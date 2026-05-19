@@ -22,8 +22,11 @@ import { useCreateZone, useDeleteZone, useUpdateZone, useUpdateProductBarcode } 
 export default function FloorPlanningPage() {
   const [activeBinLog, setActiveBinLog]   = useState<string | undefined>();
   const [selectedBin, setSelectedBin]     = useState<string | undefined>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const variantId = searchParams.get('variantId');
+  const activeTab = (searchParams.get('tab') as 'map' | 'setup' | 'barcodes') ?? 'map';
+  const activeView = (searchParams.get('view') as 'list' | 'canvas') ?? 'list';
+  const activeSubTab = (searchParams.get('subTab') as 'locations' | 'products') ?? 'locations';
   const [variantFocusBins, setVariantFocusBins] = useState<string[]>([]);
 
   const { data, isLoading, isError, refetch } = useFloorPlanning();
@@ -63,6 +66,12 @@ export default function FloorPlanningPage() {
       onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
       onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
       onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
+      activeTab={activeTab}
+      onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}
+      activeView={activeView}
+      onViewChange={(view) => setSearchParams(prev => { prev.set('view', view); return prev; })}
+      activeSubTab={activeSubTab}
+      onSubTabChange={(subTab) => setSearchParams(prev => { prev.set('subTab', subTab); return prev; })}
     />
   );
 }

@@ -98,6 +98,13 @@ export type FloorPlanningPageProps = {
   onDeleteZone?: (locationCode: string) => Promise<void>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+  /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
+  activeTab?: 'map' | 'setup' | 'barcodes';
+  onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;
+  activeView?: 'list' | 'canvas';
+  onViewChange?: (view: 'list' | 'canvas') => void;
+  activeSubTab?: 'locations' | 'products';
+  onSubTabChange?: (subTab: 'locations' | 'products') => void;
   onUpdateZone?: (locationCode: string, payload: {
     position_x?: number | null;
     position_y?: number | null;
@@ -378,12 +385,17 @@ const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
 function BarcodesTab({ 
   zones, 
   productBarcodes, 
-  onUpdateProductBarcode 
-}: { zones: WarehouseZone[]; productBarcodes: ProductBarcode[]; onUpdateProductBarcode?: (
-  lasyncroVariantId: string, 
-  barcode: string
-) => Promise<void> }) {
-  const [subTab, setSubTab]           = useState<'locations' | 'products'>('locations');
+  onUpdateProductBarcode,
+  activeSubTab,
+  onSubTabChange,
+}: { 
+  zones: WarehouseZone[]; 
+  productBarcodes: ProductBarcode[]; 
+  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+  activeSubTab?: 'locations' | 'products';
+  onSubTabChange?: (subTab: 'locations' | 'products') => void;
+}) {
+  const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
   const [locSearch, setLocSearch]     = useState('');
   const [selected, setSelected]       = useState<Set<string>>(new Set());
@@ -414,7 +426,7 @@ function BarcodesTab({
         {(['locations', 'products'] as const).map((st) => (
           <Box
             key={st}
-            onClick={() => setSubTab(st)}
+            onClick={() => { setSubTab(st); onSubTabChange?.(st); }}
             sx={{
               px: 2, py: 0.75, borderRadius: 1.5, cursor: 'pointer', fontSize: 13, fontWeight: 500,
               border: '1px solid',
@@ -607,15 +619,22 @@ function FloorPlanningModuleFT2Inner({
   onToggleZoneActive,
   onUpdateZone,
   onUpdateProductBarcode,
+  onTabChange,
+  activeTab,
+  activeView,
+  onViewChange,
+  activeSubTab,
+  onSubTabChange,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
-  const [tab, setTab] = useState<'map' | 'setup' | 'barcodes'>('map');
+  const [tab, setTab] = useState<'map' | 'setup' | 'barcodes'>(activeTab ?? 'map');
   const [selectedBin, setSelectedBin] = useState<string | undefined>();
   type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
   const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
-  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['bin', 'lane', 'warehouse']));
-  const [canvasView, setCanvasView] = useState(false);
+  // Filter by zone_type (operational) not location type — matches target design filter rail
+  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'quarantine', 'kitting', 'storage']));
+  const [canvasView, setCanvasView] = useState(activeView === 'canvas');
 
   // Derive grid props from overlay selection
   const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
@@ -639,7 +658,9 @@ function FloorPlanningModuleFT2Inner({
   }, [overlay, gridLocations, gridOccupancy]);
 
   const filteredGridLocations = useMemo(() =>
-    (gridLocations ?? []).filter(l => zoneFilters.has(l.type)),
+    // Filter by zone_type — matches filter rail zone checkboxes (pick/pack/receive etc.)
+    // Falls back to showing location if zone_type is null (unclassified locations)
+    (gridLocations ?? []).filter(l => l.zone_type == null || zoneFilters.has(l.zone_type)),
     [gridLocations, zoneFilters]
   );
   const handleBinSelect = useCallback((lc: string) => {
@@ -733,7 +754,7 @@ function FloorPlanningModuleFT2Inner({
       {/* Primary tab navigation */}
       <Tabs
         value={tab}
-        onChange={(_, v) => setTab(v)}
+        onChange={(_, v) => { setTab(v); onTabChange?.(v); }}
         sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
       >
         <Tab icon={<Map size={15} />} iconPosition="start" value="map" sx={{ minHeight: 40, fontSize: 13 }}
@@ -787,13 +808,22 @@ function FloorPlanningModuleFT2Inner({
 
                 <Divider />
 
-                {/* ZONE FILTERS */}
+                {/* ZONE FILTERS — by zone_type matching target design */}
                 <Box>
                   <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
                     Filter
                   </Typography>
-                  {(['bin', 'lane', 'warehouse'] as const).map((type) => {
-                    const count = (gridLocations ?? []).filter(l => l.type === type).length;
+                  {([
+                    { type: 'pick',       label: 'Pick zone'    },
+                    { type: 'pack',       label: 'Pack zone'    },
+                    { type: 'receive',    label: 'Receiving'    },
+                    { type: 'ship',       label: 'Shipping'     },
+                    { type: 'returns',    label: 'Returns'      },
+                    { type: 'quarantine', label: 'Quarantine'   },
+                    { type: 'kitting',    label: 'Kitting'      },
+                    { type: 'storage',    label: 'Storage'      },
+                  ] as const).map(({ type, label }) => {
+                    const count  = (gridLocations ?? []).filter(l => l.zone_type === type).length;
                     const active = zoneFilters.has(type);
                     return (
                       <Box
@@ -803,27 +833,53 @@ function FloorPlanningModuleFT2Inner({
                           next.has(type) ? next.delete(type) : next.add(type);
                           return next;
                         })}
-                        sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5, cursor: 'pointer' }}
+                        sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: 'pointer' }}
                       >
                         <Box sx={{
-                          width: 14, height: 14, borderRadius: 0.5, flexShrink: 0,
+                          width: 12, height: 12, borderRadius: 0.5, flexShrink: 0,
                           border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
                           bgcolor: active ? 'var(--accent)' : 'transparent',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                         }}>
-                          {active && <Box sx={{ width: 7, height: 7, bgcolor: '#fff', borderRadius: 0.25 }} />}
+                          {active && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
                         </Box>
-                        <Typography sx={{ fontSize: 12, color: 'var(--ink-2)', textTransform: 'capitalize' }}>
-                          {type}s
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                          {label}
                         </Typography>
-                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', ml: 'auto' }}>
-                          {count}
-                        </Typography>
+                        {count > 0 && (
+                          <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', ml: 'auto' }}>
+                            {count}
+                          </Typography>
+                        )}
                       </Box>
                     );
                   })}
                 </Box>
-
+                <Divider />
+                {/* LAYERS — toggle canvas layers (Phase 2 stubs, Phase 3 wires to Three.js layers) */}
+                <Box>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                    Layers
+                  </Typography>
+                  {([
+                    { label: 'Floor & grid', defaultOn: true  },
+                    { label: 'Bins',         defaultOn: true  },
+                    { label: 'Tote markers', defaultOn: true  },
+                    { label: 'Pick path',    defaultOn: false },
+                  ]).map(({ label, defaultOn }) => (
+                    <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: 'pointer' }}>
+                      <Box sx={{
+                        width: 12, height: 12, borderRadius: 0.5, flexShrink: 0,
+                        border: '1.5px solid', borderColor: defaultOn ? 'var(--accent)' : 'var(--rule)',
+                        bgcolor: defaultOn ? 'var(--accent)' : 'transparent',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {defaultOn && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
+                      </Box>
+                      <Typography sx={{ fontSize: 11, color: 'var(--ink-2)' }}>{label}</Typography>
+                    </Box>
+                  ))}
+                </Box>
                 <Divider />
 
                 {/* SURFACED TODAY — Phase 2c */}
@@ -877,8 +933,12 @@ function FloorPlanningModuleFT2Inner({
               {selectedBin && (() => {
                 const occ        = gridOccupancy?.[selectedBin];
                 const totalUnits = occ?.on_hand_quantity ?? 0;
-                // Capacity estimation: assume 48 units max per bin (Phase 2: real capacity from warehouse_locations)
-                const CAPACITY   = 48;
+                // Capacity derived from rack_levels × estimated units per level (10).
+                // Falls back to 48 if rack_levels not set. Phase 3: use real capacity field.
+                const selectedLocation = (gridLocations ?? []).find(l => l.location_code === selectedBin);
+                const CAPACITY   = selectedLocation?.rack_levels != null
+                  ? parseFloat(String(selectedLocation.rack_levels)) * 10
+                  : 48;
                 const pct        = Math.min(100, Math.round((totalUnits / CAPACITY) * 100));
                 const pctColor   = pct >= 85
                   ? 'var(--accent)'
@@ -988,6 +1048,39 @@ function FloorPlanningModuleFT2Inner({
                         </Box>
                       ))}
                     </Box>
+
+                    <Divider />
+
+                    {/* Bin actions — Print is live (barcode exists), Replenish + Move are Phase 3 stubs */}
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                      <Box sx={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75,
+                        py: 1, borderRadius: 1.5, bgcolor: 'var(--accent)', color: '#fff',
+                        fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                        '&:hover': { opacity: 0.9 }, transition: 'opacity 0.15s',
+                      }}>
+                        <ScrollText size={12} />
+                        Print bin label
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.75 }}>
+                        <Box sx={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)',
+                          fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer',
+                          '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s',
+                        }}>
+                          Replenish
+                        </Box>
+                        <Box sx={{
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)',
+                          fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer',
+                          '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s',
+                        }}>
+                          Move
+                        </Box>
+                      </Box>
+                    </Box>
                   </Paper>
                 );
               })()}
@@ -1044,7 +1137,7 @@ function FloorPlanningModuleFT2Inner({
                   {([{ label: 'List', val: false }, { label: 'Canvas', val: true }] as const).map(({ label, val }) => (
                     <Box
                       key={label}
-                      onClick={() => setCanvasView(val)}
+                      onClick={() => { setCanvasView(val); onViewChange?.(val ? 'canvas' : 'list'); }}
                       sx={{
                         px: 1.5, py: 0.6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
                         bgcolor: canvasView === val ? 'var(--accent)' : 'transparent',
@@ -1118,7 +1211,7 @@ function FloorPlanningModuleFT2Inner({
             )}
 
             {canvasView ? (
-              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} />
+              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} />
             ) : zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />
@@ -1141,10 +1234,12 @@ function FloorPlanningModuleFT2Inner({
       )}
 
       {!isLoading && !isError && tab === 'barcodes' && (
-        <BarcodesTab 
-          zones={zones} 
-          productBarcodes={productBarcodes} 
-          onUpdateProductBarcode={onUpdateProductBarcode} 
+        <BarcodesTab
+          zones={zones}
+          productBarcodes={productBarcodes}
+          onUpdateProductBarcode={onUpdateProductBarcode}
+          activeSubTab={activeSubTab}
+          onSubTabChange={onSubTabChange}
         />
       )}
     </Box>

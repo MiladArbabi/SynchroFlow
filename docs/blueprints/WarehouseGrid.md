@@ -94,7 +94,15 @@ SVG floor plan editor rendered in the Setup tab. Reads `position_x/y`, `width`, 
 | Canvas size | 20m × 15m virtual, pan + zoom |
 | Zoom range | 40%–300% |
 | Drag reposition | writes `position_x/y` via `PATCH /zones/:locationCode` on drag-end |
-| Click to select | opens `RackInspector` right panel |
+| Resize handles | east / south / SE corner handles — writes `width/depth` on resize-end |
+| Collision clamping | bins clamp to nearest non-overlapping edge during drag and resize — multi-pass, ref-based |
+| Frame zones | warehouse/lane/shelf are containers — no collision, resize freely, gold label bar always visible |
+| Click to select | opens `RackInspector` right panel with editable fields |
+| Unpositioned list | palette shows zones with null coordinates — click to place at canvas centre |
+| 2D/3D toggle | stub in toolbar — 3D greyed, activates `renderer='three'` in Phase 3 |
+| Saved X ago | toolbar timestamp — updates after every successful drag-end or resize-end commit |
+| Snap grid | 0.1m — allows fine positioning including 0.5m standard bin depth |
+| Zone colour coding | bins by `zone_type`, frames by `zone.type` (gold for lane/warehouse/shelf) |
 | Zone colour coding | by `zone_type` — 8 colours, all via rgba tokens |
 | Toggle | List/Canvas toggle in Setup tab header |
 
@@ -245,13 +253,31 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 
 ## Phase 2 — Remaining
 
-- [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop (no writers for `inventory_unit_status` yet — issue WG-11)
+- [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop (no writers — issue WG-11)
 - [ ] Wire `inline/focus` into Product detail page (page doesn't exist yet)
 - [ ] Surfaced Today panel — left rail live intelligence (GitHub issue #958)
 - [ ] Velocity + Open orders overlays
-- [ ] Resize handles on canvas racks — writes `width/depth` via `onUpdateZone`
-- [ ] Component palette — drag zone type tiles onto canvas (dock, pack station, etc.)
-- [ ] 2D/3D toggle button stub — `renderer='three'` placeholder
+- [ ] BUG-08/09 edge cases — zone overlap at corners with 3+ adjacent zones (parked)
+- [ ] Template presets — Pick-pack-ship / U-shaped / Fish-bone (GAP-04, parked)
+- [ ] Palette drag-to-canvas — direct drag from palette tile onto canvas (currently click-to-place only)
+- [ ] `last_printed_at` column on `warehouse_locations` — Last Printed column in Barcodes tab currently shows "Never" stub
+
+## Phase 2 — Complete (this session, May 2026)
+
+- ✅ Resize handles — east/south/SE corner, writes `width/depth` via `onUpdateZone` on drag-end
+- ✅ Unpositioned zone list in palette — click to place at canvas centre
+- ✅ 2D/3D toggle button stub — 3D greyed out, Phase 3 placeholder
+- ✅ Map tab filter rail — zone type filters (pick/pack/receive/ship/returns/quarantine/kitting/storage)
+- ✅ Map tab — Layers section (Floor & grid / Bins / Tote markers / Pick path stubs)
+- ✅ Map tab — bin panel actions (Print bin label / Replenish / Move stubs)
+- ✅ Map tab — CAPACITY derived from `rack_levels × 10` (was hardcoded 48)
+- ✅ Tab + canvas view + barcodes sub-tab persisted via URL search params (`?tab=&view=&subTab=`)
+- ✅ Barcodes tab — filter pills extended (ALL/BIN/LANE/SHELF/WAREHOUSE/TOTE/DOCK/SHIP/PACK/RET/KIT)
+- ✅ Barcodes tab — table columns: Zone + Last Printed added, Parent removed
+- ✅ Barcodes tab — Aisles fully labelled shows `N/M` fraction format
+- ✅ String→float parse fix for `width/depth/position_x/y` from Postgres decimal columns
+- ✅ Duplicate Surfaced Today block removed from filter rail
+- ✅ `children_count` integer cast fix (was returning string)
 
 ---
 
