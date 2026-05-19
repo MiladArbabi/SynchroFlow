@@ -7,8 +7,13 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useBinLog } from '../floor-planning/useBinLog';
 import { useBinStats } from '../floor-planning/useBinStats';
-import { useCreateZone, useDeleteZone, useUpdateZone, useUpdateProductBarcode } from '../floor-planning/useZoneManagement';
-
+import { 
+  useCreateZone, 
+  useDeleteZone, 
+  useUpdateZone, 
+  useUpdateProductBarcode, 
+  usePrintBarcode 
+} from '../floor-planning/useZoneManagement';
 /**
  * FLOOR PLANNING GATE PAGE
  * -------------------------
@@ -32,6 +37,7 @@ export default function FloorPlanningPage() {
   const { data, isLoading, isError, refetch } = useFloorPlanning();
   const { data: gridData, isLoading: isGridLoading } = useWarehouseGrid();
   const { data: occupancyData } = useWarehouseGridOccupancy(!isGridLoading);
+  const printBarcode  = usePrintBarcode();
   const { data: binLogData, isLoading: isBinLogLoading } = useBinLog(activeBinLog);
   const { data: binStatsData } = useBinStats(selectedBin);
   const createZone    = useCreateZone();
@@ -65,6 +71,7 @@ export default function FloorPlanningPage() {
       onDeleteZone={(code) => deleteZone.mutateAsync(code)}
       onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
       onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
+      onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
       onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
       activeTab={activeTab}
       onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}

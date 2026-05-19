@@ -256,10 +256,18 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - ✅ `useUpdateProductBarcode` — inline barcode edit in Products tab, writes `external_product_identity_map`
 - ✅ `children_count` — live subquery (was hardcoded 0)
 - ✅ Dev seed floor coordinates — all 16 locations positioned
+- [x] Palette click-to-create — click tile, enter code, POST /zones with position, placed immediately on canvas
+- [x] Scroll to pan — removed zoom-on-scroll, native wheel listener pans canvas; shift+scroll pans horizontally
+- [x] Pan/Select mode toggle — toolbar icon buttons, modeRef pattern for stale closure safety
+- [x] Frame zone collision fix — warehouse/lane/shelf excluded from drag and resize clamping
+- [x] Warehouse removed from palette — canvas IS the warehouse; multi-warehouse via tabs (issue #963)
+- [x] Palette simplified — 8 tiles: Aisle (lane/frame) + Pick/Pack/Receive/Ship/Returns/Quarantine/Materials
+- [x] Label bar — sticky gold tab on frame zones always visible even when children fill the frame
+- [x] Saved X ago — toolbar timestamp after every drag-end or resize-end commit
+- [x] `last_printed_at` — migration in 0108, endpoint, hook, inspector wired, Barcodes tab live
 
 ## Phase 2 — Remaining
 
-- [x] Palette click-to-create — click tile, enter code, place at canvas centre
 - [ ] Marquee select not selecting zones — issue #961
 - [ ] Responsive collapsible side panels — issue #962  
 - [ ] Multi-warehouse tab navigation — issue #963
@@ -269,7 +277,6 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - [ ] Velocity + Open orders overlays
 - [ ] BUG-08/09 edge cases — zone overlap at corners with 3+ adjacent zones (parked)
 - [ ] Template presets — Pick-pack-ship / U-shaped / Fish-bone (GAP-04, parked)
-- [ ] `last_printed_at` column on `warehouse_locations` — Last Printed column in Barcodes tab currently shows "Never" stub
 
 ## Phase 2 — Complete (this session, May 2026)
 
@@ -299,3 +306,121 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - [ ] `zone_type` → material colour
 - [ ] Add 2D/3D toggle button inside `variant="full"` toolbar
 - [ ] Never couple business logic to renderer — props contract is frozen
+
+## Phase 3 — Isometric 2.5D Renderer
+
+### Overview
+Isometric SVG renderer activated by the 2D/3D toolbar toggle in `CanvasEditor`.
+No Three.js — pure SVG isometric projection. Same data, different visual surface.
+Read-only — editing remains in 2D mode only.
+
+### Design Goals
+
+- Show rack_levels as vertical height — operators can see how tall a rack is
+- Colour-coded by zone_type — same ZONE_COLORS palette as 2D
+- Embeddable as standalone `<IsometricZoneView />` in product/order detail pages
+- Onboarding tool — new operators can visualise the warehouse in 3D before their first shift
+
+### Coordinate System
+Isometric projection from 3D (x, y, z) to 2D screen (sx, sy):
+```tsx
+sx = (x - y) * cos(30°) * SCALE
+sy = (x + y) * sin(30°) * SCALE - z * SCALE
+```
+Where:
+
+- `x` = position_x (metres, rightward)
+- `y` = position_y (metres, downward in 2D = depth in 3D)
+- `z` = rack height (rack_levels × LEVEL_HEIGHT, default 0.5m per level)
+- `SCALE` = 60px/metre (same as 2D)
+
+### Zone Rendering
+Each zone renders as an isometric box with 3 visible faces:
+
+- **Top face** — fill at 100% opacity, zone_type colour
+- **Left face** — fill at 70% opacity (darker)
+- **Right face** — fill at 50% opacity (darkest)
+- **Label** — location_code on top face
+- **Level markers** — L1/L2/L3 on front face at each rack_levels interval
+
+Frame zones (warehouse/lane) render as flat floor tiles (z=0, no height).
+
+### Render Order
+Zones sorted by `position_x + position_y` descending — painter's algorithm,
+back zones render first so front zones appear on top correctly.
+
+### Interaction
+
+- Click zone → select → opens RackInspector (read-only, no edit fields)
+- Pan → same offset/zoom system as 2D (mouse drag on canvas)
+- Scroll → pan (same native wheel listener)
+- No drag/resize handles in isometric mode
+- No marquee select in isometric mode
+
+### Component Structure
+```typescript
+modules/floor-planning/src/ui/components/
+  IsometricCanvas.tsx     — main isometric SVG renderer
+  IsometricZoneView.tsx   — embeddable standalone single-zone view (product/order detail)
+```
+
+### Props
+```typescript
+interface IsometricCanvasProps {
+  zones: WarehouseZone[];
+  selected?: string | null;
+  onSelect?: (locationCode: string | null) => void;
+  offset?: { x: number; y: number };
+  zoom?: number;
+}
+
+interface IsometricZoneViewProps {
+  zone: WarehouseZone;
+  width?: number;   // container width px, default 200
+  height?: number;  // container height px, default 160
+}
+```
+
+### Constants
+
+```tsx
+LEVEL_HEIGHT = 0.5    // metres per rack level
+ISO_ANGLE    = 30     // degrees
+ISO_SCALE    = 60     // px/metre (same as 2D SCALE)
+```
+
+### Toolbar Toggle
+
+The existing 2D/3D stub in `CanvasEditor` toolbar activates `IsometricCanvas`
+in place of the flat SVG canvas. Left palette and right inspector panels remain.
+Inspector fields are read-only in 3D mode (no onUpdateZone calls).
+
+### Embeddable Usage (future)
+
+```tsx
+// Product detail page — show where this product is stocked
+<IsometricZoneView zone={primaryBin} width={240} height={180} />
+
+// Order detail page — show all line item locations
+{lineItemBins.map(bin => <IsometricZoneView key={bin.location_code} zone={bin} />)}
+```
+
+### Phase 3 — Completed
+
+- [x] `IsometricCanvas.tsx` — pure SVG isometric renderer, no Three.js
+- [x] 2D/3D toggle wired — swaps SVG canvas for isometric in-place
+- [x] Palette hidden in 3D mode — editing is 2D only
+- [x] Read-only RackInspector in 3D mode — onUpdateZone/onDeleteZone disabled
+- [x] Painter's algorithm sort — back zones render first, correct z-order
+- [x] Level markers on front face — dashed lines at each rack_levels interval
+- [x] Angle presets — standard (↗) and mirrored (↙) toggle
+- [x] `rack_levels` editable in inspector — zone height updates in 3D
+- [x] `defaultRackLevels` in PALETTE_ITEMS — Pick=3, Pack=2, others=1
+- [x] Toolbar zoom hidden in 3D — isometric has own zoom/reset/angle controls
+
+### Phase 3 — Remaining
+
+- [ ] `IsometricZoneView.tsx` — embeddable single-zone component for product/order detail pages
+- [ ] Embed in product detail page — show where product is stocked
+- [ ] Embed in order detail page — show line item bin locations
+- [ ] Flipped painter sort — when flipped=true sort order should reverse for correct z-order

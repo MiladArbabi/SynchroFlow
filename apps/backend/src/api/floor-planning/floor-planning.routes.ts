@@ -13,7 +13,8 @@ import {
   httpGetVariantBins,
   httpCreateZone,
   httpDeleteZone,
-  httpUpdateZone
+  httpUpdateZone,
+  httpPrintBarcode
 } from './floor-planning.controller.js';
 
 /**
@@ -105,6 +106,14 @@ router.get(
   requireFt2,
   requireAction('floor-planning:read'),
   httpGetVariantBins
+);
+
+router.post(
+  '/zones/:locationCode/print',
+  authenticateToken,
+  requireFt2,
+  requireAction('floor-planning:write'),
+  httpPrintBarcode
 );
 
 export default router;

@@ -64,6 +64,7 @@ export type WarehouseZone = {
   orientation: number;
   rack_levels: number | null;
   zone_type: string | null;
+  last_printed_at: string | null;
 };
 
 export type ProductBarcode = {
@@ -96,6 +97,7 @@ export type FloorPlanningPageProps = {
   variantFocusBins?: string[];
   onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
+  onPrintBarcode?: (locationCode: string) => Promise<void>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
@@ -557,7 +559,9 @@ function BarcodesTab({
                       </TableCell>
                       {/* Last Printed — no data model yet, stub shows Never. Phase 3: add last_printed_at to warehouse_locations */}
                       <TableCell sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                        Never
+                        {z.last_printed_at
+                          ? new Date(z.last_printed_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                          : <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11, fontStyle: 'italic' }}>Never</Typography>}
                       </TableCell>
                       <TableCell>
                         {z.active
@@ -616,6 +620,7 @@ function FloorPlanningModuleFT2Inner({
   variantFocusBins,
   onCreateZone,
   onDeleteZone,
+  onPrintBarcode,
   onToggleZoneActive,
   onUpdateZone,
   onUpdateProductBarcode,
@@ -1211,7 +1216,7 @@ function FloorPlanningModuleFT2Inner({
             )}
 
             {canvasView ? (
-              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} onCreateZone={onCreateZone} />
+              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} onCreateZone={onCreateZone} onPrintBarcode={onPrintBarcode} />
             ) : zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />

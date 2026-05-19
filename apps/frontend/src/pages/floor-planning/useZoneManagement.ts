@@ -71,3 +71,14 @@ export function useUpdateProductBarcode() {
     },
   });
 }
+
+export function usePrintBarcode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (locationCode: string) =>
+      axiosInstance.post(`/api/v1/floor-planning/zones/${locationCode}/print`).then(r => r.data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}

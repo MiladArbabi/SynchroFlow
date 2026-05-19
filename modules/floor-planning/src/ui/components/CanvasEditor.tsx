@@ -19,6 +19,7 @@ import { Box, Typography, Divider, Chip, IconButton, Paper, TextField } from '@m
 import { X, Layers, RotateCw, Copy, Trash2, Tag, Hand, MousePointer } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
+import { IsometricCanvas } from './IsometricCanvas.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SCALE      = 60;
@@ -68,14 +69,14 @@ const ZONE_STROKE: Record<string, string> = {
 
 // Palette items — frame zones (lane) have no collision, operational zones (bin) are clamped
 const PALETTE_ITEMS = [
-  { type: 'lane', label: 'Aisle',      zone_type: 'pick',      defaultW: 4.4, defaultD: 1.0 },
-  { type: 'bin',  label: 'Pick',       zone_type: 'pick',      defaultW: 1.0, defaultD: 0.5 },
-  { type: 'bin',  label: 'Pack',       zone_type: 'pack',      defaultW: 2.0, defaultD: 1.5 },
-  { type: 'bin',  label: 'Receive',    zone_type: 'receive',   defaultW: 3.0, defaultD: 3.0 },
-  { type: 'bin',  label: 'Ship',       zone_type: 'ship',      defaultW: 4.0, defaultD: 3.0 },
-  { type: 'bin',  label: 'Returns',    zone_type: 'returns',   defaultW: 3.0, defaultD: 2.0 },
-  { type: 'bin',  label: 'Quarantine', zone_type: 'quarantine',defaultW: 2.0, defaultD: 2.0 },
-  { type: 'bin',  label: 'Materials',  zone_type: 'kitting',   defaultW: 2.0, defaultD: 1.0 },
+  { type: 'lane', label: 'Aisle',      zone_type: 'pick',      defaultW: 4.4, defaultD: 1.0, defaultRackLevels: null },
+  { type: 'bin',  label: 'Pick',       zone_type: 'pick',      defaultW: 1.0, defaultD: 0.5, defaultRackLevels: 3    },
+  { type: 'bin',  label: 'Pack',       zone_type: 'pack',      defaultW: 2.0, defaultD: 1.5, defaultRackLevels: 2    },
+  { type: 'bin',  label: 'Receive',    zone_type: 'receive',   defaultW: 3.0, defaultD: 3.0, defaultRackLevels: 1    },
+  { type: 'bin',  label: 'Ship',       zone_type: 'ship',      defaultW: 4.0, defaultD: 3.0, defaultRackLevels: 1    },
+  { type: 'bin',  label: 'Returns',    zone_type: 'returns',   defaultW: 3.0, defaultD: 2.0, defaultRackLevels: 1    },
+  { type: 'bin',  label: 'Quarantine', zone_type: 'quarantine',defaultW: 2.0, defaultD: 2.0, defaultRackLevels: 1    },
+  { type: 'bin',  label: 'Materials',  zone_type: 'kitting',   defaultW: 2.0, defaultD: 1.0, defaultRackLevels: 2    },
 ] as const;
 
 const TEMPLATES = [
@@ -125,6 +126,7 @@ interface CanvasEditorProps {
     zone_type?: string | null;
   }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
+  onPrintBarcode?: (locationCode: string) => Promise<void>;
   onCreateZone?: (payload: { 
     location_code: string; 
     type: WarehouseLocationType; 
@@ -132,7 +134,8 @@ interface CanvasEditorProps {
     position_x?: number; 
     position_y?: number; 
     width?: number; 
-    depth?: number
+    depth?: number;
+    rack_levels?: number
   }) => Promise<void>;
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
@@ -161,6 +164,7 @@ function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCent
         position_y: canvasCentreY,
         width: item.defaultW,
         depth: item.defaultD,
+        rack_levels: item.defaultRackLevels ?? undefined,
       });
       setActiveItem(null);
       setLocationCode('');
@@ -273,11 +277,12 @@ function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCent
 }
 
 // ── RackInspector ─────────────────────────────────────────────────────────────
-function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone }: {
+function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarcode }: {
   zone: WarehouseZone;
   onClose: () => void;
   onUpdateZone?: CanvasEditorProps['onUpdateZone'];
   onDeleteZone?: CanvasEditorProps['onDeleteZone'];
+  onPrintBarcode?: CanvasEditorProps['onPrintBarcode'];
 }) {
   const zoneColor = ZONE_STROKE[zone.zone_type ?? 'storage'] ?? ZONE_STROKE.storage;
   const [saving, setSaving] = useState(false);
@@ -354,10 +359,26 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone }: {
           </Box>
         </Box>
         <Divider />
-        <Box sx={{ display: 'flex', gap: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Layers size={12} color="var(--ink-4)" />
-            <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{zone.rack_levels ?? '—'} levels</Typography>
+            <TextField size="small" type="number"
+              defaultValue={zone.rack_levels ?? ''}
+              placeholder="—"
+              onBlur={(e) => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val >= 1 && val <= 20) onUpdateZone?.(zone.location_code, { rack_levels: val });
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = parseInt((e.target as HTMLInputElement).value);
+                  if (!isNaN(val) && val >= 1 && val <= 20) onUpdateZone?.(zone.location_code, { rack_levels: val });
+                }
+              }}
+              inputProps={{ min: 1, max: 20, style: { fontFamily: 'monospace', fontSize: 11, padding: '2px 4px', width: 36 } }}
+              sx={{ '& fieldset': { border: 'none' }, '& .MuiInputBase-root': { bgcolor: 'var(--bg-2)', borderRadius: 1, border: '1px solid var(--rule)' } }}
+            />
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>levels</Typography>
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <RotateCw size={12} color="var(--ink-4)" />
@@ -382,7 +403,8 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone }: {
       <Box sx={{ p: 1.5, borderTop: '1px solid var(--rule)', display: 'flex', flexDirection: 'column', gap: 0.75 }}>
         {/* Print barcode — hidden for warehouse frame type which have no scannable barcode */}
         {zone.type !== 'warehouse' && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, py: 1, borderRadius: 1.5, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', '&:hover': { opacity: 0.9 }, transition: 'opacity 0.15s' }}>
+          <Box onClick={() => onPrintBarcode?.(zone.location_code)}
+            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.75, py: 1, borderRadius: 1.5, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: 'pointer', '&:hover': { opacity: 0.9 }, transition: 'opacity 0.15s' }}>
             <Tag size={12} /> Print barcode
           </Box>
         )}
@@ -438,17 +460,20 @@ export function CanvasEditor({
   zones, 
   onUpdateZone, 
   onDeleteZone, 
-  onCreateZone 
+  onCreateZone,
+  onPrintBarcode,
 }: CanvasEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(1);
   const [offset, setOffset]     = useState({ x: 40, y: 40 });
   const [selected, setSelected] = useState<string | null>(null);
+  const [flipped, setFlipped]   = useState(false); // angle preset: standard vs mirrored
   const [localPositions, setLocalPositions] = useState<Record<string, { x: number; y: number }>>({});
   const [localSizes, setLocalSizes]         = useState<Record<string, { w: number; h: number }>>({});
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [renderMode, setRenderMode] = useState<'2D' | '3D'>('2D');
   // Interaction mode — pan (default) or select (marquee)
   const [mode, setMode] = useState<'pan' | 'select'>('pan');
   // Marquee selection rectangle — SVG canvas coordinates in pixels
@@ -729,7 +754,7 @@ export function CanvasEditor({
     <Box sx={{ display: 'flex', width: '100%', height: 560, border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden', bgcolor: 'var(--bg)' }}>
 
       {/* LEFT — palette */}
-      <ComponentPalette
+      {renderMode === '2D' && <ComponentPalette
         unpositionedZones={zones.filter(z => z.position_x == null)}
         onPlace={(zone) => {
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));
@@ -741,6 +766,7 @@ export function CanvasEditor({
         canvasCentreX={snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)))}
         canvasCentreY={snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)))}
       />
+      }
 
       {/* CENTER — canvas */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
@@ -760,16 +786,16 @@ export function CanvasEditor({
             {positionedZones.length} components
             {unpositionedCount > 0 && <span style={{ color: 'var(--ink-4)' }}> · {unpositionedCount} unpositioned</span>}
           </Typography>
-          {/* 2D/3D toggle stub — Phase 3 activates ThreeRenderer */}
+          {/* 2D/3D toggle — Phase 3: IsometricCanvas activates on 3D */}
           <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden', mr: 1 }}>
-            {(['2D', '3D'] as const).map((mode) => (
-              <Box key={mode} title={mode === '3D' ? 'Three.js renderer — Phase 3' : 'SVG floor plan — current'}
+            {(['2D', '3D'] as const).map((m) => (
+              <Box key={m} title={m === '3D' ? 'Isometric 2.5D view' : 'SVG floor plan'} onClick={() => setRenderMode(m)}
                 sx={{ px: 1.25, py: 0.4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-                  cursor: mode === '3D' ? 'not-allowed' : 'default',
-                  bgcolor: mode === '2D' ? 'var(--accent)' : 'transparent',
-                  color:   mode === '2D' ? '#fff' : 'var(--ink-4)',
-                  opacity: mode === '3D' ? 0.5 : 1, transition: 'all 0.15s' }}>
-                {mode}
+                  cursor: 'pointer',
+                  bgcolor: renderMode === m ? 'var(--accent)' : 'transparent',
+                  color:   renderMode === m ? '#fff' : 'var(--ink-4)',
+                  transition: 'all 0.15s' }}>
+                {m}
               </Box>
             ))}
           </Box>
@@ -788,7 +814,7 @@ export function CanvasEditor({
               </Box>
             ))}
           </Box>
-          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {renderMode === '2D' && <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
               <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta)))}
                 sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
@@ -803,10 +829,16 @@ export function CanvasEditor({
               Reset
             </Box>
           </Box>
+          }
         </Box>
 
-        {/* Rulers + SVG */}
-        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* Rulers + SVG — 2D mode only */}
+        {renderMode === '3D' && (
+          <Box sx={{ flex: 1, overflow: 'hidden' }}>
+            <IsometricCanvas zones={zones} onSelect={(code) => setSelected(code)} />
+          </Box>
+        )}
+        {renderMode === '2D' && <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Box sx={{ display: 'flex', flexShrink: 0 }}>
             <Box sx={{ width: RULER_SIZE, height: RULER_SIZE, bgcolor: 'var(--bg-2)', borderRight: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)', flexShrink: 0 }} />
             <Box sx={{ flex: 1, overflow: 'hidden' }}>
@@ -935,6 +967,7 @@ export function CanvasEditor({
             </Box>
           </Box>
         </Box>
+        }
 
         {/* Zone tree breadcrumb */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0, px: 1, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0, overflowX: 'auto', height: 28 }}>
@@ -959,7 +992,10 @@ export function CanvasEditor({
 
       {/* RIGHT — inspector */}
       {selectedZone ? (
-        <RackInspector zone={selectedZone} onClose={() => setSelected(null)} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} />
+        <RackInspector zone={selectedZone} onClose={() => setSelected(null)}
+          onUpdateZone={renderMode === '2D' ? onUpdateZone : undefined}
+          onDeleteZone={renderMode === '2D' ? onDeleteZone : undefined}
+          onPrintBarcode={onPrintBarcode} />
       ) : (
         <Box sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, p: 2 }}>
           <Box sx={{ width: 32, height: 32, borderRadius: 1, border: '1.5px dashed var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

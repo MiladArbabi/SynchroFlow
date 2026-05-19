@@ -103,6 +103,11 @@ export async function up(knex: Knex): Promise<void> {
       .nullable()
       .defaultTo('storage')
       .comment('Operational zone classification — drives colour coding in 2D/3D views');
+
+    table
+      .timestamp('last_printed_at', { useTz: true })
+      .nullable()
+      .comment('Timestamp of last barcode print — updated by floor-planning module when Print barcode is triggered');
   });
 
   // 3. Index for canvas queries (fetch all locations with coordinates for a shop)
@@ -124,6 +129,7 @@ export async function down(knex: Knex): Promise<void> {
     table.dropColumn('orientation');
     table.dropColumn('rack_levels');
     table.dropColumn('zone_type');
+    table.dropColumn('last_printed_at');
   });
 
   await knex.raw(`DROP TYPE IF EXISTS warehouse_zone_type;`);

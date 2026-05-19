@@ -243,7 +243,7 @@ export async function seed(knex: Knex): Promise<void> {
       await trx('warehouse_locations')
         .insert({ shop_id: shop.id, ...loc })
         .onConflict(['shop_id', 'location_code'])
-        .ignore();
+        .merge(['position_x', 'position_y', 'width', 'depth', 'orientation', 'rack_levels', 'zone_type', 'barcode', 'parent_location_code']);
     }
     await trx.raw(`SET LOCAL "app.current_tenant" = '0'`); // reset after warehouse inserts
 
@@ -484,6 +484,37 @@ export async function seed(knex: Knex): Promise<void> {
 
   if (process.env.DEV_SEED_MODE === 'full_data') {
     console.log('[DEV_SEED] Seeding full operational data (trust + FT2)…');
+    // ── WAREHOUSE LOCATIONS (full_data) ──────────────────────────────────────
+    // Also seed/reset warehouse locations in full_data mode so dev:full-reset
+    // always restores clean coordinates regardless of which mode was used.
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
+    const fdLocationRows = [
+      { location_code: 'WH-1-ROOT', barcode: null,          type: 'warehouse', parent_location_code: null,         position_x: 0,   position_y: 0,   width: 12,  depth: 12,  orientation: 0, rack_levels: null, zone_type: 'storage' },
+      { location_code: 'A',         barcode: null,          type: 'lane',      parent_location_code: 'WH-1-ROOT',  position_x: 1.0, position_y: 0.0, width: 4.4, depth: 1.0, orientation: 0, rack_levels: null, zone_type: 'pick' },
+      { location_code: 'B',         barcode: null,          type: 'lane',      parent_location_code: 'WH-1-ROOT',  position_x: 1.0, position_y: 4.0, width: 4.4, depth: 1.0, orientation: 0, rack_levels: null, zone_type: 'pick' },
+      { location_code: 'C',         barcode: null,          type: 'lane',      parent_location_code: 'WH-1-ROOT',  position_x: 1.0, position_y: 8.0, width: 4.4, depth: 1.0, orientation: 0, rack_levels: null, zone_type: 'pick' },
+      { location_code: 'A-1',       barcode: 'LOC-A-1',    type: 'bin',       parent_location_code: 'A',           position_x: 1.0, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'A-2',       barcode: 'LOC-A-2',    type: 'bin',       parent_location_code: 'A',           position_x: 2.1, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'A-3',       barcode: 'LOC-A-3',    type: 'bin',       parent_location_code: 'A',           position_x: 3.2, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'A-4',       barcode: 'LOC-A-4',    type: 'bin',       parent_location_code: 'A',           position_x: 4.3, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'B-1',       barcode: 'LOC-B-1',    type: 'bin',       parent_location_code: 'B',           position_x: 1.0, position_y: 5.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'B-2',       barcode: 'LOC-B-2',    type: 'bin',       parent_location_code: 'B',           position_x: 2.1, position_y: 5.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'B-3',       barcode: 'LOC-B-3',    type: 'bin',       parent_location_code: 'B',           position_x: 3.2, position_y: 5.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'B-4',       barcode: 'LOC-B-4',    type: 'bin',       parent_location_code: 'B',           position_x: 4.3, position_y: 5.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'C-1',       barcode: 'LOC-C-1',    type: 'bin',       parent_location_code: 'C',           position_x: 1.0, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'C-2',       barcode: 'LOC-C-2',    type: 'bin',       parent_location_code: 'C',           position_x: 2.1, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'C-3',       barcode: 'LOC-C-3',    type: 'bin',       parent_location_code: 'C',           position_x: 3.2, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'C-4',       barcode: 'LOC-C-4',    type: 'bin',       parent_location_code: 'C',           position_x: 4.3, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
+      { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A',           position_x: 8.0, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 1, zone_type: 'quarantine' },
+    ];
+    for (const loc of fdLocationRows) {
+      await trx('warehouse_locations')
+        .insert({ shop_id: shop.id, ...loc })
+        .onConflict(['shop_id', 'location_code'])
+        .merge(['position_x', 'position_y', 'width', 'depth', 'orientation', 'rack_levels', 'zone_type', 'barcode', 'parent_location_code']);
+    }
+    await trx.raw(`SET LOCAL "app.current_tenant" = '0'`);
+    console.log('[DEV_SEED] ✅ Warehouse locations seeded (full_data reset)');
 
     // ── PRODUCTS + VARIANTS ──────────────────────────────────────────────────
     // Trust needs: products.updated_at non-null, variants with clean SKUs

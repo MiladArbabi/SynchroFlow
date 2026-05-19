@@ -44,7 +44,8 @@ export async function httpGetLayout(req: Request, res: Response) {
           'depth',
           'orientation',
           'rack_levels',
-          'zone_type'
+          'zone_type',
+          'last_printed_at',
         );
 
       const productBarcodes = await trx('variants as v')
@@ -146,7 +147,8 @@ export async function httpGetGrid(req: Request, res: Response) {
           'depth',
           'orientation',
           'rack_levels',
-          'zone_type'
+          'zone_type',
+          'last_printed_at'
         );
     });
 
@@ -607,5 +609,26 @@ export async function httpDeleteZone(req: Request, res: Response) {
     if (err.message?.includes('Cannot delete')) return res.status(409).json({ error: err.message });
     console.error('[floor-planning] httpDeleteZone failed', err);
     return res.status(500).json({ error: 'Failed to delete zone' });
+  }
+}
+
+export async function httpPrintBarcode(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  const { locationCode } = req.params;
+  try {
+    const updated = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('warehouse_locations')
+        .where({ shop_id: shopId, location_code: locationCode })
+        .update({ last_printed_at: trx.fn.now() })
+        .returning(['location_code', 'last_printed_at']);
+    });
+
+    if (!Array.isArray(updated) || !updated.length) return res.status(404).json({ error: 'Zone not found' });
+    return res.json({ location_code: updated[0].location_code, last_printed_at: updated[0].last_printed_at });
+  } catch (err) {
+    console.error('[floor-planning] httpPrintBarcode failed', err);
+    return res.status(500).json({ error: 'Failed to update last_printed_at' });
   }
 }
