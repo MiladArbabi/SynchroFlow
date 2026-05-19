@@ -16,8 +16,9 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Typography, Divider, Chip, IconButton, Paper, TextField } from '@mui/material';
-import { X, Layers, RotateCw, Copy, Trash2, Tag } from 'lucide-react';
+import { X, Layers, RotateCw, Copy, Trash2, Tag, Hand, MousePointer } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
+import { WarehouseLocationType } from '@lasyncro/shared/ui';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const SCALE      = 60;
@@ -65,15 +66,16 @@ const ZONE_STROKE: Record<string, string> = {
   storage:    'rgba(100,116,139,0.6)',
 };
 
+// Palette items — frame zones (lane) have no collision, operational zones (bin) are clamped
 const PALETTE_ITEMS = [
-  { type: 'lane',    label: 'Aisle',           zone_type: 'pick',    defaultW: 4.4, defaultD: 1.0 },
-  { type: 'bin',     label: 'Rack',            zone_type: 'storage', defaultW: 1.0, defaultD: 0.8 },
-  { type: 'bin',     label: 'Bin',             zone_type: 'pick',    defaultW: 1.0, defaultD: 0.8 },
-  { type: 'bin',     label: 'Dock',            zone_type: 'ship',    defaultW: 3.0, defaultD: 3.0 },
-  { type: 'bin',     label: 'Packing station', zone_type: 'pack',    defaultW: 2.0, defaultD: 1.5 },
-  { type: 'bin',     label: 'Shipping bay',    zone_type: 'ship',    defaultW: 4.0, defaultD: 3.0 },
-  { type: 'bin',     label: 'Returns area',    zone_type: 'returns', defaultW: 3.0, defaultD: 2.0 },
-  { type: 'bin',     label: 'Kitting bench',   zone_type: 'kitting', defaultW: 2.0, defaultD: 1.0 },
+  { type: 'lane', label: 'Aisle',      zone_type: 'pick',      defaultW: 4.4, defaultD: 1.0 },
+  { type: 'bin',  label: 'Pick',       zone_type: 'pick',      defaultW: 1.0, defaultD: 0.5 },
+  { type: 'bin',  label: 'Pack',       zone_type: 'pack',      defaultW: 2.0, defaultD: 1.5 },
+  { type: 'bin',  label: 'Receive',    zone_type: 'receive',   defaultW: 3.0, defaultD: 3.0 },
+  { type: 'bin',  label: 'Ship',       zone_type: 'ship',      defaultW: 4.0, defaultD: 3.0 },
+  { type: 'bin',  label: 'Returns',    zone_type: 'returns',   defaultW: 3.0, defaultD: 2.0 },
+  { type: 'bin',  label: 'Quarantine', zone_type: 'quarantine',defaultW: 2.0, defaultD: 2.0 },
+  { type: 'bin',  label: 'Materials',  zone_type: 'kitting',   defaultW: 2.0, defaultD: 1.0 },
 ] as const;
 
 const TEMPLATES = [
@@ -123,13 +125,52 @@ interface CanvasEditorProps {
     zone_type?: string | null;
   }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
+  onCreateZone?: (payload: { 
+    location_code: string; 
+    type: WarehouseLocationType; 
+    zone_type?: string; 
+    position_x?: number; 
+    position_y?: number; 
+    width?: number; 
+    depth?: number
+  }) => Promise<void>;
 }
-
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ unpositionedZones, onPlace }: {
+function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCentreX, canvasCentreY }: {
   unpositionedZones: WarehouseZone[];
   onPlace: (zone: WarehouseZone) => void;
+  onCreateZone?: CanvasEditorProps['onCreateZone'];
+  canvasCentreX: number;
+  canvasCentreY: number;
 }) {
+  const [activeItem, setActiveItem] = useState<string | null>(null);
+  const [locationCode, setLocationCode] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCreate(item: typeof PALETTE_ITEMS[number]) {
+    if (!locationCode.trim() || !onCreateZone) return;
+    setCreating(true);
+    setError(null);
+    try {
+      await onCreateZone({
+        location_code: locationCode.trim().toUpperCase(),
+        type: item.type,
+        zone_type: item.zone_type,
+        position_x: canvasCentreX,
+        position_y: canvasCentreY,
+        width: item.defaultW,
+        depth: item.defaultD,
+      });
+      setActiveItem(null);
+      setLocationCode('');
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to create');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   return (
     <Box sx={{
       width: 160, flexShrink: 0, borderRight: '1px solid var(--rule)',
@@ -137,22 +178,43 @@ function ComponentPalette({ unpositionedZones, onPlace }: {
     }}>
       <Box sx={{ p: 1.5, borderBottom: '1px solid var(--rule)' }}>
         <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          Drag to add
+          Click to add
         </Typography>
       </Box>
       <Box sx={{ p: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75, overflowY: 'auto' }}>
         {PALETTE_ITEMS.map((item) => {
-          const fill   = ZONE_COLORS[item.zone_type] ?? ZONE_COLORS.storage;
-          const stroke = ZONE_STROKE[item.zone_type] ?? ZONE_STROKE.storage;
+          // Frame types (lane) use type-based colour — matches canvas render
+          const colorKey = item.type === 'lane' ? 'lane' : item.zone_type;
+          const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+          const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
           return (
-            <Box key={item.label} title={`${item.label} · ${item.zone_type}`}
-              sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${stroke}`, bgcolor: fill, cursor: 'grab',
+            <Box key={item.label}
+              onClick={() => { setActiveItem(item.label); setLocationCode(''); setError(null); }}
+              sx={{ p: 1, borderRadius: 1.5, border: `1px solid ${activeItem === item.label ? 'var(--accent)' : stroke}`,
+                bgcolor: activeItem === item.label ? 'var(--accent-ghost)' : fill, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, userSelect: 'none',
-                '&:hover': { opacity: 0.8 }, transition: 'opacity 0.12s' }}>
+                '&:hover': { opacity: 0.8 }, transition: 'all 0.12s' }}>
               <Box sx={{ width: '100%', height: 20, borderRadius: 0.5, border: `1px solid ${stroke}`, bgcolor: fill }} />
-              <Typography sx={{ fontSize: 9, fontWeight: 600, color: 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
+              <Typography sx={{ fontSize: 9, fontWeight: 600, color: activeItem === item.label ? 'var(--accent)' : 'var(--ink-2)', textAlign: 'center', lineHeight: 1.2 }}>
                 {item.label}
               </Typography>
+              {activeItem === item.label && (
+                <Box sx={{ width: '100%', mt: 0.5 }} onClick={e => e.stopPropagation()}>
+                  <input
+                    autoFocus
+                    placeholder="Code e.g. D-1"
+                    value={locationCode}
+                    onChange={e => setLocationCode(e.target.value.toUpperCase())}
+                    onKeyDown={e => { if (e.key === 'Enter') void handleCreate(item); if (e.key === 'Escape') setActiveItem(null); }}
+                    style={{ width: '100%', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', borderRadius: 3, border: '1px solid var(--rule)', background: 'var(--bg)', color: 'var(--ink)', boxSizing: 'border-box' }}
+                  />
+                  {error && <Typography sx={{ fontSize: 8, color: 'rgba(239,68,68,0.9)', mt: 0.25 }}>{error}</Typography>}
+                  <Box onClick={() => void handleCreate(item)}
+                    sx={{ mt: 0.5, py: 0.25, borderRadius: 1, bgcolor: creating ? 'var(--ink-4)' : 'var(--accent)', color: '#fff', fontSize: 8, fontWeight: 600, textAlign: 'center', cursor: 'pointer' }}>
+                    {creating ? '…' : 'Add'}
+                  </Box>
+                </Box>
+              )}
             </Box>
           );
         })}
@@ -372,7 +434,12 @@ function Ruler({ length, horizontal, scale, offset: off, zoom }: {
 }
 
 // ── CanvasEditor ──────────────────────────────────────────────────────────────
-export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditorProps) {
+export function CanvasEditor({ 
+  zones, 
+  onUpdateZone, 
+  onDeleteZone, 
+  onCreateZone 
+}: CanvasEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(1);
   const [offset, setOffset]     = useState({ x: 40, y: 40 });
@@ -382,6 +449,12 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  // Interaction mode — pan (default) or select (marquee)
+  const [mode, setMode] = useState<'pan' | 'select'>('pan');
+  // Marquee selection rectangle — SVG canvas coordinates in pixels
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const marqueeRef    = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const dragRef   = useRef<DragState | null>(null);
   const panRef    = useRef<PanState | null>(null);
@@ -400,10 +473,17 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
   const positionedZonesRef = useRef(positionedZones);
   const localSizesRef      = useRef(localSizes);
   const localPositionsRef  = useRef(localPositions);
+  const modeRef            = useRef(mode);
+  const zoomRef            = useRef(zoom);
+  const offsetRef          = useRef(offset);
   // Sync refs synchronously on every render — avoids stale closure in mousemove handler
   positionedZonesRef.current = positionedZones;
   localSizesRef.current      = localSizes;
   localPositionsRef.current  = localPositions;
+  modeRef.current            = mode;
+  zoomRef.current            = zoom;
+  offsetRef.current          = offset;
+  marqueeRef.current         = marquee;
   const unpositionedCount = zones.filter(z => z.position_x == null && !placedCoords[z.location_code]).length;
   const selectedZone = selected
     ? positionedZones.find(z => z.location_code === selected) ?? zones.find(z => z.location_code === selected)
@@ -461,6 +541,9 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
     e.stopPropagation();
     setSelected(zone.location_code);
+    // In select mode — only select, no drag
+    console.log('[canvas] onRackMouseDown mode:', modeRef.current);
+    // Both modes allow zone dragging — select mode just prevents canvas pan
     dragRef.current = {
       locationCode: zone.location_code,
       startMouseX:  e.clientX,
@@ -472,6 +555,15 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
 
   function onCanvasMouseDown(e: React.MouseEvent) {
     if (dragRef.current) return;
+    if (mode === 'select') {
+      // Start marquee selection — record SVG canvas start point
+      const rect = svgRef.current!.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      marqueeStartRef.current = { x: sx, y: sy };
+      setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy });
+      return;
+    }
     setSelected(null);
     panRef.current = {
       startMouseX:  e.clientX,
@@ -529,6 +621,19 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
         setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
         return;
       }
+      // Marquee update
+      if (marqueeStartRef.current) {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect) {
+          setMarquee({
+            x1: marqueeStartRef.current.x,
+            y1: marqueeStartRef.current.y,
+            x2: e.clientX - rect.left,
+            y2: e.clientY - rect.top,
+          });
+        }
+        return;
+      }
       // Pan
       if (panRef.current) {
         const p = panRef.current;
@@ -565,22 +670,58 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
         }
         dragRef.current = null;
       }
+      // Commit marquee selection — select all zones whose centre falls within the marquee rect
+      if (marqueeStartRef.current && marqueeRef.current) {
+        const minX = Math.min(marqueeRef.current.x1, marqueeRef.current.x2);
+        const maxX = Math.max(marqueeRef.current.x1, marqueeRef.current.x2);
+        const minY = Math.min(marqueeRef.current.y1, marqueeRef.current.y2);
+        const maxY = Math.max(marqueeRef.current.y1, marqueeRef.current.y2);
+        // Only select if marquee has meaningful size (not just a click)
+        if (maxX - minX > 4 || maxY - minY > 4) {
+          const hits = positionedZonesRef.current.filter(z => {
+            const lp = localPositionsRef.current[z.location_code];
+            const ls = localSizesRef.current[z.location_code];
+            const zx = (lp?.x ?? parseFloat(String(z.position_x ?? 0)));
+            const zy = (lp?.y ?? parseFloat(String(z.position_y ?? 0)));
+            const zw = (ls?.w ?? parseFloat(String(z.width  ?? 1)));
+            const zh = (ls?.h ?? parseFloat(String(z.depth  ?? 0.5)));
+            // Centre of zone in SVG pixels
+            const cx = offsetRef.current.x + (zx + zw / 2) * SCALE * zoomRef.current;
+            const cy = offsetRef.current.y + (zy + zh / 2) * SCALE * zoomRef.current;
+            return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
+          });
+          if (hits.length === 1) setSelected(hits[0].location_code);
+          // Multi-select: for now select first hit — group select in future sprint
+        }
+        marqueeStartRef.current = null;
+        setMarquee(null);
+      }
+      // Always clear marqueeStartRef on mouseup — prevents stale ref hijacking pan mode
+      marqueeStartRef.current = null;
+      setMarquee(null);
       panRef.current = null;
     }
-
+    // Native wheel listener on SVG — { passive: false } required to call preventDefault()
+    // React synthetic onWheel cannot reliably prevent page scroll in all browsers
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      setOffset(prev => ({
+        x: prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8,
+        y: prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8,
+      }));
+    }
+    const svgEl = svgRef.current;
+    if (svgEl) svgEl.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup',   onMouseUp);
     return () => {
+      if (svgEl) svgEl.removeEventListener('wheel', onWheel);
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup',   onMouseUp);
-    };
+      };
   }, [zoom, localPositions, localSizes, onUpdateZone]);
 
-  function onWheel(e: React.WheelEvent) {
-    e.preventDefault();
-    setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z * (e.deltaY < 0 ? 1.1 : 0.91))));
-  }
-
+  // onWheel is registered as a native listener in useEffect (passive: false required)
   const canvasW = toSvg(CANVAS_W);
   const canvasH = toSvg(CANVAS_H);
 
@@ -596,6 +737,9 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
           setPlacedCoords(prev => ({ ...prev, [zone.location_code]: { x: centreX, y: centreY } }));
           onUpdateZone?.(zone.location_code, { position_x: centreX, position_y: centreY });
         }}
+        onCreateZone={onCreateZone}
+        canvasCentreX={snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)))}
+        canvasCentreY={snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)))}
       />
 
       {/* CENTER — canvas */}
@@ -626,6 +770,21 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
                   color:   mode === '2D' ? '#fff' : 'var(--ink-4)',
                   opacity: mode === '3D' ? 0.5 : 1, transition: 'all 0.15s' }}>
                 {mode}
+              </Box>
+            ))}
+          </Box>
+          {/* Mode toggle — Pan (default) or Select (marquee) */}
+          <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden', mr: 1 }}>
+            {([
+              { m: 'pan'    as const, icon: <Hand size={12} />,          title: 'Pan mode — drag to pan canvas' },
+              { m: 'select' as const, icon: <MousePointer size={12} />,  title: 'Select mode — click or drag to select zones' },
+            ]).map(({ m, icon, title }) => (
+              <Box key={m} title={title} onClick={() => setMode(m)}
+                sx={{ px: 1.25, py: 0.4, display: 'flex', alignItems: 'center', cursor: 'pointer',
+                  bgcolor: mode === m ? 'var(--accent)' : 'transparent',
+                  color:   mode === m ? '#fff' : 'var(--ink-4)',
+                  transition: 'all 0.15s' }}>
+                {icon}
               </Box>
             ))}
           </Box>
@@ -660,8 +819,8 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
             </Box>
             <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               <svg ref={svgRef} width="100%" height="100%"
-                style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
-                onMouseDown={onCanvasMouseDown} onWheel={onWheel}>
+                style={{ cursor: mode === 'select' ? 'crosshair' : 'grab', userSelect: 'none', display: 'block' }}
+                onMouseDown={onCanvasMouseDown}>
                 <g transform={`translate(${offset.x},${offset.y})`}>
                   <defs>
                     <pattern id="grid-dots" x="0" y="0" width={SCALE * zoom * SNAP} height={SCALE * zoom * SNAP} patternUnits="userSpaceOnUse">
@@ -750,6 +909,18 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone }: CanvasEditor
                     );
                   })}
                 </g>
+              {/* Marquee selection rectangle — rendered outside transform group in screen coords */}
+                {marquee && (
+                  <rect
+                    x={Math.min(marquee.x1, marquee.x2)}
+                    y={Math.min(marquee.y1, marquee.y2)}
+                    width={Math.abs(marquee.x2 - marquee.x1)}
+                    height={Math.abs(marquee.y2 - marquee.y1)}
+                    fill="var(--accent-ghost)" stroke="var(--accent)"
+                    strokeWidth="1" strokeDasharray="4 2"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
               </svg>
 
               {/* Zone type legend */}

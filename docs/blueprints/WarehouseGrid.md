@@ -105,6 +105,12 @@ SVG floor plan editor rendered in the Setup tab. Reads `position_x/y`, `width`, 
 | Zone colour coding | bins by `zone_type`, frames by `zone.type` (gold for lane/warehouse/shelf) |
 | Zone colour coding | by `zone_type` — 8 colours, all via rgba tokens |
 | Toggle | List/Canvas toggle in Setup tab header |
+| Palette click-to-create | click tile → enter location code → creates zone via POST + places at canvas centre |
+| Pan/Select mode toggle | toolbar — pan pans canvas, select allows marquee (issue #961) |
+| Scroll to pan | vertical scroll pans Y, shift+scroll pans X — zoom is toolbar-only |
+| Zone render order | warehouse back, lanes middle, bins front — SVG painters model |
+| Frame colour | warehouse/lane/shelf render gold — visually distinct from operational zones |
+| Palette simplified | 8 tiles: Aisle (frame) + Pick/Pack/Receive/Ship/Returns/Quarantine/Materials (operational) |
 
 **Phase 3 note:** `CanvasEditor` is a separate renderer from `WarehouseGrid`. The same `WarehouseLocation` data model feeds both — `position_x/y`, `width`, `depth`, `rack_levels` feed Three.js geometry unchanged.
 
@@ -253,13 +259,16 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 
 ## Phase 2 — Remaining
 
+- [x] Palette click-to-create — click tile, enter code, place at canvas centre
+- [ ] Marquee select not selecting zones — issue #961
+- [ ] Responsive collapsible side panels — issue #962  
+- [ ] Multi-warehouse tab navigation — issue #963
 - [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop (no writers — issue WG-11)
 - [ ] Wire `inline/focus` into Product detail page (page doesn't exist yet)
 - [ ] Surfaced Today panel — left rail live intelligence (GitHub issue #958)
 - [ ] Velocity + Open orders overlays
 - [ ] BUG-08/09 edge cases — zone overlap at corners with 3+ adjacent zones (parked)
 - [ ] Template presets — Pick-pack-ship / U-shaped / Fish-bone (GAP-04, parked)
-- [ ] Palette drag-to-canvas — direct drag from palette tile onto canvas (currently click-to-place only)
 - [ ] `last_printed_at` column on `warehouse_locations` — Last Printed column in Barcodes tab currently shows "Never" stub
 
 ## Phase 2 — Complete (this session, May 2026)

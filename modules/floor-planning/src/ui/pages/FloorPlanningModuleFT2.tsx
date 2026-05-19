@@ -1211,7 +1211,7 @@ function FloorPlanningModuleFT2Inner({
             )}
 
             {canvasView ? (
-              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} />
+              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} onDeleteZone={onDeleteZone} onCreateZone={onCreateZone} />
             ) : zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />
