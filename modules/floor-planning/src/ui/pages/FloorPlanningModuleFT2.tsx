@@ -360,13 +360,19 @@ function ProductBarcodesTable({
  * Locations data sourced from warehouse_locations (zones prop).
  * Products data sourced from variants + external_product_identity_map.
  */
-type LocationFilter = 'all' | 'bin' | 'lane' | 'shelf' | 'warehouse';
+type LocationFilter = 'all' | 'bin' | 'lane' | 'shelf' | 'warehouse' | 'tote' | 'dock' | 'ship' | 'pack' | 'ret' | 'kit';
 const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
-  { label: 'ALL',       value: 'all' },
-  { label: 'BIN',       value: 'bin' },
-  { label: 'LANE',      value: 'lane' },
-  { label: 'SHELF',     value: 'shelf' },
+  { label: 'ALL',       value: 'all'       },
+  { label: 'BIN',       value: 'bin'       },
+  { label: 'LANE',      value: 'lane'      },
+  { label: 'SHELF',     value: 'shelf'     },
   { label: 'WAREHOUSE', value: 'warehouse' },
+  { label: 'TOTE',      value: 'tote'      },
+  { label: 'DOCK',      value: 'dock'      },
+  { label: 'SHIP',      value: 'ship'      },
+  { label: 'PACK',      value: 'pack'      },
+  { label: 'RET',       value: 'ret'       },
+  { label: 'KIT',       value: 'kit'       },
 ];
 
 function BarcodesTab({ 
@@ -385,9 +391,11 @@ function BarcodesTab({
   const toggleOne  = (code: string) => setSelected((prev) => { const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s; });
   const toggleAll  = (codes: string[]) => setSelected((prev) => prev.size === codes.length ? new Set() : new Set(codes));
 
-  const barcoded     = zones.filter((z) => z.barcode !== null);
-  const missing      = zones.filter((z) => z.barcode === null);
-  const aisles       = zones.filter((z) => z.type === 'lane' || z.type === 'warehouse');
+  const barcoded      = zones.filter((z) => z.barcode !== null);
+  const missing       = zones.filter((z) => z.barcode === null);
+  // Aisles fully labelled: lane-type zones that have a barcode assigned
+  const aisles        = zones.filter((z) => z.type === 'lane');
+  const aislesLabelled = aisles.filter((z) => z.barcode !== null);
   const fullLabelled = aisles.length;
 
   const filteredZones = zones.filter((z) => {
@@ -462,10 +470,11 @@ function BarcodesTab({
           {/* Stat row */}
           <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
             {[
-              { label: 'Total locations', value: zones.length, color: 'var(--ink)' },
-              { label: 'Barcoded',        value: barcoded.length, color: 'var(--accent)' },
-              { label: 'Missing barcode', value: missing.length,  color: missing.length > 0 ? 'var(--accent)' : 'var(--ink-3)' },
-              { label: 'Aisles in scope', value: fullLabelled,    color: 'var(--ink)' },
+              { label: 'Total locations',     value: zones.length,          color: 'var(--ink)'    },
+              { label: 'Barcoded',            value: barcoded.length,       color: 'var(--accent)' },
+              { label: 'Missing barcode',     value: missing.length,        color: missing.length > 0 ? 'var(--accent)' : 'var(--ink-3)' },
+              // Shows barcoded/total aisles fraction — matches target design "6/7" format
+              { label: 'Aisles fully labelled', value: `${aislesLabelled.length}/${aisles.length}`, color: 'var(--ink)' },
             ].map(({ label, value, color }) => (
               <Box key={label} sx={{ flex: 1, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
                 <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
@@ -492,17 +501,18 @@ function BarcodesTab({
                       sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
                     />
                   </TableCell>
-                  <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Code</TableCell>
-                  <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Type</TableCell>
-                  <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Parent</TableCell>
-                  <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Barcode</TableCell>
-                  <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Status</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Code</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Type</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Zone</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Barcode</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Last Printed</TableCell>
+                    <TableCell sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Status</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredZones.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} sx={{ textAlign: 'center', color: 'var(--ink-4)', py: 4 }}>
+                    <TableCell colSpan={7} sx={{ textAlign: 'center', color: 'var(--ink-4)', py: 4 }}>
                       No locations configured. Add zones in Setup.
                     </TableCell>
                   </TableRow>
@@ -526,11 +536,16 @@ function BarcodesTab({
                           color={TYPE_LABELS[z.type]?.color ?? 'default'}
                         />
                       </TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--ink-3)' }}>
-                        {z.parent_location_code ?? <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>—</Typography>}
+                      {/* Zone — zone_type from migration 0108, falls back to parent for structural types */}
+                      <TableCell sx={{ fontSize: 11, color: 'var(--ink-3)', textTransform: 'capitalize' }}>
+                        {z.zone_type ?? z.parent_location_code ?? <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>—</Typography>}
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
                         {z.barcode ?? <Typography component="span" sx={{ color: 'var(--ink-4)', fontSize: 11 }}>No barcode</Typography>}
+                      </TableCell>
+                      {/* Last Printed — no data model yet, stub shows Never. Phase 3: add last_printed_at to warehouse_locations */}
+                      <TableCell sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                        Never
                       </TableCell>
                       <TableCell>
                         {z.active
