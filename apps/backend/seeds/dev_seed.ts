@@ -208,32 +208,35 @@ export async function seed(knex: Knex): Promise<void> {
     console.log('[DEV_SEED] ✅ Lifecycle snapshot seeded → FT2');
 
     // ── WAREHOUSE LOCATIONS ──────────────────────────────────────────────────
-    // Seed minimal bin locations for dev stow testing.
-   const locationRows = [
-      // Warehouse root
-      { location_code: 'WH-1-ROOT', barcode: null,          type: 'warehouse',  parent_location_code: null },
-      // Aisles (lane type)
-      { location_code: 'A',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
-      { location_code: 'B',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
-      { location_code: 'C',         barcode: null,          type: 'lane',       parent_location_code: 'WH-1-ROOT' },
-      // Aisle A bins
-      { location_code: 'A-1',       barcode: 'LOC-A-1',    type: 'bin',        parent_location_code: 'A' },
-      { location_code: 'A-2',       barcode: 'LOC-A-2',    type: 'bin',        parent_location_code: 'A' },
-      { location_code: 'A-3',       barcode: 'LOC-A-3',    type: 'bin',        parent_location_code: 'A' },
-      { location_code: 'A-4',       barcode: 'LOC-A-4',    type: 'bin',        parent_location_code: 'A' },
-      // Aisle B bins
-      { location_code: 'B-1',       barcode: 'LOC-B-1',    type: 'bin',        parent_location_code: 'B' },
-      { location_code: 'B-2',       barcode: 'LOC-B-2',    type: 'bin',        parent_location_code: 'B' },
-      { location_code: 'B-3',       barcode: 'LOC-B-3',    type: 'bin',        parent_location_code: 'B' },
-      { location_code: 'B-4',       barcode: 'LOC-B-4',    type: 'bin',        parent_location_code: 'B' },
-      // Aisle C bins
-      { location_code: 'C-1',       barcode: 'LOC-C-1',    type: 'bin',        parent_location_code: 'C' },
-      { location_code: 'C-2',       barcode: 'LOC-C-2',    type: 'bin',        parent_location_code: 'C' },
-      { location_code: 'C-3',       barcode: 'LOC-C-3',    type: 'bin',        parent_location_code: 'C' },
-      { location_code: 'C-4',       barcode: 'LOC-C-4',    type: 'bin',        parent_location_code: 'C' },
-      // Problem bin (WMS settings reference)
-      { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A' },
-    ];
+    // Seed minimal bin locations for dev stow/canvas testing.
+    // Floor coordinates (metres from top-left origin) match a 3-aisle 4-bin layout:
+    //   Aisles A/B/C run left-to-right, 3m apart on Y axis.
+    //   Each bin is 1.0m wide × 0.8m deep, 0.1m gap between bins.
+    const locationRows = [
+    // Warehouse root — full floor envelope
+    { location_code: 'WH-1-ROOT', barcode: null,           type: 'warehouse', parent_location_code: null,      position_x: 0,    position_y: 0,    width: 12,   depth: 10,   orientation: 0, rack_levels: null, zone_type: 'storage' },
+    // Aisles (lane type) — 1m wide walking paths, full depth
+    { location_code: 'A',         barcode: null,           type: 'lane',      parent_location_code: 'WH-1-ROOT', position_x: 1,  position_y: 1,    width: 4.4,  depth: 1,    orientation: 0, rack_levels: null, zone_type: 'pick' },
+    { location_code: 'B',         barcode: null,           type: 'lane',      parent_location_code: 'WH-1-ROOT', position_x: 1,  position_y: 4,    width: 4.4,  depth: 1,    orientation: 0, rack_levels: null, zone_type: 'pick' },
+    { location_code: 'C',         barcode: null,           type: 'lane',      parent_location_code: 'WH-1-ROOT', position_x: 1,  position_y: 7,    width: 4.4,  depth: 1,    orientation: 0, rack_levels: null, zone_type: 'pick' },
+    // Aisle A bins — 1.0m wide × 0.8m deep, 0.1m gap, 3 rack levels
+    { location_code: 'A-1',       barcode: 'LOC-A-1',     type: 'bin',       parent_location_code: 'A',          position_x: 1,    position_y: 2,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'A-2',       barcode: 'LOC-A-2',     type: 'bin',       parent_location_code: 'A',          position_x: 2.1,  position_y: 2,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'A-3',       barcode: 'LOC-A-3',     type: 'bin',       parent_location_code: 'A',          position_x: 3.2,  position_y: 2,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'A-4',       barcode: 'LOC-A-4',     type: 'bin',       parent_location_code: 'A',          position_x: 4.3,  position_y: 2,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    // Aisle B bins
+    { location_code: 'B-1',       barcode: 'LOC-B-1',     type: 'bin',       parent_location_code: 'B',          position_x: 1,    position_y: 5,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'B-2',       barcode: 'LOC-B-2',     type: 'bin',       parent_location_code: 'B',          position_x: 2.1,  position_y: 5,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'B-3',       barcode: 'LOC-B-3',     type: 'bin',       parent_location_code: 'B',          position_x: 3.2,  position_y: 5,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'B-4',       barcode: 'LOC-B-4',     type: 'bin',       parent_location_code: 'B',          position_x: 4.3,  position_y: 5,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    // Aisle C bins
+    { location_code: 'C-1',       barcode: 'LOC-C-1',     type: 'bin',       parent_location_code: 'C',          position_x: 1,    position_y: 8,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'C-2',       barcode: 'LOC-C-2',     type: 'bin',       parent_location_code: 'C',          position_x: 2.1,  position_y: 8,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'C-3',       barcode: 'LOC-C-3',     type: 'bin',       parent_location_code: 'C',          position_x: 3.2,  position_y: 8,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    { location_code: 'C-4',       barcode: 'LOC-C-4',     type: 'bin',       parent_location_code: 'C',          position_x: 4.3,  position_y: 8,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 3,    zone_type: 'pick' },
+    // Problem bin — quarantine zone, no floor position needed for canvas
+    { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM',  type: 'bin',       parent_location_code: 'A',          position_x: 8,    position_y: 1,    width: 1,    depth: 0.8,  orientation: 0, rack_levels: 1,    zone_type: 'quarantine' },
+  ];
 
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
     for (const loc of locationRows) {

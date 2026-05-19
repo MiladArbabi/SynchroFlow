@@ -30,6 +30,7 @@ import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasy
 import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, WarehouseLocationType } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
+import { CanvasEditor } from '../components/CanvasEditor.js';
 
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
@@ -96,6 +97,16 @@ export type FloorPlanningPageProps = {
   onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
+  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+  onUpdateZone?: (locationCode: string, payload: {
+    position_x?: number | null;
+    position_y?: number | null;
+    width?: number | null;
+    depth?: number | null;
+    orientation?: number;
+    rack_levels?: number | null;
+    zone_type?: string | null;
+  }) => Promise<void>;
 };
 
 const TYPE_LABELS: Record<LocationType, {
@@ -162,9 +173,33 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
   );
 }
 
-function ProductBarcodesTable({ items }: { items: ProductBarcode[] }) {
-  const [filter, setFilter] = useState('');
+function ProductBarcodesTable({ 
+  items, onUpdateProductBarcode 
+} : { items: ProductBarcode[]; onUpdateProductBarcode?: (
+  lasyncroVariantId: string, 
+  barcode: string) => Promise<void> 
+}) {
+  const [filter, setFilter]                 = useState('');
   const [showUnassigned, setShowUnassigned] = useState(false);
+  // Inline edit state: tracks which variant is being edited and the draft value
+  const [editingId, setEditingId]           = useState<string | null>(null);
+  const [editValue, setEditValue]           = useState('');
+  const [saving, setSaving]                 = useState(false);
+  const [saveError, setSaveError]           = useState<string | null>(null);
+
+  async function handleSave(lasyncroVariantId: string) {
+    if (!editValue.trim() || !onUpdateProductBarcode) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onUpdateProductBarcode(lasyncroVariantId, editValue.trim());
+      setEditingId(null);
+    } catch {
+      setSaveError('Failed to save barcode');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const assigned = items.filter((i) => i.barcode !== null);
   const unassigned = items.filter((i) => i.barcode === null);
@@ -209,6 +244,7 @@ function ProductBarcodesTable({ items }: { items: ProductBarcode[] }) {
                     <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncro ID</TableCell>
                     <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
                     <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Supplier Barcode</TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 80 }} />
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -221,13 +257,47 @@ function ProductBarcodesTable({ items }: { items: ProductBarcode[] }) {
                         {item.sku ?? <Typography variant="caption" color="text.disabled">—</Typography>}
                       </TableCell>
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>
-                        {item.barcode}
+                        {editingId === item.lasyncro_variant_id ? (
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                            <TextField
+                              size="small"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') void handleSave(item.lasyncro_variant_id); if (e.key === 'Escape') setEditingId(null); }}
+                              autoFocus
+                              inputProps={{ style: { fontFamily: 'monospace', fontSize: 12, padding: '2px 6px' } }}
+                              sx={{ width: 140 }}
+                              error={!!saveError}
+                              helperText={saveError ?? undefined}
+                            />
+                            <Box
+                              onClick={() => void handleSave(item.lasyncro_variant_id)}
+                              sx={{ px: 1, py: 0.25, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }}
+                            >
+                              {saving ? '…' : 'Save'}
+                            </Box>
+                            <Box onClick={() => setEditingId(null)} sx={{ fontSize: 11, color: 'var(--ink-4)', cursor: 'pointer' }}>✕</Box>
+                          </Box>
+                        ) : (
+                          item.barcode
+                        )}
+                      </TableCell>
+                      {/* Edit action — only rendered when onUpdateProductBarcode is wired */}
+                      <TableCell>
+                        {onUpdateProductBarcode && editingId !== item.lasyncro_variant_id && (
+                          <Box
+                            onClick={() => { setEditingId(item.lasyncro_variant_id); setEditValue(item.barcode ?? ''); setSaveError(null); }}
+                            sx={{ fontSize: 10, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', letterSpacing: '0.04em', '&:hover': { textDecoration: 'underline' } }}
+                          >
+                            Edit
+                          </Box>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={3} sx={{ textAlign: 'center', color: 'text.secondary', py: 3 }}>
+                      <TableCell colSpan={4} sx={{ textAlign: 'center', color: 'text.secondary', py: 3 }}>
                         No results match your filter.
                       </TableCell>
                     </TableRow>
@@ -299,7 +369,14 @@ const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
   { label: 'WAREHOUSE', value: 'warehouse' },
 ];
 
-function BarcodesTab({ zones, productBarcodes }: { zones: WarehouseZone[]; productBarcodes: ProductBarcode[] }) {
+function BarcodesTab({ 
+  zones, 
+  productBarcodes, 
+  onUpdateProductBarcode 
+}: { zones: WarehouseZone[]; productBarcodes: ProductBarcode[]; onUpdateProductBarcode?: (
+  lasyncroVariantId: string, 
+  barcode: string
+) => Promise<void> }) {
   const [subTab, setSubTab]           = useState<'locations' | 'products'>('locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
   const [locSearch, setLocSearch]     = useState('');
@@ -486,7 +563,10 @@ function BarcodesTab({ zones, productBarcodes }: { zones: WarehouseZone[]; produ
             <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
             <Chip label={productBarcodes.length} size="small" />
           </Box>
-          <ProductBarcodesTable items={productBarcodes} />
+          <ProductBarcodesTable 
+            items={productBarcodes} 
+            onUpdateProductBarcode={onUpdateProductBarcode} 
+          />
         </Box>
       )}
     </Box>
@@ -510,6 +590,8 @@ function FloorPlanningModuleFT2Inner({
   onCreateZone,
   onDeleteZone,
   onToggleZoneActive,
+  onUpdateZone,
+  onUpdateProductBarcode,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
@@ -518,6 +600,7 @@ function FloorPlanningModuleFT2Inner({
   type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
   const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
   const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['bin', 'lane', 'warehouse']));
+  const [canvasView, setCanvasView] = useState(false);
 
   // Derive grid props from overlay selection
   const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
@@ -935,12 +1018,29 @@ function FloorPlanningModuleFT2Inner({
       {!isLoading && !isError && tab === 'setup' && (
         <>
           <Box sx={{ mb: 4 }}>
-            {/* Header + Add button */}
+            {/* Header + Canvas/List toggle + Add button */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
               <LayoutDashboard size={18} />
               <Typography variant="subtitle1" fontWeight={700}>Warehouse Zones</Typography>
               <Chip label={zones.length} size="small" />
-              <Box sx={{ ml: 'auto' }}>
+              <Box sx={{ ml: 'auto', display: 'flex', gap: 1 }}>
+                {/* View toggle — List shows zone cards, Canvas shows SVG floor plan editor */}
+                <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden' }}>
+                  {([{ label: 'List', val: false }, { label: 'Canvas', val: true }] as const).map(({ label, val }) => (
+                    <Box
+                      key={label}
+                      onClick={() => setCanvasView(val)}
+                      sx={{
+                        px: 1.5, py: 0.6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
+                        bgcolor: canvasView === val ? 'var(--accent)' : 'transparent',
+                        color:   canvasView === val ? '#fff' : 'var(--ink-3)',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {label}
+                    </Box>
+                  ))}
+                </Box>
                 <Box
                   onClick={() => { setCreateOpen(v => !v); setCreateError(null); }}
                   sx={{ display: 'flex', alignItems: 'center', gap: 0.75, px: 1.5, py: 0.75, borderRadius: 1.5, cursor: 'pointer', border: '1px solid var(--accent)', color: 'var(--accent)', fontSize: 12, fontWeight: 600, '&:hover': { bgcolor: 'var(--accent)', color: '#fff' }, transition: 'all 0.15s' }}
@@ -1002,7 +1102,9 @@ function FloorPlanningModuleFT2Inner({
               </Paper>
             )}
 
-            {zones.length === 0 ? (
+            {canvasView ? (
+              <CanvasEditor zones={zones} onUpdateZone={onUpdateZone} />
+            ) : zones.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <LayoutDashboard size={36} style={{ opacity: 0.3 }} />
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
@@ -1024,7 +1126,11 @@ function FloorPlanningModuleFT2Inner({
       )}
 
       {!isLoading && !isError && tab === 'barcodes' && (
-        <BarcodesTab zones={zones} productBarcodes={productBarcodes} />
+        <BarcodesTab 
+          zones={zones} 
+          productBarcodes={productBarcodes} 
+          onUpdateProductBarcode={onUpdateProductBarcode} 
+        />
       )}
     </Box>
   );

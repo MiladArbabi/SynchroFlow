@@ -18,6 +18,14 @@ interface UpdateZonePayload {
   active?: boolean;
   barcode?: string;
   parent_location_code?: string;
+  // Canvas editor fields — written on drag-end and resize-end
+  position_x?: number | null;
+  position_y?: number | null;
+  width?: number | null;
+  depth?: number | null;
+  orientation?: number;
+  rack_levels?: number | null;
+  zone_type?: string | null;
 }
 
 export function useCreateZone() {
@@ -47,6 +55,17 @@ export function useDeleteZone() {
   return useMutation({
     mutationFn: (locationCode: string) =>
       axiosInstance.delete(`/api/v1/floor-planning/zones/${locationCode}`).then(r => r.data),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}
+
+export function useUpdateProductBarcode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ lasyncroVariantId, barcode }: { lasyncroVariantId: string; barcode: string }) =>
+      axiosInstance.patch(`/api/v1/floor-planning/products/${lasyncroVariantId}/barcode`, { barcode }).then(r => r.data),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
     },

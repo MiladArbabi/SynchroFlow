@@ -31,7 +31,12 @@ export async function httpGetLayout(req: Request, res: Response) {
           'type',
           'parent_location_code',
           'active',
-          trx.raw(`0 as children_count`),
+          // children_count: live count of direct children — drives ZoneCard child indicator in UI
+          // CAST to integer — Postgres COUNT(*) returns numeric string via Knex without explicit cast
+          trx.raw(
+            `(SELECT COUNT(*) FROM warehouse_locations wl2 WHERE wl2.shop_id = ? AND wl2.parent_location_code = warehouse_locations.location_code)::integer as children_count`,
+            [shopId]
+          ),
           'barcode',
           'position_x',
           'position_y',
@@ -317,38 +322,6 @@ export async function httpGetBinStats(req: Request, res: Response) {
   if (!locationCode) return res.status(400).json({ error: 'locationCode required' });
 
   try {
-    const stats = await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-      const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-      const [picks7d, lastPick] = await Promise.all([
-        // Picks in last 7 days at this location
-        trx('pick_scan_log')
-          .where({ shop_id: shopId, location_code: locationCode, status: 'confirmed' })
-          .where('scanned_at', '>=', since7d)
-          .count('scan_id as count')
-          .first(),
-
-        // Most recent pick at this location
-        trx('pick_scan_log as psl')
-          .where({ 'psl.shop_id': shopId, 'psl.location_code': locationCode })
-          .leftJoin('users as u', 'u.id', 'psl.scanned_by')
-          .orderBy('psl.scanned_at', 'desc')
-          .first()
-          .select(
-            'psl.scanned_at as last_pick_at',
-            trx.raw(`TRIM(COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) as last_pick_by`)
-          ),
-      ]);
-
-      return {
-        picks_7d:     Number(picks7d?.count ?? 0),
-        last_pick_at: lastPick?.last_pick_at ?? null,
-        last_pick_by: lastPick?.last_pick_by || null,
-      };
-    });
-
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
@@ -382,15 +355,15 @@ export async function httpGetBinStats(req: Request, res: Response) {
           .where({ 'it.shop_id': shopId, 'it.location_code': locationCode })
           .where('it.available_quantity', '>', 0)
           .leftJoin(
-            trx('order_revenue_units as oru')
-              .where('oru.shop_id', shopId)
-              .where('oru.created_at', '>=', since30d)
-              .groupBy('oru.lasyncro_variant_id')
-              .select(
-                'oru.lasyncro_variant_id',
-                trx.raw('SUM(oru.quantity) as units_sold_30d')
-              )
-              .as('vel'),
+            // shop_id must use trx.raw binding — Knex subqueries don't inherit SET LOCAL RLS context
+              trx('order_revenue_units as oru')
+                .where('oru.created_at', '>=', since30d)
+                .groupBy('oru.lasyncro_variant_id')
+                .select(
+                  'oru.lasyncro_variant_id',
+                  trx.raw('SUM(oru.quantity) as units_sold_30d')
+                )
+                .as('vel'),
             'vel.lasyncro_variant_id',
             'it.lasyncro_variant_id'
           )

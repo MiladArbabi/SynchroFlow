@@ -7,7 +7,7 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useBinLog } from '../floor-planning/useBinLog';
 import { useBinStats } from '../floor-planning/useBinStats';
-import { useCreateZone, useDeleteZone, useUpdateZone } from '../floor-planning/useZoneManagement';
+import { useCreateZone, useDeleteZone, useUpdateZone, useUpdateProductBarcode } from '../floor-planning/useZoneManagement';
 
 /**
  * FLOOR PLANNING GATE PAGE
@@ -33,7 +33,8 @@ export default function FloorPlanningPage() {
   const { data: binStatsData } = useBinStats(selectedBin);
   const createZone    = useCreateZone();
   const deleteZone    = useDeleteZone();
-  const updateZone    = useUpdateZone();
+  const updateZone           = useUpdateZone();
+  const updateProductBarcode = useUpdateProductBarcode();
 
   useEffect(() => {
     if (!variantId) { setVariantFocusBins([]); return; }
@@ -60,6 +61,8 @@ export default function FloorPlanningPage() {
       onCreateZone={(payload) => createZone.mutateAsync(payload)}
       onDeleteZone={(code) => deleteZone.mutateAsync(code)}
       onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
+      onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
+      onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
     />
   );
 }
