@@ -13,39 +13,42 @@ export async function evaluateInventoryConstraint(
    * Constraint must be derived from actual stock state,
    * NOT from previously projected constraints.
    */
-  const rows = await trx('order_revenue_units as ru')
-  .leftJoin('inventory_truth as it', function () {
-    this.on('ru.lasyncro_variant_id', '=', 'it.lasyncro_variant_id');
-    /**
-     * LOCATION BINDING (CRITICAL)
-     * ----------------------------
-     * Prevents cross-location contamination.
-     * Assumes single default location until multi-location supported.
-     */
-    this.andOn('it.location_code', '=', trx.raw('?', ['WH-1-ROOT']));
-   })
-  .where('ru.lasyncro_order_id', orderId)
-  .select(
-    'ru.lasyncro_variant_id',
-
-    /**
-     * REMAINING DEMAND
-     */
-    trx.raw('SUM(ru.quantity - ru.fulfilled_quantity) as remaining_quantity'),
-
-    /**
-     * AVAILABLE STOCK
-     */
-    trx.raw('COALESCE(MAX(it.available_quantity), 0) as available_quantity')
-  )
-  .groupBy('ru.lasyncro_variant_id');
-
-  /**
-   * OVERSSELL DETECTION
+  /*
+   * INVENTORY CONSTRAINT — MULTI-BIN AWARE (fixed May 2026)
+   * --------------------------------------------------------
+   * Previously hardcoded to WH-1-ROOT which caused false inventory
+   * blocks for variants stocked in specific bins (A-1, B-2, etc).
+   *
+   * Now aggregates available_quantity across ALL active bin locations
+   * for the shop. Frame zones (warehouse/lane/shelf) are excluded —
+   * only bin-type locations hold pickable stock.
+   *
+   * shop_id scoping via RLS — SET LOCAL must be called by caller.
    */
-  const isOversell = rows.some(r =>
-    Number(r.available_quantity) < Number(r.remaining_quantity)
-  );
+  const rows = await trx('order_revenue_units as ru')
+    .leftJoin('inventory_truth as it', function () {
+      this.on('ru.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
+          .andOn('it.shop_id', '=', trx.raw('?', [shopId]));
+    })
+    .leftJoin('warehouse_locations as wl', function () {
+      this.on('wl.location_code', '=', 'it.location_code')
+          .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+          .andOnVal('wl.active', true)
+          .andOnVal('wl.type', 'bin');
+    })
+    .where('ru.lasyncro_order_id', orderId)
+    .select(
+      'ru.lasyncro_variant_id',
+      trx.raw('SUM(ru.quantity - ru.fulfilled_quantity) as remaining_quantity'),
+      /*
+       * Sum available_quantity across all active bins.
+       * COALESCE to 0 when no bin stock exists — triggers constraint.
+       */
+      trx.raw('COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type = ?), 0) as available_quantity', ['bin'])
+    )
+    .groupBy('ru.lasyncro_variant_id');
+
+    /* isOversell derived per-variant below — no aggregate needed */
 
   /**
    * VARIANT-SCOPED CONSTRAINT EMISSION

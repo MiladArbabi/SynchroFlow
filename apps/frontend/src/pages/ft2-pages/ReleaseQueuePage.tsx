@@ -1,19 +1,19 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/ReleaseQueuePage.tsx
 import { useState, useCallback, useMemo } from 'react';
 import {
   Box, Typography, Checkbox, Button, CircularProgress,
   Alert, Chip, Dialog, DialogTitle, DialogContent,
-  DialogActions, TextField, MenuItem, Select, FormControl,
+  DialogActions, MenuItem, Select, FormControl,
   InputLabel, LinearProgress,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useTheme } from '@mui/material/styles';
-import { Flag, Package, Clock, Zap, Users } from 'lucide-react';
+import { Flag, Package, Clock, Zap } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useWmsOperators } from '../wms/useWmsOperators';
 
 interface PoolOrder {
   lasyncro_order_id: string;
@@ -86,6 +86,8 @@ export default function ReleaseQueuePage() {
   const { data, isLoading, isError } = useOrderPool();
   const setPriority = useSetPriority();
   const releaseBatch = useReleaseBatch();
+  const { data: operatorsData } = useWmsOperators();
+  const operators = operatorsData?.operators ?? [];
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [releaseOpen, setReleaseOpen] = useState(false);
@@ -352,7 +354,14 @@ export default function ReleaseQueuePage() {
                 onChange={e => setOperatorId(e.target.value)}
                 label="Assign operator (optional)"
               >
-                <MenuItem value=""><em>Auto-assign</em></MenuItem>
+
+                <MenuItem value=""><em>Dispatch to all</em></MenuItem>
+                {operators.map(op => (
+                  <MenuItem key={op.user_id} value={String(op.user_id)}>
+                    {op.first_name} {op.last_name}
+                    {op.role === 'owner' ? ' (you)' : ` · ${op.role}`}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
             {releaseBatch.isError && (
