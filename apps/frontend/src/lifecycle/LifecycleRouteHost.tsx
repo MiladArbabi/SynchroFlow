@@ -30,6 +30,7 @@ import ProductsPage from 'pages/ft1-pages/ProductsPage';
 import CustomersPage from 'pages/ft1-pages/CustomersPage';
 import FinancesPage from 'pages/ft1-pages/FinancesPage';
 import WelcomePage from 'pages/onboarding/WelcomePage';
+import AlertsPage from 'pages/ft2-pages/AlertsPage';
 
 // FT2 pages (observability / governed truth surfaces)
 import OrdersFT2Page from 'pages/ft2-pages/OrdersFT2Page';
@@ -39,7 +40,8 @@ import ProductsFT2Page from 'pages/ft2-pages/ProductsFT2Page';
 import FinancesFT2Page from 'pages/ft2-pages/FinancesFT2Page';
 import OverviewFT2Page from 'pages/ft2-pages/OverviewFT2Page';
 import FulfillmentQueuePage from 'pages/ft2-pages/FulfillmentQueuePage';
-import AlertsPage from 'pages/ft2-pages/AlertsPage';
+import BlockedOrdersPage from 'pages/ft2-pages/BlockedOrdersPage';
+import ReleaseQueuePage from 'pages/ft2-pages/ReleaseQueuePage';
 import ReturnsFT2Page from 'pages/ft2-pages/ReturnsFT2Page';
 import OrdersOutboundPage from 'pages/ft2-pages/OrdersOutboundPage';
 import OrdersInboundPage from 'pages/ft2-pages/OrdersInboundPage';
@@ -188,11 +190,13 @@ export function LifecycleRouteHost() {
       {/* RO — Reality Overview */}
       <Route path="/overview/*" element={<OverviewFT2Page />} />
 
-      {/* ORDERS */}
-      <Route path="/orders/*" element={<OrdersFT2Page />} />
-
-      {/* ORDER DETAIL — single order drill-in (ORD-12) */}
+      {/* ORDERS — specific sub-routes must come before wildcard */}
+      <Route path="/orders/blocked" element={<BlockedOrdersPage />} />
+      <Route path="/orders/pool" element={<ReleaseQueuePage />} />
+      <Route path="/orders/outbound" element={<OrdersOutboundPage />} />
+      <Route path="/orders/inbound" element={<OrdersInboundPage />} />
       <Route path="/orders/:orderId" element={<OrderDetailPage />} />
+      <Route path="/orders/*" element={<OrdersFT2Page />} />
 
       {/* PRODUCTS */}
       <Route path="/products/*" element={<ProductsFT2Page />} />

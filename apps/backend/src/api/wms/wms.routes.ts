@@ -35,6 +35,7 @@ import {
   httpGetWmsSettings,
   httpResolveProblemTask,
   httpPatchWmsSettings,
+  httpSetOrderPriority,
 } from './wms.controller.js';
 import { httpGetPickAnalytics } from './wms.analytics.controller.js';
 
@@ -236,6 +237,15 @@ router.get(
   requireTier('core'),
   requireAction('wms:read'),
   httpGetPackingSlipUrl
+);
+
+router.post(
+  '/orders/:orderId/priority',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:batch:release'),
+  httpSetOrderPriority
 );
 
 router.post(

@@ -138,7 +138,8 @@ export async function seed(knex: Knex): Promise<void> {
     console.log('[DEV_SEED] ✅ Full identity seeded');
     console.log('[DEV_SEED] → This user CAN log in');
 
-    // Seed WMS settings — required for batch release
+    // Seed WMS settings — SET LOCAL required: shop_wms_settings has RLS enabled
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
     await trx('shop_wms_settings')
       .insert({ shop_id: shop.id })
       .onConflict('shop_id')
@@ -513,7 +514,7 @@ export async function seed(knex: Knex): Promise<void> {
         .onConflict(['shop_id', 'location_code'])
         .merge(['position_x', 'position_y', 'width', 'depth', 'orientation', 'rack_levels', 'zone_type', 'barcode', 'parent_location_code']);
     }
-    await trx.raw(`SET LOCAL "app.current_tenant" = '0'`);
+    // Note: app.current_tenant intentionally NOT reset here — subsequent inserts (inventory_truth etc) require it
     console.log('[DEV_SEED] ✅ Warehouse locations seeded (full_data reset)');
 
     // ── PRODUCTS + VARIANTS ──────────────────────────────────────────────────
@@ -576,24 +577,28 @@ export async function seed(knex: Knex): Promise<void> {
     console.log(`[DEV_SEED] Created ${productIds.length} products, ${variantIds.length} variants`);
 
     // ── INVENTORY TRUTH ──────────────────────────────────────────────────────
-    // Trust needs: inventory_truth with non-null updated_at
-    const locationCode = `WH-${shop.id}-ROOT`;
-
-    for (const v of variantIds) {
+    // Assign variants to specific bins — enables spatial pick route and zone_distribution in pool
+    // Bin assignment: round-robin across A-1..A-4, B-1..B-4, C-1..C-4
+    // SET LOCAL required: inventory_truth has forced RLS enabled
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
+    const binLocations = ['A-1','A-2','A-3','A-4','B-1','B-2','B-3','B-4','C-1','C-2','C-3','C-4'];
+    for (let vi = 0; vi < variantIds.length; vi++) {
+      const v = variantIds[vi];
+      const binCode = binLocations[vi % binLocations.length];
+      const qty = Math.floor(Math.random() * 80) + 20;
       await trx('inventory_truth').insert({
         shop_id: shop.id,
         lasyncro_variant_id: v.lasyncro_variant_id,
-        location_code: locationCode,
-        on_hand_quantity: Math.floor(Math.random() * 80) + 20,
+        location_code: binCode,
+        on_hand_quantity: qty,
         reserved_quantity: 0,
         committed_quantity: 0,
-        available_quantity: Math.floor(Math.random() * 80) + 20,
-        sellable_quantity: Math.floor(Math.random() * 80) + 20,
+        available_quantity: qty,
+        sellable_quantity: qty,
         last_evaluated_at: now,
       }).onConflict(['shop_id', 'lasyncro_variant_id', 'location_code']).merge();
     }
-
-    console.log(`[DEV_SEED] Created inventory_truth for ${variantIds.length} variants`);
+    console.log(`[DEV_SEED] Created inventory_truth for ${variantIds.length} variants across bins A-1..C-4`);
 
     // ── CUSTOMERS ────────────────────────────────────────────────────────────
     const customerHashes: string[] = [];
@@ -678,6 +683,31 @@ export async function seed(knex: Knex): Promise<void> {
         created_at: orderDate,
         updated_at: now,
       }).onConflict(['lasyncro_order_id']).ignore();
+
+      // order_line_items — required for pool line_item_count, unit_count, pick route
+      await trx('order_line_items').insert({
+        lasyncro_line_item_id: trx.raw('gen_random_uuid()'),
+        lasyncro_order_id: order.lasyncro_order_id,
+        lasyncro_product_id: variant.product_id,
+        lasyncro_variant_id: variant.lasyncro_variant_id,
+        title: variant.sku ?? 'FT2 Product',
+        sku: variant.sku ?? null,
+        quantity: qty,
+        unit_price: unitPrice,
+        line_total: totalPrice,
+        platform: 'shopify',
+        external_line_item_id: `ft2-${i}-${Date.now()}`,
+        created_at: orderDate,
+        updated_at: orderDate,
+      }).onConflict(['platform', 'external_line_item_id']).ignore();
+
+      // external_order_identity_map — required for pool external_order_id display
+      await trx('external_order_identity_map').insert({
+        lasyncro_order_id: order.lasyncro_order_id,
+        shop_id: shop.id,
+        platform: 'shopify',
+        external_order_id: `${100100 + i}`,
+      }).onConflict(['shop_id', 'platform', 'external_order_id']).ignore();
     }
 
     console.log(`[DEV_SEED] Created ${orderCount} orders with revenue units and fulfillment status`);

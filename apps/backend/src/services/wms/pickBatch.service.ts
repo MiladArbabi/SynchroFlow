@@ -37,64 +37,87 @@ export async function releaseBatch(
   releasedBy: number | null,
   assignedOperatorId?: number | null,
   assignedPackerId?: number | null,
+  /**
+   * PRIORITY ORDER SELECTION (A2)
+   * --------------------------------
+   * Owner-selected orders locked in first before greedy fill.
+   * All must be in the pool (constraint-free, unbatched).
+   * Invalid IDs are silently skipped — greedy fill compensates.
+   * Priority-flagged orders (is_priority_flagged=true) always
+   * precede non-flagged orders in greedy fill even without explicit selection.
+   */
+  priorityOrderIds?: string[],
 ): Promise<ReleaseBatchResult | null> {
-
   // 1. Load WMS settings for this shop
   const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .select('max_batch_line_items')
     .first();
-
   if (!settings) {
     console.error('[PICK_BATCH_SERVICE] shop_wms_settings missing', { shopId });
     throw new Error(`[PICK_BATCH_SERVICE] No WMS settings found for shop ${shopId}`);
   }
-
   const maxLineItems: number = settings.max_batch_line_items;
 
-  // 2. Find eligible orders — pending/processing, not already batched
+  // 2. Find eligible orders — constraint-free, unbatched, pending/processing.
+  //    Sort: priority-flagged first, then oldest-first within each group.
   const eligibleOrders = await trx('orders as o')
     .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
     .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+    .whereNotExists(
+      trx('order_constraints as oc')
+        .where('oc.lasyncro_order_id', trx.raw('o.lasyncro_order_id'))
+        .where('oc.is_active', true)
+        .select(1)
+    )
     .where('o.shop_id', shopId)
     .whereIn('ofs.status', ['pending', 'processing'])
-    .whereNull('pbo.lasyncro_order_id') // not already in any batch
-    .select(
-      'o.lasyncro_order_id',
-    )
-    .orderBy('o.order_created_at', 'asc'); // oldest first
+    .whereNull('pbo.lasyncro_order_id')
+    .select('o.lasyncro_order_id', 'ofs.is_priority_flagged')
+    .orderByRaw('ofs.is_priority_flagged DESC, o.order_created_at ASC');
 
   if (eligibleOrders.length === 0) {
     console.info('[PICK_BATCH_SERVICE] No eligible orders found', { shopId });
     return null;
   }
 
-  // 3. Greedily select full orders up to max_batch_line_items ceiling
+  // 3. Build ordered candidate list:
+  //    a) Owner-selected priority orders (priorityOrderIds) — validated against pool
+  //    b) Pool priority-flagged orders not already selected
+  //    c) Remaining pool orders oldest-first
+  const eligibleSet = new Set(eligibleOrders.map(o => o.lasyncro_order_id));
+  const validPriorityIds = (priorityOrderIds ?? []).filter(id => eligibleSet.has(id));
+  const priorityFlaggedIds = eligibleOrders
+    .filter(o => o.is_priority_flagged && !validPriorityIds.includes(o.lasyncro_order_id))
+    .map(o => o.lasyncro_order_id);
+  const remainingIds = eligibleOrders
+    .filter(o => !validPriorityIds.includes(o.lasyncro_order_id) && !priorityFlaggedIds.includes(o.lasyncro_order_id))
+    .map(o => o.lasyncro_order_id);
+
+  const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
+
+  // 4. Greedy fill up to max_batch_line_items ceiling — full orders only
   const selectedOrderIds: string[] = [];
   let runningLineItems = 0;
   let runningUnits = 0;
 
-  for (const order of eligibleOrders) {
+  for (const orderId of candidateIds) {
     const lineItems = await trx('order_line_items')
-      .where({ lasyncro_order_id: order.lasyncro_order_id })
+      .where({ lasyncro_order_id: orderId })
       .select('lasyncro_line_item_id', 'quantity');
-
     const orderLineCount = lineItems.length;
     const orderUnitCount = lineItems.reduce((sum, li) => sum + Number(li.quantity), 0);
 
-    // Full order must fit within remaining ceiling
     if (runningLineItems + orderLineCount > maxLineItems) {
-      // If no orders selected yet and single order exceeds ceiling,
-      // include it anyway to prevent starvation
+      // Starvation guard: if nothing selected yet, include oversized order anyway
       if (selectedOrderIds.length === 0) {
-        selectedOrderIds.push(order.lasyncro_order_id);
+        selectedOrderIds.push(orderId);
         runningLineItems += orderLineCount;
         runningUnits += orderUnitCount;
       }
       break;
     }
-
-    selectedOrderIds.push(order.lasyncro_order_id);
+    selectedOrderIds.push(orderId);
     runningLineItems += orderLineCount;
     runningUnits += orderUnitCount;
   }

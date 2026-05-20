@@ -220,17 +220,17 @@ Pick route optimization uses `position_x` / `position_y` from `warehouse_locatio
 
 ### Backend
 
-- [ ] A1 — Enrich `httpGetOrderPool` with missing fields
-- [ ] A2 — Add `priorityOrderIds[]` to `releaseBatch` service + priority-first selection
-- [ ] A3 — Add `POST /wms/orders/:orderId/priority` endpoint
-- [ ] A4 — Upgrade pick route sort to spatial coordinates in `httpGetBatchLineItems`
+- [x] A1 — Enrich `httpGetOrderPool` — returns external_order_id, is_priority_flagged, line_item_count, unit_count, zone_distribution, max_batch_line_items (see #970 for dev seed gaps)
+- [x] A2 — `releaseBatch` accepts `priority_order_ids[]` — owner-selected orders locked in first, then priority-flagged, then greedy oldest-first fill
+- [x] A3 — `POST /wms/orders/:orderId/priority` — wraps set_order_priority_flag(), priority orders surface first in pool response
+- [x] A4 — Upgrade pick route sort to spatial coordinates in `httpGetBatchLineItems` — falls back to location_code ASC when coordinates null (see #969 for dev seed gap)
 
 ### Frontend
 
-- [ ] B1 — Add Blocked + Release Queue tabs to `ORDERS_MODULE_TABS`
-- [ ] B2 — Build `BlockedOrdersPage` with per-type resolution actions
-- [ ] B3 — Build `ReleaseQueuePage` with priority, multi-select, preview, release
-- [ ] B4 — Fix `FulfillmentQueuePage` filters + `?order=` param handling
+- [x] B1 — Blocked + Release Queue tabs added to `ORDERS_MODULE_TABS`
+- [x] B2 — `BlockedOrdersPage` — grouped by constraint type, per-type resolution actions, SLA breach signals
+- [x] B3 — `ReleaseQueuePage` — priority flag toggle, multi-select with ceiling progress, release dialog with operator assignment
+- [x] B4 — All order routes fixed — Outbound/Inbound no longer log out; routing order corrected in LifecycleRouteHost
 
 ### Intelligence
 

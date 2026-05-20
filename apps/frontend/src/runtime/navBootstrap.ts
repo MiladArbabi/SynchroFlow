@@ -54,12 +54,12 @@ export function bootstrapNavGroups() {
     icon: ShoppingBag,
     requiredModuleId: 'order-nexus',
     children: [
-      // Sidebar shortcuts mirror the 5-tab ModuleTabBar on all Orders routes.
-      // Order here controls accordion/popover render order — do not reorder.
-      { id: 'fulfillment', title: 'Fulfillment', path: '/fulfillment'      },
-      { id: 'outbound',    title: 'Outbound',    path: '/orders/outbound'  },
-      { id: 'inbound',     title: 'Inbound',     path: '/orders/inbound'   },
-      { id: 'returns',     title: 'Returns',     path: '/returns'          },
+      { id: 'blocked',     title: 'Blocked',       path: '/orders/blocked'  },
+      { id: 'pool',        title: 'Release Queue', path: '/orders/pool'     },
+      { id: 'fulfillment', title: 'Fulfillment',   path: '/fulfillment'     },
+      { id: 'outbound',    title: 'Outbound',      path: '/orders/outbound' },
+      { id: 'inbound',     title: 'Inbound',       path: '/orders/inbound'  },
+      { id: 'returns',     title: 'Returns',       path: '/returns'         },
     ],
   });
 
