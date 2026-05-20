@@ -268,7 +268,8 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 
 ## Phase 2 — Remaining
 
-- [ ] Marquee select not selecting zones — issue #961
+- [x] Marquee select — fixed hits.length guard; now selects zones dragged over; works over frame zones in select mode
+- [ ] Marquee fill invisible — --accent-ghost CSS var undefined, issue #967
 - [ ] Responsive collapsible side panels — issue #962  
 - [ ] Multi-warehouse tab navigation — issue #963
 - [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop (no writers — issue WG-11)
@@ -294,6 +295,10 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - ✅ String→float parse fix for `width/depth/position_x/y` from Postgres decimal columns
 - ✅ Duplicate Surfaced Today block removed from filter rail
 - ✅ `children_count` integer cast fix (was returning string)
+- ✅ RackInspector delete — MUI Dialog replaces window.confirm() (issue #965)
+- ✅ RackInspector duplicate — Dialog with editable code input, onCreateZone wired (issue #966)
+- ✅ Isometric painter sort flipped fix — z-order correct in mirrored view
+- ✅ IsometricZoneView embeddable — exported from module index for product/order detail embeds
 
 ---
 
@@ -310,6 +315,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 ## Phase 3 — Isometric 2.5D Renderer
 
 ### Overview
+
 Isometric SVG renderer activated by the 2D/3D toolbar toggle in `CanvasEditor`.
 No Three.js — pure SVG isometric projection. Same data, different visual surface.
 Read-only — editing remains in 2D mode only.
@@ -322,6 +328,7 @@ Read-only — editing remains in 2D mode only.
 - Onboarding tool — new operators can visualise the warehouse in 3D before their first shift
 
 ### Coordinate System
+
 Isometric projection from 3D (x, y, z) to 2D screen (sx, sy):
 ```tsx
 sx = (x - y) * cos(30°) * SCALE
@@ -335,6 +342,7 @@ Where:
 - `SCALE` = 60px/metre (same as 2D)
 
 ### Zone Rendering
+
 Each zone renders as an isometric box with 3 visible faces:
 
 - **Top face** — fill at 100% opacity, zone_type colour
@@ -346,6 +354,7 @@ Each zone renders as an isometric box with 3 visible faces:
 Frame zones (warehouse/lane) render as flat floor tiles (z=0, no height).
 
 ### Render Order
+
 Zones sorted by `position_x + position_y` descending — painter's algorithm,
 back zones render first so front zones appear on top correctly.
 
@@ -358,13 +367,14 @@ back zones render first so front zones appear on top correctly.
 - No marquee select in isometric mode
 
 ### Component Structure
+
 ```typescript
 modules/floor-planning/src/ui/components/
-  IsometricCanvas.tsx     — main isometric SVG renderer
-  IsometricZoneView.tsx   — embeddable standalone single-zone view (product/order detail)
+  IsometricCanvas.tsx     — main isometric SVG renderer; also exports IsometricZoneView (embeddable single-zone, no interaction)
 ```
 
 ### Props
+
 ```typescript
 interface IsometricCanvasProps {
   zones: WarehouseZone[];
@@ -415,12 +425,16 @@ Inspector fields are read-only in 3D mode (no onUpdateZone calls).
 - [x] Level markers on front face — dashed lines at each rack_levels interval
 - [x] Angle presets — standard (↗) and mirrored (↙) toggle
 - [x] `rack_levels` editable in inspector — zone height updates in 3D
-- [x] `defaultRackLevels` in PALETTE_ITEMS — Pick=3, Pack=2, others=1
-- [x] Toolbar zoom hidden in 3D — isometric has own zoom/reset/angle controls
+et/angle controls
+- [x] Per-level colour banding — each rack level renders as a distinct shade (dark→light→default cycling every 3 levels) on left and right faces; full-height face polygons replaced by per-level slices
 
 ### Phase 3 — Remaining
 
-- [ ] `IsometricZoneView.tsx` — embeddable single-zone component for product/order detail pages
+- [x] `IsometricZoneView` — embeddable single-zone component, exported from module index
+- [x] Flipped painter sort — sort reverses when flipped=true for correct z-order
 - [ ] Embed in product detail page — show where product is stocked
 - [ ] Embed in order detail page — show line item bin locations
-- [ ] Flipped painter sort — when flipped=true sort order should reverse for correct z-order
+
+### Cross-references
+
+**Cross-references:** OrderPool.md — pick route sort uses position_x/y from warehouse_locations. WMS_process_blueprint.md — pick session consumes spatially-sorted line items.

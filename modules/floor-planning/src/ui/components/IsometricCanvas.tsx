@@ -24,6 +24,21 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 
+// ── IsometricZoneView ─────────────────────────────────────────────────────────
+/**
+ * Embeddable presentational component — renders a single zone as an isometric box.
+ * No pan/zoom/interaction. Intended for product/order detail page embeds.
+ * Props:
+ *   zone    — the zone to render (must have width, depth, rack_levels)
+ *   width   — SVG viewport width in px (default 120)
+ *   height  — SVG viewport height in px (default 90)
+ */
+export interface IsometricZoneViewProps {
+  zone: WarehouseZone;
+  width?: number;
+  height?: number;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 const ISO_SCALE    = 60;   // px per metre (world scale)
 const LEVEL_HEIGHT = 0.5;  // metres per rack level
@@ -100,9 +115,21 @@ interface BoxProps {
 }
 
 function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label, rackLevels, zoom, onClick,flipped }: BoxProps) {
-  const fill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
-  const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-  const selStroke = 'var(--accent)';
+  const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+  const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
+  const selStroke  = 'var(--accent)';
+
+  // Per-level fill: cycle dark→light→default repeating every 3 levels.
+  // Achieved by modulating the alpha of the base rgba color.
+  // Pattern: level 0 (bottom) = 0.85×, level 1 = 0.55×, level 2 = 1.0× (default), repeat.
+  const LEVEL_ALPHA_FACTORS = [0.85, 0.55, 1.0];
+  function levelFill(levelIndex: number): string {
+    const factor = LEVEL_ALPHA_FACTORS[levelIndex % 3];
+    return baseFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * factor * 2.5)})`);
+  }
+
+  // Use baseFill for top face and side face derivations (unchanged)
+  const fill = baseFill;
 
   // 8 corners of the box in world space → projected
   // Bottom face corners
@@ -124,24 +151,8 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
 
   return (
     <g onClick={onClick} style={{ cursor: 'pointer' }}>
-      {/* Left face (front-left visible) */}
-      {!isFlat && (
-        <polygon
-          points={pts(b01, b11, t11, t01)}
-          fill={leftFill}
-          stroke={isSelected ? selStroke : stroke}
-          strokeWidth={isSelected ? 1.5 : 0.8}
-        />
-      )}
-      {/* Right face (front-right visible) */}
-      {!isFlat && (
-        <polygon
-          points={pts(b10, b11, t11, t10)}
-          fill={rightFill}
-          stroke={isSelected ? selStroke : stroke}
-          strokeWidth={isSelected ? 1.5 : 0.8}
-        />
-      )}
+      {/* Left and right faces are now rendered as per-level slices below.
+          Full-height polygons removed to avoid double-painting over level bands. */}
       {/* Top face */}
       <polygon
         points={pts(t00, t10, t11, t01)}
@@ -177,14 +188,28 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
           </text>
         );
       })()}
-      {/* Rack level markers on front-left edge */}
-      {!isFlat && rackLevels != null && rackLevels > 1 && Array.from({ length: rackLevels - 1 }, (_, i) => {
-        const lz = (i + 1) * LEVEL_HEIGHT;
-        const la = project(wx,      wy + wd, lz, zoom, flipped);
-        const lb = project(wx + ww, wy + wd, lz, zoom, flipped);
+      {/* Rack level bands — each level rendered as a distinct filled slice on left+right faces.
+          Alpha cycles dark→light→default every 3 levels so operators can count levels visually. */}
+      {!isFlat && rackLevels != null && rackLevels > 1 && Array.from({ length: rackLevels }, (_, i) => {
+        const z0 = i * LEVEL_HEIGHT;
+        const z1 = (i + 1) * LEVEL_HEIGHT;
+        const lFill = levelFill(i);
+        const lFillDark  = lFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 0.75)})`);
+        // Left face slice corners
+        const ll0 = project(wx,      wy + wd, z0, zoom, flipped);
+        const ll1 = project(wx + ww, wy + wd, z0, zoom, flipped);
+        const lu0 = project(wx,      wy + wd, z1, zoom, flipped);
+        const lu1 = project(wx + ww, wy + wd, z1, zoom, flipped);
+        // Right face slice corners
+        const rl0 = project(wx + ww, wy,      z0, zoom, flipped);
+        const rl1 = project(wx + ww, wy + wd, z0, zoom, flipped);
+        const ru0 = project(wx + ww, wy,      z1, zoom, flipped);
+        const ru1 = project(wx + ww, wy + wd, z1, zoom, flipped);
         return (
-          <line key={i} x1={la.sx} y1={la.sy} x2={lb.sx} y2={lb.sy}
-            stroke={stroke} strokeWidth="0.5" strokeDasharray="2 2" opacity="0.6" />
+          <g key={i}>
+            <polygon points={pts(ll0, ll1, lu1, lu0)} fill={lFill}     stroke={stroke} strokeWidth="0.4" />
+            <polygon points={pts(rl0, rl1, ru1, ru0)} fill={lFillDark} stroke={stroke} strokeWidth="0.4" />
+          </g>
         );
       })}
     </g>
@@ -213,13 +238,14 @@ export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
   const positionedZones = zones.filter(z => z.position_x != null && z.position_y != null);
 
   // Painter's algorithm: sort by (position_x + position_y) ascending — back zones first
+  // Painter's algorithm: ascending = back-to-front for standard view.
+  // Flipped view mirrors the projection axis so sort must reverse to maintain correct occlusion.
   const sorted = [...positionedZones].sort((a, b) => {
     const da = parseFloat(String(a.position_x ?? 0)) + parseFloat(String(a.position_y ?? 0));
     const db = parseFloat(String(b.position_x ?? 0)) + parseFloat(String(b.position_y ?? 0));
-    // Frame zones always render before bins at same depth
     const typeOrder = { warehouse: 0, lane: 1, shelf: 2, bin: 3 };
     if (Math.abs(da - db) < 0.01) return (typeOrder[a.type] ?? 3) - (typeOrder[b.type] ?? 3);
-    return da - db;
+    return flipped ? db - da : da - db;
   });
 
   function handleSelect(code: string) {
@@ -334,5 +360,48 @@ export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
         ))}
       </Box>
     </Box>
+  );
+}
+
+export function IsometricZoneView({ zone, width = 120, height = 90 }: IsometricZoneViewProps) {
+  const ww = parseFloat(String(zone.width  ?? 1));
+  const wd = parseFloat(String(zone.depth  ?? 0.5));
+  const wh = (zone.rack_levels ?? 1) * LEVEL_HEIGHT;
+  const isFrame = zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf';
+  const colorKey = isFrame ? zone.type : (zone.zone_type ?? 'storage');
+
+  // Fixed zoom to fit zone in viewport — scale to the smaller axis
+  const zoom = Math.min((width * 0.5) / ((ww + wd) * TILE_W / 2), (height * 0.6) / ((ww + wd) * TILE_H / 2 + wh * LEVEL_H));
+
+  // Centre the box in the viewport: project the centre bottom of the bounding diamond
+  const cx = width  / 2;
+  const cy = height * 0.65;
+
+  // Render at world origin (0,0) then translate to centre via SVG transform
+  const originPt = project(0, 0, 0, zoom);
+
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      xmlns="http://www.w3.org/2000/svg"
+      style={{ display: 'block', overflow: 'visible' }}
+    >
+      <g transform={`translate(${cx - originPt.sx}, ${cy - originPt.sy})`}>
+        <IsometricBox
+          wx={0} wy={0}
+          ww={ww} wd={wd} wh={wh}
+          colorKey={colorKey}
+          isSelected={false}
+          isFrame={isFrame}
+          label={zone.location_code}
+          rackLevels={zone.rack_levels ?? null}
+          zoom={zoom}
+          flipped={false}
+          onClick={() => {}}
+        />
+      </g>
+    </svg>
   );
 }

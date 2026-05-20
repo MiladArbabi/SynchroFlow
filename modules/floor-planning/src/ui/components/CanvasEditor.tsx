@@ -15,7 +15,7 @@
  * Phase 3: same WarehouseLocation data feeds Three.js renderer unchanged.
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Box, Typography, Divider, Chip, IconButton, Paper, TextField } from '@mui/material';
+import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button } from '@mui/material';
 import { X, Layers, RotateCw, Copy, Trash2, Tag, Hand, MousePointer } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
@@ -277,15 +277,18 @@ function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCent
 }
 
 // ── RackInspector ─────────────────────────────────────────────────────────────
-function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarcode }: {
+function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarcode, onCreateZone }: {
   zone: WarehouseZone;
   onClose: () => void;
   onUpdateZone?: CanvasEditorProps['onUpdateZone'];
   onDeleteZone?: CanvasEditorProps['onDeleteZone'];
   onPrintBarcode?: CanvasEditorProps['onPrintBarcode'];
+  // onCreateZone: required to power the Duplicate action — offsets copy by 1.1m to avoid overlap
+  onCreateZone?: CanvasEditorProps['onCreateZone'];
 }) {
   const zoneColor = ZONE_STROKE[zone.zone_type ?? 'storage'] ?? ZONE_STROKE.storage;
-  const [saving, setSaving] = useState(false);
+  const [saving, setSaving]           = useState(false);
+  const [deleteOpen, setDeleteOpen]   = useState(false);
   const [editW, setEditW]   = useState(String(zone.width  ?? ''));
   const [editD, setEditD]   = useState(String(zone.depth  ?? ''));
   const [editX, setEditX]   = useState(String(zone.position_x ?? ''));
@@ -308,9 +311,50 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
 
   async function handleDelete() {
     if (!onDeleteZone) return;
-    if (!window.confirm(`Delete ${zone.location_code}? This cannot be undone.`)) return;
+    setDeleteOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!onDeleteZone) return;
+    setDeleteOpen(false);
     await onDeleteZone(zone.location_code);
     onClose();
+  }
+
+  // Duplicate: opens a Dialog so the user can set a unique code before creation.
+  // location_code is the PK and immutable post-creation — must be set here.
+  const [duplicateOpen, setDuplicateOpen]   = useState(false);
+  const [duplicateCode, setDuplicateCode]   = useState('');
+  const [duplicating, setDuplicating]       = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
+
+  function openDuplicate() {
+    setDuplicateCode(`${zone.location_code}-COPY`);
+    setDuplicateError(null);
+    setDuplicateOpen(true);
+  }
+
+  async function confirmDuplicate() {
+    if (!onCreateZone || !duplicateCode.trim()) return;
+    setDuplicating(true);
+    setDuplicateError(null);
+    try {
+      await onCreateZone({
+        location_code: duplicateCode.trim().toUpperCase(),
+        type: zone.type as WarehouseLocationType,
+        zone_type: zone.zone_type ?? undefined,
+        position_x: (parseFloat(String(zone.position_x ?? 0)) + 1.1),
+        position_y: parseFloat(String(zone.position_y ?? 0)),
+        width: parseFloat(String(zone.width ?? 1)),
+        depth: parseFloat(String(zone.depth ?? 0.5)),
+        rack_levels: zone.rack_levels ?? undefined,
+      });
+      setDuplicateOpen(false);
+    } catch {
+      setDuplicateError('Code already exists or is invalid.');
+    } finally {
+      setDuplicating(false);
+    }
   }
 
   return (
@@ -409,7 +453,7 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
           </Box>
         )}
         <Box sx={{ display: 'flex', gap: 0.75 }}>
-          <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)', fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s' }}>
+          <Box onClick={openDuplicate} sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)', fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s' }}>
             <Copy size={11} /> Duplicate
           </Box>
           <Box onClick={handleDelete}
@@ -418,6 +462,42 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
           </Box>
         </Box>
       </Box>
+
+      {/* Duplicate — user sets a unique code before creation; location_code is immutable PK post-create */}
+      <Dialog open={duplicateOpen} onClose={() => setDuplicateOpen(false)}>
+        <DialogTitle sx={{ fontSize: 14 }}>Duplicate <strong>{zone.location_code}</strong></DialogTitle>
+        <Box sx={{ px: 3, pb: 1 }}>
+          <TextField
+            autoFocus
+            size="small"
+            label="New name"
+            value={duplicateCode}
+            onChange={e => { setDuplicateCode(e.target.value.toUpperCase()); setDuplicateError(null); }}
+            onKeyDown={e => { if (e.key === 'Enter') confirmDuplicate(); }}
+            error={!!duplicateError}
+            helperText={duplicateError ?? ' '}
+            inputProps={{ style: { fontFamily: 'monospace' } }}
+            fullWidth
+          />
+        </Box>
+        <DialogActions>
+          <Button size="small" onClick={() => setDuplicateOpen(false)}>Cancel</Button>
+          <Button size="small" variant="contained" onClick={confirmDuplicate} disabled={duplicating || !duplicateCode.trim()}>
+            {duplicating ? 'Creating…' : 'Duplicate'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete confirmation — MUI Dialog replaces window.confirm() for design-system consistency */}
+      <Dialog open={deleteOpen} onClose={() => setDeleteOpen(false)}>
+        <DialogTitle sx={{ fontSize: 14 }}>
+          Delete <strong>{zone.location_code}</strong>? This cannot be undone.
+        </DialogTitle>
+        <DialogActions>
+          <Button size="small" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+          <Button size="small" color="error" variant="contained" onClick={confirmDelete}>Delete</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
@@ -564,11 +644,14 @@ export function CanvasEditor({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
+    // In select mode: let event bubble to canvas so marquee can start over zones.
+    // In pan mode: stop propagation to prevent canvas pan hijacking zone drag.
+    if (modeRef.current === 'select') {
+      setSelected(zone.location_code);
+      return;
+    }
     e.stopPropagation();
     setSelected(zone.location_code);
-    // In select mode — only select, no drag
-    console.log('[canvas] onRackMouseDown mode:', modeRef.current);
-    // Both modes allow zone dragging — select mode just prevents canvas pan
     dragRef.current = {
       locationCode: zone.location_code,
       startMouseX:  e.clientX,
@@ -715,7 +798,7 @@ export function CanvasEditor({
             const cy = offsetRef.current.y + (zy + zh / 2) * SCALE * zoomRef.current;
             return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
           });
-          if (hits.length === 1) setSelected(hits[0].location_code);
+          if (hits.length >= 1) setSelected(hits[0].location_code);
           // Multi-select: for now select first hit — group select in future sprint
         }
         marqueeStartRef.current = null;
@@ -995,7 +1078,8 @@ export function CanvasEditor({
         <RackInspector zone={selectedZone} onClose={() => setSelected(null)}
           onUpdateZone={renderMode === '2D' ? onUpdateZone : undefined}
           onDeleteZone={renderMode === '2D' ? onDeleteZone : undefined}
-          onPrintBarcode={onPrintBarcode} />
+          onPrintBarcode={onPrintBarcode}
+          onCreateZone={onCreateZone} />
       ) : (
         <Box sx={{ width: 220, flexShrink: 0, borderLeft: '1px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, p: 2 }}>
           <Box sx={{ width: 32, height: 32, borderRadius: 1, border: '1.5px dashed var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

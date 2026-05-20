@@ -1,5 +1,5 @@
-```markdown
 # LaSyncro WMS‑Lite  
+
 ## Complete Process Blueprint & System Contract  
 
 **Version:** 2.0  
@@ -20,6 +20,7 @@
 ✅ Suppliers Portal module live. PO management implemented. Schema migrated.
 
 **Actors**  
+
 - **Owner / Admin** — creates and manages suppliers and POs  
 - **Operator** — executes physical receive and stow tasks  
 
@@ -36,6 +37,7 @@ Implemented enum on `purchase_orders.status`:
 `draft → ordered → confirmed → in_production → shipped → partially_received → received → cancelled`
 
 **Notes:**  
+
 - `in_production` and `shipped` are skippable via force‑advance buttons in the UI.  
 - `partially_received`: PO stays open — multiple receive actions allowed until fully received.  
 - Auto‑transitions to `received` when all line items reach `quantity_ordered == quantity_received`.  
@@ -64,6 +66,7 @@ Implemented enum on `purchase_orders.status`:
 | POST   | `/api/v1/suppliers/purchase-orders/:poId/receive`             | Record received quantities (FEAT‑004 will call this)   |
 
 **When PO marked `shipped` [PLANNED — FEAT‑004]**  
+
 - System generates an alert/task in Alerts module: `wms:receive:arrived:{poId}`  
 - Alert links to WMS Receive Session screen  
 - Operator processes each package: scans, labels, checks quality, flags defects  
@@ -72,6 +75,7 @@ Implemented enum on `purchase_orders.status`:
 ---
 
 ### 1.2 RECEIVE JOB  [PLANNED — FEAT‑004]  
+
 ⚠️ Designed. Not yet implemented. Alert trigger from Suppliers Portal is the integration point.
 
 **Trigger**  
@@ -99,6 +103,7 @@ PO transitions to `shipped` → system creates `receive_jobs` record linked to P
 ---
 
 ### 1.3 INSPECTION PROCESS  [PLANNED — FEAT‑004]  
+
 ⚠️ Designed. Not yet implemented.
 
 **UI — Receive/Inspection Screen (Mobile, per variant group)**
@@ -123,6 +128,7 @@ PO transitions to `shipped` → system creates `receive_jobs` record linked to P
 ```
 
 **Inspection Flow — per variant**  
+
 - Operator sees variant details and expected quantity  
 - For each unit: good → tap `+` (accepted counter); problem → tap `✗` → problem dialog  
 - Problem types: `defect | packaging_damage | wrong_item | wrong_variant | wrong_quantity | other`  
@@ -132,15 +138,18 @@ PO transitions to `shipped` → system creates `receive_jobs` record linked to P
 ---
 
 ### 1.4 BARCODE ASSIGNMENT  [PARTIALLY LIVE]  
+
 ✅ Floor Planning module live. `warehouse_locations.barcode` column added (migration 0048). Product barcodes read from `external_product_identity_map`.
 
 **Barcode Model — Confirmed & Live**  
+
 - **Location barcodes**: system‑generated, stored on `warehouse_locations.barcode` (e.g. `LOC-A01-03-B`)  
 - **Product barcodes**: supplier barcodes (UPC/EAN) from `external_product_identity_map.barcode` — resolve to `lasyncro_variant_id`  
 - `lasyncro_variant_id` is the authoritative system identity — platform‑agnostic  
 - Floor Planning UI shows both: location barcodes + product barcodes table (assigned/unassigned)  
 
 **Barcode Assignment Rules**  
+
 - Variants with existing barcode (synced from Shopify) → skip generation, proceed to print  
 - Variants without barcode → system generates LaSyncro barcode: `LS-{shop_id}-{lasyncro_variant_id_short}`  
 - Stored on `external_product_identity_map.barcode`  
@@ -161,27 +170,32 @@ PO transitions to `shipped` → system creates `receive_jobs` record linked to P
 ---
 
 ### 1.5 STOW TASK CREATION  [LIVE — migration 0084]  
+
 ✅ `stow_tasks` table exists. Stow execution implemented in WMS module.
 
 **Trigger**  
 All accepted units barcoded and confirmed → receive job transitions to `stow_ready` → system creates `stow_tasks` per variant group.
 
 **Location Suggestion [PLANNED — WM‑36]**  
+
 1. **Home location (priority 1)**: variant has designated home location → suggest if empty  
 2. **Product family proximity (priority 2)**: same family stowed nearby → suggest adjacent bin  
 3. **Empty location (priority 3)**: nearest empty bin to receiving dock  
 4. **Overflow (priority 4)**: flag for owner/admin manual assignment  
 
 **Location Suggestion Mode [`shop_wms_settings`]**  
+
 - `suggest` — system shows top 3, operator chooses  
 - `pre_select` — system pre‑selects best, operator confirms or overrides  
 
 ---
 
 ### 1.6 STOW EXECUTION  [LIVE]  
+
 ✅ Stow execution implemented in WMS module. Location scan optional (configurable).
 
 **Stow Flow**  
+
 - Operator claims stow task  
 - Screen shows product, quantity, suggested location  
 - Operator carries units to location, scans location barcode (WM‑28) or manually confirms  
@@ -193,6 +207,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ## PART 2 — OUTBOUND: ORDERS & FULFILLMENT
 
 ### 2.1 ORDER INGESTION & CONSTRAINT CHECK  [LIVE]  
+
 ✅ Shopify webhook ingestion live. Constraint engine live. Order pool live.
 
 | Blocker Type        | Description                                      | Source                            |
@@ -206,6 +221,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 2.2 BATCH MANAGEMENT SETTINGS  [LIVE — migration 0087]  
+
 ✅ `shop_wms_settings` table exists with all configurable fields.
 
 | Setting                            | Description                                      | Default   |
@@ -224,6 +240,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 2.3 BATCH ASSEMBLY & RELEASE  [LIVE]  
+
 ✅ Manual and auto‑release implemented. `pick_batches` + `pick_batch_orders` tables live.
 
 - Full orders only — no split orders across batches  
@@ -234,12 +251,14 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 2.4 PICK EXECUTION  [LIVE]  
+
 ✅ Full pick session implemented. Offline resilience via IndexedDB + Background Sync. Pick exceptions live.
 
 **Pick Session Lifecycle**  
 `pending → picking → pick_complete`
 
 **Pick Flow — per line item**  
+
 - Operator arrives at location shown on screen  
 - Optional: scans location barcode to confirm correct bin (WM‑28, configurable)  
 - Scans product barcode — camera or manual input  
@@ -251,12 +270,14 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 2.5 PACK EXECUTION  [LIVE]  
+
 ✅ Pack session implemented. Pack exceptions live. Problem resolution thread (WM‑33) still planned.
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
 
 **Pack Flow — per order**  
+
 - Packer claims batch (separate from picker — enforced at service layer)  
 - **Single‑item order**: scan item → scan invoice → pack confirmed  
 - **Multi‑item order**: scan all items → all confirmed → scan invoice → pack confirmed  
@@ -270,6 +291,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 2.6 SHIP CONFIRMATION  [LIVE]  
+
 ✅ Ship confirmation implemented. Shopify `fulfillmentCreate` integration live.
 
 - **Full ship**: `order_warehouse_status` → `shipped`, Shopify `fulfillmentCreate` fired, customer notified  
@@ -280,6 +302,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ## PART 3 — WAREHOUSE LOCATIONS & FLOOR PLANNING
 
 ### 3.1 LOCATION HIERARCHY  [LIVE — migration 0048]  
+
 ✅ `warehouse_locations` table live. `barcode` column added to migration 0048.
 
 **Hierarchy:** Warehouse → Lane → Shelf → Bin  
@@ -288,6 +311,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 **Barcode format:** `LOC-{location_code}`  e.g. `LOC-A-1-3-7`
 
 **Floor Planning Module [LIVE — FEAT‑002]**  
+
 - List/table interface for admin/owner — operator read‑only  
 - **Locations tab**: warehouse zones/shelves/bins with system barcodes  
 - **Products tab**: variants + supplier barcodes from `external_product_identity_map`, unassigned collapsed  
@@ -308,6 +332,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ---
 
 ### 3.3 VARIANT‑TO‑LOCATION ASSIGNMENT  [PLANNED — WM‑36]  
+
 - Each variant can have a **home location** — default stow and pick location  
 - Home location assignment done in Floor Planning module by owner/admin  
 - During stow: system suggests home location first  
@@ -390,8 +415,6 @@ inventory_truth updated → Units available for pick
 
 ### Outbound (Orders)
 
-```
-
 Shopify Order Webhook
     ↓
 Domain Event → Projection Engine
@@ -423,8 +446,6 @@ SKU Gaps                  Push to packer(s)
                     Ship Confirmation (owner/admin)
                               ↓
                     Shopify writeback → Customer notified
-
-```
 
 ---
 
@@ -465,4 +486,7 @@ SKU Gaps                  Push to packer(s)
 - **`PATCH /me/currency`** is not backend role‑restricted — do not remove frontend gate without adding backend enforcement.  
 - **Receive quantities** are recorded by operator after physical inspection — never pre‑filled or assumed from PO ordered quantities.  
 - **`lasyncro_variant_id`** is the authoritative product identity across all platforms. Never use external IDs as keys in domain logic.
-```
+
+### Cross-references
+
+**Cross-references:** OrderPool.md — pool feeds batch release. WarehouseGrid.md — spatial pick route uses floor coordinates. constraint_system_blueprint.md — constraint resolution gates pool entry.
