@@ -10,9 +10,8 @@ const db = knex({
   },
 });
 
-// Clear stale migration history from old schema
-await db.schema.dropTableIfExists('knex_migrations');
-await db.schema.dropTableIfExists('knex_migrations_lock');
+// Drop all tables and start fresh
+await db.raw('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
 
 db.migrate.latest()
   .then(([batch, log]) => {
