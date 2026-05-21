@@ -19,8 +19,6 @@ import posthog, { PostHog } from 'posthog-js';
 import AuthWrapper1 from './AuthWrapper1'; // <-- USE ALIAS
 import AuthCardWrapper from './AuthCardWrapper'; // <-- USE ALIAS
 import LoginProvider from './LoginProvider'; // <-- USE ALIAS
-// import ViewOnlyAlert from 'pages/authentication/ViewOnlyAlert';
-import AuthFooter from 'ui-component/cards/AuthFooter';
 
 import { useAuth } from 'contexts/AuthContext';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
@@ -136,9 +134,6 @@ export default function Register() {
               </Box>
             )}
           </Box>
-        </Stack>
-        <Stack sx={{ px: 3, mb: 3, mt: 1 }}>
-          <AuthFooter />
         </Stack>
       </Stack>
       {/* AUTH-014: system status pill — top-right */}

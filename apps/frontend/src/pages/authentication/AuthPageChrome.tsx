@@ -89,7 +89,7 @@ export function SocialProofTicker() {
         borderTop: '1px solid var(--rule)',
         bgcolor: 'var(--bg)',
         zIndex: 10,
-        py: 1,
+        py: 1.25,
       }}
     >
       <Box

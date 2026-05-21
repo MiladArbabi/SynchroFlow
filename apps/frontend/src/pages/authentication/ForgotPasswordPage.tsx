@@ -31,8 +31,9 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthWrapper1>
-      <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-        {/* AUTH-012: top-left logo nav bar — matches target A4 */}
+      <Stack sx={{ justifyContent: 'flex-end', minHeight: '100vh' }}>
+        <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 68px)' }}>
+          {/* AUTH-012: top-left logo nav bar — matches target A2 */}
         <Box
           sx={{
             position: 'fixed',
@@ -43,6 +44,7 @@ export default function ForgotPasswordPage() {
             py: 2,
             display: 'flex',
             alignItems: 'center',
+            justifyContent: 'space-between',
             zIndex: 10,
           }}
         >
@@ -188,6 +190,7 @@ export default function ForgotPasswordPage() {
             </Stack>
           </AuthCardWrapper>
         </Box>
+      </Stack>
       </Stack>
       <SocialProofTicker />
     </AuthWrapper1>

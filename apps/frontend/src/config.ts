@@ -51,7 +51,8 @@ export type ConfigProps = {
 
 const config: ConfigProps = {
   menuOrientation: MenuOrientation.VERTICAL,
-  fontFamily: `'Roboto', sans-serif`,
+  // THEME: Inter matches target design — loaded via @fontsource/inter in main.tsx
+  fontFamily: `'Inter', sans-serif`,
   borderRadius: 8,
   outlinedFilled: true,
   presetColor: 'default',
