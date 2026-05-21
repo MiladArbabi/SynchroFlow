@@ -21,6 +21,7 @@ import AnimateButton from 'ui-component/extended/AnimateButton';
 import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import InputAdornment from '@mui/material/InputAdornment';
+import { SocialProofTicker, SystemStatusPill } from './AuthPageChrome';
 
 type SubmitState = 'idle' | 'success' | 'error';
 
@@ -53,6 +54,8 @@ export default function ForgotPasswordPage() {
               sx={{ height: 28, width: 'auto' }}
             />
           </Link>
+          {/* AUTH-014: system status pill — top-right */}
+          <SystemStatusPill />
         </Box>
         <Box sx={{ m: { xs: 1, sm: 3 } }}>
           <AuthCardWrapper>
@@ -182,11 +185,11 @@ export default function ForgotPasswordPage() {
                   Contact support
                 </Typography>
               </Stack>
-
             </Stack>
           </AuthCardWrapper>
         </Box>
       </Stack>
+      <SocialProofTicker />
     </AuthWrapper1>
   );
 }

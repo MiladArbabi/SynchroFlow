@@ -22,6 +22,7 @@ import LoginProvider from './LoginProvider'; // <-- USE ALIAS
 
 import AuthFooter from 'ui-component/cards/AuthFooter';
 import { useAuth } from '../../contexts/AuthContext';
+import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 
 // import { APP_AUTH } from 'config';
 
@@ -89,6 +90,8 @@ export default function Login() {
                 sx={{ height: 28, width: 'auto' }}
               />
             </Link>
+            {/* AUTH-014: system status pill — top-right */}
+            <SystemStatusPill />
           </Box>
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
             <AuthCardWrapper>
@@ -146,6 +149,8 @@ export default function Login() {
           <AuthFooter />
         </Box>
       </Stack>
+      {/* AUTH-013: social proof ticker — bottom */}
+      <SocialProofTicker />
     </AuthWrapper1>
   );
 }

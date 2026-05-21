@@ -23,6 +23,8 @@ import LoginProvider from './LoginProvider'; // <-- USE ALIAS
 import AuthFooter from 'ui-component/cards/AuthFooter';
 
 import { useAuth } from 'contexts/AuthContext';
+import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
+
 // import { 'jwt' } from 'config'; // <-- COMMENT OUT
 
 // A mapping of auth types to dynamic imports
@@ -74,6 +76,7 @@ export default function Register() {
               py: 2,
               display: 'flex',
               alignItems: 'center',
+              justifyContent: 'space-between',
               zIndex: 10,
             }}
           >
@@ -85,6 +88,8 @@ export default function Register() {
                 sx={{ height: 28, width: 'auto' }}
               />
             </Link>
+            {/* AUTH-014: system status pill — top-right */}
+            <SystemStatusPill />
           </Box>
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
             <AuthCardWrapper>
@@ -136,6 +141,8 @@ export default function Register() {
           <AuthFooter />
         </Stack>
       </Stack>
+      {/* AUTH-014: system status pill — top-right */}
+      <SocialProofTicker />
     </AuthWrapper1>
   );
 }
