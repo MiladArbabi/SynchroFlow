@@ -78,8 +78,12 @@ export default function Login() {
                   </Link>
                 </Box>
                 <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                  <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'secondary.main' }}>
-                    Let's Sync Up!
+                  {/* AUTH-003: target headline "Welcome back. Let's sync up." */}
+                  <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
+                    Welcome back.{' '}
+                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400 }}>
+                      Let's sync up.
+                    </Box>
                   </Typography>
                   <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' } }}>
                     Enter your credentials to continue
@@ -89,18 +93,21 @@ export default function Login() {
                   {AuthLoginComponent ? (
                     <AuthLoginComponent posthog={posthog} />
                   ) : (
-                    <CircularProgress color="secondary" />
+                    <CircularProgress sx={{ color: 'var(--accent)' }} />
                   )}
                 </Box>
                 <Divider sx={{ width: 1 }} />
                 <Stack sx={{ alignItems: 'center' }}>
-                  <Typography
-                    component={Link}
-                    to={isLoggedIn ? '/pages/register/register3' : authParam ? `/register?auth=${authParam}` : '/register'}
-                    variant="subtitle1"
-                    sx={{ textDecoration: 'none' }}
-                  >
-                    Don&apos;t have an account?
+                  {/* AUTH-015: full sentence with accented CTA link */}
+                  <Typography variant="subtitle1" sx={{ color: 'var(--ink-3)' }}>
+                    New to LaSyncro?{' '}
+                    <Box
+                      component={Link}
+                      to={authParam ? `/register?auth=${authParam}` : '/register'}
+                      sx={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Create an account
+                    </Box>
                   </Typography>
                 </Stack>
               </Stack>

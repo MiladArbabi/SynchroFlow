@@ -213,7 +213,8 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
         <form noValidate onSubmit={handleSubmit} {...others}>
           {/* Email Input */}
           <CustomFormControl fullWidth error={Boolean(touched.email && errors.email)}>
-            <InputLabel htmlFor="outlined-adornment-email-login">Email Address / Username</InputLabel>
+            {/* AUTH-009: "Email address" matches target A1 */}
+            <InputLabel htmlFor="outlined-adornment-email-login">Email address</InputLabel>
             <OutlinedInput
               id="outlined-adornment-email-login"
               type="email"
@@ -274,7 +275,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
                 variant="subtitle1"
                 component={Link}
                 to={authParam ? `/forgot-password?auth=${authParam}` : '/forgot-password'}
-                sx={{ textDecoration: 'none', color: 'secondary.main' }}
+                sx={{ textDecoration: 'none', color: 'var(--accent)' }}
               >
                 Forgot Password?
               </Typography>
@@ -294,8 +295,10 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
           <Box sx={{ mt: 2 }}>
             <AnimateButton>
               {/* This button is now safe to use! */}
-              <Button color="secondary" disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained">
-                Sign In
+              {/* THEME-001: LaSyncro accent CTA — never color="secondary" (MUI amber) */}
+              <Button disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained"
+                sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}>
+                Sign in →
               </Button>
             </AnimateButton>
           </Box>

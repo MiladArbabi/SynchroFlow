@@ -98,9 +98,10 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
     ...overrides,
   });
   
-  console.log('[DEBUG] handleSubmit triggered', { selectedPlatform });
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    // AUTH-016: debug log scoped to actual submit, not every render
+    console.log('[DEBUG] handleSubmit triggered', { selectedPlatform });
     if (!selectedPlatform) {
       // --- ANALYTICS: invalid submit (no platform selected) ---
       emit('integration.connect.failed', {
@@ -406,7 +407,9 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
             </Button>
           </Grid>
          <Grid size={{ xs: 12, sm: 4 }}>
-            <Button fullWidth type="submit" variant="contained" color="primary">
+            {/* THEME-001: accent orange — not color="primary" (MUI blue) */}
+            <Button fullWidth type="submit" variant="contained"
+              sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}>
               Connect
             </Button>
           </Grid>
@@ -433,7 +436,9 @@ export const ConnectStoreModal: React.FC<ConnectStoreModalProps> = ({ isOpen, on
             </Button>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button fullWidth type="submit" variant="contained" color="primary">
+            {/* THEME-001: accent orange — not color="primary" (MUI blue) */}
+            <Button fullWidth type="submit" variant="contained"
+              sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}>
               Connect
             </Button>
           </Grid>

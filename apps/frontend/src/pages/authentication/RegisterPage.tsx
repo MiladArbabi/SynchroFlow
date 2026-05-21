@@ -75,11 +75,15 @@ export default function Register() {
                   </Link>
                 </Box>
                 <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                  <Typography gutterBottom variant={downMD ? 'h3' : 'h2'} sx={{ color: 'secondary.main', mb: 0 }}>
-                    Sign up
+                  {/* AUTH-004: target headline "Create your account. 60 seconds." */}
+                  <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
+                    Create your account.{' '}
+                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400 }}>
+                      60 seconds.
+                    </Box>
                   </Typography>
-                  <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' } }}>
-                    Enter your details to continue
+                  <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' }, color: 'var(--ink-3)' }}>
+                    You'll connect Shopify in the next step. We never store your password.
                   </Typography>
                 </Stack>
                 <Box>{AuthRegisterComponent && <AuthRegisterComponent posthog={posthog}/>}</Box>

@@ -80,12 +80,12 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
   const changePassword = (value: string) => {
     const temp = strengthIndicator(value);
     setStrength(temp);
-    //setLevel(strengthColor(temp));
+    // AUTH-010: wire strength label/color — strengthColor reads from _themes-vars.module.scss
+    setLevel(strengthColor(temp));
   };
 
   // Placeholder functions (replace or remove)
   /* const strengthIndicator = (value: string): number => value.length; // Simple length check
-  const strengthColor = (level: number): StrengthLevel => // Simple color logic
     level < 5 ? { color: 'error.main', label: 'Weak' } : { color: 'success.main', label: 'Strong' }; */
 
   useEffect(() => {
@@ -95,7 +95,8 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
   return (
     <>
       <Stack sx={{ mb: 2, alignItems: 'center' }}>
-        <Typography variant="subtitle1">Sign up with Email address </Typography>
+        {/* AUTH-008: divider label above email fields */}
+        <Typography variant="subtitle1" sx={{ color: 'var(--ink-3)' }}>Or use email</Typography>
       </Stack>
 
       <Formik
@@ -141,8 +142,9 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             });
 
             // --- ANALYTICS: signup success (NO PII) ---
-            if (response.data.id) {
-              const newUserId = response.data.id.toString();
+            // AUTH-019: backend returns { user: publicUser } — not flat { id }
+            if (response.data.user?.id) {
+              const newUserId = response.data.user.id.toString();
 
               emit('auth.signup.success', {
                 user_id: newUserId
@@ -228,7 +230,8 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
               </Grid>
             </Grid>
             <CustomFormControl fullWidth error={Boolean(touched.email && errors.email)}>
-              <InputLabel htmlFor="outlined-adornment-email-register">Email Address / Username</InputLabel>
+              {/* AUTH-008: "Work email" matches target A2 */}
+              <InputLabel htmlFor="outlined-adornment-email-register">Work email</InputLabel>
               <OutlinedInput
                 id="outlined-adornment-email-register"
                 type="email"
@@ -295,9 +298,14 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
               control={<Checkbox checked={checked} onChange={(event) => setChecked(event.target.checked)} name="checked" color="primary" />}
               label={
                 <Typography variant="subtitle1">
-                  Agree with &nbsp;
-                  <Typography variant="subtitle1" component={Link} to="#">
-                    Terms & Condition.
+                  {/* AUTH-011: split links matching target A2 */}
+                  I agree to the{' '}
+                  <Typography variant="subtitle1" component={Link} to="/terms" sx={{ color: 'var(--accent)' }}>
+                    Terms
+                  </Typography>
+                  {' '}and{' '}
+                  <Typography variant="subtitle1" component={Link} to="/privacy" sx={{ color: 'var(--accent)' }}>
+                    Privacy policy.
                   </Typography>
                 </Typography>
               }
@@ -310,8 +318,10 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
 
             <Box sx={{ mt: 2 }}>
               <AnimateButton>
-                <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained" color="secondary">
-                  Sign up
+                {/* THEME-001: LaSyncro accent CTA — never color="secondary" (MUI amber) */}
+                <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained"
+                  sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}>
+                  Continue →
                 </Button>
               </AnimateButton>
             </Box>

@@ -17,6 +17,7 @@ import { useRuntimeRoutes } from 'runtime/useRuntimeRoutes';
 import ThemeCustomization from './themes';
 import LoginPage from 'pages/authentication/LoginPage';
 import RegisterPage from 'pages/authentication/RegisterPage';
+import ForgotPasswordPage from 'pages/authentication/ForgotPasswordPage';
 
 import { ShopLifecycleShell } from 'lifecycle/ShopLifecycleShell';
 import { ShopLifecycleGate } from 'lifecycle/ShopLifecycleGate';
@@ -201,6 +202,8 @@ export default function App() {
         <Route element={<PublicAppShell />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          {/* AUTH-018: forgot-password is public — no auth required */}
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}
