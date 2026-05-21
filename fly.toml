@@ -21,4 +21,4 @@ primary_region = 'arn'
   cpus = 1
 
 [deploy]
-  release_command = "node apps/backend/dist/src/scripts/runMigrationsWithChecksum.js"
+  release_command = "node /app/apps/backend/migrate-prod.mjs"
