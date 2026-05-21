@@ -19,7 +19,8 @@
     "declarationMap": true,
     "incremental": true,
     "isolatedModules": false,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "src"

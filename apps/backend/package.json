@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "prebuild": "sh -c 'if [ \"$SKIP_DEPS\" = \"1\" ]; then echo \"Skipping build:deps (SKIP_DEPS=1)\"; else npm --prefix ../.. run build:deps; fi'",
-    "build": "tsc --project tsconfig.json && tsc --project tsconfig.migrations.json",
+    "build": "tsc --project tsconfig.json --incremental false",
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build && node ./scripts/node-start.js\"",
     "dev:worker": "nodemon --watch src --ext ts --exec \"npm run build && node dist/worker-entry.js\"",

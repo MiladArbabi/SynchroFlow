@@ -51,6 +51,7 @@
     "build": "rm -f tsconfig.tsbuildinfo && tsc --outDir dist --declaration"
   },
   "dependencies": {
-    "dotenv": "^16.6.1"
+    "dotenv": "^16.6.1",
+    "@shopify/shopify-api": "*"
   }
 }

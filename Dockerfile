@@ -10,8 +10,8 @@ FROM base as build
 RUN apt-get update -qq && \
     apt-get install -y python-is-python3 pkg-config build-essential libpqxx-dev
 COPY --link . .
-RUN npm install --ignore-scripts
-RUN npx tsc -p modules/shared/tsconfig.build.json
+RUN npm install
+RUN npm install -g typescript@5.5.2
 RUN SKIP_DEPS=1 npm --workspace ./apps/backend run build
 
 FROM base

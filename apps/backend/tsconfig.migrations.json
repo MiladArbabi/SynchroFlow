@@ -9,7 +9,9 @@
     "rootDir": ".",
     "outDir": "./dist",
     "sourceMap": true,
-    "declaration": false
+    "declaration": false,
+    "noEmitOnError": false,
+    "ignoreDeprecations": "5.0"
   },
   "include": [
     "migrations/**/*.ts",
