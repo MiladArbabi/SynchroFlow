@@ -18,7 +18,8 @@
     "declaration": true,
     "declarationMap": true,
     "incremental": true,
-    "isolatedModules": false
+    "isolatedModules": false,
+    "noEmitOnError": false
   },
   "include": [
     "src"
