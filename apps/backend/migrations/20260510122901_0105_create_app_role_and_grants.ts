@@ -32,7 +32,9 @@ export async function up(knex: Knex): Promise<void> {
     $$;
   `);
 
-  await knex.raw(`GRANT CONNECT ON DATABASE synchroflow TO sf_app`);
+  const { rows } = await knex.raw(`SELECT current_database() as db`);
+  const dbName = rows[0].db;
+  await knex.raw(`GRANT CONNECT ON DATABASE "${dbName}" TO sf_app`);
   await knex.raw(`GRANT USAGE ON SCHEMA public TO sf_app`);
   await knex.raw(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sf_app`);
   await knex.raw(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sf_app`);
@@ -41,7 +43,7 @@ export async function up(knex: Knex): Promise<void> {
 
   // Register app.current_tenant GUC at database level
   // Required so sf_app (non-superuser) can SET/SHOW this parameter
-  await knex.raw(`ALTER DATABASE synchroflow SET app.current_tenant = '0'`);
+  await knex.raw(`ALTER DATABASE "${dbName}" SET app.current_tenant = '0'`);
 }
 
 export async function down(knex: Knex): Promise<void> {
@@ -49,5 +51,6 @@ export async function down(knex: Knex): Promise<void> {
   await knex.raw(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM sf_app`);
   await knex.raw(`REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM sf_app`);
   await knex.raw(`REVOKE USAGE ON SCHEMA public FROM sf_app`);
-  await knex.raw(`REVOKE CONNECT ON DATABASE synchroflow_db FROM sf_app`);
+  const { rows } = await knex.raw(`SELECT current_database() as db`);
+  await knex.raw(`REVOKE CONNECT ON DATABASE "${rows[0].db}" FROM sf_app`);
 }
