@@ -89,14 +89,14 @@ export function SocialProofTicker() {
         borderTop: '1px solid var(--rule)',
         bgcolor: 'var(--bg)',
         zIndex: 10,
-        py: 1.25,
+        py: 1,
       }}
     >
       <Box
         sx={{
           display: 'flex',
           width: 'max-content',
-          animation: `${scroll} 32s linear infinite`,
+          animation: `${scroll} 50s linear infinite`,
           '&:hover': { animationPlayState: 'paused' },
         }}
       >

@@ -34,6 +34,7 @@ import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
 // assets
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
+import OAuthButtons from '../OAuthButtons';
 
 // ===============================|| ERROR HANDLER ||=============================== //
 
@@ -210,7 +211,9 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
         touched: any;
         values: LoginFormValues;
       }) => (
-        <form noValidate onSubmit={handleSubmit} {...others}>
+        <>
+          <OAuthButtons mode="login" />
+          <form noValidate onSubmit={handleSubmit} {...others}>
           {/* Email Input */}
           <CustomFormControl fullWidth error={Boolean(touched.email && errors.email)}>
             {/* AUTH-009: "Email address" matches target A1 */}
@@ -303,6 +306,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             </AnimateButton>
           </Box>
         </form>
+        </>
       )}
     </Formik>
   );
