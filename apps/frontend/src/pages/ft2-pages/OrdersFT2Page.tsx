@@ -78,7 +78,7 @@ export default function OrdersFT2Page() {
    * allowing visualization of historical operational projections.
    */
   const decision = snapshotQuery.data.decision;
-  const operationalControl = snapshotQuery.data.operationalControl;
+  const operationalControl = snapshotQuery.data.operationalControl!;
 
   const headerProps = mapOrdersFt2Props(
     snapshotQuery.data,

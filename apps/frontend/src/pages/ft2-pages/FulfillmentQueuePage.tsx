@@ -22,8 +22,8 @@ import type { PickBatch, PickBatchLineItem } from '../wms/usePickBatches';
 
 
 // Batch sequential display number — derived from released_at sort order
-const batchDisplayId = (batch: PickBatch, index: number): string =>
-  `#${String(index + 1).padStart(5, '0')}`;
+const batchDisplayId = (batch: PickBatch): string =>
+  `#${batch.pick_batch_id.slice(0, 8).toUpperCase()}`;
 
 const formatTime = (iso: string | null): string => {
   if (!iso) return '—';
@@ -148,7 +148,7 @@ function BatchLineItemsPanel({ batchId }: { batchId: string }) {
 
 // ─── BATCH ROW ────────────────────────────────────────────────────────────────
 
-function BatchRow({ batch, index }: { batch: PickBatch; index: number }) {
+function BatchRow({ batch }: { batch: PickBatch }) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(false);
 
@@ -185,7 +185,7 @@ function BatchRow({ batch, index }: { batch: PickBatch; index: number }) {
 
         {/* Batch ID */}
         <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'monospace' }}>
-          {batchDisplayId(batch, index)}
+          {batchDisplayId(batch)}
         </Typography>
 
         {/* Assignee */}
@@ -360,16 +360,30 @@ export default function FulfillmentQueuePage() {
 
           {/* Empty */}
           {!isLoading && batches.length === 0 && (
-            <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
+            <Box sx={{ px: 3, py: 6, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
               <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>
                 No active batches — release a batch from the order pool to get started.
               </Typography>
+              <Box
+                component="a"
+                href="/orders/pool"
+                sx={{
+                  display: 'inline-flex', alignItems: 'center', gap: 0.75,
+                  px: 2, py: 1, borderRadius: '8px',
+                  bgcolor: 'var(--accent)', color: '#fff',
+                  fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                  '&:hover': { opacity: 0.9 },
+                  transition: 'opacity 0.15s',
+                }}
+              >
+                Go to Release Queue →
+              </Box>
             </Box>
           )}
 
           {/* Batch rows */}
-          {batches.map((batch, i) => (
-            <BatchRow key={batch.pick_batch_id} batch={batch} index={i} />
+          {batches.map((batch) => (
+            <BatchRow key={batch.pick_batch_id} batch={batch} />
           ))}
         </Box>
 

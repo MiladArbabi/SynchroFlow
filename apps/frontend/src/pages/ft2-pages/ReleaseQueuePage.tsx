@@ -3,8 +3,7 @@ import { useState, useCallback, useMemo } from 'react';
 import {
   Box, Typography, Checkbox, Button, CircularProgress,
   Alert, Chip, Dialog, DialogTitle, DialogContent,
-  DialogActions, MenuItem, Select, FormControl,
-  InputLabel, LinearProgress,
+  DialogActions, MenuItem, Select, FormControl, LinearProgress,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useTheme } from '@mui/material/styles';
@@ -264,7 +263,8 @@ export default function ReleaseQueuePage() {
                   '&:last-child': { borderBottom: 'none' },
                 }}
               >
-                <Checkbox size="small" sx={{ p: 0 }} checked={isSelected} onChange={() => {}} onClick={e => e.stopPropagation()} />
+
+                <Checkbox size="small" sx={{ p: 0 }} checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleSelect(order.lasyncro_order_id); }} onClick={e => e.stopPropagation()} />
 
                 {/* Priority flag */}
                 <Box onClick={e => { e.stopPropagation(); setPriority.mutate({ orderId: order.lasyncro_order_id, flagged: !order.is_priority_flagged }); }}>
@@ -348,13 +348,19 @@ export default function ReleaseQueuePage() {
               </Typography>
             </Box>
             <FormControl size="small" fullWidth>
-              <InputLabel sx={{ fontSize: 13 }}>Assign operator (optional)</InputLabel>
               <Select
                 value={operatorId}
                 onChange={e => setOperatorId(e.target.value)}
                 label="Assign operator (optional)"
+                displayEmpty
+                renderValue={(val) => val === ''
+                  ? <em style={{ color: 'var(--ink-3)' }}>Dispatch to all</em>
+                  : (() => {
+                      const op = operators.find(o => String(o.user_id) === val);
+                      return op ? `${op.first_name} ${op.last_name}${op.role === 'owner' ? ' (you)' : ''}` : val;
+                    })()
+                }
               >
-
                 <MenuItem value=""><em>Dispatch to all</em></MenuItem>
                 {operators.map(op => (
                   <MenuItem key={op.user_id} value={String(op.user_id)}>

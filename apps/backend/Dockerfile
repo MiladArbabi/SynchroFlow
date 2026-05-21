@@ -1,16 +1,12 @@
 FROM node:20.19.5-slim
-
 WORKDIR /app
-
 COPY package*.json ./
+COPY package-lock.json ./
 COPY tsconfig.json ./
-COPY knexfile.ts ./
+COPY knexfile.cjs ./
 COPY src/ ./src/
-
-RUN npm ci
+RUN npm install
 RUN npm run build
-RUN npm ci --only=production
-
+RUN npm prune --production
 EXPOSE 8080
-
 CMD ["node", "dist/src/server.js"]

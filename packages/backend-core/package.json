@@ -49,5 +49,8 @@
   "files": ["dist"],
   "scripts": {
     "build": "rm -f tsconfig.tsbuildinfo && tsc --outDir dist --declaration"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1"
   }
 }

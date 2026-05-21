@@ -1,6 +1,11 @@
-*
-!apps/backend/**
-!apps/backend/package.json
-!apps/backend/tsconfig.json
-!apps/backend/knexfile.ts
-!apps/backend/dist/**
+node_modules
+.git
+.claude
+apps/frontend
+apps/marketing
+apps/mobile
+apps/integration-service
+*.md
+.env*
+apps/backend/src
+apps/backend/node_modules

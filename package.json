@@ -14,7 +14,7 @@
     "build:backend": "npm run build:deps && npm --workspace ./apps/backend run build",
     "build:modules": "npm --workspace modules/customers run build && npm --workspace modules/finances run build && npm --workspace modules/order-nexus run build && npm --workspace modules/products run build && npm --workspace modules/overview run build && npm --workspace modules/alerts run build && npm --workspace modules/cashflow run build && npm --workspace modules/fulfillment run build && npm --workspace modules/returns run build && npm --workspace ./modules/problem-center run build",
     "build:apps": "npm --workspace ui run build && npm --workspace api run build",
-    "start": "node apps/backend/dist/src/server.js",
+    "start": "node apps/backend/dist/server.js",
     "dev": "concurrently --prefix-colors \"cyan,yellow,green\" -p \"[{name}]\" \"npm:dev-api\" \"npm:dev-worker\" \"npm:dev-ui\"",
     "dev-worker": "wait-on tcp:5432 && SKIP_DEPS=1 npm run dev:worker --workspace=api",
     "dev-api": "wait-on tcp:5432 && npm run dev --workspace=api",
@@ -32,8 +32,7 @@
     "test": "npm run test:setup && jest --runInBand --verbose --forceExit",
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
-    "storybook": "npm run storybook -w ui",
-    "postinstall": "npm run build -w @lasyncro/products"
+    "storybook": "npm run storybook -w ui"
   },
   "keywords": [],
   "author": "",

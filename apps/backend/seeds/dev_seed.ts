@@ -517,6 +517,13 @@ export async function seed(knex: Knex): Promise<void> {
     // Note: app.current_tenant intentionally NOT reset here — subsequent inserts (inventory_truth etc) require it
     console.log('[DEV_SEED] ✅ Warehouse locations seeded (full_data reset)');
 
+    // WMS settings — upsert here since full_data runs with correct SET LOCAL context
+    await trx('shop_wms_settings')
+      .insert({ shop_id: shop.id })
+      .onConflict('shop_id')
+      .ignore();
+    console.log('[DEV_SEED] ✅ WMS settings seeded');
+
     // ── PRODUCTS + VARIANTS ──────────────────────────────────────────────────
     // Trust needs: products.updated_at non-null, variants with clean SKUs
     const now = new Date();

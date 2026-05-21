@@ -2,7 +2,7 @@ app = 'synchroflow'
 primary_region = 'arn'
 
 [build]
-  dockerfile = "apps/backend/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   PORT = '8080'
