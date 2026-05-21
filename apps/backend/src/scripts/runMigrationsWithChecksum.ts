@@ -20,7 +20,8 @@ import { execSync } from 'child_process';
  * - DB state matches codebase exactly
  */
 
-const db = knex(knexConfig.development);
+const env = process.env.NODE_ENV || 'development';
+const db = knex(knexConfig[env]);
 
 // Resolve dist/migrations relative to compiled script location (context-independent)
 const SCRIPT_DIR = path.dirname(new URL(import.meta.url).pathname);

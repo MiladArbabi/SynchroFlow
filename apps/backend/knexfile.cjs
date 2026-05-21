@@ -25,5 +25,14 @@ module.exports = {
       directory: path.join(__dirname, './dist/seeds'),
       extension: 'js',
     }
+  },
+  production: {
+    client: 'pg',
+    connection: process.env.DATABASE_URL,
+    migrations: {
+      tableName: 'knex_migrations',
+      directory: path.join(__dirname, './dist/migrations'),
+      extension: 'js',
+    },
   }
 };
