@@ -24,7 +24,7 @@ import LoginProvider from './LoginProvider'; // <-- USE ALIAS
 import Logo from 'ui-component/Logo'; // <-- USE ALIAS
 import AuthFooter from 'ui-component/cards/AuthFooter';
 
-// import useAuth from 'hooks/useAuth'; // <-- COMMENT OUT
+import { useAuth } from 'contexts/AuthContext';
 // import { 'jwt' } from 'config'; // <-- COMMENT OUT
 
 // A mapping of auth types to dynamic imports
@@ -42,8 +42,8 @@ interface AuthRegisterProps {
 
 export default function Register() {
   const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md')); // <-- Add Theme type
-  // const { isLoggedIn } = useAuth(); // <-- COMMENT OUT
-  const isLoggedIn = false; // <-- Placeholder
+  // AUTH-017: wire real auth state — redirects already-logged-in users away from /register
+  const { isLoggedIn } = useAuth();
   const [AuthRegisterComponent, setAuthRegisterComponent] = useState<React.ComponentType<AuthRegisterProps> | null>(null);
   
   const [searchParams] = useSearchParams();
@@ -91,7 +91,7 @@ export default function Register() {
                 <Stack sx={{ alignItems: 'center' }}>
                   <Typography
                     component={Link}
-                    to={isLoggedIn ? '/pages/login/login3' : authParam ? `/login?auth=${authParam}` : '/login'}
+                    to={authParam ? `/login?auth=${authParam}` : '/login'}
                     variant="subtitle1"
                     sx={{ textDecoration: 'none' }}
                   >

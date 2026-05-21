@@ -23,8 +23,8 @@ import LoginProvider from './LoginProvider'; // <-- USE ALIAS
 
 import Logo from 'ui-component/Logo'; // <-- USE ALIAS (Assuming correct)
 import AuthFooter from 'ui-component/cards/AuthFooter';
+import { useAuth } from '../../contexts/AuthContext';
 
-// import useAuth from 'hooks/useAuth'; // <-- COMMENT OUT for now
 // import { APP_AUTH } from 'config';
 
 // A mapping of auth types to dynamic imports
@@ -43,8 +43,8 @@ interface AuthLoginProps {
 // ================================|| AUTH3 - LOGIN ||================================ //
 
 export default function Login() {
-  // const { isLoggedIn } = useAuth(); // <-- COMMENT OUT for now
-  const isLoggedIn = false; 
+  // AUTH-017: wire real auth state — redirects already-logged-in users away from /login
+  const { isLoggedIn } = useAuth();
   const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md')); // <-- Add Theme type
   const [AuthLoginComponent, setAuthLoginComponent] = useState<React.ComponentType<AuthLoginProps> | null>(null);
   

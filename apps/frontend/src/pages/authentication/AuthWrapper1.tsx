@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // material-ui
 import { styled, Theme } from '@mui/material/styles';
 
