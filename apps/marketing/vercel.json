@@ -34,7 +34,10 @@
     {
       "source": "/features/:slug*",
       "destination": "/features/:slug*"
-    }
+    },
+    { "source": "/pricing", "destination": "/pricing" },
+    { "source": "/faq", "destination": "/faq" },
+    { "source": "/getting-started", "destination": "/getting-started" }
   ],
   "headers": [
     {

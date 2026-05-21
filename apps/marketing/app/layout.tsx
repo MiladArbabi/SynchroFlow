@@ -108,6 +108,7 @@ function Nav() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
         <Link href="/blog" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Blog</Link>
         <Link href="/compare" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Compare</Link>
+        <Link href="/pricing" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pricing</Link>
         <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
         <a
           href="https://lasyncro.com/#waitlist"
@@ -147,6 +148,7 @@ function Footer() {
         <a href="https://lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Home</a>
         <Link href="/blog" style={{ color: '#6B7280', textDecoration: 'none' }}>Blog</Link>
         <Link href="/compare" style={{ color: '#6B7280', textDecoration: 'none' }}>Compare</Link>
+        <Link href="/pricing" style={{ color: '#6B7280', textDecoration: 'none' }}>Pricing</Link>
         <Link href="/about" style={{ color: '#6B7280', textDecoration: 'none' }}>About</Link>
         <a href="mailto:contact@lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Contact</a>
       </div>
