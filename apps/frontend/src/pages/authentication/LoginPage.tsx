@@ -16,11 +16,8 @@ import { usePostHog } from 'posthog-js/react';
 import { PostHog } from 'posthog-js';
 
 // project imports
-import AuthWrapper1 from './AuthWrapper1'; // <-- USE ALIAS
-import AuthCardWrapper from './AuthCardWrapper'; // <-- USE ALIAS
-import LoginProvider from './LoginProvider'; // <-- USE ALIAS
-
-import { useAuth } from '../../contexts/AuthContext';
+import AuthWrapper1 from './AuthWrapper1'; 
+import AuthCardWrapper from './AuthCardWrapper'; 
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 
 // import { APP_AUTH } from 'config';
@@ -42,7 +39,6 @@ interface AuthLoginProps {
 
 export default function Login() {
   // AUTH-017: wire real auth state — redirects already-logged-in users away from /login
-  const { isLoggedIn } = useAuth();
   const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md')); // <-- Add Theme type
   const [AuthLoginComponent, setAuthLoginComponent] = useState<React.ComponentType<AuthLoginProps> | null>(null);
   
@@ -108,7 +104,7 @@ export default function Login() {
                     Enter your credentials to continue
                   </Typography>
                 </Stack>
-                <Box sx={{ width: 1, minHeight: 250, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Box sx={{ width: 1 }}>
                   {AuthLoginComponent ? (
                     <AuthLoginComponent posthog={posthog} />
                   ) : (
@@ -131,17 +127,6 @@ export default function Login() {
                 </Stack>
               </Stack>
             </AuthCardWrapper>
-            {!isLoggedIn && (
-              <Box
-                sx={{
-                  maxWidth: { xs: 400, lg: 475 },
-                  margin: { xs: 2.5, md: 3 },
-                  '& > *': { flexGrow: 1, flexBasis: '50%' }
-                }}
-              >
-                <LoginProvider currentLoginWith={'jwt'} />
-              </Box>
-            )}
           </Box>
         </Stack>
       </Stack>

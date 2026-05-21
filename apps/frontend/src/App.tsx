@@ -27,6 +27,7 @@ import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 
 import AppLayout from 'layouts/AppLayout';
 import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
+import ConnectStorePage from 'pages/authentication/ConnectStorePage';
 
 const queryClient = new QueryClient();
 
@@ -204,6 +205,8 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           {/* AUTH-018: forgot-password is public — no auth required */}
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          {/* AUTH-005/006: A3 connect-store step — auth-protected post-registration */}
+          <Route path="/connect-store" element={<ConnectStorePage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}

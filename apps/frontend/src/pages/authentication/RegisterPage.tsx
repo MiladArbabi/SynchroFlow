@@ -16,9 +16,8 @@ import { usePostHog } from 'posthog-js/react';
 import posthog, { PostHog } from 'posthog-js';
 
 // project imports
-import AuthWrapper1 from './AuthWrapper1'; // <-- USE ALIAS
-import AuthCardWrapper from './AuthCardWrapper'; // <-- USE ALIAS
-import LoginProvider from './LoginProvider'; // <-- USE ALIAS
+import AuthWrapper1 from './AuthWrapper1'; 
+import AuthCardWrapper from './AuthCardWrapper'; 
 
 import { useAuth } from 'contexts/AuthContext';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
@@ -92,8 +91,26 @@ export default function Register() {
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
             <AuthCardWrapper>
               <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+
+                {/* AUTH-005: step 1 of 2 stepper — matches target A2 */}
+                <Stack direction="row" alignItems="center" spacing={1.5} sx={{ width: '100%' }}>
+                  <Stack direction="row" alignItems="center" spacing={0.75}>
+                    <Box sx={{ width: 22, height: 22, borderRadius: '50%', border: '2px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography sx={{ color: 'var(--accent)', fontSize: '0.7rem', fontWeight: 700 }}>1</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: 'var(--ink)', fontWeight: 600 }}>Account</Typography>
+                  </Stack>
+                  <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--rule-2)' }} />
+                  <Stack direction="row" alignItems="center" spacing={0.75}>
+                    <Box sx={{ width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--rule-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Typography sx={{ color: 'var(--ink-4)', fontSize: '0.7rem', fontWeight: 500 }}>2</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500 }}>Connect store</Typography>
+                  </Stack>
+                </Stack>
+
                 <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                  {/* AUTH-004: target headline "Create your account. 60 seconds." */}
+                  {/* AUTH-004: target headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
                     Create your account.{' '}
                     {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
@@ -119,20 +136,6 @@ export default function Register() {
                 </Stack>
               </Stack>
             </AuthCardWrapper>
-            {!isLoggedIn && (
-              <Box
-                sx={{
-                  maxWidth: { xs: 400, lg: 475 },
-                  margin: { xs: 2.5, md: 3 },
-                  '& > *': {
-                    flexGrow: 1,
-                    flexBasis: '50%'
-                  }
-                }}
-              >
-                <LoginProvider currentLoginWith={'jwt'} />
-              </Box>
-            )}
           </Box>
         </Stack>
       </Stack>

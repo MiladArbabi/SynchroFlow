@@ -38,6 +38,9 @@ import { strengthColor, strengthIndicator } from 'utils/password-strength'; // A
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
+// auth
+import { useAuth } from '../../../contexts/AuthContext';
+
 // ===========================|| JWT - REGISTER ||=========================== //
 
 // Define props interface
@@ -68,6 +71,9 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
 
   const [strength, setStrength] = useState(0);
   const [level, setLevel] = useState<StringColorProps>();
+
+  const navigate = useNavigate();
+  const auth = useAuth();
 
   const handleClickShowPassword = () => {
     setShowPassword(!showPassword);
@@ -151,14 +157,18 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
               });
             }
  
-           // --- SUCCESS: Registration completed ---
-            // Registration does NOT authenticate the user.
-            // Force clean transition to login.
+           // AUTH-006: auto-login after registration — backend now returns accessToken.
+            // Navigate to connect-store step without requiring a second login.
+            if (response.data.accessToken && response.data.user) {
+              auth.login(response.data.user, response.data.accessToken);
+              localStorage.setItem('user', JSON.stringify(response.data.user));
+            }
+
             setStatus({ success: true });
             setSubmitting(false);
 
-            // Full reload ensures no app bootstrap runs without auth
-            window.location.href = '/login';
+            // Proceed to A3 connect-store step
+            navigate('/connect-store');
 
           } catch (err: any) { // <-- Add Type
             console.error("Register error:", err); // <-- Temporary log
