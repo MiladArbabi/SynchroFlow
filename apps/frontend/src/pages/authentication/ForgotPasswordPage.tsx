@@ -31,6 +31,29 @@ export default function ForgotPasswordPage() {
   return (
     <AuthWrapper1>
       <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+        {/* AUTH-012: top-left logo nav bar — matches target A4 */}
+        <Box
+          sx={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            px: 3,
+            py: 2,
+            display: 'flex',
+            alignItems: 'center',
+            zIndex: 10,
+          }}
+        >
+          <Link to="/" aria-label="LaSyncro home">
+            <Box
+              component="img"
+              src="/logo-dark.png"
+              alt="LaSyncro"
+              sx={{ height: 28, width: 'auto' }}
+            />
+          </Link>
+        </Box>
         <Box sx={{ m: { xs: 1, sm: 3 } }}>
           <AuthCardWrapper>
             <Stack spacing={2}>

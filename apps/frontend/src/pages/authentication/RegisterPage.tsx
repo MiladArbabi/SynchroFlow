@@ -20,8 +20,6 @@ import AuthWrapper1 from './AuthWrapper1'; // <-- USE ALIAS
 import AuthCardWrapper from './AuthCardWrapper'; // <-- USE ALIAS
 import LoginProvider from './LoginProvider'; // <-- USE ALIAS
 // import ViewOnlyAlert from 'pages/authentication/ViewOnlyAlert';
-
-import Logo from 'ui-component/Logo'; // <-- USE ALIAS
 import AuthFooter from 'ui-component/cards/AuthFooter';
 
 import { useAuth } from 'contexts/AuthContext';
@@ -65,20 +63,38 @@ export default function Register() {
     <AuthWrapper1>
       <Stack sx={{ justifyContent: 'flex-end', minHeight: '100vh' }}>
         <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 68px)' }}>
+          {/* AUTH-012: top-left logo nav bar — matches target A2 */}
+          <Box
+            sx={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              px: 3,
+              py: 2,
+              display: 'flex',
+              alignItems: 'center',
+              zIndex: 10,
+            }}
+          >
+            <Link to="/" aria-label="LaSyncro home">
+              <Box
+                component="img"
+                src="/logo-dark.png"
+                alt="LaSyncro"
+                sx={{ height: 28, width: 'auto' }}
+              />
+            </Link>
+          </Box>
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
-            {/* {!isLoggedIn && <ViewOnlyAlert />} */}
             <AuthCardWrapper>
               <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                <Box sx={{ mb: 3 }}>
-                  <Link to="#" aria-label="theme logo">
-                    <Logo />
-                  </Link>
-                </Box>
                 <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
                   {/* AUTH-004: target headline "Create your account. 60 seconds." */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
                     Create your account.{' '}
-                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400 }}>
+                    {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
+                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400, fontFamily: '"DM Serif Display", Georgia, serif' }}>
                       60 seconds.
                     </Box>
                   </Typography>
