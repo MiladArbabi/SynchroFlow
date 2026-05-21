@@ -10,6 +10,10 @@ const db = knex({
   },
 });
 
+// Clear stale migration history from old schema
+await db.schema.dropTableIfExists('knex_migrations');
+await db.schema.dropTableIfExists('knex_migrations_lock');
+
 db.migrate.latest()
   .then(([batch, log]) => {
     console.log('Migrations complete', { batch, log });
