@@ -32,7 +32,7 @@ export async function up(knex: Knex): Promise<void> {
     $$;
   `);
 
-  await knex.raw(`GRANT CONNECT ON DATABASE synchroflow_db TO sf_app`);
+  await knex.raw(`GRANT CONNECT ON DATABASE synchroflow TO sf_app`);
   await knex.raw(`GRANT USAGE ON SCHEMA public TO sf_app`);
   await knex.raw(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sf_app`);
   await knex.raw(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sf_app`);
@@ -41,7 +41,7 @@ export async function up(knex: Knex): Promise<void> {
 
   // Register app.current_tenant GUC at database level
   // Required so sf_app (non-superuser) can SET/SHOW this parameter
-  await knex.raw(`ALTER DATABASE synchroflow_db SET app.current_tenant = '0'`);
+  await knex.raw(`ALTER DATABASE synchroflow SET app.current_tenant = '0'`);
 }
 
 export async function down(knex: Knex): Promise<void> {
