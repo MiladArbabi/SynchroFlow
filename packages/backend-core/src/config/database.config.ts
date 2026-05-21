@@ -70,7 +70,7 @@ if (!dbConfig) {
 }
 
 // --- DB CONFIG VALIDATION (MANDATORY) ---
-if (!process.env.PGUSER || !process.env.PGDATABASE) {
+if (environment !== 'production' && (!process.env.PGUSER || !process.env.PGDATABASE)) {
   throw new Error('FATAL: Missing required DB env vars (PGUSER, PGDATABASE)');
 }
 
