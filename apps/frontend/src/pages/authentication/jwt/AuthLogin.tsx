@@ -36,6 +36,9 @@ import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 import OAuthButtons from '../OAuthButtons';
 
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
+
 // ===============================|| ERROR HANDLER ||=============================== //
 
 /**
@@ -219,13 +222,19 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             {/* AUTH-009: "Email address" matches target A1 */}
             <InputLabel htmlFor="outlined-adornment-email-login">Email address</InputLabel>
             <OutlinedInput
-              id="outlined-adornment-email-login"
-              type="email"
-              value={values.email}
-              name="email"
-              onBlur={handleBlur}
-              onChange={handleChange}
-            />
+                id="outlined-adornment-email-login"
+                type="email"
+                value={values.email}
+                name="email"
+                onBlur={handleBlur}
+                onChange={handleChange}
+                label="Email address"
+                startAdornment={
+                  <InputAdornment position="start">
+                    <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
+                  </InputAdornment>
+                }
+              />
             {touched.email && errors.email && (
               <FormHelperText error id="standard-weight-helper-text-email-login">
                 {errors.email}
@@ -243,6 +252,12 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
               name="password"
               onBlur={handleBlur}
               onChange={handleChange}
+              label="Password"
+              startAdornment={
+                <InputAdornment position="start">
+                  <LockOutlinedIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
+                </InputAdornment>
+              }
               endAdornment={
                 <InputAdornment position="end">
                   <IconButton
@@ -256,7 +271,6 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
                   </IconButton>
                 </InputAdornment>
               }
-              label="Password"
             />
             {touched.password && errors.password && (
               <FormHelperText error id="standard-weight-helper-text-password-login">

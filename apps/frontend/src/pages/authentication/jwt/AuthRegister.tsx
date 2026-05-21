@@ -40,6 +40,8 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
 // auth
 import { useAuth } from '../../../contexts/AuthContext';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 // ===========================|| JWT - REGISTER ||=========================== //
 
@@ -249,6 +251,12 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                 name="email"
                 onBlur={handleBlur}
                 onChange={handleChange}
+                label="Work email"
+                startAdornment={
+                  <InputAdornment position="start">
+                    <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
+                  </InputAdornment>
+                }
               />
               {touched.email && errors.email && (
                 <FormHelperText error id="standard-weight-helper-text--register">
@@ -266,6 +274,11 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                 name="password"
                 label="Password"
                 onBlur={handleBlur}
+                startAdornment={
+                  <InputAdornment position="start">
+                    <LockOutlinedIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
+                  </InputAdornment>
+                }
                 onChange={(e) => {
                   handleChange(e);
                   changePassword(e.target.value);
@@ -310,11 +323,11 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                 <Typography variant="subtitle1">
                   {/* AUTH-011: split links matching target A2 */}
                   I agree to the{' '}
-                  <Typography variant="subtitle1" component={Link} to="/terms" sx={{ color: 'var(--accent)' }}>
+                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/terms" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent)', textDecoration: 'none' }}>
                     Terms
                   </Typography>
                   {' '}and{' '}
-                  <Typography variant="subtitle1" component={Link} to="/privacy" sx={{ color: 'var(--accent)' }}>
+                  <Typography variant="subtitle1" component="a" href="https://www.lasyncro.com/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: 'var(--accent)', textDecoration: 'none' }}>
                     Privacy policy.
                   </Typography>
                 </Typography>

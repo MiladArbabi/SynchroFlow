@@ -125,6 +125,7 @@ export default function ForgotPasswordPage() {
                           name="email"
                           onBlur={handleBlur}
                           onChange={handleChange}
+                          label="Email address"
                           startAdornment={
                             <InputAdornment position="start">
                               <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
