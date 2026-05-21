@@ -1,6 +1,6 @@
 // apps/backend/src/api/auth/auth.controller.ts
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemDb } from '@lasyncro/backend-core/db.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
@@ -37,11 +37,9 @@ export const registerUser = async (req: Request, res: Response) => {
     // --- Hash the password ---
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    const newUser = await db.transaction<User>(async trx => {
-    // Registration is a pre-tenant system operation — RLS bypassed for this transaction only.
-    // sf_app cannot bypass RLS globally, so we use SET LOCAL row_security = off scoped to this transaction.
-    // This is safe because registration has no tenant context to enforce yet.
-    await trx.raw(`SET LOCAL row_security = off`);
+    // AUTH-006: registration is pre-tenant — uses systemDb (sf_user, BYPASSRLS=true)
+    // sf_app cannot bypass RLS; SET LOCAL row_security = off has no effect for non-superusers.
+    const { user: newUser, shopId } = await systemDb.transaction<{ user: User; shopId: number }>(async trx => {
     
     // 1️⃣ Create shop
     const [newShop] = await trx('shops')
@@ -125,13 +123,34 @@ export const registerUser = async (req: Request, res: Response) => {
       trialEndsAt,
     });
 
-    return createdUser;
+    // AUTH-006: return shopId so we can issue tokens without a second DB lookup
+    return { user: createdUser, shopId: newShop.id };
   });
 
     const { password_hash, ...publicUser } = newUser;
-    
+
+    // AUTH-006: issue tokens immediately after registration so frontend
+    // can auto-login and proceed to connect-store step without a second login call.
+    const { accessToken, refreshToken: newRefreshToken } = await issueAuthTokens({
+      userId: newUser.id,
+      shopId,
+      actorType: 'shop_user',
+      authProvider: 'password',
+      shopRoles: ['owner'],
+      scopes: [],
+      tokenVersion: 1,
+    });
+
+    res.cookie('refreshToken', newRefreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     res.status(201).json({
-      user: publicUser
+      user: publicUser,
+      accessToken,
     });
 
   } catch (error) {
