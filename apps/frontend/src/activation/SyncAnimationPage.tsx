@@ -28,7 +28,6 @@ const ACCENT_HOVER  = '#FF8C5A';
 const ACCENT_GHOST  = 'rgba(255,107,43,0.10)';
 const ACCENT_BORDER = 'rgba(255,107,43,0.25)';
 const GREEN         = '#22C55E';
-const GREEN_GHOST   = 'rgba(34,197,94,0.10)';
 
 // ─── Theme palette ────────────────────────────────────────────────────────────
 
@@ -66,46 +65,6 @@ const STEPS: StepDef[] = [
   { label: 'Calculating margin per order', detail: 'Risk-scoring delays · projecting restock needs' },
   { label: 'Building your Morning Brief', detail: 'Prioritising what needs your attention first' },
 ];
-
-// ─── SkeletonLine ─────────────────────────────────────────────────────────────
-
-const SkeletonLine: React.FC<{ width: string; height?: number; pal: ReturnType<typeof useSyncTheme> }> = ({ width, height = 10, pal }) => (
-  <Box sx={{
-    width, height,
-    borderRadius: 1,
-    bgcolor: pal.cardBorder,
-    '@keyframes shimmer': {
-      '0%':   { opacity: 0.4 },
-      '50%':  { opacity: 0.8 },
-      '100%': { opacity: 0.4 },
-    },
-    animation: 'shimmer 1.8s ease-in-out infinite',
-  }} />
-);
-
-// ─── BriefCard ────────────────────────────────────────────────────────────────
-
-const BriefCard: React.FC<{ index: number; pal: ReturnType<typeof useSyncTheme> }> = ({ index, pal }) => (
-  <Box sx={{
-    p: 2,
-    borderRadius: 2,
-    border: `1px solid ${pal.cardBorder}`,
-    bgcolor: pal.cardBg,
-    opacity: 1,
-    transform: 'translateY(0)',
-    animation: `fadeInCard 0.5s ease ${index * 0.15}s both`,
-    '@keyframes fadeInCard': {
-      from: { opacity: 0, transform: 'translateY(8px)' },
-      to:   { opacity: 1, transform: 'translateY(0)' },
-    },
-  }}>
-    <Stack spacing={1}>
-      <SkeletonLine width="55%" height={9} pal={pal} />
-      <SkeletonLine width="80%" height={13} pal={pal} />
-      <SkeletonLine width="65%" height={9} pal={pal} />
-    </Stack>
-  </Box>
-);
 
 // ─── StepItem ─────────────────────────────────────────────────────────────────
 
@@ -241,8 +200,6 @@ const SyncAnimationPage: React.FC = () => {
   if (progress?.current && progress.current > 0) peakVariantsRef.current = Math.max(peakVariantsRef.current, progress.current);
   if (polledCounts.orders > 0) peakOrdersRef.current = Math.max(peakOrdersRef.current, polledCounts.orders);
 
-  const isCompleted = status === 'COMPLETED';
-
   // explicit failure state
   if (isError) {
     return (
@@ -295,11 +252,11 @@ const SyncAnimationPage: React.FC = () => {
         </Box>
       </Box>
 
-      {/* ── Two-column body ───────────────────────────────────────────── */}
+      {/* ── Body ─────────────────────────────────────────────────────── */}
       <Box sx={{
         flex: 1,
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: '400px 1fr' },
+        gridTemplateColumns: { xs: '1fr' },
         gap: 0,
         maxWidth: 1100,
         mx: 'auto',
@@ -378,64 +335,6 @@ const SyncAnimationPage: React.FC = () => {
               }} />
             </Box>
           </Box>
-        </Box>
-
-        {/* ── RIGHT PANEL ─────────────────────────────────────────────── */}
-        <Box sx={{
-          display: { xs: 'none', md: 'flex' },
-          flexDirection: 'column',
-          borderLeft: `1px solid ${pal.divider}`,
-          pl: 5,
-        }}>
-          {/* Panel header */}
-          <Box sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            mb: 2.5, pb: 2,
-            borderBottom: `1px solid ${pal.divider}`,
-          }}>
-            <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, color: pal.textSecond, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-              The Brief · Building now
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Box sx={{
-                width: 6, height: 6, borderRadius: '50%',
-                bgcolor: isCompleted ? GREEN : ACCENT,
-                animation: isCompleted ? 'none' : 'syncPulse 1.5s ease-in-out infinite',
-                '@keyframes syncPulse': {
-                  '0%, 100%': { opacity: 1 },
-                  '50%':      { opacity: 0.3 },
-                },
-              }} />
-              <Typography sx={{ fontSize: '0.65rem', color: pal.textHint }}>
-                Step {currentStepNumber} of {TOTAL_STEPS}
-              </Typography>
-            </Box>
-          </Box>
-
-          {/* Brief cards — skeletons */}
-          <Stack spacing={1.5}>
-            {[0, 1, 2, 3].map((i) => (
-              <BriefCard key={i} index={i} pal={pal} />
-            ))}
-          </Stack>
-
-          {/* Completed state overlay */}
-          {isCompleted && (
-            <Box sx={{
-              mt: 3, p: 2, borderRadius: 2,
-              bgcolor: GREEN_GHOST,
-              border: `1px solid rgba(34,197,94,0.2)`,
-              animation: 'fadeInCard 0.5s ease both',
-              '@keyframes fadeInCard': {
-                from: { opacity: 0 },
-                to:   { opacity: 1 },
-              },
-            }}>
-              <Typography sx={{ fontSize: '0.8rem', color: GREEN, fontWeight: 600 }}>
-                ✓ Your Morning Brief is ready
-              </Typography>
-            </Box>
-          )}
         </Box>
 
       </Box>

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/activation/hooks/useSyncStepMachine.ts
 //
 // Responsibility:
@@ -215,9 +216,8 @@ export function useSyncStepMachine(
   });
 
   // ── Progress ──────────────────────────────────────────────────────────────
-  const progressWidth = progress?.percentage
-    ? progress.percentage
-    : ((activeStepIndex + 1) / totalSteps) * 100;
+  // Progress bar driven by UI step index — 20% per step regardless of backend percentage
+  const progressWidth = ((activeStepIndex + 1) / totalSteps) * 100;
 
   return {
     stepStates,
