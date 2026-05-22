@@ -66,7 +66,7 @@ export default function AboutPage() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Our story
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
           Built for merchants who{' '}
           <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>run their own warehouse.</em>
         </h1>
@@ -116,7 +116,7 @@ export default function AboutPage() {
             { num: '60s', label: 'Shopify connection time' },
           ].map(({ num, label }) => (
             <div key={label} style={{ background: '#FFFFFF', padding: '28px 32px' }}>
-              <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 36, fontWeight: 400, color: '#FF6B2B', fontStyle: 'italic', marginBottom: 8 }}>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 36, fontWeight: 400, color: '#FF6B2B', fontStyle: 'italic', marginBottom: 8 }}>
                 {num}
               </div>
               <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.5, color: '#6B7280' }}>

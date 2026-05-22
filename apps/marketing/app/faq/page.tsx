@@ -80,7 +80,7 @@ export default function FaqPage() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           FAQ
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
           Common questions,<br />straight answers.
         </h1>
         <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 17, fontWeight: 300, lineHeight: 1.65, color: '#6B7280', margin: 0, maxWidth: 480 }}>
@@ -92,7 +92,7 @@ export default function FaqPage() {
         <div style={{ borderTop: '1px solid #E8E6E0' }}>
           {faqs.map((faq, i) => (
             <div key={i} style={{ borderBottom: '1px solid #E8E6E0', padding: '32px 0', display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '2vw' }}>
-              <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 20, fontWeight: 400, color: '#0F0E0D', margin: 0, lineHeight: 1.3 }}>
+              <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 20, fontWeight: 400, color: '#0F0E0D', margin: 0, lineHeight: 1.3 }}>
                 {faq.q}
               </h2>
               <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.7, color: '#3A3835', margin: 0 }}>
@@ -103,7 +103,7 @@ export default function FaqPage() {
         </div>
 
         <div style={{ marginTop: 64, padding: '40px', background: '#FFF5F0', borderRadius: 16, border: '1px solid #FFD4BC', textAlign: 'center' }}>
-          <p style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 20, color: '#0F0E0D', margin: '0 0 8px' }}>
+          <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 20, color: '#0F0E0D', margin: '0 0 8px' }}>
             Still have questions?
           </p>
           <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280', margin: '0 0 20px' }}>

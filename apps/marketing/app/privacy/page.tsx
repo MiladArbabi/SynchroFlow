@@ -26,7 +26,7 @@ const privacyPageSchema = {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{ marginBottom: 48 }}>
-      <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 24, fontWeight: 400, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 16px' }}>
+      <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 24, fontWeight: 400, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 16px' }}>
         {title}
       </h2>
       <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835' }}>
@@ -49,7 +49,7 @@ export default function PrivacyPage() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Legal
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 48, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 24px', maxWidth: 720 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 48, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 24px', maxWidth: 720 }}>
           Privacy Policy
         </h1>
         <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0 }}>

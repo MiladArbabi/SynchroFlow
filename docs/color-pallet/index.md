@@ -57,7 +57,7 @@ Replace both existing `:root` blocks with this single definition. Use everywhere
   --space-4:       #2E3D62;
 
   /* Typography */
-  --serif: 'Instrument Serif', Georgia, serif;
+  --serif: 'Plus Jakarta Sans', system-ui, sans-serif;
   --sans:  'DM Sans', system-ui, sans-serif;
 }
 

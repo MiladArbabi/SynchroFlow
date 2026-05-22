@@ -59,7 +59,7 @@ export default function ProductVisual({ badge, title, caption }: ProductVisualPr
         {/* Title */}
         <p style={{
           position: 'relative',
-          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
           fontSize: '22px', fontWeight: 400,
           lineHeight: 1.3, color: '#3A3835',
           textAlign: 'center',

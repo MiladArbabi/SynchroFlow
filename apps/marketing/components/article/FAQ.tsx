@@ -61,7 +61,7 @@ export default function FAQ({ items }: FAQProps) {
             color: '#FF6B2B', marginBottom: '14px',
           }}>FAQ</div>
           <h2 style={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: '36px', fontWeight: 400,
             letterSpacing: '-0.02em', margin: 0,
             color: '#0F0E0D', lineHeight: 1.2,

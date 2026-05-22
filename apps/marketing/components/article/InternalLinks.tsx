@@ -29,7 +29,7 @@ export default function InternalLinks({ links }: InternalLinksProps) {
         Keep reading
       </div>
       <h2 style={{
-        fontFamily: "'Instrument Serif', Georgia, serif",
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
         fontSize: '32px', fontWeight: 400,
         letterSpacing: '-0.02em', margin: '0 0 32px',
         color: '#0F0E0D', lineHeight: 1.12,
@@ -67,7 +67,7 @@ export default function InternalLinks({ links }: InternalLinksProps) {
               </span>
             </div>
             <h4 style={{
-              fontFamily: "'Instrument Serif', Georgia, serif",
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
               fontSize: '20px', fontWeight: 400,
               letterSpacing: '-0.02em', color: '#0F0E0D',
               margin: '0 0 8px', lineHeight: 1.25,

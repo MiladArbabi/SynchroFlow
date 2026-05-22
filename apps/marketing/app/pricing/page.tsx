@@ -72,7 +72,7 @@ export default function PricingPage() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Pricing
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
           Simple pricing.<br />Serious results.
         </h1>
         <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 17, fontWeight: 300, lineHeight: 1.65, color: '#6B7280', margin: '0 0 12px', maxWidth: 480 }}>
@@ -102,7 +102,7 @@ export default function PricingPage() {
               <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.1em', textTransform: 'uppercase', color: plan.featured ? '#FF6B2B' : '#9CA3AF', marginBottom: 8 }}>
                 {plan.tier}
               </div>
-              <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 36, fontWeight: 400, color: '#0F0E0D', letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 36, fontWeight: 400, color: '#0F0E0D', letterSpacing: '-0.02em', lineHeight: 1, marginBottom: 12 }}>
                 {plan.price}<span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, color: '#9CA3AF', letterSpacing: 0 }}>{plan.period}</span>
               </div>
               <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid #E8E6E0' }}>
@@ -133,7 +133,7 @@ export default function PricingPage() {
 
         {/* Footer note */}
         <div style={{ textAlign: 'center', marginTop: 48, padding: '32px 0', borderTop: '1px solid #E8E6E0' }}>
-          <p style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 18, fontStyle: 'italic', color: '#6B7280', margin: '0 0 12px' }}>
+          <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 18, fontStyle: 'italic', color: '#6B7280', margin: '0 0 12px' }}>
             At £179/month, LaSyncro costs less per day than a single unplanned stockout.
           </p>
           <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 300, color: '#9CA3AF', margin: 0 }}>

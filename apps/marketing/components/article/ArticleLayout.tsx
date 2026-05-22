@@ -49,7 +49,7 @@ export default function ArticleLayout({
 
           {/* Title */}
           <h1 style={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: 'clamp(36px, 5vw, 56px)',
             fontWeight: 400,
             lineHeight: 1.2,

@@ -16,8 +16,8 @@
 // - rowHover and shadow cannot be CSS vars (require alpha) — computed here
 //
 // TYPOGRAPHY:
-//   font-family: var(--serif)  → Instrument Serif (headers, hero numbers)
-//   font-family: var(--sans)   → DM Sans (body, UI, captions)
+//   font-family: var(--serif)  → Plus Jakarta Sans (headers, hero numbers)
+//   font-family: var(--sans)   → sans-serif (body, UI, captions)
 //   font-variant-numeric: tabular-nums → always on data numbers
 
 import { useColorScheme } from '@mui/material/styles';

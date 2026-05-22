@@ -60,7 +60,7 @@ export default function CompareIndex() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Operator-honest comparisons
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
           LaSyncro vs{' '}
           <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>the alternatives.</em>
         </h1>
@@ -75,7 +75,7 @@ export default function CompareIndex() {
           All comparisons
         </span>
         <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
+          <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
             {pages.length}
           </span>
           tools compared
@@ -102,7 +102,7 @@ export default function CompareIndex() {
                     {page.frontmatter.tags?.[0]}
                   </span>
                 </div>
-                <h2 className="compare-title" style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 6px' }}>
+                <h2 className="compare-title" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 6px' }}>
                   {page.frontmatter.title}
                 </h2>
                 <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 560 }}>

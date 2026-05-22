@@ -64,7 +64,7 @@ export default function WaitlistCTA({ variant = 'full', text }: WaitlistCTAProps
           Operational in 60 seconds
         </span>
         <h3 style={{
-          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
           fontSize: '26px', fontWeight: 400, lineHeight: 1.2,
           letterSpacing: '-0.02em', margin: '0 0 6px', color: '#F0EEE8',
         }}>

@@ -64,7 +64,7 @@ export default function GettingStartedPage() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Getting Started
         </div>
-        <h1 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
+        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
           From zero to running<br />in under an hour.
         </h1>
         <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 17, fontWeight: 300, lineHeight: 1.65, color: '#6B7280', margin: 0, maxWidth: 520 }}>
@@ -76,11 +76,11 @@ export default function GettingStartedPage() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
           {steps.map((step, i) => (
             <div key={i} style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '2vw', padding: '40px 0', borderBottom: i < steps.length - 1 ? '1px solid #E8E6E0' : 'none' }}>
-              <div style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 48, fontWeight: 400, color: '#E8E6E0', lineHeight: 1, paddingTop: 4 }}>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 48, fontWeight: 400, color: '#E8E6E0', lineHeight: 1, paddingTop: 4 }}>
                 {step.n}
               </div>
               <div>
-                <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 24, fontWeight: 400, color: '#0F0E0D', margin: '0 0 12px', lineHeight: 1.2 }}>
+                <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 24, fontWeight: 400, color: '#0F0E0D', margin: '0 0 12px', lineHeight: 1.2 }}>
                   {step.title}
                 </h2>
                 <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.75, color: '#3A3835', margin: 0 }}>
@@ -93,7 +93,7 @@ export default function GettingStartedPage() {
 
         <div style={{ marginTop: 64, padding: '40px', background: '#FFF5F0', borderRadius: 16, border: '1px solid #FFD4BC', display: 'grid', gridTemplateColumns: '1fr auto', alignItems: 'center', gap: 24 }}>
           <div>
-            <p style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, color: '#0F0E0D', margin: '0 0 6px' }}>
+            <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, color: '#0F0E0D', margin: '0 0 6px' }}>
               Ready to connect your store?
             </p>
             <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280', margin: 0 }}>

@@ -62,7 +62,7 @@ export default function HeroVisual({
             color: '#6B7280',
           }}>{leftLabel}</span>
           <h4 style={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
             margin: 0, color: '#0F0E0D',
@@ -117,7 +117,7 @@ export default function HeroVisual({
             color: '#FF6B2B',
           }}>{rightLabel}</span>
           <h4 style={{
-            fontFamily: "'Instrument Serif', Georgia, serif",
+            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
             margin: 0, color: '#0F0E0D',

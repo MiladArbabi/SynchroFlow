@@ -79,7 +79,7 @@ function FeaturedVisual() {
           <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#6B7280' }}>
             What Shopify tracks
           </span>
-          <h4 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+          <h4 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
             Inventory<br />visibility
           </h4>
           <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
@@ -111,7 +111,7 @@ function FeaturedVisual() {
           <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B' }}>
             What a WMS adds
           </span>
-          <h4 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+          <h4 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
             Warehouse<br />operations
           </h4>
           <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
@@ -196,7 +196,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           <EyebrowDot />
           The operator&apos;s library
         </div>
-        <h1 className="page-h1" style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
+        <h1 className="page-h1" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
           Operational intelligence for merchants who{' '}
           <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>run their own warehouse.</em>
         </h1>
@@ -222,7 +222,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           ))}
         </div>
         <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
+          <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
             {allArticles.length}
           </span>
           articles published
@@ -249,7 +249,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                 {formatDate(featured.frontmatter.date)} · {Math.ceil((featured.content?.split(' ').length ?? 0) / 200)} min read
               </span>
             </div>
-            <h2 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 36, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+            <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 36, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
               <a href={`/blog/${featured.slug}`}>
                 {featured.frontmatter.titleAccent ? (
                   <>
@@ -277,7 +277,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Post list header ──────────────────────────────────────── */}
       <div style={{ ...W, display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', borderTop: '1px solid #E8E6E0', padding: '56px 5vw 12px', gap: 16, flexWrap: 'wrap' }}>
-        <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
+        <h3 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 28, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
           Latest <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>posts</em>
         </h3>
         <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
@@ -306,7 +306,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
               </span>
               <div className="post-row-grid" style={{ minWidth: 0 }}>
                 <h4 className="post-title" style={{
-                  fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 22, fontWeight: 400,
+                  fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400,
                   lineHeight: 1.25, letterSpacing: '-0.02em',
                   color: hoveredSlug === article.slug ? '#FF6B2B' : '#0F0E0D',
                   margin: '0 0 6px',
@@ -342,7 +342,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
               <EyebrowDot />
               Browse
             </div>
-            <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: 0 }}>
+            <h3 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: 0 }}>
               By <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>topic.</em>
             </h3>
           </div>
@@ -363,7 +363,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
             }}>
               <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: '#0F0E0D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>{tagLabel(cat)}</span>
-                <span style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 13, color: '#FF6B2B', fontStyle: 'italic' }}>
+                <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, color: '#FF6B2B', fontStyle: 'italic' }}>
                   {String(count).padStart(2, '0')}
                 </span>
               </div>
@@ -397,7 +397,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
             <EyebrowDot />
             Weekly · For operators
           </div>
-          <h3 style={{ fontFamily: "'Instrument Serif', Georgia, serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: '0 0 10px', color: '#F0EEE8' }}>
+          <h3 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 28, fontWeight: 400, lineHeight: 1.22, letterSpacing: '-0.02em', margin: '0 0 10px', color: '#F0EEE8' }}>
             The Morning Brief,{' '}
             <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>in your inbox.</em>
           </h3>

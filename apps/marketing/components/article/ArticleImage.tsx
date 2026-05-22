@@ -56,7 +56,7 @@ export default function ArticleImage({ src, alt, caption, priority = false, badg
               </span>
             )}
             <div style={{
-              fontFamily: "'Instrument Serif', Georgia, serif",
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
               fontSize: '18px', fontWeight: 400,
               color: '#6B7280', textAlign: 'center',
               maxWidth: '440px', padding: '0 24px', lineHeight: 1.3,

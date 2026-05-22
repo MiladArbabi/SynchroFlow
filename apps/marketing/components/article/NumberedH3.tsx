@@ -15,7 +15,7 @@ export default function NumberedH3({ n, title }: NumberedH3Props) {
       margin: '44px 0 14px',
     }}>
       <span style={{
-        fontFamily: "'Instrument Serif', Georgia, serif",
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
         fontSize: '15px', fontWeight: 400,
         lineHeight: 1, color: '#FF6B2B',
         fontStyle: 'italic', flexShrink: 0,

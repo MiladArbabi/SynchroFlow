@@ -21,7 +21,7 @@ const components = {
   QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual,
   h2: ({ children }: { children: React.ReactNode }) => (
     <h2 style={{
-      fontFamily: "'Instrument Serif', Georgia, serif",
+      fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
       fontSize: '32px', fontWeight: 400,
       lineHeight: 1.25, letterSpacing: '-0.02em',
       color: '#0F0E0D', margin: '56px 0 18px',
