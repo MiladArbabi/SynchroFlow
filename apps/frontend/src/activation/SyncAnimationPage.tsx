@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 // apps/frontend/src/activation/SyncAnimationPage.tsx
 //
 // PURPOSE: FT0 sync animation — shown immediately after Shopify OAuth succeeds.
@@ -14,7 +13,7 @@
 // STEP REVEAL RULE: only the active step is visible. Previous steps show as
 // green checkmarks. Future steps are hidden entirely — no peeking.
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef } from 'react';
 import { Box, Typography, Stack } from '@mui/material';
 import { useColorScheme } from '@mui/material/styles';
 import { CheckCircle, Zap } from 'lucide-react';
@@ -67,38 +66,6 @@ const STEPS: StepDef[] = [
   { label: 'Calculating margin per order', detail: 'Risk-scoring delays · projecting restock needs' },
   { label: 'Building your Morning Brief', detail: 'Prioritising what needs your attention first' },
 ];
-
-// ─── useCountUp ───────────────────────────────────────────────────────────────
-
-function useCountUp(target: number, active: boolean): number {
-  const [value, setValue]     = useState(0);
-  const rafRef                = useRef<number | null>(null);
-  const startRef              = useRef<number | null>(null);
-  const startValueRef         = useRef(0);
-  const prevTargetRef         = useRef(0);
-
-  useEffect(() => {
-    if (!active || target === 0) return;
-    if (target === prevTargetRef.current) return;
-    startValueRef.current = value;
-    prevTargetRef.current = target;
-    startRef.current = null;
-    if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    const duration = Math.min(1200, Math.max(400, target * 0.5));
-    function animate(ts: number) {
-      if (startRef.current === null) startRef.current = ts;
-      const elapsed  = ts - startRef.current;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased    = 1 - Math.pow(1 - progress, 3);
-      setValue(Math.round(startValueRef.current + eased * (target - startValueRef.current)));
-      if (progress < 1) rafRef.current = requestAnimationFrame(animate);
-    }
-    rafRef.current = requestAnimationFrame(animate);
-    return () => { if (rafRef.current !== null) cancelAnimationFrame(rafRef.current); };
-  }, [active, target]);
-
-  return value;
-}
 
 // ─── SkeletonLine ─────────────────────────────────────────────────────────────
 
@@ -159,9 +126,6 @@ const StepItem: React.FC<StepItemProps> = ({ step, state, stepIndex, counts, pro
   const isDone    = state === 'done';
   const isVisible = isActive || isDone;
 
-  // animated counts for products (has total) and orders (no total)
-  const animOrders   = useCountUp(counts.orders,   isVisible && stepIndex === 2);
-
   if (!isVisible) return null;
 
   // Sub-label per step
@@ -188,10 +152,32 @@ const StepItem: React.FC<StepItemProps> = ({ step, state, stepIndex, counts, pro
     </Typography>;
   }
 
-  if (stepIndex === 2 && (isActive || isDone)) {
-    subLabel = <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: isDone ? GREEN : pal.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
-      {(isDone ? counts.orders : animOrders).toLocaleString()} <Typography component="span" sx={{ fontSize: '0.8rem', color: pal.textSecond, fontWeight: 400 }}>orders {isActive ? 'read so far' : 'mapped'}</Typography>
-    </Typography>;
+  if (stepIndex === 2 && isActive) {
+    subLabel = (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+        <Box sx={{
+          width: 6, height: 6, borderRadius: '50%', bgcolor: ACCENT, flexShrink: 0,
+          '@keyframes orderPulse': {
+            '0%, 100%': { opacity: 1, transform: 'scale(1)' },
+            '50%':      { opacity: 0.3, transform: 'scale(0.7)' },
+          },
+          animation: 'orderPulse 1.2s ease-in-out infinite',
+        }} />
+        <Typography sx={{ fontSize: '0.85rem', color: pal.textSecond }}>
+          Fetching order history — this takes a moment
+        </Typography>
+      </Box>
+    );
+  }
+  if (stepIndex === 2 && isDone) {
+    subLabel = (
+      <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: GREEN, fontVariantNumeric: 'tabular-nums' }}>
+        {counts.orders > 0 ? `${counts.orders.toLocaleString()} ` : ''}
+        <Typography component="span" sx={{ fontSize: '0.8rem', color: pal.textSecond, fontWeight: 400 }}>
+          {counts.orders > 0 ? 'orders mapped' : 'orders mapped'}
+        </Typography>
+      </Typography>
+    );
   }
 
   return (
@@ -250,8 +236,10 @@ const SyncAnimationPage: React.FC = () => {
   // Peak count tracking — DB counts lag projections, preserve highest seen value
   const peakVariantsRef = useRef(0);
   const peakOrdersRef   = useRef(0);
-  if (polledCounts.variants > 0) peakVariantsRef.current = polledCounts.variants;
-  if (polledCounts.orders > 0)   peakOrdersRef.current   = polledCounts.orders;
+  // Track peak from both DB counts AND progress.current (products sync uses progress proxy)
+  if (polledCounts.variants > 0) peakVariantsRef.current = Math.max(peakVariantsRef.current, polledCounts.variants);
+  if (progress?.current && progress.current > 0) peakVariantsRef.current = Math.max(peakVariantsRef.current, progress.current);
+  if (polledCounts.orders > 0) peakOrdersRef.current = Math.max(peakOrdersRef.current, polledCounts.orders);
 
   const isCompleted = status === 'COMPLETED';
 

@@ -5,16 +5,27 @@
 // - Handle synthetic PROCESSING step
 // - Control teaser + reassurance timing
 //
-// NOTE: No network calls. Pure orchestration layer.
+// ARCHITECTURE: Phase walking is driven by a single imperative timer loop
+// (walkRef) that reads latest target via a ref. This isolates timing from
+// React's render cycle — poll re-renders never interfere with pending timers.
 
 import { useEffect, useRef, useState } from 'react';
 
 const UX_TIMINGS = {
-  CONNECTING_FLOOR_MS:  2500,   // minimum time on connecting step
-  MIN_STEP_DURATION_MS: 1800,   // minimum time each subsequent step stays visible
-  TEASER_DELAY_MS:      800,    // delay before teaser appears after DONE
-  REASSURANCE_DELAY_MS: 60000,  // show reassurance after 60s total
+  TEASER_DELAY_MS:      800,
+  REASSURANCE_DELAY_MS: 60000,
 };
+
+// Minimum display time per phase — controls pacing of the sync animation
+const PHASE_MIN_DURATION: Partial<Record<SyncPhase, number>> = {
+  CONNECTING:         2500,
+  IMPORTING_PRODUCTS: 1800,
+  IMPORTING_ORDERS:   8000,   // longest — most events happen here
+  PROCESSING:         5000,   // calculating margin — feels substantial
+  FINALIZING:         3000,
+};
+
+const getMinDuration = (phase: SyncPhase) => PHASE_MIN_DURATION[phase] ?? 2000;
 
 type StepState = 'pending' | 'active' | 'done';
 
@@ -78,65 +89,103 @@ export function useSyncStepMachine(
   progress?: SyncProgress | null
 ): SyncStepMachineResult {
 
-  const [gatedPhase, setGatedPhase]               = useState<SyncPhase>('CONNECTING');
-  const [processingVisible, setProcessingVisible]  = useState(false);
-  const targetPhaseRef = useRef<SyncPhase>('CONNECTING');
-  const [showTeaser, setShowTeaser]                = useState(false);
-  const [showReassurance, setShowReassurance]      = useState(false);
+  // ── Display phase — what the UI shows ─────────────────────────────────────
+  const [displayPhase, setDisplayPhase] = useState<SyncPhase>('CONNECTING');
 
-  // Synthetic PROCESSING step: activates when orders start arriving
+  // ── Refs — readable inside timer closures without stale value risk ─────────
+  const displayPhaseRef   = useRef<SyncPhase>('CONNECTING');
+  const latestStatusRef   = useRef<string>(status);
+  const processingRef     = useRef<boolean>(false);
+  const walkingRef        = useRef<boolean>(false);
+  const timerRef          = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── UX signals ────────────────────────────────────────────────────────────
+  const [showTeaser, setShowTeaser]           = useState(false);
+  const [showReassurance, setShowReassurance] = useState(false);
+
+  // ── Keep refs current on every render ─────────────────────────────────────
+  latestStatusRef.current = status;
+
+  // ── Synthetic PROCESSING step ──────────────────────────────────────────────
   useEffect(() => {
     const rawPhase = mapStatusToPhase(status);
     if (rawPhase === 'IMPORTING_ORDERS' && counts.orders > 0) {
-      setProcessingVisible(true);
+      processingRef.current = true;
     } else if (rawPhase !== 'IMPORTING_ORDERS') {
-      setProcessingVisible(false);
+      processingRef.current = false;
     }
   }, [status, counts.orders]);
 
-  // Compute target phase — where backend wants us to be
-  let targetPhase = mapStatusToPhase(status);
-  if (processingVisible && targetPhase === 'IMPORTING_ORDERS') targetPhase = 'PROCESSING';
+  // ── Compute current target index from latest status ───────────────────────
+  const getTargetIndex = () => {
+    let p = mapStatusToPhase(latestStatusRef.current);
+    if (processingRef.current && p === 'IMPORTING_ORDERS') p = 'PROCESSING';
+    return PHASE_ORDER.indexOf(p);
+  };
 
-  // Only advance the ref — never regress. Prevents poll-driven re-renders from resetting timers.
-  if (PHASE_ORDER.indexOf(targetPhase) > PHASE_ORDER.indexOf(targetPhaseRef.current)) {
-    targetPhaseRef.current = targetPhase;
-  }
+  // ── Advance one step, then schedule the next ───────────────────────────────
+  const scheduleNextStep = () => {
+    const currentIndex = PHASE_ORDER.indexOf(displayPhaseRef.current);
+    const targetIndex  = getTargetIndex();
 
-  // Walk through phases sequentially with minimum dwell per step.
-  // Never skips — even if backend jumps CONNECTING→DONE in 2s, UI walks each step.
-  // CONNECTING_FLOOR_MS enforced here directly — no separate connectingReady gate needed.
+    if (currentIndex >= targetIndex) {
+      // Reached target — stop walking
+      walkingRef.current = false;
+      timerRef.current   = null;
+      return;
+    }
+
+    const minDur = getMinDuration(displayPhaseRef.current);
+
+    timerRef.current = setTimeout(() => {
+      const currIdx = PHASE_ORDER.indexOf(displayPhaseRef.current);
+      const tgtIdx  = getTargetIndex();
+
+      if (currIdx < tgtIdx) {
+        const next = PHASE_ORDER[currIdx + 1];
+        if (next) {
+          displayPhaseRef.current = next;
+          setDisplayPhase(next);        // trigger re-render
+        }
+      }
+      scheduleNextStep();              // chain next step
+    }, minDur);
+  };
+
+  // ── Start the walk when status first advances past CONNECTING ──────────────
   useEffect(() => {
-    const currentIndex = PHASE_ORDER.indexOf(gatedPhase);
-    const targetIndex  = PHASE_ORDER.indexOf(targetPhaseRef.current);
+    const targetIndex = getTargetIndex();
 
-    if (currentIndex >= targetIndex) return;
+    if (targetIndex <= PHASE_ORDER.indexOf(displayPhaseRef.current)) return;
+    if (walkingRef.current) return; // already walking — loop reads latest via ref
 
-    const nextPhase = PHASE_ORDER[currentIndex + 1];
-    if (!nextPhase) return;
+    walkingRef.current = true;
+    scheduleNextStep();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]); // status is the only meaningful trigger — counts/progress don't affect timing
 
-    const minDur = gatedPhase === 'CONNECTING'
-      ? UX_TIMINGS.CONNECTING_FLOOR_MS
-      : UX_TIMINGS.MIN_STEP_DURATION_MS;
+  // ── Cleanup on unmount ─────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
 
-    const t = setTimeout(() => setGatedPhase(nextPhase), minDur);
-    return () => clearTimeout(t);
-  }, [gatedPhase]); // targetPhase read via ref — poll re-renders never cancel the timer
-
-  // Teaser after DONE
+  // ── Teaser after DONE ──────────────────────────────────────────────────────
   useEffect(() => {
     if (status !== 'COMPLETED') return;
     const t = setTimeout(() => setShowTeaser(true), UX_TIMINGS.TEASER_DELAY_MS);
     return () => clearTimeout(t);
   }, [status]);
 
-  // Reassurance after 60s
+  // ── Reassurance after 60s ──────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setShowReassurance(true), UX_TIMINGS.REASSURANCE_DELAY_MS);
     return () => clearTimeout(t);
   }, []);
 
-  if (gatedPhase === 'ERROR') {
+  // ── Error state ───────────────────────────────────────────────────────────
+  if (displayPhase === 'ERROR') {
     return {
       stepStates:      Array(totalSteps).fill('pending'),
       activeStepIndex: -1,
@@ -147,8 +196,9 @@ export function useSyncStepMachine(
     };
   }
 
+  // ── Active step index ──────────────────────────────────────────────────────
   let activeStepIndex = 0;
-  switch (gatedPhase) {
+  switch (displayPhase) {
     case 'CONNECTING':         activeStepIndex = 0; break;
     case 'IMPORTING_PRODUCTS': activeStepIndex = 1; break;
     case 'IMPORTING_ORDERS':   activeStepIndex = 2; break;
@@ -157,12 +207,14 @@ export function useSyncStepMachine(
     case 'DONE':               activeStepIndex = 4; break;
   }
 
+  // ── Step states ───────────────────────────────────────────────────────────
   const stepStates: StepState[] = Array.from({ length: totalSteps }, (_, i) => {
     if (i < activeStepIndex) return 'done';
     if (i === activeStepIndex) return 'active';
     return 'pending';
   });
 
+  // ── Progress ──────────────────────────────────────────────────────────────
   const progressWidth = progress?.percentage
     ? progress.percentage
     : ((activeStepIndex + 1) / totalSteps) * 100;
