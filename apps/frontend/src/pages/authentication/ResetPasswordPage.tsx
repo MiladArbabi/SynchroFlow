@@ -110,8 +110,9 @@ export default function ResetPasswordPage() {
                         password: values.password,
                       });
                       setSubmitState('success');
-                    } catch (err: any) {
-                      setSubmitError(err.response?.data?.error ?? 'Reset failed. Please try again.');
+                      } catch (err) {
+                      const error = err as { response?: { data?: { error?: string } } };
+                      setSubmitError(error.response?.data?.error ?? 'Reset failed. Please try again.');
                       setSubmitState('error');
                     } finally {
                       setSubmitting(false);

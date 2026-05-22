@@ -345,8 +345,8 @@ AuthPageChrome.tsx
 | #979 | Self-serve account deletion + Shopify store disconnection |
 | AUTH-007 deferred | Email verification is non-blocking — users can access app unverified. Future: gate certain actions behind `email_verified_at IS NOT NULL` |
 | Google OAuth | Backend only supports Shopify. Google OAuth shown as disabled. Needs backend implementation. |
-| Forgot password backend | `ForgotPasswordPage` UI exists and calls `POST /api/v1/auth/forgot-password` but this endpoint does not exist yet in `auth.routes.ts` / `auth.controller.ts` |
-| Password reset | No reset token flow, no `reset-password` page, no `PUT /api/v1/auth/reset-password` endpoint |
+| Forgot password | ✅ Complete — `POST /api/v1/auth/forgot-password` + `sendPasswordResetEmail` + rate-limited, enumeration-safe |
+| Password reset | ✅ Complete — `POST /api/v1/auth/reset-password` + `ResetPasswordPage` at `/reset-password?token=<hex>` + sessions revoked on reset |
 
 ---
 
@@ -410,3 +410,4 @@ curl http://localhost:3000/api/v1/auth/dev-token
 | `/forgot-password` | `ForgotPasswordPage.tsx` | A4 |
 | `/check-inbox` | `CheckInboxPage.tsx` | A5 |
 | `/verify-email` | `VerifyEmailPage.tsx` | — (token handler) |
+| `/reset-password` | `ResetPasswordPage.tsx` | — (not in original target designs) |
