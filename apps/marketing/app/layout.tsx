@@ -84,14 +84,14 @@ function Nav() {
         {/* Logo switches based on color scheme — logo-dark for light bg, logo-light for dark bg */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="https://www.lasyncro.com/logo-dark.png"
+          src="https://www.lasyncro.com/logo.png"
           alt="LaSyncro"
           style={{ height: '24px', width: 'auto', display: 'block' }}
           className="logo-light-mode"
         />
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src="https://www.lasyncro.com/logo-light.png"
+          src="https://www.lasyncro.com/logo.png"
           alt="LaSyncro"
           style={{ height: '24px', width: 'auto', display: 'none' }}
           className="logo-dark-mode"
