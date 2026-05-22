@@ -211,8 +211,8 @@ const AppLayout = (props: AppLayoutProps) => {
               />
             )}
 
-            {/* TRIAL COUNTDOWN BANNER (UX-03) */}
-            <TrialCountdownBanner trialEndsAt={trialEndsAt} />
+            {/* Trial banner — FT2 only */}
+            {isSidenavAllowed && <TrialCountdownBanner trialEndsAt={trialEndsAt} />}
 
             {/* POST-TRIAL INTERSTITIAL (UX-07) */}
             <PostTrialInterstitial show={isPostTrial} />

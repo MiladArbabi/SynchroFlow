@@ -19,6 +19,7 @@ import { Bell, Home } from 'lucide-react';
 import { Badge } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAlerts } from '../../pages/alerts/useAlerts';
+import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 
 interface TopnavbarContentProps {
   isEditing: boolean;
@@ -32,6 +33,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
 }) => {
   const location = useLocation();
   const { mode, setMode } = useColorScheme();
+  const { phase } = useShopLifecycle();
+  const isFt2 = phase === 'FT2_READY';
 
   const navigate = useNavigate();
   const { data: alertsData } = useAlerts();
@@ -114,6 +117,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         }}
       >
 
+    {isFt2 && (
+          <>
         <Tooltip title="Alerts">
           <IconButton
             size="small"
@@ -163,6 +168,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
             <IconComponent name="Moon" size="medium" />
           </IconButton>
         </Tooltip>
+        </>
+      )}
 
         <ProfileSection />
         
