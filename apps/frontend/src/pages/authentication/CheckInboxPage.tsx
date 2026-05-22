@@ -136,6 +136,43 @@ export default function CheckInboxPage() {
             </Box>
 
             {/* Actions — matches target A5 */}
+            {(() => {
+              const domain = email.split('@')[1]?.toLowerCase() ?? '';
+              const providerMap: Record<string, { label: string; url: string }> = {
+                'gmail.com':       { label: 'Open Gmail',   url: 'https://mail.google.com' },
+                'googlemail.com':  { label: 'Open Gmail',   url: 'https://mail.google.com' },
+                'outlook.com':     { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'hotmail.com':     { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'live.com':        { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'yahoo.com':       { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
+                'ymail.com':       { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
+                'icloud.com':      { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
+                'me.com':          { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
+              };
+              const provider = providerMap[domain] ?? { label: 'Open email app', url: `https://${domain}` };
+              return (
+                <Button
+                  fullWidth
+                  variant="contained"
+                  href={provider.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    mb: 1.5,
+                    bgcolor: 'var(--accent)',
+                    color: '#fff',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    fontSize: '0.9rem',
+                    py: 1.25,
+                    borderRadius: '8px',
+                    '&:hover': { bgcolor: 'var(--accent-hover)' },
+                  }}
+                >
+                  {provider.label} →
+                </Button>
+              );
+            })()}
             <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
               <Button
                 fullWidth
@@ -146,7 +183,7 @@ export default function CheckInboxPage() {
               >
                 <Stack direction="row" alignItems="center" spacing={0.75}>
                   <RefreshIcon sx={{ fontSize: 16 }} />
-                  <span>{resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? 'Sent' : 'Resend email'}</span>
+                  <span>{resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? 'Sent ✓' : 'Resend email'}</span>
                 </Stack>
               </Button>
               <Button
