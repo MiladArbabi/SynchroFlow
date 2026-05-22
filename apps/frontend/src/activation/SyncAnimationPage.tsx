@@ -25,8 +25,6 @@ import { useSyncStepMachine } from './hooks/useSyncStepMachine';
 
 const ACCENT        = '#FF6B2B';
 const ACCENT_HOVER  = '#FF8C5A';
-const ACCENT_GHOST  = 'rgba(255,107,43,0.10)';
-const ACCENT_BORDER = 'rgba(255,107,43,0.25)';
 const GREEN         = '#22C55E';
 
 // ─── Theme palette ────────────────────────────────────────────────────────────
@@ -215,43 +213,8 @@ const SyncAnimationPage: React.FC = () => {
   const currentStepNumber = Math.min(activeStepIndex + 1, TOTAL_STEPS);
 
   return (
-    <Box sx={{ minHeight: '100dvh', bgcolor: pal.bg, display: 'flex', flexDirection: 'column' }}>
 
-      {/* ── Minimal nav ───────────────────────────────────────────────── */}
-      <Box sx={{
-        px: 3, py: 2,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: `1px solid ${pal.divider}`,
-        bgcolor: pal.surface,
-        position: 'sticky', top: 0, zIndex: 10,
-      }}>
-        <Box component="img"
-          src="/logo-dark.png"
-          alt="LaSyncro"
-          sx={{ height: 26, width: 'auto', filter: pal.isDark ? 'none' : 'invert(1)' }}
-        />
-        {/* Syncing pill */}
-        <Box sx={{
-          display: 'flex', alignItems: 'center', gap: 0.75,
-          px: 1.5, py: 0.5,
-          borderRadius: 99,
-          border: `1px solid ${ACCENT_BORDER}`,
-          bgcolor: ACCENT_GHOST,
-        }}>
-          <Box sx={{
-            width: 7, height: 7, borderRadius: '50%', bgcolor: ACCENT,
-            '@keyframes syncPulse': {
-              '0%, 100%': { opacity: 1 },
-              '50%':      { opacity: 0.3 },
-            },
-            animation: 'syncPulse 1.5s ease-in-out infinite',
-          }} />
-          <Typography sx={{ fontSize: '0.7rem', fontWeight: 600, color: ACCENT, letterSpacing: '0.05em' }}>
-            Sync in progress
-          </Typography>
-        </Box>
-      </Box>
-
+    <Box sx={{ minHeight: 'calc(100vh - 48px)', bgcolor: pal.bg, display: 'flex', flexDirection: 'column' }}>
       {/* ── Body ─────────────────────────────────────────────────────── */}
       <Box sx={{
         flex: 1,
