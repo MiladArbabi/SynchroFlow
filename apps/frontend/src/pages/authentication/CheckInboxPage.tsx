@@ -23,6 +23,8 @@ import Button from '@mui/material/Button';
 import AuthWrapper1 from './AuthWrapper1';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutlined';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import MailOutlineIcon from '@mui/icons-material/MailOutline';
 
 export default function CheckInboxPage() {
   const { user, logout, accessToken } = useAuth();
@@ -30,7 +32,11 @@ export default function CheckInboxPage() {
   const location = useLocation();
 
   // Email can come from auth state or location state (forgot-password flow)
-  const email = user?.email ?? (location.state as { email?: string })?.email ?? '';
+  // Email from auth state, location state, or localStorage fallback
+  const storedUser = React.useMemo(() => {
+    try { return JSON.parse(localStorage.getItem('user') ?? '{}'); } catch { return {}; }
+  }, []);
+  const email = user?.email ?? (location.state as { email?: string })?.email ?? storedUser?.email ?? '';
 
   const [resendState, setResendState] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
   const [resendCooldown, setResendCooldown] = useState(false);
@@ -124,7 +130,10 @@ export default function CheckInboxPage() {
                 disabled={resendState === 'sending' || resendCooldown}
                 sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
               >
-                {resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? '✓ Sent' : '↺ Resend email'}
+                <Stack direction="row" alignItems="center" spacing={0.75}>
+                  <RefreshIcon sx={{ fontSize: 16 }} />
+                  <span>{resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? 'Sent' : 'Resend email'}</span>
+                </Stack>
               </Button>
               <Button
                 fullWidth
@@ -133,7 +142,10 @@ export default function CheckInboxPage() {
                 to="/login"
                 sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
               >
-                ✉ Change address
+                <Stack direction="row" alignItems="center" spacing={0.75}>
+                  <MailOutlineIcon sx={{ fontSize: 16 }} />
+                  <span>Change address</span>
+                </Stack>
               </Button>
             </Stack>
 
