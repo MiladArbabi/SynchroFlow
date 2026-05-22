@@ -23,19 +23,11 @@ import './debug/lasyncro-module-debug';
 import './assets/scss/style.scss'; // Import Berry's global styles
 import 'simplebar-react/dist/simplebar.min.css'; // Import Simplebar styles
 
-// google-fonts
-import '@fontsource/roboto/400.css';
-import '@fontsource/roboto/500.css';
-import '@fontsource/roboto/300.css';
-import '@fontsource/roboto/700.css';
+// Primary UI font loaded via Google Fonts in index.html (Plus Jakarta Sans)
+// @fontsource packages removed — no longer primary fonts
+// Inter kept as fallback via system stack in index.css
 import '@fontsource/inter/400.css';
 import '@fontsource/inter/500.css';
-import '@fontsource/inter/600.css';
-import '@fontsource/inter/700.css';
-import '@fontsource/poppins/400.css';
-import '@fontsource/poppins/500.css';
-import '@fontsource/poppins/600.css';
-import '@fontsource/poppins/700.css';
 
 // --- CSS / STYLING ---
 /* import "assets/css/nucleo-icons.css";

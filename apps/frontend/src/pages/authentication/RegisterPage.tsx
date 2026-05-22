@@ -114,7 +114,6 @@ export default function Register() {
                   {/* AUTH-004: target headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
                     Create your account.{' '}
-                    {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
                     <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       60 seconds.
                     </Box>

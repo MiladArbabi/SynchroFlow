@@ -99,7 +99,7 @@ export default function Login() {
                   {/* AUTH-003: target headline "Welcome back. Let's sync up." */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
                     Welcome back.{' '}
-                    {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
+                    {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
                     <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       Let's sync up.
                     </Box>
