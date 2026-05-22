@@ -47,7 +47,10 @@ async function checkProjectionHealth(): Promise<void> {
   );
 
   if (!cursors || cursors.length === 0) {
-    console.warn('[PROJECTION_HEALTH] No projection cursors found');
+    // Silenced in dev — expected after fresh reset, no events yet
+    if (process.env.NODE_ENV !== 'development') {
+      console.warn('[PROJECTION_HEALTH] No projection cursors found');
+    }
     return;
   }
 

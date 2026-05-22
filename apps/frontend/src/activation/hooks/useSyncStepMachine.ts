@@ -7,7 +7,7 @@
 //
 // NOTE: No network calls. Pure orchestration layer.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const UX_TIMINGS = {
   CONNECTING_FLOOR_MS:  2500,   // minimum time on connecting step
@@ -62,6 +62,15 @@ function mapStatusToPhase(status: string): SyncPhase {
   }
 }
 
+const PHASE_ORDER: SyncPhase[] = [
+  'CONNECTING',
+  'IMPORTING_PRODUCTS',
+  'IMPORTING_ORDERS',
+  'PROCESSING',
+  'FINALIZING',
+  'DONE',
+];
+
 export function useSyncStepMachine(
   status: string,
   counts: SyncCounts,
@@ -71,7 +80,6 @@ export function useSyncStepMachine(
 
   // ── Timing gate: enforces minimum display per step ────────────────────────
   const [gatedPhase, setGatedPhase]           = useState<SyncPhase>('CONNECTING');
-  const phaseFirstSeenRef                     = useRef<Partial<Record<string, number>>>({});
 
   // ── Synthetic PROCESSING step: activates when orders start arriving ───────
   const [processingVisible, setProcessingVisible] = useState(false);
@@ -99,30 +107,33 @@ export function useSyncStepMachine(
     }
   }, [status, counts.orders]);
 
-  // Step 3: compute rawPhase with gates applied
-  let rawPhase = mapStatusToPhase(status);
-  if (!connectingReady && rawPhase !== 'CONNECTING') rawPhase = 'CONNECTING';
-  if (processingVisible && rawPhase === 'IMPORTING_ORDERS') rawPhase = 'PROCESSING';
+  let targetPhase = mapStatusToPhase(status);
+  if (!connectingReady && targetPhase !== 'CONNECTING') targetPhase = 'CONNECTING';
+  if (processingVisible && targetPhase === 'IMPORTING_ORDERS') targetPhase = 'PROCESSING';
 
-  // Step 4: enforce minimum display time per phase before advancing gatedPhase
+  // Step 4: walk through phases sequentially — never skip, always show each step
+  // Even if backend jumps from CONNECTING → DONE in 2s, UI walks each step with min dwell
   useEffect(() => {
-    if (!phaseFirstSeenRef.current[rawPhase]) {
-      phaseFirstSeenRef.current[rawPhase] = Date.now();
-    }
-    const seenAt  = phaseFirstSeenRef.current[rawPhase] ?? Date.now();
-    const elapsed = Date.now() - seenAt;
-    const minDur  = rawPhase === 'CONNECTING'
+    const currentIndex = PHASE_ORDER.indexOf(gatedPhase);
+    const targetIndex  = PHASE_ORDER.indexOf(targetPhase);
+
+    // Already at or past target — nothing to do
+    if (currentIndex >= targetIndex) return;
+
+    // Advance one step at a time
+    const nextPhase = PHASE_ORDER[currentIndex + 1];
+    if (!nextPhase) return;
+
+    const minDur = gatedPhase === 'CONNECTING'
       ? UX_TIMINGS.CONNECTING_FLOOR_MS
       : UX_TIMINGS.MIN_STEP_DURATION_MS;
 
-    if (elapsed >= minDur) {
-      setGatedPhase(rawPhase);
-    } else {
-      const remaining = minDur - elapsed;
-      const t = setTimeout(() => setGatedPhase(rawPhase), remaining);
-      return () => clearTimeout(t);
-    }
-  }, [rawPhase]);
+    const t = setTimeout(() => {
+      setGatedPhase(nextPhase);
+    }, minDur);
+
+    return () => clearTimeout(t);
+  }, [gatedPhase, targetPhase]);
 
   // Step 5: teaser after DONE
   useEffect(() => {
