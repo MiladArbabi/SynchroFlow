@@ -160,7 +160,6 @@ const StepItem: React.FC<StepItemProps> = ({ step, state, stepIndex, counts, pro
   const isVisible = isActive || isDone;
 
   // animated counts for products (has total) and orders (no total)
-  const animVariants = useCountUp(counts.variants, isVisible && stepIndex === 1);
   const animOrders   = useCountUp(counts.orders,   isVisible && stepIndex === 2);
 
   if (!isVisible) return null;
@@ -169,16 +168,18 @@ const StepItem: React.FC<StepItemProps> = ({ step, state, stepIndex, counts, pro
   let subLabel: React.ReactNode = null;
 
   if (stepIndex === 1 && isActive) {
-    // Products: we have current/total from backend progress
-    const current = progress?.current ?? animVariants;
-    const total   = progress?.total   ?? 0;
+    // Use progress.current as proxy when variants table not yet populated
+    const current = counts.variants > 0 ? counts.variants : (progress?.current ?? 0);
+    const total   = progress?.total ?? 0;
     subLabel = total > 0
       ? <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: pal.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
           {current.toLocaleString()} <Typography component="span" sx={{ fontSize: '0.8rem', color: pal.textSecond, fontWeight: 400 }}>of {total.toLocaleString()} products</Typography>
         </Typography>
-      : <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: pal.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
-          {animVariants.toLocaleString()} <Typography component="span" sx={{ fontSize: '0.8rem', color: pal.textSecond, fontWeight: 400 }}>products found</Typography>
-        </Typography>;
+      : current > 0
+        ? <Typography sx={{ fontSize: '1.1rem', fontWeight: 700, color: pal.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+            {current.toLocaleString()} <Typography component="span" sx={{ fontSize: '0.8rem', color: pal.textSecond, fontWeight: 400 }}>products found</Typography>
+          </Typography>
+        : null;
   }
 
   if (stepIndex === 1 && isDone) {

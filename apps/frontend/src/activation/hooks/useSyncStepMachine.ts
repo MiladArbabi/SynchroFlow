@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/activation/hooks/useSyncStepMachine.ts
 
 /**
@@ -13,15 +14,17 @@
  * - Pure orchestration layer
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * UX timing configuration
  * Centralized to eliminate magic numbers
  */
 const UX_TIMINGS = {
-  TEASER_DELAY_MS: 800,
-  REASSURANCE_DELAY_MS: 60000,
+  TEASER_DELAY_MS:       800,
+  REASSURANCE_DELAY_MS:  60000,
+  MIN_STEP_DURATION_MS:  1800,  // minimum time each step stays visible before advancing
+  CONNECTING_FLOOR_MS:   2500,  // minimum connecting step duration
 };
 
 type StepState = 'pending' | 'active' | 'done';
@@ -92,57 +95,37 @@ export function useSyncStepMachine(
   // console.debug('[SyncPhase]', phase);
 
   const [processingVisible, setProcessingVisible] = useState(false);
-  const [showTeaser, setShowTeaser] = useState(false);
-  const [showReassurance, setShowReassurance] = useState(false);
-  // minimum display guard for connecting step (prevents flash)
-  const [connectingReady, setConnectingReady] = useState(false);
-  
-    let phase = mapStatusToPhase(status);
+  const [showTeaser, setShowTeaser]               = useState(false);
+  const [showReassurance, setShowReassurance]     = useState(false);
+  const [connectingReady, setConnectingReady]     = useState(false);
+  // Track when each phase was first seen — enforces minimum display time
+  const phaseFirstSeenRef = useRef<Partial<Record<string, number>>>({});
+  const [gatedPhase, setGatedPhase]               = useState<SyncPhase>('CONNECTING');
 
-    // hold connecting visually until minimum duration passes
-    if (!connectingReady && phase !== 'CONNECTING') {
-        phase = 'CONNECTING';
+  let rawPhase = mapStatusToPhase(status);
+  if (!connectingReady && rawPhase !== 'CONNECTING') rawPhase = 'CONNECTING';
+  if (processingVisible && rawPhase === 'IMPORTING_ORDERS') rawPhase = 'PROCESSING';
+
+  // Record first-seen time for each raw phase
+  useEffect(() => {
+    if (!phaseFirstSeenRef.current[rawPhase]) {
+      phaseFirstSeenRef.current[rawPhase] = Date.now();
     }
+    const elapsed = Date.now() - (phaseFirstSeenRef.current[rawPhase] ?? Date.now());
+    const minDuration = rawPhase === 'CONNECTING'
+      ? UX_TIMINGS.CONNECTING_FLOOR_MS
+      : UX_TIMINGS.MIN_STEP_DURATION_MS;
 
-    // elevate synthetic processing into explicit phase
-    // ensures single source of truth (no UI-only hidden state)
-    if (processingVisible && phase === 'IMPORTING_ORDERS') {
-        phase = 'PROCESSING';
-    }
-
-    // synthetic step (controlled, isolated)
-    /**
-     * processing becomes visible when meaningful data exists
-     * removes arbitrary timing dependency
-     */
-    useEffect(() => {
-    if (phase === 'IMPORTING_ORDERS' && counts.orders > 0) {
-        setProcessingVisible(true);
+    if (elapsed >= minDuration) {
+      setGatedPhase(rawPhase);
     } else {
-        setProcessingVisible(false);
-    }
-    }, [phase, counts.orders]);
-
-  useEffect(() => {
-  if (phase !== 'CONNECTING') return;
-
-  const t = setTimeout(() => setConnectingReady(true), 3000); // UX floor
-  return () => clearTimeout(t);
-}, [phase]);
-
-  // teaser on completion
-  useEffect(() => {
-    if (phase === 'DONE') {
-      const t = setTimeout(() => setShowTeaser(true), UX_TIMINGS.TEASER_DELAY_MS);
+      const remaining = minDuration - elapsed;
+      const t = setTimeout(() => setGatedPhase(rawPhase), remaining);
       return () => clearTimeout(t);
     }
-  }, [phase]);
+  }, [rawPhase]);
 
-  // reassurance
-  useEffect(() => {
-    const t = setTimeout(() => setShowReassurance(true), UX_TIMINGS.REASSURANCE_DELAY_MS);
-    return () => clearTimeout(t);
-  }, []);
+  const phase = gatedPhase;
 
   // active step index (deterministic)
   let activeStepIndex = 0;
