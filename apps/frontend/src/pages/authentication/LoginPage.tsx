@@ -60,8 +60,8 @@ export default function Login() {
 
   return (
     <AuthWrapper1>
-      <Stack sx={{ justifyContent: 'flex-end', minHeight: '100vh' }}>
-        <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 68px)' }}>
+      <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '60px' }}>
+        <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
           {/* AUTH-012: top-left logo nav bar — matches target A1 */}
           <Box
             sx={{
@@ -100,7 +100,7 @@ export default function Login() {
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
                     Welcome back.{' '}
                     {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
-                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400, fontFamily: '"DM Serif Display", Georgia, serif' }}>
+                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       Let's sync up.
                     </Box>
                   </Typography>

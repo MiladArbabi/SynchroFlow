@@ -8,6 +8,9 @@ import { axiosInstance } from 'api/axiosConfig';
 // -- ANALYTICS 
 import { useUiEvents } from '../../../analytics/useUiEvents';
 
+// -- AUTH
+import OAuthButtons from '../OAuthButtons';
+
 // material-ui
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -51,6 +54,7 @@ interface RegisterFormValues {
   password: string;
   firstName: string;
   lastName: string;
+  agreed: boolean;
   submit: string | null;
 }
 
@@ -65,8 +69,9 @@ export interface StringColorProps {
 export default function JWTRegister({ ...others }: JWTRegisterProps) {
   const theme = useTheme();
   const [showPassword, setShowPassword] = useState(false);
-  const [checked, setChecked] = useState(true);
   const { emit } = useUiEvents();
+
+  // Terms agreement — controlled by Formik, not local state
 
   const [strength, setStrength] = useState(0);
   const [level, setLevel] = useState<StringColorProps>();
@@ -99,10 +104,8 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
 
   return (
     <>
-      <Stack sx={{ mb: 2, alignItems: 'center' }}>
-        {/* AUTH-008: divider label above email fields */}
-        <Typography variant="subtitle1" sx={{ color: 'var(--ink-3)' }}>Or use email</Typography>
-      </Stack>
+      {/* AUTH-002: OAuth buttons above email form — matches target A2 */}
+      <OAuthButtons mode="register" />
 
       <Formik
         initialValues={{
@@ -110,6 +113,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
           password: '',
           firstName: '',
           lastName: '',
+          agreed: false,
           submit: null
         }}
         validationSchema={Yup.object().shape({
@@ -129,7 +133,10 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
           password: Yup.string()
             .required('Password is required')
             .test('no-leading-trailing-whitespace', 'Password can not start or end with spaces', (value) => value === value.trim())
-            .max(25, 'Password must be less than 25 characters')
+            .max(25, 'Password must be less than 25 characters'),
+          agreed: Yup.boolean()
+            .oneOf([true], 'You must agree to the Terms and Privacy policy.')
+            .required(),
         })}
         onSubmit={async (values, { setErrors, setStatus, setSubmitting }: FormikHelpers<RegisterFormValues>) => {
           try {
@@ -293,9 +300,26 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             {strength !== 0 && (
               <FormControl fullWidth>
                 <Box sx={{ mb: 2 }}>
-                  <Stack direction="row" sx={{ gap: 2, alignItems: 'center' }}>
-                    <Box sx={{ width: 85, height: 8, borderRadius: '7px', bgcolor: level?.color }} />
-                    <Typography variant="subtitle1" sx={{ fontSize: '0.75rem' }}>
+                  {/* AUTH-010: 4-segment strength bar matching target A2 */}
+                  <Stack direction="row" sx={{ gap: 1, alignItems: 'center' }}>
+                    {[1, 2, 3, 4].map((seg) => (
+                      <Box
+                        key={seg}
+                        sx={{
+                          flex: 1,
+                          height: 6,
+                          borderRadius: '3px',
+                          bgcolor: strength >= seg
+                            ? strength <= 1 ? '#EF4444'
+                            : strength <= 2 ? '#F59E0B'
+                            : strength <= 3 ? '#3B82F6'
+                            : '#22C55E'
+                            : 'var(--rule-2)',
+                          transition: 'background-color 0.2s',
+                        }}
+                      />
+                    ))}
+                    <Typography variant="caption" sx={{ color: 'var(--ink-3)', minWidth: 52, textAlign: 'right' }}>
                       {level?.label}
                     </Typography>
                   </Stack>
@@ -304,7 +328,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             )}
 
             <FormControlLabel
-              control={<Checkbox checked={checked} onChange={(event) => setChecked(event.target.checked)} name="checked" color="primary" />}
+              control={<Checkbox checked={values.agreed} onChange={handleChange} name="agreed" color="primary" />}
               label={
                 <Typography variant="subtitle1">
                   {/* AUTH-011: split links matching target A2 */}
@@ -319,6 +343,9 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                 </Typography>
               }
             />
+            {touched.agreed && errors.agreed && (
+              <FormHelperText error>{errors.agreed}</FormHelperText>
+            )}
             {errors.submit && (
               <Box sx={{ mt: 3 }}>
                 <FormHelperText error>{errors.submit}</FormHelperText>

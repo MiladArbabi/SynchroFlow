@@ -21,6 +21,7 @@ import AuthCardWrapper from './AuthCardWrapper';
 
 import { useAuth } from 'contexts/AuthContext';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
+import { CircularProgress } from '@mui/material';
 
 // import { 'jwt' } from 'config'; // <-- COMMENT OUT
 
@@ -60,8 +61,8 @@ export default function Register() {
 
   return (
     <AuthWrapper1>
-      <Stack sx={{ justifyContent: 'flex-end', minHeight: '100vh' }}>
-        <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: 'calc(100vh - 68px)' }}>
+      <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '60px' }}>
+        <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
           {/* AUTH-012: top-left logo nav bar — matches target A2 */}
           <Box
             sx={{
@@ -90,7 +91,7 @@ export default function Register() {
           </Box>
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
             <AuthCardWrapper>
-              <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+              <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 2, width: '100%' }}>
 
                 {/* AUTH-005: step 1 of 2 stepper — matches target A2 */}
                 <Stack direction="row" alignItems="center" spacing={1.5} sx={{ width: '100%' }}>
@@ -109,29 +110,37 @@ export default function Register() {
                   </Stack>
                 </Stack>
 
-                <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>
                   {/* AUTH-004: target headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0 }}>
                     Create your account.{' '}
                     {/* THEME-002: DM Serif Display loaded in index.html — serif italic brand voice */}
-                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400, fontFamily: '"DM Serif Display", Georgia, serif' }}>
+                    <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       60 seconds.
                     </Box>
                   </Typography>
-                  <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' }, color: 'var(--ink-3)' }}>
+                  <Typography variant="caption" sx={{ fontSize: '16px', color: 'var(--ink-3)' }}>
                     You'll connect Shopify in the next step. We never store your password.
                   </Typography>
                 </Stack>
-                <Box>{AuthRegisterComponent && <AuthRegisterComponent posthog={posthog}/>}</Box>
+                <Box sx={{ width: '100%' }}>
+                  {AuthRegisterComponent
+                    ? <AuthRegisterComponent posthog={posthog}/>
+                    : <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress sx={{ color: 'var(--accent)' }} /></Box>
+                  }
+                </Box>
                 <Divider sx={{ width: 1 }} />
                 <Stack sx={{ alignItems: 'center' }}>
-                  <Typography
-                    component={Link}
-                    to={authParam ? `/login?auth=${authParam}` : '/login'}
-                    variant="subtitle1"
-                    sx={{ textDecoration: 'none' }}
-                  >
-                    Already have an account?
+                  {/* Target A2: "Already have an account? Sign in" with accent link */}
+                  <Typography variant="subtitle1" sx={{ color: 'var(--ink-3)' }}>
+                    Already have an account?{' '}
+                    <Box
+                      component={Link}
+                      to={authParam ? `/login?auth=${authParam}` : '/login'}
+                      sx={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: 600 }}
+                    >
+                      Sign in
+                    </Box>
                   </Typography>
                 </Stack>
               </Stack>
