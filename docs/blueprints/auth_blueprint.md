@@ -379,6 +379,50 @@ All transactional emails use `emailHtml(content)` in `email.service.ts`:
 4. Call fire-and-forget with `.catch()` for non-fatal emails
 5. Use `systemDb` if sending during pre-tenant operations
 
+## FT0 Sync Animation (SyncAnimationPage)
+
+### Location
+
+`apps/frontend/src/activation/SyncAnimationPage.tsx`
+`apps/frontend/src/activation/hooks/useSyncStepMachine.ts`
+`apps/frontend/src/activation/hooks/useSyncStatus.ts`
+
+### Architecture
+
+- `useSyncStatus` — polls `/api/v1/integrations/sync-status` every 2s
+- `useSyncStepMachine` — imperative timer loop drives phase walking, isolated from React render cycle
+- Phase order: CONNECTING → IMPORTING_PRODUCTS → IMPORTING_ORDERS → PROCESSING → FINALIZING → DONE
+
+### Timing (minimum per phase)
+
+| Phase | Duration |
+|---|---|
+| CONNECTING | 2500ms |
+| IMPORTING_PRODUCTS | 1800ms |
+| IMPORTING_ORDERS | 8000ms |
+| PROCESSING | 5000ms |
+| FINALIZING | 3000ms |
+
+### Key decisions
+
+- Timer loop uses refs not state — poll re-renders never cancel pending timers
+- `highestTargetIndex` tracks furthest backend phase seen — never regresses
+- Product count uses `progress.current` as proxy when DB variants table lags projections
+- Orders step shows pulse indicator — total count not known upfront
+- Progress bar driven by UI step index (20% per step) — not backend percentage
+- Right panel removed — skeletons without real data erode trust (#985 tracks real data reveal)
+
+### Nav during FT0
+
+- Only logo + "Sync in progress" pill visible
+- Trial banner, alerts bell, color mode toggles gated to `isFt2 = phase === 'FT2_READY'`
+- Gating in `TopnavbarContent.tsx` via `useShopLifecycle()`
+- Trial banner also gated in `AppLayout/index.tsx` via `isSidenavAllowed`
+
+### Pending
+
+- #985 — populate right panel with real brief items on COMPLETED
+
 ---
 
 ## Environment Variables Required
