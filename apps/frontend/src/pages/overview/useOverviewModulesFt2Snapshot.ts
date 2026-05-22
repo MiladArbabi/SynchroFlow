@@ -34,9 +34,10 @@ export type OverviewModulesFt2Snapshot = {
 
 const DEFAULT_RANGE: FT2DateRange = { preset: 'past_30_days', from: null, to: null };
 
-export function useOverviewModulesFt2Snapshot(range: FT2DateRange = DEFAULT_RANGE) {
+export function useOverviewModulesFt2Snapshot(range: FT2DateRange = DEFAULT_RANGE, enabled = true) {
   return useQuery<OverviewModulesFt2Snapshot>({
     queryKey: ['overview', 'modules-ft2', range.preset],
+    enabled,
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/overview/modules-ft2',{
@@ -53,5 +54,7 @@ export function useOverviewModulesFt2Snapshot(range: FT2DateRange = DEFAULT_RANG
         });
       return data;
     },
+    refetchInterval: (query) =>
+      query.state.data ? false : 5000,
   });
 }

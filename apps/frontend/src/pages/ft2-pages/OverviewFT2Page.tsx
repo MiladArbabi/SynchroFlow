@@ -12,22 +12,14 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
-  const { user } = useAuth();
-  
+  // AFTER
+  const { user, isLoading: authLoading } = useAuth();
   const [forceRefresh, setForceRefresh] = useState(false);
-
-  const overviewModules = useOverviewModulesFt2Snapshot();
-  const trust = useTrustFt2Snapshot();
-
-  /**
-   * PULSE + FIRST INSIGHT DATA SOURCE (B-05, B-06)
-   * -----------------------------------------------
-   * Reuses existing FT2 snapshot — no new API calls.
-   * operationalControl powers both the Pulse zone and
-   * the FirstInsightBanner.
-   */
-  const ft2Snapshot = useOrdersFt2Snapshot();
+  const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
+  const trust = useTrustFt2Snapshot(!authLoading);
+  const ft2Snapshot = useOrdersFt2Snapshot(!authLoading);
   const operationalControl = ft2Snapshot.data?.operationalControl;
+  const morningBrief = useMorningBriefSnapshot(forceRefresh, !authLoading);
 
   /**
    * MORNING BRIEF (OVR-01)
@@ -37,9 +29,9 @@ export default function OverviewPageFT2() {
    */
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
   const { displayCurrency } = useEntitlements();
-  const morningBrief = useMorningBriefSnapshot(forceRefresh);
 
-  if (!overviewModules.isSuccess) return null;
+  if (overviewModules.isPending) return null;
+  if (overviewModules.isError) return null;
 
   const overviewProps = mapOverviewFt2Props(
     overviewModules.data,
@@ -61,7 +53,7 @@ export default function OverviewPageFT2() {
         } : null}
         
         userName={user?.first_name ?? null}
-        morningBrief={isOwnerOrAdmin ? (morningBrief.data ?? null) : undefined}
+        morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}
         currency={displayCurrency}
         onNavigate={(deepLink) => navigate(deepLink)}
         onRefreshBrief={() => setForceRefresh(f => !f)}

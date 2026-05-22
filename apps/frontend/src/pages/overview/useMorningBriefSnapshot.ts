@@ -36,9 +36,11 @@ export interface MorningBriefData {
   summaryLine: string | null;
 }
 
-export function useMorningBriefSnapshot(force = false) {
+// AFTER
+export function useMorningBriefSnapshot(force = false, enabled = true) {
   return useQuery<MorningBriefData | null>({
     queryKey: ['overview', 'morning-brief', force],
+    enabled,
     queryFn: async () => {
       const { data, status } = await axiosInstance.get(
         `/api/v1/modules/overview/morning-brief${force ? '?force=true' : ''}`,
@@ -50,6 +52,8 @@ export function useMorningBriefSnapshot(force = false) {
     },
     // Refresh every 15 minutes — matches backend cache window
     staleTime: (query) => query.state.data === null ? 0 : 15 * 60 * 1000,
-    refetchInterval: (query) => query.state.data === null ? 10 * 1000 : false,
+    refetchInterval: (query) =>
+      query.state.data === null || query.state.status === 'error' ? 10 * 1000 : false,
+    retry: 3,
   });
 }

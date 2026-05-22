@@ -130,13 +130,16 @@ export type OrdersFt2Snapshot = {
  * - Read-only
  * - No transformation
  */
-export function useOrdersFt2Snapshot() {
+export function useOrdersFt2Snapshot(enabled = true) {
   return useQuery<OrdersFt2Snapshot>({
     queryKey: ['order-nexus', 'ft2'],
+    enabled,
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/order-nexus/ft2');
       return data;
     },
+    refetchInterval: (query) =>
+      query.state.data?.operationalControl ? false : 5000,
   });
 }

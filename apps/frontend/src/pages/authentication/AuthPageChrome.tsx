@@ -15,12 +15,11 @@ import { keyframes } from '@mui/system';
 
 const TICKER_STATS = [
   { value: '2.1M', label: 'TRACKED ACROSS WAITLIST STORES' },
-  { value: '912 hrs', label: 'SPREADSHEET WORK REMOVED / MONTH' },
+  { value: '91.2 hrs', label: 'SPREADSHEET WORK REMOVED / MONTH' },
   { value: '4.2 days', label: 'AVERAGE STOCK-OUT LEAD TIME' },
   { value: '99.4%', label: 'PICK ACCURACY IN CONNECTED WAREHOUSES' },
   { value: '73%', label: 'FEWER ANGRY-CUSTOMER EMAILS' },
   { value: '2.5 hr', label: 'SAVED PER OPERATOR PER DAY' },
-  { value: 'SOC 2', label: 'TYPE II · READ-ONLY SHOPIFY SCOPES' },
 ];
 
 // Duplicate for seamless loop

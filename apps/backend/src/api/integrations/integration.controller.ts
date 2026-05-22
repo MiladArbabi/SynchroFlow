@@ -447,15 +447,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     let authTokens: { accessToken: any; refreshToken: any };
 
     try {
+     const shopContext = await requireShopContextForUser(oauthContext.userId);
       authTokens = await issueAuthTokens({
-      userId: oauthContext.userId,
-      shopId: result.shopId,
-      actorType: 'shop_user',
-      authProvider: 'shopify',
-      shopRoles: [],
-      scopes: [],
-      tokenVersion: 1,
-    });
+        userId: oauthContext.userId,
+        shopId: result.shopId,
+        actorType: 'shop_user',
+        authProvider: 'shopify',
+        shopRoles: [shopContext.role],
+        scopes: [],
+        tokenVersion: 1,
+      });
       } catch (err) {
         console.error('[OAuth] Token issuance invariant failed', err);
         throw new Error('OAUTH_FATAL: auth token issuance failed');

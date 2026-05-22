@@ -17,9 +17,10 @@ export type TrustFt2Snapshot = {
  *
  * Reusable across all FT2 pages.
  */
-export function useTrustFt2Snapshot() {
+export function useTrustFt2Snapshot(enabled = true) {
   return useQuery<TrustFt2Snapshot>({
     queryKey: ['ft2', 'trust'],
+    enabled,
     queryFn: async () => {
     /**
      * Trust FT2 must use the same authenticated transport
@@ -45,7 +46,8 @@ export function useTrustFt2Snapshot() {
     },
 
     // Trust is terminal, not volatile UI data
-    staleTime: 60_000,
+    staleTime: (query) => query.state.data?.trustEligible === true ? 60_000 : 0,
+    refetchInterval: (query) => query.state.data?.trustEligible === true ? false : 5000,
     retry: false,
   });
 }
