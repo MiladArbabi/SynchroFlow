@@ -73,6 +73,16 @@ export async function up(knex: Knex): Promise<void> {
     table.string('email_verification_token', 128).nullable();
     table.timestamp('email_verification_expires_at', { useTz: true }).nullable();
 
+    /**
+     * PASSWORD RESET (AUTH: forgot-password flow)
+     * --------------------------------------------
+     * password_reset_token      — crypto random hex, single-use
+     * password_reset_expires_at — 30 min window (matches UI copy)
+     * Token cleared on successful reset.
+     */
+    table.string('password_reset_token', 128).nullable();
+    table.timestamp('password_reset_expires_at', { useTz: true }).nullable();
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

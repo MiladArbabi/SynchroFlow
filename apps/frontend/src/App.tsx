@@ -30,6 +30,7 @@ import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
 import ConnectStorePage from 'pages/authentication/ConnectStorePage';
 import CheckInboxPage from 'pages/authentication/CheckInboxPage';
 import VerifyEmailPage from 'pages/authentication/VerifyEmailPage';
+import ResetPasswordPage from 'pages/authentication/ResetPasswordPage';
 
 const queryClient = new QueryClient();
 
@@ -213,6 +214,8 @@ export default function App() {
           <Route path="/check-inbox" element={<CheckInboxPage />} />
           {/* AUTH-007: verify-email token handler — verifies then redirects to /connect-store */}
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          {/* Password reset — token from email link */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}

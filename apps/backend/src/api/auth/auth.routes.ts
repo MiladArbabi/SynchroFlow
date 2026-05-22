@@ -7,7 +7,9 @@ import {
   logoutUser, 
   getDevToken, 
   verifyEmail, 
-  resendVerificationEmail 
+  resendVerificationEmail,
+  forgotPassword,
+  resetPassword
 } from './auth.controller.js';
 import { testIssueAccessToken } from './auth.test.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
@@ -36,5 +38,9 @@ router.get('/dev-token', getDevToken);
 router.get('/verify-email', verifyEmail);
 // AUTH-007: requires auth — user must be logged in to resend verification
 router.post('/resend-verification', authenticateToken, resendVerificationEmail);
+
+// Forgot password / reset password
+router.post('/forgot-password', forgotPassword);
+router.post('/reset-password', resetPassword);
 
 export default router;

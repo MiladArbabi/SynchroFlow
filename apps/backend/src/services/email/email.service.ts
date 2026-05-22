@@ -24,6 +24,13 @@ export interface SendOperatorInviteParams {
   role: string;
 }
 
+export interface SendPasswordResetEmailParams {
+  toEmail: string;
+  firstName: string;
+  resetToken: string;
+}
+
+
 /**
  * sendOperatorInviteEmail
  * -----------------------
@@ -318,4 +325,50 @@ export async function sendVerificationEmail(params: SendVerificationEmailParams)
   }
 
   console.info('[EMAIL] Verification email sent', { toEmail });
+}
+
+/**
+ * sendPasswordResetEmail
+ * ----------------------
+ * Sent when user requests password reset via /forgot-password.
+ * Link expires in 30 minutes — matches UI copy in ForgotPasswordPage.
+ * Non-fatal: caller logs failure but does not expose user existence.
+ */
+export async function sendPasswordResetEmail(params: SendPasswordResetEmailParams): Promise<void> {
+  const { toEmail, firstName, resetToken } = params;
+  const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
+  const resetUrl = `${appUrl}/reset-password?token=${resetToken}`;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: 'Reset your LaSyncro password',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <img src="https://www.lasyncro.com/logo-dark.png" alt="LaSyncro" style="height: 28px; margin-bottom: 24px;" />
+        <h2 style="margin-bottom: 8px; color: #0F0E0D;">Reset your password</h2>
+        <p style="color: #6B7280;">Hi ${firstName || 'there'},</p>
+        <p style="color: #6B7280;">
+          Click the button below to reset your password. This link expires in 30 minutes.
+        </p>
+        <a href="${resetUrl}"
+           style="display:inline-block;margin-top:16px;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          Reset password
+        </a>
+        <p style="margin-top: 24px; color: #9CA3AF; font-size: 13px;">
+          Or copy this link: ${resetUrl}
+        </p>
+        <p style="color: #9CA3AF; font-size: 12px; margin-top: 32px;">
+          If you didn't request a password reset, you can safely ignore this email.
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendPasswordResetEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Password reset email sent', { toEmail });
 }

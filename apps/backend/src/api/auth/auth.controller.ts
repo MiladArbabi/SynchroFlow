@@ -11,7 +11,7 @@ import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backen
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { User } from '../../types.js';
-import { sendVerificationEmail } from '../../services/email/email.service.js';
+import { sendVerificationEmail, sendPasswordResetEmail } from '../../services/email/email.service.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -629,4 +629,111 @@ export const resendVerificationEmail = async (req: Request, res: Response) => {
   });
 
   return res.status(200).json({ message: 'Verification email sent.' });
+};
+
+// ─────────────────────────────────────────────
+// Forgot password / reset password endpoints
+// ─────────────────────────────────────────────
+
+/**
+ * forgotPassword
+ * --------------
+ * POST /api/v1/auth/forgot-password  — public, no auth required
+ * Always returns 200 to prevent email enumeration.
+ * Rate-limited: 3 requests per 15 minutes per IP.
+ */
+export const forgotPassword = async (req: Request, res: Response) => {
+  const ip = req.headers['x-forwarded-for']?.toString() || req.socket.remoteAddress || 'unknown';
+  const allowed = rateLimit(`forgot-password:${ip}`, 3, 15 * 60_000);
+  if (!allowed) {
+    return res.status(429).json({ error: 'Too many requests. Please wait before trying again.' });
+  }
+
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Email is required.' });
+  }
+
+  // Always return 200 — never reveal whether email exists
+  try {
+    const user = await systemDb<User>('users')
+      .where({ email: email.toLowerCase() })
+      .first();
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+      await systemDb('users')
+        .where({ id: user.id })
+        .update({
+          password_reset_token: resetToken,
+          password_reset_expires_at: expiresAt,
+        });
+
+      sendPasswordResetEmail({
+        toEmail: user.email,
+        firstName: user.first_name ?? '',
+        resetToken,
+      }).catch((err) => {
+        console.error('[AUTH][FORGOT_PASSWORD] email failed (non-fatal):', err);
+      });
+
+      console.info('[AUTH][FORGOT_PASSWORD] reset token issued', { userId: user.id });
+    }
+  } catch (err) {
+    console.error('[AUTH][FORGOT_PASSWORD] error:', err);
+  }
+
+  // Always 200 — no enumeration
+  return res.status(200).json({ message: 'If that email exists, a reset link is on its way.' });
+};
+
+/**
+ * resetPassword
+ * -------------
+ * POST /api/v1/auth/reset-password  — public, no auth required
+ * Validates token, updates password, clears token.
+ */
+export const resetPassword = async (req: Request, res: Response) => {
+  const { token, password } = req.body;
+
+  if (!token || !password) {
+    return res.status(400).json({ error: 'Token and new password are required.' });
+  }
+
+  if (password.length > 25) {
+    return res.status(400).json({ error: 'Password must be less than 25 characters.' });
+  }
+
+  const user = await systemDb<User>('users')
+    .where({ password_reset_token: token })
+    .first();
+
+  if (!user) {
+    return res.status(400).json({ error: 'Invalid or expired reset link.' });
+  }
+
+  if (!user.password_reset_expires_at || new Date() > new Date(user.password_reset_expires_at)) {
+    return res.status(400).json({ error: 'Reset link has expired. Please request a new one.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+  await systemDb('users')
+    .where({ id: user.id })
+    .update({
+      password_hash: passwordHash,
+      password_reset_token: null,
+      password_reset_expires_at: null,
+    });
+
+  // Revoke all active sessions on password reset — security best practice
+  await db('refresh_tokens')
+    .where({ user_id: user.id, revoked_at: null })
+    .update({ revoked_at: new Date() });
+
+  console.info('[AUTH][RESET_PASSWORD] password reset successful', { userId: user.id });
+
+  return res.status(200).json({ message: 'Password reset successfully. Please sign in.' });
 };
