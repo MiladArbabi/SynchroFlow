@@ -344,7 +344,7 @@ AuthPageChrome.tsx
 | #978 | Add "Open Gmail/email" shortcut on check-inbox screen — open |
 | #979 | Self-serve account deletion + Shopify store disconnection — open |
 | #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
-| #984 | AhaMomentPage (FT1) visual elevation — open |
+| #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
 | AUTH-007 deferred | Email verification is non-blocking — users can access app unverified. Future: gate certain actions behind `email_verified_at IS NOT NULL` |
 | Google OAuth | Backend only supports Shopify. Google OAuth shown as disabled. Needs backend implementation. |
 
@@ -358,6 +358,7 @@ AuthPageChrome.tsx
 | Email templates (#981) | ✅ Shared `emailHtml()` wrapper — logo-light.png, #FF6B2B accent, Plus Jakarta Sans |
 | Continue button overlap (#980) | ✅ pb: 100px on all auth page wrappers |
 | Floor-planning Vite race | ✅ Pre-build in dev-ui script + added to build:modules |
+| AhaMomentPage visual elevation (#984) | ✅ Floating status pill with timestamp, gated divider, accent left-border on first card, revenue impact banner, layout height fix |
 
 ## Email System
 
