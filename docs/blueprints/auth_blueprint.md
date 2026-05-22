@@ -341,12 +341,43 @@ AuthPageChrome.tsx
 
 | Issue | Description |
 |---|---|
-| #978 | Add "Open Gmail/email" shortcut on check-inbox screen |
-| #979 | Self-serve account deletion + Shopify store disconnection |
+| #978 | Add "Open Gmail/email" shortcut on check-inbox screen — open |
+| #979 | Self-serve account deletion + Shopify store disconnection — open |
+| #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
+| #984 | AhaMomentPage (FT1) visual elevation — open |
 | AUTH-007 deferred | Email verification is non-blocking — users can access app unverified. Future: gate certain actions behind `email_verified_at IS NOT NULL` |
 | Google OAuth | Backend only supports Shopify. Google OAuth shown as disabled. Needs backend implementation. |
-| Forgot password | ✅ Complete — `POST /api/v1/auth/forgot-password` + `sendPasswordResetEmail` + rate-limited, enumeration-safe |
-| Password reset | ✅ Complete — `POST /api/v1/auth/reset-password` + `ResetPasswordPage` at `/reset-password?token=<hex>` + sessions revoked on reset |
+
+## Completed since initial audit
+
+| Item | Resolution |
+|---|---|
+| Forgot password | ✅ `POST /api/v1/auth/forgot-password` — enumeration-safe, rate-limited, Resend delivery |
+| Password reset | ✅ `POST /api/v1/auth/reset-password` + `ResetPasswordPage` at `/reset-password?token=<hex>` |
+| Cross-tab verification (#982) | ✅ BroadcastChannel('lasyncro_auth') — VerifyEmailPage broadcasts, CheckInboxPage listens |
+| Email templates (#981) | ✅ Shared `emailHtml()` wrapper — logo-light.png, #FF6B2B accent, Plus Jakarta Sans |
+| Continue button overlap (#980) | ✅ pb: 100px on all auth page wrappers |
+| Floor-planning Vite race | ✅ Pre-build in dev-ui script + added to build:modules |
+
+## Email System
+
+### Shared wrapper
+
+All transactional emails use `emailHtml(content)` in `email.service.ts`:
+
+- Background: `#FAFAF8` (LaSyncro light bg token)
+- Logo: `https://www.lasyncro.com/logo-light.png` (light-background compatible)
+- Accent: `#FF6B2B` (LaSyncro orange)
+- Font: Plus Jakarta Sans (consistent with app + marketing)
+- Card: white `#FFFFFF` with `#E8E6E0` border, 12px border-radius
+
+### Adding a new email template
+
+1. Add `SendXxxParams` interface
+2. Export `sendXxxEmail(params)` function  
+3. Wrap html with `emailHtml(\`...\`)`
+4. Call fire-and-forget with `.catch()` for non-fatal emails
+5. Use `systemDb` if sending during pre-tenant operations
 
 ---
 
