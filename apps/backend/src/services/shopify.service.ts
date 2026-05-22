@@ -277,7 +277,15 @@ export const performInitialSync = async (
     /**
      * WEBHOOK REGISTRATION (ISOLATED SIDE-EFFECT)
      */
-    await registerWebhooksForShop(shopId);
+    // Webhook registration is a non-fatal side effect — never block or crash sync
+    try {
+      await registerWebhooksForShop(shopId);
+    } catch (webhookErr) {
+      console.warn('[WEBHOOK_REGISTRATION_FAILED] Non-fatal — sync already completed', {
+        shopId,
+        error: (webhookErr as Error).message,
+      });
+    }
 
     } catch (error: any) {
     console.error(`[ShopifyService] FAILED to sync shopId: ${shopId}`, error);
