@@ -7,7 +7,7 @@
 //
 // NOTE: No network calls. Pure orchestration layer.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const UX_TIMINGS = {
   CONNECTING_FLOOR_MS:  2500,   // minimum time on connecting step
@@ -80,6 +80,7 @@ export function useSyncStepMachine(
 
   const [gatedPhase, setGatedPhase]               = useState<SyncPhase>('CONNECTING');
   const [processingVisible, setProcessingVisible]  = useState(false);
+  const targetPhaseRef = useRef<SyncPhase>('CONNECTING');
   const [showTeaser, setShowTeaser]                = useState(false);
   const [showReassurance, setShowReassurance]      = useState(false);
 
@@ -97,14 +98,18 @@ export function useSyncStepMachine(
   let targetPhase = mapStatusToPhase(status);
   if (processingVisible && targetPhase === 'IMPORTING_ORDERS') targetPhase = 'PROCESSING';
 
+  // Only advance the ref — never regress. Prevents poll-driven re-renders from resetting timers.
+  if (PHASE_ORDER.indexOf(targetPhase) > PHASE_ORDER.indexOf(targetPhaseRef.current)) {
+    targetPhaseRef.current = targetPhase;
+  }
+
   // Walk through phases sequentially with minimum dwell per step.
   // Never skips — even if backend jumps CONNECTING→DONE in 2s, UI walks each step.
   // CONNECTING_FLOOR_MS enforced here directly — no separate connectingReady gate needed.
   useEffect(() => {
     const currentIndex = PHASE_ORDER.indexOf(gatedPhase);
-    const targetIndex  = PHASE_ORDER.indexOf(targetPhase);
+    const targetIndex  = PHASE_ORDER.indexOf(targetPhaseRef.current);
 
-    // Don't advance past what the backend has confirmed
     if (currentIndex >= targetIndex) return;
 
     const nextPhase = PHASE_ORDER[currentIndex + 1];
@@ -116,7 +121,7 @@ export function useSyncStepMachine(
 
     const t = setTimeout(() => setGatedPhase(nextPhase), minDur);
     return () => clearTimeout(t);
-  }, [gatedPhase, targetPhase]);// targetPhase here is fine — timer is set fresh each render but previous is cancelled
+  }, [gatedPhase]); // targetPhase read via ref — poll re-renders never cancel the timer
 
   // Teaser after DONE
   useEffect(() => {
