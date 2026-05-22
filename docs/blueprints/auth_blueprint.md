@@ -1,0 +1,412 @@
+# LaSyncro — Auth & Identity Blueprint
+
+**Last updated: May 2026**  
+**Status: Core flow complete — email verification live — account deletion pending**  
+**Issues: #978 (Gmail shortcut) · #979 (Account deletion)**
+
+---
+
+## Overview
+
+LaSyncro uses a custom JWT-based auth system with email/password registration, Shopify OAuth integration, and email verification. There is no third-party auth provider (no Auth0, Firebase, Supabase). All token issuance is owned by a single internal service.
+
+---
+
+## Architecture
+
+### Stack
+
+- **Backend:** Express + PostgreSQL (Knex) + bcrypt + jsonwebtoken + Resend (email)
+- **Frontend:** React + MUI v7 + Formik + Yup + AuthContext
+- **Token storage:** Access token in-memory (`authStore.ts`) + localStorage fallback. Refresh token in HttpOnly cookie.
+- **RLS:** PostgreSQL Row Level Security enforced via `sf_app` role. Registration uses `systemDb` (`sf_user`, BYPASSRLS=true) because no tenant context exists yet.
+
+### Key files
+
+```tsx
+
+Backend
+├── apps/backend/src/api/auth/
+│   ├── auth.controller.ts       ← registerUser, loginUser, refreshToken, logoutUser, verifyEmail, resendVerificationEmail
+│   ├── auth.routes.ts           ← route wiring + authenticateToken middleware
+│   └── token.service.ts        ← SINGLE authority for JWT issuance — never bypass
+├── apps/backend/src/services/email/
+│   └── email.service.ts        ← sendVerificationEmail, sendOperatorInviteEmail, sendTrialReminderEmail etc.
+├── packages/backend-core/src/
+│   ├── db.ts                   ← db (sf_app, RLS enforced) + systemDb (sf_user, BYPASSRLS)
+│   └── middleware/auth.middleware.ts  ← authenticateToken — sets req.user.userId (camelCase)
+
+Frontend
+├── apps/frontend/src/
+│   ├── contexts/AuthContext.tsx          ← AuthProvider, useAuth hook, OAuth handoff handler
+│   ├── utils/authStore.ts               ← in-memory token store + localStorage fallback
+│   ├── utils/route-guard/AuthGuard.jsx  ← redirects unauthenticated to /login
+│   └── pages/authentication/
+│       ├── LoginPage.tsx                ← /login — dynamic import of jwt/AuthLogin
+│       ├── RegisterPage.tsx             ← /register — dynamic import of jwt/AuthRegister
+│       ├── ForgotPasswordPage.tsx       ← /forgot-password
+│       ├── CheckInboxPage.tsx           ← /check-inbox — post-registration verification wait
+│       ├── VerifyEmailPage.tsx          ← /verify-email — token handler, redirects to /connect-store
+│       ├── ConnectStorePage.tsx         ← /connect-store — step 2 of registration
+│       ├── OAuthButtons.tsx             ← Shopify + Google buttons (shared across login/register)
+│       ├── AuthPageChrome.tsx           ← SystemStatusPill + SocialProofTicker (shared)
+│       ├── AuthWrapper1.tsx             ← page background wrapper (uses var(--bg))
+│       └── AuthCardWrapper.tsx          ← card with border/shadow (uses var(--surface))
+│       └── jwt/
+│           ├── AuthLogin.tsx            ← email/password sign-in form + Formik
+│           └── AuthRegister.tsx         ← registration form + Formik + terms validation
+
+```
+
+---
+
+## Registration Flow (Happy Path)
+
+```tsx
+
+/register
+  → AuthRegister.tsx fills: firstName, lastName, workEmail, password, agreed (terms)
+  → POST /api/v1/auth/register
+      ↓ systemDb transaction (sf_user — BYPASSRLS required)
+        1. INSERT shops
+        2. INSERT warehouse_locations (root)
+        3. INSERT users
+        4. INSERT shop_memberships (role: owner)
+        5. LifecycleProjectionService.projectForMembership()
+        6. INSERT shop_subscriptions (14-day Growth trial)
+        7. EntitlementsService.applyFromCommercialGrant()
+      ↓ issueAuthTokens() — access + refresh tokens
+      ↓ systemDb UPDATE users SET email_verification_token, email_verification_expires_at
+      ↓ sendVerificationEmail() — non-fatal, fire-and-forget
+  ← { user: publicUser, accessToken }
+  → auth.login(user, accessToken) — stored in AuthContext + authStore + localStorage
+  → navigate('/check-inbox')
+
+/check-inbox
+  → Shows email address, 30-min expiry notice, Resend + Change address buttons
+  → POST /api/v1/auth/resend-verification (requires Bearer token, rate-limited 1/min)
+
+[User clicks email link]
+/verify-email?token=<hex>
+  → VerifyEmailPage.tsx calls GET /api/v1/auth/verify-email?token=<hex>
+  → Backend: validates token, checks expiry, sets email_verified_at, clears token fields
+  ← { message: 'Email verified successfully.' }
+  → navigate('/connect-store?verified=true')
+
+/connect-store?verified=true
+  → Shows green "Email verified" banner
+  → User enters Shopify store name → GET /api/v1/integrations/oauth/initiate?platform=shopify&shop=<name>
+  → Redirects to Shopify OAuth
+  → Shopify redirects back → GET /api/v1/integrations/oauth/callback/shopify
+  → SyncAnimationPage → /overview (FT1 or FT2 depending on lifecycle)
+
+```
+
+---
+
+## Sign-In Flow
+
+```tsx
+
+/login
+  → POST /api/v1/auth/login { email, password }
+  → bcrypt.compare → requireShopContextForUser → issueAuthTokens
+  ← { accessToken, refreshToken, user }
+  → auth.login() → navigate(role === 'operator' ? '/wms' : '/')
+
+```
+
+---
+
+## Token System
+
+### Access token
+
+- JWT signed with `JWT_SECRET`
+- Expires: **15 minutes** (900s)
+- Payload: `user_id`, `shop_id`, `shop_roles`, `tier`, `scopes`, `session_id`, `token_version`
+- Stored: in-memory (`authStore.ts`) + localStorage fallback
+
+### Refresh token
+
+- JWT signed with `JWT_REFRESH_SECRET`
+- Expires: **7 days**
+- Stored: HttpOnly cookie (`refreshToken`)
+- DB record: `refresh_tokens` table with `token_hash`, `session_id`, `token_version`, `revoked_at`
+- Rotation: old token revoked on each refresh, new token issued
+- Security: IP drift + UA drift logged (audit events), replay detection via `revoked_at`
+
+### Token issuance — SINGLE AUTHORITY
+
+```tsx
+
+token.service.ts → issueAuthTokens()
+
+```tsx
+**Never** issue tokens anywhere else. Any change here must be reflected in auth middleware tests.
+
+---
+
+## Email Verification
+
+### Schema (users table)
+
+```sql
+email_verified_at             TIMESTAMP WITH TIME ZONE  nullable
+email_verification_token      VARCHAR(128)              nullable — cleared on verify
+email_verification_expires_at TIMESTAMP WITH TIME ZONE  nullable — 30 min window
+```
+
+### Endpoints
+
+```ts
+GET  /api/v1/auth/verify-email?token=<hex>    — public, no auth required
+POST /api/v1/auth/resend-verification         — requires Bearer token, rate-limited 1/min/user
+```
+
+### Important
+
+- Verification is **non-blocking** — user gets access token immediately on register
+- Email delivery failure is **non-fatal** — registration succeeds regardless
+- Token update uses `systemDb` (not `db`) — sf_app cannot update users without tenant context
+
+---
+
+## Database & RLS
+
+### Critical rule
+
+`sf_app` (runtime role) has **`rolbypassrls = false`**. `sf_user` (migration role) has **`rolbypassrls = true`**.
+
+Any pre-tenant operation (registration, email verification token writes) **must use `systemDb`**, not `db`.
+
+```typescript
+// ✅ CORRECT — pre-tenant write
+await systemDb('users').where({ id: userId }).update({ email_verification_token: token });
+
+// ❌ WRONG — will fail with RLS violation
+await db('users').where({ id: userId }).update({ email_verification_token: token });
+```
+
+### RLS policies on key tables
+
+| Table | INSERT | SELECT | UPDATE | DELETE |
+|---|---|---|---|---|
+| shops | open (anyone) | tenant-isolated | tenant-isolated | tenant-isolated |
+| users | open | tenant-isolated | tenant-isolated | tenant-isolated |
+| shop_memberships | tenant-isolated | tenant-isolated | — | — |
+| warehouse_locations | tenant-isolated (ALL) | — | — | — |
+
+---
+
+## OAuth (Shopify)
+
+### Current state
+
+- **Shopify OAuth**: fully implemented end-to-end
+- **Google OAuth**: backend returns `{"error":"Unsupported platform"}` — UI shows disabled button with "Coming soon" tooltip
+- OAuth initiate endpoint **requires auth token** — it is not a public endpoint
+
+### Flow
+
+```ts
+ConnectStorePage → GET /api/v1/integrations/oauth/initiate?platform=shopify&shop=<name>
+  (requires Authorization: Bearer <accessToken>)
+→ Redirects to https://<shop>.myshopify.com/admin/oauth/authorize
+→ Shopify redirects to GET /api/v1/integrations/oauth/callback/shopify
+→ SyncAnimationPage (FT0 lifecycle)
+→ /overview (FT1/FT2)
+```
+
+---
+
+## Frontend Auth State
+
+### AuthContext
+
+```typescript
+{
+  isLoggedIn: boolean
+  isLoading: boolean      // true during initial hydration
+  user: PublicUser | null
+  accessToken: string | null
+  login(user, accessToken): void
+  logout(): void
+  setAccessToken(token): void
+}
+```
+
+### OAuth handoff (URL → state)
+
+When Shopify OAuth completes, backend redirects to:
+
+```tsx
+/?token=<jwt>&connect=success
+```
+
+`AuthContext` detects `connect=success` + `token` params on mount, decodes JWT payload, sets auth state, cleans URL via `history.replaceState`.
+
+### Token persistence
+
+```tsx
+authStore.ts
+  setToken()   → inMemoryAccessToken + localStorage.accessToken
+  getToken()   → inMemoryAccessToken ?? localStorage.accessToken
+  clearToken() → both cleared
+```
+
+---
+
+## Design System (Auth Pages)
+
+### Font
+
+**Plus Jakarta Sans** — loaded via Google Fonts in `apps/frontend/index.html`. Consistent across app, marketing, and landing page.
+
+### Color tokens (CSS vars — set in themes/index.tsx)
+
+```tsx
+--accent        #FF6B2B  (CTA buttons, links, highlights)
+--accent-hover  #FF8C5A
+--accent-ghost  rgba(255,107,43,0.12)
+--bg            page background
+--bg-2          secondary background
+--surface       card/panel surface
+--ink           primary text
+--ink-2         secondary text
+--ink-3         caption/metadata
+--ink-4         placeholder/hint
+--rule          default border  (dark: rgba(255,255,255,0.08))
+--rule-2        stronger border
+```
+
+### Auth-specific rules
+
+- All CTA buttons: `sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}`
+- **Never** use `color="secondary"` on buttons — renders MUI amber (#F59E0B), not LaSyncro orange
+- Card: `<MainCard border boxShadow sx={{ bgcolor: 'var(--surface)', borderColor: 'var(--rule) !important' }}>`
+- Page wrapper: `<AuthWrapper1>` — sets `backgroundColor: 'var(--bg)'`
+- Input fields: use `<FormControl>` + `<OutlinedInput placeholder="...">` — NOT `CustomFormControl` (it breaks `startAdornment` via `legend { display: none }`)
+
+### Shared auth chrome components
+
+```tsx
+AuthPageChrome.tsx
+  <SystemStatusPill />   — top-right nav, static "All systems green"
+  <SocialProofTicker />  — bottom fixed bar, scrolling metrics
+```
+
+---
+
+## Pitfalls & Lessons Learned
+
+### 1. RLS blocks pre-tenant writes
+
+**Problem:** `SET LOCAL row_security = off` has no effect for non-superuser roles.  
+**Fix:** Use `systemDb` for all operations before a shop/tenant exists.
+
+### 2. CustomFormControl breaks input icons
+
+**Problem:** `CustomFormControl` sets `legend { display: none }` and `fieldset { top: 0 }` — removes the MUI notch, causing `startAdornment` icons to overlap floating labels.  
+**Fix:** Use standard `<FormControl>` + `placeholder` instead of floating `InputLabel`.
+
+### 3. OAuth initiate requires auth token
+
+**Problem:** `/api/v1/integrations/oauth/initiate` has `authenticateToken` middleware — cannot be called from the sign-in page (user has no token yet).  
+**Fix:** "Continue with Shopify" on sign-in redirects to `/register`. OAuth connect happens post-registration when user has a token.
+
+### 4. Dynamic import flash on register page
+
+**Problem:** `AuthRegisterComponent` starts as `null` causing brief white flash before component loads.  
+**Fix:** Show `<CircularProgress>` while `AuthRegisterComponent` is null.
+
+### 5. Register response shape mismatch
+
+**Problem:** Frontend analytics read `response.data.id` but backend returns `{ user: publicUser }`.  
+**Fix:** `response.data.user.id`
+
+### 6. Verify-email was mapped to CheckInboxPage
+
+**Problem:** `/verify-email` route rendered `CheckInboxPage` — clicking the email link just showed the inbox screen again.  
+**Fix:** Dedicated `VerifyEmailPage` that calls the backend, shows status, then navigates to `/connect-store`.
+
+### 7. Backend redirect vs SPA
+
+**Problem:** Backend `res.redirect()` on verify-email doesn't work for axios calls in a SPA.  
+**Fix:** Return JSON `{ message: '...' }` — frontend handles navigation.
+
+---
+
+## Pending / Next Steps
+
+| Issue | Description |
+|---|---|
+| #978 | Add "Open Gmail/email" shortcut on check-inbox screen |
+| #979 | Self-serve account deletion + Shopify store disconnection |
+| AUTH-007 deferred | Email verification is non-blocking — users can access app unverified. Future: gate certain actions behind `email_verified_at IS NOT NULL` |
+| Google OAuth | Backend only supports Shopify. Google OAuth shown as disabled. Needs backend implementation. |
+| Forgot password backend | `ForgotPasswordPage` UI exists and calls `POST /api/v1/auth/forgot-password` but this endpoint does not exist yet in `auth.routes.ts` / `auth.controller.ts` |
+| Password reset | No reset token flow, no `reset-password` page, no `PUT /api/v1/auth/reset-password` endpoint |
+
+---
+
+## Environment Variables Required
+
+```bash
+# Auth
+JWT_SECRET=...
+JWT_REFRESH_SECRET=...
+
+# Shopify OAuth
+SHOPIFY_API_KEY=...
+SHOPIFY_API_SECRET=...
+SHOPIFY_WEBHOOK_SECRET=...
+SHOPIFY_API_VERSION=2024-01
+
+# Email (Resend)
+RESEND_API_KEY=...
+RESEND_FROM_EMAIL=noreply@lasyncro.com
+
+# URLs
+FRONTEND_URL=http://localhost:5173   # used in verification email link
+APP_BASE_URL=https://...ngrok...     # used for Shopify OAuth redirect URI
+```
+
+---
+
+## Testing
+
+```bash
+# Register + verify flow
+curl -X POST http://localhost:3000/api/v1/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"test@test.com","firstName":"Test","lastName":"User","password":"Password123!"}'
+
+# Login
+curl -X POST http://localhost:3000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"test@test.com","password":"Password123!"}'
+
+# Verify email (token from DB)
+curl "http://localhost:3000/api/v1/auth/verify-email?token=<token>"
+
+# Resend verification (requires Bearer token)
+curl -X POST http://localhost:3000/api/v1/auth/resend-verification \
+  -H "Authorization: Bearer <accessToken>"
+
+# Dev token (non-production only)
+curl http://localhost:3000/api/v1/auth/dev-token
+```
+
+---
+
+## Screens Reference
+
+| Route | File | Target design |
+|---|---|---|
+| `/login` | `LoginPage.tsx` + `jwt/AuthLogin.tsx` | A1 |
+| `/register` | `RegisterPage.tsx` + `jwt/AuthRegister.tsx` | A2 |
+| `/connect-store` | `ConnectStorePage.tsx` | A3 |
+| `/forgot-password` | `ForgotPasswordPage.tsx` | A4 |
+| `/check-inbox` | `CheckInboxPage.tsx` | A5 |
+| `/verify-email` | `VerifyEmailPage.tsx` | — (token handler) |
