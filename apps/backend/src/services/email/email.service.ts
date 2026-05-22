@@ -15,6 +15,24 @@ import { Resend } from 'resend';
 const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.RESEND_FROM_EMAIL ?? 'noreply@lasyncro.com';
 
+// Shared branded email wrapper — LaSyncro light-mode template
+// Logo: logo-light.png (light background compatible)
+const emailHtml = (content: string) => `
+  <div style="background:#FAFAF8;padding:40px 0;font-family:'Plus Jakarta Sans',system-ui,sans-serif;">
+    <div style="max-width:520px;margin:0 auto;background:#FFFFFF;border-radius:12px;overflow:hidden;border:1px solid #E8E6E0;">
+      <div style="padding:24px 32px;border-bottom:1px solid #E8E6E0;">
+        <img src="https://www.lasyncro.com/logo-light.png" alt="LaSyncro" style="height:32px;width:auto;" />
+      </div>
+      <div style="padding:32px;">
+        ${content}
+      </div>
+      <div style="padding:16px 32px;background:#F3F2EF;border-top:1px solid #E8E6E0;">
+        <p style="margin:0;font-size:12px;color:#9CA3AF;">LaSyncro · Operational intelligence for growing merchants</p>
+      </div>
+    </div>
+  </div>
+`;
+
 export interface SendOperatorInviteParams {
   toEmail: string;
   firstName: string;
@@ -297,26 +315,20 @@ export async function sendVerificationEmail(params: SendVerificationEmailParams)
     from: FROM,
     to: toEmail,
     subject: 'Verify your LaSyncro email address',
-    html: `
-      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-        <img src="https://www.lasyncro.com/logo-dark.png" alt="LaSyncro" style="height: 28px; margin-bottom: 24px;" />
-        <h2 style="margin-bottom: 8px; color: #0F0E0D;">Verify your email address</h2>
-        <p style="color: #6B7280;">Hi ${firstName || 'there'},</p>
-        <p style="color: #6B7280;">
-          Click the button below to verify your email. This link expires in 30 minutes.
-        </p>
-        <a href="${verifyUrl}"
-           style="display:inline-block;margin-top:16px;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
-          Verify email address
-        </a>
-        <p style="margin-top: 24px; color: #9CA3AF; font-size: 13px;">
-          Or copy this link: ${verifyUrl}
-        </p>
-        <p style="color: #9CA3AF; font-size: 12px; margin-top: 32px;">
-          If you didn't create a LaSyncro account, you can safely ignore this email.
-        </p>
-      </div>
-    `,
+    html: emailHtml(`
+      <h2 style="margin:0 0 8px;color:#0F0E0D;font-size:22px;font-weight:700;">Verify your email address</h2>
+      <p style="color:#6B7280;margin:0 0 8px;">Hi ${firstName || 'there'},</p>
+      <p style="color:#6B7280;margin:0 0 24px;">Click the button below to verify your email. This link expires in 30 minutes.</p>
+      <a href="${verifyUrl}"
+         style="display:inline-block;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">
+        Verify email address
+      </a>
+      <p style="margin:24px 0 0;color:#9CA3AF;font-size:13px;">
+        Or copy this link:<br/>
+        <a href="${verifyUrl}" style="color:#FF6B2B;word-break:break-all;">${verifyUrl}</a>
+      </p>
+      <p style="color:#9CA3AF;font-size:12px;margin:16px 0 0;">If you didn't create a LaSyncro account, you can safely ignore this email.</p>
+    `),
   });
 
   if (error) {
@@ -343,26 +355,20 @@ export async function sendPasswordResetEmail(params: SendPasswordResetEmailParam
     from: FROM,
     to: toEmail,
     subject: 'Reset your LaSyncro password',
-    html: `
-      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
-        <img src="https://www.lasyncro.com/logo-dark.png" alt="LaSyncro" style="height: 28px; margin-bottom: 24px;" />
-        <h2 style="margin-bottom: 8px; color: #0F0E0D;">Reset your password</h2>
-        <p style="color: #6B7280;">Hi ${firstName || 'there'},</p>
-        <p style="color: #6B7280;">
-          Click the button below to reset your password. This link expires in 30 minutes.
-        </p>
-        <a href="${resetUrl}"
-           style="display:inline-block;margin-top:16px;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
-          Reset password
-        </a>
-        <p style="margin-top: 24px; color: #9CA3AF; font-size: 13px;">
-          Or copy this link: ${resetUrl}
-        </p>
-        <p style="color: #9CA3AF; font-size: 12px; margin-top: 32px;">
-          If you didn't request a password reset, you can safely ignore this email.
-        </p>
-      </div>
-    `,
+    html: emailHtml(`
+      <h2 style="margin:0 0 8px;color:#0F0E0D;font-size:22px;font-weight:700;">Reset your password</h2>
+      <p style="color:#6B7280;margin:0 0 8px;">Hi ${firstName || 'there'},</p>
+      <p style="color:#6B7280;margin:0 0 24px;">Click the button below to reset your password. This link expires in 30 minutes.</p>
+      <a href="${resetUrl}"
+         style="display:inline-block;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">
+        Reset password
+      </a>
+      <p style="margin:24px 0 0;color:#9CA3AF;font-size:13px;">
+        Or copy this link:<br/>
+        <a href="${resetUrl}" style="color:#FF6B2B;word-break:break-all;">${resetUrl}</a>
+      </p>
+      <p style="color:#9CA3AF;font-size:12px;margin:16px 0 0;">If you didn't request a password reset, you can safely ignore this email.</p>
+    `),
   });
 
   if (error) {

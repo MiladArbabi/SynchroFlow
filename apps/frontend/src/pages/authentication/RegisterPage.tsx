@@ -61,7 +61,7 @@ export default function Register() {
 
   return (
     <AuthWrapper1>
-      <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '60px' }}>
+      <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
         <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
           {/* AUTH-012: top-left logo nav bar — matches target A2 */}
           <Box

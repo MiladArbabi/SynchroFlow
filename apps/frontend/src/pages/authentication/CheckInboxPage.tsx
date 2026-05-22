@@ -60,6 +60,20 @@ export default function CheckInboxPage() {
     }
   };
 
+  // #982: listen for verification success from other tabs (BroadcastChannel)
+  React.useEffect(() => {
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel('lasyncro_auth');
+      bc.onmessage = (e) => {
+        if (e.data?.type === 'EMAIL_VERIFIED') {
+          navigate('/connect-store?verified=true');
+        }
+      };
+    } catch { /* BroadcastChannel not supported */ }
+    return () => bc?.close();
+  }, [navigate]);
+
   const handleSignOut = () => {
     logout();
     navigate('/login');

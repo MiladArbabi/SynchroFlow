@@ -37,6 +37,12 @@ export default function VerifyEmailPage() {
     axiosInstance.get(`/api/v1/auth/verify-email`, { params: { token } })
       .then(() => {
         setState('success');
+        // #982: broadcast verification success to other tabs (e.g. check-inbox)
+              try {
+                const bc = new BroadcastChannel('lasyncro_auth');
+                bc.postMessage({ type: 'EMAIL_VERIFIED' });
+                bc.close();
+              } catch { /* BroadcastChannel not supported */ }
         setTimeout(() => navigate('/connect-store?verified=true'), 1500);
       })
       .catch((err) => {
