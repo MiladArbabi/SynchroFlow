@@ -48,12 +48,7 @@ export default function ForgotPasswordPage() {
           }}
         >
           <Link to="/" aria-label="LaSyncro home">
-            <Box
-              component="img"
-              src="/logo-dark.png"
-              alt="LaSyncro"
-              sx={{ height: 28, width: 'auto' }}
-            />
+            <AuthLogo />
           </Link>
           {/* AUTH-014: system status pill — top-right */}
           <SystemStatusPill />

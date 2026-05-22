@@ -25,6 +25,7 @@ import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
+import { AuthLogo } from './AuthLogo';
 
 export default function CheckInboxPage() {
   const { user, logout, accessToken } = useAuth();
@@ -86,7 +87,7 @@ export default function CheckInboxPage() {
         {/* Nav bar */}
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
           <Link to="/" aria-label="LaSyncro home">
-            <Box component="img" src="/logo-dark.png" alt="LaSyncro" sx={{ height: 28, width: 'auto' }} />
+            <AuthLogo />
           </Link>
           <SystemStatusPill />
         </Box>

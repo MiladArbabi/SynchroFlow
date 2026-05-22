@@ -19,6 +19,7 @@ import { PostHog } from 'posthog-js';
 import AuthWrapper1 from './AuthWrapper1'; 
 import AuthCardWrapper from './AuthCardWrapper'; 
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
+import { AuthLogo } from './AuthLogo';
 
 // import { APP_AUTH } from 'config';
 
@@ -78,12 +79,7 @@ export default function Login() {
             }}
           >
             <Link to="/" aria-label="LaSyncro home">
-              <Box
-                component="img"
-                src="/logo-dark.png"
-                alt="LaSyncro"
-                sx={{ height: 28, width: 'auto' }}
-              />
+              <AuthLogo />
             </Link>
             {/* AUTH-014: system status pill — top-right */}
             <SystemStatusPill />

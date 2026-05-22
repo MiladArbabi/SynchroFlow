@@ -17,6 +17,7 @@ import Button from '@mui/material/Button';
 import AuthWrapper1 from './AuthWrapper1';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { Link } from 'react-router-dom';
+import { AuthLogo } from './AuthLogo';
 
 type State = 'verifying' | 'success' | 'expired' | 'invalid' | 'error';
 
@@ -66,7 +67,7 @@ export default function VerifyEmailPage() {
         {/* Nav bar */}
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
           <Link to="/" aria-label="LaSyncro home">
-            <Box component="img" src="/logo-dark.png" alt="LaSyncro" sx={{ height: 28, width: 'auto' }} />
+            <AuthLogo />
           </Link>
           <SystemStatusPill />
         </Box>

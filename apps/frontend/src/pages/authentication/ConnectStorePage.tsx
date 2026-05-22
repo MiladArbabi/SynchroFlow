@@ -20,6 +20,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import FormHelperText from '@mui/material/FormHelperText';
 import AuthWrapper1 from './AuthWrapper1';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
+import { AuthLogo } from './AuthLogo';
 
 // Data access scopes shown to user — matches target A3 "What we'll read"
 const SCOPES = [
@@ -71,7 +72,7 @@ export default function ConnectStorePage() {
         {/* Nav bar — logo + status pill */}
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
           <Link to="/" aria-label="LaSyncro home">
-            <Box component="img" src="/logo-dark.png" alt="LaSyncro" sx={{ height: 28, width: 'auto' }} />
+            <AuthLogo />
           </Link>
           <SystemStatusPill />
         </Box>
