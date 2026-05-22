@@ -51,8 +51,8 @@ export type ConfigProps = {
 
 const config: ConfigProps = {
   menuOrientation: MenuOrientation.VERTICAL,
-  // THEME: Inter matches target design — loaded via @fontsource/inter in main.tsx
-  fontFamily: `'Inter', sans-serif`,
+  // UI font: Plus Jakarta Sans — geometric humanist, premium feel, Google Fonts available
+  fontFamily: `'Plus Jakarta Sans', 'Inter', sans-serif`,
   borderRadius: 8,
   outlinedFilled: true,
   presetColor: 'default',

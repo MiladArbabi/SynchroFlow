@@ -15,9 +15,14 @@ interface AuthCardWrapperProps extends Omit<MainCardProps, 'content'> { // Inher
 export default function AuthCardWrapper({ children, ...other }: AuthCardWrapperProps) {
   return (
     <MainCard
+      border
+      boxShadow
       sx={{
         maxWidth: { xs: 400, lg: 475 },
         margin: { xs: 2.5, md: 3 },
+        bgcolor: 'var(--surface)',
+        // Override MainCard's default borderColor (theme.palette.divider) with our design token
+        borderColor: 'var(--rule) !important',
         '& > *': {
           flexGrow: 1,
           flexBasis: '50%'

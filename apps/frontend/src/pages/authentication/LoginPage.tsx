@@ -91,7 +91,11 @@ export default function Login() {
           <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
             <AuthCardWrapper>
               <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
-                <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>
+                  {/* Target A1: "SIGN IN" orange uppercase label */}
+                  <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+                    Sign in
+                  </Typography>
                   {/* AUTH-003: target headline "Welcome back. Let's sync up." */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
                     Welcome back.{' '}
@@ -101,7 +105,7 @@ export default function Login() {
                     </Box>
                   </Typography>
                   <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' } }}>
-                    Enter your credentials to continue
+                    Enter your credentials to open today's brief.
                   </Typography>
                 </Stack>
                 <Box sx={{ width: 1 }}>

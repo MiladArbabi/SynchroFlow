@@ -11,8 +11,6 @@ import { useUiEvents } from '../../../analytics/useUiEvents';
 
 // material-ui
 import Button from '@mui/material/Button';
-import Checkbox from '@mui/material/Checkbox';
-import FormControlLabel from '@mui/material/FormControlLabel';
 import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid';
 import IconButton from '@mui/material/IconButton';
@@ -104,8 +102,6 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
   // A React state to hold and display submission errors
   const [submitError, setSubmitError] = useState<string | null>(null);
   // --- END NATIVE ERROR CATCHER ---
-
-  const [checked, setChecked] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [searchParams] = useSearchParams();
   const authParam = searchParams.get('auth');
@@ -275,22 +271,18 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             )}
           </FormControl>
 
-          {/* Remember Me & Forgot Password */}
           <Grid container sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-            <Grid>
-              <FormControlLabel
-                control={<Checkbox checked={checked} onChange={(event) => setChecked(event.target.checked)} name="checked" color="primary" />}
-                label="Keep me logged in"
-              />
-            </Grid>
-            <Grid>
+              <Grid>
+                {/* Keep me logged in removed — B2B default is persistent sessions (7-day refresh token) */}
+              </Grid>
+              <Grid>
               <Typography
                 variant="subtitle1"
                 component={Link}
                 to={authParam ? `/forgot-password?auth=${authParam}` : '/forgot-password'}
                 sx={{ textDecoration: 'none', color: 'var(--accent)' }}
               >
-                Forgot Password?
+                Forgot password?
               </Typography>
             </Grid>
           </Grid>

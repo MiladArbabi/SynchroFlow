@@ -76,21 +76,22 @@ export default function OAuthButtons({ mode, onShopifyRegister }: OAuthButtonsPr
 
   return (
     <Stack spacing={1.5} width="100%">
-      {/* Shopify */}
-      <Button onClick={handleShopify} sx={buttonSx} variant="outlined" fullWidth>
-        <ShopifyIcon />
-        Continue with Shopify
-      </Button>
+      {/* AUTH-001/002: 2-column OAuth buttons — matches target A1/A2 */}
+      <Stack direction="row" spacing={1.5}>
+        <Button onClick={handleShopify} sx={{ ...buttonSx, flex: 1 }} variant="outlined">
+          <ShopifyIcon />
+          Continue with Shopify
+        </Button>
 
-      {/* Google — coming soon */}
-      <Tooltip title="Google sign-in coming soon" placement="top" arrow>
-        <span style={{ width: '100%' }}>
-          <Button disabled sx={{ ...buttonSx, width: '100%', opacity: 0.45 }} variant="outlined">
-            <GoogleIcon />
-            Continue with Google
-          </Button>
-        </span>
-      </Tooltip>
+        <Tooltip title="Google sign-in coming soon" placement="top" arrow>
+          <span style={{ flex: 1 }}>
+            <Button disabled sx={{ ...buttonSx, width: '100%', opacity: 0.45 }} variant="outlined">
+              <GoogleIcon />
+              Continue with Google
+            </Button>
+          </span>
+        </Tooltip>
+      </Stack>
 
       {/* Divider */}
       <Stack direction="row" alignItems="center" spacing={1.5} sx={{ py: 0.5 }}>
