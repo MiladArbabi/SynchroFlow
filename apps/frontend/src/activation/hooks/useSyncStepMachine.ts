@@ -7,7 +7,7 @@
 //
 // NOTE: No network calls. Pure orchestration layer.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const UX_TIMINGS = {
   CONNECTING_FLOOR_MS:  2500,   // minimum time on connecting step
@@ -91,6 +91,8 @@ export function useSyncStepMachine(
   // ── connectingReady: prevents flash-through on fast syncs ─────────────────
   const [connectingReady, setConnectingReady] = useState(false);
 
+  const targetPhaseRef = useRef<SyncPhase>('CONNECTING');
+
   // Step 1: enforce minimum connecting floor
   useEffect(() => {
     const t = setTimeout(() => setConnectingReady(true), UX_TIMINGS.CONNECTING_FLOOR_MS);
@@ -111,16 +113,19 @@ export function useSyncStepMachine(
   if (!connectingReady && targetPhase !== 'CONNECTING') targetPhase = 'CONNECTING';
   if (processingVisible && targetPhase === 'IMPORTING_ORDERS') targetPhase = 'PROCESSING';
 
+  // Keep ref in sync — lets useEffect read latest targetPhase without it being a dependency
+  targetPhaseRef.current = targetPhase;
+
   // Step 4: walk through phases sequentially — never skip, always show each step
   // Even if backend jumps from CONNECTING → DONE in 2s, UI walks each step with min dwell
   useEffect(() => {
     const currentIndex = PHASE_ORDER.indexOf(gatedPhase);
-    const targetIndex  = PHASE_ORDER.indexOf(targetPhase);
+    const targetIndex  = PHASE_ORDER.indexOf(targetPhaseRef.current);
 
     // Already at or past target — nothing to do
     if (currentIndex >= targetIndex) return;
 
-    // Advance one step at a time
+    // Advance one step at a time with minimum dwell
     const nextPhase = PHASE_ORDER[currentIndex + 1];
     if (!nextPhase) return;
 
@@ -129,11 +134,12 @@ export function useSyncStepMachine(
       : UX_TIMINGS.MIN_STEP_DURATION_MS;
 
     const t = setTimeout(() => {
+      // Re-check at fire time — target may have moved further
       setGatedPhase(nextPhase);
     }, minDur);
 
     return () => clearTimeout(t);
-  }, [gatedPhase, targetPhase]);
+  }, [gatedPhase]); // targetPhase intentionally read via ref — prevents timer restart on backend updates
 
   // Step 5: teaser after DONE
   useEffect(() => {

@@ -247,6 +247,12 @@ const SyncAnimationPage: React.FC = () => {
     useSyncStepMachine(status, polledCounts, TOTAL_STEPS, progress);
   const pal = useSyncTheme();
 
+  // Peak count tracking — DB counts lag projections, preserve highest seen value
+  const peakVariantsRef = useRef(0);
+  const peakOrdersRef   = useRef(0);
+  if (polledCounts.variants > 0) peakVariantsRef.current = polledCounts.variants;
+  if (polledCounts.orders > 0)   peakOrdersRef.current   = polledCounts.orders;
+
   const isCompleted = status === 'COMPLETED';
 
   // explicit failure state
@@ -354,7 +360,10 @@ const SyncAnimationPage: React.FC = () => {
                 state={stepStates[i]}
                 stepIndex={i}
                 activeIndex={activeStepIndex}
-                counts={{ orders: polledCounts.orders, variants: polledCounts.variants }}
+                counts={{ 
+                  orders: Math.max(polledCounts.orders, peakOrdersRef.current), 
+                  variants: Math.max(polledCounts.variants, peakVariantsRef.current) 
+                }}
                 progress={i === 1 ? progress : null}
                 pal={pal}
               />
