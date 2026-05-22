@@ -59,6 +59,20 @@ export async function up(knex: Knex): Promise<void> {
     table.string('orders_per_month_segment', 20);
     table.string('entry_channel').defaultTo('unknown');
 
+    /**
+     * EMAIL VERIFICATION (AUTH-007)
+     * ------------------------------
+     * email_verified_at      — null = unverified, timestamp = verified
+     * email_verification_token — crypto random hex, single-use
+     * email_verification_expires_at — 30 min window per target design A5
+     *
+     * Verification is optional for OAuth paths (Shopify/Google).
+     * Token is cleared on successful verification.
+     */
+    table.timestamp('email_verified_at', { useTz: true }).nullable();
+    table.string('email_verification_token', 128).nullable();
+    table.timestamp('email_verification_expires_at', { useTz: true }).nullable();
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());

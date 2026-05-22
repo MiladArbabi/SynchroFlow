@@ -9,7 +9,6 @@ import { axiosInstance } from 'api/axiosConfig';
 import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
-import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import FormHelperText from '@mui/material/FormHelperText';
 import Button from '@mui/material/Button';
@@ -18,10 +17,10 @@ import { Formik } from 'formik';
 import AuthWrapper1 from './AuthWrapper1';
 import AuthCardWrapper from './AuthCardWrapper';
 import AnimateButton from 'ui-component/extended/AnimateButton';
-import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import InputAdornment from '@mui/material/InputAdornment';
 import { SocialProofTicker, SystemStatusPill } from './AuthPageChrome';
+import FormControl from '@mui/material/FormControl';
 
 type SubmitState = 'idle' | 'success' | 'error';
 
@@ -116,8 +115,7 @@ export default function ForgotPasswordPage() {
                 >
                   {({ errors, handleBlur, handleChange, handleSubmit, isSubmitting, touched, values }) => (
                     <form noValidate onSubmit={handleSubmit}>
-                      <CustomFormControl fullWidth error={Boolean(touched.email && errors.email)}>
-                        <InputLabel htmlFor="forgot-password-email">Email address</InputLabel>
+                      <FormControl fullWidth error={Boolean(touched.email && errors.email)} sx={{ mt: 1, mb: 1 }}>
                         <OutlinedInput
                           id="forgot-password-email"
                           type="email"
@@ -125,7 +123,7 @@ export default function ForgotPasswordPage() {
                           name="email"
                           onBlur={handleBlur}
                           onChange={handleChange}
-                          label="Email address"
+                          placeholder="Email address"
                           startAdornment={
                             <InputAdornment position="start">
                               <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
@@ -135,7 +133,7 @@ export default function ForgotPasswordPage() {
                         {touched.email && errors.email && (
                           <FormHelperText error>{errors.email}</FormHelperText>
                         )}
-                      </CustomFormControl>
+                      </FormControl>
 
                       {submitError && (
                         <Box sx={{ mt: 1 }}>

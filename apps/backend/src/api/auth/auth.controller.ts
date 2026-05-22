@@ -11,6 +11,7 @@ import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backen
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { User } from '../../types.js';
+import { sendVerificationEmail } from '../../services/email/email.service.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -146,6 +147,27 @@ export const registerUser = async (req: Request, res: Response) => {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    // AUTH-007: generate verification token and send email
+    // Non-fatal — registration succeeds even if email delivery fails.
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+
+    // AUTH-007: use systemDb — registration context has no tenant set yet
+    await systemDb('users')
+      .where({ id: newUser.id })
+      .update({
+        email_verification_token: verificationToken,
+        email_verification_expires_at: expiresAt,
+      });
+
+    sendVerificationEmail({
+      toEmail: newUser.email,
+      firstName: newUser.first_name ?? '',
+      verificationToken,
+    }).catch((err) => {
+      console.error('[AUTH][REGISTER] verification email failed (non-fatal):', err);
     });
 
     res.status(201).json({
@@ -508,4 +530,106 @@ export const getDevToken = async (req: Request, res: Response) => {
     console.error('[AuthController] getDevToken failed:', error);
     res.status(500).json({ error: 'Failed to generate dev token' });
   }
+};
+
+// ─────────────────────────────────────────────
+// AUTH-007: Email verification endpoints
+// ─────────────────────────────────────────────
+
+/**
+ * verifyEmail
+ * -----------
+ * GET /api/v1/auth/verify-email?token=<hex>
+ * Validates token, marks email as verified, redirects to app.
+ * Public — no auth required (user may not be logged in yet).
+ */
+export const verifyEmail = async (req: Request, res: Response) => {
+  const { token } = req.query as { token?: string };
+
+  if (!token) {
+    return res.status(400).json({ error: 'Missing verification token.' });
+  }
+
+  const user = await systemDb<User>('users')
+    .where({ email_verification_token: token })
+    .first();
+
+  if (!user) {
+    return res.status(400).json({ error: 'Invalid or expired verification link.' });
+  }
+
+  if (user.email_verified_at) {
+    // Already verified — redirect to app
+    const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
+    return res.redirect(`${appUrl}/connect-store?verified=already`);
+  }
+
+  if (!user.email_verification_expires_at || new Date() > new Date(user.email_verification_expires_at)) {
+    return res.status(400).json({ error: 'Verification link has expired. Please request a new one.' });
+  }
+
+  await db('users')
+    .where({ id: user.id })
+    .update({
+      email_verified_at: new Date(),
+      email_verification_token: null,
+      email_verification_expires_at: null,
+    });
+
+  console.info('[AUTH][VERIFY_EMAIL] verified', { userId: user.id });
+
+  const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
+  return res.redirect(`${appUrl}/connect-store?verified=true`);
+};
+
+/**
+ * resendVerificationEmail
+ * -----------------------
+ * POST /api/v1/auth/resend-verification
+ * Requires auth token — user must be logged in.
+ * Rate-limited: one resend per minute per user.
+ */
+export const resendVerificationEmail = async (req: Request, res: Response) => {
+  // auth.middleware sets req.user.userId (camelCase) — matches JWT contract
+  const userId = (req as any).user?.userId;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Unauthorized.' });
+  }
+
+  const user = await systemDb<User>('users').where({ id: userId }).first();
+
+  if (!user) {
+    return res.status(404).json({ error: 'User not found.' });
+  }
+
+  if (user.email_verified_at) {
+    return res.status(400).json({ error: 'Email already verified.' });
+  }
+
+  // Rate limit: one resend per minute per user
+  const allowed = rateLimit(`resend-verification:${userId}`, 1, 60_000);
+  if (!allowed) {
+    return res.status(429).json({ error: 'Please wait before requesting another verification email.' });
+  }
+
+  const verificationToken = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  await db('users')
+    .where({ id: userId })
+    .update({
+      email_verification_token: verificationToken,
+      email_verification_expires_at: expiresAt,
+    });
+
+  sendVerificationEmail({
+    toEmail: user.email,
+    firstName: user.first_name ?? '',
+    verificationToken,
+  }).catch((err) => {
+    console.error('[AUTH][RESEND_VERIFICATION] email failed (non-fatal):', err);
+  });
+
+  return res.status(200).json({ message: 'Verification email sent.' });
 };

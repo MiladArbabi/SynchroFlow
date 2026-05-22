@@ -1,7 +1,16 @@
 // apps/backend/src/api/auth/auth.routes.ts
 import { Router } from 'express';
-import { registerUser, loginUser, refreshToken, logoutUser, getDevToken } from './auth.controller.js';
+import { 
+  registerUser, 
+  loginUser, 
+  refreshToken, 
+  logoutUser, 
+  getDevToken, 
+  verifyEmail, 
+  resendVerificationEmail 
+} from './auth.controller.js';
 import { testIssueAccessToken } from './auth.test.controller.js';
+import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 
 const router = Router();
 
@@ -22,5 +31,10 @@ router.post('/refresh_token', refreshToken);
 router.post('/logout', logoutUser);
 
 router.get('/dev-token', getDevToken);
+
+// AUTH-007: email verification
+router.get('/verify-email', verifyEmail);
+// AUTH-007: requires auth — user must be logged in to resend verification
+router.post('/resend-verification', authenticateToken, resendVerificationEmail);
 
 export default router;

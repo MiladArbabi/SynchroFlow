@@ -17,7 +17,6 @@ import FormHelperText from '@mui/material/FormHelperText';
 import Grid from '@mui/material/Grid';
 import IconButton from '@mui/material/IconButton';
 import InputAdornment from '@mui/material/InputAdornment';
-import InputLabel from '@mui/material/InputLabel';
 import OutlinedInput from '@mui/material/OutlinedInput';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
@@ -29,7 +28,7 @@ import { Formik } from 'formik';
 
 // project imports
 import AnimateButton from 'ui-component/extended/AnimateButton';
-import CustomFormControl from 'ui-component/extended/Form/CustomFormControl';
+import FormControl from '@mui/material/FormControl';
 
 // assets
 import Visibility from '@mui/icons-material/Visibility';
@@ -218,33 +217,30 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
           <OAuthButtons mode="login" />
           <form noValidate onSubmit={handleSubmit} {...others}>
           {/* Email Input */}
-          <CustomFormControl fullWidth error={Boolean(touched.email && errors.email)}>
-            {/* AUTH-009: "Email address" matches target A1 */}
-            <InputLabel htmlFor="outlined-adornment-email-login">Email address</InputLabel>
+          <FormControl fullWidth error={Boolean(touched.email && errors.email)} sx={{ mt: 1, mb: 1 }}>
             <OutlinedInput
-                id="outlined-adornment-email-login"
-                type="email"
-                value={values.email}
-                name="email"
-                onBlur={handleBlur}
-                onChange={handleChange}
-                label="Email address"
-                startAdornment={
-                  <InputAdornment position="start">
-                    <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
-                  </InputAdornment>
-                }
-              />
+              id="outlined-adornment-email-login"
+              type="email"
+              value={values.email}
+              name="email"
+              onBlur={handleBlur}
+              onChange={handleChange}
+              placeholder="Email address"
+              startAdornment={
+                <InputAdornment position="start">
+                  <MailOutlineIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
+                </InputAdornment>
+              }
+            />
             {touched.email && errors.email && (
               <FormHelperText error id="standard-weight-helper-text-email-login">
                 {errors.email}
               </FormHelperText>
             )}
-          </CustomFormControl>
+          </FormControl>
 
           {/* Password Input */}
-          <CustomFormControl fullWidth error={Boolean(touched.password && errors.password)}>
-            <InputLabel htmlFor="outlined-adornment-password-login">Password</InputLabel>
+          <FormControl fullWidth error={Boolean(touched.password && errors.password)} sx={{ mt: 1, mb: 1 }}>
             <OutlinedInput
               id="outlined-adornment-password-login"
               type={showPassword ? 'text' : 'password'}
@@ -252,7 +248,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
               name="password"
               onBlur={handleBlur}
               onChange={handleChange}
-              label="Password"
+              placeholder="Password"
               startAdornment={
                 <InputAdornment position="start">
                   <LockOutlinedIcon sx={{ color: 'var(--ink-4)', fontSize: 18 }} />
@@ -277,7 +273,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
                 {errors.password}
               </FormHelperText>
             )}
-          </CustomFormControl>
+          </FormControl>
 
           {/* Remember Me & Forgot Password */}
           <Grid container sx={{ alignItems: 'center', justifyContent: 'space-between' }}>

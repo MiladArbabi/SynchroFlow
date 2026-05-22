@@ -26,6 +26,10 @@ export interface User {
   detected_mode?: 'survival' | 'growth' | 'architect';
   shopify_connected?: boolean;
   stripe_connected?: boolean;
+  // AUTH-007: email verification fields
+  email_verified_at?: Date | null;
+  email_verification_token?: string | null;
+  email_verification_expires_at?: Date | null;
 }
 
 export interface UserMilestone {

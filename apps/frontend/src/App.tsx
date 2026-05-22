@@ -28,6 +28,7 @@ import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import AppLayout from 'layouts/AppLayout';
 import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
 import ConnectStorePage from 'pages/authentication/ConnectStorePage';
+import CheckInboxPage from 'pages/authentication/CheckInboxPage';
 
 const queryClient = new QueryClient();
 
@@ -207,6 +208,10 @@ export default function App() {
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* AUTH-005/006: A3 connect-store step — auth-protected post-registration */}
           <Route path="/connect-store" element={<ConnectStorePage />} />
+          {/* AUTH-007: A5 email verification inbox screen */}
+          <Route path="/check-inbox" element={<CheckInboxPage />} />
+          {/* AUTH-007: verify-email redirect handler */}
+          <Route path="/verify-email" element={<CheckInboxPage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}

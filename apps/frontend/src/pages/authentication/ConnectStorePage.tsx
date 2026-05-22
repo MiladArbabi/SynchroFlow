@@ -38,6 +38,10 @@ export default function ConnectStorePage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // handle the verified=true redirect from verifyEmail controller
+  const searchParams = new URLSearchParams(window.location.search);
+  const justVerified = searchParams.get('verified') === 'true';
+
   const handleConnect = async () => {
     if (!shopName.trim()) {
       setError('Please enter your Shopify store name.');
@@ -85,6 +89,12 @@ export default function ConnectStorePage() {
                 </Box>
                 <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500 }}>Account</Typography>
               </Stack>
+
+              {justVerified && (
+                <Box sx={{ bgcolor: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 1.5, px: 2, py: 1, mb: 2 }}>
+                  <Typography variant="caption" sx={{ color: '#4ADE80', fontWeight: 600 }}>✓ Email verified — now connect your store</Typography>
+                </Box>
+              )}
 
               {/* Connector */}
               <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />

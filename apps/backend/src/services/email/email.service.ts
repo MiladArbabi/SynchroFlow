@@ -267,3 +267,55 @@ export async function sendSyncCompletedEmail(params: SendSyncCompletedParams): P
 
   console.info('[EMAIL] Sync completed email sent', { toEmail });
 }
+
+export interface SendVerificationEmailParams {
+  toEmail: string;
+  firstName: string;
+  verificationToken: string;
+}
+
+/**
+ * sendVerificationEmail
+ * ---------------------
+ * AUTH-007: Sent immediately after email/password registration.
+ * Link expires in 30 minutes — matches target design A5 copy.
+ * Non-fatal: caller logs failure but does not abort registration.
+ */
+export async function sendVerificationEmail(params: SendVerificationEmailParams): Promise<void> {
+  const { toEmail, firstName, verificationToken } = params;
+  const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
+  const verifyUrl = `${appUrl}/verify-email?token=${verificationToken}`;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: toEmail,
+    subject: 'Verify your LaSyncro email address',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto; padding: 32px;">
+        <img src="https://www.lasyncro.com/logo-dark.png" alt="LaSyncro" style="height: 28px; margin-bottom: 24px;" />
+        <h2 style="margin-bottom: 8px; color: #0F0E0D;">Verify your email address</h2>
+        <p style="color: #6B7280;">Hi ${firstName || 'there'},</p>
+        <p style="color: #6B7280;">
+          Click the button below to verify your email. This link expires in 30 minutes.
+        </p>
+        <a href="${verifyUrl}"
+           style="display:inline-block;margin-top:16px;padding:12px 24px;background:#FF6B2B;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;">
+          Verify email address
+        </a>
+        <p style="margin-top: 24px; color: #9CA3AF; font-size: 13px;">
+          Or copy this link: ${verifyUrl}
+        </p>
+        <p style="color: #9CA3AF; font-size: 12px; margin-top: 32px;">
+          If you didn't create a LaSyncro account, you can safely ignore this email.
+        </p>
+      </div>
+    `,
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendVerificationEmail failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Verification email sent', { toEmail });
+}
