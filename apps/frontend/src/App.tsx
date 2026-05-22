@@ -29,6 +29,7 @@ import AppLayout from 'layouts/AppLayout';
 import { EntitlementBoundary } from 'runtime/EntitlementBoundary';
 import ConnectStorePage from 'pages/authentication/ConnectStorePage';
 import CheckInboxPage from 'pages/authentication/CheckInboxPage';
+import VerifyEmailPage from 'pages/authentication/VerifyEmailPage';
 
 const queryClient = new QueryClient();
 
@@ -210,8 +211,8 @@ export default function App() {
           <Route path="/connect-store" element={<ConnectStorePage />} />
           {/* AUTH-007: A5 email verification inbox screen */}
           <Route path="/check-inbox" element={<CheckInboxPage />} />
-          {/* AUTH-007: verify-email redirect handler */}
-          <Route path="/verify-email" element={<CheckInboxPage />} />
+          {/* AUTH-007: verify-email token handler — verifies then redirects to /connect-store */}
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}

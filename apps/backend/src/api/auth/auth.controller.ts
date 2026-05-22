@@ -559,9 +559,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
   }
 
   if (user.email_verified_at) {
-    // Already verified — redirect to app
-    const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
-    return res.redirect(`${appUrl}/connect-store?verified=already`);
+    return res.status(200).json({ message: 'Already verified.', alreadyVerified: true });
   }
 
   if (!user.email_verification_expires_at || new Date() > new Date(user.email_verification_expires_at)) {
@@ -578,8 +576,7 @@ export const verifyEmail = async (req: Request, res: Response) => {
 
   console.info('[AUTH][VERIFY_EMAIL] verified', { userId: user.id });
 
-  const appUrl = process.env.FRONTEND_URL ?? 'https://app.lasyncro.com';
-  return res.redirect(`${appUrl}/connect-store?verified=true`);
+  return res.status(200).json({ message: 'Email verified successfully.' });
 };
 
 /**
