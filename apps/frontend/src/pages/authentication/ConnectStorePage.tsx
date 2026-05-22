@@ -90,14 +90,18 @@ export default function ConnectStorePage() {
                 <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500 }}>Account</Typography>
               </Stack>
 
-              {justVerified && (
-                <Box sx={{ bgcolor: 'rgba(74,222,128,0.08)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 1.5, px: 2, py: 1, mb: 2 }}>
-                  <Typography variant="caption" sx={{ color: '#4ADE80', fontWeight: 600 }}>✓ Email verified — now connect your store</Typography>
-                </Box>
+              {/* Connector — splits around verified badge when present */}
+              {justVerified ? (
+                <>
+                  <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
+                  <Box sx={{ bgcolor: 'rgba(74,222,128,0.10)', border: '1px solid rgba(74,222,128,0.3)', borderRadius: 99, px: 1, py: 0.25, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <Typography sx={{ color: '#4ADE80', fontSize: '0.65rem', fontWeight: 600 }}>✓ Email verified</Typography>
+                  </Box>
+                  <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
+                </>
+              ) : (
+                <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
               )}
-
-              {/* Connector */}
-              <Box sx={{ flex: 1, height: '1px', bgcolor: 'var(--accent)' }} />
 
               {/* Step 2 — active */}
               <Stack direction="row" alignItems="center" spacing={0.75}>
@@ -111,7 +115,7 @@ export default function ConnectStorePage() {
             {/* Headline */}
             <Typography variant="h2" sx={{ color: 'var(--ink)', fontWeight: 700, mb: 0.5 }}>
               Now connect{' '}
-              <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400, fontFamily: '"DM Serif Display", Georgia, serif' }}>
+              <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 400 }}>
                 your Shopify store.
               </Box>
             </Typography>
