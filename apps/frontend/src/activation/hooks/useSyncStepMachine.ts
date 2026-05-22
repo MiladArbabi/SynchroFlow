@@ -7,7 +7,7 @@
 //
 // NOTE: No network calls. Pure orchestration layer.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 const UX_TIMINGS = {
   CONNECTING_FLOOR_MS:  2500,   // minimum time on connecting step
@@ -78,28 +78,12 @@ export function useSyncStepMachine(
   progress?: SyncProgress | null
 ): SyncStepMachineResult {
 
-  // ── Timing gate: enforces minimum display per step ────────────────────────
-  const [gatedPhase, setGatedPhase]           = useState<SyncPhase>('CONNECTING');
+  const [gatedPhase, setGatedPhase]               = useState<SyncPhase>('CONNECTING');
+  const [processingVisible, setProcessingVisible]  = useState(false);
+  const [showTeaser, setShowTeaser]                = useState(false);
+  const [showReassurance, setShowReassurance]      = useState(false);
 
-  // ── Synthetic PROCESSING step: activates when orders start arriving ───────
-  const [processingVisible, setProcessingVisible] = useState(false);
-
-  // ── UX signals ────────────────────────────────────────────────────────────
-  const [showTeaser, setShowTeaser]           = useState(false);
-  const [showReassurance, setShowReassurance] = useState(false);
-
-  // ── connectingReady: prevents flash-through on fast syncs ─────────────────
-  const [connectingReady, setConnectingReady] = useState(false);
-
-  const targetPhaseRef = useRef<SyncPhase>('CONNECTING');
-
-  // Step 1: enforce minimum connecting floor
-  useEffect(() => {
-    const t = setTimeout(() => setConnectingReady(true), UX_TIMINGS.CONNECTING_FLOOR_MS);
-    return () => clearTimeout(t);
-  }, []); // runs once on mount
-
-  // Step 2: activate synthetic PROCESSING step when orders arrive
+  // Synthetic PROCESSING step: activates when orders start arriving
   useEffect(() => {
     const rawPhase = mapStatusToPhase(status);
     if (rawPhase === 'IMPORTING_ORDERS' && counts.orders > 0) {
@@ -109,23 +93,20 @@ export function useSyncStepMachine(
     }
   }, [status, counts.orders]);
 
+  // Compute target phase — where backend wants us to be
   let targetPhase = mapStatusToPhase(status);
-  if (!connectingReady && targetPhase !== 'CONNECTING') targetPhase = 'CONNECTING';
   if (processingVisible && targetPhase === 'IMPORTING_ORDERS') targetPhase = 'PROCESSING';
 
-  // Keep ref in sync — lets useEffect read latest targetPhase without it being a dependency
-  targetPhaseRef.current = targetPhase;
-
-  // Step 4: walk through phases sequentially — never skip, always show each step
-  // Even if backend jumps from CONNECTING → DONE in 2s, UI walks each step with min dwell
+  // Walk through phases sequentially with minimum dwell per step.
+  // Never skips — even if backend jumps CONNECTING→DONE in 2s, UI walks each step.
+  // CONNECTING_FLOOR_MS enforced here directly — no separate connectingReady gate needed.
   useEffect(() => {
     const currentIndex = PHASE_ORDER.indexOf(gatedPhase);
-    const targetIndex  = PHASE_ORDER.indexOf(targetPhaseRef.current);
+    const targetIndex  = PHASE_ORDER.indexOf(targetPhase);
 
-    // Already at or past target — nothing to do
+    // Don't advance past what the backend has confirmed
     if (currentIndex >= targetIndex) return;
 
-    // Advance one step at a time with minimum dwell
     const nextPhase = PHASE_ORDER[currentIndex + 1];
     if (!nextPhase) return;
 
@@ -133,28 +114,23 @@ export function useSyncStepMachine(
       ? UX_TIMINGS.CONNECTING_FLOOR_MS
       : UX_TIMINGS.MIN_STEP_DURATION_MS;
 
-    const t = setTimeout(() => {
-      // Re-check at fire time — target may have moved further
-      setGatedPhase(nextPhase);
-    }, minDur);
-
+    const t = setTimeout(() => setGatedPhase(nextPhase), minDur);
     return () => clearTimeout(t);
-  }, [gatedPhase]); // targetPhase intentionally read via ref — prevents timer restart on backend updates
+  }, [gatedPhase, targetPhase]);// targetPhase here is fine — timer is set fresh each render but previous is cancelled
 
-  // Step 5: teaser after DONE
+  // Teaser after DONE
   useEffect(() => {
     if (status !== 'COMPLETED') return;
     const t = setTimeout(() => setShowTeaser(true), UX_TIMINGS.TEASER_DELAY_MS);
     return () => clearTimeout(t);
   }, [status]);
 
-  // Step 6: reassurance after 60s regardless of phase
+  // Reassurance after 60s
   useEffect(() => {
     const t = setTimeout(() => setShowReassurance(true), UX_TIMINGS.REASSURANCE_DELAY_MS);
     return () => clearTimeout(t);
   }, []);
 
-  // ── Error state ───────────────────────────────────────────────────────────
   if (gatedPhase === 'ERROR') {
     return {
       stepStates:      Array(totalSteps).fill('pending'),
@@ -166,7 +142,6 @@ export function useSyncStepMachine(
     };
   }
 
-  // ── Active step index (deterministic from gatedPhase) ────────────────────
   let activeStepIndex = 0;
   switch (gatedPhase) {
     case 'CONNECTING':         activeStepIndex = 0; break;
@@ -177,14 +152,12 @@ export function useSyncStepMachine(
     case 'DONE':               activeStepIndex = 4; break;
   }
 
-  // ── Step states ───────────────────────────────────────────────────────────
   const stepStates: StepState[] = Array.from({ length: totalSteps }, (_, i) => {
     if (i < activeStepIndex) return 'done';
     if (i === activeStepIndex) return 'active';
     return 'pending';
   });
 
-  // ── Progress ──────────────────────────────────────────────────────────────
   const progressWidth = progress?.percentage
     ? progress.percentage
     : ((activeStepIndex + 1) / totalSteps) * 100;
