@@ -359,6 +359,7 @@ AuthPageChrome.tsx
 | Continue button overlap (#980) | ✅ pb: 100px on all auth page wrappers |
 | Floor-planning Vite race | ✅ Pre-build in dev-ui script + added to build:modules |
 | AhaMomentPage visual elevation (#984) | ✅ Floating status pill with timestamp, gated divider, accent left-border on first card, revenue impact banner, layout height fix |
+| Auth logo color scheme fix | ✅ AuthLogo component — logo-dark.png for dark, logo.png for light — applied across all 7 auth pages |
 
 ## Email System
 
