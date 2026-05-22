@@ -3,7 +3,7 @@
 // Uses inline styles exclusively — avoids Tailwind/CSS variable conflicts in production.
 
 import type { Metadata } from 'next'
-import { Plus_Jakarta_Sans, Instrument_Serif } from 'next/font/google'
+import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
@@ -14,14 +14,6 @@ const plusJakartaSans = Plus_Jakarta_Sans({
   weight: ['300', '400', '500'],
   style: ['normal', 'italic'],
   variable: '--font-plus-jakarta-sans',
-  display: 'swap',
-})
-
-const instrumentSerif = Instrument_Serif({
-  subsets: ['latin'],
-  weight: ['400'],
-  style: ['normal', 'italic'],
-  variable: '--font-instrument-serif',
   display: 'swap',
 })
 
@@ -64,7 +56,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${plusJakartaSans.variable} ${instrumentSerif.variable}`}>
+    <html lang="en" className={`${plusJakartaSans.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <PostHogProvider>
           <Schema data={organizationSchema} />

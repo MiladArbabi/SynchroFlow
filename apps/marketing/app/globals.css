@@ -20,7 +20,7 @@
   --space-2:       #1C2740;
   --space-3:       #243050;
   --space-4:       #2E3D62;
-  --serif:         var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
+  --serif:         var(--font-plus-jakarta-sans), 'Plus Jakarta Sans', system-ui, sans-serif;
   --sans:          var(--font-plus-jakarta-sans), 'Plus Jakarta Sans', system-ui, sans-serif;
   --ls-tight:      -0.02em;
   --ls-eyebrow:    0.12em;
@@ -82,7 +82,7 @@ article p {
   margin-bottom: 22px;
 }
 article h2 {
-  font-family: 'Instrument Serif', Georgia, serif;
+  font-family: var(--font-plus-jakarta-sans), 'Plus Jakarta Sans', system-ui, sans-serif;
   font-size: 32px;
   font-weight: 400;
   line-height: 1.18;
