@@ -53,7 +53,7 @@ const components = {
       fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
       fontSize: '32px', fontWeight: 400,
       lineHeight: 1.25, letterSpacing: '-0.02em',
-      color: '#0F0E0D', margin: '56px 0 18px',
+      color: '#0F0E0D', margin: '40px 0 14px',
     }}>{children}</h2>
   ),
   h3: ({ children }: { children: React.ReactNode }) => (
@@ -61,7 +61,7 @@ const components = {
       fontFamily: "'DM Sans', system-ui, sans-serif",
       fontSize: '18px', fontWeight: 500,
       lineHeight: 1.3, color: '#0F0E0D',
-      margin: '36px 0 12px',
+      margin: '24px 0 10px',
     }}>{children}</h3>
   ),
   p: ({ children }: { children: React.ReactNode }) => (
