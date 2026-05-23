@@ -8,7 +8,7 @@
 'use client'
 
 import { useState } from 'react'
-import type { ContentItem } from '@/lib/mdx'
+import type { ContentItem, Frontmatter } from '@/lib/mdx'
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('en-GB', {
@@ -52,7 +52,12 @@ function EyebrowDot() {
   )
 }
 
-function FeaturedVisual() {
+// FeaturedVisual — driven by the featured article's frontmatter.
+// Never hardcode content here — this renders whatever article sorts first by date.
+function FeaturedVisual({ frontmatter }: { frontmatter: Frontmatter }) {
+  const category = postCategory(frontmatter.tags)
+  const bullets = frontmatter.secondaryKeywords.slice(0, 3)
+
   return (
     <div style={{
       border: '1px solid #E8E6E0', borderRadius: 12, overflow: 'hidden',
@@ -72,57 +77,35 @@ function FeaturedVisual() {
       }} />
       <div style={{
         position: 'absolute', inset: 0,
-        display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+        display: 'flex', flexDirection: 'column',
+        justifyContent: 'center', padding: '36px 40px', gap: 18,
       }}>
-        {/* Left col */}
-        <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
-          <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#6B7280' }}>
-            What Shopify tracks
-          </span>
-          <h4 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
-            Inventory<br />visibility
-          </h4>
-          <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
-            {['Stock counts per variant', 'Multi-location toggling', 'Transfer records'].map(item => (
-              <li key={item} style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12.5, fontWeight: 300, lineHeight: 1.4, color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#9CA3AF', flexShrink: 0 }} />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-        {/* Middle arrow */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 18px', position: 'relative' }}>
-          <span style={{
-            position: 'absolute', top: '14%', bottom: '14%', left: '50%', width: 1,
-            background: 'linear-gradient(180deg, transparent, #D1CFC8 20%, #D1CFC8 80%, transparent)',
-          }} />
-          <span style={{
-            width: 34, height: 34, borderRadius: '50%',
-            background: '#FFF0E8', border: '1px solid #FFDCCA',
-            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: '#FF6B2B', position: 'relative', zIndex: 1,
-          }}>
-            <ArrowRight size={12} />
-          </span>
-        </div>
-        {/* Right col */}
-        <div style={{ padding: '28px 32px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 14 }}>
-          <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B' }}>
-            What a WMS adds
-          </span>
-          <h4 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
-            Warehouse<br />operations
-          </h4>
-          <ul style={{ listStyle: 'none', padding: 0, margin: '6px 0 0', display: 'grid', gap: 6 }}>
-            {['Bin & location tracking', 'Scan-based receiving', 'Immutable event ledger'].map(item => (
-              <li key={item} style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12.5, fontWeight: 300, lineHeight: 1.4, color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <span style={{
+          fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11,
+          fontWeight: 500, letterSpacing: '0.12em',
+          textTransform: 'uppercase' as const, color: '#FF6B2B',
+        }}>
+          {tagLabel(category)}
+        </span>
+        <h4 style={{
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+          fontSize: 24, fontWeight: 400, lineHeight: 1.2,
+          letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0,
+        }}>
+          {frontmatter.primaryKeyword}
+        </h4>
+        <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
+          {bullets.map(kw => (
+            <li key={kw} style={{
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+              fontSize: 13, fontWeight: 300, lineHeight: 1.4,
+              color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8,
+            }}>
+              <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
+              {kw}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
@@ -233,7 +216,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       {featured && (
         <section className="featured-grid" style={{ ...W, padding: '56px 5vw 32px', display: 'grid', gridTemplateColumns: '1.05fr 1fr', gap: 56, alignItems: 'stretch' }}>
           <a href={`/blog/${featured.slug}`} aria-label="Featured article" style={{ display: 'block' }}>
-            <FeaturedVisual />
+            <FeaturedVisual frontmatter={featured.frontmatter} />
           </a>
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
