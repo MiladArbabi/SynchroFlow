@@ -129,10 +129,7 @@ export default function ArticleLayout({
         <FAQ items={frontmatter.faq} />
       </div>
 
-       {/* Divider before FAQ */}
-      <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 48px' }} />
-      </div>
+       
 
       {/* End CTA */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw 32px' }}>
