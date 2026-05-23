@@ -32,7 +32,7 @@ export default function ArticleLayout({
     <>
       {/* Article header */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <header style={{ padding: '88px 0 44px', borderBottom: '1px solid var(--rule)' }}>
+        <header style={{ padding: '72px 0 32px', borderBottom: '1px solid var(--rule)' }}>
           {/* Breadcrumbs */}
           <div style={{
             fontFamily: "'DM Sans', system-ui, sans-serif",
@@ -113,7 +113,7 @@ export default function ArticleLayout({
 
       {/* Article body */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <article style={{ padding: '56px 0 32px' }}>
+        <article style={{ padding: '36px 0 32px' }}>
           {children}
           <WaitlistCTA variant="inline" text={frontmatter.cta_text} />
         </article>
@@ -121,7 +121,7 @@ export default function ArticleLayout({
 
       {/* Divider before FAQ */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 72px' }} />
+        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 48px' }} />
       </div>
 
       {/* FAQ */}
@@ -131,7 +131,7 @@ export default function ArticleLayout({
 
        {/* Divider before FAQ */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
-        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 72px' }} />
+        <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, #E8E6E0 20%, #E8E6E0 80%, transparent)', margin: '0 0 48px' }} />
       </div>
 
       {/* End CTA */}
