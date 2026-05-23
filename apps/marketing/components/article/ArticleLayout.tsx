@@ -112,8 +112,8 @@ export default function ArticleLayout({
       </div>
 
       {/* Article body */}
-      <div style={{ maxWidth: '720px', margin: '12 auto', padding: '0 5vw' }}>
-        <article style={{ padding: '12px 0 32px' }}>
+      <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
+        <article style={{ marginTop: '12px',padding: '12px 0 32px' }}>
           {children}
           <WaitlistCTA variant="inline" text={frontmatter.cta_text} />
         </article>
