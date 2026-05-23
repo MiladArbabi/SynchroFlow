@@ -15,6 +15,7 @@ import ProductVisual from '@/components/article/ProductVisual'
 import NumberedH3 from '@/components/article/NumberedH3'
 import Checklist from '@/components/article/Checklist'
 import { Metadata } from 'next'
+import remarkGfm from 'remark-gfm'
 
 // MDX components — h2/h3 explicitly mapped to prevent browser default bold rendering
 const components = {
@@ -142,7 +143,7 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
         { name: frontmatter.title, url },
       ])} />
     <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content?.split(/\s+/).length ?? 0}>
-      <MDXRemote source={content} components={components} />
+      <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
       </ArticleLayout>
     </>
   )
