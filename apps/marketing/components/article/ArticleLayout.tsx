@@ -83,7 +83,7 @@ export default function ArticleLayout({
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#3A3835' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="../../public/favicon-light.svg" alt="" width={20} height={20} style={{ borderRadius: '4px', display: 'block' }} />
+              <img src="/favicon-light.svg" alt="" width={20} height={20} style={{ borderRadius: '4px', display: 'block' }} />
               <span>LaSyncro</span>
             </div>
             <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#9CA3AF' }} />
