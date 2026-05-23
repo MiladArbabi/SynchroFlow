@@ -67,7 +67,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const { slug } = await params
   const { frontmatter } = getContentBySlug('compare', slug)
   return {
-    title: `LaSyncro | ${frontmatter.title}`,
+    // Keyword-first format: primary keyword leads, brand appended — maximises CTR on non-branded queries
+    title: `${frontmatter.title} — LaSyncro`,
     description: frontmatter.description,
     alternates: { canonical: `https://www.lasyncro.com/compare/${slug}` },
     openGraph: {
