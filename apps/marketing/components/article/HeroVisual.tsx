@@ -21,7 +21,7 @@ export default function HeroVisual({
   const leftList = leftItems.split('|')
   const rightList = rightItems.split('|')
   return (
-    <figure className="reveal" style={{ margin: '44px -40px 0' }}>
+    <figure className="reveal" style={{ margin: '44px -40px 40' }}>
       <div style={{
         aspectRatio: '16/7',
         background: '#F3F2EF',
