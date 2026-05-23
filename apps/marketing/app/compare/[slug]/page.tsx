@@ -19,6 +19,33 @@ import { Metadata } from 'next'
 // MDX components — h2/h3 explicitly mapped to prevent browser default bold rendering
 const components = {
   QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual,
+  // Styled table components — renders MDX pipe tables with brand design system
+  table: ({ children }: { children: React.ReactNode }) => (
+    <div style={{ overflowX: 'auto', margin: '32px 0' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '14px' }}>
+        {children}
+      </table>
+    </div>
+  ),
+  thead: ({ children }: { children: React.ReactNode }) => (
+    <thead style={{ borderBottom: '2px solid #E8E6E0' }}>{children}</thead>
+  ),
+  tbody: ({ children }: { children: React.ReactNode }) => (
+    <tbody>{children}</tbody>
+  ),
+  tr: ({ children }: { children: React.ReactNode }) => (
+    <tr style={{ borderBottom: '1px solid #F3F2EF' }}>{children}</tr>
+  ),
+  th: ({ children }: { children: React.ReactNode }) => (
+    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 500, color: '#6B7280', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>
+      {children}
+    </th>
+  ),
+  td: ({ children }: { children: React.ReactNode }) => (
+    <td style={{ padding: '12px 16px', color: '#3A3835', fontWeight: 300, lineHeight: 1.5, verticalAlign: 'top' }}>
+      {children}
+    </td>
+  ),
   h2: ({ children }: { children: React.ReactNode }) => (
     <h2 style={{
       fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
