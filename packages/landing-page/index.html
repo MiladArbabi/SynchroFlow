@@ -1499,12 +1499,7 @@ if (cs) syncObs.observe(cs);
   svg+='<g class="fp-problem-group">';
   problems.forEach(function(p,i){var c=iso(p.x,p.y,p.z);svg+='<g transform="translate('+fmt(c[0])+','+fmt(c[1])+')">'+'<circle class="fp-problem-ring'+(i===1?' delay':'')+'" cx="0" cy="0" r="4.5"/>'+'<circle class="fp-problem-base" cx="0" cy="0" r="3"/>'+'</g>';});
   svg+='</g>';
-  svg+='<use href="#fp-data-path" class="fp-data-path"/>';
-  svg+='<circle class="fp-data-dot" r="3.5">'
-      +'<animateMotion dur="7.5s" begin="1.8s" repeatCount="indefinite" rotate="auto"><mpath href="#fp-data-path"/></animateMotion>'
-      +'<animate attributeName="opacity" values="0;1;1;1;0" keyTimes="0;0.05;0.5;0.92;1" dur="7.5s" begin="1.8s" repeatCount="indefinite"/>'
-      +'</circle>';
-  svg+='<circle class="fp-bin-spot" id="fp-bin-spot" cx="0" cy="0" r="13"/>';
+  
   svg+='<g class="fp-tip-group" id="fp-tip">'
       +'<line class="fp-tip-leader" id="fp-tip-leader" x1="0" y1="0" x2="0" y2="0"/>'
       +'<g id="fp-tip-card" transform="translate(0,0)">'
@@ -1531,14 +1526,10 @@ if (cs) syncObs.observe(cs);
     var l=document.getElementById('fp-tip-leader');
     l.setAttribute('x1',fmt(bx[0]));l.setAttribute('y1',fmt(bx[1]));
     l.setAttribute('x2',fmt(lx));l.setAttribute('y2',fmt(ly));
-    var s=document.getElementById('fp-bin-spot');
-    s.setAttribute('cx',fmt(bx[0]));s.setAttribute('cy',fmt(bx[1]));
     document.getElementById('fp-tip').classList.add('visible');
-    s.classList.add('visible');
   }
   function hideTip(){
     document.getElementById('fp-tip').classList.remove('visible');
-    document.getElementById('fp-bin-spot').classList.remove('visible');
   }
   function runCarousel(){
     if(window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
