@@ -1497,7 +1497,6 @@ if (cs) syncObs.observe(cs);
   racks.forEach(function(r){svg+='<g class="fp-rack fp-rack-'+r.id.toLowerCase()+'">'+rackSVG(r)+'</g>';});
   svg+='<g class="fp-pack-group">'+packSVG()+'</g>';
   svg+='<g class="fp-problem-group">';
-  problems.forEach(function(p,i){var c=iso(p.x,p.y,p.z);svg+='<g transform="translate('+fmt(c[0])+','+fmt(c[1])+')">'+'<circle class="fp-problem-ring'+(i===1?' delay':'')+'" cx="0" cy="0" r="4.5"/>'+'<circle class="fp-problem-base" cx="0" cy="0" r="3"/>'+'</g>';});
   svg+='</g>';
   
   svg+='<g class="fp-tip-group" id="fp-tip">'
