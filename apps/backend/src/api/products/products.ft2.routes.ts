@@ -6,6 +6,7 @@ import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middle
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { httpPatchVariantCost, httpGetVariantCosts, httpBulkUpdateVariantCosts } from './products.cost.controller.js';
 import { getProductsWmsReadinessHandler } from './products.wms-readiness.controller.js';
+import { getProductsCatalogHandler } from './products.catalog.controller.js';
 
 const router = Router();
 
@@ -28,6 +29,13 @@ router.get('/operator-summary', authenticateToken, getProductsOperatorSummaryHan
  * Final path: GET /api/v1/modules/products/wms-readiness
  */
 router.get('/wms-readiness', authenticateToken, getProductsWmsReadinessHandler);
+
+/**
+ * Catalog list — per-variant list with image_url, titles, sku, stock.
+ * Used by ProductsCatalogPage image grid.
+ * Final path: GET /api/v1/modules/products/catalog
+ */
+router.get('/catalog', authenticateToken, getProductsCatalogHandler);
 
 /**
  * Variant cost entry — updates unit_cost and backfills unfulfilled order revenue units.

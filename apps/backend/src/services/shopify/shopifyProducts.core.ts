@@ -94,7 +94,15 @@ export async function syncProducts(
       } else {
         unitCost = Number(unitCostAmount);
       }
-      const variantId = crypto.randomUUID();
+      
+      // Look up existing lasyncro_variant_id by Shopify variant ID to ensure
+      // resync updates the same row (image_url, sku, barcode etc) rather than
+      // inserting a duplicate with a new UUID.
+      const existingMapping = await trx('external_product_identity_map')
+        .where({ shop_id: shopId, platform: 'shopify', external_variant_id: variant.id })
+        .select('lasyncro_variant_id')
+        .first();
+      const variantId = existingMapping?.lasyncro_variant_id ?? crypto.randomUUID();
 
       // 2. Insert variant (atomic unit)
       await trx('variants')
@@ -110,7 +118,7 @@ export async function syncProducts(
           // Drives receive flow branching — scan-to-match vs manual selection.
           barcode: variant.barcode || null,
           // Variant image from Shopify — nullable, falls back to product image in UI
-          image_url: variant.image?.src || null,
+          image_url: variant.image?.url || node.featuredImage?.url || null,
         })
         .onConflict('lasyncro_variant_id')
         .merge({
@@ -120,7 +128,7 @@ export async function syncProducts(
           unit_cost: unitCost,
           status: 'active',
           barcode: variant.barcode || null, // merchant may add EAN after initial sync
-          image_url: variant.image?.src || null, // merchant may add image after initial sync
+          image_url: variant.image?.url || node.featuredImage?.url || null, // merchant may add image after initial sync
           updated_at: new Date().toISOString(),
         });
 

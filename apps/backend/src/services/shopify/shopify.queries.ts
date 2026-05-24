@@ -19,6 +19,9 @@ query {
         vendor
         productType
         status
+        featuredImage {
+          url
+        }
         totalInventory
         variants(first: 100) {
           edges {
@@ -26,6 +29,9 @@ query {
               id
               sku
               barcode
+              image {
+                url
+              }
               title
               price
               compareAtPrice
