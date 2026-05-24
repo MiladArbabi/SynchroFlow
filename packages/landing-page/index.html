@@ -583,6 +583,10 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 .fp-zone-label{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:0.18em;text-anchor:middle;}
 .fp-zone-label.receive{fill:var(--ok);}
 .fp-zone-label.ship{fill:var(--accent);}
+.fp-zone-returns{fill:rgba(46,61,98,0.30);stroke:#4A6080;stroke-width:1;stroke-dasharray:4 3;}
+.fp-zone-staging{fill:rgba(186,117,23,0.12);stroke:#BA7517;stroke-width:1;stroke-dasharray:4 3;}
+.fp-zone-label.returns{fill:#7A9CC0;}
+.fp-zone-label.staging{fill:#BA7517;}
 .fp-problem-base{fill:var(--accent);}
 .fp-problem-ring{fill:none;stroke:var(--accent);stroke-width:1.2;transform-origin:center;animation:fp-problem-pulse 2.4s ease-out infinite;}
 .fp-problem-ring.delay{animation-delay:1.2s;}
@@ -1374,7 +1378,12 @@ if (cs) syncObs.observe(cs);
     {id:'C',x:25,y:158,w:160,d:22,h:46,bins:['C-1','C-2','C-3','C-4'],fills:[0.68,0.28,0.55,0.18],hot:[]},
   ];
   var pack = {x:122,y:208,w:60,d:44,h:18};
-  var zones = {receive:{x:225,y:28,w:48,d:60},ship:{x:25,y:215,w:82,d:48}};
+  var zones = {
+    receive:{x:225,y:28,w:48,d:60},
+    ship:{x:25,y:215,w:82,d:48},
+    returns:{x:120,y:228,w:72,d:42},
+    staging:{x:210,y:210,w:58,d:42}
+  };
   var problems = [{x:60+160*(3.5/4),y:29,z:86},{x:40+170*(2.5/4),y:99,z:70}];
   var carousel = [
     {rackIdx:0,binIdx:1,code:'A-2',line1:'12 units · 4 picks / wk',line2:'Tote 0418 · last picked 12 min ago'},
@@ -1465,7 +1474,7 @@ if (cs) syncObs.observe(cs);
   for(var x=0;x<=FLOOR.w;x+=20){var ga=iso(x,0),gb=iso(x,FLOOR.d);grid+='<line x1="'+fmt(ga[0])+'" y1="'+fmt(ga[1])+'" x2="'+fmt(gb[0])+'" y2="'+fmt(gb[1])+'"/>';}
   for(var y=0;y<=FLOOR.d;y+=20){var ga=iso(0,y),gb=iso(FLOOR.w,y);grid+='<line x1="'+fmt(ga[0])+'" y1="'+fmt(ga[1])+'" x2="'+fmt(gb[0])+'" y2="'+fmt(gb[1])+'"/>';}
   svg+='<g class="fp-floor-grid">'+grid+'</g>';
-  svg+='<g class="fp-floor-mark">'+zoneSVG(zones.receive,'receive','RECEIVE')+zoneSVG(zones.ship,'ship','SHIP')+'</g>';
+  svg+='<g class="fp-floor-mark">'+zoneSVG(zones.receive,'receive','RECEIVE')+zoneSVG(zones.ship,'ship','SHIP')+zoneSVG(zones.returns,'returns','RETURNS')+zoneSVG(zones.staging,'staging','STAGING')+'</g>';
   racks.forEach(function(r){var c=iso(r.x+r.w/2,r.y+r.d+14,0);svg+='<text class="fp-aisle-label" x="'+fmt(c[0])+'" y="'+fmt(c[1]+5)+'">'+r.id+'</text>';});
   svg+='<g class="fp-ceiling">'+ceilingSVG()+'</g>';
   racks.forEach(function(r){svg+='<g class="fp-rack fp-rack-'+r.id.toLowerCase()+'">'+rackSVG(r)+'</g>';});
@@ -1475,7 +1484,7 @@ if (cs) syncObs.observe(cs);
   
   svg+='<g class="fp-tip-group" id="fp-tip">'
       +'<line class="fp-tip-leader" id="fp-tip-leader" x1="0" y1="0" x2="0" y2="0"/>'
-      +'<g id="fp-tip-card" transform="translate(0,0)">'
+      +'<g id="fp-tip-card" transform="translate(-999,-999)">'
       +'<rect class="fp-tip-card-bg" x="0" y="0" width="148" height="46" rx="6" ry="6"/>'
       +'<text class="fp-tip-meta" x="10" y="14" id="fp-tip-code">A-2</text>'
       +'<text class="fp-tip-title" x="10" y="28" id="fp-tip-line1"></text>'
