@@ -106,6 +106,8 @@ interface BoxProps {
   wh: number;                   // world height (metres, = rack_levels * LEVEL_HEIGHT)
   colorKey: string;
   isSelected: boolean;
+  /** Occupancy 0-1 fraction — overrides fill for bin zones when provided */
+  occupancyFraction?: number;
   isFrame: boolean;
   label: string;
   rackLevels: number | null;
@@ -114,10 +116,17 @@ interface BoxProps {
   onClick: () => void;
 }
 
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label, rackLevels, zoom, onClick,flipped }: BoxProps) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label, rackLevels, zoom, onClick,flipped, occupancyFraction }: BoxProps) {
   const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
   const selStroke  = 'var(--accent)';
+  // Occupancy overlay: interpolate from empty (blue) → full (accent red) for bins.
+  const fillOverride = occupancyFraction != null
+    ? occupancyFraction >= 0.85 ? 'rgba(239,68,68,0.75)'
+    : occupancyFraction >= 0.5  ? 'rgba(245,158,11,0.65)'
+    : occupancyFraction > 0     ? 'rgba(34,197,94,0.55)'
+    : 'rgba(100,116,139,0.25)'
+    : null;
 
   // Per-level fill: cycle dark→light→default repeating every 3 levels.
   // Achieved by modulating the alpha of the base rgba color.
@@ -128,8 +137,8 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
     return baseFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * factor * 2.5)})`);
   }
 
-  // Use baseFill for top face and side face derivations (unchanged)
-  const fill = baseFill;
+  // Apply occupancy overlay for bins; fall back to zone-type color otherwise.
+  const fill = fillOverride ?? baseFill;
 
   // 8 corners of the box in world space → projected
   // Bottom face corners
@@ -220,9 +229,13 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
 export interface IsometricCanvasProps {
   zones: WarehouseZone[];
   onSelect?: (locationCode: string | null) => void;
+  filteredCodes?: Set<string>;
+  occupancy?: Record<string, { on_hand_quantity: number }>;
+  /** Layer toggles from the Layers rail */
+  showFloor?: boolean;
+  showBins?: boolean;
 }
-
-export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, showFloor = true, showBins = true }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(0.9);
   const [offset, setOffset]     = useState({ x: 420, y: 120 });
@@ -234,8 +247,13 @@ export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
   zoomRef.current   = zoom;
   offsetRef.current = offset;
 
-  // Positioned zones only
-  const positionedZones = zones.filter(z => z.position_x != null && z.position_y != null);
+  // Apply zone filter rail selection; if no filter provided, show all positioned zones.
+  const isFrame = (z: WarehouseZone) => z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf';
+  const positionedZones = zones.filter(z =>
+    z.position_x != null && z.position_y != null &&
+    (filteredCodes == null || filteredCodes.has(z.location_code)) &&
+    (isFrame(z) ? showFloor : showBins)
+  );
 
   // Painter's algorithm: sort by (position_x + position_y) ascending — back zones first
   // Painter's algorithm: ascending = back-to-front for standard view.
@@ -300,6 +318,10 @@ export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
             const rackLevels = zone.rack_levels ?? null;
             const wh = isFrame ? 0 : (rackLevels ?? 1) * LEVEL_HEIGHT;
             const colorKey = isFrame ? zone.type : (zone.zone_type ?? 'storage');
+            // Occupancy fraction: bins only. Capacity = rack_levels × 10 units (fallback 10).
+            const occ = !isFrame && occupancy ? occupancy[zone.location_code] : undefined;
+            const capacity = (zone.rack_levels ?? 1) * 10;
+            const occupancyFraction = occ != null ? Math.min(1, occ.on_hand_quantity / capacity) : undefined;
             return (
               <IsometricBox
                 key={zone.location_code}
@@ -312,6 +334,7 @@ export function IsometricCanvas({ zones, onSelect }: IsometricCanvasProps) {
                 zoom={zoom}
                 flipped={flipped}
                 onClick={() => handleSelect(zone.location_code)}
+                occupancyFraction={occupancyFraction}
               />
             );
           })}

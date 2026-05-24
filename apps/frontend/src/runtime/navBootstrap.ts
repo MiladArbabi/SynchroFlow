@@ -54,12 +54,13 @@ export function bootstrapNavGroups() {
     icon: ShoppingBag,
     requiredModuleId: 'order-nexus',
     children: [
-      { id: 'blocked',     title: 'Blocked',       path: '/orders/blocked'  },
-      { id: 'pool',        title: 'Release Queue', path: '/orders/pool'     },
-      { id: 'fulfillment', title: 'Fulfillment',   path: '/fulfillment'     },
-      { id: 'outbound',    title: 'Outbound',      path: '/orders/outbound' },
-      { id: 'inbound',     title: 'Inbound',       path: '/orders/inbound'  },
-      { id: 'returns',     title: 'Returns',       path: '/returns'         },
+      { id: 'orders-overview', title: 'Overview',      path: '/orders'          },
+      { id: 'blocked',         title: 'Blocked',       path: '/orders/blocked'  },
+      { id: 'pool',            title: 'Release Queue', path: '/orders/pool'     },
+      { id: 'fulfillment',     title: 'Fulfillment',   path: '/fulfillment'     },
+      { id: 'outbound',        title: 'Outbound',      path: '/orders/outbound' },
+      { id: 'inbound',         title: 'Inbound',       path: '/orders/inbound'  },
+      { id: 'returns',         title: 'Returns',       path: '/returns'         },
     ],
   });
 
@@ -72,6 +73,7 @@ export function bootstrapNavGroups() {
     icon: Warehouse,
     requiredModuleId: 'wms-lite',
     children: [
+      { id: 'wms-operations',  title: 'Operations',     path: '/wms'             },
       { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale' },
       { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
     ],
@@ -92,16 +94,17 @@ export function bootstrapNavGroups() {
   registerNavItem({
     id: 'inventory',
     title: 'Inventory',
-    path: '/products',
+    path: '/inventory',
     group: 'workspace',
     order: 50,
     icon: Box,
     requiredModuleId: 'products',
     children: [
-      { id: 'products-catalog',       title: 'Catalog',         path: '/products/catalog'        },
-      { id: 'products-costs',         title: 'Costs',           path: '/products/costs'          },
-      { id: 'products-wms-readiness', title: 'WMS Readiness',   path: '/products/wms-readiness'  },
-      { id: 'problem-center',         title: 'Problem Center',  path: '/problem-center'          },
+      { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
+      { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
+      { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
+      { id: 'products-wms-readiness', title: 'WMS Readiness',  path: '/inventory/wms-readiness'  },
+      { id: 'problem-center',         title: 'Problem Center', path: '/problem-center'          },
     ],
   });
 
@@ -119,15 +122,15 @@ export function bootstrapNavGroups() {
   registerNavItem({
     id: 'finances',
     title: 'Finances',
-    path: '/cashflow',
+    path: '/finances',
     group: 'workspace',
     order: 70,
     icon: DollarSign,
     requiredModuleId: 'cashflow',
     requiredTier: 'growth',
     children: [
-      { id: 'cashflow',        title: 'Cash Flow', path: '/cashflow'        },
       { id: 'finances-main',   title: 'Finances',  path: '/finances'        },
+      { id: 'cashflow',        title: 'Cash Flow', path: '/cashflow'        },
       { id: 'finances-margin', title: 'Margin',    path: '/finances/margin' },
     ],
   });
@@ -135,7 +138,7 @@ export function bootstrapNavGroups() {
   registerNavItem({
     id: 'team',
     title: 'Team',
-    path: '/members',
+    path: '/team',
     group: 'workspace',
     order: 80,
     icon: Users,

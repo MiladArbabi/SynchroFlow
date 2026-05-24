@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/SidenavContent.tsx
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   List,
@@ -11,7 +11,6 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { useState } from 'react';
 import { ArrowUp, ChevronDown } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
@@ -52,19 +51,33 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   // Only one item open at a time. Null = all collapsed.
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
+  // Auto-expand parent accordion when child route is active (e.g. landing via tab bar).
+  useEffect(() => {
+    for (const group of groups) {
+      for (const item of group.items) {
+        if ((item.children ?? []).some(c => pathname === c.path || pathname.startsWith(c.path + '/') || pathname.startsWith(c.path + '?'))) {
+          setExpandedItem(item.id);
+          return;
+        }
+      }
+    }
+  }, [pathname, groups]);
+
   // Hover popover anchor for compact mode submodule flyout.
   const [popoverAnchor, setPopoverAnchor] = useState<{ el: HTMLElement; itemId: string } | null>(null);
+  const popoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isItemActive = (item: ResolvedNavItem): boolean => {
     // Item is active if current path matches it directly OR any of its children
     if (pathname === item.path || pathname.startsWith(item.path + '?')) return true;
     return (item.children ?? []).some(
-      c => pathname === c.path || pathname.startsWith(c.path + '/')
+      c => pathname === c.path || pathname.startsWith(c.path + '/') || pathname.startsWith(c.path + '?')
     );
   };
 
   const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string }) => {
-    const isActive = pathname === child.path || pathname.startsWith(child.path + '/');
+    // Children are leaf routes — exact match only. startsWith would cause /wms to match /wms/analytics.
+    const isActive = pathname === child.path || pathname.startsWith(child.path + '?');
     return (
       <ListItemButton
         key={child.id}
@@ -108,16 +121,15 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     const hasChildren = (item.children ?? []).length > 0;
     const isOpen = expandedItem === item.id;
 
+    // Label/icon click → navigate only. Chevron click → toggle only.
     const handleClick = () => {
       if (isLocked) { setUpgradeFeature(item.title); setUpgradeOpen(true); return; }
-      if (isExpanded && hasChildren) {
-        // Navigate to parent route AND toggle accordion.
-        // Closing an already-open accordion does not re-navigate.
-        navigate(item.path);
-        setExpandedItem(prev => prev === item.id ? null : item.id);
-      } else {
-        navigate(item.path);
-      }
+      navigate(item.path);
+    };
+
+    const handleChevronClick = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      setExpandedItem(prev => prev === item.id ? null : item.id);
     };
 
     const buttonContent = (
@@ -125,8 +137,13 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         key={item.id}
         selected={isActive}
         onClick={handleClick}
-        onMouseEnter={isCompact && hasChildren ? (e) => setPopoverAnchor({ el: e.currentTarget, itemId: item.id }) : undefined}
-        onMouseLeave={isCompact && hasChildren ? () => setPopoverAnchor(null) : undefined}
+        onMouseEnter={isCompact && hasChildren ? (e) => {
+          if (popoverCloseTimer.current) clearTimeout(popoverCloseTimer.current);
+          setPopoverAnchor({ el: e.currentTarget, itemId: item.id });
+        } : undefined}
+        onMouseLeave={isCompact && hasChildren ? () => {
+          popoverCloseTimer.current = setTimeout(() => setPopoverAnchor(null), 100);
+        } : undefined}
         sx={{
           borderRadius: '8px',
           justifyContent: isExpanded ? 'flex-start' : 'center',
@@ -168,7 +185,10 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
               }
             />
             {hasChildren && !isLocked && (
-              <Box sx={{ ml: 'auto', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              <Box
+                onClick={handleChevronClick}
+                sx={{ ml: 'auto', color: 'var(--ink-4)', display: 'flex', alignItems: 'center', transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', p: '4px', borderRadius: '4px', borderLeft: '1px solid var(--rule)', '&:hover': { bgcolor: 'var(--bg-3)', borderLeftColor: 'transparent' } }}
+              >
                 <ChevronDown size={14} strokeWidth={1.75} />
               </Box>
             )}
@@ -245,8 +265,8 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
       {/* COMPACT MODE — submodule hover popover */}
       {isCompact && popoverItem?.children && (
         <Box
-          onMouseEnter={() => setPopoverAnchor(prev => prev)}
-          onMouseLeave={() => setPopoverAnchor(null)}
+          onMouseEnter={() => { if (popoverCloseTimer.current) clearTimeout(popoverCloseTimer.current); }}
+          onMouseLeave={() => { popoverCloseTimer.current = setTimeout(() => setPopoverAnchor(null), 100); }}
           sx={{
             position: 'fixed',
             left: 56,

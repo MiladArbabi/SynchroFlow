@@ -31,6 +31,7 @@ import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, Warehou
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 import { CanvasEditor } from '../components/CanvasEditor.js';
+import { IsometricCanvas } from '../components/IsometricCanvas.js';
 
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
@@ -640,6 +641,9 @@ function FloorPlanningModuleFT2Inner({
   // Filter by zone_type (operational) not location type — matches target design filter rail
   const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'quarantine', 'kitting', 'storage']));
   const [canvasView, setCanvasView] = useState(activeView === 'canvas');
+  // Layer visibility — wired to Layers rail in Map tab.
+  const [showFloor, setShowFloor] = useState(true);
+  const [showBins,  setShowBins]  = useState(true);
 
   // Derive grid props from overlay selection
   const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
@@ -756,11 +760,12 @@ function FloorPlanningModuleFT2Inner({
         </>;
       })()}
 
-      {/* Primary tab navigation */}
+    {/* Primary tab navigation */}
+    <Box sx={{ mx: '-40px', px: '40px', bgcolor: 'var(--bg-2)', borderBottom: '1px solid var(--rule)', mb: 3 }}>
       <Tabs
         value={tab}
         onChange={(_, v) => { setTab(v); onTabChange?.(v); }}
-        sx={{ mb: 3, borderBottom: 1, borderColor: 'divider' }}
+        sx={{ borderBottom: 'none' }}
       >
         <Tab icon={<Map size={15} />} iconPosition="start" value="map" sx={{ minHeight: 40, fontSize: 13 }}
           label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>Map{binCount > 0 && <Box component="span" sx={{ px: 0.75, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>{binCount}</Box>}</Box>} />
@@ -769,6 +774,7 @@ function FloorPlanningModuleFT2Inner({
         <Tab icon={<Tag size={15} />} iconPosition="start" value="barcodes" sx={{ minHeight: 40, fontSize: 13 }}
           label={<Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>Barcodes{barcodesCount > 0 && <Box component="span" sx={{ px: 0.75, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: 1.6 }}>{barcodesCount}</Box>}</Box>} />
       </Tabs>
+    </Box>
 
       {/* MAP TAB — 2D warehouse grid */}
       {tab === 'map' && (
@@ -867,19 +873,19 @@ function FloorPlanningModuleFT2Inner({
                     Layers
                   </Typography>
                   {([
-                    { label: 'Floor & grid', defaultOn: true  },
-                    { label: 'Bins',         defaultOn: true  },
-                    { label: 'Tote markers', defaultOn: true  },
-                    { label: 'Pick path',    defaultOn: false },
-                  ]).map(({ label, defaultOn }) => (
-                    <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: 'pointer' }}>
+                    { label: 'Floor & grid', active: showFloor, onToggle: () => setShowFloor(p => !p) },
+                    { label: 'Bins',         active: showBins,  onToggle: () => setShowBins(p => !p)  },
+                    { label: 'Tote markers', active: false,     onToggle: undefined }, // Phase 3
+                    { label: 'Pick path',    active: false,     onToggle: undefined }, // Phase 3
+                  ]).map(({ label, active, onToggle }) => (
+                    <Box key={label} onClick={onToggle ?? undefined} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.4, cursor: onToggle ? 'pointer' : 'not-allowed', opacity: onToggle ? 1 : 0.4 }}>
                       <Box sx={{
                         width: 12, height: 12, borderRadius: 0.5, flexShrink: 0,
-                        border: '1.5px solid', borderColor: defaultOn ? 'var(--accent)' : 'var(--rule)',
-                        bgcolor: defaultOn ? 'var(--accent)' : 'transparent',
+                        border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
+                        bgcolor: active ? 'var(--accent)' : 'transparent',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                       }}>
-                        {defaultOn && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
+                        {active && <Box sx={{ width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 }} />}
                       </Box>
                       <Typography sx={{ fontSize: 11, color: 'var(--ink-2)' }}>{label}</Typography>
                     </Box>
@@ -925,14 +931,15 @@ function FloorPlanningModuleFT2Inner({
                   </Box>
                 </Box>
               </Box>
-              <WarehouseGrid
-                  locations={filteredGridLocations}
-                  occupancy={overlay === 'none' ? undefined : gridOccupancy}
-                  focusedBins={variantFocusBins ?? overlayFocusedBins}
-                  mode={overlayGridMode}
-                  variant="full"
-                  onBinSelect={handleBinSelect}
-                />
+              {/* MAP TAB — isometric 2.5D view (read-only). 2D editing stays in Setup → Canvas. */}
+              <IsometricCanvas
+                zones={zones}
+                onSelect={(code) => code && handleBinSelect(code)}
+                filteredCodes={new Set(filteredGridLocations.map(l => l.location_code))}
+                occupancy={overlay === 'none' ? undefined : gridOccupancy ?? undefined}
+                showFloor={showFloor}
+                showBins={showBins}
+              />
               </Box>
               {/* Bin detail panel — enriched with occupancy data */}
               {selectedBin && (() => {

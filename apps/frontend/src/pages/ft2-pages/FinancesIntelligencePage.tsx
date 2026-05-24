@@ -180,7 +180,7 @@ export default function FinancesIntelligencePage() {
             />
             {missingCosts > 0 && (
               <Typography
-                onClick={() => navigate('/products/costs')}
+                onClick={() => navigate('/inventory/costs')}
                 sx={{ fontSize: 12, color: '#6366F1', mt: 1, cursor: 'pointer', fontWeight: 600,
                   '&:hover': { textDecoration: 'underline' } }}
               >
@@ -241,7 +241,7 @@ export default function FinancesIntelligencePage() {
                 title={`${missingCosts} SKUs missing cost data`}
                 detail="Margin calculations are incomplete. Enter costs to get accurate net margin."
                 cta="Fix in Products"
-                onClick={() => navigate('/products/costs')}
+                onClick={() => navigate('/inventory/costs')}
               />
             )}
 

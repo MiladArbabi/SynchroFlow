@@ -155,7 +155,7 @@ export function LifecycleRouteHost() {
       <Route path="/orders/inbound" element={<OrdersInboundPage />} />
 
       {/* PRODUCTS */}
-      <Route path="/products/*" element={<ProductsPage />} />
+      <Route path="/inventory/*" element={<ProductsPage />} />
 
       {/* CUSTOMERS */}
       <Route path="/customers/*" element={<CustomersPage />} />
@@ -199,7 +199,7 @@ export function LifecycleRouteHost() {
       <Route path="/orders/*" element={<OrdersFT2Page />} />
 
       {/* PRODUCTS */}
-      <Route path="/products/*" element={<ProductsFT2Page />} />
+      <Route path="/inventory/*" element={<ProductsFT2Page />} />
 
       {/* CUSTOMERS */}
       <Route path="/customers/*" element={<CustomersFT2Page />} />
@@ -223,8 +223,9 @@ export function LifecycleRouteHost() {
       <Route path="/demand/*" element={<DemandPage />} />
 
       {/* WMS */}
-      <Route path="/wms/*" element={<WmsPage />} />
+      {/* /wms/analytics must precede /wms/* — wildcard would shadow it otherwise */}
       <Route path="/wms/analytics" element={<WmsAnalyticsPage />} />
+      <Route path="/wms/*" element={<WmsPage />} />
 
       {/* SUPPLIERS PORTAL */}
       <Route path="/suppliers-portal/*" element={<SuppliersPortalPage />} />

@@ -251,8 +251,9 @@ export default function WmsPage() {
     // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
     <ModuleTabBar tabs={[
-      { id: 'operations', label: 'Operations', path: '/wms' },
-      { id: 'analytics',  label: 'Analytics',  path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
+      { id: 'operations',    label: 'Operations',     path: '/wms'            },
+      { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
+      { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
     ]} />
     <WmsModuleFT2
       data={data ?? null}

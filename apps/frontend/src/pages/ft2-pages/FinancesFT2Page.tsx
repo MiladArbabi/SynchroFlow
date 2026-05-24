@@ -22,8 +22,9 @@ export default function FinancesFT2Page() {
     <PlanGate feature="finances.overview">
       <>
         <ModuleTabBar tabs={[
-          { id: 'intelligence', label: 'Intelligence', path: '/finances' },
-          { id: 'margin',       label: 'Margin',       path: '/finances/margin' },
+          { id: 'intelligence', label: 'Finances',  path: '/finances'        },
+          { id: 'cashflow',     label: 'Cash Flow', path: '/cashflow'        },
+          { id: 'margin',       label: 'Margin',    path: '/finances/margin' },
         ]} />
         <Routes>
           <Route path="/"        element={<FinancesIntelligencePage />} />

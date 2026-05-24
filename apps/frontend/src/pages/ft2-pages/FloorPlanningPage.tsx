@@ -14,6 +14,8 @@ import {
   useUpdateProductBarcode, 
   usePrintBarcode 
 } from '../floor-planning/useZoneManagement';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
+
 /**
  * FLOOR PLANNING GATE PAGE
  * -------------------------
@@ -53,32 +55,40 @@ export default function FloorPlanningPage() {
   }, [variantId]);
 
   return (
-    <FloorPlanningModuleFT2
-      data={data ?? null}
-      isLoading={isLoading}
-      isError={isError}
-      onRefresh={refetch}
-      gridLocations={gridData?.locations}
-      gridOccupancy={occupancyData?.occupancy}
-      isGridLoading={isGridLoading}
-      binLog={binLogData}
-      isBinLogLoading={isBinLogLoading}
-      onBinLogOpen={setActiveBinLog}
-      binStats={binStatsData}
-      onBinSelect={setSelectedBin}
-      variantFocusBins={variantFocusBins.length > 0 ? variantFocusBins : undefined}
-      onCreateZone={(payload) => createZone.mutateAsync(payload)}
-      onDeleteZone={(code) => deleteZone.mutateAsync(code)}
-      onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
-      onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
-      onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
-      onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
-      activeTab={activeTab}
-      onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}
-      activeView={activeView}
-      onViewChange={(view) => setSearchParams(prev => { prev.set('view', view); return prev; })}
-      activeSubTab={activeSubTab}
-      onSubTabChange={(subTab) => setSearchParams(prev => { prev.set('subTab', subTab); return prev; })}
-    />
+    <>
+      {/* Warehouse-level tab bar — mirrors WmsPage and WmsAnalyticsPage */}
+      <ModuleTabBar tabs={[
+        { id: 'operations',     label: 'Operations',     path: '/wms'            },
+        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
+        { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth' },
+      ]} />
+      <FloorPlanningModuleFT2
+        data={data ?? null}
+        isLoading={isLoading}
+        isError={isError}
+        onRefresh={refetch}
+        gridLocations={gridData?.locations}
+        gridOccupancy={occupancyData?.occupancy}
+        isGridLoading={isGridLoading}
+        binLog={binLogData}
+        isBinLogLoading={isBinLogLoading}
+        onBinLogOpen={setActiveBinLog}
+        binStats={binStatsData}
+        onBinSelect={setSelectedBin}
+        variantFocusBins={variantFocusBins.length > 0 ? variantFocusBins : undefined}
+        onCreateZone={(payload) => createZone.mutateAsync(payload)}
+        onDeleteZone={(code) => deleteZone.mutateAsync(code)}
+        onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
+        onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
+        onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
+        onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
+        activeTab={activeTab}
+        onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}
+        activeView={activeView}
+        onViewChange={(view) => setSearchParams(prev => { prev.set('view', view); return prev; })}
+        activeSubTab={activeSubTab}
+        onSubTabChange={(subTab) => setSearchParams(prev => { prev.set('subTab', subTab); return prev; })}
+      />
+    </>
   );
 }

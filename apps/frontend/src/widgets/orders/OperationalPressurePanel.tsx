@@ -97,7 +97,7 @@ export function OperationalPressurePanel({
       zoom: { enabled: false },
     },
     stroke: {
-      curve: 'smooth',
+      curve: 'smooth' as const,
       width: 3,
     },
     xaxis: {
@@ -111,7 +111,7 @@ export function OperationalPressurePanel({
       intersect: false,
     },
     legend: {
-      position: 'bottom',
+      position: 'bottom' as const,
     },
   };
 

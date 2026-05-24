@@ -60,8 +60,9 @@ export default function WmsAnalyticsPage() {
     <PlanGate feature="wms.pick_batches">
       <Box sx={{ bgcolor: pal.bg, minHeight: '100%' }}>
       <ModuleTabBar tabs={[
-        { id: 'operations', label: 'Operations', path: '/wms' },
-        { id: 'analytics',  label: 'Analytics',  path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
+        { id: 'operations',     label: 'Operations',     path: '/wms'             },
+        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale'  },
+        { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
       ]} />
       <Box sx={{ p: { xs: 2, md: 3 } }}>
 

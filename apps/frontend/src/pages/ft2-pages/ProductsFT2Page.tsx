@@ -44,10 +44,11 @@ export default function ProductsFT2Page() {
   return (
     <>
       <ModuleTabBar tabs={[
-        { id: 'intelligence',    label: 'Intelligence',   path: '/products' },
-        { id: 'catalog',         label: 'Catalog',        path: '/products/catalog' },
-        { id: 'costs',           label: 'Costs',          path: '/products/costs' },
-        { id: 'wms-readiness',   label: 'WMS Readiness',  path: '/products/wms-readiness' },
+        { id: 'intelligence',    label: 'Intelligence',   path: '/inventory'                },
+        { id: 'catalog',         label: 'Catalog',        path: '/inventory/catalog'        },
+        { id: 'costs',           label: 'Costs',          path: '/inventory/costs'          },
+        { id: 'wms-readiness',   label: 'WMS Readiness',  path: '/inventory/wms-readiness'  },
+        { id: 'problem-center',  label: 'Problem Center', path: '/problem-center'          },
       ]} />
 
       {/* Date range bar — visible on Intelligence + Catalog tabs only */}
@@ -81,7 +82,7 @@ export default function ProductsFT2Page() {
         <Route path="/catalog"        element={<ProductsCatalogPage range={range} />} />
         <Route path="/costs"          element={<ProductsCostsPage />} />
         <Route path="/wms-readiness"  element={<ProductsWmsReadinessPage />} />
-        <Route path="*"               element={<Navigate to="/products" replace />} />
+        <Route path="*"               element={<Navigate to="/inventory" replace />} />
       </Routes>
     </>
   );

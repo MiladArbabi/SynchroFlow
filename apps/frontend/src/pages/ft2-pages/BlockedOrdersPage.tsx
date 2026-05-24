@@ -30,7 +30,7 @@ const CONSTRAINT_CONFIG = {
     border: 'rgba(245,158,11,0.25)',
     description: 'Items ordered are unavailable in current inventory.',
     action: 'View stock levels',
-    actionHref: '/products',
+    actionHref: '/inventory',
   },
   customer: {
     label: 'Customer Action',
