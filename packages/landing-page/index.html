@@ -581,7 +581,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 .fp-zone-receive{fill:rgba(76,175,122,0.12);stroke:var(--ok);stroke-width:1;stroke-dasharray:4 3;}
 .fp-zone-ship{fill:rgba(255,107,43,0.08);stroke:var(--accent-border);stroke-width:1;stroke-dasharray:4 3;}
 .fp-zone-label{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:0.18em;text-anchor:middle;}
-.fp-zone-label.receive{fill:var(--ok);}
+.fp-zone-label.receive{fill:#ffffff;}
 .fp-zone-label.ship{fill:var(--accent);}
 .fp-zone-returns{fill:rgba(46,61,98,0.30);stroke:#4A6080;stroke-width:1;stroke-dasharray:4 3;}
 .fp-zone-staging{fill:rgba(186,117,23,0.12);stroke:#BA7517;stroke-width:1;stroke-dasharray:4 3;}
@@ -1381,8 +1381,8 @@ if (cs) syncObs.observe(cs);
   var zones = {
     receive:{x:225,y:28,w:48,d:60},
     ship:{x:25,y:215,w:82,d:48},
-    returns:{x:120,y:228,w:72,d:42},
-    staging:{x:210,y:210,w:58,d:42}
+    returns:{x:25,y:258,w:72,d:38},
+    staging:{x:185,y:215,w:62,d:38}
   };
   var problems = [{x:60+160*(3.5/4),y:29,z:86},{x:40+170*(2.5/4),y:99,z:70}];
   var carousel = [
