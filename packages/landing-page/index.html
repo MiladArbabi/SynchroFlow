@@ -558,6 +558,98 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   .chaos-sync .cs-caption{opacity:1!important;}
   .reveal,.ba-row,.stat-n,.how-cell,.brief-row,.brief-card-header,.brief-footer,.how-icon{opacity:1!important;transform:none!important;clip-path:none!important;transition:none!important;}
 }
+
+/* ─── FP-CARD: isometric warehouse hero visual ─────────────────
+   Styles for the animated floor-plan card replacing the static
+   hero image. SVG content injected by fp JS (see bottom of file).
+   ─────────────────────────────────────────────────────────────── */
+.fp-card{position:relative;border-radius:14px;background:var(--surface);border:1px solid var(--rule);padding:16px 16px 12px;overflow:hidden;width:100%;}
+.fp-card::after{content:'';position:absolute;inset:0;border-radius:14px;pointer-events:none;box-shadow:inset 0 0 0 1px rgba(255,107,43,0.05);}
+@media(prefers-color-scheme:dark){.fp-card{background:rgba(255,255,255,0.02);}}
+.fp-meta{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--ink-3);font-weight:500;flex-wrap:wrap;gap:8px;}
+.fp-meta-left{display:flex;align-items:center;gap:10px;}
+.fp-status-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(76,175,122,0.18);}
+.fp-meta strong{color:var(--ink-2);font-weight:500;}
+.fp-meta-right{display:flex;gap:5px;align-items:center;}
+.fp-pill{font-size:9px;padding:2px 8px;border-radius:100px;border:1px solid var(--rule);color:var(--ink-3);font-weight:500;letter-spacing:0.08em;}
+.fp-pill.active{background:var(--accent-ghost);border-color:var(--accent-border);color:var(--accent);}
+.fp-stage{position:relative;width:100%;aspect-ratio:720/460;}
+.fp-stage svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
+.fp-footer{display:flex;align-items:center;justify-content:space-between;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule);font-size:10px;color:var(--ink-4);letter-spacing:0.06em;text-transform:uppercase;flex-wrap:wrap;gap:6px;}
+.fp-footer-stat{display:inline-flex;align-items:center;gap:6px;}
+.fp-footer-stat strong{color:var(--ink-2);font-family:var(--serif);font-weight:400;font-size:13px;text-transform:none;letter-spacing:-0.01em;}
+.fp-footer-stat em{color:var(--accent);font-family:var(--serif);font-weight:400;font-style:italic;font-size:12px;text-transform:none;letter-spacing:0;}
+.fp-footer-divider{width:1px;height:10px;background:var(--rule);}
+/* SVG face tones */
+.fp-floor-pad{fill:var(--bg-2);stroke:var(--rule);stroke-width:1;opacity:.7;}
+.fp-floor-grid{stroke:var(--rule);stroke-width:.5;opacity:.55;fill:none;}
+.fp-face-top{fill:var(--surface);stroke:var(--ink-3);stroke-width:.5;stroke-opacity:.4;}
+.fp-face-right{fill:#EEEAE2;stroke:var(--ink-3);stroke-width:.5;stroke-opacity:.4;}
+.fp-face-front{fill:#DBD5C9;stroke:var(--ink-3);stroke-width:.5;stroke-opacity:.4;}
+@media(prefers-color-scheme:dark){
+  .fp-floor-pad{fill:rgba(255,255,255,0.025);stroke:rgba(255,255,255,0.05);}
+  .fp-floor-grid{stroke:rgba(255,255,255,0.05);}
+  .fp-face-top{fill:#2E3D62;stroke:rgba(255,255,255,0.25);}
+  .fp-face-right{fill:#243050;stroke:rgba(255,255,255,0.22);}
+  .fp-face-front{fill:#1A2238;stroke:rgba(255,255,255,0.22);}
+}
+.fp-bin-divider{stroke:var(--ink-3);stroke-width:.4;stroke-opacity:.4;fill:none;}
+@media(prefers-color-scheme:dark){.fp-bin-divider{stroke:rgba(255,255,255,0.22);}}
+.fp-bin-fill{fill:var(--accent);opacity:.32;}
+.fp-bin-fill.hot{opacity:.55;}
+.fp-aisle-label{font-family:var(--serif);font-style:italic;font-size:18px;fill:var(--ink-4);opacity:.35;text-anchor:middle;letter-spacing:0.05em;}
+@media(prefers-color-scheme:dark){.fp-aisle-label{fill:rgba(255,255,255,0.18);}}
+.fp-bin-code{font-family:var(--sans);font-size:7px;font-weight:500;letter-spacing:0.1em;fill:var(--ink-3);text-anchor:middle;}
+.fp-pack-top{fill:var(--accent);}
+.fp-pack-right{fill:#E55A1F;}
+.fp-pack-front{fill:#C9491A;}
+.fp-pack-label{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:0.14em;fill:#fff;text-anchor:middle;}
+.fp-zone-receive{fill:rgba(76,175,122,0.12);stroke:var(--ok);stroke-width:1;stroke-dasharray:4 3;}
+.fp-zone-ship{fill:rgba(255,107,43,0.08);stroke:var(--accent-border);stroke-width:1;stroke-dasharray:4 3;}
+.fp-zone-label{font-family:var(--sans);font-size:9px;font-weight:600;letter-spacing:0.18em;text-anchor:middle;}
+.fp-zone-label.receive{fill:var(--ok);}
+.fp-zone-label.ship{fill:var(--accent);}
+.fp-problem-base{fill:var(--accent);}
+.fp-problem-ring{fill:none;stroke:var(--accent);stroke-width:1.2;transform-origin:center;animation:fp-problem-pulse 2.4s ease-out infinite;}
+.fp-problem-ring.delay{animation-delay:1.2s;}
+@keyframes fp-problem-pulse{0%{transform:scale(0.6);opacity:.9;}100%{transform:scale(2.4);opacity:0;}}
+.fp-data-path{fill:none;stroke:var(--accent);stroke-width:1;stroke-dasharray:2 4;opacity:.35;}
+.fp-data-dot{fill:var(--accent);filter:drop-shadow(0 0 8px rgba(255,107,43,0.65));}
+.fp-ceiling{fill:none;stroke:var(--accent);stroke-width:.6;stroke-dasharray:2 5;opacity:.22;}
+.fp-ceiling-node{fill:var(--accent);opacity:.7;}
+.fp-tip-leader{stroke:var(--accent);stroke-width:1;opacity:0;transition:opacity .35s ease;}
+.fp-tip-card-bg{fill:var(--surface);stroke:var(--accent-border);stroke-width:1;}
+@media(prefers-color-scheme:dark){.fp-tip-card-bg{fill:rgba(15,22,32,0.96);stroke:rgba(255,107,43,0.45);}}
+.fp-tip-title{font-family:var(--sans);font-size:9.5px;font-weight:600;fill:var(--ink);letter-spacing:0.02em;}
+.fp-tip-sub{font-family:var(--sans);font-size:8.5px;font-weight:400;fill:var(--ink-3);}
+.fp-tip-meta{font-family:var(--sans);font-size:7.5px;font-weight:500;letter-spacing:0.12em;fill:var(--accent);text-transform:uppercase;}
+.fp-tip-group{opacity:0;transition:opacity .4s ease;}
+.fp-tip-group.visible{opacity:1;}
+.fp-tip-group.visible .fp-tip-leader{opacity:.55;}
+.fp-bin-spot{fill:none;stroke:var(--accent);stroke-width:1.4;opacity:0;transition:opacity .35s ease;}
+.fp-bin-spot.visible{opacity:.85;}
+/* Assembly entrance animations — CSS-only, no JS dependency */
+@keyframes fp-fade-in{from{opacity:0;}}
+@keyframes fp-rack-in{from{opacity:0;transform:translateY(34px);}}
+@keyframes fp-pack-in{from{opacity:0;transform:translateY(18px);}}
+.fp-floor-pad{animation:fp-fade-in 0.8s ease 0.05s both;}
+.fp-floor-grid{animation:fp-fade-in 0.8s ease 0.15s both;}
+.fp-floor-mark{animation:fp-fade-in 0.8s ease 0.95s both;}
+.fp-aisle-label{animation:fp-fade-in 0.8s ease 0.30s both;}
+.fp-rack{animation:fp-rack-in 0.85s cubic-bezier(.16,1,.3,1) both;}
+.fp-rack-a{animation-delay:0.35s;}
+.fp-rack-b{animation-delay:0.55s;}
+.fp-rack-c{animation-delay:0.75s;}
+.fp-pack-group{animation:fp-pack-in 0.8s cubic-bezier(.16,1,.3,1) 0.95s both;}
+.fp-bin-code{animation:fp-fade-in 0.5s ease 1.15s both;}
+.fp-problem-group{animation:fp-fade-in 0.6s ease 1.30s both;}
+.fp-ceiling-group{animation:fp-fade-in 0.8s ease 1.55s both;}
+.fp-data-dot{animation:fp-fade-in 0.4s ease 1.80s both;}
+@media(prefers-reduced-motion:reduce){
+  .fp-floor-pad,.fp-floor-grid,.fp-floor-mark,.fp-aisle-label,
+  .fp-rack,.fp-pack-group,.fp-bin-code,.fp-problem-group,
+  .fp-ceiling-group,.fp-data-dot,.fp-problem-ring{animation:none!important;}
+}
 </style>
 
 <!-- SEO: meta description, canonical, robots — added 2026-04 -->
@@ -612,6 +704,7 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     "offerCount": "4"
   }
 }
+
 </script>
 
 <!-- SEO: Structured data — WebSite with SearchAction -->
@@ -715,9 +808,26 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     </p>
   </div>
 
-  <!-- RIGHT -->
-  <div class="hero-visual">
-    <img src="hero-warehouse-flow-1.png" alt="Warehouse operations simplified through mobile scanning">
+  <!-- RIGHT: animated isometric floor-plan card (fp-card) — visual driven by fp JS below -->
+  <div class="fp-card" aria-hidden="true">
+    <div class="fp-meta">
+      <div class="fp-meta-left">
+        <span class="fp-status-dot"></span>
+        <span><strong>Floor 1</strong> · 300m² · Live</span>
+      </div>
+      <div class="fp-meta-right">
+        <span class="fp-pill">2D</span>
+        <span class="fp-pill active">3D</span>
+      </div>
+    </div>
+    <div class="fp-stage" id="fp-stage"></div>
+    <div class="fp-footer">
+      <span class="fp-footer-stat"><strong>23</strong>&nbsp;components</span>
+      <span class="fp-footer-divider"></span>
+      <span class="fp-footer-stat"><strong>97%</strong>&nbsp;pick accuracy</span>
+      <span class="fp-footer-divider"></span>
+      <span class="fp-footer-stat"><em>2 risks surfaced</em></span>
+    </div>
   </div>
 
 </div>
@@ -1270,6 +1380,180 @@ var syncObs = new IntersectionObserver(function(entries) {
 }, { threshold: 0.4 });
 var cs = document.getElementById('chaos-sync');
 if (cs) syncObs.observe(cs);
+
+/* ─── FP HERO: isometric warehouse SVG builder + tooltip carousel
+   Builds SVG into #fp-stage on load. No dependencies.
+   ─────────────────────────────────────────────────────────────── */
+(function () {
+  var stage = document.getElementById('fp-stage');
+  if (!stage) return;
+
+  var VB_W = 720, VB_H = 460, OX = 360, OY = 130, SCALE = 1.0;
+  function iso(x, y, z) { z=z||0; return [OX+(x-y)*0.866*SCALE, OY+(x+y)*0.5*SCALE-z*SCALE]; }
+  function pt(p) { return p[0].toFixed(2)+','+p[1].toFixed(2); }
+  function fmt(n) { return (+n).toFixed(2); }
+
+  var FLOOR = {x:0,y:0,w:280,d:280};
+  var racks = [
+    {id:'A',x:60,y:18,w:160,d:22,h:78,bins:['A-1','A-2','A-3','A-4'],fills:[0.62,0.50,0.32,0.95],hot:[3]},
+    {id:'B',x:40,y:88,w:170,d:22,h:62,bins:['B-1','B-2','B-3','B-4'],fills:[0.55,0.72,0.38,0.60],hot:[]},
+    {id:'C',x:25,y:158,w:160,d:22,h:46,bins:['C-1','C-2','C-3','C-4'],fills:[0.68,0.28,0.55,0.18],hot:[]},
+  ];
+  var pack = {x:122,y:208,w:60,d:44,h:18};
+  var zones = {receive:{x:225,y:28,w:48,d:60},ship:{x:25,y:215,w:82,d:48}};
+  var problems = [{x:60+160*(3.5/4),y:29,z:86},{x:40+170*(2.5/4),y:99,z:70}];
+  var carousel = [
+    {rackIdx:0,binIdx:1,code:'A-2',line1:'12 units · 4 picks / wk',line2:'Tote 0418 · last picked 12 min ago'},
+    {rackIdx:0,binIdx:3,code:'A-4 · running hot',line1:'92% full · velocity 18 / wk',line2:'Move to forward pick zone'},
+    {rackIdx:1,binIdx:2,code:'B-3 · stock-out risk',line1:'4 days of cover left',line2:'Reorder Meadow #4012 today'},
+    {rackIdx:2,binIdx:0,code:'C-1',line1:'24 units · stable',line2:'Last replenished 6 days ago'},
+  ];
+
+  function rackSVG(r) {
+    var p1=iso(r.x+r.w,r.y,0),p2=iso(r.x+r.w,r.y+r.d,0),p3=iso(r.x,r.y+r.d,0);
+    var p4=iso(r.x,r.y,r.h),p5=iso(r.x+r.w,r.y,r.h),p6=iso(r.x+r.w,r.y+r.d,r.h),p7=iso(r.x,r.y+r.d,r.h);
+    var g='';
+    g+='<polygon class="fp-face-right" points="'+pt(p1)+' '+pt(p2)+' '+pt(p6)+' '+pt(p5)+'"/>';
+    g+='<polygon class="fp-face-front" points="'+pt(p3)+' '+pt(p2)+' '+pt(p6)+' '+pt(p7)+'"/>';
+    g+='<polygon class="fp-face-top" points="'+pt(p4)+' '+pt(p5)+' '+pt(p6)+' '+pt(p7)+'"/>';
+    for (var i=1;i<4;i++) {
+      var xd=r.x+i*(r.w/4);
+      var tA=iso(xd,r.y,r.h),tB=iso(xd,r.y+r.d,r.h);
+      g+='<line class="fp-bin-divider" x1="'+fmt(tA[0])+'" y1="'+fmt(tA[1])+'" x2="'+fmt(tB[0])+'" y2="'+fmt(tB[1])+'"/>';
+      var fA=iso(xd,r.y+r.d,0),fB=iso(xd,r.y+r.d,r.h);
+      g+='<line class="fp-bin-divider" x1="'+fmt(fA[0])+'" y1="'+fmt(fA[1])+'" x2="'+fmt(fB[0])+'" y2="'+fmt(fB[1])+'"/>';
+    }
+    var sa=iso(r.x,r.y+r.d,r.h/2),sb=iso(r.x+r.w,r.y+r.d,r.h/2);
+    g+='<line class="fp-bin-divider" x1="'+fmt(sa[0])+'" y1="'+fmt(sa[1])+'" x2="'+fmt(sb[0])+'" y2="'+fmt(sb[1])+'" stroke-opacity="0.22"/>';
+    for (var j=0;j<4;j++) {
+      var f=r.fills[j]; if(f<=0) continue;
+      var x0=r.x+j*(r.w/4)+1.5,x1=r.x+(j+1)*(r.w/4)-1.5,fillH=Math.max(2,f*(r.h-4));
+      var a=iso(x0,r.y+r.d,1),b=iso(x1,r.y+r.d,1),c=iso(x1,r.y+r.d,fillH+1),d=iso(x0,r.y+r.d,fillH+1);
+      g+='<polygon class="fp-bin-fill'+(r.hot.indexOf(j)>=0?' hot':'')+'" points="'+pt(a)+' '+pt(b)+' '+pt(c)+' '+pt(d)+'"/>';
+    }
+    for (var k=0;k<4;k++) {
+      var cx=r.x+(k+0.5)*(r.w/4),top=iso(cx,r.y+r.d/2,r.h);
+      g+='<text class="fp-bin-code" x="'+fmt(top[0])+'" y="'+fmt(top[1]-5)+'">'+r.bins[k]+'</text>';
+    }
+    return g;
+  }
+
+  function packSVG() {
+    var p1=iso(pack.x+pack.w,pack.y,0),p2=iso(pack.x+pack.w,pack.y+pack.d,0),p3=iso(pack.x,pack.y+pack.d,0);
+    var p4=iso(pack.x,pack.y,pack.h),p5=iso(pack.x+pack.w,pack.y,pack.h),p6=iso(pack.x+pack.w,pack.y+pack.d,pack.h),p7=iso(pack.x,pack.y+pack.d,pack.h);
+    var g='';
+    g+='<polygon class="fp-pack-right" points="'+pt(p1)+' '+pt(p2)+' '+pt(p6)+' '+pt(p5)+'"/>';
+    g+='<polygon class="fp-pack-front" points="'+pt(p3)+' '+pt(p2)+' '+pt(p6)+' '+pt(p7)+'"/>';
+    g+='<polygon class="fp-pack-top" points="'+pt(p4)+' '+pt(p5)+' '+pt(p6)+' '+pt(p7)+'"/>';
+    var c=iso(pack.x+pack.w/2,pack.y+pack.d/2,pack.h);
+    g+='<text class="fp-pack-label" x="'+fmt(c[0])+'" y="'+fmt(c[1]+3)+'">PACK</text>';
+    return g;
+  }
+
+  function zoneSVG(z,kind,label) {
+    var p0=iso(z.x,z.y,0),p1=iso(z.x+z.w,z.y,0),p2=iso(z.x+z.w,z.y+z.d,0),p3=iso(z.x,z.y+z.d,0);
+    var c=iso(z.x+z.w/2,z.y+z.d/2,0);
+    return '<polygon class="fp-zone-'+kind+'" points="'+pt(p0)+' '+pt(p1)+' '+pt(p2)+' '+pt(p3)+'"/>'+
+           '<text class="fp-zone-label '+kind+'" x="'+fmt(c[0])+'" y="'+fmt(c[1]+3)+'">'+label+'</text>';
+  }
+
+  function ceilingSVG() {
+    var node=iso(150,96,130);
+    var g='<g class="fp-ceiling-group">';
+    racks.forEach(function(r){
+      var l=iso(r.x+r.w*0.15,r.y+r.d/2,r.h),ri=iso(r.x+r.w*0.85,r.y+r.d/2,r.h);
+      g+='<line class="fp-ceiling" x1="'+fmt(l[0])+'" y1="'+fmt(l[1])+'" x2="'+fmt(node[0])+'" y2="'+fmt(node[1])+'"/>';
+      g+='<line class="fp-ceiling" x1="'+fmt(ri[0])+'" y1="'+fmt(ri[1])+'" x2="'+fmt(node[0])+'" y2="'+fmt(node[1])+'"/>';
+    });
+    [iso(zones.receive.x+zones.receive.w/2,zones.receive.y+zones.receive.d/2,0),
+     iso(pack.x+pack.w/2,pack.y+pack.d/2,pack.h),
+     iso(zones.ship.x+zones.ship.w/2,zones.ship.y+zones.ship.d/2,0)].forEach(function(p){
+      g+='<line class="fp-ceiling" x1="'+fmt(p[0])+'" y1="'+fmt(p[1])+'" x2="'+fmt(node[0])+'" y2="'+fmt(node[1])+'"/>';
+    });
+    g+='<circle class="fp-ceiling-node" cx="'+fmt(node[0])+'" cy="'+fmt(node[1])+'" r="3"/></g>';
+    return g;
+  }
+
+  function dataPath() {
+    var a=iso(zones.receive.x+zones.receive.w/2,zones.receive.y+zones.receive.d/2,6);
+    var b=iso(60+160*(1.5/4),31,84),c=iso(40+170*(2.5/4),99,68);
+    var d=iso(pack.x+pack.w/2,pack.y+pack.d/2,pack.h+4),e=iso(zones.ship.x+zones.ship.w/2,zones.ship.y+zones.ship.d/2,6);
+    function arc(p1,p2,lift){var cx=(p1[0]+p2[0])/2,cy=(p1[1]+p2[1])/2-lift;return 'Q '+fmt(cx)+','+fmt(cy)+' '+fmt(p2[0])+','+fmt(p2[1]);}
+    return 'M '+fmt(a[0])+','+fmt(a[1])+' '+arc(a,b,36)+' '+arc(b,c,14)+' '+arc(c,d,32)+' '+arc(d,e,14);
+  }
+
+  /* Build SVG string */
+  var svg='<svg viewBox="0 0 '+VB_W+' '+VB_H+'" preserveAspectRatio="xMidYMid meet">';
+  svg+='<defs><path id="fp-data-path" d="'+dataPath()+'"/></defs>';
+  var f0=iso(FLOOR.x,FLOOR.y),f1=iso(FLOOR.x+FLOOR.w,FLOOR.y),f2=iso(FLOOR.x+FLOOR.w,FLOOR.y+FLOOR.d),f3=iso(FLOOR.x,FLOOR.y+FLOOR.d);
+  svg+='<polygon class="fp-floor-pad" points="'+pt(f0)+' '+pt(f1)+' '+pt(f2)+' '+pt(f3)+'"/>';
+  var grid='';
+  for(var x=0;x<=FLOOR.w;x+=20){var ga=iso(x,0),gb=iso(x,FLOOR.d);grid+='<line x1="'+fmt(ga[0])+'" y1="'+fmt(ga[1])+'" x2="'+fmt(gb[0])+'" y2="'+fmt(gb[1])+'"/>';}
+  for(var y=0;y<=FLOOR.d;y+=20){var ga=iso(0,y),gb=iso(FLOOR.w,y);grid+='<line x1="'+fmt(ga[0])+'" y1="'+fmt(ga[1])+'" x2="'+fmt(gb[0])+'" y2="'+fmt(gb[1])+'"/>';}
+  svg+='<g class="fp-floor-grid">'+grid+'</g>';
+  svg+='<g class="fp-floor-mark">'+zoneSVG(zones.receive,'receive','RECEIVE')+zoneSVG(zones.ship,'ship','SHIP')+'</g>';
+  racks.forEach(function(r){var c=iso(r.x+r.w/2,r.y+r.d+14,0);svg+='<text class="fp-aisle-label" x="'+fmt(c[0])+'" y="'+fmt(c[1]+5)+'">'+r.id+'</text>';});
+  svg+='<g class="fp-ceiling">'+ceilingSVG()+'</g>';
+  racks.forEach(function(r){svg+='<g class="fp-rack fp-rack-'+r.id.toLowerCase()+'">'+rackSVG(r)+'</g>';});
+  svg+='<g class="fp-pack-group">'+packSVG()+'</g>';
+  svg+='<g class="fp-problem-group">';
+  problems.forEach(function(p,i){var c=iso(p.x,p.y,p.z);svg+='<g transform="translate('+fmt(c[0])+','+fmt(c[1])+')">'+'<circle class="fp-problem-ring'+(i===1?' delay':'')+'" cx="0" cy="0" r="4.5"/>'+'<circle class="fp-problem-base" cx="0" cy="0" r="3"/>'+'</g>';});
+  svg+='</g>';
+  svg+='<use href="#fp-data-path" class="fp-data-path"/>';
+  svg+='<circle class="fp-data-dot" r="3.5">'
+      +'<animateMotion dur="7.5s" begin="1.8s" repeatCount="indefinite" rotate="auto"><mpath href="#fp-data-path"/></animateMotion>'
+      +'<animate attributeName="opacity" values="0;1;1;1;0" keyTimes="0;0.05;0.5;0.92;1" dur="7.5s" begin="1.8s" repeatCount="indefinite"/>'
+      +'</circle>';
+  svg+='<circle class="fp-bin-spot" id="fp-bin-spot" cx="0" cy="0" r="13"/>';
+  svg+='<g class="fp-tip-group" id="fp-tip">'
+      +'<line class="fp-tip-leader" id="fp-tip-leader" x1="0" y1="0" x2="0" y2="0"/>'
+      +'<g id="fp-tip-card" transform="translate(0,0)">'
+      +'<rect class="fp-tip-card-bg" x="0" y="0" width="148" height="46" rx="6" ry="6"/>'
+      +'<text class="fp-tip-meta" x="10" y="14" id="fp-tip-code">A-2</text>'
+      +'<text class="fp-tip-title" x="10" y="28" id="fp-tip-line1"></text>'
+      +'<text class="fp-tip-sub" x="10" y="40" id="fp-tip-line2"></text>'
+      +'</g></g>';
+  svg+='</svg>';
+  stage.innerHTML = svg;
+
+  /* Tooltip carousel — cycles every 3.2s after assembly settles */
+  var cIdx=0, timer=null;
+  function showTip(item) {
+    var r=racks[item.rackIdx],bx=iso(r.x+(item.binIdx+0.5)*(r.w/4),r.y+r.d/2,r.h);
+    var tx=bx[0]+40,ty=bx[1]-70;
+    if(tx+158>VB_W-10) tx=bx[0]-158-40;
+    if(ty<8) ty=bx[1]+26;
+    document.getElementById('fp-tip-code').textContent=item.code;
+    document.getElementById('fp-tip-line1').textContent=item.line1;
+    document.getElementById('fp-tip-line2').textContent=item.line2;
+    document.getElementById('fp-tip-card').setAttribute('transform','translate('+fmt(tx)+','+fmt(ty)+')');
+    var lx=tx<bx[0]?tx+158:tx,ly=ty+25;
+    var l=document.getElementById('fp-tip-leader');
+    l.setAttribute('x1',fmt(bx[0]));l.setAttribute('y1',fmt(bx[1]));
+    l.setAttribute('x2',fmt(lx));l.setAttribute('y2',fmt(ly));
+    var s=document.getElementById('fp-bin-spot');
+    s.setAttribute('cx',fmt(bx[0]));s.setAttribute('cy',fmt(bx[1]));
+    document.getElementById('fp-tip').classList.add('visible');
+    s.classList.add('visible');
+  }
+  function hideTip(){
+    document.getElementById('fp-tip').classList.remove('visible');
+    document.getElementById('fp-bin-spot').classList.remove('visible');
+  }
+  function runCarousel(){
+    if(window.matchMedia('(prefers-reduced-motion:reduce)').matches) return;
+    var step=function(){
+      showTip(carousel[cIdx]);
+      timer=setTimeout(function(){hideTip();cIdx=(cIdx+1)%carousel.length;timer=setTimeout(step,700);},3200);
+    };
+    step();
+  }
+  setTimeout(runCarousel,2400);
+  document.addEventListener('visibilitychange',function(){
+    if(document.hidden&&timer){clearTimeout(timer);timer=null;hideTip();}
+    else if(!document.hidden&&!timer){cIdx=0;setTimeout(runCarousel,600);}
+  });
+})();
 </script>
 </body>
 </html>
