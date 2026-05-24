@@ -53,18 +53,42 @@ export const httpGetConstrainedOrders = async (
        */
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const query = trx('order_constraints as oc')
+      // Deduplicate order_constraints — one row per order, most recent constraint wins
+      const dedupedConstraints = trx('order_constraints')
+        .distinctOn('lasyncro_order_id')
+        .select('lasyncro_order_id', 'constraint_type', 'block_type', 'started_at', 'is_active')
+        .where('is_active', true)
+        .orderByRaw('lasyncro_order_id, started_at DESC NULLS LAST')
+        .as('oc');
+
+      const query = trx(dedupedConstraints)
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
-        .leftJoin('decisions as d', function () {
-          this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'))
-            .andOn('d.shop_id', '=', trx.raw('?', [shopId]));
-        })
-        .leftJoin('order_age_snapshot as oas', 'oas.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin(
+          // Deduplicate decisions — take the single highest-priority decision per order
+          trx('decisions')
+            .select('entity_id', 'recommended_action', 'priority', 'id', 'shop_id')
+            .where('shop_id', shopId)
+            .orderBy('priority', 'desc')
+            .as('d'),
+          function () {
+            this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'));
+          }
+        )
+        .leftJoin(
+          // Take only the latest aggregate_version per order
+          trx('order_age_snapshot')
+            .select('lasyncro_order_id', 'age_since_creation_seconds', 'is_shipping_sla_breached', 'is_delivery_sla_breached')
+            .distinctOn('lasyncro_order_id')
+            .orderByRaw('lasyncro_order_id, aggregate_version DESC')
+            .as('oas'),
+          'oas.lasyncro_order_id', 'oc.lasyncro_order_id'
+        )
         .leftJoin('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'oc.lasyncro_order_id')
-        .where('oc.is_active', true)
         .where('o.shop_id', shopId)
         .select(
           'oc.lasyncro_order_id as order_id',
+          'eim.external_order_id',
           'oc.constraint_type',
           'oc.block_type',
           'oc.started_at as constrained_since',

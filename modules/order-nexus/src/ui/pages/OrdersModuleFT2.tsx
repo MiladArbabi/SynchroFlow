@@ -1,29 +1,31 @@
 // modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
 //
 // ORDERS MODULE — FT2 OPERATOR SURFACE
-// -------------------------------------
-// Target design: LASYNCRO_UX_PLAYBOOK.md §2.2
-// Sections:
-//   1. Header        — serif greeting + date/sync + revenue alert banner
-//   2. Operation Pulse — 4 stat cards + aging band row
-//   3. Action Queue  — blocked orders table (SLA · hold reason · resolve)
-//   4. Orders by Stage — stacked progress bar + stage grid
-//   5. Your Money    — 4 large-number cards + leakage footer
+// Sprint 3 redesign · May 2026
+// ─────────────────────────────────────────────────────────────
+// Layout:
+//   1. Header      — DM Sans compact + live data signal line
+//   2. Alert       — blocked revenue banner (conditional)
+//   3. Context     — LEFT: Pulse 2×2 + aging | RIGHT: Money 2×2 + stage bar
+//   4. Action Queue — checkbox select → priority bar → Release Queue
 //
 // RULES:
-// - No hardcoded hex — CSS variables or theme.palette.* only
-// - No fetching — pure UI, all data via props
-// - No cross-module imports
+// - No hardcoded hex. CSS variables or theme.palette.* only.
+//   Exception: STAGE_COLORS — domain tokens, no design-system equivalent yet.
+// - No inline style={}. MUI sx prop only.
+// - No cross-module imports.
+// - No fetching. All data via props.
 
+import { useState, useCallback } from 'react';
 import { Box, Typography, Checkbox, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
-import { AlertTriangle, Clock } from 'lucide-react';
+import { AlertTriangle, Clock, MapPin, Package, ArrowUp } from 'lucide-react';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
-// ─── PROPS CONTRACT ───────────────────────────────────────────────────────────
+// ─── PROPS ────────────────────────────────────────────────────
 
 export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   orders: {
@@ -91,6 +93,15 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   onOrderSelect?: (orderId: string) => void;
 
+  /**
+   * onPriorityFlag
+   * --------------
+   * Wired at page level via POST /api/v1/wms/orders/:orderId/priority.
+   * Called with the array of selected lasyncro_order_ids.
+   * On resolution, this component clears selection and navigates to /orders/pool.
+   */
+  onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
+
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
     topBlockingType?: string | null;
@@ -121,59 +132,118 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   currency?: CurrencyContext;
 }
 
-// ─── HELPERS ──────────────────────────────────────────────────────────────────
+// ─── HELPERS ──────────────────────────────────────────────────
 
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
 
-// Hold reason colors are constraint-type signal colors.
-// No MUI palette equivalent — these are domain-specific, not severity tiers.
-// If the design system adds constraint-type tokens, migrate here.
-const HOLD_COLORS = {
-  inventory:   '#F59E0B',
-  customer:    '#3B82F6',
-  operational: '#EF4444',
-  default:     '#6B7280',
-} as const;
-
-const holdReasonLabel = (type: string | null | undefined): { label: string; color: string } => {
-  switch (type) {
-    case 'inventory':   return { label: 'Out of stock',          color: HOLD_COLORS.inventory   };
-    case 'customer':    return { label: 'Address invalid',       color: HOLD_COLORS.customer    };
-    case 'operational': return { label: 'Payment hold — review', color: HOLD_COLORS.operational };
-    default:            return { label: 'Hold',                  color: HOLD_COLORS.default     };
-  }
+/**
+ * fmtSlaAge
+ * ---------
+ * Converts raw hours to operator-readable SLA age.
+ * 1271 → "53d 1h past"  |  5 → "5h past"  |  48 → "2d past"
+ */
+const fmtSlaAge = (hours: number): string => {
+  const h = Math.round(hours);
+  const d = Math.floor(h / 24);
+  const rem = h % 24;
+  if (d === 0) return `${rem}h past`;
+  if (rem === 0) return `${d}d past`;
+  return `${d}d ${rem}h past`;
 };
 
-// Dot used in hold reason column — colored per constraint type
-function HoldDot({ color }: { color: string }) {
-  return <Box component="span" sx={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', bgcolor: color, mr: 0.75, flexShrink: 0 }} />;
-}
+// ─── STAGE COLORS ─────────────────────────────────────────────
+// Domain-specific pipeline stage colors.
+// No design-system token equivalent yet — tracked in B-08.
+// When @lasyncro/ui-ft2 adds stage tokens, migrate here.
+const STAGE_COLORS: Record<string, string> = {
+  new:            '#9CA3AF',
+  ready:          '#10B981',
+  picking:        '#14B8A6',
+  packed:         '#3B82F6',
+  blocked:        '#F97316',
+  breached:       '#EF4444',
+  awaiting_reply: '#F59E0B',
+  awaiting_stock: '#EAB308',
+};
 
-// ─── SECTION LABEL ────────────────────────────────────────────────────────────
-// 10px / 500 / 0.08em — playbook §3 label-caps style
+// ─── CONSTRAINT TAG ───────────────────────────────────────────
+// Semantic pill replacing the old HoldDot + text pattern.
+// Uses theme.palette — no hardcoded hex.
 
-function SectionLabel({ left, right }: { left: string; right?: string }) {
+type ConstraintType = 'inventory' | 'customer' | 'operational' | null | undefined;
+
+function ConstraintTag({ type }: { type: ConstraintType }) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === 'dark';
+
+  const config = (() => {
+    switch (type) {
+      case 'inventory':
+        return {
+          label: 'Out of stock',
+          Icon: Package,
+          color: theme.palette.warning.main,
+        };
+      case 'customer':
+        return {
+          label: 'Address issue',
+          Icon: MapPin,
+          color: theme.palette.info.main,
+        };
+      default:
+        return {
+          label: 'Overdue',
+          Icon: Clock,
+          color: theme.palette.error.main,
+        };
+    }
+  })();
+
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-        {left}
+    <Box sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 0.5,
+      px: 1,
+      py: 0.375,
+      borderRadius: '20px',
+      bgcolor: alpha(config.color, isDark ? 0.2 : 0.1),
+      border: `0.5px solid ${alpha(config.color, 0.35)}`,
+    }}>
+      <config.Icon size={10} color={config.color} />
+      <Typography sx={{ fontSize: 11, fontWeight: 500, color: config.color, lineHeight: 1 }}>
+        {config.label}
       </Typography>
-      {right && (
-        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          {right}
-        </Typography>
-      )}
     </Box>
   );
 }
 
-// ─── STAT CARD ────────────────────────────────────────────────────────────────
-// Playbook §6 StatCard — label above, large number, CTA link below
+// ─── SLA BADGE ────────────────────────────────────────────────
 
-function StatCard({
-  label, value, valueColor, cta, ctaHref,
-}: {
+function SlaBadge({ hours }: { hours: number }) {
+  const theme = useTheme();
+  return (
+    <Box sx={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 0.5,
+      px: 1,
+      py: 0.25,
+      borderRadius: '4px',
+      bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.18 : 0.08),
+    }}>
+      <Clock size={10} color={theme.palette.error.main} />
+      <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.error.main, fontVariantNumeric: 'tabular-nums' }}>
+        {fmtSlaAge(hours)}
+      </Typography>
+    </Box>
+  );
+}
+
+// ─── STAT CARD ────────────────────────────────────────────────
+
+function StatCard({ label, value, valueColor, cta, ctaHref }: {
   label: string;
   value: string;
   valueColor?: string;
@@ -183,11 +253,10 @@ function StatCard({
   const navigate = useNavigate();
   return (
     <Box sx={{
-      flex: 1,
-      bgcolor: 'var(--surface)',
-      border: '1px solid var(--rule)',
-      borderRadius: '10px',
-      p: '14px 16px',
+      bgcolor: 'var(--bg)',
+      border: '0.5px solid var(--rule)',
+      borderRadius: '8px',
+      p: '12px 14px',
       display: 'flex',
       flexDirection: 'column',
       gap: 0.5,
@@ -195,13 +264,13 @@ function StatCard({
       <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
         {label}
       </Typography>
-      <Typography sx={{ fontSize: 28, fontWeight: 500, color: valueColor ?? 'var(--ink)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+      <Typography sx={{ fontSize: 24, fontWeight: 500, color: valueColor ?? 'var(--ink)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
         {value}
       </Typography>
       {cta && ctaHref && (
         <Typography
           onClick={() => navigate(ctaHref)}
-          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', textDecoration: 'none', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
+          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.25, '&:hover': { textDecoration: 'underline' } }}
         >
           {cta} →
         </Typography>
@@ -210,311 +279,539 @@ function StatCard({
   );
 }
 
-// ─── STAGE COLORS ─────────────────────────────────────────────────────────────
-// Playbook §2.2 — stage color registry. Add new stages here only.
-// Stage colors are pipeline-stage signal colors — not MUI severity colors.
-// Named per operator vocabulary (§2.2). Extend here when new stages are added.
-// If the design system adds stage tokens, migrate here.
-const STAGE_COLORS: Record<string, string> = {
-  new:             '#9CA3AF',
-  ready:           '#10B981',
-  picking:         '#14B8A6',
-  packed:          '#3B82F6',
-  blocked:         '#F97316',
-  breached:        '#EF4444',
-  awaiting_reply:  '#F59E0B',
-  awaiting_stock:  '#EAB308',
-};
+// ─── MONEY CARD ───────────────────────────────────────────────
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+function MoneyCard({ label, value, valueColor }: {
+  label: string;
+  value: string;
+  valueColor?: string;
+}) {
+  return (
+    <Box sx={{
+      bgcolor: 'var(--bg)',
+      border: '0.5px solid var(--rule)',
+      borderRadius: '8px',
+      p: '12px 14px',
+    }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: 18, fontWeight: 500, color: valueColor ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+        {value}
+      </Typography>
+    </Box>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────
 
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { operationalControl, revenue, operatorSummary, currency } = props;
+  const { operationalControl, revenue, operatorSummary, currency, onPriorityFlag } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
-  // ── Derived counts ──────────────────────────────────────────────────────────
-  const qReady      = operatorSummary?.queueCounts?.readyToShip      ?? operationalControl?.queue_ready_to_ship      ?? 0;
-  const qPicking    = operationalControl?.pending_fulfillment ?? 0;
-  const constrained = operationalControl?.constrained_orders  ?? 0;
-  const aging72     = operationalControl?.aging_72h_plus      ?? 0;
-  const aging48     = operationalControl?.aging_48h           ?? 0;
-  const aging24     = operationalControl?.aging_24h           ?? 0;
-  const totalOrders = props.orders?.total ?? 0;
+  // ── Selection state ─────────────────────────────────────────
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [isPrioritising, setIsPrioritising] = useState(false);
+  const [prioritisedCount, setPrioritisedCount] = useState<number | null>(null);
 
-  // ── Date header ─────────────────────────────────────────────────────────────
+  // ── Derived counts ──────────────────────────────────────────
+  const qReady      = operatorSummary?.queueCounts?.readyToShip ?? operationalControl?.queue_ready_to_ship ?? 0;
+  const qPicking    = operationalControl?.pending_fulfillment ?? 0;
+  const constrained = operationalControl?.constrained_orders ?? 0;
+  const aging72     = operationalControl?.aging_72h_plus ?? 0;
+  const aging48     = operationalControl?.aging_48h ?? 0;
+  const aging24     = operationalControl?.aging_24h ?? 0;
+  const totalOrders = props.orders?.total ?? 0;
+  const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
+  const leakage = operationalControl?.revenue_leakage ?? 0;
+
+  // ── Date / sync header ──────────────────────────────────────
   const now = new Date();
-  const dayLabel = now.toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
-  // Derive human-readable sync age from snapshot_date — never hardcode "2 min ago"
+  const dayLabel = now
+    .toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' })
+    .toUpperCase();
   const syncLabel = (() => {
-    const snapshotDate = operationalControl?.snapshot_date;
-    if (!snapshotDate) return 'Syncing…';
-    const diffMin = Math.round((now.getTime() - new Date(snapshotDate).getTime()) / 60000);
+    const snap = operationalControl?.snapshot_date;
+    if (!snap) return 'Syncing…';
+    const diffMin = Math.round((now.getTime() - new Date(snap).getTime()) / 60000);
     if (diffMin < 1) return 'Just synced';
     if (diffMin < 60) return `Last synced ${diffMin} min ago`;
-    const diffHr = Math.round(diffMin / 60);
-    return `Last synced ${diffHr}h ago`;
+    return `Last synced ${Math.round(diffMin / 60)}h ago`;
   })();
 
-  // ── Revenue alert ───────────────────────────────────────────────────────────
-  // blockedRevenue = orders with an active blocker (inventory/customer/operational) — cannot ship
-  // at_risk_revenue (SLA proximity signal) is available but not surfaced in this banner
-  const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
-  const atRiskCount    = constrained;
-  const oldestHours    = operatorSummary?.agingOrders?.[0]?.ageHours ?? null;
-
-  // ── Stage bar segments ──────────────────────────────────────────────────────
-  // Each segment is a proportion of totalOrders. Unknown remainder = new.
-  const stageData = [
-    { key: 'ready',          label: 'Ready pick',      count: qReady      },
-    { key: 'picking',        label: 'Picking',         count: qPicking    },
-    { key: 'blocked',        label: 'Blocked',         count: constrained },
-    { key: 'breached',       label: 'Breached',        count: aging72     },
-    { key: 'awaiting_stock', label: 'Awaiting stock',  count: operatorSummary?.constraintCounts?.inventory ?? 0 },
-    { key: 'awaiting_reply', label: 'Awaiting reply',  count: operatorSummary?.constraintCounts?.customer  ?? 0 },
-  ];
-  const accountedFor = stageData.reduce((s, d) => s + d.count, 0);
-  const newCount = Math.max(0, totalOrders - accountedFor);
-
-  const allStages = [
-    { key: 'new', label: 'New', count: newCount },
-    ...stageData,
-  ];
-  const stageTotal = allStages.reduce((s, d) => s + d.count, 0) || 1;
-
-  // ── Action queue rows (blocked orders from operatorSummary) ─────────────────
-  // Shows up to 5 most urgent. Sorted by ageHours desc (oldest first).
+  // ── Action queue ────────────────────────────────────────────
   const actionQueueOrders = [...(operatorSummary?.agingOrders ?? [])]
     .sort((a, b) => b.ageHours - a.ageHours)
     .slice(0, 5);
 
-  // ── Your money ──────────────────────────────────────────────────────────────
-  const leakage = operationalControl?.revenue_leakage ?? 0;
+  // Revenue lookup from imminentSlaBreachers (best-effort — different shape)
+  const revenueByOrder = new Map<string, number>(
+    (operatorSummary?.imminentSlaBreachers ?? []).map(b => [b.lasyncro_order_id, b.revenue])
+  );
 
-  // ── Shared card style ────────────────────────────────────────────────────────
+  // ── Stage bar ───────────────────────────────────────────────
+  const stageData = [
+    { key: 'ready',          label: 'Ready pick',     count: qReady      },
+    { key: 'picking',        label: 'Picking',        count: qPicking    },
+    { key: 'blocked',        label: 'Blocked',        count: constrained },
+    { key: 'breached',       label: 'Breached',       count: aging72     },
+    { key: 'awaiting_stock', label: 'Awaiting stock', count: operatorSummary?.constraintCounts?.inventory ?? 0 },
+    { key: 'awaiting_reply', label: 'Awaiting reply', count: operatorSummary?.constraintCounts?.customer  ?? 0 },
+  ];
+  const accountedFor = stageData.reduce((s, d) => s + d.count, 0);
+  const newCount = Math.max(0, totalOrders - accountedFor);
+  const allStages = [{ key: 'new', label: 'New', count: newCount }, ...stageData];
+  const stageTotal = allStages.reduce((s, d) => s + d.count, 0) || 1;
+
+  // ── Handlers ────────────────────────────────────────────────
+  const toggleSelect = useCallback((id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  // Only unconstrained orders can be prioritised — blocked orders go to /orders/blocked
+  const poolEligibleOrders = actionQueueOrders.filter(o => o.constraintType === null);
+
+  const toggleAll = useCallback(() => {
+    setSelected(prev =>
+      prev.size === poolEligibleOrders.length && poolEligibleOrders.length > 0
+        ? new Set()
+        : new Set(poolEligibleOrders.map(o => o.lasyncro_order_id))
+    );
+  }, [poolEligibleOrders]);
+
+  const handlePrioritise = useCallback(async () => {
+    if (!onPriorityFlag || selected.size === 0) return;
+    setIsPrioritising(true);
+    try {
+      await onPriorityFlag([...selected], true);
+      const n = selected.size;
+      setSelected(new Set());
+      setPrioritisedCount(n);
+      // Brief confirmation window, then navigate to the pool
+      setTimeout(() => {
+        navigate('/orders/pool');
+        setPrioritisedCount(null);
+      }, 1200);
+    } finally {
+      setIsPrioritising(false);
+    }
+  }, [onPriorityFlag, selected, navigate]);
+
+  // ── Shared styles ────────────────────────────────────────────
   const cardSx = {
     bgcolor: 'var(--surface)',
-    border: '1px solid var(--rule)',
+    border: '0.5px solid var(--rule)',
     borderRadius: '10px',
     overflow: 'hidden',
   };
 
+  const oldestHours = operatorSummary?.agingOrders?.[0]?.ageHours ?? null;
+
   return (
-    <Box sx={{ p: '32px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
+    <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
-      {/* ── SECTION 1: HEADER ──────────────────────────────────────────────── */}
-
-      {/* Date / sync line */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
-        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          {dayLabel} · Channels live · {syncLabel}
-        </Typography>
+      {/* ── 1. HEADER ─────────────────────────────────────────── */}
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2.5 }}>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+            <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+              {dayLabel} · Channels live · {syncLabel}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.25 }}>
+            Orders
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            {constrained > 0
+              ? `${constrained} need a decision · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
+              : 'All orders on track — nothing needs immediate action'}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
+          <Box
+            sx={{
+              px: 1.5, py: 0.625, borderRadius: '8px',
+              border: '0.5px solid var(--rule)',
+              bgcolor: 'var(--surface)',
+              cursor: 'pointer', fontSize: 12, color: 'var(--ink-3)',
+              '&:hover': { borderColor: 'var(--ink-3)' },
+            }}
+          >
+            Export
+          </Box>
+          <Box
+            onClick={() => navigate('/orders/blocked')}
+            sx={{
+              px: 1.5, py: 0.625, borderRadius: '8px',
+              bgcolor: 'var(--accent)', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600, color: theme.palette.common.white,
+              '&:hover': { opacity: 0.88 },
+            }}
+          >
+            Resolve all →
+          </Box>
+        </Box>
       </Box>
 
-      {/* Serif heading + italic accent */}
-      <Box sx={{ mb: 1 }}>
-        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>
-          Orders today.{' '}
-        </Typography>
-        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>
-          Here's what to clear first.
-        </Typography>
-      </Box>
-
-      {/* Subheading */}
-      <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2.5 }}>
-        {constrained > 0
-          ? `${constrained} orders need a decision today — ${aging72} past 72h SLA. Everything else is on track.`
-          : 'All orders are on track — nothing needs immediate action.'}
-      </Typography>
-
-      {/* Revenue alert banner — only when revenue at risk */}
+      {/* ── 2. ALERT BANNER ───────────────────────────────────── */}
       {blockedRevenue > 0 && (
         <Box sx={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 2, px: 2, py: 1.5, mb: 4,
-          bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.error.main, 0.18) : alpha(theme.palette.error.main, 0.06),
-          border: '1px solid', borderColor: alpha(theme.palette.error.main, 0.3),
+          gap: 2, px: 2, py: 1.25, mb: 3,
+          bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.18 : 0.06),
+          border: `0.5px solid ${alpha(theme.palette.error.main, 0.3)}`,
           borderRadius: '10px',
         }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <AlertTriangle size={16} color={theme.palette.error.main} />
+            <AlertTriangle size={15} color={theme.palette.error.main} />
             <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
-              <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(blockedRevenue)}</Typography>
-              {' '}of revenue is held up across{' '}
-              <Typography component="span" sx={{ fontWeight: 600 }}>{atRiskCount} orders</Typography>
-              {oldestHours != null && `. Oldest is ${Math.round(oldestHours)}h past SLA — every hour is a refund risk.`}
+              <Box component="span" sx={{ fontWeight: 600 }}>{fmt$(blockedRevenue)}</Box>
+              {' '}of revenue held across{' '}
+              <Box component="span" sx={{ fontWeight: 600 }}>{constrained} orders</Box>
+              {oldestHours != null && `. Oldest is ${fmtSlaAge(oldestHours)} — every hour is a refund risk.`}
             </Typography>
           </Box>
           <Typography
             onClick={() => navigate('/fulfillment?filter=blocked')}
-            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', textDecoration: 'none', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
           >
             Review queue →
           </Typography>
         </Box>
       )}
 
-      {/* ── SECTION 2: OPERATION PULSE ─────────────────────────────────────── */}
+      {/* ── 3. CONTEXT ZONE — 2 columns ───────────────────────── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 3 }}>
 
-      <SectionLabel left="Operation Pulse" right={`Today, so far · ${fmtN(totalOrders)} total`} />
+        {/* LEFT: Operation Pulse */}
+        <Box sx={{ ...cardSx, p: 2, height: '100%' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+              Operation pulse
+            </Typography>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+              Today · {fmtN(totalOrders)} total
+            </Typography>
+          </Box>
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 1.5 }}>
-        <StatCard
-          label="Ready to ship"
-          value={fmtN(qReady)}
-          valueColor={qReady > 0 ? theme.palette.success.main : undefined}
-          cta="Fulfillment queue"
-          ctaHref="/fulfillment"
-        />
-        <StatCard
-          label="Being picked & packed"
-          value={fmtN(qPicking)}
-          cta="In progress"
-          ctaHref="/fulfillment"
-        />
-        <StatCard
-          label="Blocked — cannot ship"
-          value={fmtN(constrained)}
-          valueColor={constrained > 0 ? 'var(--accent)' : undefined}
-          cta="Blocked orders"
-          ctaHref="/fulfillment?filter=blocked"
-        />
-        <StatCard
-          label="Breached SLA · 72h+"
-          value={fmtN(aging72)}
-          valueColor={aging72 > 0 ? theme.palette.error.main : undefined}
-          cta="Urgent"
-          ctaHref="/fulfillment?filter=urgent"
-        />
-      </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mb: 2 }}>
+            <StatCard
+              label="Ready to ship"
+              value={fmtN(qReady)}
+              valueColor={qReady > 0 ? theme.palette.success.main : undefined}
+              cta="Fulfillment queue"
+              ctaHref="/fulfillment"
+            />
+            <StatCard
+              label="Picking & packing"
+              value={fmtN(qPicking)}
+              cta="In progress"
+              ctaHref="/fulfillment"
+            />
+            <StatCard
+              label="Blocked"
+              value={fmtN(constrained)}
+              valueColor={constrained > 0 ? 'var(--accent)' : undefined}
+              cta="Blocked orders"
+              ctaHref="/orders/blocked"
+            />
+            <StatCard
+              label="SLA breached 72h+"
+              value={fmtN(aging72)}
+              valueColor={aging72 > 0 ? theme.palette.error.main : undefined}
+              cta="Urgent"
+              ctaHref="/fulfillment?filter=urgent"
+            />
+          </Box>
 
-      {/* Aging band row */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4, px: 0.5 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          {[
-            { count: aging24, label: '24H+', color: theme.palette.warning.light },
-            { count: aging48, label: '48H+', color: theme.palette.warning.main },
-            { count: aging72, label: '72H+ BREACHED', color: theme.palette.error.main },
-          ].map(({ count, label, color }) => (
-            <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />
-              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                {fmtN(count)} {label}
+          {/* Aging band */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1.5, borderTop: '0.5px solid var(--rule)' }}>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              {[
+                { count: aging24, label: '24h+',          color: theme.palette.warning.light },
+                { count: aging48, label: '48h+',          color: theme.palette.warning.main  },
+                { count: aging72, label: '72h+ breached', color: theme.palette.error.main    },
+              ].map(({ count, label, color }) => (
+                <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: color }} />
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    {fmtN(count)} {label}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+            <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>
+              {fmtN(props.orders?.fulfilled)} shipped · {fmt$(revenue?.earned)} collected
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* RIGHT: Money + Stage */}
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+            <MoneyCard label="Total order value"    value={fmt$(revenue?.totalSales)} />
+            <MoneyCard label="Collected — shipped"  value={fmt$(revenue?.earned)}    valueColor={theme.palette.success.main} />
+            <MoneyCard label="Paid · not shipped"   value={fmt$(revenue?.pending)}   valueColor="var(--accent)" />
+            <MoneyCard label="Blocked — held up"    value={fmt$(revenue?.blocked)}   valueColor={theme.palette.error.main} />
+          </Box>
+
+          {leakage > 0 && (
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: theme.palette.error.main, px: 0.5 }}>
+              {fmt$(leakage)} leaked to refunds this week · SLA misses · unrecoverable
+            </Typography>
+          )}
+
+          {/* Stage bar */}
+          <Box sx={{ ...cardSx, p: 2, height: '100%' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.25 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                Open orders by stage
+              </Typography>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>
+                {fmtN(props.orders?.unfulfilled)} open
               </Typography>
             </Box>
-          ))}
+            <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mb: 1.5, bgcolor: 'var(--bg)' }}>
+              {allStages.filter(s => s.count > 0).map(stage => (
+                <Box
+                  key={stage.key}
+                  sx={{ width: `${(stage.count / stageTotal) * 100}%`, bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)' }}
+                />
+              ))}
+            </Box>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px 16px' }}>
+              {allStages.filter(s => s.count > 0).map(stage => (
+                <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.625 }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{stage.label}</Typography>
+                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{fmtN(stage.count)}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
         </Box>
-        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          ● {fmtN(props.orders?.fulfilled)} shipped this week · {fmt$(revenue?.earned)} collected
+      </Box>
+
+      {/* ── 4. ACTION QUEUE ───────────────────────────────────── */}
+
+      {/* Section label row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+            Action queue
+          </Typography>
+          {constrained > 0 && (
+            <Box sx={{
+              px: 1, py: 0.25, borderRadius: '20px',
+              bgcolor: alpha(theme.palette.error.main, 0.1),
+              border: `0.5px solid ${alpha(theme.palette.error.main, 0.3)}`,
+            }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: theme.palette.error.main }}>
+                {constrained} urgent
+              </Typography>
+            </Box>
+          )}
+        </Box>
+        <Typography
+          onClick={() => navigate('/orders')}
+          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+        >
+          View all orders →
         </Typography>
       </Box>
 
-      {/* ── SECTION 3: ACTION QUEUE ────────────────────────────────────────── */}
+      {/* Priority confirmation */}
+      {prioritisedCount != null && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          px: 2, py: 1.25, mb: 2,
+          bgcolor: alpha(theme.palette.success.main, 0.08),
+          border: `0.5px solid ${alpha(theme.palette.success.main, 0.3)}`,
+          borderRadius: '10px',
+        }}>
+          <ArrowUp size={15} color={theme.palette.success.main} />
+          <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
+            <Box component="span" sx={{ fontWeight: 600 }}>
+              {prioritisedCount} order{prioritisedCount !== 1 ? 's' : ''}
+            </Box>
+            {' '}flagged as priority — taking you to the Release Queue.
+          </Typography>
+        </Box>
+      )}
 
-      <SectionLabel
-        left={`Action Queue · ${constrained > 0 ? `${constrained} urgent` : 'clear'}`}
-        right="View all orders →"
-      />
+      {/* Selection toolbar — visible when ≥1 order checked */}
+      {selected.size > 0 && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          px: 2, py: 1.25, mb: 2,
+          bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.15 : 0.06),
+          border: `0.5px solid ${alpha(theme.palette.warning.main, 0.35)}`,
+          borderRadius: '10px',
+        }}>
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+            {selected.size} order{selected.size !== 1 ? 's' : ''} selected
+          </Typography>
+          <Box
+            component="button"
+            onClick={handlePrioritise}
+            disabled={isPrioritising}
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.75,
+              px: 1.75, py: 0.75,
+              bgcolor: isPrioritising ? 'var(--ink-4)' : 'var(--accent)',
+              color: theme.palette.common.white,
+              border: 'none', borderRadius: '8px',
+              cursor: isPrioritising ? 'not-allowed' : 'pointer',
+              fontSize: 12, fontWeight: 600,
+              opacity: isPrioritising ? 0.7 : 1,
+              transition: 'opacity 0.15s ease',
+              '&:hover': { opacity: isPrioritising ? 0.7 : 0.88 },
+            }}
+          >
+            <ArrowUp size={13} />
+            {isPrioritising ? 'Prioritising…' : 'Prioritise in next batch →'}
+          </Box>
+        </Box>
+      )}
 
-      <Box sx={{ ...cardSx, mb: 4 }}>
-        {/* Table header */}
+      {/* Table */}
+      <Box sx={{ ...cardSx }}>
+        {/* Header row */}
         <Box sx={{
           display: 'grid',
-          gridTemplateColumns: '32px 1fr 1fr 80px 80px 90px',
-          px: 2, py: 1,
+          gridTemplateColumns: '36px 1fr 160px 130px 80px 96px',
+          px: 2, py: 1.25,
           bgcolor: 'var(--bg-2)',
-          borderBottom: '1px solid var(--rule)',
+          borderBottom: '0.5px solid var(--rule)',
+          alignItems: 'center',
         }}>
-          {['', 'Order · Channel', 'Hold Reason', 'SLA', 'Value', ''].map((col, i) => (
+          <Checkbox
+            size="small" sx={{ p: 0 }}
+            checked={selected.size === poolEligibleOrders.length && poolEligibleOrders.length > 0}
+            indeterminate={selected.size > 0 && selected.size < poolEligibleOrders.length}
+            onChange={toggleAll}
+            disabled={poolEligibleOrders.length === 0}
+          />
+          {['Order · channel', 'Constraint', 'SLA', 'Value', ''].map((col, i) => (
             <Typography key={i} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
               {col}
             </Typography>
           ))}
         </Box>
 
-        {/* Table rows */}
+        {/* Rows */}
         {actionQueueOrders.length === 0 ? (
-          <Box sx={{ px: 2, py: 3, textAlign: 'center' }}>
+          <Box sx={{ px: 2, py: 4, textAlign: 'center' }}>
             <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>No blocked orders — queue is clear.</Typography>
           </Box>
-        ) : actionQueueOrders.map((order) => {
-          const hold = holdReasonLabel(order.constraintType);
-          const hoursOver = Math.round(order.ageHours);
+        ) : actionQueueOrders.map(order => {
+          const isSelected = selected.has(order.lasyncro_order_id);
+          const orderRevenue = revenueByOrder.get(order.lasyncro_order_id);
           return (
-            <Box key={order.lasyncro_order_id} sx={{
-              display: 'grid',
-              gridTemplateColumns: '32px 1fr 1fr 80px 80px 90px',
-              alignItems: 'center',
-              px: 2, py: 1.25,
-              borderBottom: '1px solid var(--rule)',
-              '&:last-child': { borderBottom: 'none' },
-              '&:hover': { bgcolor: 'var(--bg-2)' },
-            }}>
-              {/* Checkbox — Phase 2 bulk select (stub) */}
-              <Checkbox size="small" sx={{ p: 0 }} />
+            <Box
+              key={order.lasyncro_order_id}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: '36px 1fr 160px 130px 80px 96px',
+                alignItems: 'center',
+                px: 2, py: 1.25,
+                borderBottom: '0.5px solid var(--rule)',
+                bgcolor: isSelected
+                  ? alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.04)
+                  : 'transparent',
+                transition: 'background-color 0.12s ease',
+                '&:last-child': { borderBottom: 'none' },
+                '&:hover': { bgcolor: isSelected ? alpha(theme.palette.warning.main, 0.07) : 'var(--bg-2)' },
+              }}
+            >
+              {order.constraintType === null ? (
+                <Checkbox
+                  size="small" sx={{ p: 0 }}
+                  checked={isSelected}
+                  onChange={() => toggleSelect(order.lasyncro_order_id)}
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <Box sx={{ width: 36 }} />
+              )}
 
-              {/* Order / channel */}
+              {/* Order ID + priority indicator */}
               <Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-                  {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                    {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                  </Typography>
+                  {order.isPriorityFlagged && (
+                    <Box sx={{
+                      px: 0.75, py: 0.125,
+                      bgcolor: alpha(theme.palette.error.main, 0.1),
+                      border: `0.5px solid ${alpha(theme.palette.error.main, 0.3)}`,
+                      borderRadius: '4px',
+                    }}>
+                      <Typography sx={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', color: theme.palette.error.main, textTransform: 'uppercase' }}>
+                        Priority
+                      </Typography>
+                    </Box>
+                  )}
+                </Box>
                 <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>Shopify</Typography>
               </Box>
 
-              {/* Hold reason */}
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <HoldDot color={hold.color} />
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{hold.label}</Typography>
+              {/* Constraint tag */}
+              <Box>
+                <ConstraintTag type={order.constraintType as ConstraintType} />
               </Box>
 
-              {/* SLA badge */}
-              <Box sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                px: 1, py: 0.25,
-                bgcolor: alpha(theme.palette.error.main, theme.palette.mode === 'dark' ? 0.18 : 0.08),
-                borderRadius: '4px',
-                width: 'fit-content',
-              }}>
-                <Clock size={11} color={theme.palette.error.main} />
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: theme.palette.error.main }}>
-                  {hoursOver}H
-                </Typography>
+              {/* SLA */}
+              <Box>
+                <SlaBadge hours={order.ageHours} />
               </Box>
 
-              {/* Value — placeholder, revenue not on agingOrders shape */}
-              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>—</Typography>
+              {/* Value — from imminentSlaBreachers if available */}
+              <Typography sx={{ fontSize: 12, fontWeight: orderRevenue != null ? 500 : 400, color: orderRevenue != null ? 'var(--ink)' : 'var(--ink-4)' }}>
+                {orderRevenue != null ? fmt$(orderRevenue) : '—'}
+              </Typography>
 
-              {/* Resolve button */}
-              <Typography
-                onClick={() => navigate(`/fulfillment?order=${order.lasyncro_order_id}`)}
+              {/* Resolve */}
+              <Box
+                onClick={() => navigate(
+                  order.constraintType !== null
+                    ? '/orders/blocked'
+                    : `/fulfillment?order=${order.lasyncro_order_id}`
+                )}
                 sx={{
+                  display: 'inline-flex', alignItems: 'center',
+                  px: 1.25, py: 0.5,
                   fontSize: 11, fontWeight: 500, color: 'var(--ink-3)',
-                  border: '1px solid var(--rule)', borderRadius: '4px',
-                  px: 1.25, py: 0.5, textDecoration: 'none',
-                  display: 'inline-block',
+                  border: '0.5px solid var(--rule)', borderRadius: '6px',
+                  cursor: 'pointer',
                   '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
                 }}
               >
-                Resolve →
-              </Typography>
+                {order.constraintType !== null ? 'Unblock →' : 'Resolve →'}
+              </Box>
             </Box>
           );
         })}
 
-        {/* Table footer */}
+        {/* Footer */}
         <Box sx={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           px: 2, py: 1,
           bgcolor: 'var(--bg-2)',
-          borderTop: '1px solid var(--rule)',
+          borderTop: '0.5px solid var(--rule)',
         }}>
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-            {qPicking > 0 && `${fmtN(qPicking)} in pick & pack`}
+            {qPicking > 0 ? `${fmtN(qPicking)} in pick & pack` : ''}
           </Typography>
           {blockedRevenue > 0 && (
             <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: theme.palette.error.main }}>
@@ -522,79 +819,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             </Typography>
           )}
         </Box>
-      </Box>
-
-      {/* ── SECTION 4: ORDERS BY STAGE ─────────────────────────────────────── */}
-
-      <SectionLabel left="Open Orders by Stage" right={`${fmtN(props.orders?.unfulfilled)} open`} />
-
-      {/* Stacked proportional progress bar */}
-      <Box sx={{ display: 'flex', height: 8, borderRadius: '4px', overflow: 'hidden', mb: 2, bgcolor: 'var(--bg-3)' }}>
-        {allStages.filter(s => s.count > 0).map((stage) => (
-          <Box
-            key={stage.key}
-            sx={{
-              width: `${(stage.count / stageTotal) * 100}%`,
-              bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)',
-              transition: 'width 0.3s ease',
-            }}
-          />
-        ))}
-      </Box>
-
-      {/* Stage grid */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '8px 24px', mb: 4 }}>
-        {allStages.map((stage) => (
-          <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)', flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              {stage.label}
-            </Typography>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>
-              {fmtN(stage.count)}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-
-      {/* ── SECTION 5: YOUR MONEY ──────────────────────────────────────────── */}
-
-      <SectionLabel left="Your Money · This Week" right="Open Finances →" />
-
-      <Box sx={{
-        ...cardSx,
-        bgcolor: theme.palette.mode === 'dark' ? 'var(--bg-2)' : 'var(--surface)',
-      }}>
-        {/* 4 large-number cards in a row */}
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', borderBottom: '1px solid var(--rule)' }}>
-          {[
-            { label: 'Total order value',        value: revenue?.totalSales ?? null, color: 'var(--ink)'                              },
-            { label: 'Collected — shipped',       value: revenue?.earned     ?? null, color: theme.palette.success.main               },
-            { label: 'Paid · not yet shipped',    value: revenue?.pending    ?? null, color: 'var(--accent)'                          },
-            { label: 'Blocked — held up',         value: revenue?.blocked    ?? null, color: theme.palette.error.main                 },
-          ].map((item, i, arr) => (
-            <Box key={item.label} sx={{
-              p: '20px 24px',
-              borderRight: i < arr.length - 1 ? '1px solid var(--rule)' : 'none',
-            }}>
-              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                {item.label}
-              </Typography>
-              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 28, fontWeight: 400, color: item.color, lineHeight: 1 }}>
-                {fmt$(item.value)}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-
-        {/* Revenue leakage footer */}
-        {leakage > 0 && (
-          <Box sx={{ px: 3, py: 1.25 }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)' }}>
-              {fmt$(leakage)} leaked to refunds · lost to SLA misses this week · unrecoverable
-            </Typography>
-          </Box>
-        )}
       </Box>
 
     </Box>

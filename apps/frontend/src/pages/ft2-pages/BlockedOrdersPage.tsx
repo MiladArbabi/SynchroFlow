@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/ft2-pages/BlockedOrdersPage.tsx
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box, Typography, CircularProgress, Alert, Chip, Button,
 } from '@mui/material';
@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query';
 
 interface ConstrainedOrder {
   order_id: string;
+  external_order_id: string | null;
   constraint_type: 'inventory' | 'customer' | 'operational';
   block_type: string | null;
   constrained_since: string | null;
@@ -57,7 +58,11 @@ function useConstrainedOrders() {
     queryKey: ['orders', 'constrained'],
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/orders/constrained?limit=50');
-      return data;
+      // Controller returns { data: rows, pagination: {} } — remap to hook contract
+      return {
+        orders: data.data ?? [],
+        total: data.data?.length ?? 0,
+      };
     },
     refetchInterval: 60_000,
   });
@@ -74,9 +79,17 @@ type GroupKey = 'inventory' | 'customer' | 'operational';
 export default function BlockedOrdersPage() {
   const theme = useTheme();
   const { data, isLoading, isError } = useConstrainedOrders();
-  const [expanded, setExpanded] = useState<GroupKey | null>('inventory');
+  const [expanded, setExpanded] = useState<GroupKey | null>(null);
 
   const orders = data?.orders ?? [];
+
+  // Auto-expand the first group that has data, once on load
+  useEffect(() => {
+    if (orders.length === 0) return;
+    const first = (['operational', 'inventory', 'customer'] as GroupKey[])
+      .find(k => orders.some(o => o.constraint_type === k)) ?? null;
+    setExpanded(first);
+  }, [orders.length]);
 
   const grouped = {
     inventory:   orders.filter(o => o.constraint_type === 'inventory'),
@@ -95,11 +108,8 @@ export default function BlockedOrdersPage() {
         {/* HEADER */}
         <Box sx={{ mb: 3 }}>
           <Box sx={{ mb: 0.5 }}>
-            <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', display: 'inline' }}>
-              Blocked orders.{' '}
-            </Typography>
-            <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', display: 'inline' }}>
-              Resolve to release.
+            <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+              Blocked orders
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
@@ -241,7 +251,7 @@ export default function BlockedOrdersPage() {
                       >
                         <Box>
                           <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
-                            {order.order_id.slice(0, 8).toUpperCase()}
+                            {order.external_order_id ? `#${order.external_order_id}` : order.order_id.slice(0, 8).toUpperCase()}
                           </Typography>
                           {order.block_type && (
                             <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>{order.block_type}</Typography>

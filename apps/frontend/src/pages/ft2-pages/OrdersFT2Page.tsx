@@ -1,4 +1,4 @@
-// apps/frontend/src/pages/OrdersFT2Page.tsx
+// apps/frontend/src/pages/ft2-pages/OrdersFT2Page.tsx
 //
 // OrdersFT2Page
 // -------------
@@ -9,10 +9,15 @@
 // - MUST NOT render FT1 modules
 // - MUST NOT infer lifecycle
 // - MUST assume FT2 routing is authoritative
+//
+// onPriorityFlag (Change 2 · Sprint 3):
+// - Fires POST /api/v1/wms/orders/:orderId/priority for each selected id
+// - Parallel via Promise.all — order-independent
+// - Invalidates ['wms','order-pool'] so ReleaseQueuePage reflects priority
+//   flags immediately when the navigation lands there
 
-// apps/frontend/src/pages/OrdersFT2Page.tsx
-
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
@@ -22,68 +27,60 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
+import { axiosInstance } from 'api/axiosConfig';
 
 const __DEV__ = import.meta.env.DEV;
 
+/**
+ * useSetPriority
+ * --------------
+ * Mirrors the identical hook in ReleaseQueuePage.
+ * Kept local — do not lift to a shared hook until a third consumer exists.
+ * Invalidates order-pool so the Release Queue reflects flags on arrival.
+ */
+function useSetPriority() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, flagged }: { orderId: string; flagged: boolean }) => {
+      await axiosInstance.post(`/api/v1/wms/orders/${orderId}/priority`, { flagged });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
+    },
+  });
+}
+
 export default function OrdersFT2Page() {
-  /**
-   * SELECTED ORDER STATE
-   * --------------------
-   * Controls the OrderDetailPanel drawer.
-   * null = panel closed. orderId = panel open for that order.
-   */
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const snapshotQuery = useOrdersFt2Snapshot();
-
-  /**
-   * OPERATOR SUMMARY
-   * ----------------
-   * Loads independently from the FT2 snapshot.
-   * Page renders FT2 data immediately — operator data populates when ready.
-   * Follows the Products module two-endpoint pattern.
-   */
   const operatorSummaryQuery = useOrdersOperatorSummary();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
+  const setPriority = useSetPriority();
 
   /**
-   * PROGRESSIVE RENDER GUARD
-   * ------------------------
-   * Only block render if data is entirely absent.
-   * isLoading with stale data → render with previous data.
-   * error state → render with null-safe fallback in OrdersModuleFT2.
-   * This mirrors the Products module pattern: operator surface
-   * renders immediately, secondary data loads independently.
+   * onPriorityFlag
+   * --------------
+   * Receives the array of selected lasyncro_order_ids from OrdersModuleFT2.
+   * Fires one POST per id in parallel — backend is idempotent per order.
+   * On resolution the module navigates to /orders/pool (handled in module).
    */
+  const onPriorityFlag = useCallback(
+    async (orderIds: string[], flagged: boolean) => {
+      await Promise.all(
+        orderIds.map(orderId => setPriority.mutateAsync({ orderId, flagged }))
+      );
+    },
+    [setPriority]
+  );
+
   if (!snapshotQuery.data) {
     return <div>Loading orders insights…</div>;
   }
 
-  /**
-   * FT2 DECISION SURFACE
-   * --------------------
-   * The FT2 snapshot is the canonical operational truth surface.
-   *
-   * Rules:
-   * - The snapshot contains decision signals and operational control state.
-   * - Fact endpoints (timeseries, distribution, coverage) may be queried
-   *   by dedicated visualization components.
-   *
-   * Constraint:
-   * - This page must NOT orchestrate additional APIs directly.
-   * - Child components/hooks may query read-only fact surfaces.
-   *
-   * Rationale:
-   * Prevents lifecycle orchestration in the page layer while still
-   * allowing visualization of historical operational projections.
-   */
   const decision = snapshotQuery.data.decision;
   const operationalControl = snapshotQuery.data.operationalControl!;
-
-  const headerProps = mapOrdersFt2Props(
-    snapshotQuery.data,
-    decision,
-  );
+  const headerProps = mapOrdersFt2Props(snapshotQuery.data, decision);
 
   if (__DEV__) {
     console.debug('[OrdersFT2Page] rendering OrdersModuleFT2', headerProps);
@@ -97,16 +94,8 @@ export default function OrdersFT2Page() {
         operationalControl={operationalControl}
         operatorSummary={operatorSummaryQuery.data ?? null}
         currency={{ displayCurrency, locale, rates }}
+        onPriorityFlag={onPriorityFlag}
       />
-
-      {/**
-       * ORDER DETAIL PANEL (B-02, B-03)
-       * --------------------------------
-       * Right-side drawer — mounts at page level to overlay
-       * the full FT2 surface without navigation.
-       * onOrderSelect wired to OperationalSignalsSection
-       * in a future pass once signal cards expose order IDs.
-       */}
       <OrderDetailPanel
         orderId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
