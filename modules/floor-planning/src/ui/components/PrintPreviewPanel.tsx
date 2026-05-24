@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { Printer } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
-import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
+import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 /**
  * PrintPreviewPanel — Barcodes tab right panel.

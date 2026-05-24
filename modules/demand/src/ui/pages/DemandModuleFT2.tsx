@@ -9,9 +9,14 @@ import {
   TrendingDown, TrendingUp, Package,
   CheckCircle, ChevronDown, ShoppingCart, Minus,
 } from 'lucide-react';
-import { BinOccupancy, formatCurrencyCompact, ModuleLoadingSkeleton, WarehouseGrid, WarehouseLocation } from '@lasyncro/shared/ui';
+import { 
+  BinOccupancy, 
+  formatCurrencyCompact, 
+  ModuleLoadingSkeleton, 
+  WarehouseLocation 
+} from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
-import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { ModuleErrorBoundary, IsometricCanvas, type WarehouseZone } from '@lasyncro/shared/ui';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -318,8 +323,8 @@ function DemandModuleFT2Inner({
 
           {/* Warehouse occupancy snapshot — heatmap mini grid */}
           {gridLocations && gridLocations.length > 0 && (
-            <Box sx={{ mb: 3, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+            <Box sx={{ mb: 3, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)', overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, pt: 1.5, pb: 1 }}>
                 <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
                   Warehouse occupancy
                 </Typography>
@@ -331,12 +336,11 @@ function DemandModuleFT2Inner({
                   </Typography>
                 )}
               </Box>
-              <Box sx={{ overflowX: 'auto' }}>
-                <WarehouseGrid
-                  locations={gridLocations}
-                  occupancy={gridOccupancy}
-                  mode="heatmap"
-                  variant="mini"
+              {/* Isometric 2.5D occupancy view — read-only snapshot of warehouse state */}
+              <Box sx={{ height: 320 }}>
+                <IsometricCanvas
+                  zones={gridLocations as unknown as WarehouseZone[]}
+                  occupancy={gridOccupancy ?? undefined}
                 />
               </Box>
             </Box>

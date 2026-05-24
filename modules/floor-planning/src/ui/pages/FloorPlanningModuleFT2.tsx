@@ -27,7 +27,15 @@ import {
 } from '@mui/material';
 import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton, WarehouseGrid } from '@lasyncro/shared/ui';
-import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, WarehouseLocationType } from '@lasyncro/shared/ui';
+import type { 
+  WarehouseLocation, 
+  BinOccupancy, 
+  BinLogResponse, 
+  BinStats, 
+  WarehouseLocationType, 
+  WarehouseZone, 
+  LocationType 
+} from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 import { CanvasEditor } from '../components/CanvasEditor.js';
@@ -49,24 +57,8 @@ import { IsometricCanvas } from '../components/IsometricCanvas.js';
  * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.
  */
 
-export type LocationType = 'warehouse' | 'lane' | 'shelf' | 'bin';
-
-export type WarehouseZone = {
-  location_code: string;
-  type: LocationType;
-  parent_location_code: string | null;
-  barcode: string | null;
-  active: boolean;
-  children_count: number;
-  position_x: number | null;
-  position_y: number | null;
-  width: number | null;
-  depth: number | null;
-  orientation: number;
-  rack_levels: number | null;
-  zone_type: string | null;
-  last_printed_at: string | null;
-};
+// WarehouseZone and LocationType moved to @lasyncro/shared/ui — re-exported for backwards compat.
+export type { LocationType, WarehouseZone } from '@lasyncro/shared/ui';
 
 export type ProductBarcode = {
   lasyncro_variant_id: string;

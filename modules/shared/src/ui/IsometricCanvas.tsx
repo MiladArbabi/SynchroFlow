@@ -22,7 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { WarehouseZone } from '@lasyncro/shared/ui';
+import type { WarehouseZone } from './IsometricCanvas.types.js';
 
 // ── IsometricZoneView ─────────────────────────────────────────────────────────
 /**
