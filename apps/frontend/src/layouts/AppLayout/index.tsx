@@ -15,6 +15,8 @@ import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
 import { TrialCountdownBanner } from "../../components/TrialCountdownBanner";
 import { PostTrialInterstitial } from '../../components/PostTrialInterstitial';
+import { useAuth } from 'contexts/AuthContext';
+import { useIdleTimeout } from 'hooks/useIdleTimeout';
 import { ChevronLeft } from "lucide-react";
 
 interface AppLayoutProps {
@@ -44,6 +46,13 @@ const AppLayout = (props: AppLayoutProps) => {
     if (!saved || saved === ('CLOSED' as string)) return 'EXPANDED';
     return saved;
   });
+  const { logout } = useAuth();
+  // Idle timeout — log out after 15min of inactivity, save route for return-to on re-login.
+  useIdleTimeout(() => {
+    const currentPath = window.location.pathname + window.location.search;
+    if (currentPath !== '/login') sessionStorage.setItem('returnTo', currentPath);
+    logout();
+  });
   /**
    * LIFECYCLE → SIDENAV VISIBILITY CONTRACT
    * - FT_MINUS_ONE, FT0, FT1 → sidenav must NOT exist
@@ -51,7 +60,6 @@ const AppLayout = (props: AppLayoutProps) => {
   */
   const isSidenavAllowed = phase === 'FT2_READY';
   const hasAutoOpenedRef = React.useRef(false); // audit: prevent re-open after manual close
-
 
   /**
    * SYSTEM HEALTH

@@ -231,14 +231,17 @@ export interface IsometricCanvasProps {
   onSelect?: (locationCode: string | null) => void;
   filteredCodes?: Set<string>;
   occupancy?: Record<string, { on_hand_quantity: number }>;
-  /** Layer toggles from the Layers rail */
   showFloor?: boolean;
   showBins?: boolean;
+  /** Override default zoom for embedded contexts (default: 0.9) */
+  initialZoom?: number;
+  /** Override default pan offset for embedded contexts (default: { x: 420, y: 120 }) */
+  initialOffset?: { x: number; y: number };
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, showFloor = true, showBins = true }: IsometricCanvasProps) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 } }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [zoom, setZoom]         = useState(0.9);
-  const [offset, setOffset]     = useState({ x: 420, y: 120 });
+  const [zoom, setZoom]         = useState(initialZoom);
+  const [offset, setOffset]     = useState(initialOffset);
   const [selected, setSelected] = useState<string | null>(null);
   const [flipped, setFlipped]   = useState(false);
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);

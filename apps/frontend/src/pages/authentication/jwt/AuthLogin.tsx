@@ -154,7 +154,11 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
               userId: response.data.user.id,
             });
 
-            const landingPath = response.data.user?.role === 'operator' ? '/wms' : '/';
+            const savedPath = sessionStorage.getItem('returnTo');
+            sessionStorage.removeItem('returnTo');
+            const landingPath = response.data.user?.role === 'operator'
+              ? '/wms'
+              : (savedPath && savedPath !== '/login' ? savedPath : '/overview');
             navigate(landingPath);
           } else {
             console.error('--- [LOGIN DEBUG 4] ---');

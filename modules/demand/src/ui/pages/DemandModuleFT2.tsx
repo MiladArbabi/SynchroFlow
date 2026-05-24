@@ -16,7 +16,7 @@ import {
   WarehouseLocation 
 } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
-import { ModuleErrorBoundary, IsometricCanvas, type WarehouseZone } from '@lasyncro/shared/ui';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 // ─────────────────────────────────────────────
 // TYPES
@@ -297,6 +297,55 @@ function DemandModuleFT2Inner({
         <Typography color="error" sx={{ p: 2 }}>Failed to load demand data.</Typography>
       )}
 
+       {/* Warehouse occupancy summary — links to full isometric map in Floor Planning */}
+          {gridLocations && gridLocations.length > 0 && (() => {
+            const bins        = gridLocations.filter(l => l.type === 'bin');
+            const stockedBins = gridOccupancy ? Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length : 0;
+            const totalBins   = bins.length;
+            const pct         = totalBins > 0 ? Math.round((stockedBins / totalBins) * 100) : 0;
+            const pickBins    = bins.filter(l => l.zone_type === 'pick');
+            const pickStocked = gridOccupancy ? pickBins.filter(l => (gridOccupancy[l.location_code]?.on_hand_quantity ?? 0) > 0).length : 0;
+            const packBins    = bins.filter(l => l.zone_type === 'pack');
+            const packStocked = gridOccupancy ? packBins.filter(l => (gridOccupancy[l.location_code]?.on_hand_quantity ?? 0) > 0).length : 0;
+            return (
+              <Box sx={{ mb: 3, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Warehouse Occupancy
+                  </Typography>
+                  <Typography
+                    component="a"
+                    href="/floor-planning?tab=map"
+                    sx={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500, '&:hover': { textDecoration: 'underline' } }}
+                  >
+                    View in Warehouse →
+                  </Typography>
+                </Box>
+                {/* Occupancy bar */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                  <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'var(--bg-3)', overflow: 'hidden' }}>
+                    <Box sx={{ height: '100%', width: `${pct}%`, bgcolor: pct > 80 ? 'rgba(239,68,68,0.8)' : pct > 40 ? 'rgba(245,158,11,0.8)' : 'rgba(34,197,94,0.8)', borderRadius: 3, transition: 'width 0.3s' }} />
+                  </Box>
+                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', minWidth: 32 }}>{pct}%</Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{stockedBins} of {totalBins} bins stocked</Typography>
+                </Box>
+                {/* Zone breakdown */}
+                <Box sx={{ display: 'flex', gap: 3 }}>
+                  {pickBins.length > 0 && (
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      Pick zones: <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{pickStocked}/{pickBins.length}</Typography> stocked
+                    </Typography>
+                  )}
+                  {packBins.length > 0 && (
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      Pack zones: <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{packStocked}/{packBins.length}</Typography> stocked
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
+            );
+          })()}
+
       {/* ── ZONE 2: PRIORITY ACTION LIST ── */}
       {!isLoading && allVariants.length > 0 && (
         <Box sx={{
@@ -320,31 +369,6 @@ function DemandModuleFT2Inner({
               </Typography>
             ))}
           </Box>
-
-          {/* Warehouse occupancy snapshot — heatmap mini grid */}
-          {gridLocations && gridLocations.length > 0 && (
-            <Box sx={{ mb: 3, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)', overflow: 'hidden' }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, pt: 1.5, pb: 1 }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                  Warehouse occupancy
-                </Typography>
-                {gridOccupancy && (
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                    {Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length} bins with stock
-                    {' · '}
-                    {gridLocations.filter(l => l.type === 'bin').length - Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length} empty
-                  </Typography>
-                )}
-              </Box>
-              {/* Isometric 2.5D occupancy view — read-only snapshot of warehouse state */}
-              <Box sx={{ height: 320 }}>
-                <IsometricCanvas
-                  zones={gridLocations as unknown as WarehouseZone[]}
-                  occupancy={gridOccupancy ?? undefined}
-                />
-              </Box>
-            </Box>
-          )}
 
           {/* Action items (critical + warning) */}
           {actionVariants.length === 0 ? (

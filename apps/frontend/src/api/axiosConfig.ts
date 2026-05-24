@@ -45,6 +45,11 @@ function hardLogout(reason) {
     delete axiosInstance.defaults.headers.common.Authorization;
     // 3. Full reload to clean runtime
     //    (kills React state, queries, polling, interceptors, memory)
+   // Save current route so login can return user to where they were.
+    const currentPath = window.location.pathname + window.location.search;
+    if (currentPath !== '/login') {
+      sessionStorage.setItem('returnTo', currentPath);
+    }
     window.location.href = '/login';
 }
 // ────────────────────────────────────────────────────────────────
