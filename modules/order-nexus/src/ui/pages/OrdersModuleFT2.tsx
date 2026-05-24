@@ -16,6 +16,7 @@
 // - No cross-module imports
 
 import { Box, Typography, Checkbox, useTheme } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
 import { AlertTriangle, Clock } from 'lucide-react';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
@@ -179,6 +180,7 @@ function StatCard({
   cta?: string;
   ctaHref?: string;
 }) {
+  const navigate = useNavigate();
   return (
     <Box sx={{
       flex: 1,
@@ -198,9 +200,8 @@ function StatCard({
       </Typography>
       {cta && ctaHref && (
         <Typography
-          component="a"
-          href={ctaHref}
-          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', textDecoration: 'none', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
+          onClick={() => navigate(ctaHref)}
+          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', textDecoration: 'none', mt: 0.5, '&:hover': { textDecoration: 'underline' } }}
         >
           {cta} →
         </Typography>
@@ -229,6 +230,7 @@ const STAGE_COLORS: Record<string, string> = {
 
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const theme = useTheme();
+  const navigate = useNavigate();
   const { operationalControl, revenue, operatorSummary, currency } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
@@ -246,9 +248,21 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // ── Date header ─────────────────────────────────────────────────────────────
   const now = new Date();
   const dayLabel = now.toLocaleDateString('en-GB', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+  // Derive human-readable sync age from snapshot_date — never hardcode "2 min ago"
+  const syncLabel = (() => {
+    const snapshotDate = operationalControl?.snapshot_date;
+    if (!snapshotDate) return 'Syncing…';
+    const diffMin = Math.round((now.getTime() - new Date(snapshotDate).getTime()) / 60000);
+    if (diffMin < 1) return 'Just synced';
+    if (diffMin < 60) return `Last synced ${diffMin} min ago`;
+    const diffHr = Math.round(diffMin / 60);
+    return `Last synced ${diffHr}h ago`;
+  })();
 
   // ── Revenue alert ───────────────────────────────────────────────────────────
-  const atRiskRevenue  = operationalControl?.at_risk_revenue ?? 0;
+  // blockedRevenue = orders with an active blocker (inventory/customer/operational) — cannot ship
+  // at_risk_revenue (SLA proximity signal) is available but not surfaced in this banner
+  const blockedRevenue = operationalControl?.blocked_revenue ?? 0;
   const atRiskCount    = constrained;
   const oldestHours    = operatorSummary?.agingOrders?.[0]?.ageHours ?? null;
 
@@ -297,7 +311,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
         <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          {dayLabel} · Channels live · Last synced 2 min ago
+          {dayLabel} · Channels live · {syncLabel}
         </Typography>
       </Box>
 
@@ -319,7 +333,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       </Typography>
 
       {/* Revenue alert banner — only when revenue at risk */}
-      {atRiskRevenue > 0 && (
+      {blockedRevenue > 0 && (
         <Box sx={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: 2, px: 2, py: 1.5, mb: 4,
@@ -330,16 +344,15 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <AlertTriangle size={16} color={theme.palette.error.main} />
             <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
-              <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(atRiskRevenue)}</Typography>
+              <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(blockedRevenue)}</Typography>
               {' '}of revenue is held up across{' '}
               <Typography component="span" sx={{ fontWeight: 600 }}>{atRiskCount} orders</Typography>
               {oldestHours != null && `. Oldest is ${Math.round(oldestHours)}h past SLA — every hour is a refund risk.`}
             </Typography>
           </Box>
           <Typography
-            component="a"
-            href="/fulfillment?filter=blocked"
-            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+            onClick={() => navigate('/fulfillment?filter=blocked')}
+            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', textDecoration: 'none', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
           >
             Review queue →
           </Typography>
@@ -478,8 +491,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
               {/* Resolve button */}
               <Typography
-                component="a"
-                href={`/fulfillment?order=${order.lasyncro_order_id}`}
+                onClick={() => navigate(`/fulfillment?order=${order.lasyncro_order_id}`)}
                 sx={{
                   fontSize: 11, fontWeight: 500, color: 'var(--ink-3)',
                   border: '1px solid var(--rule)', borderRadius: '4px',
@@ -504,9 +516,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
             {qPicking > 0 && `${fmtN(qPicking)} in pick & pack`}
           </Typography>
-          {atRiskRevenue > 0 && (
+          {blockedRevenue > 0 && (
             <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: theme.palette.error.main }}>
-              {fmt$(atRiskRevenue)} at risk across this queue
+              {fmt$(blockedRevenue)} blocked across this queue
             </Typography>
           )}
         </Box>

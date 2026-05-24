@@ -329,7 +329,7 @@ export async function seed(knex: Knex): Promise<void> {
         .insert({
           shop_id: shop.id,
           supplier_id: supplier.id,
-          status: 'confirmed',
+          status: 'ordered',
           expected_delivery_date: new Date().toISOString().split('T')[0],
           notes: 'QA test PO — full flow seed',
         })

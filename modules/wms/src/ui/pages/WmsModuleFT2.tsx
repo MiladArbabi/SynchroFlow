@@ -113,6 +113,8 @@ export type WmsModuleFT2Props = {
   onConfirmStow?: (taskId: string) => Promise<void>;
   isOnline: boolean;
   queuedCount: number;
+  /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
+  pendingReceiveSession?: { receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] } | null;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -174,14 +176,21 @@ const BatchCard = memo(function BatchCard({
     : 0;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2 }}>
+    <Paper elevation={3} sx={{
+      p: 2.5, mb: 2, borderRadius: 2,
+      border: '1px solid var(--rule)',
+      background: 'var(--surface)',
+      boxShadow: theme.palette.mode === 'dark'
+        ? '0 4px 16px rgba(0,0,0,0.45)'
+        : '0 4px 16px rgba(0,0,0,0.10)',
+    }}>
 
       {/* BATCH HEADER */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
         <Typography
           variant="body2"
           fontWeight={700}
-          sx={{ fontFamily: 'monospace', color: theme.palette.text.primary }}
+          sx={{ fontFamily: 'monospace', color: 'var(--ink)' }}
         >
           {batch.pick_batch_id.slice(0, 8).toUpperCase()}
         </Typography>
@@ -426,8 +435,14 @@ function WmsModuleFT2Inner({
   onClaimStowTask,
   onConfirmStow,
   gridLocations,
+  pendingReceiveSession,
 }: WmsModuleFT2Props) {
-  const [activeSession, setActiveSession] = useState<ActiveSession>(null);
+  // Auto-enter receive session if handed off from Suppliers portal via URL param
+  const [activeSession, setActiveSession] = useState<ActiveSession>(
+    pendingReceiveSession
+      ? { type: 'receive', ...pendingReceiveSession }
+      : null
+  );
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 

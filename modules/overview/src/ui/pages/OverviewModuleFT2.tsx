@@ -577,7 +577,9 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
                   {pulse?.blockedOrders ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
                 </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>3 SKU, 1 payment, 1 manual</Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
+                  {pulse?.blockedOrders ? 'need a decision to ship' : 'queue is clear'}
+                </Typography>
               </Box>
               {/* Ready to Ship */}
               <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?filter=ready') : undefined}>
@@ -585,7 +587,9 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
                   {pulse?.shipToday ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
                 </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>pickers on track for cutoff</Typography>
+                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
+                  {pulse?.shipToday ? 'ready for pick & pack' : 'nothing queued yet'}
+                </Typography>
               </Box>
               {/* SLA Breached */}
               <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?aging=72h') : undefined}>
@@ -665,51 +669,50 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 )}
               </>
             )}
+          {/* ── FOOTER — inside The Brief card, always visible when brief is shown ── */}
+          <Box sx={{
+            p: '0.75rem 1.25rem',
+            background: 'var(--bg-2)',
+            borderTop: '0.5px solid var(--rule)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+              {trustWarning && (
+                <Box component="span" sx={{ color: 'warning.main', mr: 1 }}>
+                  Data may be stale ·
+                </Box>
+              )}
+              {isTrustGated ? 'Waiting for data sync' : generatedTime ? `Updated at ${generatedTime}` : 'Updating...'}
+            </Typography>
+            {onRefreshBrief && (
+              <Box
+                component="button"
+                onClick={onRefreshBrief}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  color: theme.palette.primary.main,
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  p: 0,
+                  '&:hover': { opacity: 0.75 },
+                }}
+              >
+                <RefreshCw size={11} />
+                Refresh
+              </Box>
+            )}
+          </Box>
           </Box>
         )}
         
-        {/* ── FOOTER ── */}
-        <Box sx={{
-          p: '0.75rem 1.25rem',
-          background: 'var(--bg-2)',
-          borderTop: '0.5px solid var(--rule)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-            {trustWarning && (
-              <Box component="span" sx={{ color: 'warning.main', mr: 1 }}>
-                Data may be stale ·
-              </Box>
-            )}
-            {isTrustGated ? 'Waiting for data sync' : generatedTime ? `Updated at ${generatedTime}` : 'Updating...'}
-          </Typography>
-          {onRefreshBrief && (
-            <Box
-              component="button"
-              onClick={onRefreshBrief}
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '4px',
-                fontSize: 11,
-                fontWeight: 500,
-                color: theme.palette.primary.main,
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                p: 0,
-                '&:hover': { opacity: 0.75 },
-              }}
-            >
-              <RefreshCw size={11} />
-              Refresh
-            </Box>
-          )}
         </Box>
-
-      </Box>
     </Box>
   );
 }

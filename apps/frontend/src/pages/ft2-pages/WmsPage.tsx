@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsPage.tsx
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { 
   WmsModuleFT2, 
   useOfflineScanQueue, 
@@ -58,16 +58,28 @@ export default function WmsPage() {
    * enter the receive session automatically, then clean the param
    * so refreshing doesn't re-trigger the session.
    */
+  const [pendingReceiveSession, setPendingReceiveSession] = useState<{
+    receiveJobId: string; poId: string; supplierName: string; lines: import('@lasyncro/wms').ReceiveJobLine[];
+  } | null>(null);
+
   useEffect(() => {
     const receiveJobId = searchParams.get('receiveJobId');
     if (!receiveJobId) return;
-
     // Clean param immediately — prevents re-trigger on refresh
     setSearchParams({}, { replace: true });
-
-    void handleFetchReceiveJob(receiveJobId).catch(() => {
-      console.error('[WmsPage] Failed to auto-enter receive session', { receiveJobId });
-    });
+    handleFetchReceiveJob(receiveJobId)
+      .then((result) => {
+        // Hand off pre-fetched job to WmsModuleFT2 — auto-enters receive session on mount
+        setPendingReceiveSession({
+          receiveJobId,
+          poId: result.job.po_id,
+          supplierName: result.job.supplier_name,
+          lines: result.lines,
+        });
+      })
+      .catch(() => {
+        console.error('[WmsPage] Failed to auto-enter receive session', { receiveJobId });
+      });
   }, [searchParams, setSearchParams, handleFetchReceiveJob]);
 
   // Register Web Push subscription on first WMS load (WM-22)
@@ -266,6 +278,7 @@ export default function WmsPage() {
       onConfirmShipment={handleConfirmShipment}
       onRefresh={refetch}
       gridLocations={gridData?.locations}
+      pendingReceiveSession={pendingReceiveSession}
       isOnline={isOnline}
       queuedCount={queuedCount}
       stowTasks={stowTasks}

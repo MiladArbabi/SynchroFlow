@@ -655,16 +655,19 @@ function PoAccordion({
                   onClick={() => void handleStatusUpdate('shipped')}>Skip → Shipped</Button>
               </>
             )}
-           <Button
-              size="small"
-              variant="outlined"
-              color="success"
-              disabled={updatingStatus}
-              startIcon={<CheckCircle size={14} />}
-              onClick={() => void handleReceive()}
-            >
-              Receive via WMS
-            </Button>
+           {/* Only show Receive when stock is physically inbound — not for draft/ordered/confirmed */}
+           {(po.status === 'shipped' || po.status === 'partially_received') && (
+              <Button
+                size="small"
+                variant="outlined"
+                color="success"
+                disabled={updatingStatus}
+                startIcon={<CheckCircle size={14} />}
+                onClick={() => void handleReceive()}
+              >
+                Receive via WMS
+              </Button>
+            )}
             <Button size="small" variant="outlined" color="error" disabled={updatingStatus}
               startIcon={<XCircle size={14} />}
               onClick={() => void handleStatusUpdate('cancelled')}>Cancel PO</Button>
