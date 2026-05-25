@@ -51,6 +51,7 @@ export interface OrdersOperatorFacts {
     isShippingSlaBreached: boolean;
     constraintType: string | null;
     isPriorityFlagged: boolean;
+    revenue: number;
     /** Minutes until 72h SLA breach — negative means already breached */
     timeToSlaBreachMinutes: number | null;
   }>;
@@ -174,6 +175,14 @@ export async function getOrdersOperatorFacts(
     .orderBy('oas.age_since_creation_seconds', 'desc')
     .limit(20)
     .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .leftJoin(
+      db('order_revenue_units')
+        .groupBy('lasyncro_order_id')
+        .select('lasyncro_order_id')
+        .sum('line_total as revenue')
+        .as('rev'),
+      'rev.lasyncro_order_id', 'o.lasyncro_order_id'
+    )
     .select(
       'o.lasyncro_order_id',
       'o.order_created_at',
@@ -182,6 +191,7 @@ export async function getOrdersOperatorFacts(
       'oas.is_shipping_sla_breached',
       'dominant_constraint.constraint_type',
       db.raw('COALESCE(ofs.is_priority_flagged, false) as is_priority_flagged'),
+      db.raw('COALESCE(rev.revenue, 0) as revenue'),
     );
 
   const SLA_HOURS = 72;
@@ -196,6 +206,7 @@ export async function getOrdersOperatorFacts(
       isShippingSlaBreached: Boolean(row.is_shipping_sla_breached),
       constraintType: row.constraint_type ?? null,
       isPriorityFlagged: Boolean(row.is_priority_flagged),
+      revenue: Math.round(Number(row.revenue) * 100) / 100,
       timeToSlaBreachMinutes,
     };
   });

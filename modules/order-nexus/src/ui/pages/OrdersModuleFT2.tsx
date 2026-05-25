@@ -112,6 +112,7 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       isShippingSlaBreached: boolean;
       constraintType: string | null;
       isPriorityFlagged: boolean;
+      revenue: number;
       timeToSlaBreachMinutes: number | null;
     }>;
     imminentSlaBreachers?: Array<{
@@ -348,10 +349,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     .sort((a, b) => b.ageHours - a.ageHours)
     .slice(0, 5);
 
-  // Revenue lookup from imminentSlaBreachers (best-effort — different shape)
-  const revenueByOrder = new Map<string, number>(
-    (operatorSummary?.imminentSlaBreachers ?? []).map(b => [b.lasyncro_order_id, b.revenue])
-  );
+  // Revenue now carried directly on agingOrders — no cross-array lookup needed
 
   // ── Stage bar ───────────────────────────────────────────────
   const stageData = [
@@ -715,7 +713,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           </Box>
         ) : actionQueueOrders.map(order => {
           const isSelected = selected.has(order.lasyncro_order_id);
-          const orderRevenue = revenueByOrder.get(order.lasyncro_order_id);
           return (
             <Box
               key={order.lasyncro_order_id}
@@ -776,9 +773,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <SlaBadge hours={order.ageHours} />
               </Box>
 
-              {/* Value — from imminentSlaBreachers if available */}
-              <Typography sx={{ fontSize: 12, fontWeight: orderRevenue != null ? 500 : 400, color: orderRevenue != null ? 'var(--ink)' : 'var(--ink-4)' }}>
-                {orderRevenue != null ? fmt$(orderRevenue) : '—'}
+              {/* Value */}
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>
+                {fmt$(order.revenue)}
               </Typography>
 
               {/* Resolve */}

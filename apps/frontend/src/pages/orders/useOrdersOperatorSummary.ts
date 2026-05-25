@@ -41,6 +41,7 @@ export interface OrdersOperatorSummary {
     isShippingSlaBreached: boolean;
     constraintType: string | null;
     isPriorityFlagged: boolean;
+    revenue: number;
     /** Minutes until 72h SLA breach — negative means already breached */
     timeToSlaBreachMinutes: number | null;
   }>;

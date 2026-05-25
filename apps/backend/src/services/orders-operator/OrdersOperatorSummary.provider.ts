@@ -47,6 +47,7 @@ export interface OrdersOperatorSummary {
     isShippingSlaBreached: boolean;
     constraintType: string | null;
     isPriorityFlagged: boolean;
+    revenue: number;
     timeToSlaBreachMinutes: number | null;
   }>;
   imminentSlaBreachers: Array<{

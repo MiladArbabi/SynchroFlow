@@ -10,6 +10,8 @@ import { httpGetOperationalPressure }
   from './orders.operational-pressure.controller.js';
 import { httpGetConstrainedOrders }
   from './orders.constrained.controller.js';
+import { httpGetFulfilledOrders }
+  from './orders.fulfilled.controller.js';
 import { httpGetOrderDecision }
   from './orders.decision-by-order.controller.js';
 import { httpExecuteOrderDecision }
@@ -81,6 +83,17 @@ router.get(
   '/constrained',
   authenticateToken,
   httpGetConstrainedOrders
+);
+
+/**
+ * @route   GET /api/v1/orders/fulfilled
+ * @desc    Shipped orders ledger for the Outbound tab.
+ * @access  Private
+ */
+router.get(
+  '/fulfilled',
+  authenticateToken,
+  httpGetFulfilledOrders
 );
 
 /**

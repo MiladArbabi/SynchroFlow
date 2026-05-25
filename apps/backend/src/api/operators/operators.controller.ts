@@ -104,9 +104,10 @@ export const httpGetTeamAvailability = async (req: Request, res: Response) => {
         'oa.is_available',
         'oa.notes',
         'u.id as user_id',
-        'u.name as operator_name',
+        trx.raw("CONCAT(u.first_name, ' ', u.last_name) as operator_name"),
       )
-      .orderBy(['oa.date', 'u.name']);
+      .orderBy('oa.date')
+      .orderBy('u.first_name');
   });
 
   return res.json({ team_availability: rows });

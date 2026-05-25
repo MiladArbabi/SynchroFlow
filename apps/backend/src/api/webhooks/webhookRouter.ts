@@ -144,6 +144,14 @@ export class WebhookRouter {
         throw new Error('[WEBHOOK_MISSING_SHOP_ID]');
       }
 
+      /**
+       * TENANT CONTEXT (RLS)
+       * --------------------
+       * integration_webhook_events has RLS enabled.
+       * Must set app.current_tenant before any ledger write.
+       */
+      await db.raw(`SET app.current_tenant = '${shopId}'`);
+
       const isFirstSeen = await WebhookLedgerService.recordReceived({
         shopId,
         integration: envelope.integration,
