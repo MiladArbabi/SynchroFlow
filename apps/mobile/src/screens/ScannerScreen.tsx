@@ -1,16 +1,12 @@
 // apps/mobile/src/screens/ScannerScreen.tsx
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, Vibration, ActivityIndicator, TextInput,
-  KeyboardAvoidingView, Platform,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Card, Badge, Row, Divider, AppHeader } from '../ui';
+import { Screen, Card, Badge, Row, Divider, AppHeader, BarcodeScannerView, BarcodeScanEvent } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
-import { useAuth } from '../hooks/useAuth';
 
 type ScanResult = {
   type: 'product' | 'location' | 'order';
@@ -52,72 +48,35 @@ const STAGE_LABELS: Record<string, { label: string; variant: 'info' | 'warning' 
   unknown:       { label: 'UNKNOWN',       variant: 'info' },
 };
 
-const VIBRATION_SUCCESS = [0, 80];
-const VIBRATION_ERROR = [0, 100, 80, 100];
-
 export default function ScannerScreen() {
-  const { logout } = useAuth();
-  const [permission, requestPermission] = useCameraPermissions();
-  const [scanning, setScanning] = useState(true);
-  const [resolving, setResolving] = useState(false);
   const [result, setResult] = useState<ScanResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [cooldown, setCooldown] = useState(false);
-  const [manualMode, setManualMode] = useState(false);
-  const [manualValue, setManualValue] = useState('');
 
-  useEffect(() => {
-    if (!permission?.granted) void requestPermission();
-  }, [permission, requestPermission]);
-
-  const handleScan = useCallback(async ({ data: scannedValue }: { data: string }) => {
-    if (cooldown || resolving) return;
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), 2000);
-
-    setResolving(true);
-    setError(null);
-    setScanning(false);
-
+  /**
+   * UNIVERSAL SCAN HANDLER
+   * ----------------------
+   * BarcodeScannerView owns: cooldown, vibration, error display,
+   * bounds overlay, manual entry, permission.
+   * This handler owns: /wms/scan/resolve API call + result display.
+   *
+   * Returns error string for inline display, or void on success.
+   */
+  const handleScan = useCallback(async (event: BarcodeScanEvent): Promise<string | void> => {
     try {
       const { data } = await apiClient.post('/api/v1/wms/scan/resolve', {
-        scanned_value: scannedValue,
+        scanned_value: event.data,
       });
-      Vibration.vibrate(VIBRATION_SUCCESS);
       setResult(data);
     } catch (err: unknown) {
-      Vibration.vibrate(VIBRATION_ERROR);
       const status = (err as any)?.response?.status;
-      if (status === 404) {
-        setError(`Not recognised: ${scannedValue}`);
-      } else {
-        setError('Scan failed. Check connection.');
-      }
-      setScanning(true);
-    } finally {
-      setResolving(false);
+      return status === 404
+        ? `Not recognised: ${event.data}`
+        : 'Scan failed. Check connection.';
     }
-  }, [cooldown, resolving]);
+  }, []);
 
   const handleReset = useCallback(() => {
     setResult(null);
-    setError(null);
-    setScanning(true);
   }, []);
-
-  if (!permission?.granted) {
-    return (
-      <Screen>
-        <AppHeader showLogo  />
-        <View style={styles.center}>
-          <Text style={styles.permText}>Camera access required for scanning.</Text>
-          <TouchableOpacity style={styles.permBtn} onPress={() => void requestPermission()}>
-            <Text style={styles.permBtnText}>Grant permission</Text>
-          </TouchableOpacity>
-        </View>
-      </Screen>
-    );
-  }
 
   // ── RESULT VIEW ───────────────────────────────────────────────────────────
   if (result) {
@@ -320,150 +279,14 @@ export default function ScannerScreen() {
 
   // ── CAMERA VIEW ───────────────────────────────────────────────────────────
   return (
-    <View style={styles.root}>
-      <CameraView
-        style={StyleSheet.absoluteFill}
-        facing="back"
-        onBarcodeScanned={scanning && !resolving ? handleScan : undefined}
-        barcodeScannerSettings={{
-          barcodeTypes: ['qr', 'ean13', 'ean8', 'code128', 'code39', 'upc_a', 'upc_e'],
-        }}
-      />
-
-      {/* Top bar */}
-      <View style={styles.cameraTopBar}>
-        <Image source={require('../../assets/logo.png')} style={styles.cameraLogo} resizeMode="contain" />
-        <TouchableOpacity onPress={() => void logout()} style={styles.profileBtn}>
-          <View style={styles.avatar}>
-            <Ionicons name="person-outline" size={16} color={colors.accent} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
-      {/* Viewfinder */}
-      <View style={styles.viewfinderContainer}>
-        {resolving ? (
-          <ActivityIndicator size="large" color={colors.accent} />
-        ) : (
-          <>
-            <View style={styles.viewfinder}>
-              <View style={[styles.corner, styles.cornerTL]} />
-              <View style={[styles.corner, styles.cornerTR]} />
-              <View style={[styles.corner, styles.cornerBL]} />
-              <View style={[styles.corner, styles.cornerBR]} />
-            </View>
-            <Text style={styles.scanHint}>
-              Scan product, location, or order barcode
-            </Text>
-          </>
-        )}
-      </View>
-
-      {/* Error */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      )}
-
-      {/* Manual entry */}
-      {manualMode ? (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'position' : 'height'}
-          keyboardVerticalOffset={0}
-          style={styles.manualSheetWrapper}
-        >
-        <View style={styles.manualSheet}>
-          <Text style={styles.manualLabel}>Enter barcode manually</Text>
-          <TextInput
-            style={styles.manualInput}
-            value={manualValue}
-            onChangeText={setManualValue}
-            placeholder="SKU, barcode, location or order ID"
-            placeholderTextColor={colors.ink4}
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoFocus
-          />
-          <View style={styles.manualBtns}>
-            <TouchableOpacity
-              style={styles.manualSubmit}
-              onPress={() => {
-                if (manualValue.trim()) {
-                  setManualMode(false);
-                  void handleScan({ data: manualValue.trim() });
-                  setManualValue('');
-                }
-              }}
-            >
-              <Text style={styles.manualSubmitText}>Search</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.manualCancel}
-              onPress={() => { setManualMode(false); setManualValue(''); }}
-            >
-              <Text style={styles.manualCancelText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-       </KeyboardAvoidingView>
-      ) : (
-        <TouchableOpacity
-          style={styles.manualTrigger}
-          onPress={() => setManualMode(true)}
-        >
-          <Ionicons name="create-outline" size={18} color={colors.ink3} />
-          <Text style={styles.manualTriggerText}>Enter manually</Text>
-        </TouchableOpacity>
-      )}
-    </View>
+    <BarcodeScannerView
+      hint="Scan product, location, or order barcode"
+      onScan={handleScan}
+    />
   );
 }
 
-// Need Image import
-import { Image } from 'react-native';
-
-const VIEWFINDER_SIZE = 240;
-const CORNER_SIZE = 24;
-const CORNER_THICKNESS = 3;
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  cameraTopBar: {
-    position: 'absolute', top: 0, left: 0, right: 0,
-    paddingTop: 56, paddingHorizontal: spacing.lg, paddingBottom: spacing.md,
-    backgroundColor: colors.cameraOverlay,
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-  },
-  cameraLogo: { height: 20, width: 100 },
-  profileBtn: {},
-  avatar: {
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: colors.accentGhost,
-    borderWidth: 1, borderColor: colors.accentBorder,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  viewfinderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  viewfinder: {
-    width: VIEWFINDER_SIZE, height: VIEWFINDER_SIZE,
-    position: 'relative',
-  },
-  corner: {
-    position: 'absolute', width: CORNER_SIZE, height: CORNER_SIZE,
-    borderColor: colors.accent, borderWidth: CORNER_THICKNESS,
-  },
-  cornerTL: { top: 0, left: 0, borderRightWidth: 0, borderBottomWidth: 0 },
-  cornerTR: { top: 0, right: 0, borderLeftWidth: 0, borderBottomWidth: 0 },
-  cornerBL: { bottom: 0, left: 0, borderRightWidth: 0, borderTopWidth: 0 },
-  cornerBR: { bottom: 0, right: 0, borderLeftWidth: 0, borderTopWidth: 0 },
-  scanHint: { marginTop: spacing.lg, color: colors.cameraHint, fontSize: font.size.sm },
-  errorBanner: {
-    position: 'absolute', bottom: 100, left: spacing.lg, right: spacing.lg,
-    backgroundColor: colors.errorGhost, borderRadius: radius.sm,
-    borderWidth: 1, borderColor: colors.errorBorder,
-    padding: spacing.md,
-  },
-  errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
   // Result view
   resultContent: { padding: spacing.lg, gap: spacing.md, paddingBottom: 100 },
   typeRow: { gap: spacing.sm, flexWrap: 'wrap' },
@@ -498,88 +321,4 @@ const styles = StyleSheet.create({
   },
   scanAgainText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
-  permText: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', marginBottom: spacing.lg },
-  permBtn: {
-    backgroundColor: colors.accent, borderRadius: radius.md,
-    paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
-  },
-  permBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
-  manualTrigger: {
-    position: 'absolute',
-    bottom: spacing.xxl + spacing.lg,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    padding: spacing.md,
-    backgroundColor: colors.cameraBg,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: colors.rule,
-  },
-  manualTriggerText: {
-    color: colors.ink3,
-    fontSize: font.size.sm,
-  },
-  manualSheet: {
-    backgroundColor: colors.bg2,
-    padding: spacing.lg,
-    paddingBottom: spacing.xxl,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    gap: spacing.md,
-  },
-  manualLabel: {
-    color: colors.ink3,
-    fontSize: font.size.sm,
-    fontWeight: font.weight.medium,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  manualInput: {
-    backgroundColor: colors.bg3,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    borderColor: colors.rule2,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    color: colors.ink,
-    fontSize: font.size.md,
-    fontWeight: font.weight.medium,
-  },
-  manualBtns: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  manualSubmit: {
-    flex: 1,
-    backgroundColor: colors.accent,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  manualSubmitText: {
-    color: colors.bg,
-    fontSize: font.size.md,
-    fontWeight: font.weight.bold,
-  },
-  manualCancel: {
-    flex: 1,
-    backgroundColor: colors.bg3,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.rule,
-  },
-  manualCancelText: {
-    color: colors.ink3,
-    fontSize: font.size.md,
-  },
-  manualSheetWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-  },
 });

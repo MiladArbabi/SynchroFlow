@@ -9,3 +9,5 @@ export { AppHeader } from './AppHeader';
 export { ProfileSheet } from './ProfileSheet';
 export { WorkflowStep } from './WorkflowStep';
 export type { WorkflowStepContext, WorkflowStepItem, ExceptionType } from './WorkflowStep';
+export { BarcodeScannerView } from './BarcodeScannerView';
+export type { BarcodeScannerViewProps, BarcodeScanEvent } from './BarcodeScannerView';
