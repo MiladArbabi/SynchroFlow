@@ -106,6 +106,7 @@ export type CreatePoInput = {
     description: string;
     quantity_ordered: number;
     unit_cost_cents?: number;
+    lasyncro_variant_id?: string | null;
   }[];
 };
 
@@ -125,6 +126,7 @@ export type SuppliersPortalPageProps = {
   onCreatePo: (input: CreatePoInput) => Promise<void>;
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
+  onSearchVariants: (q: string) => Promise<VariantOption[]>;
   /** When true, auto-opens the Create PO dialog on mount (from demand module handoff) */
   autoOpenCreatePo?: boolean;
   /** Pre-filled line item from demand module handoff */
@@ -160,7 +162,11 @@ type LineItemDraft = {
   description: string;
   quantity_ordered: string;
   unit_cost_cents: string;
+  lasyncro_variant_id?: string | null;
+  sku?: string | null;
 };
+
+type VariantOption = { lasyncro_variant_id: string; sku: string | null; title: string | null; unit_cost: number | null };
 
 function CreatePoDialog({
   open,
@@ -168,12 +174,14 @@ function CreatePoDialog({
   onClose,
   onCreateSupplier,
   onCreatePo,
+  onSearchVariants,
 }: {
   open: boolean;
   suppliers: Supplier[];
   onClose: () => void;
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
+  onSearchVariants: (q: string) => Promise<VariantOption[]>;
 }) {
   const [supplierId, setSupplierId] = useState<string>('');
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
@@ -184,6 +192,9 @@ function CreatePoDialog({
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [variantOptions, setVariantOptions] = useState<VariantOption[]>([]);
+  const [variantSearch, setVariantSearch] = useState<Record<number, string>>({});
+  const [focusedOptionIndex, setFocusedOptionIndex] = useState(-1);
 
   let keyCounter = lineItems.length;
 
@@ -246,6 +257,7 @@ function CreatePoDialog({
           unit_cost_cents: item.unit_cost_cents
             ? Math.round(parseFloat(item.unit_cost_cents) * 100)
             : undefined,
+          lasyncro_variant_id: item.lasyncro_variant_id?.trim() || null,
         })),
       });
 
@@ -329,13 +341,86 @@ function CreatePoDialog({
             </Typography>
             {lineItems.map((item, idx) => (
               <Box key={item.key} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'flex-start' }}>
-                <TextField
-                  label="Description *"
-                  size="small"
-                  value={item.description}
-                  onChange={(e) => updateLineItem(item.key, 'description', e.target.value)}
-                  sx={{ flex: 3 }}
-                />
+                <Box sx={{ flex: 3, position: 'relative' }}>
+                  <TextField
+                    label="Product / SKU"
+                    size="small"
+                    fullWidth
+                    value={variantSearch[item.key] ?? item.description}
+                    onKeyDown={(e) => {
+                      if (!variantOptions.length) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setFocusedOptionIndex((i) => Math.min(i + 1, variantOptions.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setFocusedOptionIndex((i) => Math.max(i - 1, 0));
+                      } else if (e.key === 'Enter' && focusedOptionIndex >= 0) {
+                        e.preventDefault();
+                        const v = variantOptions[focusedOptionIndex];
+                        const label = v.sku ?? (v.title && v.title !== 'Default Title' ? v.title : '');
+                        updateLineItem(item.key, 'description', label);
+                        updateLineItem(item.key, 'lasyncro_variant_id', v.lasyncro_variant_id);
+                        if (v.unit_cost) updateLineItem(item.key, 'unit_cost_cents', String(v.unit_cost));
+                        setVariantSearch((p) => ({ ...p, [item.key]: label }));
+                        setVariantOptions([]);
+                        setFocusedOptionIndex(-1);
+                      } else if (e.key === 'Escape') {
+                        setVariantOptions([]);
+                        setFocusedOptionIndex(-1);
+                      }
+                    }}
+                    onChange={async (e) => {
+                      setFocusedOptionIndex(-1);
+                      const q = e.target.value;
+                      setVariantSearch((p) => ({ ...p, [item.key]: q }));
+                      updateLineItem(item.key, 'description', q);
+                      setLineItems((prev) => prev.map((i) => i.key === item.key ? { ...i, lasyncro_variant_id: null } : i));
+                      if (q.length >= 1) {
+                        const results = await onSearchVariants(q);
+                        setVariantOptions(results);
+                      } else {
+                        setVariantOptions([]);
+                      }
+                    }}
+                  />
+                  {variantOptions.length > 0 && (variantSearch[item.key]?.length ?? 0) > 0 && !item.lasyncro_variant_id && (
+                    <Box
+                      onMouseDown={(e) => e.preventDefault()}
+                      sx={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                        bgcolor: 'background.paper', border: '1px solid', borderColor: 'divider',
+                        borderRadius: 1, boxShadow: 3, maxHeight: 200, overflowY: 'auto',
+                      }}
+                    >
+                      {variantOptions.map((v) => (
+                        <Box
+                          key={v.lasyncro_variant_id}
+                          onMouseDown={(e) => e.preventDefault()}
+                          sx={{ px: 1.5, py: 1, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                          onClick={() => {
+                            const label = v.sku && v.sku !== '—' ? v.sku : (v.title && v.title !== 'Default Title' ? v.title : '');
+                            updateLineItem(item.key, 'description', label);
+                            updateLineItem(item.key, 'lasyncro_variant_id', v.lasyncro_variant_id);
+                            if (v.unit_cost) updateLineItem(item.key, 'unit_cost_cents', String(v.unit_cost));
+                            setVariantSearch((p) => ({ ...p, [item.key]: label }));
+                            setVariantOptions([]);
+                          }}
+                        >
+                          {v.sku ? (
+                            <Typography variant="body2" fontWeight={600}>{v.sku}</Typography>
+                          ) : null}
+                          {v.title && v.title !== 'Default Title' && (
+                            <Typography variant="caption" color="text.secondary">{v.title}</Typography>
+                          )}
+                          {!v.sku && (!v.title || v.title === 'Default Title') && (
+                            <Typography variant="body2" color="text.secondary" fontStyle="italic">Unknown variant</Typography>
+                          )}
+                        </Box>
+                      ))}
+                    </Box>
+                  )}
+                </Box>
                 <TextField
                   label="Qty *"
                   size="small"
@@ -744,6 +829,7 @@ function SuppliersPortalModuleFT2Inner({
   onCreateSupplier,
   onCreatePo,
   onCreateReceiveJob,
+  onSearchVariants,
   autoOpenCreatePo = false,
   prefilledLineItem,
 }: SuppliersPortalPageProps) {
@@ -884,6 +970,7 @@ function SuppliersPortalModuleFT2Inner({
         onClose={handlePoCreated}
         onCreateSupplier={onCreateSupplier}
         onCreatePo={onCreatePo}
+        onSearchVariants={onSearchVariants}
       />
     </Box>
   );

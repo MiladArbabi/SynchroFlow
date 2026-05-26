@@ -154,11 +154,13 @@ export async function httpGetReceiveJob(req: Request, res: Response) {
 
       const lines = await trx('receive_job_lines as rjl')
         .leftJoin('variants as v', 'rjl.lasyncro_variant_id', 'v.lasyncro_variant_id')
+        .leftJoin('purchase_order_line_items as poli', 'rjl.po_line_item_id', 'poli.id')
         .where({ 'rjl.receive_job_id': jobId, 'rjl.shop_id': shopId })
         .select(
           'rjl.*',
           'v.sku',
           'v.title as variant_title',
+          'poli.description',
         );
 
       return { job, lines };

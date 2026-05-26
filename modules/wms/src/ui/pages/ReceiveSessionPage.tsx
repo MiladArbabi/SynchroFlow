@@ -49,6 +49,7 @@ export interface ReceiveJobLine {
   lasyncro_variant_id: string | null;
   sku: string | null;
   variant_title: string | null;
+  description: string | null;
   quantity_expected: number;
 }
 
@@ -213,7 +214,7 @@ export default function ReceiveSessionPage({
           Inspect variant
         </Typography>
         <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }} noWrap>
-          {currentLine?.variant_title || currentLine?.sku || currentLine?.lasyncro_variant_id?.slice(0, 8) || 'Unknown item'}
+          {currentLine?.variant_title || currentLine?.sku || currentLine?.description || currentLine?.lasyncro_variant_id?.slice(0, 8) || 'Unknown item'}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, mt: 0.5, alignItems: 'center' }}>
           {currentLine?.sku && (

@@ -428,4 +428,37 @@ export async function httpPatchPurchaseOrder(req: Request, res: Response) {
     console.error('[suppliers] httpPatchPurchaseOrder failed', err);
     return res.status(500).json({ error: 'Failed to update purchase order' });
   }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/suppliers/variants/search?q=...
+// ─────────────────────────────────────────────────────────────────────────────
+// Lightweight variant search for PO line item autocomplete.
+// Returns id, sku, title, unit_cost for all variants matching the query.
+export async function httpSearchVariants(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  const q = (req.query.q as string ?? '').trim();
+  try {
+    const variants = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      let query = trx('variants')
+        .where({ shop_id: shopId })
+        .whereNotNull('sku')
+        .whereNot('sku', '')
+        .select('lasyncro_variant_id', 'sku', 'title', 'unit_cost')
+        .orderBy('sku', 'asc')
+        .limit(30);
+      if (q) {
+        query = query.where(function () {
+          this.whereILike('sku', `%${q}%`).orWhereILike('title', `%${q}%`);
+        });
+      }
+      return query;
+    });
+    return res.json({ variants });
+  } catch (err: any) {
+    console.error('[VARIANTS_SEARCH_FAILED]', { shopId, q, error: err.message });
+    return res.status(500).json({ error: 'Failed to search variants' });
+  }
 }

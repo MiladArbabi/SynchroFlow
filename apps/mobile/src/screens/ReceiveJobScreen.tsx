@@ -20,6 +20,7 @@ type ReceiveJobLine = {
   lasyncro_variant_id: string;
   sku: string | null;
   variant_title: string | null;
+  description: string | null;
   quantity_expected: number;
   quantity_accepted: number;
   quantity_rejected: number;
@@ -414,8 +415,8 @@ export default function ReceiveJobScreen() {
             <Text style={styles.briefSectionTitle}>Line items</Text>
             {lines.map(line => (
               <Card key={line.receive_job_line_id} style={styles.briefLineCard}>
-                <Text style={styles.briefLineName} numberOfLines={1}>{line.variant_title ?? line.sku ?? '—'}</Text>
-                <Text style={styles.briefLineMeta}>SKU: {line.sku ?? '—'} · {line.quantity_expected} units expected</Text>
+                <Text style={styles.briefLineName} numberOfLines={1}>{line.variant_title ?? line.sku ?? line.description ?? '—'}</Text>
+                <Text style={styles.briefLineMeta}>{line.sku ? `SKU: ${line.sku} · ` : ''}{line.quantity_expected} units expected</Text>
               </Card>
             ))}
             <Button
@@ -502,7 +503,7 @@ export default function ReceiveJobScreen() {
               <View key={line.receive_job_line_id} style={styles.summaryCard}>
                 <Row style={{ justifyContent: 'space-between', alignItems: 'center' }}>
                   <Text style={styles.summaryVariant} numberOfLines={1}>
-                    {line.variant_title ?? line.sku ?? '—'}
+                    {line.variant_title ?? line.sku ?? line.description ?? '—'}
                   </Text>
                   <Badge
                     label={line.quantity_rejected > 0 ? `${line.quantity_accepted}✓ ${line.quantity_rejected}✗` : `${line.quantity_accepted} ✓`}
@@ -580,7 +581,7 @@ export default function ReceiveJobScreen() {
                         alignItems: 'center',
                       }}>
                         <Text style={{ color: confirmed ? colors.success : colors.ink, fontSize: font.size.sm, fontWeight: font.weight.semibold }} numberOfLines={1}>
-                          {line.sku ?? line.variant_title ?? '—'}
+                          {line.sku ?? line.variant_title ?? line.description ?? '—'}
                         </Text>
                         <Text style={{ color: colors.ink3, fontSize: font.size.xs, marginTop: 2 }}>
                           {confirmed ? `✓ ${line.quantity_accepted}` : `${scanCount} / ${line.quantity_expected}`}
@@ -647,7 +648,7 @@ export default function ReceiveJobScreen() {
                   <Row style={styles.lineHeader}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.variantTitle} numberOfLines={1}>
-                        {line.variant_title ?? line.sku ?? `Item ${idx + 1}`}
+                        {line.variant_title ?? line.sku ?? line.description ?? `Item ${idx + 1}`}
                       </Text>
                       {line.sku && <Text style={styles.sku}>{line.sku}</Text>}
                     </View>

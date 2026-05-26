@@ -12,6 +12,7 @@ import {
   httpUpdatePoStatus,
   httpReceiveShipment,
   httpPatchPurchaseOrder,
+  httpSearchVariants,
 } from './suppliers.controller.js';
 import {
   httpListReceiveJobs,
@@ -33,6 +34,14 @@ import {
  * on PO status transition to received/partially_received.
  */
 const router = Router();
+
+// ── VARIANTS SEARCH (PO line item autocomplete) ────────
+router.get(
+  '/variants/search',
+  authenticateToken,
+  requireFt2,
+  httpSearchVariants
+);
 
 // ── SUPPLIERS ──────────────────────────────────────────
 router.get(

@@ -67,6 +67,11 @@ export default function SuppliersPortalPage() {
     refetch();
   }, [refetch]);
 
+  const handleSearchVariants = useCallback(async (q: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/suppliers/variants/search?q=${encodeURIComponent(q)}`);
+    return data.variants ?? [];
+  }, []);
+
   /**
    * RECEIVE VIA WMS
    * ---------------
@@ -101,6 +106,7 @@ export default function SuppliersPortalPage() {
       onCreateSupplier={handleCreateSupplier}
       onCreatePo={handleCreatePo}
       onCreateReceiveJob={handleCreateReceiveJob}
+      onSearchVariants={handleSearchVariants}
       autoOpenCreatePo={demandAction === 'create-po'}
       prefilledLineItem={demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
         description: demandDescription ?? demandSku ?? '',
