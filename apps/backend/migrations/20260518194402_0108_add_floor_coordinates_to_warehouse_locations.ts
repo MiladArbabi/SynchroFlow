@@ -57,6 +57,7 @@ export async function up(knex: Knex): Promise<void> {
           'receive',
           'ship',
           'returns',
+          'problem',
           'quarantine',
           'kitting',
           'storage'
