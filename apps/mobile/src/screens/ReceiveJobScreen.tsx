@@ -44,7 +44,8 @@ type LineState = {
   confirmed: boolean;
 };
 
-type ScreenPhase = 'brief' | 'inspect' | 'summary' | 'closed';
+type ScreenPhase = 'brief' | 'inspect' | 'scan' | 'summary' | 'closed';
+type InspectMode = 'count' | 'scan';
 
 const EXCEPTION_TYPES = [
   { type: 'defect', label: 'Damaged', icon: 'hammer-outline' },
@@ -68,6 +69,7 @@ export default function ReceiveJobScreen() {
   const [error, setError] = useState<string | null>(null);
   const [screenPhase, setScreenPhase] = useState<ScreenPhase>('brief');
   const [claiming, setClaiming] = useState(false);
+  const [inspectMode, setInspectMode] = useState<InspectMode>('count');
 
   // Shortfall modal
   // Shortfall modal
@@ -112,7 +114,7 @@ export default function ReceiveJobScreen() {
     setClaiming(true);
     try {
       await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/claim`);
-      setScreenPhase('inspect');
+      setScreenPhase(inspectMode === 'scan' ? 'scan' : 'inspect');
     } catch (err: any) {
       const code = err?.response?.data?.error;
       Alert.alert('Error', code === 'JOB_CLAIMED_BY_OTHER' ? 'This job has been claimed by another operator.' : 'Failed to claim job.');
@@ -357,10 +359,18 @@ export default function ReceiveJobScreen() {
               </Card>
             ))}
             <Button
-              label={claiming ? 'Claiming…' : 'Claim & start inspection'}
-              onPress={() => void handleClaim()}
+              label={claiming ? 'Claiming…' : 'Scan items'}
+              onPress={() => { setInspectMode('scan'); void handleClaim(); }}
               variant="primary"
               style={{ marginTop: spacing.lg }}
+              disabled={claiming}
+            />
+            <Button
+              label={claiming ? 'Claiming…' : 'Count by hand'}
+              onPress={() => { setInspectMode('count'); void handleClaim(); }}
+              variant="secondary"
+              style={{ marginTop: spacing.sm }}
+              disabled={claiming}
             />
           </ScrollView>
         ) : null}
@@ -463,6 +473,78 @@ export default function ReceiveJobScreen() {
           />
         </View>
       </Screen>
+    );
+  }
+
+  // ── SCAN ─────────────────────────────────────────────────────────────────
+  if (screenPhase === 'scan') {
+    const totalConfirmed = lines.filter(l => lineStates[l.receive_job_line_id]?.confirmed).length;
+    const allConfirmed = totalConfirmed === lines.length;
+
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {/* Full-screen camera placeholder — logic wired in next step */}
+        <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: '#fff', fontSize: font.size.md }}>Camera loading…</Text>
+        </View>
+
+        {/* Progress HUD — bottom drawer */}
+        <View style={{
+          backgroundColor: colors.bg,
+          borderTopWidth: 1,
+          borderTopColor: colors.rule,
+          paddingHorizontal: spacing.lg,
+          paddingTop: spacing.md,
+          paddingBottom: spacing.xl,
+          maxHeight: 240,
+        }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
+            <Text style={{ color: colors.ink3, fontSize: font.size.xs, fontWeight: font.weight.semibold, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              {totalConfirmed} of {lines.length} lines complete
+            </Text>
+            <TouchableOpacity onPress={() => setScreenPhase('inspect')}>
+              <Text style={{ color: colors.accent, fontSize: font.size.sm }}>Switch to count</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0 }}>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              {lines.map(line => {
+                const state = lineStates[line.receive_job_line_id];
+                const confirmed = state?.confirmed ?? false;
+                const scanCount = 0; // wired in next step
+                return (
+                  <View key={line.receive_job_line_id} style={{
+                    backgroundColor: confirmed ? colors.successGhost ?? colors.bg2 : colors.bg2,
+                    borderWidth: 1,
+                    borderColor: confirmed ? colors.success : colors.rule,
+                    borderRadius: radius.sm,
+                    padding: spacing.sm,
+                    minWidth: 100,
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ color: confirmed ? colors.success : colors.ink, fontSize: font.size.sm, fontWeight: font.weight.semibold }} numberOfLines={1}>
+                      {line.sku ?? line.variant_title ?? '—'}
+                    </Text>
+                    <Text style={{ color: colors.ink3, fontSize: font.size.xs, marginTop: 2 }}>
+                      {confirmed ? `✓ ${line.quantity_accepted}` : `${scanCount} / ${line.quantity_expected}`}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          {allConfirmed && (
+            <Button
+              label="Review & close"
+              onPress={() => setScreenPhase('summary')}
+              variant="primary"
+              style={{ marginTop: spacing.md }}
+            />
+          )}
+        </View>
+      </View>
     );
   }
 

@@ -160,6 +160,7 @@ export const createMember = async (req: Request, res: Response) => {
     const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
     const { seatLimit } = getTierConfig(currentTier);
 
+    await db.raw(`SET app.current_tenant = '${shopId}'`);
     const activeSeatCount = await db('shop_memberships')
       .where({ shop_id: shopId })
       .whereNull('revoked_at')
@@ -192,6 +193,7 @@ export const createMember = async (req: Request, res: Response) => {
     let newUser: { id: number; email: string };
 
     await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       // 1. Create user (shop_id = existing shop, NOT a new shop)
       const [created] = await trx('users')
         .insert({

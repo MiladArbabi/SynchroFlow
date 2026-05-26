@@ -158,3 +158,13 @@ Operator availability UI in webapp. The schema, endpoints, and mobile surface ex
 | TEAM-07 | ✅ Fixed | Server crash resolved — `u.name` → `trx.raw("CONCAT(u.first_name, ' ', u.last_name)")` in `httpGetTeamAvailability`. Consistent with `trx` usage pattern throughout file. |
 EOF
 echo "TEAM-07 logged."
+---
+
+## Sprint 4 Fixes (May 25, 2026)
+
+| ID | Fix | File |
+|---|---|---|
+| TEAM-08 | `createMember` transaction missing `SET LOCAL app.current_tenant` — `shop_memberships` insert violated RLS. Fixed by adding tenant context at transaction start and before `shop_memberships` seat count query. | `apps/backend/src/api/members/members.controller.ts` |
+| TEAM-09 | `httpCreateReceiveJob` pre-transaction PO validation ran on bare `db` without tenant context — RLS blocked `purchase_orders` lookup. Fixed by moving all validation inside the transaction. | `apps/backend/src/api/suppliers/receiveJob.controller.ts` |
+| TEAM-10 | PO line items seeded without `lasyncro_variant_id` — receive job creation failed with NOT NULL constraint. Fixed by updating all 7 PO line items to real variant IDs in DB. Must be included in seed script for future resets. |`apps/backend/src/db/seeds/` |
+| TEAM-11 | Open — Owner/admin cannot claim receive jobs from mobile — claim logic allows any role but mobile TaskList only shows jobs to operators. Owner should be able to execute receive jobs directly. Needs investigation. | `apps/mobile/src/screens/DispatchScreen.tsx`, `apps/backend/src/api/suppliers/receiveJob.controller.ts` |

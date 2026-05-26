@@ -24,37 +24,38 @@ export async function httpCreateReceiveJob(req: Request, res: Response) {
   const poId = req.params.poId as string;
 
   try {
-    // Pre-transaction validation
-    const po = await db('purchase_orders')
-      .where({ id: poId, shop_id: shopId })
-      .first();
-
-    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
-    if (po.status !== 'shipped' && po.status !== 'partially_received') {
-      return res.status(409).json({ error: `Cannot receive PO in status: ${po.status}` });
-    }
-
-    // Guard: prevent duplicate active receive jobs
-    const activeJob = await db('receive_jobs')
-      .where({ po_id: poId, shop_id: shopId })
-      .whereIn('status', ['pending', 'in_progress', 'inspection', 'barcode_assignment', 'stow_ready'])
-      .first();
-
-    if (activeJob) {
-      return res.status(409).json({
-        error: 'An active receive job already exists for this PO',
-        receive_job_id: activeJob.receive_job_id,
-      });
-    }
-
     const { assigned_operator_id } = req.body ?? {};
     const jobId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const po = await trx('purchase_orders')
+        .where({ id: poId, shop_id: shopId })
+        .first();
+
+      if (!po) throw Object.assign(new Error('Purchase order not found'), { statusCode: 404 });
+      if (po.status !== 'shipped' && po.status !== 'partially_received') {
+        throw Object.assign(new Error(`Cannot receive PO in status: ${po.status}`), { statusCode: 409 });
+      }
+
+      const activeJob = await trx('receive_jobs')
+        .where({ po_id: poId, shop_id: shopId })
+        .whereIn('status', ['pending', 'in_progress', 'inspection', 'barcode_assignment', 'stow_ready'])
+        .first();
+
+      if (activeJob) {
+        throw Object.assign(
+          new Error('An active receive job already exists for this PO'),
+          { statusCode: 409, receive_job_id: activeJob.receive_job_id }
+        );
+      }
+
       return createReceiveJob(trx, { shopId, poId, operatorId: assigned_operator_id ?? null });
     });
 
     return res.status(201).json({ receive_job_id: jobId });
   } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
+    if (err.statusCode === 409) return res.status(409).json({ error: err.message, receive_job_id: err.receive_job_id });
     console.error('[RECEIVE_JOB_CREATE_FAILED]', { shopId, poId, error: err.message });
     return res.status(500).json({ error: `Failed to create receive job: ${err.message}` });
   }
