@@ -329,7 +329,7 @@ export async function seed(knex: Knex): Promise<void> {
         .insert({
           shop_id: shop.id,
           supplier_id: supplier.id,
-          status: 'ordered',
+          status: 'shipped',
           expected_delivery_date: new Date().toISOString().split('T')[0],
           notes: 'QA test PO — full flow seed',
         })
@@ -582,6 +582,79 @@ export async function seed(knex: Knex): Promise<void> {
     }
 
     console.log(`[DEV_SEED] Created ${productIds.length} products, ${variantIds.length} variants`);
+
+    // ── SUPPLIERS + PURCHASE ORDERS ──────────────────────────────────────────
+    // Wool & Co — 2 POs (one shipped/receivable, one ordered/in-transit)
+    // Linen House — 1 PO (shipped/receivable)
+    // All line items linked to real variants for full receive flow testing.
+    const woolVariants = variantIds.filter(v => v.sku.startsWith('WOOL-'));
+    const linenVariants = variantIds.filter(v => v.sku.startsWith('LINEN-'));
+
+    const [woolSupplier] = await trx('suppliers')
+      .insert({ shop_id: shop.id, name: 'Wool & Co', contact_email: 'orders@woolco.test', active: true })
+      .onConflict(['shop_id', 'name']).merge({ active: true }).returning('*');
+
+    const [linenSupplier] = await trx('suppliers')
+      .insert({ shop_id: shop.id, name: 'Linen House', contact_email: 'orders@linenhouse.test', active: true })
+      .onConflict(['shop_id', 'name']).merge({ active: true }).returning('*');
+
+    // Wool & Co PO 1 — shipped, ready to receive
+    const [woolPo1] = await trx('purchase_orders')
+      .insert({
+        shop_id: shop.id,
+        supplier_id: woolSupplier.id,
+        status: 'shipped',
+        expected_delivery_date: new Date().toISOString().split('T')[0],
+        notes: 'Seed PO — ready to receive',
+      }).returning('*');
+
+    for (const v of woolVariants) {
+      await trx('purchase_order_line_items').insert({
+        po_id: woolPo1.id, shop_id: shop.id,
+        lasyncro_variant_id: v.lasyncro_variant_id,
+        description: v.sku, quantity_ordered: 20, quantity_received: 0, unit_cost_cents: 2800,
+      });
+    }
+
+    // Wool & Co PO 2 — ordered, in transit
+    const [woolPo2] = await trx('purchase_orders')
+      .insert({
+        shop_id: shop.id,
+        supplier_id: woolSupplier.id,
+        status: 'ordered',
+        expected_delivery_date: new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0],
+        notes: 'Seed PO — in transit',
+      }).returning('*');
+
+    for (const v of woolVariants) {
+      await trx('purchase_order_line_items').insert({
+        po_id: woolPo2.id, shop_id: shop.id,
+        lasyncro_variant_id: v.lasyncro_variant_id,
+        description: v.sku, quantity_ordered: 50, quantity_received: 0, unit_cost_cents: 2800,
+      });
+    }
+
+    // Linen House PO — shipped, ready to receive
+    const [linenPo] = await trx('purchase_orders')
+      .insert({
+        shop_id: shop.id,
+        supplier_id: linenSupplier.id,
+        status: 'shipped',
+        expected_delivery_date: new Date().toISOString().split('T')[0],
+        notes: 'Seed PO — ready to receive',
+      }).returning('*');
+
+    for (const v of linenVariants) {
+      await trx('purchase_order_line_items').insert({
+        po_id: linenPo.id, shop_id: shop.id,
+        lasyncro_variant_id: v.lasyncro_variant_id,
+        description: v.sku, quantity_ordered: 25, quantity_received: 0, unit_cost_cents: 1800,
+      });
+    }
+
+    console.log(`[DEV_SEED] Wool & Co + Linen House suppliers and POs seeded`);
+
+    // ── INVENTORY TRUTH ──────────────────────────────────────────────────────
 
     // ── INVENTORY TRUTH ──────────────────────────────────────────────────────
     // Assign variants to specific bins — enables spatial pick route and zone_distribution in pool
