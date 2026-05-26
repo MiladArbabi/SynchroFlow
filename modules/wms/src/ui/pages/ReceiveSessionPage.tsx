@@ -46,7 +46,7 @@ import { CheckCircle, AlertTriangle, PackageX, ScanBarcode } from 'lucide-react'
 
 export interface ReceiveJobLine {
   receive_job_line_id: string;
-  lasyncro_variant_id: string;
+  lasyncro_variant_id: string | null;
   sku: string | null;
   variant_title: string | null;
   quantity_expected: number;
@@ -58,12 +58,13 @@ export interface ReceiveSessionPageProps {
   supplierName: string;
   lines: ReceiveJobLine[];
   onInspectLine: (params: {
-    lasyncro_variant_id: string;
+    lasyncro_variant_id: string | null;
+    receive_job_line_id: string;
     quantity_accepted: number;
     quantity_rejected: number;
   }) => Promise<void>;
   onReportException: (params: {
-    lasyncro_variant_id: string;
+    lasyncro_variant_id: string | null;
     receive_job_line_id: string;
     exception_type: string;
     quantity_affected: number;
@@ -98,7 +99,6 @@ export default function ReceiveSessionPage({
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [accepted, setAccepted] = useState(0);
-  const [rejected, setRejected] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [exceptionDialog, setExceptionDialog] = useState(false);
@@ -112,12 +112,12 @@ export default function ReceiveSessionPage({
   const currentLine = lines[currentIndex];
   const isLastLine = currentIndex === lines.length - 1;
   const progress = Math.round((currentIndex / lines.length) * 100);
+  const rejected = currentLine ? Math.max(0, currentLine.quantity_expected - accepted) : 0;
   const totalCounted = accepted + rejected;
   const remaining = currentLine ? currentLine.quantity_expected - totalCounted : 0;
 
   const resetForNext = useCallback(() => {
     setAccepted(0);
-    setRejected(0);
     setSubmitError(null);
   }, []);
 
@@ -128,6 +128,7 @@ export default function ReceiveSessionPage({
     try {
       await onInspectLine({
         lasyncro_variant_id: currentLine.lasyncro_variant_id,
+        receive_job_line_id: currentLine.receive_job_line_id,
         quantity_accepted: accepted,
         quantity_rejected: rejected,
       });
@@ -212,7 +213,7 @@ export default function ReceiveSessionPage({
           Inspect variant
         </Typography>
         <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }} noWrap>
-          {currentLine?.variant_title || currentLine?.sku || currentLine?.lasyncro_variant_id.slice(0, 8)}
+          {currentLine?.variant_title || currentLine?.sku || currentLine?.lasyncro_variant_id?.slice(0, 8) || 'Unknown item'}
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, mt: 0.5, alignItems: 'center' }}>
           {currentLine?.sku && (
@@ -241,7 +242,7 @@ export default function ReceiveSessionPage({
           <Box sx={{ flex: 1, textAlign: 'center' }}>
             <Typography variant="caption" color="success.main" fontWeight={700}>Accepted</Typography>
             <Typography variant="h3" fontWeight={800} color="success.main">{accepted}</Typography>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mt: 1, alignItems: 'center' }}>
               <Button
                 variant="outlined"
                 color="success"
@@ -252,6 +253,18 @@ export default function ReceiveSessionPage({
               >
                 −
               </Button>
+              <TextField
+                size="small"
+                value={accepted}
+                onChange={(e) => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v >= 0 && currentLine && v <= currentLine.quantity_expected) {
+                    setAccepted(v);
+                  }
+                }}
+                inputProps={{ style: { textAlign: 'center', width: 48, fontWeight: 700 } }}
+                sx={{ width: 72 }}
+              />
               <Button
                 variant="contained"
                 color="success"
@@ -262,36 +275,15 @@ export default function ReceiveSessionPage({
                 +
               </Button>
             </Box>
-          </Box>
-
-          {/* DIVIDER */}
-          <Box sx={{ width: '1px', bgcolor: 'divider', my: 1 }} />
-
-          {/* REJECTED */}
-          <Box sx={{ flex: 1, textAlign: 'center' }}>
-            <Typography variant="caption" color="error.main" fontWeight={700}>Rejected</Typography>
-            <Typography variant="h3" fontWeight={800} color="error.main">{rejected}</Typography>
-            <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mt: 1 }}>
-              <Button
-                variant="outlined"
-                color="error"
-                size="small"
-                onClick={() => setRejected((r) => Math.max(0, r - 1))}
-                disabled={rejected === 0}
-                sx={{ minWidth: 36, px: 1 }}
-              >
-                −
-              </Button>
-              <Button
-                variant="contained"
-                color="error"
-                size="small"
-                onClick={() => setRejected((r) => r + 1)}
-                sx={{ minWidth: 36, px: 1 }}
-              >
-                +
-              </Button>
-            </Box>
+            <Button
+              size="small"
+              variant="text"
+              color="success"
+              onClick={() => currentLine && setAccepted(currentLine.quantity_expected)}
+              sx={{ mt: 0.5, fontSize: 11 }}
+            >
+              Set all ({currentLine?.quantity_expected})
+            </Button>
           </Box>
         </Box>
       </Paper>

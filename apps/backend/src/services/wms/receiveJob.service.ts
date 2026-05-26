@@ -95,7 +95,8 @@ export async function createReceiveJob(
 export interface InspectLineInput {
   shopId: number;
   receiveJobId: string;
-  lasyncroVariantId: string;
+  lasyncroVariantId: string | null;
+  receiveJobLineId?: string | null;
   quantityAccepted: number;
   quantityRejected: number;
   inspectedBy: number;
@@ -110,14 +111,20 @@ export async function inspectReceiveJobLine(
   trx: Knex.Transaction,
   input: InspectLineInput
 ): Promise<void> {
-  const { shopId, receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected, inspectedBy } = input;
 
-  const line = await trx('receive_job_lines')
-    .where({ receive_job_id: receiveJobId, lasyncro_variant_id: lasyncroVariantId, shop_id: shopId })
-    .first();
-
-  if (!line) throw new Error(`[RECEIVE_INSPECT] Line not found: ${lasyncroVariantId} on job ${receiveJobId}`);
-  if (line.inspection_complete) throw new Error(`[RECEIVE_INSPECT] Line already inspected: ${lasyncroVariantId}`);
+  const { shopId, receiveJobId, lasyncroVariantId, receiveJobLineId, quantityAccepted, quantityRejected, inspectedBy } = input;
+  const query = trx('receive_job_lines')
+    .where({ receive_job_id: receiveJobId, shop_id: shopId });
+  if (receiveJobLineId) {
+    query.where({ receive_job_line_id: receiveJobLineId });
+  } else if (lasyncroVariantId) {
+    query.where({ lasyncro_variant_id: lasyncroVariantId });
+  } else {
+    throw new Error('[RECEIVE_INSPECT] Either lasyncroVariantId or receiveJobLineId required');
+  }
+  const line = await query.first();
+  if (!line) throw new Error(`[RECEIVE_INSPECT] Line not found on job ${receiveJobId}`);
+  if (line.inspection_complete) throw new Error(`[RECEIVE_INSPECT] Line already inspected on job ${receiveJobId}`);
 
   await trx('receive_job_lines')
     .where({ receive_job_line_id: line.receive_job_line_id })
@@ -276,6 +283,8 @@ export async function closeReceiveJob(
   const RECEIVE_NAMESPACE = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
   for (const line of lines) {
     if (line.quantity_accepted <= 0) continue;
+    if (!line.lasyncro_variant_id) continue; 
+    // unlinked line — no inventory write, no barcode, no stow task
 
     const rootLocation = `WH-${shopId}-ROOT`;
     const movementId = uuidv5(
@@ -364,8 +373,10 @@ export async function closeReceiveJob(
   }
 
   // 4. Create stow tasks for accepted units (quantity > 0 only)
+  // Skip unlinked lines — no variant ID means no stow task can be created
   for (const line of lines) {
     if (line.quantity_accepted <= 0) continue;
+    if (!line.lasyncro_variant_id) continue;
 
     const stowTaskId = await createStowTask(trx, {
       shopId,

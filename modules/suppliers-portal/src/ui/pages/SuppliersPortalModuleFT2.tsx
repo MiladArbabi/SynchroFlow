@@ -135,13 +135,13 @@ const STATUS_CONFIG: Record<PurchaseOrderStatus, {
   label: string;
   color: 'default' | 'primary' | 'warning' | 'success' | 'error' | 'info';
 }> = {
-  draft:              { label: 'Draft',           color: 'default' },
-  ordered:               { label: 'Sent',            color: 'info'    },
-  confirmed:          { label: 'Confirmed',       color: 'primary' },
-  in_production:      { label: 'In Production',   color: 'warning' },
-  shipped:            { label: 'Shipped',         color: 'info'    },
-  partially_received: { label: 'Part. Received',  color: 'warning' },
-  received:           { label: 'Received',        color: 'success' },
+  draft:              { label: 'Draft',       color: 'default' },
+  ordered:            { label: 'On the way',  color: 'info'    },
+  confirmed:          { label: 'On the way',  color: 'info'    },
+  in_production:      { label: 'On the way',  color: 'info'    },
+  shipped:            { label: 'Arrived',     color: 'success' },
+  partially_received: { label: 'Receiving',   color: 'warning' },
+  received:           { label: 'Received',    color: 'success' },
   cancelled:          { label: 'Cancelled',       color: 'error'   },
 };
 
@@ -635,28 +635,22 @@ function PoAccordion({
 
         {OPEN_STATUSES.includes(po.status) && (
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {/* Draft → mark as sent to supplier */}
             {po.status === 'draft' && (
-              <Button size="small" variant="outlined" disabled={updatingStatus}
-                onClick={() => void handleStatusUpdate('ordered')}>Mark Ordered</Button>
+              <Button size="small" variant="outlined" color="info" disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('ordered')}>
+                Mark as sent
+              </Button>
             )}
-            {po.status === 'ordered' && (
-              <>
-                <Button size="small" variant="outlined" disabled={updatingStatus}
-                  onClick={() => void handleStatusUpdate('confirmed')}>Mark Confirmed</Button>
-                <Button size="small" variant="outlined" color="warning" disabled={updatingStatus}
-                  onClick={() => void handleStatusUpdate('in_production')}>Skip → In Production</Button>
-              </>
+            {/* On the way → mark as arrived at dock */}
+            {(po.status === 'ordered' || po.status === 'confirmed' || po.status === 'in_production') && (
+              <Button size="small" variant="outlined" color="success" disabled={updatingStatus}
+                onClick={() => void handleStatusUpdate('shipped')}>
+                Mark as arrived
+              </Button>
             )}
-            {po.status === 'confirmed' && (
-              <>
-                <Button size="small" variant="outlined" color="warning" disabled={updatingStatus}
-                  onClick={() => void handleStatusUpdate('in_production')}>Mark In Production</Button>
-                <Button size="small" variant="outlined" color="info" disabled={updatingStatus}
-                  onClick={() => void handleStatusUpdate('shipped')}>Skip → Shipped</Button>
-              </>
-            )}
-           {/* Only show Receive when stock is physically inbound — not for draft/ordered/confirmed */}
-           {(po.status === 'shipped' || po.status === 'partially_received') && (
+            {/* Arrived → start receive session in WMS */}
+            {(po.status === 'shipped' || po.status === 'partially_received') && (
               <Button
                 size="small"
                 variant="outlined"

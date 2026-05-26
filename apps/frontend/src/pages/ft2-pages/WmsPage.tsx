@@ -220,7 +220,7 @@ export default function WmsPage() {
 
   const handleInspectReceiveLine = useCallback(async (
     jobId: string,
-    params: { lasyncro_variant_id: string; quantity_accepted: number; quantity_rejected: number }
+    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }
   ) => {
     await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/inspect`, params);
   }, []);

@@ -222,10 +222,12 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const jobId = req.params.jobId as string;
-  const { lasyncro_variant_id, quantity_accepted, quantity_rejected } = req.body;
-
-  if (!lasyncro_variant_id || quantity_accepted == null || quantity_rejected == null) {
-    return res.status(400).json({ error: 'lasyncro_variant_id, quantity_accepted, quantity_rejected required' });
+  const { lasyncro_variant_id, receive_job_line_id, quantity_accepted, quantity_rejected } = req.body;
+  if (!lasyncro_variant_id && !receive_job_line_id) {
+    return res.status(400).json({ error: 'lasyncro_variant_id or receive_job_line_id required' });
+  }
+  if (quantity_accepted == null || quantity_rejected == null) {
+    return res.status(400).json({ error: 'quantity_accepted, quantity_rejected required' });
   }
   if (quantity_accepted < 0 || quantity_rejected < 0) {
     return res.status(400).json({ error: 'Quantities must be non-negative' });
@@ -237,7 +239,8 @@ export async function httpInspectReceiveJobLine(req: Request, res: Response) {
       await inspectReceiveJobLine(trx, {
         shopId,
         receiveJobId: jobId,
-        lasyncroVariantId: lasyncro_variant_id,
+        lasyncroVariantId: lasyncro_variant_id ?? null,
+        receiveJobLineId: receive_job_line_id ?? null,
         quantityAccepted: quantity_accepted,
         quantityRejected: quantity_rejected,
         inspectedBy: req.user!.userId,

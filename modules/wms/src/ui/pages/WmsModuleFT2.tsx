@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, useMemo, memo } from 'react';
+import { useState, memo, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -82,8 +82,8 @@ export type WmsModuleFT2Props = {
 
   onCreateReceiveJob?: (poId: string) => Promise<{ receive_job_id: string }>;
   onFetchReceiveJob?: (jobId: string) => Promise<{ job: { po_id: string; supplier_name: string }; lines: ReceiveJobLine[] }>;
-  onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
-  onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
+  onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
+  onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
 
   onClaimBatch: (batchId: string) => Promise<void>;
@@ -443,6 +443,12 @@ function WmsModuleFT2Inner({
       ? { type: 'receive', ...pendingReceiveSession }
       : null
   );
+
+  useEffect(() => {
+    if (pendingReceiveSession) {
+      setActiveSession({ type: 'receive', ...pendingReceiveSession });
+    }
+  }, [pendingReceiveSession]);
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 

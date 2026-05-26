@@ -74,10 +74,20 @@ export default function SuppliersPortalPage() {
    * Navigation to WMS receive session is handled by PoAccordion → handleReceive.
    */
   const handleCreateReceiveJob = useCallback(async (poId: string) => {
-    const { data } = await axiosInstance.post(
-      `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
-    );
-    return data;
+    try {
+      const { data } = await axiosInstance.post(
+        `/api/v1/suppliers/purchase-orders/${poId}/receive-jobs`
+      );
+      return data;
+    } catch (err: unknown) {
+      // 409 = active job already exists — treat as success, navigate to existing job
+      const status = (err as { response?: { status?: number; data?: { receive_job_id?: string } } })?.response?.status;
+      const existingJobId = (err as { response?: { data?: { receive_job_id?: string } } })?.response?.data?.receive_job_id;
+      if (status === 409 && existingJobId) {
+        return { receive_job_id: existingJobId };
+      }
+      throw err;
+    }
   }, []);
 
   return (
