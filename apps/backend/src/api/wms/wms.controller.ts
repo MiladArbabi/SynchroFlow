@@ -1366,7 +1366,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const { resolution_action, resolution_notes } = req.body;
 
-  const VALID_ACTIONS = ['re_stow', 'discard', 'return', 'write_off'];
+  const VALID_ACTIONS = ['re_stow', 'discard', 'return', 'write_off', 'quarantine', 'find_replacement'];
   if (!taskId) return res.status(400).json({ error: 'taskId is required' });
   if (!resolution_action || !VALID_ACTIONS.includes(resolution_action)) {
     return res.status(400).json({ error: `resolution_action must be one of: ${VALID_ACTIONS.join(', ')}` });
@@ -1384,19 +1384,78 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       if (!task) throw new Error('TASK_NOT_FOUND');
       if (task.status === 'resolved') throw new Error('TASK_ALREADY_RESOLVED');
 
+      // ── Determine final status from resolution_action ──────
+      const statusMap: Record<string, string> = {
+        re_stow:          'resolved',
+        discard:          'resolved',
+        write_off:        'resolved',
+        quarantine:       'resolved',
+        return:           'returned_to_supplier',
+        find_replacement: 'investigating',
+      };
+      const finalStatus = statusMap[resolution_action] ?? 'resolved';
+
       await trx('problem_center_tasks')
         .where({ problem_task_id: taskId })
         .update({
-          status: 'resolved',
+          status: finalStatus,
           resolution_action,
           resolution_notes: resolution_notes?.trim() ?? null,
           resolved_by: userId,
-          resolved_at: new Date(),
+          resolved_at: finalStatus === 'investigating' ? null : new Date(),
           updated_at: new Date(),
         });
 
-      // Deactivate alerts linked to this specific problem task only.
-      // Matches by source_exception_id (the batch/task ID stored as entity_id on the alert).
+      // ── CASCADE: inventory_movements for write-off actions ──
+      // discard = physical damage (product destroyed)
+      // write_off = shrinkage (missing, unaccounted)
+      if (resolution_action === 'discard' || resolution_action === 'write_off') {
+        const movementType = resolution_action === 'discard' ? 'damage' : 'shrinkage';
+        const it = await trx('inventory_truth')
+          .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
+          .select('available_quantity', 'on_hand_quantity', 'location_code')
+          .first();
+
+        // Only write movement if stock exists — never create negative inventory_movements
+        const writeQty = Math.min(task.quantity, it?.available_quantity ?? 0);
+        if (writeQty > 0) {
+          await trx('inventory_movements').insert({
+            lasyncro_inventory_movement_id: trx.raw('gen_random_uuid()'),
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            movement_type: movementType,
+            quantity_delta: -writeQty,
+            reference_type: 'problem_center_task',
+            reference_id: taskId,
+            location_code: it?.location_code ?? 'WH-1-ROOT',
+            shop_id: shopId,
+            operator_id: userId,
+            triggered_by: 'problem_center',
+            occurred_at: new Date(),
+          });
+          // Decrement inventory_truth
+          await trx('inventory_truth')
+            .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
+            .decrement('available_quantity', writeQty)
+            .decrement('on_hand_quantity', writeQty);
+        }
+        console.info('[PROBLEM_CENTER_WRITE_OFF]', {
+          problem_task_id: taskId, movement_type: movementType,
+          qty_written: writeQty, variant_id: task.lasyncro_variant_id, shopId,
+        });
+      }
+
+      // ── CASCADE: move to PROBLEM bin (quarantine / re_stow pending) ─
+      if (resolution_action === 'quarantine' || resolution_action === 're_stow') {
+        // PROBLEM bin confirmed at location_code='PROBLEM', zone_type='quarantine'
+        await trx('inventory_truth')
+          .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
+          .update({ location_code: 'PROBLEM', updated_at: new Date() });
+        console.info('[PROBLEM_CENTER_QUARANTINE]', {
+          problem_task_id: taskId, variant_id: task.lasyncro_variant_id, shopId,
+        });
+      }
+
+      // ── Deactivate linked alerts ────────────────────────────
       if (task.source_exception_id) {
         await trx('alerts')
           .where({ shop_id: shopId, entity_id: task.source_exception_id, is_active: true })
@@ -1404,13 +1463,10 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       }
 
       console.info('[PROBLEM_CENTER_RESOLVED]', {
-        problem_task_id: taskId,
-        resolution_action,
-        resolved_by: userId,
-        shopId,
+        problem_task_id: taskId, resolution_action,
+        final_status: finalStatus, resolved_by: userId, shopId,
       });
-
-      return { problem_task_id: taskId, resolved: true, resolution_action };
+      return { problem_task_id: taskId, resolved: true, resolution_action, status: finalStatus };
     });
 
     return res.status(200).json(result);
@@ -2050,6 +2106,52 @@ export const httpGetProblemTasks = async (req: Request, res: Response) => {
   } catch (err: unknown) {
     console.error('[PROBLEM_CENTER_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to fetch problem tasks: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/problem-center/:taskId/replacement
+// ─────────────────────────────────────────
+export const httpFindReplacementForTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const taskId = String(req.params.taskId);
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const task = await trx('problem_center_tasks as pct')
+        .where({ 'pct.problem_task_id': taskId, 'pct.shop_id': shopId })
+        .select('pct.lasyncro_variant_id', 'pct.quantity')
+        .first();
+
+      if (!task) throw new Error('Problem task not found');
+
+      // Find same variant at other locations with sufficient stock
+      const candidates = await trx('inventory_truth as it')
+        .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+        .where('it.shop_id', shopId)
+        .where('it.lasyncro_variant_id', task.lasyncro_variant_id)
+        .where('it.available_quantity', '>=', task.quantity)
+        .orderBy('it.available_quantity', 'desc')
+        .select(
+          'it.location_code',
+          'it.available_quantity',
+          'it.on_hand_quantity',
+          'v.title as variant_title',
+          'v.sku',
+        );
+
+      return { task_id: taskId, variant_id: task.lasyncro_variant_id, replacement_locations: candidates };
+    });
+
+    return res.json(result);
+  } catch (err: unknown) {
+    console.error('[REPLACEMENT_FINDER_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Replacement finder failed: ${getErrorMessage(err)}` });
   }
 };
 

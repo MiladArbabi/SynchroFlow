@@ -31,6 +31,7 @@ import {
   httpScanResolve,
   httpCreateProblemTask,
   httpGetProblemTasks,
+  httpFindReplacementForTask,
   httpReportStowException,
   httpGetWmsSettings,
   httpResolveProblemTask,
@@ -291,6 +292,15 @@ router.get(
   requireTier('core'),
   requireAction('wms:read'),
   httpGetProblemTasks
+);
+
+router.get(
+  '/problem-center/:taskId/replacement',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpFindReplacementForTask
 );
 
 router.post(

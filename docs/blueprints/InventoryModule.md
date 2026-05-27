@@ -1,7 +1,7 @@
 # Inventory Module — Audit Blueprint
 
-**LaSyncro | Sprint 4 Audit | May 25, 2026**
-**Status: Audited — Production-ready, DS violations, variance tracking gap**
+**LaSyncro | Sprint 4 Audit | May 26, 2026**
+**Status: Audited — Full UX rebuild required. Schema corrections applied. Issues INV-01–INV-11 registered.**
 
 ---
 
@@ -28,6 +28,7 @@
 | Method | Path | Status | Notes |
 |---|---|---|---|
 | GET | `/api/v1/modules/products/ft2` | ✅ Live | 12-key intelligence snapshot |
+| GET | `/api/v1/modules/products/operator-summary` | ✅ Live | Sellability, dead weight, top returned, demand signals |
 | GET | `/api/v1/modules/products/catalog` | ✅ Live | `{variants: [40 items]}` |
 | GET | `/api/v1/modules/products/wms-readiness` | ✅ Live | Pickability + variance + receive readiness |
 | GET | `/api/v1/modules/products/variants/costs` | ✅ Live | `{variants: [36 items]}` |
@@ -195,3 +196,121 @@ Problem Center → /problem-center
 |---|---|---|
 | INV-09 | P1 | Problem Center missing ModuleTabBar — navigation breaks when landing on `/problem-center` |
 | INV-10 | P1 | Full UX rebuild required for all 5 Inventory sub-tabs — current UI predates FT2 design language and is visually inconsistent with Overview and Orders |
+
+---
+
+## 10. Schema Corrections (Audit May 26, 2026)
+
+| Location | Error | Correction |
+|---|---|---|
+| Blueprint §3, all services | `estimated_unit_cost` | Actual column: `unit_cost numeric(12,2)` on `variants` table |
+| Blueprint §3 `inventory_truth` | `bin_location` column listed | Column does not exist on `inventory_truth`. Bin location lives in WMS layer (`warehouse_locations`) |
+| Blueprint §2 movements | `sale: 58, opening_balance: +623` | Quantities change with data — do not track in blueprint. Movement types confirmed: `opening_balance`, `sale`, `refund_return`, `reservation_hold`, `reconciliation_correction` |
+
+---
+
+## 11. Backend Architecture — Intelligence Pipeline
+
+The Intelligence tab is powered by **two parallel endpoints**:
+
+### A. `/api/v1/modules/products/ft2` — FTEP snapshot
+
+Pipeline: `ProductsOperatorFacts` → `buildProductsIntelligence` → `buildProductsFtep`
+Returns aggregate enum signals only (`supply: null`, `operational: {inventory: 'ok'}`, etc.)
+**Does not return per-variant data.**
+
+### B. `/api/v1/modules/products/operator-summary` — Operator surface
+
+Pipeline: `ProductsOperatorFacts` → direct mapping + `ProductsDemandBridge`
+Returns actionable operator data: sellability counts, blocked reasons, dead weight, top returned, demand signals.
+**This is what drives all visible Intelligence tab content.**
+
+### Demand bridge
+
+`ProductsDemandBridge.service.ts` calls `computeDemandIntelligence(shopId)` — the full demand velocity engine.
+Returns per-variant: `velocity_per_day`, `days_of_stock_remaining`, `reorder_urgency`, `suggested_reorder_qty`, `dead_capital_value`.
+
+### Key column facts
+
+- `variants.unit_cost` — cost per unit (numeric 12,2). Used for dead capital + inventory value computation.
+- `inventory_truth` — no `bin_location`. Fields: `on_hand_quantity`, `reserved_quantity`, `committed_quantity`, `available_quantity`, `sellable_quantity`, `last_evaluated_at`
+- `inventory_movements` — append-only (delete/update triggers). Sign-constrained per movement type.
+
+---
+
+## 12. INV-09 Resolution
+
+**INV-09 RESOLVED.** `ProblemCenterPage` ModuleTabBar is present and working. Confirmed visually — tab bar renders correctly on `/problem-center` with all 5 tabs.
+
+---
+
+## 13. Sprint 4 Implementation Log (May 27, 2026)
+
+### Backend — New Services
+
+| Service | File | Purpose |
+|---|---|---|
+| ProductsInboundBridge | `products-operator/ProductsInboundBridge.service.ts` | Pulls open PO pipeline into operator summary. Overdue detection via date string comparison. `covers_stocked_out_skus` cross-reference. |
+| ProductsWarehouseBridge | `products-operator/ProductsWarehouseBridge.service.ts` | Pick zone occupancy %, variants with stock but no pick bin. All stock at WH-1-ROOT on seed — 25 variants unpickable. |
+| ProductsFinancesBridge | `products-operator/ProductsFinancesBridge.service.ts` | Margin at risk per week (stocked-out × velocity × margin). `active_sellers_no_cost` count. Uses `variants.unit_cost` (authoritative). |
+
+All three wired into `ProductsOperatorSummary.provider.ts` via parallel `Promise.all`. Silent null on failure.
+
+### Schema Facts (authoritative)
+
+- `purchase_orders`: PK `id` (uuid), `supplier_id` (int FK → `suppliers.id`), `expected_delivery_date` (date), no `po_reference` column. Display ref = first 8 chars of UUID.
+- `variants.unit_cost` numeric(12,2) — authoritative cost. NOT `estimated_unit_cost` (that lives on `order_revenue_units` as snapshot).
+- `inventory_truth`: no `bin_location`. All stock at `WH-1-ROOT` location_code on seed.
+- `warehouse_locations`: pick bins = `zone_type='pick'` AND `type='bin'`. 12 active pick bins on seed, 0 stocked.
+- `products.product_type`: `physical` | `gift_card`. Gift cards filtered from catalog endpoint (INV-05 resolved).
+
+### Frontend — Rebuilt Pages
+
+| Page | Changes |
+|---|---|
+| `ProductsModuleFT2.tsx` | Full FT2 rebuild. 4-card stat row, warehouse banner, two-column layout (action queue + inbound pipeline/returns). All new bridge signals consumed. |
+| `ProductsCatalogPage.tsx` | FT2 rebuild. 4-card stat row, two-column layout, sortable columns, pagination (10/page), gift card filtered, images in both columns. |
+
+### Issue Status Updates
+
+| ID | Status |
+|---|---|
+| INV-01 | ✅ RESOLVED — no hardcoded hex in ProductsModuleFT2 |
+| INV-02 | ✅ RESOLVED — fontWeight max 500 throughout |
+| INV-03 | ✅ RESOLVED — 0.5px borders throughout |
+| INV-05 | ✅ RESOLVED — gift card filtered at backend |
+| INV-09 | ✅ RESOLVED (pre-existing) — Problem Center tab bar present |
+| INV-10 | ✅ RESOLVED — full UX rebuild complete |
+| INV-CAT-01 | 🔵 REGISTERED — Product detail panel, defer Sprint 5 |
+| INV-DR-01 | 🔵 REGISTERED — Date range bar audit needed on Intelligence tab |
+| INV-04 | 🔴 OPEN — variance_count null in WMS Readiness |
+| INV-06 | 🔴 OPEN — test/seed variants still in Costs tab |
+| INV-07 | 🔴 OPEN — image_url null for 3 products |
+---
+
+## 14. Problem Center — Final State (May 27, 2026)
+
+### Scope expanded
+Sources: `pick | pack | stow | receive` (was `pick | pack` only)
+Exception types added: `stow_failure`, `receive_rejection`
+
+### Data source
+`problem_center_tasks` table — NOT the legacy `pick_exceptions` table.
+Endpoint: `GET /api/v1/wms/problem-center` → `{ problem_tasks: [] }`
+Resolve: `POST /api/v1/wms/problem-center/:taskId/resolve` → `{ resolution_action, resolution_notes }`
+
+### Shape mapping (frontend)
+`problem_task_id` → `pick_exception_id`
+`source` → `stage`
+`quantity` → `quantity_required`
+`quantity_found` = 0 (not stored in problem_center_tasks)
+`problem_bin_location` → `batch_short_id` (displayed as BATCH column)
+
+### UX
+Table layout matching Returns module. Stage color tokens:
+Pick=teal (#14B8A6), Pack=blue (#3B82F6), Stow=purple (#8B5CF6), Receive=amber (#F59E0B)
+
+### Issue Status
+| ID | Status |
+|---|---|
+| INV-02 (Problem Center) | ✅ RESOLVED — fontWeight max 500 |

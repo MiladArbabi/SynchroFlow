@@ -256,7 +256,7 @@ const SyncAnimationPage: React.FC = () => {
           </Typography>
 
           <Typography sx={{ fontSize: '0.85rem', color: pal.textSecond, mb: 4, lineHeight: 1.6 }}>
-            Watch your operation appear as we read each row.
+            Bringing your workflow together.
           </Typography>
 
           {/* ── Step list — one active at a time ────────────────────── */}
