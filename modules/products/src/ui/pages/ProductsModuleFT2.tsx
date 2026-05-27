@@ -1,65 +1,41 @@
 // modules/products/src/ui/pages/ProductsModuleFT2.tsx
-import { Box, Typography, Chip, Divider, useTheme } from '@mui/material';
-import { useColorScheme } from '@mui/material/styles';
-import { formatCurrency } from '@lasyncro/shared/ui';
+//
+// INVENTORY MODULE — FT2 OPERATOR SURFACE
+// Sprint 4 rebuild · May 2026
+// ─────────────────────────────────────────────────────────────
+// Layout:
+//   1. Header      — DM Sans 22px/500 + live signal line
+//   2. Stat Row    — 4 StatCards: Ready to Sell · Margin at Risk · Inbound · Dead Capital
+//   3. Action Queue — ranked by urgency × actionability (no PO > overdue PO > low stock > no SKU > dead capital)
+//   4. Inbound Pipeline — open POs with overdue flag + cash committed
+//   5. Warehouse Readiness — stock-no-bin intersection signal
+//   6. Return Leakage — top returned variants with restock CTA
+//
+// RULES:
+// - No hardcoded hex. CSS variables or theme.palette.* only.
+// - No inline style={}. MUI sx prop only.
+// - No cross-module imports.
+// - No fetching. All data via props.
+// - fontWeight max 500. border 0.5px solid var(--rule).
+
+import { Box, Typography, useTheme } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { alpha } from '@mui/material/styles';
+import { Warehouse, RefreshCw } from 'lucide-react';
+import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
-// ─────────────────────────────────────────────────────────────
-// THEME HOOK — mirrors OverviewModuleFT2 / OrdersModuleFT2 pattern
-// ─────────────────────────────────────────────────────────────
-function useProductsTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return {
-    isDark,
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-  };
-}
+// ─── PROPS ────────────────────────────────────────────────────
 
-/**
- * ProductsModuleFT2DataProps
- * --------------------------
- * DATA-ONLY FT2 contract.
- *
- * Rules:
- * - Observational facts only
- * - No inference, scoring, or recommendations
- * - Null = truth unavailable or withheld by policy
- */
 export interface ProductsModuleFT2DataProps {
   context: {
     period: { from: string; to: string };
     productsObserved: number | null;
-    statusCounts: {
-      active: number | null;
-      inactive: number | null;
-      archived: number | null;
-    } | null;
     variantsObserved: number | null;
     productsWithSkuCount: number | null;
     productsWithoutSkuCount: number | null;
+    statusCounts: { active: number | null; inactive: number | null; archived: number | null } | null;
   };
-
-  // Operational presence counts — raw facts, no inference
-  operationalCounts: {
-    productsWithInventoryCount: number | null;
-    productsWithoutInventoryCount: number | null;
-    skusWithSalesCount: number | null;
-    totalSkusObserved: number | null;
-  } | null;
-
-  // Supply presence counts — raw facts, no inference
-  supplyCounts: {
-    productsWithInventorySignalCount: number | null;
-  } | null;
-
-  // Operator summary — purpose-built actionable surface
-  // Source: GET /api/v1/modules/products/operator-summary
-  // Null = endpoint not yet loaded or data unavailable
   operatorSummary?: {
     sellability: {
       sellable: number | null;
@@ -70,12 +46,8 @@ export interface ProductsModuleFT2DataProps {
         zeroStock: number | null;
       };
     };
-    deadWeight: {
-      noSalesCount: number | null;
-    };
-    drift: {
-      addedThisPeriod: number | null;
-    };
+    deadWeight: { noSalesCount: number | null };
+    drift: { addedThisPeriod: number | null };
     topReturned: Array<{
       variantTitle: string | null;
       sku: string | null;
@@ -87,7 +59,6 @@ export interface ProductsModuleFT2DataProps {
       productTitle: string | null;
       variants: Array<{ variantTitle: string | null }>;
     }>;
-    // null = growth tier not enabled or no velocity data yet
     demand: {
       critical_reorder_count: number;
       warning_reorder_count: number;
@@ -104,29 +75,53 @@ export interface ProductsModuleFT2DataProps {
         suggested_reorder_qty: number | null;
       }>;
     } | null;
+    inbound: {
+      open_po_count: number;
+      total_units_expected: number;
+      total_committed_value_cents: number | null;
+      overdue_pos: Array<{
+        po_short_ref: string;
+        supplier_name: string;
+        status: string;
+        expected_delivery_date: string | null;
+        overdue_days: number | null;
+        total_units_ordered: number;
+        total_units_received: number;
+        covers_stocked_out_skus: string[];
+      }>;
+      pending_pos: Array<{
+        po_short_ref: string;
+        supplier_name: string;
+        status: string;
+        expected_delivery_date: string | null;
+        overdue_days: number | null;
+        total_units_ordered: number;
+        total_units_received: number;
+        covers_stocked_out_skus: string[];
+      }>;
+    } | null;
+    warehouse: {
+      total_pick_bins: number;
+      stocked_pick_bins: number;
+      pick_zone_occupancy_pct: number | null;
+      variants_with_stock_no_bin: number;
+    } | null;
+    finances: {
+      total_margin_at_risk_per_week: number;
+      active_sellers_no_cost: number;
+      stocked_out_margin_variants: Array<{
+        lasyncro_variant_id: string;
+        sku: string | null;
+        avg_sale_price: number;
+        unit_cost: number;
+        margin_per_unit: number;
+        margin_pct: number;
+        units_sold_30d: number;
+        margin_lost_per_week: number;
+      }>;
+    } | null;
   } | null;
-
-  outcome: { status: 'positive' | 'negative' | 'unknown' } | null;
-  trend: { direction: 'up' | 'down' | 'flat' | 'unknown' } | null;
-
-  productDataIntegrity: {
-    integrity: 'ok' | 'attention' | 'unknown';
-    duplication: 'present' | 'absent' | 'unknown';
-  } | null;
-
-  operational: {
-    inventory: 'ok' | 'gaps' | 'unknown';
-    fulfillment: 'visible' | 'missing' | 'unknown';
-    stability: 'stable' | 'fragile' | 'unknown';
-  } | null;
-
-  supply: {
-    replenishment: 'observable' | 'missing' | 'unknown';
-    coverage: 'complete' | 'partial' | 'missing' | 'unknown';
-  } | null;
-
-  // Each field nullable independently — backend FTEP returns null per-field
-  // when that domain's freshness is 'unknown' (see ProductDataFreshnessFtep.service.ts)
+  // Legacy FT2 snapshot fields — retained for data trust bar
   dataFreshness: {
     structural: 'fresh' | 'stale' | 'unknown' | null;
     inventory: 'fresh' | 'stale' | 'unknown' | null;
@@ -134,644 +129,574 @@ export interface ProductsModuleFT2DataProps {
     fulfillment: 'fresh' | 'stale' | 'unknown' | null;
     cost: 'fresh' | 'stale' | 'unknown' | null;
   } | null;
-
-  alignment: { alignment: 'aligned' | 'misaligned' | 'unknown' } | null;
-
-  dependency: {
-    surface: 'isolated' | 'coupled' | 'unknown';
-    blastRadius: 'contained' | 'wide' | 'unknown';
+  outcome: { status: 'positive' | 'negative' | 'unknown' } | null;
+  operationalCounts: {
+    productsWithInventoryCount: number | null;
+    productsWithoutInventoryCount: number | null;
+    skusWithSalesCount: number | null;
+    totalSkusObserved: number | null;
   } | null;
-
-  // Catalog-level signals — downgraded from intelligence layer
-  // Source of truth: ProductsFtep.types.ts → signals
-  signals?: {
-    catalog: 'ok' | 'attention' | 'unknown';
-    skuCoverage: 'ok' | 'gaps' | 'unknown';
-    variantComplexity: 'simple' | 'complex' | 'unknown';
-  } | null;
-}
-
-export type ProductsModuleFT2Props = ProductsModuleFT2DataProps & {
-  /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
+  // Unused legacy fields — kept for prop-compat, not rendered
+  trend?: unknown;
+  signals?: unknown;
+  productDataIntegrity?: unknown;
+  operational?: unknown;
+  supply?: unknown;
+  alignment?: unknown;
+  dependency?: unknown;
+  supplyCounts?: unknown;
   currency?: CurrencyContext;
-};
-
-// ─────────────────────────────────────────
-// LABEL MAPS
-// Faithful to FTEP semantics — do not add inference.
-// 'unknown' always means "data insufficient", not "bad".
-// Source of truth: ProductsFtep.types.ts
-// ─────────────────────────────────────────
-const INVENTORY_LABELS: Record<string, string> = {
-  ok: 'Stock visible',
-  gaps: 'Coverage gaps detected',
-  unknown: 'Insufficient data',
-};
-
-const FULFILLMENT_LABELS: Record<string, string> = {
-  visible: 'Fulfillment observable',
-  missing: 'Fulfillment data absent',
-  unknown: 'Insufficient data',
-};
-
-const STABILITY_LABELS: Record<string, string> = {
-  stable: 'Operationally stable',
-  fragile: 'Fragile state detected',
-  unknown: 'Insufficient data',
-};
-
-const REPLENISHMENT_LABELS: Record<string, string> = {
-  observable: 'Replenishment observable',
-  missing: 'Replenishment data absent',
-  unknown: 'Insufficient data',
-};
-
-const COVERAGE_LABELS: Record<string, string> = {
-  complete: 'Full coverage',
-  partial: 'Partial coverage',
-  missing: 'Coverage absent',
-  unknown: 'Insufficient data',
-};
-
-const SURFACE_LABELS: Record<string, string> = {
-  isolated: 'Low dependency surface',
-  coupled: 'High dependency surface',
-  unknown: 'Insufficient data',
-};
-
-const BLAST_RADIUS_LABELS: Record<string, string> = {
-  contained: 'Impact contained',
-  wide: 'Wide blast radius',
-  unknown: 'Insufficient data',
-};
-
-const ALIGNMENT_LABELS: Record<string, string> = {
-  aligned: 'Domains in agreement',
-  misaligned: 'Cross-domain divergence',
-  unknown: 'Insufficient data',
-};
-
-const FRESHNESS_LABELS: Record<string, string> = {
-  fresh: 'Fresh',
-  stale: 'Stale',
-  unknown: 'Insufficient data',
-};
-
-const CATALOG_LABELS: Record<string, string> = {
-  ok: 'Catalog healthy',
-  attention: 'Catalog needs attention',
-  unknown: 'Insufficient data',
-};
-
-const SKU_COVERAGE_LABELS: Record<string, string> = {
-  ok: 'Full SKU coverage',
-  gaps: 'Coverage gaps detected',
-  unknown: 'Insufficient data',
-};
-
-const VARIANT_COMPLEXITY_LABELS: Record<string, string> = {
-  simple: 'Low complexity',
-  complex: 'High complexity',
-  unknown: 'Insufficient data',
-};
-
-// ─────────────────────────────────────────
-// SIGNAL ROW
-// Renders one label/value pair with theme-consistent
-// color coding. Tone derives from enum value semantics.
-// ─────────────────────────────────────────
-type SignalTone = 'positive' | 'warning' | 'neutral';
-
-function resolveSignalTone(value: string | null): SignalTone {
-  if (value == null) return 'neutral';
-  if (['ok', 'visible', 'stable', 'observable', 'complete', 'isolated', 'contained', 'aligned', 'fresh'].includes(value)) return 'positive';
-  if (['gaps', 'missing', 'fragile', 'partial', 'coupled', 'wide', 'misaligned', 'stale'].includes(value)) return 'warning';
-  return 'neutral';
 }
 
-function SignalRow({
-  label,
-  value,
-  displayValue,
-}: {
+export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
+
+// ─── HELPERS ──────────────────────────────────────────────────
+
+const fmtN = (n: number | null | undefined): string =>
+  n == null ? '—' : Math.round(n).toLocaleString();
+
+// ─── STAT CARD ────────────────────────────────────────────────
+// Matches Orders FT2 StatCard exactly.
+
+function StatCard({ label, value, valueColor, sub, cta, ctaHref }: {
   label: string;
-  value: string | null;
-  displayValue: string;
+  value: string;
+  valueColor?: string;
+  sub?: string;
+  cta?: string;
+  ctaHref?: string;
 }) {
-  const theme = useTheme();
-
-   // Use CSS variable references — palette values resolved at build time
-  // do not update on scheme switch in MUI v6 colorSchemes mode.
-  const toneColor: Record<SignalTone, string> = {
-    positive: theme.palette.success.main,
-    warning: theme.palette.warning.main,
-    neutral: 'var(--mui-palette-text-secondary)',
-  };
-
-  const tone = resolveSignalTone(value);
-  const color = toneColor[tone];
-
+  const navigate = useNavigate();
   return (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        py: 1.25,
-        px: 2,
-        borderBottom: '1px solid',
-        borderColor: 'divider',
-        '&:last-child': { borderBottom: 'none' },
-      }}
-    >
-      <Typography variant="body2" color="text.secondary">
+    <Box sx={{
+      bgcolor: 'var(--surface)',
+      border: '0.5px solid var(--rule)',
+      borderRadius: '8px',
+      p: '12px 14px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 0.5,
+      flex: 1,
+      minWidth: 0,
+    }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
         {label}
       </Typography>
-      <Typography variant="body2" fontWeight={600} sx={{ color }}>
-        {displayValue}
+      <Typography sx={{ fontSize: value.length > 6 ? 20 : 24, fontWeight: 500, color: valueColor ?? 'var(--ink)', lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+        {value}
       </Typography>
-    </Box>
-  );
-}
-
-// ─────────────────────────────────────────
-// SECTION CARD
-// Consistent card wrapper matching Overview/CashFlow pattern.
-// ─────────────────────────────────────────
-function SectionCard({
-  title,
-  footer,
-  children,
-}: {
-  title: string;
-  footer?: string;
-  children: React.ReactNode;
-}) {
-  const pal = useProductsTheme();
-  return (
-    <Box
-      sx={{
-        background: pal.cardBg,
-        border: `1px solid ${pal.border}`,
-        borderRadius: 2,
-        overflow: 'hidden',
-        flex: 1,
-        minWidth: 240,
-      }}
-    >
-      <Box sx={{ px: 2, py: 1.25, borderBottom: '1px solid', borderColor: 'divider' }}>
-        <Typography variant="overline" color="text.secondary">
-          {title}
+      {sub && (
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+          {sub}
         </Typography>
-      </Box>
-      {children}
-      {footer && (
-        <Box sx={{ px: 2, py: 1, borderTop: '1px solid', borderColor: 'divider' }}>
-          <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-            {footer}
-          </Typography>
-        </Box>
+      )}
+      {cta && ctaHref && (
+        <Typography
+          onClick={() => navigate(ctaHref)}
+          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.25, '&:hover': { textDecoration: 'underline' } }}
+        >
+          {cta} →
+        </Typography>
       )}
     </Box>
   );
 }
 
-// ─────────────────────────────────────────
-// NULL SECTION
-// Shown when an entire domain is suppressed by FTEP policy.
-// 'null' here means "withheld by policy or data insufficient" —
-// not an error state.
-// ─────────────────────────────────────────
-function SuppressedSection({ title }: { title: string }) {
+// ─── SECTION HEADER ───────────────────────────────────────────
+
+function SectionHeader({ label, meta }: { label: string; meta?: string }) {
   return (
-    <SectionCard title={title}>
-      <Box sx={{ px: 2, py: 2 }}>
-        <Typography variant="body2" color="text.secondary">
-          Signal unavailable
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+        {label}
+      </Typography>
+      {meta && (
+        <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>
+          {meta}
         </Typography>
-      </Box>
-    </SectionCard>
+      )}
+    </Box>
   );
 }
 
-// ─────────────────────────────────────────
-// ROOT COMPONENT
-// ─────────────────────────────────────────
-export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
-  const {
-    context,
-    outcome,
-    operational,
-    supply,
-    dependency,
-    alignment,
-    dataFreshness,
-    signals,
-    currency,
-    operationalCounts,
-    supplyCounts,
-    operatorSummary,
-  } = props;
+// ─── ACTION ROW ───────────────────────────────────────────────
 
+type ActionRowProps = {
+  dot: 'critical' | 'warning' | 'optimize';
+  label: string;
+  meta?: string;
+  impact?: string;
+  cta: string;
+  ctaHref: string;
+};
+
+function ActionRow({ dot, label, meta, impact, cta, ctaHref }: ActionRowProps) {
   const theme = useTheme();
-  const pal = useProductsTheme();
+  const navigate = useNavigate();
 
-  const outcomeColor =
-    outcome?.status === 'positive'
-      ? theme.palette.success.main
-      : outcome?.status === 'negative'
-      ? theme.palette.error.main
-      : theme.palette.text.secondary;
+  const dotColor =
+    dot === 'critical' ? theme.palette.error.main :
+    dot === 'warning'  ? theme.palette.warning.main :
+                         'var(--ink-4)';
 
   return (
-    <Box sx={{ p: 3 }}>
-
-    {/* ─────────────────────────────────────────
-          ZONE 1 — YOUR PRODUCTS
-          Orientation anchor only — one sentence.
-          Detail lives in Zone 5 (sellability).
-          ───────────────────────────────────────── */}
-      <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <Typography variant="h5" fontWeight={700} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-          You have {context.productsObserved ?? '—'} products
+    <Box sx={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      px: 2, py: 1.25,
+      borderBottom: '0.5px solid var(--rule)',
+      '&:last-child': { borderBottom: 'none' },
+      '&:hover': { bgcolor: dot === 'optimize' ? 'action.hover' : alpha(dotColor, 0.04) },
+    }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 }} />
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500 }}>
+            {label}
+          </Typography>
+          {meta && (
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }}>
+              {meta}
+            </Typography>
+          )}
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, ml: 2 }}>
+        {impact && (
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: dot === 'critical' ? theme.palette.error.main : dot === 'warning' ? theme.palette.warning.main : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+            {impact}
+          </Typography>
+        )}
+        <Typography
+          onClick={() => navigate(ctaHref)}
+          sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
+        >
+          {cta} →
         </Typography>
-        {outcome?.status != null && outcome.status !== 'unknown' && (
-          <Chip
-            label={outcome.status === 'positive' ? '✓ Looking good' : '✗ Needs attention'}
-            size="small"
-            color={outcome.status === 'positive' ? 'success' : 'error'}
-          />
+      </Box>
+    </Box>
+  );
+}
+
+// ─── INBOUND ROW ──────────────────────────────────────────────
+
+function InboundRow({ po, isOverdue }: {
+  po: {
+    po_short_ref: string;
+    supplier_name: string;
+    status: string;
+    expected_delivery_date: string | null;
+    overdue_days: number | null;
+    total_units_ordered: number;
+    total_units_received: number;
+    covers_stocked_out_skus: string[];
+  };
+  isOverdue: boolean;
+}) {
+  const theme = useTheme();
+  const navigate = useNavigate();
+
+  const dateLabel = po.expected_delivery_date
+    ? new Date(po.expected_delivery_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    : '—';
+
+  const statusLabel = po.status.replace(/_/g, ' ');
+
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      px: 2, py: 1.25,
+      borderBottom: '0.5px solid var(--rule)',
+      '&:last-child': { borderBottom: 'none' },
+    }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box>
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+            {po.supplier_name}
+          </Typography>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }}>
+            {po.po_short_ref} · {statusLabel}
+          </Typography>
+        </Box>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ textAlign: 'right' }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: isOverdue ? theme.palette.error.main : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }}>
+            {isOverdue ? `${po.overdue_days}d overdue` : `Due ${dateLabel}`}
+          </Typography>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            {po.total_units_ordered} units
+            {po.covers_stocked_out_skus.length > 0 && ` · covers ${po.covers_stocked_out_skus.length} stocked out`}
+          </Typography>
+        </Box>
+        {isOverdue && (
+          <Typography
+            onClick={() => navigate('/orders/inbound')}
+            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+          >
+            Chase →
+          </Typography>
+        )}
+        {!isOverdue && po.status === 'shipped' && (
+          <Typography
+            onClick={() => navigate('/orders/inbound')}
+            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+          >
+            Receive →
+          </Typography>
         )}
       </Box>
+    </Box>
+  );
+}
 
-      {/* ─────────────────────────────────────────
-          DATA TRUST BAR
-          Collapsed from Zone 3 + Zone 4.
-          Operator-readable freshness only — no system jargon.
-          ───────────────────────────────────────── */}
-      {dataFreshness && (
-        <Box
-          sx={{
-            mb: 4,
-            px: 2,
-            py: 1.25,
-            background: pal.cardBg,
-            border: `1px solid ${pal.border}`,
-            borderRadius: 2,
-            display: 'flex',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 1.5,
-          }}
-        >
-          <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, mr: 0.5 }}>
-            Data trust
+// ─── MAIN COMPONENT ───────────────────────────────────────────
+
+export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const { context, operatorSummary, dataFreshness, currency } = props;
+
+  const fmt$ = (n: number | null | undefined): string =>
+    formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
+
+  const os = operatorSummary;
+  const sellable  = os?.sellability.sellable ?? 0;
+  const blocked   = os?.sellability.blocked ?? 0;
+  const total     = sellable + blocked;
+  const noSku     = os?.sellability.blockedReasons.noSku ?? 0;
+  const zeroStock = os?.sellability.blockedReasons.zeroStock ?? 0;
+
+  // Determine signal line
+  const signalParts: string[] = [];
+  if (context.variantsObserved)   signalParts.push(`${context.variantsObserved} SKUs`);
+  if (zeroStock > 0)               signalParts.push(`${zeroStock} stocked out`);
+  if (os?.inbound?.total_units_expected) signalParts.push(`${os.inbound.total_units_expected} units inbound`);
+  if (os?.warehouse?.pick_zone_occupancy_pct != null) signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
+
+  return (
+    <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
+
+      {/* ── 1. HEADER ─────────────────────────────────────────── */}
+      <Box sx={{ mb: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+          <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
+          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+            Live
           </Typography>
-          {(
-            [
-              ['Stock', dataFreshness.structural],
-              ['Inventory', dataFreshness.inventory],
-              ['Sales', dataFreshness.sales],
-              ['Fulfillment', dataFreshness.fulfillment],
-              ['Cost', dataFreshness.cost],
-            ] as [string, string | null][]
-          ).map(([label, value]) => {
-            const isStale = value === 'stale';
-            const isUnknown = value == null || value === 'unknown';
-            const dotColor = isStale
-              ? theme.palette.warning.main
-              : isUnknown
-              ? theme.palette.text.secondary
-              : theme.palette.success.main;
-            return (
-              <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 }} />
-                <Typography variant="caption" sx={{ color: isStale ? theme.palette.warning.main : 'var(--mui-palette-text-secondary)' }}>
-                  {label}{isStale ? ' — stale' : ''}
-                </Typography>
-              </Box>
-            );
-          })}
+        </Box>
+        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.25 }}>
+          Inventory
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+          {signalParts.length > 0 ? signalParts.join(' · ') : 'Loading inventory signals…'}
+        </Typography>
+      </Box>
+
+      {/* ── DATA TRUST BAR ────────────────────────────────────── */}
+      {dataFreshness && Object.values(dataFreshness).some(v => v === 'stale') && (
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: 1.5,
+          px: 2, py: 1, mb: 2.5,
+          bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),
+          border: `0.5px solid ${alpha(theme.palette.warning.main, 0.3)}`,
+          borderRadius: '8px',
+        }}>
+          <RefreshCw size={12} color={theme.palette.warning.main} />
+          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+            Some data may be stale —{' '}
+            {(['structural','inventory','sales','fulfillment','cost'] as const)
+              .filter(k => dataFreshness[k] === 'stale')
+              .join(', ')}{' '}
+            data needs a sync.
+          </Typography>
         </Box>
       )}
 
-    {/* ─────────────────────────────────────────
-      ZONES 5 + 5b — TWO COLUMN LAYOUT
-      Left: sellability + dead weight
-      Right: supply signals + reorder list
-    ───────────────────────────────────────── */}
-    {/* ─────────────────────────────────────────
-          ZONE 5 — SELLABILITY (full width above columns)
-          ───────────────────────────────────────── */}
-      {operatorSummary && (() => {
-        const total = (operatorSummary.sellability.sellable ?? 0) + (operatorSummary.sellability.blocked ?? 0);
-        const sellable = operatorSummary.sellability.sellable ?? 0;
-        const blocked = operatorSummary.sellability.blocked ?? 0;
-        const noSku = operatorSummary.sellability.blockedReasons.noSku ?? 0;
-        const noInventory = operatorSummary.sellability.blockedReasons.noInventory ?? 0;
-        const zeroStock = operatorSummary.sellability.blockedReasons.zeroStock ?? 0;
-        const noSales = operatorSummary.deadWeight.noSalesCount ?? 0;
-        const sellablePct = total > 0 ? (sellable / total) * 100 : 0;
+      {/* ── 2. STAT ROW — 4 cards ─────────────────────────────── */}
+      {os && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.5, mb: 3 }}>
+          <StatCard
+            label="Ready to sell"
+            value={`${fmtN(sellable)} of ${fmtN(total)}`}
+            valueColor={sellable === 0 ? theme.palette.error.main : sellable < total ? theme.palette.warning.main : theme.palette.success.main}
+            sub={blocked > 0 ? `${blocked} blocked` : undefined}
+            cta="Fix in Catalog"
+            ctaHref="/inventory/catalog"
+          />
+          <StatCard
+            label="Margin at risk"
+            value={os.finances ? fmt$(os.finances.total_margin_at_risk_per_week) + '/wk' : '—'}
+            valueColor={os.finances && os.finances.total_margin_at_risk_per_week > 0 ? theme.palette.error.main : undefined}
+            sub={os.finances ? `${zeroStock} stocked out` : undefined}
+            cta="See Demand"
+            ctaHref="/demand"
+          />
+          <StatCard
+            label="Inbound"
+            value={os.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—'}
+            valueColor={os.inbound && os.inbound.overdue_pos.length > 0 ? theme.palette.warning.main : undefined}
+            sub={os.inbound ? `${os.inbound.open_po_count} open POs` : 'No open POs'}
+            cta="View Inbound"
+            ctaHref="/orders/inbound"
+          />
+          <StatCard
+            label="Dead capital"
+            value={os.demand ? fmt$(os.demand.dead_capital_value) : '—'}
+            valueColor={os.demand && os.demand.dead_capital_value > 0 ? theme.palette.warning.main : undefined}
+            sub="0-velocity stock"
+            cta="Review in Demand"
+            ctaHref="/demand"
+          />
+        </Box>
+      )}
 
-        return (
-          <Box sx={{ mb: 3, mt: 4 }}>
-            {/* ── Header ── */}
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ color: sellable === 0 ? theme.palette.error.main : sellable < total ? theme.palette.warning.main : theme.palette.success.main }}>
-                {sellable} of {total}
-              </Typography>
-              <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                products are ready to sell
-              </Typography>
-            </Box>
+      {/* ── 4. TWO COLUMN BODY ────────────────────────────────── */}
+      {/* LEFT: Action queue  |  RIGHT: Inbound pipeline + Return leakage */}
+      <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch', flexWrap: 'wrap' }}>
 
-            {/* ── Progress bar ── */}
-            <Box sx={{ position: 'relative', height: 8, borderRadius: 1, bgcolor: theme.palette.error.main, overflow: 'hidden', mb: 2, mt: 1.5 }}>
+        {/* ── LEFT COLUMN — Action queue ──────────────────────── */}
+        {os && (
+          <Box sx={{ flex: 2, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Warehouse banner — inside left column above action queue */}
+            {os?.warehouse && os.warehouse.variants_with_stock_no_bin > 0 && (
               <Box sx={{
-                position: 'absolute', left: 0, top: 0, height: '100%',
-                width: `${sellablePct}%`,
-                bgcolor: theme.palette.success.main,
-                borderRadius: 1,
-                transition: 'width 0.4s ease',
-              }} />
-            </Box>
-
-            {/* ── Blocked reasons ── */}
-            {blocked > 0 && (
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mb: 3 }}>
-                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                  Why are {blocked} blocked?
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                px: 2, py: 1.5,
+                border: `0.5px solid ${alpha(theme.palette.warning.main, 0.35)}`,
+                bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.08 : 0.04),
+                borderRadius: '10px',
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Warehouse size={14} color={theme.palette.warning.main} />
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                      {os.warehouse.variants_with_stock_no_bin} SKUs have stock but no pick bin assigned
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                      {os.warehouse.pick_zone_occupancy_pct ?? 0}% occupancy · {os.warehouse.stocked_pick_bins} of {os.warehouse.total_pick_bins} bins stocked · stow before next pick run
+                    </Typography>
+                  </Box>
+                </Box>
+                <Typography
+                  onClick={() => navigate('/inventory/wms-readiness')}
+                  sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { textDecoration: 'underline' } }}
+                >
+                  Fix in WMS →
                 </Typography>
-                {noSku > 0 && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, background: pal.cardBg, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.error.main, borderLeft: '4px solid', borderLeftColor: theme.palette.error.main }}>
-                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main, minWidth: 24 }}>{noSku}</Typography>
-                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                      no product code — warehouse can't identify or pick these. See Catalog tab.
-                    </Typography>
-                  </Box>
-                )}
-                {noInventory > 0 && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
-                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.warning.main, minWidth: 24 }}>{noInventory}</Typography>
-                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                      have no stock data — inventory hasn't been recorded for these products
-                    </Typography>
-                  </Box>
-                )}
-                {zeroStock > 0 && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, p: 1.5, background: pal.cardBg, borderRadius: 1.5, border: '1px solid', borderColor: theme.palette.warning.main, borderLeft: '4px solid', borderLeftColor: theme.palette.warning.main }}>
-                    <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.warning.main, minWidth: 24 }}>{zeroStock}</Typography>
-                    <Typography variant="body2" sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                      are out of stock — listed as active but nothing left to ship
-                    </Typography>
-                  </Box>
-                )}
               </Box>
             )}
-            </Box>
-        );
-      })()}
+            <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', flex: 1 }}>
+              <Box sx={{ px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  Action queue
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {os.demand && (os.demand.critical_reorder_count > 0 || os.demand.warning_reorder_count > 0) && (
+                    <Typography sx={{ fontSize: 10, color: theme.palette.error.main, fontWeight: 500 }}>
+                      {os.demand.critical_reorder_count} critical · {os.demand.warning_reorder_count} warning
+                    </Typography>
+                  )}
+                  <Typography
+                    onClick={() => navigate('/demand')}
+                    sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                  >
+                    See all in Demand →
+                  </Typography>
+                </Box>
+              </Box>
 
-      {/* ─────────────────────────────────────────
-          TWO COLUMN LAYOUT — Supply chain signals
-          Left: dead weight + supply metric cards
-          Right: reorder now list
-          ───────────────────────────────────────── */}
-      {operatorSummary && (() => {
-        const noSales = operatorSummary.deadWeight.noSalesCount ?? 0;
-        return (
-      <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start', flexWrap: 'wrap', mb: 4 }}>
-        {/* ── LEFT COLUMN ── */}
-        <Box sx={{ flex: 1, minWidth: 260, display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* Dead weight */}
-          {noSales > 0 && (
-            <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
-                {noSales}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                {noSales === 1 ? 'product' : 'products'} generated no orders this period
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                Active but not selling — consider reviewing or archiving
-              </Typography>
+              {/* Priority 1: stocked out with no covering PO */}
+              {os.demand?.reorder_now
+                .filter(v => {
+                  const coveredByPO = os.inbound
+                    ? [...os.inbound.overdue_pos, ...os.inbound.pending_pos].some(po =>
+                        po.covers_stocked_out_skus.includes(v.lasyncro_variant_id)
+                      )
+                    : false;
+                  return v.days_of_stock_remaining === 0 && !coveredByPO;
+                })
+                .slice(0, 4)
+                .map(v => {
+                  const fin = os.finances?.stocked_out_margin_variants.find(f => f.lasyncro_variant_id === v.lasyncro_variant_id);
+                  return (
+                    <ActionRow
+                      key={v.lasyncro_variant_id}
+                      dot="critical"
+                      label={v.sku ?? 'No SKU'}
+                      meta={`Stocked out · no inbound PO · ${v.velocity_per_day.toFixed(2)} units/day`}
+                      impact={fin ? `${fmt$(fin.margin_lost_per_week)}/wk lost` : undefined}
+                      cta="Order"
+                      ctaHref="/suppliers"
+                    />
+                  );
+                })}
+
+              {/* Priority 2: stocked out with overdue PO */}
+              {os.inbound?.overdue_pos
+                .filter(po => po.covers_stocked_out_skus.length > 0)
+                .map(po => (
+                  <ActionRow
+                    key={po.po_short_ref}
+                    dot="critical"
+                    label={`${po.supplier_name} PO ${po.po_short_ref}`}
+                    meta={`${po.overdue_days}d overdue · covers ${po.covers_stocked_out_skus.length} stocked-out SKU${po.covers_stocked_out_skus.length > 1 ? 's' : ''}`}
+                    impact={po.overdue_days != null && po.overdue_days > 0 ? `${po.overdue_days}d late` : undefined}
+                    cta="Chase"
+                    ctaHref="/orders/inbound"
+                  />
+                ))}
+
+              {/* Priority 3: no SKU */}
+              {noSku > 0 && (
+                <ActionRow
+                  dot="warning"
+                  label={`${noSku} SKUs have no product code`}
+                  meta="WMS-Lite can't pick or receive these — fix in Shopify"
+                  cta="Fix in Catalog"
+                  ctaHref="/inventory/catalog"
+                />
+              )}
+
+              {/* Priority 4: critically low stock */}
+              {os.demand && os.demand.critical_reorder_count - os.demand.stockout_count > 0 && (
+                <ActionRow
+                  dot="warning"
+                  label={`${os.demand.critical_reorder_count - os.demand.stockout_count} SKUs under 7 days stock`}
+                  meta="Order before they run out"
+                  cta="See Demand"
+                  ctaHref="/demand"
+                />
+              )}
+
+              {/* Priority 5: dead capital */}
+              {os.demand && os.demand.dead_capital_value > 0 && (
+                <ActionRow
+                  dot="optimize"
+                  label={`${fmt$(os.demand.dead_capital_value)} in non-moving stock`}
+                  meta="Active SKUs with stock but zero velocity"
+                  cta="Review"
+                  ctaHref="/demand"
+                />
+              )}
+
+              {/* Priority 6: unrestocked returns */}
+              {os.topReturned.length > 0 && (
+                <ActionRow
+                  dot="optimize"
+                  label={`${os.topReturned.length} returned product${os.topReturned.length > 1 ? 's' : ''} not restocked`}
+                  meta="Every unrestocked return is double-lost — revenue refunded and inventory not recovered"
+                  cta="Fix in Returns"
+                  ctaHref="/returns"
+                />
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* ── RIGHT COLUMN — Inbound pipeline + Return leakage ─── */}
+        <Box sx={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+          {/* Inbound pipeline */}
+          {os?.inbound && os.inbound.open_po_count > 0 && (
+            <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+              <Box sx={{ px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  Inbound pipeline
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  {os.inbound.total_committed_value_cents != null && (
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                      {fmt$(os.inbound.total_committed_value_cents / 100)} committed
+                    </Typography>
+                  )}
+                  <Typography
+                    onClick={() => navigate('/cashflow')}
+                    sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                  >
+                    Cash Flow →
+                  </Typography>
+                </Box>
+              </Box>
+              {os.inbound.overdue_pos.map(po => (
+                <InboundRow key={po.po_short_ref} po={po} isOverdue={true} />
+              ))}
+              {os.inbound.pending_pos.map(po => (
+                <InboundRow key={po.po_short_ref} po={po} isOverdue={false} />
+              ))}
             </Box>
           )}
 
-      {/* ── Supply metric cards — in left column ── */}
-        {operatorSummary?.demand && (() => {
-          const d = operatorSummary.demand!;
-          const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
-          const hasCritical = d.critical_reorder_count > 0;
-          const hasDeadCapital = d.dead_capital_value > 0;
-          if (!hasCritical && !hasDeadCapital) return null;
-          return (
-            <>
-              {hasCritical && (
-                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.error.main}`, borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.main, fontVariantNumeric: 'tabular-nums' }}>
-                    {d.critical_reorder_count}
+          {/* Return leakage */}
+          {os?.topReturned && os.topReturned.length > 0 && (() => {
+            const maxRate = Math.max(...os.topReturned.map(r => r.returnRatePct));
+            const totalLeakage = os.topReturned.reduce((s, r) => s + r.revenueLeakage, 0);
+            return (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Return leakage
                   </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                    {d.critical_reorder_count === 1 ? 'SKU' : 'SKUs'} critically low
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    Under 7 days of stock at current velocity
+                  <Typography sx={{ fontSize: 11, color: theme.palette.error.main, fontWeight: 500 }}>
+                    {fmt$(totalLeakage)} lost · 0% restocked
                   </Typography>
                 </Box>
-              )}
-              {d.warning_reorder_count > 0 && (
-                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderLeft: `4px solid ${theme.palette.warning.main}`, borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
-                    {d.warning_reorder_count}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                    {d.warning_reorder_count === 1 ? 'SKU' : 'SKUs'} running low
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    Under 14 days of stock — reorder soon
-                  </Typography>
-                </Box>
-              )}
-              {hasDeadCapital && (
-                <Box sx={{ p: 2, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.warning.main, fontVariantNumeric: 'tabular-nums' }}>
-                    {fmt(d.dead_capital_value)}
-                  </Typography>
-                  <Typography variant="body2" sx={{ mt: 0.5, color: 'var(--mui-palette-text-primary)' }}>
-                    capital in non-moving stock
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-                    Active SKUs with stock but zero velocity
-                  </Typography>
-                </Box>
-              )}
-            </>
-          );
-        })()}
-        </Box>{/* end LEFT COLUMN */}
-
-        {/* ── RIGHT COLUMN — Reorder now list ── */}
-        <Box sx={{ flex: 1, minWidth: 260 }}>
-        {operatorSummary?.demand && (() => {
-          const d = operatorSummary.demand!;
-          const hasReorderNow = d.reorder_now.length > 0;
-          if (!hasReorderNow) return null;
-          return (
-            <Box sx={{ border: `1px solid ${pal.border}`, background: pal.cardBg, borderRadius: 2, overflow: 'hidden' }}>
-              <Box sx={{ px: 2, py: 1.25, borderBottom: `1px solid ${pal.border}` }}>
-                <Typography variant="overline" color="text.secondary">
-                  {d.stockout_count > 0
-                    ? `${d.stockout_count} stocked out · ${d.critical_reorder_count - d.stockout_count > 0 ? `${d.critical_reorder_count - d.stockout_count} critical` : ''} — reorder now`
-                    : 'Reorder now — sorted by urgency'}
-                </Typography>
-              </Box>
-              {d.reorder_now.slice(0, 4).map((v: {
-                lasyncro_variant_id: string; sku: string | null;
-                days_of_stock_remaining: number | null; estimated_stockout_date: string | null;
-                velocity_per_day: number; suggested_reorder_qty: number | null
-              }, idx: number) => (
-                <Box
-                  key={v.lasyncro_variant_id}
-                  sx={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    px: 2, py: 1.25,
-                    borderBottom: idx < Math.min(d.reorder_now.length, 2) - 1 ? `1px solid ${pal.border}` : 'none',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
-                >
-                  <Box>
-                    <Typography variant="body2" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                      {v.sku ?? 'No SKU'}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      {v.velocity_per_day} units/day · {v.suggested_reorder_qty != null ? `order ${v.suggested_reorder_qty} units` : ''}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Typography variant="body2" fontWeight={700} sx={{ color: (v.days_of_stock_remaining ?? 99) === 0 ? theme.palette.error.main : theme.palette.warning.main }}>
-                      {v.days_of_stock_remaining === 0 ? 'Stocked out' : v.days_of_stock_remaining != null ? `${v.days_of_stock_remaining}d left` : '—'}
-                    </Typography>
-                    {v.days_of_stock_remaining === 0 ? (
-                      <Typography variant="caption" sx={{ color: theme.palette.error.main }}>reorder now</Typography>
-                    ) : v.estimated_stockout_date ? (
-                      <Typography variant="caption" color="text.secondary">
-                        out {new Date(v.estimated_stockout_date).toLocaleDateString()}
-                      </Typography>
-                    ) : null}
-                  </Box>
-                </Box>
-              ))}
-              {d.reorder_now.length > 2 && (
-                <Box component="a" href="/demand" sx={{
-                  display: 'block', px: 2, py: 1,
-                  borderTop: `1px solid ${pal.border}`,
-                  color: 'var(--accent)', fontSize: 12, fontWeight: 600,
-                  textDecoration: 'none', '&:hover': { bgcolor: 'action.hover' },
-                }}>
-                  See all {d.reorder_now.length} in Demand →
-                </Box>
-              )}
-            </Box>
-          );
-        })()}
-        </Box>{/* end RIGHT COLUMN */}
-      </Box>
-        );
-      })()}
-      {/* end TWO COLUMN LAYOUT */}
-
-      {/* ─────────────────────────────────────────
-          ZONE 6 — WHICH PRODUCTS KEEP COMING BACK?
-          Plain-language return signal with visual rate bar.
-          Source: /operator-summary → topReturned
-          ───────────────────────────────────────── */}
-      {operatorSummary && operatorSummary.topReturned.length > 0 && (() => {
-        const maxRate = Math.max(...operatorSummary.topReturned.map(r => r.returnRatePct));
-        return (
-          <Box sx={{ mb: 4 }}>
-            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 0.5 }}>
-              <Typography variant="h5" fontWeight={700} sx={{ color: theme.palette.error.main }}>
-                {operatorSummary.topReturned.length}
-              </Typography>
-              <Typography variant="body1" fontWeight={500} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                {operatorSummary.topReturned.length === 1 ? 'product has' : 'products have'} significant return activity
-              </Typography>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              High return rates may signal product quality, description, or fulfilment issues.
-            </Typography>
-
-            <Box sx={{ background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2, overflow: 'hidden' }}>
-              {operatorSummary.topReturned.map((item, idx) => {
-                const barPct = maxRate > 0 ? (item.returnRatePct / maxRate) * 100 : 0;
-                const rateColor = item.returnRatePct >= 20
-                  ? theme.palette.error.main
-                  : item.returnRatePct >= 10
-                  ? theme.palette.warning.main
-                  : theme.palette.success.main;
-                  const fmt = (n: number) => formatCurrency(n, currency?.displayCurrency, currency?.locale, currency?.rates);
-
-                return (
-                  <Box
-                    key={idx}
-                    sx={{
-                      px: 2,
-                      py: 1.5,
-                      borderBottom: '1px solid',
-                      borderColor: 'divider',
-                      '&:last-child': { borderBottom: 'none' },
-                      '&:hover': { bgcolor: 'action.hover' },
-                    }}
-                  >
-                    {/* Product name + code */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                      <Box>
-                        <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--mui-palette-text-primary)' }}>
-                          {item.variantTitle && item.variantTitle !== 'Default Title'
-                            ? item.variantTitle
-                            : item.sku
-                            ? `Product ${item.sku}`
-                            : `Product #${idx + 1}`}
-                        </Typography>
-                        {item.sku && (
-                          <Typography variant="caption" color="text.secondary">
-                            Code: {item.sku}
+                {os.topReturned.map((item, idx) => {
+                  const barPct = maxRate > 0 ? (item.returnRatePct / maxRate) * 100 : 0;
+                  const rateColor = item.returnRatePct >= 20 ? theme.palette.error.main
+                    : item.returnRatePct >= 10 ? theme.palette.warning.main
+                    : theme.palette.success.main;
+                  return (
+                    <Box
+                      key={idx}
+                      sx={{
+                        px: 2, py: 1.5,
+                        borderBottom: '0.5px solid var(--rule)',
+                        '&:last-child': { borderBottom: 'none' },
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.75 }}>
+                        <Box>
+                          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                            {item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : item.sku ?? `Item ${idx + 1}`}
                           </Typography>
-                        )}
+                          {item.sku && (
+                            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }}>
+                              {item.sku}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                            {item.unitsReturned} returned
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, fontWeight: 500, color: theme.palette.error.main }}>
+                            {fmt$(item.revenueLeakage)} lost
+                          </Typography>
+                          <Typography
+                            onClick={() => navigate('/returns')}
+                            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                          >
+                            Restock →
+                          </Typography>
+                        </Box>
                       </Box>
-                      <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                        <Typography variant="body2" color="text.secondary">
-                          {item.unitsReturned} {item.unitsReturned === 1 ? 'unit' : 'units'} returned
-                        </Typography>
-                        <Typography variant="body2" fontWeight={700} sx={{ color: theme.palette.error.main }}>
-                          {fmt(item.revenueLeakage)} lost
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        <Box sx={{ flex: 1, height: 4, borderRadius: 1, bgcolor: 'var(--bg)', overflow: 'hidden' }}>
+                          <Box sx={{ height: '100%', width: `${barPct}%`, bgcolor: rateColor, borderRadius: 1, transition: 'width 0.3s ease' }} />
+                        </Box>
+                        <Typography sx={{ fontSize: 11, fontWeight: 500, color: rateColor, minWidth: 70, textAlign: 'right' }}>
+                          {item.returnRatePct}% returned
                         </Typography>
                       </Box>
                     </Box>
+                  );
+                })}
+              </Box>
+            );
+          })()}
 
-                    {/* Return rate bar */}
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                      <Box sx={{ flex: 1, height: 6, borderRadius: 1, bgcolor: 'divider', overflow: 'hidden' }}>
-                        <Box sx={{
-                          height: '100%',
-                          width: `${barPct}%`,
-                          bgcolor: rateColor,
-                          borderRadius: 1,
-                          transition: 'width 0.3s ease',
-                        }} />
-                      </Box>
-                      <Typography variant="caption" fontWeight={700} sx={{ color: rateColor, minWidth: 60, textAlign: 'right' }}>
-                        {item.returnRatePct}% returned
-                      </Typography>
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Box>
-          </Box>
-        );
-      })()}
+        </Box>{/* end RIGHT COLUMN */}
+      </Box>{/* end TWO COLUMN BODY */}
 
     </Box>
   );
