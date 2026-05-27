@@ -15,8 +15,9 @@ const INVENTORY_TABS = [
 export default function ProblemCenterPage() {
   const { data, isLoading, isError, refetch } = useProblemCenter();
   const handleResolve = useCallback(async (exceptionId: string, note: string) => {
-    await axiosInstance.post(`/api/v1/wms/problem-center/pick-exceptions/${exceptionId}/resolve`, {
-      resolution_note: note,
+    await axiosInstance.post(`/api/v1/wms/problem-center/${exceptionId}/resolve`, {
+      resolution_action: 'write_off',
+      resolution_notes: note,
     });
   }, []);
   return (
