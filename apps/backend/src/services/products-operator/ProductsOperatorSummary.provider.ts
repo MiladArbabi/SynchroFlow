@@ -11,6 +11,9 @@ import {
 import {
   getProductsWarehouseSignals, type ProductsWarehouseSignals,
 } from './ProductsWarehouseBridge.service.js';
+import {
+  getProductsFinancesSignals, type ProductsFinancesSignals,
+} from './ProductsFinancesBridge.service.js';
 
 /**
  * ProductsOperatorSummary
@@ -71,6 +74,9 @@ export interface ProductsOperatorSummary {
   // ── Warehouse floor readiness ─────────────────────────────
   // null = warehouse not yet configured
   warehouse: ProductsWarehouseSignals | null;
+  // ── Finances — margin at risk + cost coverage gaps ────────
+  // null = no stocked-out variants with known cost, or query failed
+  finances: ProductsFinancesSignals | null;
 };
 
 /**
@@ -88,11 +94,12 @@ export async function getProductsOperatorSummary(input: {
   period: { from: string; to: string };
 }): Promise<ProductsOperatorSummary> {
   // Fetch facts + demand signals in parallel — demand owns its own RLS transaction
-  const [facts, demand, inbound, warehouse] = await Promise.all([
+  const [facts, demand, inbound, warehouse, finances] = await Promise.all([
     withTenant(input.shopId, (trx) => getProductsOperatorFacts(input, trx)),
     getProductsDemandSignals(input.shopId),
     getProductsInboundSignals(input.shopId),
     getProductsWarehouseSignals(input.shopId),
+    getProductsFinancesSignals(input.shopId),
   ]);
 
   const blocked =
@@ -134,6 +141,8 @@ export async function getProductsOperatorSummary(input: {
     demand,
     // null when no open POs or supplier module not yet used
     inbound,
+    // null when no stocked-out variants with known cost, or query failed
+    finances,
     // null when warehouse not yet configured
     warehouse,
   };
