@@ -8,6 +8,9 @@ import {
 import {
   getProductsInboundSignals, type ProductsInboundSignals,
 } from './ProductsInboundBridge.service.js';
+import {
+  getProductsWarehouseSignals, type ProductsWarehouseSignals,
+} from './ProductsWarehouseBridge.service.js';
 
 /**
  * ProductsOperatorSummary
@@ -65,6 +68,9 @@ export interface ProductsOperatorSummary {
   // ── Inbound PO pipeline ───────────────────────────────────
   // null = no open POs or suppliers module not yet used
   inbound: ProductsInboundSignals | null;
+  // ── Warehouse floor readiness ─────────────────────────────
+  // null = warehouse not yet configured
+  warehouse: ProductsWarehouseSignals | null;
 };
 
 /**
@@ -82,10 +88,11 @@ export async function getProductsOperatorSummary(input: {
   period: { from: string; to: string };
 }): Promise<ProductsOperatorSummary> {
   // Fetch facts + demand signals in parallel — demand owns its own RLS transaction
-  const [facts, demand, inbound] = await Promise.all([
+  const [facts, demand, inbound, warehouse] = await Promise.all([
     withTenant(input.shopId, (trx) => getProductsOperatorFacts(input, trx)),
     getProductsDemandSignals(input.shopId),
     getProductsInboundSignals(input.shopId),
+    getProductsWarehouseSignals(input.shopId),
   ]);
 
   const blocked =
@@ -127,5 +134,7 @@ export async function getProductsOperatorSummary(input: {
     demand,
     // null when no open POs or supplier module not yet used
     inbound,
+    // null when warehouse not yet configured
+    warehouse,
   };
 }
