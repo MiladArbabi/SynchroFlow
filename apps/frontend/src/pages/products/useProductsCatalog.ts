@@ -14,6 +14,8 @@ export interface CatalogVariant {
   status: string;
   product_title: string | null;
   lasyncro_product_id: string;
+  /** physical | gift_card | digital — gift_card filtered at backend (INV-05) */
+  product_type: string;
   sellable_quantity: number;
 }
 
