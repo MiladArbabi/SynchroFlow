@@ -5,6 +5,9 @@ import { withTenant } from '@lasyncro/backend-core/db.js';
 import { 
   getProductsDemandSignals, type ProductsDemandSignals
  } from './ProductsDemandBridge.service.js';
+import {
+  getProductsInboundSignals, type ProductsInboundSignals,
+} from './ProductsInboundBridge.service.js';
 
 /**
  * ProductsOperatorSummary
@@ -59,6 +62,9 @@ export interface ProductsOperatorSummary {
   // ── Demand signals (growth tier) ──────────────────────────
   // null = demand data unavailable (tier not enabled or no velocity yet)
   demand: ProductsDemandSignals | null;
+  // ── Inbound PO pipeline ───────────────────────────────────
+  // null = no open POs or suppliers module not yet used
+  inbound: ProductsInboundSignals | null;
 };
 
 /**
@@ -76,9 +82,10 @@ export async function getProductsOperatorSummary(input: {
   period: { from: string; to: string };
 }): Promise<ProductsOperatorSummary> {
   // Fetch facts + demand signals in parallel — demand owns its own RLS transaction
-  const [facts, demand] = await Promise.all([
+  const [facts, demand, inbound] = await Promise.all([
     withTenant(input.shopId, (trx) => getProductsOperatorFacts(input, trx)),
     getProductsDemandSignals(input.shopId),
+    getProductsInboundSignals(input.shopId),
   ]);
 
   const blocked =
@@ -118,5 +125,7 @@ export async function getProductsOperatorSummary(input: {
     noSkuProducts: facts.noSkuProducts,
     // null when growth tier not enabled or demand data not yet available
     demand,
+    // null when no open POs or supplier module not yet used
+    inbound,
   };
 }
