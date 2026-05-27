@@ -99,8 +99,13 @@ export async function getProductsWmsReadinessFacts(
         qb.raw('SUM(it.on_hand_quantity) - SUM(it.reserved_quantity + it.committed_quantity + it.available_quantity) as delta')
       );
 
-    const variance_count = varianceRows.length > 0 ? varianceRows.length : null;
-    const total_variance_units = varianceRows.length > 0
+    // Return 0 (not null) when query runs but finds no variance — 0 is a positive signal.
+    // null reserved for "no inventory_truth data exists for this shop".
+    const hasInventoryData = (await qb('inventory_truth').where('shop_id', shopId).count('* as count').first())?.count;
+    const variance_count = hasInventoryData && Number(hasInventoryData) > 0
+      ? varianceRows.length
+      : null;
+    const total_variance_units = hasInventoryData && Number(hasInventoryData) > 0
       ? varianceRows.reduce((sum: number, r: any) => sum + Math.abs(Number(r.delta)), 0)
       : null;
 
