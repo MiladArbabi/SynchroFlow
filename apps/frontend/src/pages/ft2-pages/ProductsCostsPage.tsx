@@ -3,21 +3,21 @@
 // ProductsCostsPage
 // -----------------
 // Cost entry and bulk CSV upload surface.
-// Moved from the main Intelligence tab — cost entry is a setup task,
-// not a daily signal. Keeping it separate reduces noise on the
-// Intelligence tab for operators who have already entered costs.
-//
-// HARD CONTRACT:
-// - Authenticated + shop-scoped (via CostEntryPanel internals)
-// - No intelligence signals here
-// - Period-independent — cost data is not time-ranged
-
+// Period-independent — cost data is not time-ranged.
 import CostEntryPanel from 'components/CostEntryPanel';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 
 export default function ProductsCostsPage() {
   return (
-    <Box>
+    <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
+      <Box sx={{ mb: 2.5 }}>
+        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.25 }}>
+          Costs
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+          Enter unit cost per SKU to unlock accurate margin and COGS reporting.
+        </Typography>
+      </Box>
       <CostEntryPanel />
     </Box>
   );

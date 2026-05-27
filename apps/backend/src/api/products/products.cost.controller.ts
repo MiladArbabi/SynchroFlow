@@ -57,17 +57,22 @@ export const httpPatchVariantCost = async (req: Request, res: Response) => {
        *
        * Joins order_fulfillment_status to exclude fulfilled orders.
        */
-      const backfilled = await trx('order_revenue_units as oru')
-        .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-        .leftJoin(
-          'order_fulfillment_status as ofs',
-          'ofs.lasyncro_order_id',
-          'oru.lasyncro_order_id'
-        )
-        .where('oru.lasyncro_variant_id', variantId)
-        .where('o.shop_id', shopId)
-        .whereNot('ofs.status', 'fulfilled')
-        .update({ 'oru.estimated_unit_cost': unit_cost, 'oru.updated_at': trx.fn.now() });
+      // PostgreSQL UPDATE...FROM requires raw — Knex join+update doesn't
+      // produce valid UPDATE...FROM syntax for multi-table updates
+      const backfillResult = await trx.raw(`
+        UPDATE order_revenue_units
+        SET estimated_unit_cost = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE lasyncro_variant_id = ?
+          AND lasyncro_order_id IN (
+            SELECT o.lasyncro_order_id
+            FROM orders o
+            LEFT JOIN order_fulfillment_status ofs
+              ON ofs.lasyncro_order_id = o.lasyncro_order_id
+            WHERE o.shop_id = ?
+              AND (ofs.status IS NULL OR ofs.status != 'fulfilled')
+          )
+      `, [unit_cost, variantId, shopId]);
+      const backfilled = backfillResult.rowCount ?? 0;
 
       console.info('[VARIANT_COST_UPDATED]', {
         shopId,
@@ -120,8 +125,10 @@ export const httpGetVariantCosts = async (req: Request, res: Response) => {
         .orderByRaw('v.unit_cost IS NOT NULL, v.title ASC')
         .select(
           'v.lasyncro_variant_id',
+          'v.lasyncro_product_id',
           'v.title',
           'v.sku',
+          'v.image_url',
           'v.unit_cost',
           'v.updated_at',
           'p.title as product_title',
@@ -203,14 +210,21 @@ export const httpBulkUpdateVariantCosts = async (req: Request, res: Response) =>
           .where({ lasyncro_variant_id: variant.lasyncro_variant_id, shop_id: shopId })
           .update({ unit_cost, updated_at: trx.fn.now() });
 
-        // Backfill unfulfilled order_revenue_units (same policy as single PATCH)
-        await trx('order_revenue_units as oru')
-          .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-          .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oru.lasyncro_order_id')
-          .where('oru.lasyncro_variant_id', variant.lasyncro_variant_id)
-          .where('o.shop_id', shopId)
-          .whereNot('ofs.status', 'fulfilled')
-          .update({ 'oru.estimated_unit_cost': unit_cost, 'oru.updated_at': trx.fn.now() });
+        // Backfill unfulfilled order_revenue_units via subquery — Knex join+update
+        // doesn't produce valid PostgreSQL UPDATE...FROM syntax
+        await trx.raw(`
+          UPDATE order_revenue_units
+          SET estimated_unit_cost = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE lasyncro_variant_id = ?
+            AND lasyncro_order_id IN (
+              SELECT o.lasyncro_order_id
+              FROM orders o
+              LEFT JOIN order_fulfillment_status ofs
+                ON ofs.lasyncro_order_id = o.lasyncro_order_id
+              WHERE o.shop_id = ?
+                AND (ofs.status IS NULL OR ofs.status != 'fulfilled')
+            )
+        `, [unit_cost, variant.lasyncro_variant_id, shopId]);
 
         updated++;
       }

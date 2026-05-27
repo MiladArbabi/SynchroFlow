@@ -1,40 +1,37 @@
 // apps/frontend/src/components/CostEntryPanel.tsx
+//
+// CostEntryPanel
+// --------------
+// Inline COGS entry surface with pagination, filtering, and product images.
+//
+// DESIGN CONTRACT:
+// - FT2 pattern: CSS vars only, 0.5px borders, fontWeight max 500
+// - 10 rows per page — matches Catalog pagination pattern
+// - Filter: all | missing only
+// - Images from variant.image_url (variant-level, falls back to initial)
+// - Both modes update variants.unit_cost + backfill oru.estimated_unit_cost
 import { useState, useCallback, useRef } from 'react';
 import {
-  Box, Typography, TextField, Button, Chip,
+  Box, Typography, TextField, Button,
   CircularProgress, Alert, Divider, InputAdornment,
 } from '@mui/material';
 import { Upload } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
-
-/**
- * COST ENTRY PANEL (PP4-04, PP9b-01)
- * ------------------------------------
- * Inline COGS entry surface — shown when missing_cogs alert is active.
- *
- * Two entry modes:
- * 1. CSV bulk upload — sku, unit_cost columns
- * 2. Per-variant inline editor
- *
- * Both modes:
- * - Update variants.unit_cost (future orders)
- * - Backfill order_revenue_units.estimated_unit_cost for unfulfilled orders
- * - Invalidate alerts query so missing_cogs alert resolves without refresh
- */
+import { useTheme } from '@mui/material/styles';
 
 type VariantCost = {
   lasyncro_variant_id: string;
+  lasyncro_product_id: string;
   title: string | null;
   sku: string | null;
+  image_url: string | null;
   unit_cost: number | null;
   updated_at: string;
   product_title: string | null;
 };
 
-// ─────────────────────────────────────────
-// HOOKS
-// ─────────────────────────────────────────
+// ─── HOOKS ────────────────────────────────────────────────────
 
 function useVariantCosts() {
   return useQuery<VariantCost[]>({
@@ -78,22 +75,9 @@ function useBulkUpload() {
     },
   });
 }
-// ─────────────────────────────────────────
-// CSV UPLOAD SECTION
-// ─────────────────────────────────────────
 
-/**
- * CSV UPLOAD ROW (PP9b-01)
- * ------------------------
- * Accepts a CSV file with columns: sku, unit_cost
- * Parses client-side, sends parsed rows to bulk endpoint.
- * Shows per-upload result summary inline.
- *
- * CSV format:
- *   sku,unit_cost
- *   BLUE-TEE-M,12.50
- *   RED-HAT-L,8.00
- */
+// ─── CSV UPLOAD ───────────────────────────────────────────────
+
 function CsvUploadRow() {
   const fileRef = useRef<HTMLInputElement>(null);
   const { mutate: bulkUpload, isPending, data: result, reset } = useBulkUpload();
@@ -102,32 +86,22 @@ function CsvUploadRow() {
   const handleFile = useCallback((file: File) => {
     setParseError(null);
     reset();
-
     const reader = new FileReader();
     reader.onload = (e) => {
       const text = e.target?.result as string;
       const lines = text.trim().split('\n');
       const rows: Array<{ sku: string; unit_cost: number }> = [];
-
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue;
-        // Skip header row if present
         if (i === 0 && line.toLowerCase().startsWith('sku')) continue;
-
         const parts = line.split(',').map((s) => s.trim().replace(/^"|"$/g, ''));
         const sku = parts[0];
-        const costStr = parts[1];
-        const unit_cost = parseFloat(costStr);
-
+        const unit_cost = parseFloat(parts[1]);
         if (!sku) { setParseError(`Row ${i + 1}: missing SKU`); return; }
-        if (isNaN(unit_cost) || unit_cost <= 0) {
-          setParseError(`Row ${i + 1}: invalid unit_cost "${costStr ?? ''}"`);
-          return;
-        }
+        if (isNaN(unit_cost) || unit_cost <= 0) { setParseError(`Row ${i + 1}: invalid unit_cost`); return; }
         rows.push({ sku, unit_cost });
       }
-
       if (rows.length === 0) { setParseError('No valid rows found in CSV.'); return; }
       bulkUpload(rows);
     };
@@ -135,109 +109,81 @@ function CsvUploadRow() {
   }, [bulkUpload, reset]);
 
   return (
-    <Box sx={{
-      px: 2, py: 1.5,
-      borderBottom: '1px solid', borderColor: 'divider',
-      bgcolor: 'action.hover',
-    }}>
-      <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 1 }}>
-        BULK UPLOAD — CSV format: sku, unit_cost
+    <Box sx={{ px: 2, py: 1.5, borderBottom: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+        Bulk upload — CSV format: sku, unit_cost
       </Typography>
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".csv,text/csv"
-        style={{ display: 'none' }}
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) handleFile(file);
-          e.target.value = '';
-        }}
+      <input ref={fileRef} type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ''; }}
       />
-      <Button
-        size="small"
-        variant="outlined"
-        startIcon={isPending ? <CircularProgress size={12} /> : <Upload size={14} />}
-        disabled={isPending}
-        onClick={() => fileRef.current?.click()}
+      <Button size="small" variant="outlined" startIcon={isPending ? <CircularProgress size={12} /> : <Upload size={14} />}
+        disabled={isPending} onClick={() => fileRef.current?.click()}
       >
         {isPending ? 'Uploading...' : 'Upload CSV'}
       </Button>
-
-      {parseError && (
-        <Typography variant="caption" color="error" sx={{ display: 'block', mt: 0.75 }}>
-          {parseError}
-        </Typography>
-      )}
-
+      {parseError && <Typography sx={{ fontSize: 11, color: 'error.main' }}>{parseError}</Typography>}
       {result && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
           ✓ {result.updated} updated
-          {result.not_found.length > 0 && ` · ${result.not_found.length} SKU${result.not_found.length > 1 ? 's' : ''} not found`}
-          {result.errors.length > 0 && ` · ${result.errors.length} error${result.errors.length > 1 ? 's' : ''}`}
+          {result.not_found.length > 0 && ` · ${result.not_found.length} not found`}
+          {result.errors.length > 0 && ` · ${result.errors.length} errors`}
         </Typography>
       )}
     </Box>
   );
 }
 
-// ─────────────────────────────────────────
-// PER-VARIANT ROW
-// ─────────────────────────────────────────
+// ─── VARIANT ROW ──────────────────────────────────────────────
 
 function VariantCostRow({ variant }: { variant: VariantCost }) {
-  const [value, setValue] = useState(
-    variant.unit_cost != null ? String(variant.unit_cost) : ''
-  );
+  const [value, setValue] = useState(variant.unit_cost != null ? String(variant.unit_cost) : '');
   const [saved, setSaved] = useState(false);
   const { mutate, isPending, isError } = usePatchVariantCost();
 
   const handleSave = useCallback(() => {
     const parsed = parseFloat(value);
     if (isNaN(parsed) || parsed <= 0) return;
-    mutate(
-      { variantId: variant.lasyncro_variant_id, unit_cost: parsed },
-      { onSuccess: () => setSaved(true) }
-    );
+    mutate({ variantId: variant.lasyncro_variant_id, unit_cost: parsed }, { onSuccess: () => setSaved(true) });
   }, [value, variant.lasyncro_variant_id, mutate]);
 
-  // Suppress Shopify's "Default Title" placeholder — not meaningful to operators
   const rawTitle = variant.title === 'Default Title' ? null : variant.title;
-  // For variants with no meaningful title, show product name as context
   const label = rawTitle ?? variant.sku ?? variant.product_title ?? variant.lasyncro_variant_id.slice(0, 8).toUpperCase();
   const isMissing = variant.unit_cost == null || variant.unit_cost <= 0;
 
   return (
     <Box sx={{
-      display: 'grid',
-      gridTemplateColumns: '1fr auto auto',
-      gap: 1.5,
-      alignItems: 'center',
-      px: 2,
-      py: 1.5,
-      borderBottom: '1px solid',
-      borderColor: 'divider',
+      display: 'flex', alignItems: 'center', gap: 2,
+      px: 2, py: 1.25,
+      borderBottom: '0.5px solid var(--rule)',
       '&:last-child': { borderBottom: 'none' },
     }}>
-      <Box>
-        <Typography variant="body2" fontWeight={600}>{label}</Typography>
+      {/* Thumbnail */}
+      <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, bgcolor: 'var(--bg)', border: '0.5px solid var(--rule)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {variant.image_url
+          ? <img src={variant.image_url} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-4)' }}>{label.charAt(0).toUpperCase()}</Typography>
+        }
+      </Box>
+      {/* Label */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: isMissing ? 'var(--ink)' : 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </Typography>
         {variant.sku && variant.sku !== variant.title && (
-          <Typography variant="caption" color="text.secondary">SKU: {variant.sku}</Typography>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>SKU: {variant.sku}</Typography>
         )}
       </Box>
+      {/* Cost input */}
       <TextField
-        size="small"
-        type="number"
-        value={value}
+        size="small" type="number" value={value}
         onChange={(e) => { setValue(e.target.value); setSaved(false); }}
         inputProps={{ min: 0.01, step: 0.01 }}
         sx={{ width: 120 }}
-        InputProps={{
-          startAdornment: <InputAdornment position="start">$</InputAdornment>,
-        }}
+        InputProps={{ startAdornment: <InputAdornment position="start">$</InputAdornment> }}
         error={isError}
         placeholder={isMissing ? 'Missing' : undefined}
       />
+      {/* Save button */}
       <Button
         size="small"
         variant={saved ? 'outlined' : 'contained'}
@@ -252,61 +198,94 @@ function VariantCostRow({ variant }: { variant: VariantCost }) {
   );
 }
 
-// ─────────────────────────────────────────
-// MAIN PANEL
-// ─────────────────────────────────────────
+// ─── MAIN PANEL ───────────────────────────────────────────────
+
+const PER_PAGE = 10;
 
 export default function CostEntryPanel() {
+  const theme = useTheme();
   const { data: variants, isLoading, isError } = useVariantCosts();
+  const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<'all' | 'missing'>('missing');
 
-  const missingCount = (variants ?? []).filter(
-    (v) => v.unit_cost == null || v.unit_cost <= 0
-  ).length;
+  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={24} /></Box>;
+  if (isError) return <Alert severity="error">Failed to load product costs.</Alert>;
+  if (!variants?.length) return null;
 
-  if (isLoading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-        <CircularProgress size={24} />
-      </Box>
-    );
-  }
+  const missingCount = variants.filter(v => v.unit_cost == null || v.unit_cost <= 0).length;
+  const filtered = filter === 'missing'
+    ? variants.filter(v => v.unit_cost == null || v.unit_cost <= 0)
+    : variants;
 
-  if (isError) {
-    return <Alert severity="error">Failed to load product costs.</Alert>;
-  }
+  const totalPages = Math.ceil(filtered.length / PER_PAGE);
+  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
-  if (!variants?.length || missingCount === 0) return null;
+  const handleFilter = (f: 'all' | 'missing') => { setFilter(f); setPage(1); };
 
   return (
-    <Box sx={{ mb: 3, border: '1px solid', borderColor: 'warning.light', borderRadius: 2, overflow: 'hidden' }}>
+    <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', mb: 3 }}>
 
-      {/* HEADER */}
-      <Box sx={{
-        px: 2, py: 1.5,
-        borderBottom: '1px solid', borderColor: 'warning.light',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
+      {/* Header */}
+      <Box sx={{ px: 2, py: 1.5, borderBottom: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
-          <Typography variant="body2" fontWeight={700}>
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
             Product cost data missing
           </Typography>
-          <Typography variant="caption" color="text.secondary">
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
             Enter cost per unit to unlock accurate margin reporting.
           </Typography>
         </Box>
-        <Chip label={`${missingCount} missing`} size="small" color="warning" />
+        <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1.5, py: 0.375, borderRadius: '20px', bgcolor: theme.palette.mode === 'dark' ? 'rgba(234,179,8,0.15)' : 'rgba(234,179,8,0.1)', border: `0.5px solid rgba(234,179,8,0.35)` }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 500, color: theme.palette.warning.main }}>{missingCount} missing</Typography>
+        </Box>
       </Box>
 
-      {/* BULK CSV UPLOAD */}
+      {/* CSV upload */}
       <CsvUploadRow />
+      <Divider sx={{ borderColor: 'var(--rule)' }} />
 
-      <Divider />
+      {/* Filter bar */}
+      <Box sx={{ px: 2, py: 1, borderBottom: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', display: 'flex', alignItems: 'center', gap: 1 }}>
+        {(['missing', 'all'] as const).map(f => (
+          <Box
+            key={f}
+            onClick={() => handleFilter(f)}
+            sx={{
+              px: 1.5, py: 0.375, borderRadius: '20px', cursor: 'pointer',
+              fontSize: 11, fontWeight: 500,
+              bgcolor: filter === f ? 'var(--accent)' : 'transparent',
+              color: filter === f ? '#fff' : 'var(--ink-4)',
+              border: `0.5px solid ${filter === f ? 'var(--accent)' : 'var(--rule)'}`,
+              '&:hover': { borderColor: 'var(--accent)' },
+            }}
+          >
+            {f === 'missing' ? `Missing (${missingCount})` : `All (${variants.length})`}
+          </Box>
+        ))}
+      </Box>
 
-      {/* PER-VARIANT ROWS — missing first, then with cost */}
-      {variants.map((v) => (
-        <VariantCostRow key={v.lasyncro_variant_id} variant={v} />
-      ))}
+      {/* Variant rows */}
+      {paged.map(v => <VariantCostRow key={v.lasyncro_variant_id} variant={v} />)}
 
+      {/* Pagination footer */}
+      {filtered.length > PER_PAGE && (
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            {((page - 1) * PER_PAGE) + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length}
+          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>
+              ← Prev
+            </Box>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 60, textAlign: 'center' }}>
+              Page {page} of {totalPages}
+            </Typography>
+            <Box onClick={() => page < totalPages && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < totalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < totalPages ? 1 : 0.4 }}>
+              Next →
+            </Box>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }

@@ -48,7 +48,7 @@ export default function ProductsCatalogPage({ range }: Props) {
     setPage(1);
   };
 
-  if (!operatorQuery.isSuccess) {
+  if (!operatorQuery.isSuccess || catalogQuery.isLoading) {
     return <Box sx={{ p: '24px 40px' }}><Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading catalog…</Typography></Box>;
   }
 
