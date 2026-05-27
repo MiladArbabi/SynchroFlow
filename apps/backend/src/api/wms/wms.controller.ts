@@ -1366,7 +1366,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
   const { taskId } = req.params;
   const { resolution_action, resolution_notes } = req.body;
 
-  const VALID_ACTIONS = ['re_stow', 'discard', 'return', 'write_off', 'quarantine', 'find_replacement'];
+  const VALID_ACTIONS = ['re_stow', 'discard', 'write_off', 'quarantine', 'find_replacement'];
   if (!taskId) return res.status(400).json({ error: 'taskId is required' });
   if (!resolution_action || !VALID_ACTIONS.includes(resolution_action)) {
     return res.status(400).json({ error: `resolution_action must be one of: ${VALID_ACTIONS.join(', ')}` });
@@ -1390,7 +1390,6 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         discard:          'resolved',
         write_off:        'resolved',
         quarantine:       'resolved',
-        return:           'returned_to_supplier',
         find_replacement: 'investigating',
       };
       const finalStatus = statusMap[resolution_action] ?? 'resolved';
@@ -1444,14 +1443,37 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         });
       }
 
-      // ── CASCADE: move to PROBLEM bin (quarantine / re_stow pending) ─
-      if (resolution_action === 'quarantine' || resolution_action === 're_stow') {
-        // PROBLEM bin confirmed at location_code='PROBLEM', zone_type='quarantine'
+      // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─
+      if (resolution_action === 'quarantine') {
+        const problemBin = task.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
         await trx('inventory_truth')
           .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
-          .update({ location_code: 'PROBLEM', updated_at: new Date() });
+          .update({ location_code: problemBin, updated_at: new Date() });
         console.info('[PROBLEM_CENTER_QUARANTINE]', {
           problem_task_id: taskId, variant_id: task.lasyncro_variant_id, shopId,
+        });
+      }
+
+      // ── CASCADE: re_stow — create stow task so operator physically re-stows ─
+      // Item currently sits in the problem bin. Operator claims this stow task,
+      // walks to problem bin, picks the item, and stows it to the correct location.
+      // Stow confirmation writes inventory_movements (inbound_purchase) + updates inventory_truth.
+      if (resolution_action === 're_stow') {
+        const problemBin = task.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+        await trx('stow_tasks').insert({
+          shop_id: shopId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          quantity: task.quantity,
+          location_code: problemBin,
+          status: 'pending',
+          trigger: 'problem_center',
+          source_task_id: taskId,
+          created_at: new Date(),
+          updated_at: new Date(),
+        });
+        console.info('[PROBLEM_CENTER_RE_STOW_TASK_CREATED]', {
+          problem_task_id: taskId, variant_id: task.lasyncro_variant_id,
+          quantity: task.quantity, problem_bin: problemBin, shopId,
         });
       }
 

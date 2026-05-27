@@ -41,7 +41,8 @@ export async function up(knex: Knex): Promise<void> {
       ) THEN
         CREATE TYPE stow_task_trigger AS ENUM (
           'order_cancelled_mid_pick',
-          'inbound_stock'
+          'inbound_stock',
+          'problem_center'
         );
       END IF;
     END$$;
@@ -104,6 +105,13 @@ export async function up(knex: Knex): Promise<void> {
      */
     table
       .uuid('po_id')
+      .nullable();
+    /**
+     * Source problem_center_tasks ID when trigger = problem_center.
+     * No FK — problem_center_tasks created in migration 0103 (after this).
+     */
+    table
+      .uuid('source_task_id')
       .nullable();
 
     table

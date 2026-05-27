@@ -47,7 +47,7 @@ export type ProblemCenterModuleFT2Props = {
   data: ProblemCenterData;
   isLoading: boolean;
   isError: boolean;
-  onResolve: (exceptionId: string, note: string) => Promise<void>;
+  onResolve: (exceptionId: string, action: string, note: string) => Promise<void>;
   onRefresh: () => void;
 };
 
@@ -75,6 +75,54 @@ const STAGE_COLORS: Record<string, string> = {
 
 const PER_PAGE = 10;
 
+// Maps exception type → sensible default resolution action
+const DEFAULT_ACTION: Record<string, string> = {
+  item_missing:         'write_off',
+  short_pick:           'write_off',
+  product_defect:       'discard',
+  packaging_defect:     're_stow',
+  wrong_item:           'find_replacement',
+  order_cancelled:      'write_off',
+  stow_failure:         're_stow',
+  receive_rejection:    'quarantine',
+  repackaging_required: 're_stow',
+  return_shortfall:     'write_off',
+};
+
+// Resolution options shown in dialog
+// forTypes: if set, only shown when exception matches one of those types
+const RESOLUTION_OPTIONS: { action: string; label: string; description: string; forTypes?: string[] }[] = [
+  {
+    action: 're_stow',
+    label: 'Re-stow',
+    description: 'Item is fine — place it back into the correct bin location.',
+    forTypes: ['packaging_defect', 'stow_failure', 'wrong_item', 'repackaging_required'],
+  },
+  {
+    action: 'find_replacement',
+    label: 'Find Replacement',
+    description: 'Locate same SKU at an alternate bin and fulfil the order from there.',
+    forTypes: ['wrong_item', 'item_missing', 'short_pick'],
+  },
+  {
+    action: 'discard',
+    label: 'Discard',
+    description: 'Item is damaged beyond use. Removes from inventory permanently.',
+    forTypes: ['product_defect', 'packaging_defect', 'receive_rejection'],
+  },
+  {
+    action: 'write_off',
+    label: 'Write Off',
+    description: 'Item is unaccounted for. Records as shrinkage and removes from inventory.',
+    forTypes: ['item_missing', 'short_pick', 'order_cancelled', 'return_shortfall'],
+  },
+  {
+    action: 'quarantine',
+    label: 'Quarantine',
+    description: 'Hold item for further investigation. No inventory change.',
+  },
+];
+
 // ── Age formatter ─────────────────────────────────────────────
 const fmtAge = (iso: string): string => {
   const h = Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000);
@@ -91,7 +139,8 @@ function ProblemCenterModuleFT2Inner({
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showResolved, setShowResolved] = useState(false);
   const [page, setPage] = useState(1);
-  const [resolveDialog, setResolveDialog] = useState<string | null>(null);
+  const [resolveDialog, setResolveDialog] = useState<{ id: string; exceptionType: string } | null>(null);
+  const [resolutionAction, setResolutionAction] = useState('write_off');
   const [resolutionNote, setResolutionNote] = useState('');
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -115,9 +164,10 @@ function ProblemCenterModuleFT2Inner({
     setResolving(true);
     setResolveError(null);
     try {
-      await onResolve(resolveDialog, resolutionNote);
+      await onResolve(resolveDialog.id, resolutionAction, resolutionNote);
       setResolveDialog(null);
       setResolutionNote('');
+      setResolutionAction('write_off');
       onRefresh();
     } catch {
       setResolveError('Failed to resolve exception. Try again.');
@@ -266,7 +316,7 @@ function ProblemCenterModuleFT2Inner({
                       <Typography sx={{ fontSize: 11, color: theme.palette.success.main, fontWeight: 500 }}>Resolved</Typography>
                     ) : (
                       <Typography
-                        onClick={() => { setResolveDialog(e.pick_exception_id); setResolutionNote(''); setResolveError(null); }}
+                        onClick={() => { setResolveDialog({ id: e.pick_exception_id, exceptionType: e.exception_type }); setResolutionNote(''); setResolutionAction(DEFAULT_ACTION[e.exception_type] ?? 'write_off'); setResolveError(null); }}
                         sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
                       >
                         Resolve →
@@ -295,25 +345,56 @@ function ProblemCenterModuleFT2Inner({
       )}
 
       {/* ── RESOLVE DIALOG ───────────────────────────────────── */}
-      <Dialog open={!!resolveDialog} onClose={() => setResolveDialog(null)} fullWidth>
+      <Dialog open={!!resolveDialog} onClose={() => setResolveDialog(null)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontSize: 16, fontWeight: 500 }}>Resolve Exception</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-4)', mb: 2 }}>
-            Add a note describing the corrective action taken.
-          </Typography>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '12px !important' }}>
+
+          {/* Action selector */}
+          <Box>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-4)', mb: 1 }}>RESOLUTION ACTION</Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {RESOLUTION_OPTIONS.filter(o =>
+                !o.forTypes || o.forTypes.includes(resolveDialog?.exceptionType ?? '')
+              ).map((opt) => (
+                <Box
+                  key={opt.action}
+                  onClick={() => setResolutionAction(opt.action)}
+                  sx={{
+                    display: 'flex', flexDirection: 'column', px: 1.5, py: 1,
+                    borderRadius: '6px', cursor: 'pointer',
+                    border: resolutionAction === opt.action
+                      ? '0.5px solid var(--accent)'
+                      : '0.5px solid var(--rule)',
+                    bgcolor: resolutionAction === opt.action
+                      ? 'var(--accent-subtle, rgba(99,102,241,0.06))'
+                      : 'transparent',
+                    transition: 'border-color 0.15s, background-color 0.15s',
+                  }}
+                >
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: resolutionAction === opt.action ? 'var(--accent)' : 'var(--ink)' }}>
+                    {opt.label}
+                  </Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{opt.description}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          {/* Optional note */}
           <TextField
-            label="Resolution note" multiline rows={3} fullWidth
+            label="Note (optional)" multiline rows={2} fullWidth size="small"
             value={resolutionNote}
             onChange={(e) => setResolutionNote(e.target.value)}
-            placeholder="e.g. Restocked from back warehouse, item located and picked"
+            placeholder="e.g. Moved to problem bin A-3, awaiting supplier collection"
+            InputProps={{ sx: { fontSize: 13 } }}
           />
-          {resolveError && <Alert severity="error" sx={{ mt: 2 }}>{resolveError}</Alert>}
+
+          {resolveError && <Alert severity="error">{resolveError}</Alert>}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setResolveDialog(null)}>Cancel</Button>
-          <Button variant="contained" onClick={() => void handleResolve()}
-            disabled={resolving || !resolutionNote.trim()}>
-            {resolving ? 'Resolving...' : 'Confirm Resolution'}
+          <Button onClick={() => setResolveDialog(null)} sx={{ fontSize: 13 }}>Cancel</Button>
+          <Button variant="contained" onClick={() => void handleResolve()} disabled={resolving} sx={{ fontSize: 13 }}>
+            {resolving ? 'Resolving…' : 'Confirm'}
           </Button>
         </DialogActions>
       </Dialog>

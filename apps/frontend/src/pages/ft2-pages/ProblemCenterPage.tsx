@@ -14,22 +14,22 @@ const INVENTORY_TABS = [
 
 export default function ProblemCenterPage() {
   const { data, isLoading, isError, refetch } = useProblemCenter();
-  const handleResolve = useCallback(async (exceptionId: string, note: string) => {
+  const handleResolve = useCallback(async (exceptionId: string, action: string, note: string) => {
     await axiosInstance.post(`/api/v1/wms/problem-center/${exceptionId}/resolve`, {
-      resolution_action: 'write_off',
-      resolution_notes: note,
+      resolution_action: action,
+      resolution_notes: note || undefined,
     });
   }, []);
   return (
     <>
       <ModuleTabBar tabs={INVENTORY_TABS} />
       <ProblemCenterModuleFT2
-      data={data ?? null}
-      isLoading={isLoading}
-      isError={isError}
-      onResolve={handleResolve}
-      onRefresh={refetch}
-    />
+        data={data ?? null}
+        isLoading={isLoading}
+        isError={isError}
+        onResolve={handleResolve}
+        onRefresh={refetch}
+      />
     </>
   );
 }
