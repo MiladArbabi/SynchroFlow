@@ -18,28 +18,22 @@ import {
 import { PackageX, Filter, CheckCircle } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 
-export type PickException = {
-  pick_exception_id: string;
-  pick_batch_id: string;
-  lasyncro_line_item_id: string;
+export type ProblemTask = {
+  problem_task_id: string;
   lasyncro_variant_id: string;
   exception_type: string;
-  stage: 'pick' | 'pack' | 'stow' | 'receive';
-  quantity_required: number;
-  quantity_found: number;
-  raised_by: number;
-  raised_at: string;
-  resolved: boolean;
-  resolved_by: number | null;
-  resolved_at: string | null;
-  resolution_note: string | null;
-  variant_title?: string;
+  source: 'pick' | 'pack' | 'stow' | 'receive' | 'returns';
+  quantity: number;
+  prob_label: string | null;
+  problem_bin_location: string | null;
+  status: 'open' | 'investigating' | 'resolved' | 'discarded' | 'returned_to_supplier';
+  created_at: string;
+  variant_title?: string | null;
   sku?: string | null;
-  batch_short_id?: string;
 };
 
 export type ProblemCenterData = {
-  exceptions: PickException[];
+  tasks: ProblemTask[];
   total_unresolved: number;
 } | null;
 
@@ -47,7 +41,7 @@ export type ProblemCenterModuleFT2Props = {
   data: ProblemCenterData;
   isLoading: boolean;
   isError: boolean;
-  onResolve: (exceptionId: string, action: string, note: string) => Promise<void>;
+  onResolve: (taskId: string, action: string, note: string) => Promise<void>;
   onRefresh: () => void;
 };
 
@@ -145,12 +139,13 @@ function ProblemCenterModuleFT2Inner({
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
-  const exceptions = data?.exceptions ?? [];
+  const tasks = data?.tasks ?? [];
 
-  const filtered = exceptions.filter((e) => {
-    if (!showResolved && e.resolved) return false;
-    if (stageFilter !== 'all' && e.stage !== stageFilter) return false;
-    if (typeFilter !== 'all' && e.exception_type !== typeFilter) return false;
+  const filtered = tasks.filter((t) => {
+    const isResolved = t.status === 'resolved' || t.status === 'discarded' || t.status === 'returned_to_supplier';
+    if (!showResolved && isResolved) return false;
+    if (stageFilter !== 'all' && t.source !== stageFilter) return false;
+    if (typeFilter !== 'all' && t.exception_type !== typeFilter) return false;
     return true;
   });
 
@@ -246,13 +241,13 @@ function ProblemCenterModuleFT2Inner({
           <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
 
             {/* Column headers */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 80px 140px 80px 80px 100px 80px 100px', gap: 0, px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', bgcolor: 'var(--bg)' }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 80px 140px 80px 120px 100px 80px 100px', gap: 0, px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', bgcolor: 'var(--bg)' }}>
               <ColHeader label="Exception" />
               <ColHeader label="Stage" />
               <ColHeader label="Type" />
-              <ColHeader label="Req" />
-              <ColHeader label="Found" />
-              <ColHeader label="Batch" />
+              <ColHeader label="Qty" />
+              <ColHeader label="Prob Label" />
+              <ColHeader label="Bin" />
               <ColHeader label="Age" />
               <ColHeader label="Action" />
             </Box>
@@ -268,55 +263,53 @@ function ProblemCenterModuleFT2Inner({
             )}
 
             {/* Rows */}
-            {paged.map((e, idx) => {
-              const typeInfo = EXCEPTION_TYPE_LABELS[e.exception_type] ?? { label: e.exception_type, color: 'default' as const };
-              const stageColor = STAGE_COLORS[e.stage] ?? 'var(--ink-4)';
-              const label = e.variant_title && e.variant_title !== 'Default Title' ? e.variant_title : e.sku ?? e.lasyncro_variant_id.slice(0, 8).toUpperCase();
-              const batchRef = e.batch_short_id ?? e.pick_batch_id.slice(0, 8).toUpperCase();
+            {paged.map((t, idx) => {
+              const typeInfo = EXCEPTION_TYPE_LABELS[t.exception_type] ?? { label: t.exception_type, color: 'default' as const };
+              const stageColor = STAGE_COLORS[t.source] ?? 'var(--ink-4)';
+              const label = t.variant_title && t.variant_title !== 'Default Title' ? t.variant_title : t.sku ?? t.lasyncro_variant_id.slice(0, 8).toUpperCase();
+              const isResolved = t.status === 'resolved' || t.status === 'discarded' || t.status === 'returned_to_supplier';
 
               return (
-                <Box key={e.pick_exception_id}>
+                <Box key={t.problem_task_id}>
                   {idx > 0 && <Divider sx={{ borderColor: 'var(--rule)' }} />}
                   <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: '2fr 80px 140px 80px 80px 100px 80px 100px',
+                    gridTemplateColumns: '2fr 80px 140px 80px 120px 100px 80px 100px',
                     gap: 0, px: 2, py: 1.25,
                     alignItems: 'center',
-                    opacity: e.resolved ? 0.5 : 1,
+                    opacity: isResolved ? 0.5 : 1,
                     '&:hover': { bgcolor: 'action.hover' },
                   }}>
                     {/* Exception — SKU + product context */}
                     <Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                         <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{label}</Typography>
-                        {e.resolved && <CheckCircle size={12} color={theme.palette.success.main} />}
+                        {isResolved && <CheckCircle size={12} color={theme.palette.success.main} />}
                       </Box>
-                      {e.sku && e.sku !== e.variant_title && (
-                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }}>{e.sku}</Typography>
+                      {t.sku && t.sku !== t.variant_title && (
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }}>{t.sku}</Typography>
                       )}
                     </Box>
                     {/* Stage */}
                     <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, borderRadius: '4px', bgcolor: `${stageColor}22`, border: `0.5px solid ${stageColor}55`, width: 'fit-content' }}>
-                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: stageColor }}>{STAGE_LABELS[e.stage] ?? e.stage}</Typography>
+                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: stageColor }}>{STAGE_LABELS[t.source] ?? t.source}</Typography>
                     </Box>
                     {/* Type */}
                     <Chip label={typeInfo.label} color={typeInfo.color} size="small" sx={{ width: 'fit-content' }} />
-                    {/* Qty required */}
-                    <Typography sx={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{e.quantity_required}</Typography>
-                    {/* Qty found */}
-                    <Typography sx={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', fontWeight: 500, color: e.quantity_found < e.quantity_required ? theme.palette.error.main : theme.palette.success.main }}>
-                      {e.quantity_found}
-                    </Typography>
-                    {/* Batch */}
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', fontFamily: 'monospace' }}>{batchRef}</Typography>
+                    {/* Qty */}
+                    <Typography sx={{ fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{t.quantity}</Typography>
+                    {/* Prob label */}
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', fontFamily: 'monospace' }}>{t.prob_label ?? '—'}</Typography>
+                    {/* Bin */}
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', fontFamily: 'monospace' }}>{t.problem_bin_location ?? '—'}</Typography>
                     {/* Age */}
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>{fmtAge(e.raised_at)}</Typography>
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>{fmtAge(t.created_at)}</Typography>
                     {/* Action */}
-                    {e.resolved ? (
+                    {isResolved ? (
                       <Typography sx={{ fontSize: 11, color: theme.palette.success.main, fontWeight: 500 }}>Resolved</Typography>
                     ) : (
                       <Typography
-                        onClick={() => { setResolveDialog({ id: e.pick_exception_id, exceptionType: e.exception_type }); setResolutionNote(''); setResolutionAction(DEFAULT_ACTION[e.exception_type] ?? 'write_off'); setResolveError(null); }}
+                        onClick={() => { setResolveDialog({ id: t.problem_task_id, exceptionType: t.exception_type }); setResolutionNote(''); setResolutionAction(DEFAULT_ACTION[t.exception_type] ?? 'write_off'); setResolveError(null); }}
                         sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
                       >
                         Resolve →
