@@ -635,15 +635,20 @@ function finish() {
 function handleEmail(e) {
   e.preventDefault();
   var email = document.getElementById('eg-email').value;
-  if (typeof posthog !== 'undefined') {
-    posthog.capture('checklist_email', { email: email });
-  }
 
   fetch('/api/waitlist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email, store: 'checklist-signup' })
-  }).catch(function(err) { console.error('Waitlist error:', err); });
+    body: JSON.stringify({ email: email, store: 'checklist-signup', source: 'checklist' })
+  })
+  .then(function(r) {
+    if (!r.ok) throw new Error('API responded ' + r.status);
+    // PostHog capture fires only after server confirms — prevents inflated counts
+    if (typeof posthog !== 'undefined') {
+      posthog.capture('waitlist_signup', { email: email, store: 'checklist-signup' });
+    }
+  })
+  .catch(function(err) { console.error('[waitlist] checklist signup error:', err); });
 
   document.getElementById('email-gate').style.display = 'none';
   document.getElementById('post-email').style.display = 'block';

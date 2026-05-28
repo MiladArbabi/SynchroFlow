@@ -1371,15 +1371,9 @@ function handleSubmit(e) {
     });
   }
 
-  // PostHog tracking
-  if (typeof posthog !== 'undefined') {
-    posthog.capture('waitlist_signup', { email: email, store: store });
-  }
-
   // Disable submit button to prevent double-submission while request is in flight
   var submitBtn = document.querySelector('#wl-form button[type="submit"]');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending…'; }
-
   fetch('/api/waitlist', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1387,6 +1381,10 @@ function handleSubmit(e) {
   })
   .then(function(r) {
     if (!r.ok) throw new Error('API responded ' + r.status);
+    // PostHog capture fires only after server confirms — prevents inflated conversion counts
+    if (typeof posthog !== 'undefined') {
+      posthog.capture('waitlist_signup', { email: email, store: store });
+    }
     // Only show success once the server has confirmed receipt
     document.getElementById('wl-form').style.display = 'none';
     document.getElementById('wl-progress').style.display = 'none';
