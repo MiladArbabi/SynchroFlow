@@ -144,6 +144,7 @@ export default function MembersPage() {
             startIcon={<UserPlus size={16} />}
             onClick={atSeatLimit ? () => setSeatLimitModalOpen(true) : openModal}
             size="small"
+            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           >
             Add Member
           </Button>

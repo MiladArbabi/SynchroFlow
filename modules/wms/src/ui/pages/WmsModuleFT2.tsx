@@ -224,10 +224,12 @@ const BatchCard = memo(function BatchCard({
         <Box
           onClick={handleToggleMap}
           sx={{
-            display: 'flex', alignItems: 'center', gap: 0.75,
-            mb: 1.5, cursor: 'pointer', width: 'fit-content',
-            fontSize: 11, fontWeight: 600, color: 'var(--accent)',
-            '&:hover': { textDecoration: 'underline' },
+            display: 'inline-flex', alignItems: 'center', gap: 0.75,
+            px: 1.25, py: 0.5, mb: 1.5,
+            fontSize: 11, fontWeight: 500, color: 'var(--accent)',
+            border: '0.5px solid var(--accent)', borderRadius: '6px',
+            cursor: 'pointer', width: 'fit-content',
+            '&:hover': { opacity: 0.75 },
           }}
         >
           {mapLoading ? <CircularProgress size={11} /> : null}

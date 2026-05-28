@@ -289,11 +289,11 @@ return (
           </Box>
           {/* Plan a new order — contextually placed in PO card footer */}
           <Box sx={{ p: '0.75rem 1.25rem', borderTop: '0.5px solid', borderTopColor: 'divider' }}>
-            <Button
+             <Button
               size="small" fullWidth variant="outlined"
               onClick={() => { setWhatIfOpen(v => !v); setWhatIfAmount(''); setWhatIfDate(''); }}
-              sx={{ fontSize: 12, borderRadius: '8px', borderColor: 'divider', color: 'text.secondary',
-                '&:hover': { borderColor: 'divider', bgcolor: 'action.hover' } }}
+              sx={{ fontSize: 12, borderRadius: '6px', borderColor: 'var(--accent)', color: 'var(--accent)',
+                '&:hover': { borderColor: 'var(--accent)', bgcolor: 'var(--accent-ghost)' } }}
             >
               {whatIfOpen ? '✕ Cancel' : '+ Plan a new order'}
             </Button>

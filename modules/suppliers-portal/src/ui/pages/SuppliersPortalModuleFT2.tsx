@@ -861,6 +861,7 @@ function SuppliersPortalModuleFT2Inner({
           variant="contained"
           startIcon={<Plus size={16} />}
           onClick={() => setCreatePoOpen(true)}
+          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
         >
           New PO
         </Button>

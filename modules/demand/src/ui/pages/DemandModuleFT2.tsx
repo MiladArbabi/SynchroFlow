@@ -313,13 +313,12 @@ function DemandModuleFT2Inner({
                   <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
                     Warehouse Occupancy
                   </Typography>
-                  <Typography
-                    component="a"
-                    href="/floor-planning?tab=map"
-                    sx={{ fontSize: 11, color: 'var(--accent)', textDecoration: 'none', fontWeight: 500, '&:hover': { textDecoration: 'underline' } }}
+                  <Box
+                    onClick={() => window.location.href = '/floor-planning?tab=map'}
+                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
                     View in Warehouse →
-                  </Typography>
+                  </Box>
                 </Box>
                 {/* Occupancy bar */}
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>

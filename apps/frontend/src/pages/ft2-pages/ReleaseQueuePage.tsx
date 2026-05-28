@@ -193,7 +193,7 @@ export default function ReleaseQueuePage() {
               size="small"
               startIcon={<Zap size={14} />}
               onClick={() => setReleaseOpen(true)}
-              sx={{ borderRadius: 2, fontWeight: 700 }}
+              sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
             >
               Release batch
             </Button>
