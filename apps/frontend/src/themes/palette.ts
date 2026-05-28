@@ -42,7 +42,7 @@ export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
   // No grey scales. No ambiguity.
   // ----------------------------------------------------------
   const neutralSurface = isDark ? '#0D1526' : '#F1F5F9';       // page background
-  const neutralElevated = isDark ? '#152032' : '#FFFFFF';       // card / panel surface
+  const neutralElevated = isDark ? '#1C2740' : '#FFFFFF';       // card / panel surface — matches --surface token
   const neutralText = isDark ? '#E5E7EB' : '#0F172A';
 
   // ----------------------------------------------------------
@@ -89,7 +89,7 @@ export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
       secondary: isDark ? '#9CA3AF' : '#475569',
     },
 
-    divider: isDark ? '#1F2937' : '#E5E7EB',
+    divider: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB',
 
     // ----- STRUCTURAL INTERACTION COLOR -----
     primary: {

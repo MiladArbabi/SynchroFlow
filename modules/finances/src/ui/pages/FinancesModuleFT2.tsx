@@ -1,8 +1,7 @@
 // modules/finances/src/ui/pages/FinancesModuleFT2.tsx
 import { useState } from 'react';
-import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme } from '@mui/material';
-import { useColorScheme } from '@mui/material/styles';
-import { FT2Layout, FT2Row } from '@lasyncro/ui-ft2';
+import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme, alpha, LinearProgress } from '@mui/material';
+import { FT2Layout } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import {
@@ -123,48 +122,64 @@ export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
 type StatusFilter = 'all' | 'pending' | 'fulfilled';
 type ViewMode = 'orders' | 'sku';
 
-function useFinancesTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return {
-    isDark,
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-    chartBg:     isDark ? '#131C2B' : '#F8F9FA',
-  };
-}
+// surface tokens → theme.palette.* and MUI sx shorthands throughout (no custom theme hook)
+function StatBox({ label, value, sub, accent }: {
+  label: string; value: string; sub?: string; accent?: 'positive' | 'negative' | 'warning' | 'neutral';
+}) {
+  const muiColor =
+    accent === 'positive' ? 'success.main' :
+    accent === 'negative' ? 'error.main'   :
+    accent === 'warning'  ? 'warning.main' :
+    'text.primary';
 
-function StatBox({ label, value }: { label: string; value: string }) {
   return (
-    <Box sx={{ flex: 1, p: 2.5, border: '1px solid', borderColor: 'divider', borderRadius: 2, textAlign: 'center' }}>
-      <Typography variant="h5" fontWeight={700} sx={{ fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </Typography>
-      <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+    <Box sx={{ flex: 1, minWidth: 140, p: 2.5, bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2 }}>
+      <Typography variant="caption" color="text.secondary"
+        sx={{ fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', mb: 0.75, display: 'block' }}>
         {label}
       </Typography>
+      <Typography color={muiColor}
+        sx={{ fontSize: 22, fontWeight: 500, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+        {value}
+      </Typography>
+      {sub && <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>{sub}</Typography>}
     </Box>
   );
 }
 
 function MarginBar({ min, avg, max }: { min: number; avg: number; max: number }) {
   const theme = useTheme();
+  const barColor =
+    avg >= 40 ? theme.palette.success.main :
+    avg >= 20 ? theme.palette.warning.main :
+                theme.palette.error.main;
 
   return (
-    <Box sx={{ mb: 3 }}>
-      <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
+    <Box>
+      <Typography variant="caption" color="text.secondary"
+        sx={{ fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', mb: 1, display: 'block' }}>
         Margin Distribution
       </Typography>
-      <Box sx={{ position: 'relative', height: 8, borderRadius: 4, bgcolor: 'action.hover' }}>
-        <Box sx={{ position: 'absolute', left: `${min}%`, width: `${max - min}%`, height: '100%', borderRadius: 4, bgcolor: theme.palette.primary.main, opacity: 0.3 }} />
-        <Box sx={{ position: 'absolute', left: `${avg - 1}%`, width: '2%', height: '100%', borderRadius: 4, bgcolor: theme.palette.primary.main }} />
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>
+          {avg}% average gross margin
+        </Typography>
       </Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+      <LinearProgress
+        variant="determinate"
+        value={avg}
+        sx={{
+          height: 6, borderRadius: 3,
+          bgcolor: 'action.hover',
+          '& .MuiLinearProgress-bar': {
+            bgcolor: barColor,
+            borderRadius: 3,
+          },
+        }}
+      />
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.75 }}>
         <Typography variant="caption" color="text.secondary">Min {min}%</Typography>
-        <Typography variant="caption" color="primary.main" fontWeight={600}>Avg {avg}%</Typography>
+        <Typography variant="caption" sx={{ color: barColor, fontWeight: 500 }}>Avg {avg}%</Typography>
         <Typography variant="caption" color="text.secondary">Max {max}%</Typography>
       </Box>
     </Box>
@@ -173,7 +188,6 @@ function MarginBar({ min, avg, max }: { min: number; avg: number; max: number })
 
 function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) {
   const theme = useTheme();
-  const pal = useFinancesTheme();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('orders');
@@ -181,7 +195,7 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
   const trendPoints = marginTrend?.data ?? [];
 
   const summary = margin?.summary;
-  const [orderSort, setOrderSort] = useState<{ field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | 'estimated_cost' | 'fulfillment_status'; dir: 'asc' | 'desc' }>({ field: 'gross_margin', dir: 'asc' });  const [showAllOrders, setShowAllOrders] = useState(false);
+  const [orderSort, setOrderSort] = useState<{ field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | 'estimated_cost' | 'fulfillment_status'; dir: 'asc' | 'desc' }>({ field: 'gross_margin', dir: 'asc' });
   const sortedOrders = [...(margin?.orders ?? [])].filter(o =>
     statusFilter === 'all' ? true : o.fulfillment_status === statusFilter
   ).sort((a, b) => {
@@ -194,7 +208,10 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
     const bv = Number(b[orderSort.field]);
     return orderSort.dir === 'asc' ? av - bv : bv - av;
   });
-  const visibleOrders = showAllOrders ? sortedOrders : sortedOrders.slice(0, 20);
+  const PER_PAGE = 10;
+  const [orderPage, setOrderPage] = useState(0);
+  const visibleOrders = sortedOrders.slice(orderPage * PER_PAGE, (orderPage + 1) * PER_PAGE);
+  const orderPageCount = Math.ceil(sortedOrders.length / PER_PAGE);
   const toggleOrderSort = (field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | 'estimated_cost' | 'fulfillment_status') => {
     setOrderSort(prev =>
       prev.field === field
@@ -206,14 +223,15 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
   type SortField = 'margin_pct' | 'gross_margin' | 'gross_revenue' | 'total_units_sold' | 'estimated_cost';
   type SortDir = 'asc' | 'desc';
   const [skuSort, setSkuSort] = useState<{ field: SortField; dir: SortDir }>({ field: 'gross_margin', dir: 'asc' });
-  const [showAllSkus, setShowAllSkus] = useState(false);
+  const [skuPage, setSkuPage] = useState(0);
 
   const sortedSkus = [...(skuMargin?.data ?? [])].sort((a, b) => {
     const av = Number(a[skuSort.field]);
     const bv = Number(b[skuSort.field]);
     return skuSort.dir === 'asc' ? av - bv : bv - av;
   });
-  const visibleSkus = showAllSkus ? sortedSkus : sortedSkus.slice(0, 20);
+  const visibleSkus = sortedSkus.slice(skuPage * PER_PAGE, (skuPage + 1) * PER_PAGE);
+  const skuPageCount = Math.ceil(sortedSkus.length / PER_PAGE);
 
   const toggleSkuSort = (field: SortField) => {
     setSkuSort(prev =>
@@ -235,81 +253,66 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
 
         {summary && (
           <>
-            {/* ZONE 1 — MARGIN PULSE */}
-            <Box sx={{ p: 2.5, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2, mb: 2 }}>
-              <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <StatBox label="Avg Gross Margin" value={`${summary.avg_margin_pct}%`} />
-                <StatBox label="Total Margin" value={fmt(summary.total_margin)} />
-                <StatBox label="Total Revenue" value={fmt(summary.total_revenue)} />
-                <StatBox label="Total Cost" value={fmt(summary.total_cost)} />
-                <StatBox label="Orders Analysed" value={String(summary.order_count)} />
+            {/* ZONE 1 — STAT CARDS */}
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
+              <StatBox label="Avg Gross Margin" value={`${summary.avg_margin_pct}%`} accent={summary.avg_margin_pct >= 40 ? 'positive' : summary.avg_margin_pct >= 20 ? 'warning' : 'negative'} />
+              <StatBox label="Total Margin"     value={fmt(summary.total_margin)}    accent="positive" />
+              <StatBox label="Total Revenue"    value={fmt(summary.total_revenue)}   accent="neutral" />
+              <StatBox label="Total Cost"       value={fmt(summary.total_cost)}      accent="neutral" />
+              <StatBox label="Orders Analysed"  value={String(summary.order_count)}  accent="neutral" />
+            </Box>
+
+            {/* ZONE 2 — DISTRIBUTION + TREND SIDE BY SIDE */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
+              <Box sx={{ p: 2.5, bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2 }}>
+                <MarginBar min={summary.min_margin_pct} avg={summary.avg_margin_pct} max={summary.max_margin_pct} />
+              </Box>
+              <Box sx={{ p: 2.5, bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2 }}>
+                <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
+                  Margin Trend — {marginTrend?.days ?? 30}d
+                </Typography>
+                {trendPoints.length > 1 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={120}>
+                      <LineChart data={trendPoints} margin={{ top: 4, right: 12, left: 0, bottom: 4 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: theme.palette.text.secondary }}
+                          tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          axisLine={false} tickLine={false} />
+                        <YAxis tick={{ fontSize: 9, fill: theme.palette.text.secondary }}
+                          axisLine={false} tickLine={false} tickFormatter={(v) => `${v}%`} domain={[0, 100]} />
+                        <Tooltip
+                          formatter={(value) => [`${Number(value)}%`, 'Avg Margin']}
+                          labelFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          contentStyle={{ background: theme.palette.background.paper, border: `0.5px solid ${theme.palette.divider}`, borderRadius: 8, fontSize: 12 }}
+                        />
+                        <ReferenceLine y={40} stroke={theme.palette.warning.main} strokeDasharray="4 2" strokeWidth={1} />
+                        <Line type="monotone" dataKey="avg_margin_pct" stroke={theme.palette.primary.main} strokeWidth={2} dot={false} activeDot={{ r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                      Dashed line = 40% margin threshold
+                    </Typography>
+                  </>
+                ) : (
+                  <Typography variant="caption" color="text.secondary">
+                    More trend data available after 7 days of activity.
+                  </Typography>
+                )}
               </Box>
             </Box>
 
-            {/* ZONE 2 — DISTRIBUTION */}
-            <Box sx={{ p: 2.5, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2, mb: 2 }}>
-              <MarginBar min={summary.min_margin_pct} avg={summary.avg_margin_pct} max={summary.max_margin_pct} />
-            </Box>
+            {/* ZONE 3 — TABLE */}
+            <Box sx={{ bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
 
-            {/* ZONE 3 — MARGIN TREND CHART */}
-            {trendPoints.length > 0 && (
-            <Box sx={{ background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
-                <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, margin: 3, display: 'block' }}>
-                  Margin Trend — {marginTrend?.days}d
-                </Typography>
-                <ResponsiveContainer width="100%" height={180}>
-                  <LineChart data={trendPoints} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10, fill: 'var(--ink-3)' }}
-                      tickFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10, fill: 'var(--ink-3)' }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `${v}%`}
-                      domain={[0, 100]}
-                    />
-                    <Tooltip
-                      formatter={(value) => [`${Number(value)}%`, 'Avg Margin']}
-                      labelFormatter={(d) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      contentStyle={{
-                        background: pal.cardBg,
-                        border: `1px solid ${pal.border}`,
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <ReferenceLine y={40} stroke={theme.palette.warning.main} strokeDasharray="4 2" strokeWidth={1} />
-                    <Line
-                      type="monotone"
-                      dataKey="avg_margin_pct"
-                      stroke={theme.palette.primary.main}
-                      strokeWidth={2}
-                      dot={false}
-                      activeDot={{ r: 4 }}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, margin: 3, display: 'block' }}>
-                  Dashed line = 40% margin threshold
-                </Typography>
-              </Box>
-            )}
-
-            {/* ZONE 4 — VIEW TOGGLE + BREAKDOWN */}
-            <Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '24px', mb: 2 }}>
-                <ToggleButtonGroup value={viewMode} exclusive onChange={(_e, val) => val && setViewMode(val)} size="small">
+              {/* TABLE CONTROLS */}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider' }}>
+                <ToggleButtonGroup value={viewMode} exclusive onChange={(_e, val) => { if (val) { setViewMode(val); setOrderPage(0); setSkuPage(0); } }} size="small">
                   <ToggleButton value="orders">By Order</ToggleButton>
                   <ToggleButton value="sku">By SKU</ToggleButton>
                 </ToggleButtonGroup>
                 {viewMode === 'orders' && (
-                  <ToggleButtonGroup value={statusFilter} exclusive onChange={(_e, val) => val && setStatusFilter(val)} size="small">
+                  <ToggleButtonGroup value={statusFilter} exclusive onChange={(_e, val) => { if (val) { setStatusFilter(val); setOrderPage(0); } }} size="small">
                     <ToggleButton value="all">All</ToggleButton>
                     <ToggleButton value="pending">Pending</ToggleButton>
                     <ToggleButton value="fulfilled">Fulfilled</ToggleButton>
@@ -320,21 +323,22 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
               {/* SKU TABLE */}
               {viewMode === 'sku' && (
                 <>
-                  <Box sx={{ display: 'grid', background: pal.cardBg, gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1, borderBottom: '1px solid', borderColor: pal.border }}>
+                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
                     {([
                       { label: 'Product / SKU', field: null },
                       { label: 'Units',         field: 'total_units_sold' },
-                      { label: 'Revenue',        field: 'gross_revenue' },
-                      { label: 'Cost',           field: 'estimated_cost' },
-                      { label: 'Margin',         field: 'gross_margin' },
-                      { label: 'Margin %',       field: 'margin_pct' },
+                      { label: 'Revenue',       field: 'gross_revenue' },
+                      { label: 'Cost',          field: 'estimated_cost' },
+                      { label: 'Margin',        field: 'gross_margin' },
+                      { label: 'Margin %',      field: 'margin_pct' },
                     ] as { label: string; field: SortField | null }[]).map(({ label, field }) => (
                       <Box key={label} onClick={() => field && toggleSkuSort(field)}
-                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default',
-                          '&:hover': { opacity: field ? 0.7 : 1 } }}>
-                        <Typography variant="caption" color="text.secondary" fontWeight={600}>{label}</Typography>
+                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default', '&:hover': { opacity: field ? 0.7 : 1 } }}>
+                        <Typography variant="caption" color="text.secondary" fontWeight={500}>{label}</Typography>
                         {field && skuSort.field === field && (
-                          <Typography variant="caption" sx={{ color: skuSort.dir === 'asc' ? '#22C55E' : '#EF4444' }}>{skuSort.dir === 'asc' ? '↑' : '↓'}</Typography>
+                          <Typography variant="caption" sx={{ color: skuSort.dir === 'asc' ? theme.palette.success.main : theme.palette.error.main }}>
+                            {skuSort.dir === 'asc' ? '↑' : '↓'}
+                          </Typography>
                         )}
                       </Box>
                     ))}
@@ -342,31 +346,23 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                   {visibleSkus.map((row) => {
                     const isNegative = row.margin_pct < 0;
                     const marginColor =
-                      isNegative            ? '#EF4444' :
-                      row.margin_pct >= 60  ? theme.palette.success.main :
-                      row.margin_pct >= 40  ? theme.palette.warning.main :
-                      theme.palette.error.main;
+                      isNegative           ? theme.palette.error.main :
+                      row.margin_pct >= 60 ? theme.palette.success.main :
+                      row.margin_pct >= 40 ? theme.palette.warning.main :
+                                             theme.palette.error.main;
                     return (
                       <Box key={row.lasyncro_variant_id} sx={{
                         display: 'grid', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px',
-                        px: 2, py: 1.5,
-                        borderBottom: '1px solid', borderColor: pal.border,
-                        borderLeft: isNegative ? '3px solid #EF4444' : '3px solid transparent',
-                        bgcolor: isNegative ? 'rgba(239,68,68,0.06)' : 'transparent',
-                        '&:hover': { bgcolor: isNegative ? 'rgba(239,68,68,0.10)' : pal.tileBg },
+                        px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider',
+                        borderLeft: isNegative ? `3px solid ${theme.palette.error.main}` : '3px solid transparent',
+                        bgcolor: isNegative ? alpha(theme.palette.error.main, 0.06) : 'transparent',
+                        '&:hover': { bgcolor: isNegative ? alpha(theme.palette.error.main, 0.10) : 'action.hover' },
                       }}>
                         <Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="body2" fontWeight={500}>{row.title ?? '—'}</Typography>
                             {isNegative && (
-                              <Box component="span" sx={{
-                                px: '5px', py: '1px',
-                                bgcolor: 'rgba(239,68,68,0.12)',
-                                border: '1px solid rgba(239,68,68,0.3)',
-                                borderRadius: '4px',
-                                fontSize: 9, fontWeight: 700, color: '#EF4444',
-                                letterSpacing: '0.04em',
-                              }}>
+                              <Box component="span" sx={{ px: '5px', py: '1px', bgcolor: alpha(theme.palette.error.main, 0.12), border: `0.5px solid ${alpha(theme.palette.error.main, 0.3)}`, borderRadius: '4px', fontSize: 9, fontWeight: 500, color: theme.palette.error.main, letterSpacing: '0.04em' }}>
                                 LOSING MONEY
                               </Box>
                             )}
@@ -377,7 +373,7 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                         <Typography variant="body2">{fmt(row.gross_revenue)}</Typography>
                         <Typography variant="body2">{fmt(row.estimated_cost)}</Typography>
                         <Typography variant="body2">{fmt(row.gross_margin)}</Typography>
-                        <Typography variant="body2" fontWeight={600} sx={{ color: marginColor }}>{row.margin_pct}%</Typography>
+                        <Typography variant="body2" fontWeight={500} sx={{ color: marginColor }}>{row.margin_pct}%</Typography>
                       </Box>
                     );
                   })}
@@ -386,24 +382,13 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                       <Typography variant="body2" color="text.secondary">No SKU margin data available.</Typography>
                     </Box>
                   )}
-                  {sortedSkus.length > 20 && (
-                    <Box sx={{ py: 2, textAlign: 'center', borderTop: `1px solid ${pal.border}` }}>
-                      <Typography
-                        onClick={() => setShowAllSkus(p => !p)}
-                        sx={{ fontSize: 12, fontWeight: 600, color: '#6366F1', cursor: 'pointer',
-                          '&:hover': { textDecoration: 'underline' } }}
-                      >
-                        {showAllSkus ? 'Show top 20' : `Show all ${sortedSkus.length} SKUs`}
-                      </Typography>
-                    </Box>
-                  )}
                 </>
               )}
 
               {/* ORDER TABLE */}
               {viewMode === 'orders' && (
                 <>
-                  <Box sx={{ display: 'grid', background: pal.cardBg, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '1px solid', borderColor: pal.border }}>
+                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
                     {([
                       { label: 'Order',    field: null },
                       { label: 'Revenue',  field: 'gross_revenue' },
@@ -413,11 +398,12 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                       { label: 'Status',   field: 'fulfillment_status' },
                     ] as { label: string; field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | null }[]).map(({ label, field }) => (
                       <Box key={label} onClick={() => field && toggleOrderSort(field)}
-                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default',
-                          '&:hover': { opacity: field ? 0.7 : 1 } }}>
-                        <Typography variant="caption" color="text.secondary" fontWeight={600}>{label}</Typography>
+                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default', '&:hover': { opacity: field ? 0.7 : 1 } }}>
+                        <Typography variant="caption" color="text.secondary" fontWeight={500}>{label}</Typography>
                         {field && orderSort.field === field && (
-                          <Typography variant="caption" sx={{ color: orderSort.dir === 'asc' ? '#22C55E' : '#EF4444' }}>{orderSort.dir === 'asc' ? '↑' : '↓'}</Typography>
+                          <Typography variant="caption" sx={{ color: orderSort.dir === 'asc' ? theme.palette.success.main : theme.palette.error.main }}>
+                            {orderSort.dir === 'asc' ? '↑' : '↓'}
+                          </Typography>
                         )}
                       </Box>
                     ))}
@@ -426,12 +412,12 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                     const marginPct = Number(order.margin_pct);
                     const marginColor = marginPct >= 60 ? theme.palette.success.main : marginPct >= 40 ? theme.palette.warning.main : theme.palette.error.main;
                     return (
-                      <Box key={order.order_id} sx={{ display: 'grid', background: pal.chartBg, gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '1px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
+                      <Box key={order.order_id} sx={{ display: 'grid', bgcolor: 'background.default', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{order.order_id.slice(0, 8).toUpperCase()}</Typography>
                         <Typography variant="body2">{fmt(Number(order.gross_revenue))}</Typography>
                         <Typography variant="body2">{fmt(Number(order.estimated_cost))}</Typography>
                         <Typography variant="body2">{fmt(Number(order.gross_margin))}</Typography>
-                        <Typography variant="body2" fontWeight={600} sx={{ color: marginColor }}>{marginPct}%</Typography>
+                        <Typography variant="body2" fontWeight={500} sx={{ color: marginColor }}>{marginPct}%</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{order.fulfillment_status ?? '—'}</Typography>
                       </Box>
                     );
@@ -443,6 +429,39 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                   )}
                 </>
               )}
+
+              {/* PAGINATION FOOTER */}
+              {(() => {
+                const pageCount = viewMode === 'orders' ? orderPageCount : skuPageCount;
+                const page      = viewMode === 'orders' ? orderPage     : skuPage;
+                const setPage   = viewMode === 'orders' ? setOrderPage  : setSkuPage;
+                const total     = viewMode === 'orders' ? sortedOrders.length : sortedSkus.length;
+                if (pageCount <= 1) return null;
+                return (
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2, py: 1, borderTop: '0.5px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
+                    <Typography variant="caption" color="text.secondary">
+                      {page * PER_PAGE + 1}–{Math.min((page + 1) * PER_PAGE, total)} of {total}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Box component="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', color: 'text.secondary', cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}>
+                        ← Prev
+                      </Box>
+                      {Array.from({ length: pageCount }, (_, i) => (
+                        <Box key={i} component="button" onClick={() => setPage(i)}
+                          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i === page ? 'primary.main' : 'divider', borderRadius: 1, bgcolor: i === page ? 'primary.main' : 'background.paper', color: i === page ? '#fff' : 'text.secondary', cursor: 'pointer' }}>
+                          {i + 1}
+                        </Box>
+                      ))}
+                      <Box component="button" onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page === pageCount - 1}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', color: 'text.secondary', cursor: page === pageCount - 1 ? 'default' : 'pointer', opacity: page === pageCount - 1 ? 0.4 : 1 }}>
+                        Next →
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })()}
+
             </Box>
           </>
         )}

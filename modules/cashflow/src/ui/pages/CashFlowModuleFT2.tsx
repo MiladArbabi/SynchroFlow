@@ -2,10 +2,9 @@
 import { useState } from 'react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 import {
-  Box, Typography, useTheme,
+  Box, Typography, useTheme, alpha,
   TextField, Button, Collapse,
 } from '@mui/material';
-import { useColorScheme, alpha } from '@mui/material/styles';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
@@ -89,40 +88,27 @@ export type CashFlowModuleFT2Props = {
   onSaveSettings?: (updates: { monthly_overhead_amount?: number; starting_cash_balance?: number }) => Promise<void>;
 };
 
-// ─────────────────────────────────────────────
-// THEME HOOK
-// ─────────────────────────────────────────────
-function useCashFlowTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return {
-    isDark,
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-    gridColor:   isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
-  };
-}
+// surface tokens → theme.palette.* and MUI sx shorthands throughout (no custom theme hook)
 
 // ─────────────────────────────────────────────
 // CUSTOM TOOLTIP
 // ─────────────────────────────────────────────
 function ProjectionTooltip({ active, payload, label, fmt }: any) {
-  const pal = useCashFlowTheme();
+  const theme = useTheme();
   if (!active || !payload?.length) return null;
   const date = new Date(label).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   return (
     <Box sx={{
-      background: pal.cardBg, border: `1px solid ${pal.border}`,
+      bgcolor: 'background.paper',
+      border: '0.5px solid',
+      borderColor: 'divider',
       borderRadius: '8px', p: 1.5, minWidth: 160,
     }}>
-      <Typography sx={{ fontSize: 11, color: pal.textSecond, mb: 1 }}>{date}</Typography>
+      <Typography sx={{ fontSize: 11, color: theme.palette.text.secondary, mb: 1 }}>{date}</Typography>
       {payload.map((entry: any) => (
         <Box key={entry.name} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2, mb: 0.25 }}>
           <Typography sx={{ fontSize: 11, color: entry.color }}>{entry.name}</Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, color: entry.color }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 500, color: entry.color }}>
             {entry.value >= 0 ? '+' : ''}{fmt(entry.value)}
           </Typography>
         </Box>
@@ -137,18 +123,20 @@ function ProjectionTooltip({ active, payload, label, fmt }: any) {
 function MetricTile({ label, value, sub, tone }: {
   label: string; value: string; sub?: string; tone?: 'positive' | 'negative' | 'warning' | 'neutral';
 }) {
-  const theme = useTheme();
-  const pal = useCashFlowTheme();
-  const color = tone === 'positive' ? theme.palette.success.main
-    : tone === 'negative' ? theme.palette.error.main
-    : tone === 'warning' ? theme.palette.warning.main
-    : pal.textPrimary;
+  const muiColor =
+    tone === 'positive' ? 'success.main' :
+    tone === 'negative' ? 'error.main'   :
+    tone === 'warning'  ? 'warning.main' :
+    'text.primary';
 
   return (
-    <Box sx={{ background: pal.tileBg, borderRadius: '6px', p: '0.6rem 0.75rem', flex: 1, minWidth: 0 }}>
-      <Typography sx={{ fontSize: 16, fontWeight: 600, color, lineHeight: 1.2 }}>{value}</Typography>
-      <Typography sx={{ fontSize: 10, color: pal.textSecond, mt: '2px' }}>{label}</Typography>
-      {sub && <Typography sx={{ fontSize: 10, color, mt: '1px' }}>{sub}</Typography>}
+    <Box sx={{ bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2, p: 2.5, flex: 1, minWidth: 0 }}>
+      <Typography variant="caption" color="text.secondary"
+        sx={{ fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em', mb: 0.75, display: 'block' }}>
+        {label}
+      </Typography>
+      <Typography variant="h5" fontWeight={500} color={muiColor} sx={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>{value}</Typography>
+      {sub && <Typography variant="caption" color={muiColor} sx={{ display: 'block', mt: 0.5 }}>{sub}</Typography>}
     </Box>
   );
 }
@@ -157,15 +145,14 @@ function MetricTile({ label, value, sub, tone }: {
 // MAIN EXPORT
 // ─────────────────────────────────────────────
 function CashFlowModuleFT2Inner({
-  data, 
-  isLoading, 
-  isError, 
-  currency, 
-  settings, 
-  onSaveSettings 
+  data,
+  isLoading,
+  isError,
+  currency,
+  settings,
+  onSaveSettings,
 }: CashFlowModuleFT2Props) {
   const theme = useTheme();
-  const pal = useCashFlowTheme();
   const [activeScenario, setActiveScenario] = useState<'all' | 'base'>('all');
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [whatIfAmount, setWhatIfAmount] = useState('');
@@ -187,7 +174,6 @@ function CashFlowModuleFT2Inner({
   const totalPoCommitments = poOutflows.reduce((s, p) => s + p.total_cost, 0);
   const atRiskRevenue = summary?.at_risk_revenue ?? 0;
 
-  // Chart data — format week label
   const chartData = projection.map(p => ({
     ...p,
     label: new Date(p.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -209,352 +195,274 @@ function CashFlowModuleFT2Inner({
     };
   });
 
-  return (
+return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
 
-      {/* ── PO IMPACT CALCULATOR ── */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-        <Button
-          size="small"
-          variant={whatIfOpen ? 'contained' : 'outlined'}
-          onClick={() => { setWhatIfOpen(v => !v); setWhatIfAmount(''); setWhatIfDate(''); }}
-          sx={{
-            fontSize: 12, borderRadius: '8px',
-            bgcolor: whatIfOpen ? 'var(--accent)' : 'transparent',
-            borderColor: 'var(--accent)',
-            color: whatIfOpen ? '#fff' : 'var(--accent)',
-            '&:hover': { bgcolor: whatIfOpen ? 'var(--accent-hover)' : 'var(--accent-ghost)' },
-          }}
-        >
-          {whatIfOpen ? '✕ Close' : '＋ Plan a new order'}
-        </Button>
-      </Box>
-
-      <Collapse in={whatIfOpen}>
-        <Box sx={{
-          mb: 2, p: '1rem 1.25rem',
-          background: 'var(--accent-ghost)',
-          border: '1px solid var(--accent-border)',
-          borderRadius: '12px',
-        }}>
-          {/* HEADER */}
-          <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', mb: '4px' }}>
-            Plan a new stock order
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: pal.textSecond, mb: '1rem' }}>
-            Enter your order details below to see how it affects your cash over the next 60 days.
-          </Typography>
-
-          {/* INPUTS */}
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <TextField
-              size="small"
-              label="Total cost of order"
-              placeholder="e.g. 5000"
-              type="number"
-              value={whatIfAmount}
-              onChange={e => setWhatIfAmount(e.target.value)}
-              sx={{ width: 180 }}
-              inputProps={{ min: 0 }}
-              helperText="How much you'll pay the supplier"
-            />
-            <TextField
-              size="small"
-              label="Payment due date"
-              type="date"
-              value={whatIfDate}
-              onChange={e => setWhatIfDate(e.target.value)}
-              sx={{ width: 180 }}
-              InputLabelProps={{ shrink: true }}
-              helperText="When the payment leaves your account"
-            />
-          </Box>
-
-          {/* RESULT */}
-          {whatIfImpact > 0 && (() => {
-            const lowestPoint = whatIfChartData.reduce((min, p) =>
-              p.base < min.base ? p : min, whatIfChartData[0]);
-            const goesNegative = whatIfChartData.some(p => p.base < 0);
-            return (
-              <Box sx={{
-                mt: '1rem', p: '0.75rem 1rem',
-                bgcolor: goesNegative ? 'rgba(220,38,38,0.08)' : 'rgba(22,163,74,0.08)',
-                border: `1px solid ${goesNegative ? '#DC2626' : '#16A34A'}`,
-                borderRadius: '8px',
-              }}>
-                <Typography sx={{
-                  fontSize: 13, fontWeight: 700,
-                  color: goesNegative ? '#DC2626' : '#16A34A',
-                  mb: '2px',
-                }}>
-                  {goesNegative
-                    ? '⚠ This order may put you in the red'
-                    : '✓ You can afford this order'}
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond }}>
-                  {goesNegative
-                    ? `Your lowest cash point would be ${fmt(lowestPoint?.base ?? 0)} around ${lowestPoint ? new Date(lowestPoint.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}. Consider waiting or splitting the order.`
-                    : `Your cash stays above zero. Lowest point: ${fmt(lowestPoint?.base ?? 0)} around ${lowestPoint ? new Date(lowestPoint.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}.`
-                  }
-                </Typography>
-                <Typography sx={{ fontSize: 10, color: pal.textSecond, mt: '4px', opacity: 0.7 }}>
-                  Based on your order revenue only — does not include rent, salaries, or other fixed costs.
-                </Typography>
-              </Box>
-            );
-          })()}
+      {/* ── ROW 1: PRIMARY KPIs ── */}
+      {summary && gp && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, mb: 1 }}>
+          <MetricTile label="Net position"    value={fmt(summary.net_cash_position)}   tone="positive" />
+          <MetricTile
+            label="Gross profit"
+            value={fmt(gp.gross_profit)}
+            sub={gp.gross_margin_pct != null ? `${gp.gross_margin_pct}% margin` : undefined}
+            tone={gp.gross_margin_pct != null && gp.gross_margin_pct < 20 ? 'warning' : 'positive'}
+          />
+          <MetricTile label="Working capital" value={fmt(summary.working_capital_locked)} tone="neutral" />
+          <MetricTile label="Inventory value" value={fmt(summary.inventory_value)}      tone="neutral" />
         </Box>
-      </Collapse>
+      )}
 
-      {/* ── OVERHEAD SETTINGS ── */}
-      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
-        <Button
-          size="small"
-          variant="text"
-          onClick={() => {
-            setSettingsOpen(v => !v);
-            setOverheadInput(String(settings?.monthly_overhead_amount ?? ''));
-            setBalanceInput(String(settings?.starting_cash_balance ?? ''));
-          }}
-          sx={{ fontSize: 11, color: pal.textSecond }}
-        >
-          ⚙ Adjust for your costs
-        </Button>
-      </Box>
+      {/* ── ROW 2: SNAPSHOT STRIP ── */}
+      {summary && (
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 1, mb: 2 }}>
+          <MetricTile label="Realized"     value={fmt(summary.realized_revenue)}                                        tone="positive" />
+          <MetricTile label="Pending"      value={fmt(summary.pending_revenue)}                                         tone="neutral" />
+          <MetricTile label="At risk"      value={fmt(summary.at_risk_revenue)}  tone={summary.at_risk_revenue > 0 ? 'warning' : 'neutral'} />
+          <MetricTile label="Refunded"     value={fmt(summary.total_refunded)}                                          tone="negative" />
+          {gp && <MetricTile label="Cost of goods"  value={`−${fmt(gp.total_cogs)}`}   tone="negative" />}
+          {gp && <MetricTile label="Gross revenue"  value={fmt(gp.gross_revenue)}       tone="neutral"  />}
+        </Box>
+      )}
 
-      <Collapse in={settingsOpen}>
+      {/* ── BLOCKED ORDERS SIGNAL (conditional) ── */}
+      {atRiskRevenue > 0 && (
         <Box sx={{
-          mb: 2, p: '1rem 1.25rem',
-          background: pal.tileBg,
-          border: `0.5px solid ${pal.border}`,
-          borderRadius: '12px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          mb: 2, p: '0.65rem 1.25rem',
+          bgcolor: alpha(theme.palette.success.main, 0.06),
+          border: '0.5px solid', borderColor: alpha(theme.palette.success.main, 0.25),
+          borderRadius: '10px',
         }}>
-          <Typography sx={{ fontSize: 13, fontWeight: 600, color: pal.textPrimary, mb: '4px' }}>
-            Make this projection more accurate
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: pal.textSecond, mb: '1rem' }}>
-            Add your fixed monthly costs and current bank balance. This stays private and only affects your chart.
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-            <TextField
-              size="small"
-              label="Monthly fixed costs"
-              placeholder="e.g. 5000"
-              type="number"
-              value={overheadInput}
-              onChange={e => setOverheadInput(e.target.value)}
-              sx={{ width: 200 }}
-              inputProps={{ min: 0 }}
-              helperText="Rent, salaries, subscriptions"
-            />
-            <TextField
-              size="small"
-              label="Current bank balance"
-              placeholder="e.g. 25000"
-              type="number"
-              value={balanceInput}
-              onChange={e => setBalanceInput(e.target.value)}
-              sx={{ width: 200 }}
-              helperText="Your cash today"
-            />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TrendingUp size={14} color={theme.palette.success.main} />
+            <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>
+              <Box component="span" sx={{ fontWeight: 500, color: 'success.main' }}>+{fmt(atRiskRevenue)}</Box>
+              {' '}unlockable — {byConstraint.reduce((s, c) => s + c.orders, 0)} constrained orders blocking revenue
+            </Typography>
+          </Box>
+          <Box component="a" href="/orders?filter=blocked"
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', textDecoration: 'none' }}>
+            <Typography sx={{ fontSize: 11, color: 'primary.main', fontWeight: 500 }}>Review blocked orders</Typography>
+            <ArrowRight size={11} color={theme.palette.primary.main} />
+          </Box>
+        </Box>
+      )}
+
+      {/* ── TWO-COLUMN MAIN ── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '2fr 3fr' }, gap: 2, alignItems: 'stretch' }}>
+
+        {/* LEFT — PO COMMITMENTS */}
+        <Box sx={{ bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: '12px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <Box sx={{ p: '0.75rem 1.25rem', borderBottom: '0.5px solid', borderBottomColor: 'divider' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Truck size={13} color={theme.palette.warning.main} />
+              <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Upcoming PO commitments
+              </Typography>
+            </Box>
+          </Box>
+          <Box sx={{ p: '0.85rem 1.25rem', flex: 1 }}>
+            {totalPoCommitments > 0 ? (
+              <>
+                <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'warning.main' }}>−{fmt(totalPoCommitments)}</Typography>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: '2px', mb: 1.5 }}>
+                  {poOutflows.length} open PO{poOutflows.length > 1 ? 's' : ''} — upcoming cash outflows
+                </Typography>
+                {poOutflows.map(p => (
+                  <Box key={p.po_id} sx={{ display: 'flex', justifyContent: 'space-between', py: '6px', borderTop: '0.5px solid', borderColor: 'divider' }}>
+                    <Typography sx={{ fontSize: 12, color: 'text.primary' }}>{p.supplier_name}</Typography>
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'warning.main' }}>−{fmt(p.total_cost)}</Typography>
+                      {p.expected_delivery_date && (
+                        <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>
+                          {new Date(p.expected_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+              </>
+            ) : (
+              <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>No open PO commitments.</Typography>
+            )}
+          </Box>
+          {/* Plan a new order — contextually placed in PO card footer */}
+          <Box sx={{ p: '0.75rem 1.25rem', borderTop: '0.5px solid', borderTopColor: 'divider' }}>
             <Button
-              size="small"
-              variant="contained"
-              disabled={settingsSaving}
-              onClick={async () => {
-                if (!onSaveSettings) return;
-                setSettingsSaving(true);
-                try {
-                  await onSaveSettings({
-                    ...(overheadInput !== '' ? { monthly_overhead_amount: Number(overheadInput) } : {}),
-                    ...(balanceInput !== '' ? { starting_cash_balance: Number(balanceInput) } : {}),
-                  });
-                  setSettingsOpen(false);
-                } finally {
-                  setSettingsSaving(false);
-                }
-              }}
-              sx={{
-                bgcolor: 'var(--accent)', color: '#fff',
-                '&:hover': { bgcolor: 'var(--accent-hover)' },
-                borderRadius: '8px', mb: '20px',
-              }}
+              size="small" fullWidth variant="outlined"
+              onClick={() => { setWhatIfOpen(v => !v); setWhatIfAmount(''); setWhatIfDate(''); }}
+              sx={{ fontSize: 12, borderRadius: '8px', borderColor: 'divider', color: 'text.secondary',
+                '&:hover': { borderColor: 'divider', bgcolor: 'action.hover' } }}
             >
-              {settingsSaving ? 'Saving…' : 'Save'}
+              {whatIfOpen ? '✕ Cancel' : '+ Plan a new order'}
             </Button>
           </Box>
-          {settings?.monthly_overhead_amount && (
-            <Typography sx={{ fontSize: 10, color: pal.textSecond, mt: '4px' }}>
-              Currently deducting {fmt(settings.monthly_overhead_amount / 4.33)}/week from projection
-              {settings.starting_cash_balance ? ` · Starting balance: ${fmt(settings.starting_cash_balance)}` : ''}
-            </Typography>
-          )}
         </Box>
-      </Collapse>
 
-      {/* ── ZONE 1: 60-DAY PROJECTION ── */}
-      <Box sx={{ background: pal.cardBg, border: `0.5px solid ${pal.border}`, borderRadius: '12px', overflow: 'hidden', mb: 2 }}>
-        <Box sx={{ p: '1rem 1.25rem', borderBottom: `0.5px solid ${pal.border}` }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: '4px' }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              60-Day Cash Projection
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1.5 }}>
-              {[
-                { key: '#DC2626', label: 'Conservative' },
-                { key: '#2563EB', label: 'Base' },
-                { key: '#16A34A', label: 'Optimistic' },
-              ].map(({ key, label }) => (
-                <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Box sx={{ width: 12, height: 2, background: key, borderRadius: 1 }} />
-                  <Typography sx={{ fontSize: 10, color: pal.textSecond }}>{label}</Typography>
+        {/* RIGHT — 60-DAY PROJECTION CHART */}
+        <Box sx={{ bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: '12px', overflow: 'hidden' }}>
+          <Box sx={{ p: '0.75rem 1.25rem', borderBottom: '0.5px solid', borderBottomColor: 'divider' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: '4px' }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                60-Day Cash Projection
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Box sx={{ display: 'flex', gap: 1.5 }}>
+                  {[
+                    { stroke: '#DC2626', label: 'Conservative' },
+                    { stroke: '#2563EB', label: 'Base' },
+                    { stroke: '#16A34A', label: 'Optimistic' },
+                  ].map(({ stroke, label }) => (
+                    <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Box sx={{ width: 12, height: 2, background: stroke, borderRadius: 1 }} />
+                      <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>{label}</Typography>
+                    </Box>
+                  ))}
                 </Box>
-              ))}
+                {/* Adjust for costs — subtle link in chart header */}
+                <Button size="small" variant="text"
+                  onClick={() => { setWhatIfOpen(v => !v); setWhatIfAmount(''); setWhatIfDate(''); }}
+                  sx={{ fontSize: 10, color: 'text.secondary', minWidth: 0, p: '2px 6px' }}
+                >
+                  ⚙ Adjust
+                </Button>
+              </Box>
             </Box>
+            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+              Projected cumulative cash change from today — based on current velocity and known PO commitments.
+            </Typography>
           </Box>
-          <Typography sx={{ fontSize: 12, color: pal.textSecond }}>
-            Projected cumulative cash change from today — based on current velocity and known PO commitments.
-          </Typography>
+          <Box sx={{ p: '1rem 0.5rem 0.5rem' }}>
+            {isLoading ? (
+              <ModuleLoadingSkeleton rows={3} height={32} />
+            ) : chartData.length === 0 ? (
+              <Box sx={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>Not enough data for projection.</Typography>
+              </Box>
+            ) : (
+              <ResponsiveContainer width="100%" height={260}>
+                <LineChart data={whatIfChartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10, fill: theme.palette.text.secondary }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 10, fill: theme.palette.text.secondary }} axisLine={false} tickLine={false} tickFormatter={(v) => fmt(v)} />
+                  <Tooltip content={<ProjectionTooltip fmt={fmt} />} />
+                  <ReferenceLine y={0} stroke={theme.palette.divider} strokeDasharray="4 2" />
+                  {/* FIN-10: recharts stroke must be a resolved color value, CSS vars unsupported */}
+                  <Line type="monotone" dataKey="conservative" name="Conservative" stroke="#DC2626" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  <Line type="monotone" dataKey="base"         name="Base"         stroke="#2563EB" strokeWidth={2}   dot={false} />
+                  <Line type="monotone" dataKey="optimistic"   name="Optimistic"   stroke="#16A34A" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                  {whatIfOpen && whatIfImpact > 0 && (
+                    <Line type="monotone" dataKey="base" name="Base (with PO)" stroke="#FF6B2B" strokeWidth={2} dot={false} strokeDasharray="6 3" />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </Box>
         </Box>
 
-        <Box sx={{ p: '1rem 0.5rem 0.5rem' }}>
-          {isLoading ? (
-            <ModuleLoadingSkeleton rows={3} height={32} />
-          ) : chartData.length === 0 ? (
-            <Box sx={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Typography sx={{ fontSize: 13, color: pal.textSecond }}>Not enough data for projection.</Typography>
-            </Box>
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={whatIfChartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={pal.gridColor} />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fontSize: 10, fill: pal.textSecond }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 10, fill: pal.textSecond }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => fmt(v)}
-                />
-                <Tooltip content={<ProjectionTooltip fmt={fmt} />} />
-                <ReferenceLine y={0} stroke={pal.border} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="conservative" name="Conservative" stroke="#DC2626" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-                <Line type="monotone" dataKey="base" name="Base" stroke="#2563EB" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="optimistic" name="Optimistic" stroke="#16A34A" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
-                {whatIfOpen && whatIfImpact > 0 && (
-                  <>
-                    <Line type="monotone" dataKey="base" name="Base (with PO)" stroke="#FF6B2B" strokeWidth={2} dot={false} strokeDasharray="6 3" />
-                  </>
-                )}
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </Box>
       </Box>
 
-      {/* ── ZONE 2: GROSS PROFIT ── */}
-      {gp && (
-        <Box sx={{ background: pal.cardBg, border: `0.5px solid ${pal.border}`, borderRadius: '12px', overflow: 'hidden', mb: 2 }}>
-          <Box sx={{ p: '0.75rem 1.25rem', borderBottom: `0.5px solid ${pal.border}` }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Gross Profit Reality
-            </Typography>
-          </Box>
-          <Box sx={{ p: '0.85rem 1.25rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <MetricTile label="Gross Revenue" value={fmt(gp.gross_revenue)} tone="neutral" />
-            <MetricTile label="Cost of Goods" value={`−${fmt(gp.total_cogs)}`} tone="negative" />
-            <MetricTile
-              label="Gross Profit"
-              value={fmt(gp.gross_profit)}
-              sub={gp.gross_margin_pct != null ? `${gp.gross_margin_pct}% margin` : undefined}
-              tone={gp.gross_margin_pct != null && gp.gross_margin_pct < 20 ? 'warning' : 'positive'}
-            />
-            <MetricTile label="Net Position" value={fmt(summary?.net_cash_position ?? 0)} tone="neutral" />
-          </Box>
-        </Box>
-      )}
+      {/* ── PLAN ORDER + PROJECTION ACCURACY — merged two-column panel ── */}
+      <Collapse in={whatIfOpen}>
+        <Box sx={{ mt: 2, border: '0.5px solid var(--accent-border)', borderRadius: '12px', overflow: 'hidden' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 0 }}>
 
-      {/* ── ZONE 3: ACTION IMPACT ── */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, mb: 2 }}>
-
-        {/* Blocked order release */}
-        {atRiskRevenue > 0 && (
-          <Box sx={{ background: pal.cardBg, border: `0.5px solid ${alpha(theme.palette.success.main, 0.3)}`, borderRadius: '12px', p: '0.85rem 1.25rem' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <TrendingUp size={14} color={theme.palette.success.main} />
-              <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'success.main' }}>Release blocked orders</Typography>
-            </Box>
-            <Typography sx={{ fontSize: 20, fontWeight: 700, color: 'success.main' }}>+{fmt(atRiskRevenue)}</Typography>
-            <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '2px' }}>
-              {byConstraint.reduce((s, c) => s + c.orders, 0)} constrained orders — resolve to unblock revenue
-            </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mt: 1, cursor: 'pointer' }}
-              component="a" href="/orders?filter=blocked">
-              <Typography sx={{ fontSize: 11, color: theme.palette.primary.main, fontWeight: 500 }}>Review blocked orders</Typography>
-              <ArrowRight size={11} color={theme.palette.primary.main} />
-            </Box>
-          </Box>
-        )}
-
-        {/* PO commitments */}
-        <Box sx={{ background: pal.cardBg, border: `0.5px solid ${pal.border}`, borderRadius: '12px', p: '0.85rem 1.25rem' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <Truck size={14} color={theme.palette.warning.main} />
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'warning.main' }}>Upcoming PO commitments</Typography>
-          </Box>
-          {totalPoCommitments > 0 ? (
-            <>
-              <Typography sx={{ fontSize: 20, fontWeight: 700, color: 'warning.main' }}>−{fmt(totalPoCommitments)}</Typography>
-              <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '2px', mb: 1 }}>
-                {poOutflows.length} open PO{poOutflows.length > 1 ? 's' : ''} — upcoming cash outflows
+            {/* LEFT — Plan a new order */}
+            <Box sx={{ p: '1rem 1.25rem', background: 'var(--accent-ghost)', borderRight: { md: '0.5px solid var(--accent-border)' } }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent)', mb: '4px' }}>
+                Plan a new stock order
               </Typography>
-              {poOutflows.slice(0, 3).map(p => (
-                <Box key={p.po_id} sx={{ display: 'flex', justifyContent: 'space-between', py: '3px', borderTop: `0.5px solid ${pal.border}` }}>
-                  <Typography sx={{ fontSize: 11, color: pal.textPrimary }}>{p.supplier_name}</Typography>
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'warning.main' }}>−{fmt(p.total_cost)}</Typography>
-                    {p.expected_delivery_date && (
-                      <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
-                        {new Date(p.expected_delivery_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Typography>
-                    )}
+              <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: '1rem' }}>
+                Enter order details to see how it shifts your 60-day cash outlook.
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  size="small" label="Total cost of order" placeholder="e.g. 5000"
+                  type="number" value={whatIfAmount} onChange={e => setWhatIfAmount(e.target.value)}
+                  fullWidth inputProps={{ min: 0 }} helperText="How much you'll pay the supplier"
+                />
+                <TextField
+                  size="small" label="Payment due date" type="date"
+                  value={whatIfDate} onChange={e => setWhatIfDate(e.target.value)}
+                  fullWidth InputLabelProps={{ shrink: true }}
+                  helperText="When the payment leaves your account"
+                />
+              </Box>
+              {whatIfImpact > 0 && (() => {
+                const lowestPoint = whatIfChartData.reduce((min, p) => p.base < min.base ? p : min, whatIfChartData[0]);
+                const goesNegative = whatIfChartData.some(p => p.base < 0);
+                return (
+                  <Box sx={{
+                    mt: '1rem', p: '0.75rem 1rem',
+                    bgcolor: goesNegative ? alpha(theme.palette.error.main, 0.08) : alpha(theme.palette.success.main, 0.08),
+                    border: '0.5px solid', borderColor: goesNegative ? 'error.main' : 'success.main',
+                    borderRadius: '8px',
+                  }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: goesNegative ? 'error.main' : 'success.main', mb: '2px' }}>
+                      {goesNegative ? '⚠ This order may put you in the red' : '✓ You can afford this order'}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                      {goesNegative
+                        ? `Lowest cash point: ${fmt(lowestPoint?.base ?? 0)} around ${lowestPoint ? new Date(lowestPoint.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}. Consider waiting or splitting.`
+                        : `Cash stays above zero. Lowest point: ${fmt(lowestPoint?.base ?? 0)} around ${lowestPoint ? new Date(lowestPoint.week).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}.`
+                      }
+                    </Typography>
+                    <Typography sx={{ fontSize: 10, color: 'text.secondary', mt: '4px', opacity: 0.7 }}>
+                      Based on order revenue only — excludes rent, salaries, or other fixed costs.
+                    </Typography>
                   </Box>
-                </Box>
-              ))}
-              {poOutflows.length > 3 && (
-                <Typography sx={{ fontSize: 10, color: pal.textSecond, mt: 0.5 }}>
-                  +{poOutflows.length - 3} more POs
+                );
+              })()}
+            </Box>
+
+            {/* RIGHT — Projection accuracy */}
+            <Box sx={{ p: '1rem 1.25rem', bgcolor: 'action.hover' }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary', mb: '4px' }}>
+                Make this projection more accurate
+              </Typography>
+              <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: '1rem' }}>
+                Add fixed monthly costs and your current bank balance. Stays private, only affects your chart.
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <TextField
+                  size="small" label="Monthly fixed costs" placeholder="e.g. 5000"
+                  type="number" value={overheadInput} onChange={e => setOverheadInput(e.target.value)}
+                  fullWidth inputProps={{ min: 0 }} helperText="Rent, salaries, subscriptions"
+                />
+                <TextField
+                  size="small" label="Current bank balance" placeholder="e.g. 25000"
+                  type="number" value={balanceInput} onChange={e => setBalanceInput(e.target.value)}
+                  fullWidth helperText="Your cash today"
+                />
+                <Button
+                  size="small" variant="contained" disabled={settingsSaving}
+                  onClick={async () => {
+                    if (!onSaveSettings) return;
+                    setSettingsSaving(true);
+                    try {
+                      await onSaveSettings({
+                        ...(overheadInput !== '' ? { monthly_overhead_amount: Number(overheadInput) } : {}),
+                        ...(balanceInput  !== '' ? { starting_cash_balance:   Number(balanceInput)  } : {}),
+                      });
+                    } finally { setSettingsSaving(false); }
+                  }}
+                  sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' }, borderRadius: '8px', alignSelf: 'flex-start' }}
+                >
+                  {settingsSaving ? 'Saving…' : 'Save'}
+                </Button>
+              </Box>
+              {settings?.monthly_overhead_amount && (
+                <Typography sx={{ fontSize: 10, color: 'text.secondary', mt: '1rem' }}>
+                  Deducting {fmt(settings.monthly_overhead_amount / 4.33)}/week from projection
+                  {settings.starting_cash_balance ? ` · Starting balance: ${fmt(settings.starting_cash_balance)}` : ''}
                 </Typography>
               )}
-            </>
-          ) : (
-            <Typography sx={{ fontSize: 13, color: pal.textSecond }}>No open PO commitments.</Typography>
-          )}
-        </Box>
-      </Box>
+            </Box>
 
-      {/* ── ZONE 4: CURRENT SNAPSHOT ── */}
-      {summary && (
-        <Box sx={{ background: pal.cardBg, border: `0.5px solid ${pal.border}`, borderRadius: '12px', overflow: 'hidden' }}>
-          <Box sx={{ p: '0.75rem 1.25rem', borderBottom: `0.5px solid ${pal.border}` }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Current Snapshot
-            </Typography>
-          </Box>
-          <Box sx={{ p: '0.85rem 1.25rem', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <MetricTile label="Realized" value={fmt(summary.realized_revenue)} tone="positive" />
-            <MetricTile label="Pending" value={fmt(summary.pending_revenue)} tone="neutral" />
-            <MetricTile label="At Risk" value={fmt(summary.at_risk_revenue)} tone={summary.at_risk_revenue > 0 ? 'warning' : 'neutral'} />
-            <MetricTile label="Refunded" value={fmt(summary.total_refunded)} tone="negative" />
-            <MetricTile label="Inventory" value={fmt(summary.inventory_value)} tone="neutral" />
-            <MetricTile label="Working Capital" value={fmt(summary.working_capital_locked)} tone="neutral" />
           </Box>
         </Box>
-      )}
+      </Collapse>
 
       {isLoading && !data && <ModuleLoadingSkeleton />}
 
