@@ -18,6 +18,7 @@ The Problem Center is LaSyncro's physical warehouse exception triage surface. It
 **Core principle:** Every exception in every WMS workflow (pick, pack, stow, receive, returns) produces one outcome: the operator physically moves the item to a designated problem bin, and one `problem_center_tasks` row is created. The owner/admin resolves it. Resolution always has an inventory consequence.
 
 **What it is NOT:**
+
 - Not an order-exception surface (order constraints live in `order_constraints` + Order Nexus)
 - Not an inventory intelligence surface (SKU Gaps handles product-side data quality)
 - Not a customer issue tracker
@@ -125,6 +126,7 @@ pick | pack | stow | receive | returns
 ## 5. PROB Label System [LIVE]
 
 Every task creation atomically:
+
 1. Increments `shop_wms_settings.prob_label_sequence`
 2. Generates label: `PROB-{shopId}-{sequence padded to 4 digits}` (e.g. `PROB-1-0001`)
 3. Creates a `barcode_print_jobs` row for physical label printing
@@ -221,6 +223,7 @@ These are the flows that automatically create `problem_center_tasks` rows:
 **Location:** `modules/problem-center/src/ui/pages/ProblemCenterModuleFT2.tsx`
 
 **Design contract:**
+
 - Table layout matching Returns module (same mental model, different domain)
 - FT2 DS: CSS vars only, 0.5px borders, `fontWeight` max 500, no hardcoded hex
 - Pagination: 10 rows per page, resets on filter change
@@ -239,6 +242,7 @@ Maps `problem_center_tasks` shape → `PickException` contract (legacy type stil
 The resolve button opens a modal. Current modal accepts a **free-text note only** and calls `POST /api/v1/wms/problem-center/pick-exceptions/:exceptionId/resolve` (the **legacy endpoint** — not `httpResolveProblemTask`).
 
 This means:
+
 - Resolution action selector is NOT shown to the user
 - No downstream cascade fires (no stow task created, no inventory movement written)
 - `httpResolveProblemTask` with its full cascade logic is **never called from the frontend**
@@ -349,3 +353,67 @@ All Problem Center UI must comply with LaSyncro FT2 DS:
 | Stage badges | Chip with `sx.backgroundColor` from stage token map (not MUI `color` prop) |
 | Exception badges | MUI `color` prop: `error` \| `warning` \| `default` |
 | Spacing | `var(--space-*)` tokens |
+
+---
+
+## 13. Changelog
+
+### v1.1 — May 27, 2026
+
+**INV-PC-03 — RESOLVED:** Resolve modal rewired to `httpResolveProblemTask`.
+
+- Action selector UI replaces free-text-only modal
+- Options filtered per `exception_type` via `RESOLUTION_OPTIONS` + `forTypes`
+- `DEFAULT_ACTION` map sets sensible default per exception type at dialog open
+- `onResolve(id, action, note)` — action now passed through to backend
+
+**Cascade corrections applied:**
+
+| Action | Previous behaviour | Correct behaviour |
+|---|---|---|
+| `re_stow` | Moved `inventory_truth.location_code` to PROBLEM bin | Creates `stow_tasks` row (`trigger=problem_center`, `source_task_id=taskId`). Item stays in problem bin physically; operator claims and confirms stow task to re-enter inventory. |
+| `quarantine` | Shared branch with `re_stow` | Isolated: moves `inventory_truth.location_code` to problem bin only. No stow task created. |
+| `return` | In `VALID_ACTIONS` + `statusMap` | **Removed entirely.** Not a feasible workflow path — no return job infrastructure exists and shipping cost falls on owner. |
+
+**Schema changes (base migration — dev reset applied):**
+
+- `stow_task_trigger` enum: `problem_center` value added
+- `stow_tasks.source_task_id` (uuid, nullable): links back to originating `problem_center_tasks` row
+
+**Open issues updated:**
+
+- INV-PC-03: ✅ RESOLVED
+- INV-PC-04: ✅ RESOLVED (`re_stow` cascade now creates stow task)
+- INV-PC-05: CLOSED — `return` resolution removed as not feasible
+
+### v1.2 — May 27, 2026
+
+**INV-PC-06 — RECLASSIFIED:** Replacement finder is NOT a Problem Center UI feature.
+
+Replacement suggestions belong contextually inside pick-job and pack-job workflows:
+
+- **Pick job:** Post-pick-list screen shows alternates for unresolved exceptions before handoff to pack (GH issue created)
+- **Pack job:** "Item missing" button creates problem_center_tasks row + ships partial + notifies Problem Center (GH issue created)
+
+The Problem Center remains a supervisor resolution queue only. Operators interact with replacement finder inside their active workflow, not from a supervisor table.
+
+`GET /api/v1/wms/problem-center/:taskId/replacement` endpoint remains valid — will be consumed by pick-job completion screen in the pick-job refinement sprint.
+
+### v1.3 — May 28, 2026
+
+**INV-PC-02 — RESOLVED:** Native `ProblemTask` type replaces legacy `PickException`.
+
+**Type changes:**
+
+| Removed | Added |
+|---|---|
+| `PickException` | `ProblemTask` |
+| `quantity_found` | — |
+| `pick_batch_id` | `prob_label` (maps to `notes` column — PROB label) |
+| `lasyncro_line_item_id` | `problem_bin_location` |
+| `raised_by` | `status` (full enum) |
+| `batch_short_id` | — |
+
+**Table column changes:** REQ → QTY, FOUND removed, BATCH → PROB LABEL, BIN added.
+
+**`useProblemCenter`:** Direct field mapping — no stub values. `total_unresolved` counts `open` + `investigating` status rows only.

@@ -314,3 +314,9 @@ Pick=teal (#14B8A6), Pack=blue (#3B82F6), Stow=purple (#8B5CF6), Receive=amber (
 | ID | Status |
 |---|---|
 | INV-02 (Problem Center) | ✅ RESOLVED — fontWeight max 500 |
+
+### INV-04 — RESOLVED (May 28, 2026)
+`variance_count` and `total_variance_units` now return `0` (not null).
+Root cause was absence of `inventory_truth` data in dev seed — resolved when full_data seed was corrected.
+`0` is the correct signal: inventory data exists, no variance detected.
+Endpoint: `GET /api/v1/modules/products/wms-readiness` (separate from operator-summary).
