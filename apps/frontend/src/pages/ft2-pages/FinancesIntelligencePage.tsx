@@ -10,7 +10,7 @@ import { Box, Typography, LinearProgress, Chip } from '@mui/material';
 import { AlertTriangle, TrendingDown, Lock, CheckCircle } from 'lucide-react';
 import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useFinancesIntelligence } from '../finances/useFinancesIntelligence';
-import { useColorScheme } from '@mui/material/styles';
+import { useColorScheme, useTheme } from '@mui/material/styles';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
@@ -65,6 +65,7 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
   onClick?: () => void;
   severity: 'critical' | 'warning' | 'ok';
 }) {
+  const theme = useTheme();
   const pal = useIntelligenceTheme();
   const borderColor =
     severity === 'critical' ? '#EF4444' :
@@ -85,19 +86,19 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
         <Typography sx={{ fontSize: 12, color: pal.textSecond, mt: 0.25 }}>{detail}</Typography>
       </Box>
       {cta && onClick && (
-        <Typography
+        <Box
           onClick={onClick}
-          sx={{ fontSize: 12, fontWeight: 600, color: '#6366F1', cursor: 'pointer', flexShrink: 0, mt: 0.25,
-            '&:hover': { textDecoration: 'underline' } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: 0.25, '&:hover': { opacity: 0.88 } }}
         >
           {cta} →
-        </Typography>
+        </Box>
       )}
     </Box>
   );
 }
 
 export default function FinancesIntelligencePage() {
+  const theme = useTheme();
   const [range, setRange] = useState<FT2DateRange>({ preset: 'past_30_days', from: null, to: null });
   const intelligenceQuery = useFinancesIntelligence();
   const { displayCurrency, locale } = useEntitlements();
@@ -179,13 +180,12 @@ export default function FinancesIntelligencePage() {
               }}
             />
             {missingCosts > 0 && (
-              <Typography
+              <Box
                 onClick={() => navigate('/inventory/costs')}
-                sx={{ fontSize: 12, color: '#6366F1', mt: 1, cursor: 'pointer', fontWeight: 600,
-                  '&:hover': { textDecoration: 'underline' } }}
+                sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', mt: 1, '&:hover': { opacity: 0.88 } }}
               >
                 Enter missing costs to unlock full margin intelligence →
-              </Typography>
+              </Box>
             )}
           </Box>
         </Box>

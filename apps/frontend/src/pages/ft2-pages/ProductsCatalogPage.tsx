@@ -146,12 +146,12 @@ export default function ProductsCatalogPage({ range }: Props) {
             {sellability.blockedReasons.noSku ?? '—'}
           </Typography>
           {(sellability.blockedReasons.noSku ?? 0) > 0 && (
-            <Typography
+            <Box
               onClick={() => { document.getElementById('no-sku-section')?.scrollIntoView({ behavior: 'smooth' }); }}
-              sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.5, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Fix below →
-            </Typography>
+            </Box>
           )}
         </Box>
         <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '8px', p: '12px 14px' }}>
@@ -160,12 +160,12 @@ export default function ProductsCatalogPage({ range }: Props) {
             {sellability.blockedReasons.zeroStock ?? '—'}
           </Typography>
           {(sellability.blockedReasons.zeroStock ?? 0) > 0 && (
-            <Typography
+            <Box
               onClick={() => navigate('/demand')}
-              sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.5, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               See Demand →
-            </Typography>
+            </Box>
           )}
         </Box>
       </Box>
@@ -223,7 +223,7 @@ export default function ProductsCatalogPage({ range }: Props) {
                         <Typography sx={{ fontSize: 11, fontWeight: 500, color: theme.palette.error.main, flexShrink: 0, minWidth: 80, textAlign: 'right' }}>No SKU</Typography>
                       )}
                       {!hasNoSku && isZeroStock && (
-                        <Typography onClick={(e) => { e.stopPropagation(); navigate('/suppliers'); }} sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0, minWidth: 80, textAlign: 'right', '&:hover': { textDecoration: 'underline' } }}>Reorder →</Typography>
+                        <Box onClick={(e) => { e.stopPropagation(); navigate('/suppliers'); }} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', flexShrink: 0, '&:hover': { opacity: 0.88 } }}>Reorder →</Box>
                       )}
                       {!hasNoSku && !isZeroStock && <Box sx={{ minWidth: 80 }} />}
                     </Box>

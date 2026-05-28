@@ -83,12 +83,12 @@ export default function ProductsWmsReadinessPage() {
             {notPickable ?? '—'}
           </Typography>
           {(notPickable ?? 0) > 0 && (
-            <Typography
+            <Box
               onClick={() => navigate('/inventory/catalog')}
-              sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.5, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Fix in Catalog →
-            </Typography>
+            </Box>
           )}
         </Box>
         {/* No bin location */}
@@ -100,12 +100,12 @@ export default function ProductsWmsReadinessPage() {
             {noBin ?? '—'}
           </Typography>
           {(noBin ?? 0) > 0 && (
-            <Typography
+            <Box
               onClick={() => navigate('/floor-planning')}
-              sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.5, cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               Stow in Warehouse →
-            </Typography>
+            </Box>
           )}
         </Box>
         {/* Variance */}

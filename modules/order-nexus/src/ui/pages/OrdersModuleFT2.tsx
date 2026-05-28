@@ -269,12 +269,12 @@ function StatCard({ label, value, valueColor, cta, ctaHref }: {
         {value}
       </Typography>
       {cta && ctaHref && (
-        <Typography
+        <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.25, '&:hover': { textDecoration: 'underline' } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
         >
           {cta} →
-        </Typography>
+        </Box>
       )}
     </Box>
   );
@@ -478,12 +478,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
               {oldestHours != null && `. Oldest is ${fmtSlaAge(oldestHours)} — every hour is a refund risk.`}
             </Typography>
           </Box>
-          <Typography
+          <Box
             onClick={() => navigate('/fulfillment?filter=blocked')}
-            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.88 } }}
           >
             Review queue →
-          </Typography>
+          </Box>
         </Box>
       )}
 
@@ -619,12 +619,13 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             </Box>
           )}
         </Box>
-        <Typography
+        {/* CTA-004: ghost pill — secondary nav action, intentionally lighter than primary filled CTAs */}
+        <Box
           onClick={() => navigate('/orders')}
-          sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
         >
           View all orders →
-        </Typography>
+        </Box>
       </Box>
 
       {/* Priority confirmation */}
@@ -786,12 +787,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                     : `/fulfillment?order=${order.lasyncro_order_id}`
                 )}
                 sx={{
+                  /* CTA-003: filled accent — matches Review › (Overview) and Receive → (Inbound) */
                   display: 'inline-flex', alignItems: 'center',
                   px: 1.25, py: 0.5,
-                  fontSize: 11, fontWeight: 500, color: 'var(--ink-3)',
-                  border: '0.5px solid var(--rule)', borderRadius: '6px',
+                  fontSize: 11, fontWeight: 500,
+                  bgcolor: 'var(--accent)', color: theme.palette.common.white,
+                  border: 'none', borderRadius: '6px',
                   cursor: 'pointer',
-                  '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+                  '&:hover': { opacity: 0.88 },
                 }}
               >
                 {order.constraintType !== null ? 'Unblock →' : 'Resolve →'}

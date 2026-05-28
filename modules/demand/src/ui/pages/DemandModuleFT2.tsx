@@ -119,10 +119,10 @@ function OrderCTA({ variant }: { variant: DemandVelocity }) {
   return (
     <Button
       size="small"
-      variant="outlined"
+      variant="contained"
       startIcon={<ShoppingCart size={12} />}
       href={href}
-      sx={{ fontSize: 10, py: 0.25, px: 1, minWidth: 0, borderRadius: '6px', whiteSpace: 'nowrap' }}
+      sx={{ fontSize: 10, py: 0.25, px: 1, minWidth: 0, borderRadius: '6px', whiteSpace: 'nowrap', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
     >
       {variant.suggested_reorder_qty ? `Order ${variant.suggested_reorder_qty}` : 'Order'}
     </Button>

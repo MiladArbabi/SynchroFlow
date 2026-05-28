@@ -738,11 +738,11 @@ function PoAccordion({
             {(po.status === 'shipped' || po.status === 'partially_received') && (
               <Button
                 size="small"
-                variant="outlined"
-                color="success"
+                variant="contained"
                 disabled={updatingStatus}
                 startIcon={<CheckCircle size={14} />}
                 onClick={() => void handleReceive()}
+                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
               >
                 Receive via WMS
               </Button>

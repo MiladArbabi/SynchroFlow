@@ -366,15 +366,12 @@ export default function OrdersInboundPage() {
             <Typography sx={{ fontSize: 13, color: 'var(--ink-4)', mb: 1 }}>
               No purchase orders yet.
             </Typography>
-            <Typography
+            <Box
               onClick={() => navigate('/suppliers-portal')}
-              sx={{
-                fontSize: 12, color: 'var(--accent)',
-                cursor: 'pointer', '&:hover': { textDecoration: 'underline' },
-              }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
             >
               Create your first PO in the Suppliers portal →
-            </Typography>
+            </Box>
           </Box>
         ) : (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>

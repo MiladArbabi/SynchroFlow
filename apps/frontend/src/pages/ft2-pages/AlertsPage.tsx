@@ -126,22 +126,20 @@ function AlertCard({ alert, onDismiss }: { alert: Alert; onDismiss: (id: string)
         {/* DEEP LINK */}
         {deepLinkRoute && (
           <Box sx={{ mt: 1 }}>
-            <Typography
-              variant="caption"
-              color="primary"
+            <Box
               sx={{
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 0.5,
-                fontWeight: 600,
-                '&:hover': { textDecoration: 'underline' },
+                display: 'inline-flex', alignItems: 'center',
+                gap: 0.5, px: 1.25, py: 0.5,
+                fontSize: 12, fontWeight: 600,
+                bgcolor: 'var(--accent)', color: theme.palette.common.white,
+                borderRadius: '6px', cursor: 'pointer',
+                '&:hover': { opacity: 0.88 },
               }}
               onClick={() => navigate(deepLinkWithEntity ?? deepLinkRoute ?? '/')}
             >
               Go to {ALERT_TYPE_LABELS[alert.alert_type] ?? 'module'}
               <ArrowRight size={12} />
-            </Typography>
+            </Box>
           </Box>
         )}
       </Box>

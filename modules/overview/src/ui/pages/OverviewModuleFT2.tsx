@@ -441,7 +441,7 @@ function BriefRow({
         <Box
           component="button"
           onClick={() => onNavigate(signal.deepLink)}
-          sx={{ fontSize: 12, fontWeight: 500, px: '10px', py: '5px', borderRadius: '5px', background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.85 } }}
+          sx={{ fontSize: 12, fontWeight: 500, px: '10px', py: '5px', borderRadius: '6px', background: 'var(--accent)', color: theme.palette.common.white, border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
         >
           {signal.priority <= 2 ? 'Review ›' : 'Open ›'}
         </Box>

@@ -191,12 +191,12 @@ function StatCard({ label, value, valueColor, sub, cta, ctaHref }: {
         </Typography>
       )}
       {cta && ctaHref && (
-        <Typography
+        <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ cursor: 'pointer', fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', mt: 0.25, '&:hover': { textDecoration: 'underline' } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
         >
           {cta} →
-        </Typography>
+        </Box>
       )}
     </Box>
   );
@@ -266,12 +266,13 @@ function ActionRow({ dot, label, meta, impact, cta, ctaHref }: ActionRowProps) {
             {impact}
           </Typography>
         )}
-        <Typography
+        {/* Primary action CTA — filled accent pill, consistent with Resolve → and Review › */}
+        <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { textDecoration: 'underline' } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
         >
           {cta} →
-        </Typography>
+        </Box>
       </Box>
     </Box>
   );
@@ -329,20 +330,20 @@ function InboundRow({ po, isOverdue }: {
           </Typography>
         </Box>
         {isOverdue && (
-          <Typography
+          <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
           >
             Chase →
-          </Typography>
+          </Box>
         )}
         {!isOverdue && po.status === 'shipped' && (
-          <Typography
+          <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
           >
             Receive →
-          </Typography>
+          </Box>
         )}
       </Box>
     </Box>
@@ -477,12 +478,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                     </Typography>
                   </Box>
                 </Box>
-                <Typography
+                <Box
                   onClick={() => navigate('/inventory/wms-readiness')}
-                  sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { textDecoration: 'underline' } }}
+                  sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { opacity: 0.75 } }}
                 >
                   Fix in WMS →
-                </Typography>
+                </Box>
               </Box>
             )}
             <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', flex: 1 }}>
@@ -496,12 +497,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                       {os.demand.critical_reorder_count} critical · {os.demand.warning_reorder_count} warning
                     </Typography>
                   )}
-                  <Typography
+                  <Box
                     onClick={() => navigate('/demand')}
-                    sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
                     See all in Demand →
-                  </Typography>
+                  </Box>
                 </Box>
               </Box>
 
@@ -609,12 +610,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                       {fmt$(os.inbound.total_committed_value_cents / 100)} committed
                     </Typography>
                   )}
-                  <Typography
+                  <Box
                     onClick={() => navigate('/cashflow')}
-                    sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
                     Cash Flow →
-                  </Typography>
+                  </Box>
                 </Box>
               </Box>
               {os.inbound.overdue_pos.map(po => (
@@ -672,12 +673,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                           <Typography sx={{ fontSize: 12, fontWeight: 500, color: theme.palette.error.main }}>
                             {fmt$(item.revenueLeakage)} lost
                           </Typography>
-                          <Typography
+                           <Box
                             onClick={() => navigate('/returns')}
-                            sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                           >
                             Restock →
-                          </Typography>
+                          </Box>
                         </Box>
                       </Box>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
