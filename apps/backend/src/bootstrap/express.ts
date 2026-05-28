@@ -44,6 +44,7 @@ import { stripeWebhookHandler } from '../api/billing/stripe.webhook.js';
 import { verifyStripeSignature } from '../api/billing/stripe.verify.middleware.js';
 import billingRoutes from '../api/billing/billing.routes.js';
 import { registerLifecycleRoutes } from '../api/lifecycle/lifecycle.routes.js';
+import waitlistRoutes from '../api/waitlist/waitlist.routes.js';
 
 // Raw body capture for webhook verification
 // -----------------------------------------
@@ -144,6 +145,9 @@ export function createApp(): Express {
   // basic endpoints preserved
   app.get('/', (_req, res) => res.send('SynchroFlow API is running!'));
   app.get('/health', (_req, res) => res.status(200).send({ status: 'ok' }));
+
+  // Public waitlist signup — no auth, called from landing page via marketing proxy
+  app.use('/api/v1/waitlist', waitlistRoutes);
 
   return app;
 }
