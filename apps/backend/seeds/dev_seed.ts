@@ -519,9 +519,9 @@ export async function seed(knex: Knex): Promise<void> {
 
     // WMS settings — upsert here since full_data runs with correct SET LOCAL context
     await trx('shop_wms_settings')
-      .insert({ shop_id: shop.id })
+      .insert({ shop_id: shop.id, problem_bin_location: 'PROBLEM' })
       .onConflict('shop_id')
-      .ignore();
+      .merge(['problem_bin_location']);
     console.log('[DEV_SEED] ✅ WMS settings seeded');
 
     // ── PRODUCTS + VARIANTS ──────────────────────────────────────────────────
