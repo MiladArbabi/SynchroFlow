@@ -4,8 +4,8 @@
 **Route:** `/wms/analytics`
 **Tier:** Growth
 **Access:** Owner / admin (operators have no access on web; operators see only dispatch/jobs on mobile)
-**Status:** 🟢 In progress · AUDIT complete · Implementation 70%
-**Last updated:** 2026-05-29
+**Status:** 🟢 Complete · All zones implemented · Floor Display live
+**Last updated:** 2026-05-29 (implementation complete)
 
 ---
 
