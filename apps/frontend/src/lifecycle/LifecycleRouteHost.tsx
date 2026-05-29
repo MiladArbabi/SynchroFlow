@@ -53,6 +53,7 @@ import SuppliersPortalPage from 'pages/ft2-pages/SuppliersPortalPage';
 import FloorPlanningPage from 'pages/ft2-pages/FloorPlanningPage';
 import WmsAnalyticsPage from 'pages/ft2-pages/WmsAnalyticsPage';
 
+import ShopSettingsPage from 'pages/ft2-pages/ShopSettingsPage';
 import MembersPage from 'pages/ft2-pages/MembersPage';
 import MemberDetailPage from 'pages/ft2-pages/MemberDetailPage';
 import ProblemCenterPage from 'pages/ft2-pages/ProblemCenterPage';
@@ -237,6 +238,9 @@ export function LifecycleRouteHost() {
       {/* PROBLEM-CENTER */}
       <Route path="/problem-center/*" element={<ProblemCenterPage />} />
 
+      {/* SHOP SETTINGS */}
+      <Route path="/settings/*" element={<ShopSettingsPage />} />
+      
       {/* TEAM — member & role management (WM-31) */}
       <Route path="/team/:userId" element={<MemberDetailPage />} />
       <Route path="/team/*" element={<MembersPage />} />

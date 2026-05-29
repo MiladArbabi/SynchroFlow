@@ -143,6 +143,9 @@ export function bootstrapNavGroups() {
     order: 80,
     icon: Users,
     // No requiredModuleId — team management is platform-level, not module-gated.
-    // No children — single destination, navigates directly.
+    children: [
+      { id: 'team-members', title: 'Members', path: '/team'     },
+      { id: 'shop-settings', title: 'Settings', path: '/settings' },
+    ],
   });
 }
