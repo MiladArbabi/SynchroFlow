@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/WmsAnalyticsPage.tsx
 //
 // WAREHOUSE ANALYTICS — FT2 Owner surface

@@ -31,6 +31,7 @@ import ConnectStorePage from 'pages/authentication/ConnectStorePage';
 import CheckInboxPage from 'pages/authentication/CheckInboxPage';
 import VerifyEmailPage from 'pages/authentication/VerifyEmailPage';
 import ResetPasswordPage from 'pages/authentication/ResetPasswordPage';
+import WmsDisplayPage from 'pages/display/WmsDisplayPage';
 
 const queryClient = new QueryClient();
 
@@ -216,6 +217,7 @@ export default function App() {
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           {/* Password reset — token from email link */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/wms/analytics/display" element={<WmsDisplayPage />} />
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}
