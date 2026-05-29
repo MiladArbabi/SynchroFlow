@@ -144,6 +144,15 @@ export async function seed(knex: Knex): Promise<void> {
       .insert({ shop_id: shop.id })
       .onConflict('shop_id')
       .ignore();
+    await trx('shop_operational_settings')
+      .insert({
+        shop_id: shop.id,
+        fulfillment_sla_hours: 24,
+        monthly_overhead_amount: 0,
+        starting_cash_balance: 0,
+      })
+      .onConflict('shop_id')
+      .ignore();
 
     // ── OPERATOR USER ──────────────────────────────────────────────────────
     // Provides mobile login credentials for operator-role testing.

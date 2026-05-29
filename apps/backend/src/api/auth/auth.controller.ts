@@ -94,13 +94,24 @@ export const registerUser = async (req: Request, res: Response) => {
     // Reminder emails sent at D-3 and D-1 (see trial expiry job, MON-07).
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-    await trx('shop_subscriptions').insert({
+    await trx('shop_subscriptions')
+      .insert({
+        shop_id: newShop.id,
+        tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
+        billing_interval: 'monthly',
+        status: 'trialing',
+        trial_ends_at: trialEndsAt,
+      });
+
+    await trx('shop_operational_settings')
+    .insert({
       shop_id: newShop.id,
-      tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
-      billing_interval: 'monthly',
-      status: 'trialing',
-      trial_ends_at: trialEndsAt,
-    });
+      fulfillment_sla_hours: 24,
+      monthly_overhead_amount: 0,
+      starting_cash_balance: 0,
+    })
+    .onConflict('shop_id')
+    .ignore();
 
     const growthConfig = getTierConfig('growth');
     const moduleRows = growthConfig.modules.map((moduleKey) => ({

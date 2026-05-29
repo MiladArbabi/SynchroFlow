@@ -15,12 +15,13 @@ export const httpGetCashFlowSettings = async (req: Request, res: Response) => {
     const shopId = req.user?.shopId;
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    const row = await db('shop_operational_settings')
-      .where('shop_id', shopId)
-      .select('monthly_overhead_amount', 'starting_cash_balance', 'starting_cash_balance_set_at')
-      .first();
+    const row = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_operational_settings')
+        .where('shop_id', shopId)
+        .select('daily_cpt_local', 'fulfillment_sla_hours', 'monthly_overhead_amount', 'starting_cash_balance', 'starting_cash_balance_set_at')
+        .first();
+    });
 
     return res.status(200).json({
       daily_cpt_local: row?.daily_cpt_local ?? null,

@@ -21,6 +21,7 @@ import { useAppTheme } from '../../hooks/useAppTheme';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { useToast } from '../../contexts/ToastContext';
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ function useShopSettings() {
 
 function usePatchShopSettings() {
   const queryClient = useQueryClient();
+  const { show } = useToast();
   return useMutation<void, Error, Partial<ShopSettings>>({
     mutationFn: async (body) => {
       await axiosInstance.patch('/api/v1/modules/cashflow/settings', body);
@@ -53,6 +55,11 @@ function usePatchShopSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shop-settings', 'operational'] });
       queryClient.invalidateQueries({ queryKey: ['wms', 'analytics', 'live'] });
+      show('Settings saved', 'success');
+    },
+    onError: (err) => {
+      console.error('[ShopSettings] patch failed', err);
+      show('Failed to save settings. Please try again.', 'error');
     },
   });
 }
