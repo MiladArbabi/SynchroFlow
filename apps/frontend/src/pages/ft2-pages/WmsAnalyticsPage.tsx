@@ -303,17 +303,35 @@ function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
 
 // ─── ZONE 2 — OPERATOR PERFORMANCE BOARD ─────────────────────
 
+type BaselineMode = 'personal' | 'team';
+
 function Zone2OperatorBoard({ operators, loading }: { operators: OperatorPerf[]; loading: boolean }) {
   const pal = useAppTheme();
   const theme = useTheme();
   const navigate = useNavigate();
+  const [baseline, setBaseline] = useState<BaselineMode>('personal');
   const COLS = '2fr 0.7fr 0.7fr 0.8fr 0.8fr 0.7fr 0.7fr';
   const COL_HEADERS = ['Operator', 'Picks', 'Packs', 'UPH', 'Accuracy', 'Exceptions', 'Avg batch'];
 
+  // Team average UPH — mean of all operators with a non-null UPH
+  const teamAvgUph = (() => {
+    const valid = operators.filter(op => op.uph != null).map(op => op.uph!);
+    return valid.length > 0 ? Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10 : null;
+  })();
+
   const uphColor = (uph: number | null): string => {
     if (uph == null) return 'var(--ink-3)';
-    if (uph >= 40) return theme.palette.success.main;
-    if (uph >= 25) return theme.palette.warning.main;
+    const ref = baseline === 'team' ? (teamAvgUph ?? uph) : uph;
+    // Personal baseline: colour by absolute thresholds
+    // Team baseline: colour relative to team avg (within 10% = amber, below = red, above = green)
+    if (baseline === 'personal') {
+      if (uph >= 40) return theme.palette.success.main;
+      if (uph >= 25) return theme.palette.warning.main;
+      return theme.palette.error.main;
+    }
+    if (teamAvgUph == null) return 'var(--ink-3)';
+    if (uph >= teamAvgUph) return theme.palette.success.main;
+    if (uph >= teamAvgUph * 0.9) return theme.palette.warning.main;
     return theme.palette.error.main;
   };
 
@@ -330,7 +348,19 @@ function Zone2OperatorBoard({ operators, loading }: { operators: OperatorPerf[];
   return (
     <ZoneCard sx={{ flex: '1 1 0', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <ZoneCardHeader>
-        <SectionLabel>Operator Performance</SectionLabel>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <SectionLabel>Operator Performance</SectionLabel>
+          <ToggleButtonGroup
+            value={baseline} exclusive size="small"
+            onChange={(_e, val) => val && setBaseline(val)}
+            sx={{ '& .MuiToggleButton-root': { fontSize: 10, py: 0.25, px: 1, lineHeight: 1.4, textTransform: 'none', fontWeight: 500 } }}
+          >
+            <ToggleButton value="personal">vs self</ToggleButton>
+            <ToggleButton value="team">
+              vs team{teamAvgUph != null ? ` (${teamAvgUph})` : ''}
+            </ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
       </ZoneCardHeader>
 
       {loading && (
