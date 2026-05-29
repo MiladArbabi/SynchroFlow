@@ -463,7 +463,8 @@ All migrations include RLS policies matching existing per-tenant pattern.
 
 | Date | Event | Notes |
 |---|---|---|
-| 2026-05-28 | Workshop complete · spec locked · blueprint created | Five-zone scroll-free design, Path B Cast confirmed, 4-slot 20s rotation including 3D map, team-aggregated display (no operator names), Growth tier, hourly_cost on Members, owner-side hour-based scheduling, per-shop single CPT for v1 |
+**Status:** 🟢 Complete · All zones implemented · Floor Display live
+**Last updated:** 2026-05-29 (implementation complete)
 | 2026-05-29 | AUDIT complete · 13 issues registered (A-01–A-13) | A-13 resolved during audit (IsometricCanvas canonical source confirmed: modules/shared) |
 | 2026-05-29 | Migrations M1–M4 applied to base migrations | shop_memberships: hourly_cost, display_hidden, owner_notes; operator_schedules table; shop_operational_settings: daily_cpt_local; shop_display_tokens table. All RLS policies confirmed. |
 | 2026-05-29 | Backend Step 2 complete — Members detail + schedule endpoints | GET/PATCH /members/:userId, GET/PUT /members/:userId/schedule, all role-gated |
@@ -474,6 +475,11 @@ All migrations include RLS policies matching existing per-tenant pattern.
 | 2026-05-29 | Open: B-02 CPT field in Shop Settings UI | daily_cpt_local column exists; owner cannot set it from UI yet |
 | 2026-05-29 | Open: B-03 Floor Display frontend route /wms/analytics/display?token= | Backend endpoint ready; TV-optimised frontend pending |
 | 2026-05-29 | Open: B-04 Zone 2 personal/team baseline toggle | Table renders; compare-to toggle not yet wired |
+| 2026-05-29 | B-02 complete — Shop Settings page + CPT field | /settings route, CarrierCutoff + SLA + CashFlow sections, CPT persists and drives Zone 1 countdown |
+| 2026-05-29 | B-01 complete — Floor Display token management UI | FloorDisplaySection in ShopSettingsPage — create/rename/rotate/revoke tokens, raw URL revealed once |
+| 2026-05-29 | B-04 complete — Zone 2 baseline toggle | vs self (absolute thresholds) / vs team (relative to team avg UPH) |
+| 2026-05-29 | B-03 complete — Floor Display frontend route | /wms/analytics/display?token= · 4-slot rotation · TV-optimised · heartbeat · IsometricCanvas slot 4 |
+| 2026-05-29 | Implementation complete | All blueprint items delivered. GitHub issue #995 open for settings audit. |
 
 ---
 

@@ -530,6 +530,26 @@ export async function getCostStory(shopId: number, windowDays: number, knex: Kne
   });
 }
 
+export async function getDisplayZones(shopId: number, knex: Knex) {
+  return knex.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    return trx('warehouse_locations')
+      .where('shop_id', shopId)
+      .where('active', true)
+      .select(
+        'location_code',
+        'type',
+        'parent_location_code',
+        'position_x',
+        'position_y',
+        'width',
+        'depth',
+        'rack_levels',
+        'zone_type',
+      );
+  });
+}
+
 export async function getActivityStream(shopId: number, sinceMs: number, knex: Knex) {
   await knex.raw(`SET "app.current_tenant" = '${shopId}'`);
   const since = new Date(sinceMs);

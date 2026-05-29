@@ -22,10 +22,12 @@ import { useSearchParams } from 'react-router-dom';
 import { Box, Typography } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
-import { axiosInstance } from 'api/axiosConfig';
-import { Clock, AlertTriangle, TrendingUp } from 'lucide-react';
+import axios from 'axios';
+import { Clock, AlertTriangle } from 'lucide-react';
 import { IsometricCanvas } from '@lasyncro/shared/ui';
 import type { WarehouseZone } from '@lasyncro/shared/ui';
+
+const displayAxios = axios.create({ baseURL: '' });
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -57,36 +59,20 @@ type DisplayData = {
   exceptions: {
     top_skus: { lasyncro_variant_id: string; title: string | null; sku: string | null; exception_count: number }[];
   };
-};
-
-type GridData = {
   zones: WarehouseZone[];
 };
 
 // ─── HOOKS ────────────────────────────────────────────────────
-
 function useDisplayData(token: string) {
   return useQuery<DisplayData>({
     queryKey: ['wms', 'display', token],
     queryFn: async () => {
-      const { data } = await axiosInstance.get(`/api/v1/wms/analytics/display?token=${encodeURIComponent(token)}`);
+      const { data } = await displayAxios.get(`/api/v1/wms/analytics/display?token=${encodeURIComponent(token)}`);
       return data;
     },
     refetchInterval: 60_000,
     enabled: token.length > 0,
     retry: false,
-  });
-}
-
-function useWarehouseGrid(token: string) {
-  return useQuery<GridData>({
-    queryKey: ['display', 'grid', token],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/floor-planning/grid');
-      return data;
-    },
-    staleTime: 5 * 60_000,
-    enabled: token.length > 0,
   });
 }
 
@@ -420,8 +406,7 @@ export default function WmsDisplayPage() {
   const theme = useTheme();
 
   const { data, isError } = useDisplayData(token);
-  const { data: gridData } = useWarehouseGrid(token);
-  const zones: WarehouseZone[] = gridData?.zones ?? [];
+  const zones: WarehouseZone[] = data?.zones ?? [];
 
   // Slot rotation
   const [slot, setSlot] = useState(0);
@@ -439,9 +424,9 @@ export default function WmsDisplayPage() {
     if (!token) return;
     const hb = setInterval(async () => {
       try {
-        await axiosInstance.post(`/api/v1/wms/analytics/display/heartbeat?token=${encodeURIComponent(token)}`);
+        await displayAxios.post(`/api/v1/wms/analytics/display/heartbeat?token=${encodeURIComponent(token)}`);
       } catch (err) {
-        console.warn('[WmsDisplay] heartbeat failed', err);
+        console.warn('[WmsDisplay] heartbeat failed (non-fatal)', err);
       }
     }, 5 * 60_000);
     return () => clearInterval(hb);

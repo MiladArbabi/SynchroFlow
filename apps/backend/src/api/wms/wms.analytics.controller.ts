@@ -8,6 +8,7 @@ import {
   getExceptionIntelligence,
   getCostStory,
   getActivityStream,
+  getDisplayZones,
   validateDisplayToken,
   generateDisplayToken,
 } from '../../services/wms/wmsAnalytics.service.js';
@@ -131,12 +132,13 @@ export const httpGetDisplayData = async (req: Request, res: Response) => {
     if (!validated) return res.status(401).json({ error: 'INVALID_TOKEN' });
     const { shopId } = validated;
     await db.raw(`SET "app.current_tenant" = '${shopId}'`);
-    const [live, pipeline, exceptions] = await Promise.all([
+    const [live, pipeline, exceptions, zones] = await Promise.all([
       getLiveCapacity(shopId, db),
       getPipelineVelocity(shopId, 30, db),
       getExceptionIntelligence(shopId, 30, db),
+      getDisplayZones(shopId, db),
     ]);
-    return res.json({ live, pipeline, exceptions: { top_skus: exceptions.top_skus } });
+    return res.json({ live, pipeline, exceptions: { top_skus: exceptions.top_skus }, zones });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_DISPLAY_FAILED]', { error: message });
