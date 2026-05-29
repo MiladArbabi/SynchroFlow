@@ -11,13 +11,17 @@ import {
   Tooltip,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowUp, ChevronDown } from 'lucide-react';
+import { ArrowUp, ChevronDown, Settings, LogOut } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
 import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
 import { useModuleHealth } from '../../runtime/useModuleHealth';
 import { useAlerts } from '../../pages/alerts/useAlerts';
 import type { ResolvedNavItem, ResolvedNavGroup } from '../../runtime/resolveNavigation';
+import { Popper, Paper, ClickAwayListener, Divider } from '@mui/material';
+import { useTheme, alpha } from '@mui/material/styles';
+import { useAuth } from '../../contexts/AuthContext';
+import { axiosInstance } from '../../api/axiosConfig';
 
 type SidenavState = 'EXPANDED' | 'COMPACT';
 
@@ -35,6 +39,8 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const { pathname } = useLocation();
   const { groups } = useResolvedNavigation();
   const moduleHealth = useModuleHealth();
+  const theme = useTheme();
+  const { user, logout } = useAuth();
 
   // Unread alert count for badge
   const { data: alertsData } = useAlerts();
@@ -46,6 +52,31 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+
+  // Profile popover
+  const profileAnchorRef = useRef<HTMLDivElement | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+
+  const handleProfileClose = (e: MouseEvent | TouchEvent) => {
+    if (profileAnchorRef.current?.contains(e.target as Node)) return;
+    setProfileOpen(false);
+  };
+
+  const handleLogout = async () => {
+    setProfileOpen(false);
+    try {
+      await axiosInstance.post('/api/v1/auth/logout');
+    } catch (err) {
+      console.warn('[ProfileMenu] logout API call failed (non-fatal — clearing local session)', err);
+    }
+    logout();
+    navigate('/login');
+  };
+
+  const initial = (user?.first_name?.[0] ?? user?.email?.[0] ?? 'U').toUpperCase();
+  const displayName = user?.first_name
+    ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
+    : user?.email ?? 'Account';
 
   // Tracks which top-level item has its accordion open in expanded mode.
   // Only one item open at a time. Null = all collapsed.
@@ -249,18 +280,107 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         {groups.map(g => renderGroup(g))}
       </SimpleBar>
 
-      {/* SYNC STATUS (stub) — replace with real channel health when Channels surface is built */}
-      {isFt2Ready && isExpanded && (
-        <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid var(--rule)', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', mb: 0.5 }}>
-            Sync Status
-          </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'success.main', flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>All channels live</Typography>
+      {/* PROFILE TRIGGER — bottom of sidenav */}
+      {isFt2Ready && (
+        <Box
+          ref={profileAnchorRef}
+          onClick={() => setProfileOpen(prev => !prev)}
+          sx={{
+            px: isExpanded ? 1.5 : 0,
+            py: 1,
+            mx: isExpanded ? 0 : 0.5,
+            mb: 0.5,
+            borderTop: '1px solid var(--rule)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.25,
+            cursor: 'pointer',
+            borderRadius: isExpanded ? 0 : '8px',
+            justifyContent: isCompact ? 'center' : 'flex-start',
+            '&:hover': { bgcolor: 'var(--bg-2)' },
+            transition: 'background 0.15s',
+            flexShrink: 0,
+          }}
+        >
+          {/* AVATAR */}
+          <Box sx={{
+            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+            bgcolor: alpha(theme.palette.primary.main, 0.15),
+            border: `1.5px solid ${profileOpen ? theme.palette.primary.main : 'var(--rule)'}`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'border-color 0.15s',
+          }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 700, color: theme.palette.primary.main, lineHeight: 1 }}>
+              {initial}
+            </Typography>
           </Box>
+          {/* NAME — expanded only */}
+          {isExpanded && (
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {displayName}
+              </Typography>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.email}
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
+
+      {/* PROFILE POPOVER — opens right of sidenav */}
+      <Popper
+        open={profileOpen}
+        anchorEl={profileAnchorRef.current}
+        placement="right-end"
+        transition
+        disablePortal={false}
+        popperOptions={{ modifiers: [{ name: 'offset', options: { offset: [0, 8] } }] }}
+        sx={{ zIndex: 1300 }}
+      >
+        {({ TransitionProps }) => (
+          <ClickAwayListener onClickAway={handleProfileClose}>
+            <Box {...TransitionProps} sx={{
+              bgcolor: 'var(--surface)',
+              border: '0.5px solid var(--rule)',
+              borderRadius: '10px',
+              boxShadow: theme.shadows[8],
+              minWidth: 220,
+              overflow: 'hidden',
+            }}>
+              {/* IDENTITY */}
+              <Box sx={{ px: 2, pt: 1.75, pb: 1.25 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.3 }}>
+                  {displayName}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: '2px' }}>
+                  {user?.email}
+                </Typography>
+              </Box>
+
+              <Divider sx={{ borderColor: 'var(--rule)' }} />
+
+              {/* ACTIONS */}
+              <Box sx={{ py: 0.5 }}>
+                <Box
+                  onClick={() => { setProfileOpen(false); navigate('/settings'); }}
+                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 0.875, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+                >
+                  <Settings size={15} strokeWidth={1.75} color="var(--ink-3)" />
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>Settings</Typography>
+                </Box>
+                <Box
+                  onClick={handleLogout}
+                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 0.875, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+                >
+                  <LogOut size={15} strokeWidth={1.75} color="var(--ink-3)" />
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>Log out</Typography>
+                </Box>
+              </Box>
+            </Box>
+          </ClickAwayListener>
+        )}
+      </Popper>
 
       {/* COMPACT MODE — submodule hover popover */}
       {isCompact && popoverItem?.children && (

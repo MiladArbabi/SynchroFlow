@@ -14,12 +14,12 @@ import { useColorScheme } from "@mui/material/styles";
 import IconComponent from "../../components/Icon";
 import { TrialCountdownChip } from 'components/TrialCountdownChip';
 
-import ProfileSection from "layout/MainLayout/Header/ProfileSection";
 import { Bell, Home } from 'lucide-react';
 import { Badge } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useAlerts } from '../../pages/alerts/useAlerts';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
+import { useIntegration } from '../../contexts/integration/useIntegration';
 
 interface TopnavbarContentProps {
   isEditing: boolean;
@@ -39,6 +39,8 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
   const navigate = useNavigate();
   const { data: alertsData } = useAlerts();
   const unreadAlerts = alertsData?.data?.length ?? 0;
+   const { isSyncComplete } = useIntegration();
+  const isLive = isSyncComplete;
 
   const pathnames = location.pathname.split("/").filter((x) => x);
   const capitalize = (s: string) =>
@@ -171,7 +173,26 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({
         </>
       )}
 
-        <ProfileSection />
+        {/* SYNC STATUS PILL */}
+        {isFt2 && (
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 0.6,
+            px: 1.25, py: 0.375,
+            borderRadius: '20px',
+            bgcolor: isLive ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+            border: `0.5px solid ${isLive ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+            flexShrink: 0,
+          }}>
+            <Box sx={{
+              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+              bgcolor: isLive ? '#22C55E' : '#F59E0B',
+              boxShadow: isLive ? '0 0 4px rgba(34,197,94,0.6)' : '0 0 4px rgba(245,158,11,0.6)',
+            }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: isLive ? '#22C55E' : '#F59E0B', lineHeight: 1, whiteSpace: 'nowrap' }}>
+              {isLive ? 'Live' : 'Syncing'}
+            </Typography>
+          </Box>
+        )}
         
       </Box>
     </Box>
