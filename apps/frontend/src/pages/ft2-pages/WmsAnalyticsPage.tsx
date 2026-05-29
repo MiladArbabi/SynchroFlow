@@ -193,11 +193,13 @@ function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
     live?.on_track === 'amber' ? 'At risk' :
     live?.on_track === 'red'   ? 'Behind' : '—';
 
-  const formatCpt = (hours: number | null): string => {
-    if (hours == null) return '—';
+  const formatCpt = (hours: number | null, cptLocal: string | null): string => {
+    if (cptLocal == null) return '—';
+    const timeLabel = cptLocal.slice(0, 5);
+    if (hours == null || hours <= 0) return `${timeLabel} (passed)`;
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
-    return h > 0 ? `${h}h ${m}m to cutoff` : `${m}m to cutoff`;
+    return h > 0 ? `${h}h ${m}m to ${timeLabel}` : `${m}m to ${timeLabel}`;
   };
 
   return (
@@ -242,9 +244,9 @@ function Zone1CapacityStrip({ live }: { live: LiveCapacity | undefined }) {
                 Cutoff
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Clock size={13} color="var(--ink-3)" />
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-                  {formatCpt(live?.hours_to_cpt ?? null)}
+                <Clock size={13} color={live?.hours_to_cpt != null && live.hours_to_cpt > 0 ? 'var(--ink-3)' : 'var(--ink-4)'} />
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: live?.hours_to_cpt != null && live.hours_to_cpt > 0 ? 'var(--ink)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }}>
+                  {formatCpt(live?.hours_to_cpt ?? null, live?.cpt_local ?? null)}
                 </Typography>
               </Box>
             </Box>

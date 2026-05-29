@@ -131,6 +131,6 @@ export function useLiveCapacity() {
     },
     refetchInterval: 60_000,
     placeholderData: (prev) => prev,
-    staleTime: 30_000,
+    staleTime: 0,
   });
 }
