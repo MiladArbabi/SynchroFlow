@@ -16,7 +16,7 @@
 // - No inline style={}. MUI sx prop only.
 // - No fetching. Data via hooks at page level, passed as props to sub-components.
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, ToggleButtonGroup, ToggleButton, Skeleton,
@@ -38,6 +38,10 @@ import {
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { useQuery } from '@tanstack/react-query';
+import { axiosInstance } from '../../api/axiosConfig';
+import { Popper, Paper, ClickAwayListener, Tooltip } from '@mui/material';
+import { Cast, ExternalLink } from 'lucide-react';
 
 // ─── HELPERS ──────────────────────────────────────────────────
 
@@ -743,6 +747,140 @@ function Zone5CostStory({ cost, loading, fmt }: {
   );
 }
 
+type DisplayToken = { id: string; label: string | null; active: boolean; last_seen_at: string | null };
+
+function CastButton() {
+  const pal = useAppTheme();
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const anchorRef = useRef<HTMLDivElement | null>(null);
+  const [open, setOpen] = useState(false);
+
+  const { data } = useQuery<{ tokens: DisplayToken[] }>({
+    queryKey: ['display-tokens'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/analytics/display-tokens');
+      return data;
+    },
+    refetchInterval: 30_000,
+  });
+
+  const tokens = data?.tokens ?? [];
+  const activeCount = tokens.filter(t => t.active).length;
+
+  const handleClose = (e: MouseEvent | TouchEvent) => {
+    if (anchorRef.current?.contains(e.target as Node)) return;
+    setOpen(false);
+  };
+
+  const openDisplay = () => {
+    setOpen(false);
+    navigate('/settings');
+  };
+
+  return (
+    <>
+      <Tooltip title="Cast to display">
+        <Box
+          ref={anchorRef}
+          onClick={() => setOpen(prev => !prev)}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 0.75,
+            px: 1.25, py: 0.5, borderRadius: '6px',
+            border: `0.5px solid ${open ? 'var(--accent)' : pal.rule}`,
+            bgcolor: open ? 'var(--accent-ghost)' : 'transparent',
+            cursor: 'pointer', flexShrink: 0,
+            '&:hover': { bgcolor: 'var(--bg-2)', borderColor: 'var(--accent)' },
+            transition: 'all 0.15s',
+            position: 'relative',
+          }}
+        >
+          <Cast size={14} strokeWidth={1.75} color={open ? 'var(--accent)' : 'var(--ink-3)'} />
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: open ? 'var(--accent)' : 'var(--ink-3)' }}>
+            Cast
+          </Typography>
+          {activeCount > 0 && (
+            <Box sx={{
+              position: 'absolute', top: -4, right: -4,
+              width: 14, height: 14, borderRadius: '50%',
+              bgcolor: theme.palette.success.main,
+              border: '2px solid var(--bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Typography sx={{ fontSize: 8, fontWeight: 700, color: 'white', lineHeight: 1 }}>{activeCount}</Typography>
+            </Box>
+          )}
+        </Box>
+      </Tooltip>
+
+      <Popper
+        open={open}
+        anchorEl={anchorRef.current}
+        placement="bottom-end"
+        disablePortal={false}
+        popperOptions={{ modifiers: [{ name: 'offset', options: { offset: [0, 6] } }] }}
+        sx={{ zIndex: 1300 }}
+      >
+        <ClickAwayListener onClickAway={handleClose}>
+          <Paper sx={{
+            bgcolor: 'var(--surface)', border: `0.5px solid ${pal.rule}`,
+            borderRadius: '10px', boxShadow: theme.shadows[8],
+            minWidth: 240, overflow: 'hidden',
+          }}>
+            <Box sx={{ px: 2, py: 1.25, borderBottom: `0.5px solid ${pal.rule}` }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                Floor Displays
+              </Typography>
+            </Box>
+
+            {tokens.length === 0 ? (
+              <Box sx={{ px: 2, py: 1.5 }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mb: 1 }}>
+                  No display URLs yet.
+                </Typography>
+                <Box
+                  onClick={() => { setOpen(false); navigate('/settings'); }}
+                  sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+                >
+                  Create one in Settings →
+                </Box>
+              </Box>
+            ) : (
+              <Box sx={{ py: 0.5 }}>
+                {tokens.map(token => (
+                  <Box
+                    key={token.id}
+                    onClick={() => openDisplay()}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5,
+                      px: 2, py: 0.875, cursor: 'pointer',
+                      '&:hover': { bgcolor: 'var(--bg-2)' },
+                    }}
+                  >
+                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, bgcolor: token.active ? theme.palette.success.main : 'var(--rule)' }} />
+                    <Typography sx={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>
+                      {token.label || 'Unlabelled display'}
+                    </Typography>
+                    <ExternalLink size={12} color="var(--ink-4)" />
+                  </Box>
+                ))}
+                <Box sx={{ px: 2, py: 0.875, borderTop: `0.5px solid ${pal.rule}` }}>
+                  <Typography
+                    onClick={() => { setOpen(false); navigate('/settings'); }}
+                    sx={{ fontSize: 11, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--accent)' } }}
+                  >
+                    Manage displays in Settings →
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+          </Paper>
+        </ClickAwayListener>
+      </Popper>
+    </>
+  );
+}
+
 export default function WmsAnalyticsPage() {
   const [days, setDays] = useState(30);
   const liveQuery = useLiveCapacity();
@@ -786,14 +924,17 @@ export default function WmsAnalyticsPage() {
               Pace, accuracy, and cost signals from your warehouse floor.
             </Typography>
           </Box>
-          <ToggleButtonGroup
-            value={days} exclusive size="small"
-            onChange={(_e, val) => val && setDays(val)}
-          >
-            <ToggleButton value={7}>7d</ToggleButton>
-            <ToggleButton value={30}>30d</ToggleButton>
-            <ToggleButton value={90}>90d</ToggleButton>
-          </ToggleButtonGroup>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <CastButton />
+            <ToggleButtonGroup
+              value={days} exclusive size="small"
+              onChange={(_e, val) => val && setDays(val)}
+            >
+              <ToggleButton value={7}>7d</ToggleButton>
+              <ToggleButton value={30}>30d</ToggleButton>
+              <ToggleButton value={90}>90d</ToggleButton>
+            </ToggleButtonGroup>
+          </Box>
         </Box>
 
         {/* ZONE 1 — CAPACITY STRIP (live, ignores date toggle) */}
