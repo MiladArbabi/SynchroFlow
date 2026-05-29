@@ -142,11 +142,8 @@ export default function ReleaseQueuePage() {
         {/* HEADER */}
         <Box sx={{ mb: 3 }}>
           <Box sx={{ mb: 0.5 }}>
-            <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', display: 'inline' }}>
-              Release queue.{' '}
-            </Typography>
-            <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', display: 'inline' }}>
-              Pick what ships next.
+            <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+              Release queue
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>

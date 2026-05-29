@@ -256,7 +256,7 @@ function DemandModuleFT2Inner({
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2,
         }}>
           <Box>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: '4px' }}>
+            <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
               Demand Intelligence
             </Typography>
             {isLoading ? (

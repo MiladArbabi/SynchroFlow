@@ -38,7 +38,22 @@ import {
   httpPatchWmsSettings,
   httpSetOrderPriority,
 } from './wms.controller.js';
-import { httpGetPickAnalytics } from './wms.analytics.controller.js';
+import {
+  httpGetPickAnalytics,
+  httpGetLiveCapacity,
+  httpGetOperatorPerformance,
+  httpGetPipelineVelocity,
+  httpGetExceptionIntelligence,
+  httpGetCostStory,
+  httpGetActivityStream,
+  httpGetDisplayData,
+  httpDisplayHeartbeat,
+  httpCreateDisplayToken,
+  httpListDisplayTokens,
+  httpPatchDisplayToken,
+  httpRotateDisplayToken,
+  httpRevokeDisplayToken,
+} from './wms.analytics.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -342,6 +357,104 @@ router.get(
   requireTier('growth'),
   requireAction('wms:read'),
   httpGetPickAnalytics
+);
+
+router.get(
+  '/analytics/live',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetLiveCapacity
+);
+
+router.get(
+  '/analytics/operators',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetOperatorPerformance
+);
+
+router.get(
+  '/analytics/pipeline',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetPipelineVelocity
+);
+
+router.get(
+  '/analytics/exceptions',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetExceptionIntelligence
+);
+
+router.get(
+  '/analytics/cost',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetCostStory
+);
+
+router.get(
+  '/analytics/activity-stream',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetActivityStream
+);
+
+router.get('/analytics/display', httpGetDisplayData);
+router.post('/analytics/display/heartbeat', httpDisplayHeartbeat);
+
+router.post(
+  '/analytics/display-tokens',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpCreateDisplayToken
+);
+router.get(
+  '/analytics/display-tokens',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpListDisplayTokens
+);
+router.patch(
+  '/analytics/display-tokens/:id',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpPatchDisplayToken
+);
+router.post(
+  '/analytics/display-tokens/:id/rotate',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpRotateDisplayToken
+);
+router.delete(
+  '/analytics/display-tokens/:id',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpRevokeDisplayToken
 );
 
 export default router;

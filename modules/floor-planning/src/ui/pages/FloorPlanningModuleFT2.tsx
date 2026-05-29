@@ -728,8 +728,9 @@ function FloorPlanningModuleFT2Inner({
           ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${hot} bin${hot !== 1 ? 's' : ''} with stock`
           : 'No bins configured yet — add aisles and bins in Setup.';
         return <>
-          <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Floor planning today.{' '}</Typography>
-          <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>Here's how the racks are running.</Typography>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+            Floor planning today
+          </Typography>
           <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>{subLine}</Typography>
         </>;
       })()}

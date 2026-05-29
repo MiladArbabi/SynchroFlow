@@ -52,6 +52,17 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo('en-US');
 
+    /**
+     * WMS ANALYTICS — OPERATOR COST & DISPLAY
+     * ----------------------------------------
+     * hourly_cost: Zone 5 cost-per-order. Owner/admin write-only. Never exposed to operator.
+     * display_hidden: excludes operator from Floor Display aggregations (PIP/sensitive cases).
+     * owner_notes: management notes. Owner/admin visible only. Soft markdown supported.
+     */
+    table.decimal('hourly_cost', 10, 2).nullable();
+    table.boolean('display_hidden').notNullable().defaultTo(false);
+    table.text('owner_notes').nullable();
+
     table.unique(['shop_id', 'user_id']);
     table.index(['user_id']);
     table.index(['shop_id']);
@@ -92,8 +103,44 @@ await knex.raw(`
  * Direct enforcement via shop_id
  * Memberships must never be visible across tenants
  */
+
+  await knex.schema.createTable('operator_schedules', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    table.integer('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+    /**
+     * weekday: 0=Sun … 6=Sat
+     * start_time / end_time: local time in shop timezone
+     * effective_from / effective_to: template versioning — allows schedule history
+     */
+    table.smallint('weekday').notNullable();
+    table.time('start_time').notNullable();
+    table.time('end_time').notNullable();
+    table.date('effective_from').notNullable();
+    table.date('effective_to').nullable();
+    table.timestamps(true, true);
+    table.index(['shop_id', 'user_id']);
+    table.index(['shop_id', 'weekday']);
+  });
+
+  await knex.raw(`
+    ALTER TABLE operator_schedules ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE operator_schedules FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS operator_schedules_tenant_isolation_policy ON operator_schedules;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY operator_schedules_tenant_isolation_policy
+    ON operator_schedules
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('operator_schedules');
   await knex.schema.dropTableIfExists('shop_memberships');
 }

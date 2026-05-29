@@ -31,7 +31,7 @@ export default function ProductsCatalogPage({ range }: Props) {
 
   // ── Pagination + sort state ───────────────────────────────
   const [page, setPage] = useState(1);
-  const PER_PAGE = 10;
+  const [perPage, setPerPage] = useState(10);
   type SortField = 'title' | 'stock' | 'variants';
   type SortDir = 'asc' | 'desc';
   const [sortField, setSortField] = useState<SortField>('title');
@@ -80,8 +80,8 @@ export default function ProductsCatalogPage({ range }: Props) {
     return 0;
   });
 
-  const totalPages = Math.ceil(allProducts.length / PER_PAGE);
-  const products = allProducts.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const totalPages = Math.ceil(allProducts.length / perPage);
+  const products = allProducts.slice((page - 1) * perPage, page * perPage);
 
   // Image lookup: product title → image_url from catalog variants
   const titleToImage = Object.values(productGroups).reduce<Record<string, string | null>>(
@@ -89,8 +89,8 @@ export default function ProductsCatalogPage({ range }: Props) {
   );
 
   // No-SKU pagination
-  const noSkuTotalPages = Math.ceil(noSkuProducts.length / PER_PAGE);
-  const pagedNoSkuProducts = noSkuProducts.slice((noSkuPage - 1) * PER_PAGE, noSkuPage * PER_PAGE);
+  const noSkuTotalPages = Math.ceil(noSkuProducts.length / perPage);
+  const pagedNoSkuProducts = noSkuProducts.slice((noSkuPage - 1) * perPage, noSkuPage * perPage);
 
   const totalProducts = (sellability.sellable ?? 0) + (sellability.blocked ?? 0);
   const added = drift.addedThisPeriod ?? 0;
@@ -232,21 +232,30 @@ export default function ProductsCatalogPage({ range }: Props) {
               })}
 
               {/* ── Pagination footer ── */}
-              {allProducts.length > PER_PAGE && (
+              {allProducts.length > 0 && (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                    {((page - 1) * PER_PAGE) + 1}–{Math.min(page * PER_PAGE, allProducts.length)} of {allProducts.length} products
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>
-                      ← Prev
-                    </Box>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 60, textAlign: 'center' }}>
-                      Page {page} of {totalPages}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                      {((page - 1) * perPage) + 1}–{Math.min(page * perPage, allProducts.length)} of {allProducts.length} products
                     </Typography>
-                    <Box onClick={() => page < totalPages && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < totalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < totalPages ? 1 : 0.4 }}>
-                      Next →
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      {[10, 25, 50, 100].map(n => (
+                        <Box key={n} onClick={() => { setPerPage(n); setPage(1); setNoSkuPage(1); }}
+                          sx={{ px: 1, py: 0.25, fontSize: 10, border: '0.5px solid', borderColor: n === perPage ? 'var(--accent)' : 'var(--rule)', borderRadius: '4px', bgcolor: n === perPage ? 'var(--accent-ghost)' : 'var(--surface)', color: n === perPage ? 'var(--accent)' : 'var(--ink-4)', cursor: 'pointer', fontWeight: n === perPage ? 600 : 400 }}>
+                          {n}
+                        </Box>
+                      ))}
                     </Box>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {totalPages > 1 && <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>}
+                    {totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (
+                      <Box key={i} onClick={() => setPage(i + 1)}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
+                        {i + 1}
+                      </Box>
+                    ))}
+                    {totalPages > 1 && <Box onClick={() => page < totalPages && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < totalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < totalPages ? 1 : 0.4 }}>Next →</Box>}
                   </Box>
                 </Box>
               )}
@@ -302,21 +311,20 @@ export default function ProductsCatalogPage({ range }: Props) {
                 );
               })}
               {/* Pagination footer */}
-              {noSkuProducts.length > PER_PAGE && (
+              {noSkuProducts.length > 0 && (
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
                   <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                    {((noSkuPage - 1) * PER_PAGE) + 1}–{Math.min(noSkuPage * PER_PAGE, noSkuProducts.length)} of {noSkuProducts.length}
+                    {((noSkuPage - 1) * perPage) + 1}–{Math.min(noSkuPage * perPage, noSkuProducts.length)} of {noSkuProducts.length}
                   </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Box onClick={() => noSkuPage > 1 && setNoSkuPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noSkuPage > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noSkuPage > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noSkuPage > 1 ? 1 : 0.4 }}>
-                      ← Prev
-                    </Box>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 60, textAlign: 'center' }}>
-                      Page {noSkuPage} of {noSkuTotalPages}
-                    </Typography>
-                    <Box onClick={() => noSkuPage < noSkuTotalPages && setNoSkuPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noSkuPage < noSkuTotalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noSkuPage < noSkuTotalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noSkuPage < noSkuTotalPages ? 1 : 0.4 }}>
-                      Next →
-                    </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {noSkuTotalPages > 1 && <Box onClick={() => noSkuPage > 1 && setNoSkuPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noSkuPage > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noSkuPage > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noSkuPage > 1 ? 1 : 0.4 }}>← Prev</Box>}
+                    {noSkuTotalPages > 1 && Array.from({ length: noSkuTotalPages }, (_, i) => (
+                      <Box key={i} onClick={() => setNoSkuPage(i + 1)}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === noSkuPage ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === noSkuPage ? 'var(--accent)' : 'var(--surface)', color: i + 1 === noSkuPage ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === noSkuPage ? 600 : 400 }}>
+                        {i + 1}
+                      </Box>
+                    ))}
+                    {noSkuTotalPages > 1 && <Box onClick={() => noSkuPage < noSkuTotalPages && setNoSkuPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noSkuPage < noSkuTotalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noSkuPage < noSkuTotalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noSkuPage < noSkuTotalPages ? 1 : 0.4 }}>Next →</Box>}
                   </Box>
                 </Box>
               )}

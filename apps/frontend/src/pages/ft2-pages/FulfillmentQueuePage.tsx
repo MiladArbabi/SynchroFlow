@@ -283,11 +283,9 @@ export default function FulfillmentQueuePage() {
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
           <Box>
             <Box sx={{ mb: 0.5 }}>
-              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', display: 'inline' }}>
-                Fulfillment queue.{' '}
-              </Typography>
-              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', display: 'inline' }}>
-                Pick, pack, ship.
+              
+              <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+                Fulfillment queue
               </Typography>
             </Box>
             <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>

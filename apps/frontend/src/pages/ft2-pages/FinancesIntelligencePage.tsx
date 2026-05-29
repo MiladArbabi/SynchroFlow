@@ -124,6 +124,11 @@ export default function FinancesIntelligencePage() {
       <FT2DateRangeBar value={range} onChange={setRange} />
 
       <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+            Finances
+          </Typography>
+        </Box>
 
         {/* ZONE 1 — NET MARGIN PULSE */}
         <Box>

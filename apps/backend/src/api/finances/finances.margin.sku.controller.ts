@@ -34,11 +34,12 @@ export const httpGetSkuMargin = async (req: Request, res: Response) => {
         .where('o.shop_id', shopId)
         .whereNotNull('ru.lasyncro_variant_id')
         .whereNotIn('p.product_type', ['gift_card', 'digital', 'service']) // exclude non-physical — cost semantics don't apply
-        .groupBy('ru.lasyncro_variant_id', 'ru.sku', 'ru.title')
+        .groupBy('ru.lasyncro_variant_id', 'ru.sku', 'ru.title', 'v.image_url')
         .select(
           'ru.lasyncro_variant_id',
           'ru.sku',
           'ru.title',
+          'v.image_url',
           trx.raw('SUM(ru.quantity) as total_units_sold'),
           trx.raw('ROUND(SUM(ru.line_total), 2) as gross_revenue'),
           trx.raw('ROUND(SUM(ru.estimated_unit_cost * ru.quantity), 2) as estimated_cost'),

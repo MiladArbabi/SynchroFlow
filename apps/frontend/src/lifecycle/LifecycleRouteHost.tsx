@@ -54,6 +54,7 @@ import FloorPlanningPage from 'pages/ft2-pages/FloorPlanningPage';
 import WmsAnalyticsPage from 'pages/ft2-pages/WmsAnalyticsPage';
 
 import MembersPage from 'pages/ft2-pages/MembersPage';
+import MemberDetailPage from 'pages/ft2-pages/MemberDetailPage';
 import ProblemCenterPage from 'pages/ft2-pages/ProblemCenterPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
@@ -237,6 +238,7 @@ export function LifecycleRouteHost() {
       <Route path="/problem-center/*" element={<ProblemCenterPage />} />
 
       {/* TEAM — member & role management (WM-31) */}
+      <Route path="/team/:userId" element={<MemberDetailPage />} />
       <Route path="/team/*" element={<MembersPage />} />
 
       {/* Catch-all → Overview */}

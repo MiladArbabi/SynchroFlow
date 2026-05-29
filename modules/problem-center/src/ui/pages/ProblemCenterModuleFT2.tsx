@@ -67,7 +67,7 @@ const STAGE_COLORS: Record<string, string> = {
   receive: '#F59E0B',
 };
 
-const PER_PAGE = 10;
+const PER_PAGE_DEFAULT = 10;
 
 // Maps exception type → sensible default resolution action
 const DEFAULT_ACTION: Record<string, string> = {
@@ -133,6 +133,16 @@ function ProblemCenterModuleFT2Inner({
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [showResolved, setShowResolved] = useState(false);
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(PER_PAGE_DEFAULT);
+  type SortField = 'exception' | 'quantity' | 'created_at';
+  type SortDir = 'asc' | 'desc';
+  const [sortField, setSortField] = useState<SortField>('created_at');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const handlePCSort = (field: SortField) => {
+    if (sortField === field) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }
+    else { setSortField(field); setSortDir('asc'); }
+    setPage(1);
+  };
   const [resolveDialog, setResolveDialog] = useState<{ id: string; exceptionType: string } | null>(null);
   const [resolutionAction, setResolutionAction] = useState('write_off');
   const [resolutionNote, setResolutionNote] = useState('');
@@ -149,8 +159,16 @@ function ProblemCenterModuleFT2Inner({
     return true;
   });
 
-  const totalPages = Math.ceil(filtered.length / PER_PAGE);
-  const paged = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+  const sorted = [...filtered].sort((a, b) => {
+    const mul = sortDir === 'asc' ? 1 : -1;
+    if (sortField === 'quantity') return mul * (a.quantity - b.quantity);
+    if (sortField === 'created_at') return mul * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    const al = (a.variant_title ?? a.sku ?? '').toLowerCase();
+    const bl = (b.variant_title ?? b.sku ?? '').toLowerCase();
+    return mul * al.localeCompare(bl);
+  });
+  const totalPages = Math.ceil(sorted.length / perPage);
+  const paged = sorted.slice((page - 1) * perPage, page * perPage);
 
   const handleFilterChange = (fn: () => void) => { fn(); setPage(1); };
 
@@ -172,10 +190,16 @@ function ProblemCenterModuleFT2Inner({
   };
 
   // Column header component
-  const ColHeader = ({ label }: { label: string }) => (
-    <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-      {label}
-    </Typography>
+  const ColHeader = ({ label, field }: { label: string; field?: SortField }) => (
+    <Box onClick={() => field && handlePCSort(field)}
+      sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default' }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: field && sortField === field ? 'var(--accent)' : 'var(--ink-4)' }}>
+        {label}
+      </Typography>
+      {field && sortField === field && (
+        <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>{sortDir === 'asc' ? '↑' : '↓'}</Typography>
+      )}
+    </Box>
   );
 
   return (
@@ -242,13 +266,13 @@ function ProblemCenterModuleFT2Inner({
 
             {/* Column headers */}
             <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 80px 140px 80px 120px 100px 80px 100px', gap: 0, px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', bgcolor: 'var(--bg)' }}>
-              <ColHeader label="Exception" />
+              <ColHeader label="Exception" field="exception" />
               <ColHeader label="Stage" />
               <ColHeader label="Type" />
-              <ColHeader label="Qty" />
+              <ColHeader label="Qty" field="quantity" />
               <ColHeader label="Prob Label" />
               <ColHeader label="Bin" />
-              <ColHeader label="Age" />
+              <ColHeader label="Age" field="created_at" />
               <ColHeader label="Action" />
             </Box>
 
@@ -321,15 +345,30 @@ function ProblemCenterModuleFT2Inner({
             })}
 
             {/* Pagination footer */}
-            {filtered.length > PER_PAGE && (
+            {sorted.length > 0 && (
               <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                  {((page - 1) * PER_PAGE) + 1}–{Math.min(page * PER_PAGE, filtered.length)} of {filtered.length} exceptions
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>
-                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 60, textAlign: 'center' }}>Page {page} of {totalPages}</Typography>
-                  <Box onClick={() => page < totalPages && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < totalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < totalPages ? 1 : 0.4 }}>Next →</Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                    {((page - 1) * perPage) + 1}–{Math.min(page * perPage, sorted.length)} of {sorted.length} exceptions
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    {[10, 25, 50, 100].map(n => (
+                      <Box key={n} onClick={() => { setPerPage(n); setPage(1); }}
+                        sx={{ px: 1, py: 0.25, fontSize: 10, border: '0.5px solid', borderColor: n === perPage ? 'var(--accent)' : 'var(--rule)', borderRadius: '4px', bgcolor: n === perPage ? 'var(--accent-ghost)' : 'var(--surface)', color: n === perPage ? 'var(--accent)' : 'var(--ink-4)', cursor: 'pointer', fontWeight: n === perPage ? 600 : 400 }}>
+                        {n}
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  {totalPages > 1 && <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>}
+                  {totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (
+                    <Box key={i} onClick={() => setPage(i + 1)}
+                      sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
+                      {i + 1}
+                    </Box>
+                  ))}
+                  {totalPages > 1 && <Box onClick={() => page < totalPages && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < totalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < totalPages ? 1 : 0.4 }}>Next →</Box>}
                 </Box>
               </Box>
             )}

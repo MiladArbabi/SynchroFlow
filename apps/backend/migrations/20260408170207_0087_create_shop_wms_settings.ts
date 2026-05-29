@@ -105,8 +105,42 @@ export async function up(knex: Knex): Promise<void> {
       shop_id = current_setting('app.current_tenant')::int
     );
   `);
+
+  await knex.schema.createTable('shop_display_tokens', (table) => {
+    table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
+    table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
+    /**
+     * token_hash: bcrypt/argon2 hash — raw token shown once at creation only.
+     * label: human label for the display ("Warehouse main", "Pick station 1 TV").
+     * rotated_at: set on rotation — old token immediately invalid on next 5-min refresh.
+     * last_seen_at: updated by heartbeat — drives active-displays counter (within 60s).
+     */
+    table.text('token_hash').notNullable();
+    table.text('label').nullable();
+    table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.timestamp('rotated_at', { useTz: true }).nullable();
+    table.timestamp('last_seen_at', { useTz: true }).nullable();
+    table.index(['shop_id']);
+  });
+
+  await knex.raw(`
+    ALTER TABLE shop_display_tokens ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE shop_display_tokens FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    DROP POLICY IF EXISTS shop_display_tokens_tenant_isolation_policy ON shop_display_tokens;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY shop_display_tokens_tenant_isolation_policy
+    ON shop_display_tokens
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('shop_display_tokens');
   await knex.schema.dropTableIfExists('shop_wms_settings');
 }

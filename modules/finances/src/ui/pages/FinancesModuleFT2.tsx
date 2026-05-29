@@ -40,6 +40,7 @@ export type SkuMarginRow = {
   lasyncro_variant_id: string;
   sku: string | null;
   title: string | null;
+  image_url: string | null;
   total_units_sold: number;
   gross_revenue: number;
   estimated_cost: number;
@@ -208,10 +209,11 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
     const bv = Number(b[orderSort.field]);
     return orderSort.dir === 'asc' ? av - bv : bv - av;
   });
-  const PER_PAGE = 10;
+  /* PAG-001: perPage is user-controlled — default 10, options 10/25/50/100 */
+  const [perPage, setPerPage] = useState(10);
   const [orderPage, setOrderPage] = useState(0);
-  const visibleOrders = sortedOrders.slice(orderPage * PER_PAGE, (orderPage + 1) * PER_PAGE);
-  const orderPageCount = Math.ceil(sortedOrders.length / PER_PAGE);
+  const visibleOrders = sortedOrders.slice(orderPage * perPage, (orderPage + 1) * perPage);
+  const orderPageCount = Math.ceil(sortedOrders.length / perPage);
   const toggleOrderSort = (field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | 'estimated_cost' | 'fulfillment_status') => {
     setOrderSort(prev =>
       prev.field === field
@@ -230,8 +232,8 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
     const bv = Number(b[skuSort.field]);
     return skuSort.dir === 'asc' ? av - bv : bv - av;
   });
-  const visibleSkus = sortedSkus.slice(skuPage * PER_PAGE, (skuPage + 1) * PER_PAGE);
-  const skuPageCount = Math.ceil(sortedSkus.length / PER_PAGE);
+  const visibleSkus = sortedSkus.slice(skuPage * perPage, (skuPage + 1) * perPage);
+  const skuPageCount = Math.ceil(sortedSkus.length / perPage);
 
   const toggleSkuSort = (field: SortField) => {
     setSkuSort(prev =>
@@ -245,7 +247,12 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
 
   return (
     <FT2Layout>
-      <Box sx={{ p: 3, minHeight: '100%' }}>
+      <Box sx={{ p: { xs: 2, md: 3 } }}>
+        <Box>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, py: 2 }}>
+            Margin
+          </Typography>
+        </Box>
 
         {!summary && (
           <Typography variant="body2" color="text.secondary">Loading margin data…</Typography>
@@ -323,8 +330,9 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
               {/* SKU TABLE */}
               {viewMode === 'sku' && (
                 <>
-                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
+                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '36px 2.5fr 80px 1fr 1fr 1fr 80px', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
                     {([
+                      { label: '',              field: null },
                       { label: 'Product / SKU', field: null },
                       { label: 'Units',         field: 'total_units_sold' },
                       { label: 'Revenue',       field: 'gross_revenue' },
@@ -352,12 +360,19 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                                              theme.palette.error.main;
                     return (
                       <Box key={row.lasyncro_variant_id} sx={{
-                        display: 'grid', gridTemplateColumns: '2.5fr 80px 1fr 1fr 1fr 80px',
+                        display: 'grid', gridTemplateColumns: '36px 2.5fr 80px 1fr 1fr 1fr 80px',
                         px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider',
                         borderLeft: isNegative ? `3px solid ${theme.palette.error.main}` : '3px solid transparent',
                         bgcolor: isNegative ? alpha(theme.palette.error.main, 0.06) : 'transparent',
                         '&:hover': { bgcolor: isNegative ? alpha(theme.palette.error.main, 0.10) : 'action.hover' },
                       }}>
+                        {/* Product thumbnail */}
+                        <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, bgcolor: 'var(--bg)', border: '0.5px solid var(--rule)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {row.image_url
+                            ? <img src={row.image_url} alt={row.title ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-4)' }}>{(row.title ?? '?').charAt(0).toUpperCase()}</Typography>
+                          }
+                        </Box>
                         <Box>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Typography variant="body2" fontWeight={500}>{row.title ?? '—'}</Typography>
@@ -436,27 +451,40 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                 const page      = viewMode === 'orders' ? orderPage     : skuPage;
                 const setPage   = viewMode === 'orders' ? setOrderPage  : setSkuPage;
                 const total     = viewMode === 'orders' ? sortedOrders.length : sortedSkus.length;
-                if (pageCount <= 1) return null;
+                if (total === 0) return null;
                 return (
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2, py: 1, borderTop: '0.5px solid', borderColor: 'divider', bgcolor: 'background.default' }}>
-                    <Typography variant="caption" color="text.secondary">
-                      {page * PER_PAGE + 1}–{Math.min((page + 1) * PER_PAGE, total)} of {total}
-                    </Typography>
+                    {/* Left: count + page size selector */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        {page * perPage + 1}–{Math.min((page + 1) * perPage, total)} of {total}
+                      </Typography>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        {[10, 25, 50, 100].map(n => (
+                          <Box key={n} component="button" onClick={() => { setPerPage(n); setOrderPage(0); setSkuPage(0); }}
+                            sx={{ px: 1, py: 0.25, fontSize: 10, border: '0.5px solid', borderColor: n === perPage ? 'var(--accent)' : 'divider', borderRadius: '4px', bgcolor: n === perPage ? 'var(--accent-ghost)' : 'background.paper', color: n === perPage ? 'var(--accent)' : 'text.secondary', cursor: 'pointer', fontWeight: n === perPage ? 600 : 400 }}>
+                            {n}
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                    {/* Right: prev / page numbers / next — hidden when all items fit */}
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <Box component="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
-                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', color: 'text.secondary', cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}>
+                      {pageCount > 1 && <Box component="button" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: '6px', bgcolor: 'background.paper', color: 'text.secondary', cursor: page === 0 ? 'default' : 'pointer', opacity: page === 0 ? 0.4 : 1 }}>
                         ← Prev
                       </Box>
-                      {Array.from({ length: pageCount }, (_, i) => (
+                      }
+                      {pageCount > 1 && Array.from({ length: pageCount }, (_, i) => (
                         <Box key={i} component="button" onClick={() => setPage(i)}
-                          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i === page ? 'primary.main' : 'divider', borderRadius: 1, bgcolor: i === page ? 'primary.main' : 'background.paper', color: i === page ? '#fff' : 'text.secondary', cursor: 'pointer' }}>
+                          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i === page ? 'var(--accent)' : 'divider', borderRadius: '6px', bgcolor: i === page ? 'var(--accent)' : 'background.paper', color: i === page ? '#fff' : 'text.secondary', cursor: 'pointer', fontWeight: i === page ? 600 : 400 }}>
                           {i + 1}
                         </Box>
                       ))}
-                      <Box component="button" onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page === pageCount - 1}
-                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: 1, bgcolor: 'background.paper', color: 'text.secondary', cursor: page === pageCount - 1 ? 'default' : 'pointer', opacity: page === pageCount - 1 ? 0.4 : 1 }}>
+                      {pageCount > 1 && <Box component="button" onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))} disabled={page === pageCount - 1}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: 'divider', borderRadius: '6px', bgcolor: 'background.paper', color: 'text.secondary', cursor: page === pageCount - 1 ? 'default' : 'pointer', opacity: page === pageCount - 1 ? 0.4 : 1 }}>
                         Next →
-                      </Box>
+                      </Box>}
                     </Box>
                   </Box>
                 );

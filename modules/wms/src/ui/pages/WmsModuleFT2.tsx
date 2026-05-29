@@ -543,7 +543,9 @@ function WmsModuleFT2Inner({
       {/* PAGE HEADER */}
       <Box sx={{ mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="h5" fontWeight={700}>Warehouse</Typography>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+            Warehouse
+          </Typography>
           <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>

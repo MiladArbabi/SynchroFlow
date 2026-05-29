@@ -10,7 +10,11 @@ import {
     revokeMember, 
     getOperatorPerformance,
     getMyPreferences,
-    updateMyPreferences
+    updateMyPreferences,
+    getMemberDetail,
+    patchMemberDetail,
+    getMemberSchedule,
+    putMemberSchedule,
  } from './members.controller.js';
 
 /**
@@ -45,5 +49,10 @@ router.get('/:userId/performance', authenticateToken, requireAction('members:rea
 // Self-service preferences (all roles)
 router.get('/me/preferences', authenticateToken, getMyPreferences);
 router.patch('/me/preferences', authenticateToken, updateMyPreferences);
+
+router.get('/:userId', authenticateToken, requireAction('members:read'), getMemberDetail);
+router.patch('/:userId', authenticateToken, requireAction('members:write'), patchMemberDetail);
+router.get('/:userId/schedule', authenticateToken, requireAction('members:read'), getMemberSchedule);
+router.put('/:userId/schedule', authenticateToken, requireAction('members:write'), putMemberSchedule);
 
 export default router;

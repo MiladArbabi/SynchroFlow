@@ -511,3 +511,307 @@ export const updateMyCurrencyPreference = async (req: Request, res: Response) =>
     return res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+/**
+ * GET /api/v1/members/:userId
+ * Full member detail page payload.
+ *
+ * Owner/admin: full view — identity, cost & shift, performance (30d), recent activity, notes.
+ * Operator (own record only): identity + own performance + own schedule. No cost, no notes.
+ * Operator requesting another user's record: 403.
+ */
+export const getMemberDetail = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const requesterId = req.user!.userId;
+  const requesterRole = req.user!.roles?.[0] ?? 'operator';
+  const targetUserId = Number(req.params.userId);
+
+  const isOwnerOrAdmin = requesterRole === 'owner' || requesterRole === 'admin';
+  const isSelf = requesterId === targetUserId;
+
+  if (!isOwnerOrAdmin && !isSelf) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const member = await trx('shop_memberships as sm')
+        .join('users as u', 'u.id', 'sm.user_id')
+        .where('sm.shop_id', shopId)
+        .where('sm.user_id', targetUserId)
+        .whereNull('sm.revoked_at')
+        .select(
+          'u.id as user_id',
+          'u.email',
+          'u.first_name',
+          'u.last_name',
+          'sm.role',
+          'sm.created_at as member_since',
+          'sm.updated_at as last_updated',
+          ...(isOwnerOrAdmin
+            ? ['sm.hourly_cost', 'sm.display_hidden', 'sm.owner_notes']
+            : []),
+        )
+        .first();
+
+      if (!member) throw Object.assign(new Error('MEMBER_NOT_FOUND'), { statusCode: 404 });
+
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      // 30-day performance
+      const [scanStats, exceptionStats, scanSourceStats] = await Promise.all([
+        trx('pick_scan_log')
+          .where('shop_id', shopId)
+          .where('scanned_by', targetUserId)
+          .where('scanned_at', '>=', since30d)
+          .where('status', 'confirmed')
+          .count('scan_id as confirmed_scans')
+          .sum('quantity_confirmed as units_picked')
+          .first(),
+        trx('pick_exceptions')
+          .where('shop_id', shopId)
+          .where('raised_by', targetUserId)
+          .where('raised_at', '>=', since30d)
+          .count('pick_exception_id as count')
+          .first(),
+        trx('inventory_movements')
+          .where('shop_id', shopId)
+          .where('operator_id', targetUserId)
+          .where('occurred_at', '>=', since30d)
+          .where('movement_type', 'sale')
+          .whereNotNull('scan_source')
+          .groupBy('scan_source')
+          .select('scan_source', trx.raw('COUNT(*) as count')),
+      ]);
+
+      const confirmedScans = Number(scanStats?.confirmed_scans ?? 0);
+      const totalExceptions = Number(exceptionStats?.count ?? 0);
+      const totalScans = confirmedScans + totalExceptions;
+
+      // UPH: units_picked / active pick hours (sum of batch durations)
+      const batchHoursRow = await trx('pick_batches')
+        .where('shop_id', shopId)
+        .where('picked_by', targetUserId)
+        .where('pick_completed_at', '>=', since30d)
+        .whereNotNull('pick_claimed_at')
+        .whereNotNull('pick_completed_at')
+        .select(trx.raw(`SUM(EXTRACT(EPOCH FROM (pick_completed_at - pick_claimed_at)) / 3600.0) as hours`))
+        .first() as any;
+
+      const activeHours = Number(batchHoursRow?.hours ?? 0);
+      const unitsPickedTotal = Number(scanStats?.units_picked ?? 0);
+      const uph30d = activeHours > 0 ? Math.round((unitsPickedTotal / activeHours) * 10) / 10 : null;
+      const accuracy30d = totalScans > 0 ? Math.round((confirmedScans / totalScans) * 1000) / 10 : null;
+
+      const scanSourceMap: Record<string, number> = {};
+      for (const row of scanSourceStats) {
+        scanSourceMap[row.scan_source] = Number(row.count);
+      }
+
+      // Recent 10 batches
+      const recentBatches = await trx('pick_batches')
+        .where('shop_id', shopId)
+        .where('picked_by', targetUserId)
+        .orderBy('pick_completed_at', 'desc')
+        .limit(10)
+        .select(
+          'pick_batch_id',
+          'pick_claimed_at',
+          'pick_completed_at',
+          'units_picked',
+          'total_units',
+          trx.raw(`EXTRACT(EPOCH FROM (pick_completed_at - pick_claimed_at))::int as duration_seconds`),
+        );
+
+      const exceptionCountsPerBatch = recentBatches.length > 0
+        ? await trx('pick_exceptions')
+          .where('shop_id', shopId)
+          .whereIn('pick_batch_id', recentBatches.map((b: any) => b.pick_batch_id))
+          .groupBy('pick_batch_id')
+          .select('pick_batch_id', trx.raw('COUNT(*) as exception_count'))
+        : [];
+
+      const exceptionMap: Record<string, number> = {};
+      for (const row of exceptionCountsPerBatch) {
+        exceptionMap[row.pick_batch_id] = Number(row.exception_count);
+      }
+
+      const activity = recentBatches.map((b: any) => ({
+        pick_batch_id: b.pick_batch_id,
+        pick_claimed_at: b.pick_claimed_at,
+        pick_completed_at: b.pick_completed_at,
+        units_picked: b.units_picked,
+        total_units: b.total_units,
+        duration_seconds: b.duration_seconds,
+        exception_count: exceptionMap[b.pick_batch_id] ?? 0,
+      }));
+
+      return {
+        identity: {
+          user_id: member.user_id,
+          email: member.email,
+          first_name: member.first_name,
+          last_name: member.last_name,
+          role: member.role,
+          member_since: member.member_since,
+        },
+        ...(isOwnerOrAdmin && {
+          cost_and_shift: {
+            hourly_cost: member.hourly_cost ?? null,
+            display_hidden: member.display_hidden ?? false,
+          },
+          notes: member.owner_notes ?? null,
+        }),
+        performance: {
+          uph_30d: uph30d,
+          accuracy_30d_pct: accuracy30d,
+          exception_count_30d: totalExceptions,
+          scan_source_mix: scanSourceMap,
+        },
+        recent_activity: activity,
+      };
+    });
+
+    return res.json(result);
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+    console.error('[MEMBERS] getMemberDetail failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * PATCH /api/v1/members/:userId
+ * Owner/admin updates hourly_cost, display_hidden, owner_notes.
+ * Operator cannot call this endpoint.
+ *
+ * Body: { hourly_cost?, display_hidden?, owner_notes? }
+ */
+export const patchMemberDetail = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const targetUserId = Number(req.params.userId);
+  const { hourly_cost, display_hidden, owner_notes } = req.body;
+
+  const updates: Record<string, any> = { updated_at: new Date() };
+  if (hourly_cost !== undefined) {
+    if (hourly_cost !== null && (typeof hourly_cost !== 'number' || hourly_cost < 0)) {
+      return res.status(400).json({ error: 'INVALID_HOURLY_COST' });
+    }
+    updates.hourly_cost = hourly_cost;
+  }
+  if (display_hidden !== undefined) updates.display_hidden = Boolean(display_hidden);
+  if (owner_notes !== undefined) updates.owner_notes = owner_notes ?? null;
+
+  if (Object.keys(updates).length === 1) {
+    return res.status(400).json({ error: 'NO_FIELDS_PROVIDED' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const membership = await trx('shop_memberships')
+        .where({ shop_id: shopId, user_id: targetUserId })
+        .whereNull('revoked_at')
+        .first('id');
+      if (!membership) throw Object.assign(new Error('MEMBER_NOT_FOUND'), { statusCode: 404 });
+      await trx('shop_memberships').where({ id: membership.id }).update(updates);
+    });
+
+    console.info('[MEMBERS] patchMemberDetail', { shopId, targetUserId, fields: Object.keys(updates) });
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+    console.error('[MEMBERS] patchMemberDetail failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * GET /api/v1/members/:userId/schedule
+ * Returns operator_schedules for a user.
+ * Owner/admin: any user. Operator: own record only.
+ */
+export const getMemberSchedule = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const requesterId = req.user!.userId;
+  const requesterRole = req.user!.roles?.[0] ?? 'operator';
+  const targetUserId = Number(req.params.userId);
+
+  const isOwnerOrAdmin = requesterRole === 'owner' || requesterRole === 'admin';
+  if (!isOwnerOrAdmin && requesterId !== targetUserId) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+
+  try {
+    await db.raw(`SET app.current_tenant = '${shopId}'`);
+    const schedule = await db('operator_schedules')
+      .where({ shop_id: shopId, user_id: targetUserId })
+      .whereNull('effective_to')
+      .orderBy('weekday', 'asc')
+      .select('id', 'weekday', 'start_time', 'end_time', 'effective_from');
+
+    return res.json({ user_id: targetUserId, schedule });
+  } catch (err) {
+    console.error('[MEMBERS] getMemberSchedule failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
+/**
+ * PUT /api/v1/members/:userId/schedule
+ * Bulk-replace the active schedule for an operator.
+ * Closes existing rows (sets effective_to = today) and inserts new ones.
+ * Owner/admin only.
+ *
+ * Body: { schedule: [{ weekday, start_time, end_time }][] }
+ */
+export const putMemberSchedule = async (req: Request, res: Response) => {
+  const shopId = req.user!.shopId!;
+  const targetUserId = Number(req.params.userId);
+  const { schedule } = req.body;
+
+  if (!Array.isArray(schedule)) {
+    return res.status(400).json({ error: 'schedule must be an array' });
+  }
+
+  const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+  for (const row of schedule) {
+    if (!VALID_WEEKDAYS.includes(row.weekday) || !row.start_time || !row.end_time) {
+      return res.status(400).json({ error: 'INVALID_SCHEDULE_ROW', row });
+    }
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const today = new Date().toISOString().slice(0, 10);
+
+      await trx('operator_schedules')
+        .where({ shop_id: shopId, user_id: targetUserId })
+        .whereNull('effective_to')
+        .update({ effective_to: today, updated_at: new Date() });
+
+      if (schedule.length > 0) {
+        await trx('operator_schedules').insert(
+          schedule.map((row: any) => ({
+            shop_id: shopId,
+            user_id: targetUserId,
+            weekday: row.weekday,
+            start_time: row.start_time,
+            end_time: row.end_time,
+            effective_from: today,
+            effective_to: null,
+          })),
+        );
+      }
+    });
+
+    console.info('[MEMBERS] putMemberSchedule', { shopId, targetUserId, rows: schedule.length });
+    return res.json({ success: true, rows_written: schedule.length });
+  } catch (err) {
+    console.error('[MEMBERS] putMemberSchedule failed:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+};

@@ -144,9 +144,11 @@ export default function ReturnsOverviewPage() {
 
       {/* HEADER */}
       <Box sx={{ mb: 3 }}>
-        <Typography sx={{ fontSize: 20, fontWeight: 700, color: pal.textPrimary }}>Returns</Typography>
-        <Typography sx={{ fontSize: 13, color: pal.textSecond, mt: 0.5 }}>
-          Return rate, revenue leakage, and restocking across your orders.
+         <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+          Returns
+        </Typography>
+        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            {isLoading ? '—' : `${summary.total_units_returned ?? 0} Total refunds, resulting in ${fmt(summary.total_margin_leakage ?? 0)} Total Margin Loss`}
         </Typography>
       </Box>
 

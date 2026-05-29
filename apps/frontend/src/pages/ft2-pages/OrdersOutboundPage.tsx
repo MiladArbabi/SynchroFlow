@@ -44,12 +44,12 @@ type SortField = 'fulfilled_at' | 'order_created_at' | 'total_price' | 'hours_to
 type SortDir = 'asc' | 'desc';
 type DateRange = 'week' | 'month' | 'all';
 
-function useFulfilledOrders(page: number, sortField: SortField, sortDir: SortDir, dateRange: DateRange) {
+function useFulfilledOrders(page: number, perPage: number, sortField: SortField, sortDir: SortDir, dateRange: DateRange) {
   return useQuery<FulfilledOrdersResponse, Error, FulfilledOrdersResponse>({
-    queryKey: ['orders', 'fulfilled', page, sortField, sortDir, dateRange],
+    queryKey: ['orders', 'fulfilled', page, perPage, sortField, sortDir, dateRange],
     queryFn: async (): Promise<FulfilledOrdersResponse> => {
       const params = new URLSearchParams({
-        limit: '25',
+        limit: String(perPage),
         page: String(page),
         sort: sortField,
         dir: sortDir,
@@ -131,11 +131,12 @@ function StatCard({ label, value, sub, icon: Icon, valueColor }: {
 export default function OrdersOutboundPage() {
   const theme = useTheme();
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [sortField, setSortField] = useState<SortField>('fulfilled_at');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [dateRange, setDateRange] = useState<DateRange>('all');
 
-  const { data, isLoading, isError } = useFulfilledOrders(page, sortField, sortDir, dateRange);
+  const { data, isLoading, isError } = useFulfilledOrders(page, perPage, sortField, sortDir, dateRange);
 
   // Reset to page 1 when filters/sort change
   const handleSort = (field: SortField) => {
@@ -384,43 +385,37 @@ export default function OrdersOutboundPage() {
 
           {/* Footer + pagination */}
           {!isLoading && data && data.total > 0 && (
-            <Box sx={{
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              px: 2, py: 1,
-              bgcolor: 'var(--bg-2)',
-              borderTop: '0.5px solid var(--rule)',
-            }}>
-              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                {((page - 1) * 25) + 1}–{Math.min(page * 25, data.total)} of {data.total} orders
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Box
-                  onClick={() => page > 1 && setPage(p => p - 1)}
-                  sx={{
-                    px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed',
-                    border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
-                    fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)',
-                    opacity: page > 1 ? 1 : 0.4,
-                  }}
-                >
-                  ← Prev
-                </Box>
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', minWidth: 60, textAlign: 'center' }}>
-                  Page {page} of {Math.ceil(data.total / 25)}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)' }}>
+              {/* Left: count + page size selector */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                  {((page - 1) * perPage) + 1}–{Math.min(page * perPage, data.total)} of {data.total} orders
                 </Typography>
-                <Box
-                  onClick={() => page < Math.ceil(data.total / 25) && setPage(p => p + 1)}
-                  sx={{
-                    px: 1.5, py: 0.5, borderRadius: '6px',
-                    cursor: page < Math.ceil(data.total / 25) ? 'pointer' : 'not-allowed',
-                    border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
-                    fontSize: 12, color: page < Math.ceil(data.total / 25) ? 'var(--ink-3)' : 'var(--ink-4)',
-                    opacity: page < Math.ceil(data.total / 25) ? 1 : 0.4,
-                  }}
-                >
-                  Next →
+                <Box sx={{ display: 'flex', gap: 0.5 }}>
+                  {[10, 25, 50, 100].map(n => (
+                    <Box key={n} onClick={() => { setPerPage(n); setPage(1); }}
+                      sx={{ px: 1, py: 0.25, fontSize: 10, border: '0.5px solid', borderColor: n === perPage ? 'var(--accent)' : 'var(--rule)', borderRadius: '4px', bgcolor: n === perPage ? 'var(--accent-ghost)' : 'var(--surface)', color: n === perPage ? 'var(--accent)' : 'var(--ink-4)', cursor: 'pointer', fontWeight: n === perPage ? 600 : 400 }}>
+                      {n}
+                    </Box>
+                  ))}
                 </Box>
               </Box>
+              {/* Right: prev / page numbers / next */}
+              {(() => {
+                const pageCount = Math.ceil(data.total / perPage);
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {pageCount > 1 && <Box onClick={() => page > 1 && setPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>}
+                    {pageCount > 1 && Array.from({ length: pageCount }, (_, i) => (
+                      <Box key={i} onClick={() => setPage(i + 1)}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
+                        {i + 1}
+                      </Box>
+                    ))}
+                    {pageCount > 1 && <Box onClick={() => page < pageCount && setPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: page < pageCount ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: page < pageCount ? 'var(--ink-3)' : 'var(--ink-4)', opacity: page < pageCount ? 1 : 0.4 }}>Next →</Box>}
+                  </Box>
+                );
+              })()}
             </Box>
           )}
         </Box>

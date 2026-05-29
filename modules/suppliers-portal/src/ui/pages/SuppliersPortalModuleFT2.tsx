@@ -852,7 +852,9 @@ function SuppliersPortalModuleFT2Inner({
       {/* HEADER */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>Suppliers</Typography>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+            Suppliers
+          </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Purchase orders, ETAs, and supplier ratings.
           </Typography>

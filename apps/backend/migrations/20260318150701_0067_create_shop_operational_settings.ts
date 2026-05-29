@@ -21,6 +21,17 @@ export async function up(knex: Knex): Promise<void> {
      * - order operational constraint projection
      */
     table.integer('fulfillment_sla_hours').notNullable().defaultTo(24);
+
+    /**
+     * CARRIER PICKUP TIME (CPT)
+     * -------------------------
+     * daily_cpt_local: time when carrier collects (e.g. '16:00').
+     * Drives Zone 1 CPT countdown and required-UPH calculation.
+     * Stored as TIME in shop's local timezone (daily_cpt_timezone on shop).
+     * Null = no CPT configured — countdown hidden in Zone 1.
+     */
+    table.time('daily_cpt_local').nullable();
+
     /**
      * CASH FLOW PROJECTION INPUTS
      * ---------------------------

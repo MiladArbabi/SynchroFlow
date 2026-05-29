@@ -197,6 +197,11 @@ function CashFlowModuleFT2Inner({
 
 return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
+        <Box>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, py: 2 }}>
+            Cash Flow
+          </Typography>
+        </Box>
 
       {/* ── ROW 1: PRIMARY KPIs ── */}
       {summary && gp && (

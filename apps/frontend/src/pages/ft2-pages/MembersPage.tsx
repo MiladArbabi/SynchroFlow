@@ -1,5 +1,6 @@
 // apps/frontend/src/pages/ft2-pages/MembersPage.tsx
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from 'contexts/AuthContext';
 import {
   Box, Typography, CircularProgress, Alert as MuiAlert,
@@ -67,6 +68,7 @@ export default function MembersPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [successEmail, setSuccessEmail] = useState<string | null>(null);
 
+  const navigate = useNavigate();
   const members = data?.members ?? [];
   const { tier } = useEntitlements();
   const rawSeatLimit = TIER_SEAT_LIMIT[tier as Tier] ?? 1;
@@ -133,7 +135,9 @@ export default function MembersPage() {
       {/* HEADER */}
       <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Box>
-          <Typography variant="h5" fontWeight={700}>Team</Typography>
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, py: 2 }}>
+            Team
+          </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Manage shop members and their roles.
           </Typography>
@@ -212,7 +216,11 @@ export default function MembersPage() {
           </TableHead>
           <TableBody>
             {members.map((member) => (
-              <TableRow key={member.user_id}>
+              <TableRow
+                key={member.user_id}
+                onClick={() => navigate(`/team/${member.user_id}`)}
+                sx={{ cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+              >
                 <TableCell>
                   {member.first_name || member.last_name
                     ? `${member.first_name ?? ''} ${member.last_name ?? ''}`.trim()

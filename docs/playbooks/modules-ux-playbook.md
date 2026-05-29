@@ -62,6 +62,7 @@ Used for: resolving issues, triggering workflows, committing actions.
 ```
 
 For MUI Button contexts (modals, forms, larger surfaces):
+
 ```tsx
 <Button
   variant="contained"
@@ -97,6 +98,7 @@ Used for: navigating to related surfaces, secondary contextual links, toggles.
 ```
 
 For uppercase small labels (stat card CTAs):
+
 ```tsx
 sx={{
   px: 1, py: 0.375,
@@ -182,7 +184,132 @@ Does this CTA commit an action or resolve an issue?
 
 ---
 
-## 6. For Future Engineers
+## 6. Pagination Standards
+
+### Canonical Pattern
+
+All paginated lists share one implementation pattern. Default 10 rows, user-selectable 10/25/50/100.
+
+```tsx
+// State
+const [page, setPage] = useState(1);
+const [perPage, setPerPage] = useState(10);
+
+// Derived
+const totalPages = Math.ceil(items.length / perPage);
+const paged = items.slice((page - 1) * perPage, page * perPage);
+```
+
+### Footer Structure
+
+```tsx
+{items.length > 0 && (
+  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
+
+    {/* LEFT: count + page size selector */}
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+      <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+        {((page - 1) * perPage) + 1}–{Math.min(page * perPage, items.length)} of {items.length}
+      </Typography>
+      <Box sx={{ display: 'flex', gap: 0.5 }}>
+        {[10, 25, 50, 100].map(n => (
+          <Box key={n} onClick={() => { setPerPage(n); setPage(1); }}
+            sx={{ px: 1, py: 0.25, fontSize: 10, border: '0.5px solid',
+              borderColor: n === perPage ? 'var(--accent)' : 'var(--rule)',
+              borderRadius: '4px',
+              bgcolor: n === perPage ? 'var(--accent-ghost)' : 'var(--surface)',
+              color: n === perPage ? 'var(--accent)' : 'var(--ink-4)',
+              cursor: 'pointer', fontWeight: n === perPage ? 600 : 400 }}>
+            {n}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+
+    {/* RIGHT: prev / page numbers / next — hidden when single page */}
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+      {totalPages > 1 && <Box onClick={() => page > 1 && setPage(p => p - 1)}
+        sx={{ px: 1.5, py: 0.5, borderRadius: '6px',
+          cursor: page > 1 ? 'pointer' : 'not-allowed',
+          border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+          fontSize: 12, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)',
+          opacity: page > 1 ? 1 : 0.4 }}>← Prev</Box>}
+      {totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (
+        <Box key={i} onClick={() => setPage(i + 1)}
+          sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid',
+            borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)',
+            borderRadius: '6px',
+            bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)',
+            color: i + 1 === page ? '#fff' : 'var(--ink-3)',
+            cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}>
+          {i + 1}
+        </Box>
+      ))}
+      {totalPages > 1 && <Box onClick={() => page < totalPages && setPage(p => p + 1)}
+        sx={{ px: 1.5, py: 0.5, borderRadius: '6px',
+          cursor: page < totalPages ? 'pointer' : 'not-allowed',
+          border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+          fontSize: 12, color: page < totalPages ? 'var(--ink-3)' : 'var(--ink-4)',
+          opacity: page < totalPages ? 1 : 0.4 }}>Next →</Box>}
+    </Box>
+  </Box>
+)}
+```
+
+### Column Sorting Pattern
+
+```tsx
+type SortField = 'field_a' | 'field_b';
+type SortDir = 'asc' | 'desc';
+const [sortField, setSortField] = useState<SortField>('field_a');
+const [sortDir, setSortDir] = useState<SortDir>('asc');
+
+const handleSort = (field: SortField) => {
+  if (sortField === field) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); }
+  else { setSortField(field); setSortDir('asc'); }
+  setPage(1); // always reset to page 1 on sort change
+};
+
+// Sortable column header
+<Box onClick={() => field && handleSort(field)}
+  sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default' }}>
+  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em',
+    textTransform: 'uppercase',
+    color: field && sortField === field ? 'var(--accent)' : 'var(--ink-4)' }}>
+    {label}
+  </Typography>
+  {field && sortField === field && (
+    <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>
+      {sortDir === 'asc' ? '↑' : '↓'}
+    </Typography>
+  )}
+</Box>
+```
+
+### Rules
+
+- Always reset `page` to `1` on sort, filter, or `perPage` change
+- Never use `const PER_PAGE = N` — always `useState(10)`
+- Footer always renders when `items.length > 0` — page size selector must persist even when all items fit on one page
+- Page number buttons only render when `totalPages > 1`
+- Active page: `bgcolor: var(--accent)`, `color: #fff` — never `primary.main`
+- Active page size chip: `bgcolor: var(--accent-ghost)`, `color: var(--accent)`, `borderColor: var(--accent)`
+- Server-paginated lists (e.g. Outbound): pass `perPage` as `limit` param in query key and URL
+
+### Surfaces Standardised — Sprint 2026-05-28
+
+| Surface | File | perPage | Sort | Images |
+|---|---|---|---|---|
+| Finances / Margin (By Order) | `modules/finances/src/ui/pages/FinancesModuleFT2.tsx` | ✅ | ✅ | N/A |
+| Finances / Margin (By SKU) | `modules/finances/src/ui/pages/FinancesModuleFT2.tsx` | ✅ | ✅ | ✅ |
+| Inventory / Catalog | `apps/frontend/src/pages/ft2-pages/ProductsCatalogPage.tsx` | ✅ | ✅ | ✅ |
+| Orders / Outbound | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ✅ | ✅ | N/A |
+| Problem Center | `modules/problem-center/src/ui/pages/ProblemCenterModuleFT2.tsx` | ✅ | ✅ | N/A |
+
+---
+
+## 7. For Future Engineers
 
 ### Adding a new CTA
 
