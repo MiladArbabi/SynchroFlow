@@ -205,6 +205,27 @@ export default function WmsPage() {
     });
   }, []);
 
+  const handleRaisePackDecision = useCallback(async (
+    _batchId: string,
+    params: {
+      pick_batch_id: string;
+      lasyncro_order_id: string;
+      lasyncro_line_item_id: string;
+      exception_type: 'item_missing' | 'short_pick';
+      question: 'ship_partial';
+    }
+  ): Promise<{ id: string }> => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pack/decision-request', params);
+    return data.request;
+  }, []);
+
+  const handlePollPackDecision = useCallback(async (
+    requestId: string
+  ): Promise<{ status: 'pending' | 'approved' | 'rejected'; partial_shipment: boolean | null; note: string | null }> => {
+    const { data } = await axiosInstance.get(`/api/v1/wms/pack/decision-request/${requestId}`);
+    return data.request;
+  }, []);
+
   /**
    * RECEIVE VIA WMS
    * ---------------
@@ -277,6 +298,8 @@ export default function WmsPage() {
       onPrintLabel={handlePrintLabel}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
+      onRaisePackDecision={handleRaisePackDecision}
+      onPollPackDecision={handlePollPackDecision}
       onRefresh={refetch}
       gridLocations={gridData?.locations}
       pendingReceiveSession={pendingReceiveSession}

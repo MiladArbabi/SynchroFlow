@@ -106,6 +106,18 @@ export type WmsModuleFT2Props = {
   onPackComplete: (batchId: string) => Promise<void>;
 
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
+  onRaisePackDecision: (batchId: string, params: {
+    pick_batch_id: string;
+    lasyncro_order_id: string;
+    lasyncro_line_item_id: string;
+    exception_type: 'item_missing' | 'short_pick';
+    question: 'ship_partial';
+  }) => Promise<{ id: string }>;
+  onPollPackDecision: (requestId: string) => Promise<{
+    status: 'pending' | 'approved' | 'rejected';
+    partial_shipment: boolean | null;
+    note: string | null;
+  }>;
   onRefresh: () => void;
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
@@ -438,6 +450,8 @@ function WmsModuleFT2Inner({
   onConfirmStow,
   gridLocations,
   pendingReceiveSession,
+  onRaisePackDecision,
+  onPollPackDecision
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -517,6 +531,8 @@ function WmsModuleFT2Inner({
         onPrintLabel={onPrintLabel}
         onConfirmShipment={(orderId, partial) => onConfirmShipment(activeSession.batchId, orderId, partial)}
         onPackComplete={() => onPackComplete(activeSession.batchId)}
+        onRaiseDecision={(params) => onRaisePackDecision(activeSession.batchId, params)}
+        onPollDecision={onPollPackDecision}
       />
     );
   }
