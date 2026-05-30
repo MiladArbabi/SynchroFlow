@@ -2436,3 +2436,54 @@ export const httpResolvePackDecision = async (req: Request, res: Response) => {
     return res.status(500).json({ error: `Failed to resolve pack decision: ${message}` });
   }
 };
+
+/**
+ * GET /api/v1/wms/pack/decision-requests
+ * ----------------------------------------
+ * Lists pack decision requests for the shop.
+ * ?status=pending|approved|rejected (default: pending)
+ * Owner/admin surface — Problem Center pending decisions strip.
+ */
+export const httpListPackDecisions = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const status = (req.query.status as string) ?? 'pending';
+
+  try {
+    let requests: Record<string, unknown>[] = [];
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      requests = await trx('pack_decision_requests as pdr')
+        .where({ 'pdr.shop_id': shopId, 'pdr.status': status })
+        .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'pdr.lasyncro_order_id')
+        .leftJoin('order_line_items as oli', 'oli.lasyncro_line_item_id', 'pdr.lasyncro_line_item_id')
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+        .orderBy('pdr.raised_at', 'asc')
+        .select(
+          'pdr.id',
+          'pdr.pick_batch_id',
+          'pdr.lasyncro_order_id',
+          'pdr.lasyncro_line_item_id',
+          'pdr.exception_type',
+          'pdr.question',
+          'pdr.status',
+          'pdr.partial_shipment',
+          'pdr.raised_by',
+          'pdr.raised_at',
+          'pdr.resolved_by',
+          'pdr.resolved_at',
+          'pdr.note',
+          'eim.external_order_id',
+          'v.title as variant_title',
+          'v.sku',
+        );
+    });
+
+    return res.status(200).json({ requests, total: requests.length });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[PACK_DECISIONS_LIST_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to list pack decisions: ${message}` });
+  }
+};

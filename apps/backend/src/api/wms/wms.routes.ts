@@ -40,6 +40,7 @@ import {
   httpRaisePackDecision,
   httpGetPackDecision,
   httpResolvePackDecision,
+  httpListPackDecisions,
 } from './wms.controller.js';
 import {
   httpGetPickAnalytics,
@@ -486,6 +487,15 @@ router.post(
   requireAction('wms:batch:release'),
   // wms:batch:release is the existing owner-only action gate
   httpResolvePackDecision
+);
+
+router.get(
+  '/pack/decision-requests',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:batch:release'),
+  httpListPackDecisions
 );
 
 export default router;
