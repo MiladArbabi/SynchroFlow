@@ -318,12 +318,16 @@ export async function computeDemandIntelligence(
               ? v.unit_cost * v.suggested_reorder_qty
               : null,
             is_active: true,
+            category: 'stock_reorder',
+            audience: 'all',
           })
           .onConflict(['shop_id', 'alert_key'])
           .merge({
             is_active: true,
-            title: trx.raw('EXCLUDED.title'),
-            message: trx.raw('EXCLUDED.message'),
+            title:     trx.raw('EXCLUDED.title'),
+            message:   trx.raw('EXCLUDED.message'),
+            category:  'stock_reorder',
+            audience:  'all',
             updated_at: trx.fn.now(),
           });
       } catch {

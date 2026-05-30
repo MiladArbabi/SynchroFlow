@@ -134,7 +134,7 @@ const AppLayout = (props: AppLayoutProps) => {
       <Box sx={{ width: "100vw", height: "100vh", display: "flex", flexDirection: "column", bgcolor: "var(--bg)" }}>
 
         {/* TOP NAVBAR — full width, always on top */}
-        <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "1px solid var(--rule)", zIndex: 1200 }}>
+        <Box sx={{ height: "48px", flexShrink: 0, borderBottom: "0.5px solid var(--rule)", zIndex: 1200, display: "flex", alignItems: "center" }}>
           <TopnavbarContent
             isEditing={false}
             onEditToggle={() => {}}

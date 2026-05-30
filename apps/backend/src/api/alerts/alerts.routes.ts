@@ -1,6 +1,12 @@
 // apps/backend/src/api/alerts/alerts.routes.ts
 import { Router } from 'express';
-import { httpGetAlerts, httpDismissAlert } from './alerts.controller.js';
+import {
+  httpGetAlerts,
+  httpDismissAlert,
+  httpAcknowledgeAlert,
+  httpSnoozeAlert,
+  httpResolveAlert,
+} from './alerts.controller.js';
 import {
   httpGetAlertRules,
   httpCreateAlertRule,
@@ -22,7 +28,11 @@ router.get('/', authenticateToken, httpGetAlerts);
  * @desc    Operator dismisses an alert.
  * @access  Private
  */
-router.post('/:alertId/dismiss', authenticateToken, httpDismissAlert);
+router.post('/:alertId/dismiss',     authenticateToken, httpDismissAlert);
+
+router.post('/:alertId/acknowledge', authenticateToken, httpAcknowledgeAlert);
+router.post('/:alertId/snooze',      authenticateToken, httpSnoozeAlert);
+router.post('/:alertId/resolve',     authenticateToken, httpResolveAlert);
 
 /**
  * ALERT RULES (PP3-01)

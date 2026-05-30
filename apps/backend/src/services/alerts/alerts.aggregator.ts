@@ -12,16 +12,38 @@ import type { Knex } from 'knex';
  * - order_constraints (operational, inventory, customer blocks)
  * - order_age_snapshot (SLA breaches)
  * - orders_operational_control_snapshot (revenue at risk)
+ * - order_revenue_units (missing COGS)
  *
  * RULES:
  * - Idempotent — upserts on (shop_id, alert_key)
  * - Operator vocabulary — never system language in title/message
  * - Revenue-ranked — higher impact alerts surface first
  * - Auto-resolves — inactive signals mark alerts resolved
+ * - category + audience required on every alert (D1 consequence taxonomy)
  *
  * Called by:
  * - shopOperationalSnapshot.worker.ts after snapshot recompute
  */
+
+/**
+ * CONSEQUENCE TAXONOMY CATEGORIES (blueprint §6)
+ * ------------------------------------------------
+ * revenue_at_risk   : money leaving / customer breach imminent
+ * stock_reorder     : stockout risk or reorder threshold crossed
+ * money_margin      : margin erosion, missing cost data
+ * supplier_inbound  : PO delays, fill/defect rate issues
+ * warehouse_floor   : pick/pack exceptions, idle operators (operator audience)
+ * data_trust        : sync staleness, identity map gaps, missing fields
+ */
+type AlertCategory =
+  | 'revenue_at_risk'
+  | 'stock_reorder'
+  | 'money_margin'
+  | 'supplier_inbound'
+  | 'warehouse_floor'
+  | 'data_trust';
+
+type AlertAudience = 'operator' | 'owner' | 'all';
 
 type AlertUpsert = {
   shop_id: number;
@@ -35,6 +57,8 @@ type AlertUpsert = {
   entity_type?: string | null;
   revenue_impact?: number | null;
   is_active: boolean;
+  category: AlertCategory;
+  audience: AlertAudience;
 };
 
 /**
@@ -42,6 +66,7 @@ type AlertUpsert = {
  * --------------------------
  * Surfaces when orders have line items with no estimated_unit_cost.
  * Without cost data, margin figures are incomplete and unreliable.
+ * Category: data_trust — audience: owner (cost is owner/admin concern)
  */
 async function aggregateMissingCogsAlerts(
   trx: Knex.Transaction,
@@ -61,34 +86,38 @@ async function aggregateMissingCogsAlerts(
     .first();
 
   const variantCount = Number(row?.variant_count ?? 0);
-  const orderCount = Number(row?.order_count ?? 0);
+  const orderCount   = Number(row?.order_count ?? 0);
 
   if (variantCount === 0) {
     return [{
-      shop_id: shopId,
-      alert_key: `cogs:shop-${shopId}:missing_cost`,
-      source: 'snapshot',
+      shop_id:    shopId,
+      alert_key:  `cogs:shop-${shopId}:missing_cost`,
+      source:     'snapshot',
       alert_type: 'missing_cogs',
-      severity: 'warning',
-      title: 'All products have cost data',
-      message: 'Margin figures are complete across all active orders.',
+      severity:   'warning',
+      title:      'All products have cost data',
+      message:    'Margin figures are complete across all active orders.',
       entity_type: 'shop',
-      is_active: false,
+      is_active:  false,
+      category:   'data_trust',
+      audience:   'owner',
     }];
   }
 
   return [{
-    shop_id: shopId,
-    alert_key: `cogs:shop-${shopId}:missing_cost`,
-    source: 'snapshot',
-    alert_type: 'missing_cogs',
-    severity: 'warning',
-    title: `${variantCount} product${variantCount > 1 ? 's' : ''} missing cost data`,
-    message: `${orderCount} active order${orderCount > 1 ? 's have' : ' has'} ${variantCount} product${variantCount > 1 ? 's' : ''} without cost data. Margin figures for these orders are incomplete.`,
-    entity_id: null,
-    entity_type: 'shop',
+    shop_id:        shopId,
+    alert_key:      `cogs:shop-${shopId}:missing_cost`,
+    source:         'snapshot',
+    alert_type:     'missing_cogs',
+    severity:       'warning',
+    title:          `${variantCount} product${variantCount > 1 ? 's' : ''} missing cost data`,
+    message:        `${orderCount} active order${orderCount > 1 ? 's have' : ' has'} ${variantCount} product${variantCount > 1 ? 's' : ''} without cost data. Margin figures for these orders are incomplete.`,
+    entity_id:      null,
+    entity_type:    'shop',
     revenue_impact: null,
-    is_active: true,
+    is_active:      true,
+    category:       'data_trust',
+    audience:       'owner',
   }];
 }
 
@@ -103,31 +132,29 @@ async function upsertAlerts(
       .insert({
         ...alert,
         resolved_at: alert.is_active ? null : trx.fn.now(),
-        updated_at: trx.fn.now(),
+        updated_at:  trx.fn.now(),
       })
       .onConflict(['shop_id', 'alert_key'])
-      // AFTER
       .merge({
-        severity: alert.severity,
-        title: alert.title,
-        message: alert.message,
-        is_active: alert.is_active,
+        severity:       alert.severity,
+        title:          alert.title,
+        message:        alert.message,
+        is_active:      alert.is_active,
         revenue_impact: alert.revenue_impact ?? null,
-        resolved_at: alert.is_active ? null : trx.fn.now(),
+        category:       alert.category,
+        audience:       alert.audience,
+        resolved_at:    alert.is_active ? null : trx.fn.now(),
         /**
          * DISMISS RESET ON REACTIVATION
          * ------------------------------
-         * When a signal re-fires (is_active = true), clear dismissed_at
-         * so the operator sees the alert again in their inbox.
-         *
-         * When a signal clears (is_active = false), preserve dismissed_at
-         * for audit purposes.
-         *
-         * This means: dismissing is temporary — if the problem
-         * persists through the next snapshot cycle, the alert returns.
-         * Operators must resolve the underlying issue to silence alerts.
+         * When a signal re-fires (is_active=true), clear dismissed_at so
+         * the operator sees it again. When signal clears (is_active=false),
+         * preserve dismissed_at for audit. Dismissing is always temporary —
+         * if the underlying problem persists, the alert returns.
          */
-        dismissed_at: alert.is_active ? null : trx.raw('"alerts"."dismissed_at"'),
+        dismissed_at: alert.is_active
+          ? null
+          : trx.raw('"alerts"."dismissed_at"'),
         updated_at: trx.fn.now(),
       });
   }
@@ -136,8 +163,12 @@ async function upsertAlerts(
 /**
  * OPERATIONAL CONSTRAINT ALERTS
  * ------------------------------
- * One alert per active operational constraint order.
- * Groups by constraint type — not per-order (too noisy).
+ * One alert per active constraint type (not per order — too noisy).
+ *
+ * Category mapping (blueprint §6):
+ *   operational → revenue_at_risk (overdue = money leaving)
+ *   inventory   → stock_reorder   (can't ship = stock problem)
+ *   customer    → revenue_at_risk (address block = breach imminent)
  */
 async function aggregateConstraintAlerts(
   trx: Knex.Transaction,
@@ -155,45 +186,58 @@ async function aggregateConstraintAlerts(
     );
 
   return rows.map((row: any) => {
-    const count = Number(row.order_count);
+    const count   = Number(row.order_count);
     const revenue = Number(row.total_revenue ?? 0);
 
-    const typeMap: Record<string, { title: string; message: string; severity: 'critical' | 'warning' }> = {
+    type ConstraintConfig = {
+      title: string;
+      message: string;
+      severity: 'critical' | 'warning';
+      category: AlertCategory;
+    };
+
+    const typeMap: Record<string, ConstraintConfig> = {
       operational: {
-        title: `${count} order${count > 1 ? 's' : ''} overdue`,
-        message: `${count} paid order${count > 1 ? 's are' : ' is'} past SLA and need${count === 1 ? 's' : ''} immediate action.`,
+        title:    `${count} order${count > 1 ? 's' : ''} overdue`,
+        message:  `${count} paid order${count > 1 ? 's are' : ' is'} past SLA and need${count === 1 ? 's' : ''} immediate action.`,
         severity: 'critical',
+        category: 'revenue_at_risk',
       },
       inventory: {
-        title: `${count} order${count > 1 ? 's' : ''} out of stock`,
-        message: `${count} order${count > 1 ? 's' : ''} cannot ship due to missing inventory.`,
+        title:    `${count} order${count > 1 ? 's' : ''} out of stock`,
+        message:  `${count} order${count > 1 ? 's' : ''} cannot ship due to missing inventory.`,
         severity: 'warning',
+        category: 'stock_reorder',
       },
       customer: {
-        title: `${count} order${count > 1 ? 's' : ''} with address issues`,
-        message: `${count} order${count > 1 ? 's have' : ' has'} a customer address problem blocking fulfillment.`,
+        title:    `${count} order${count > 1 ? 's' : ''} with address issues`,
+        message:  `${count} order${count > 1 ? 's have' : ' has'} a customer address problem blocking fulfillment.`,
         severity: 'warning',
+        category: 'revenue_at_risk',
       },
     };
 
     const config = typeMap[row.constraint_type] ?? {
-      title: `${count} blocked orders`,
-      message: `${count} orders have an unresolved constraint.`,
+      title:    `${count} blocked orders`,
+      message:  `${count} orders have an unresolved constraint.`,
       severity: 'warning' as const,
+      category: 'revenue_at_risk' as AlertCategory,
     };
 
     return {
-      shop_id: shopId,
-      alert_key: `constraint:shop-${shopId}:${row.constraint_type}`,
-      source: 'constraint',
-      alert_type: row.constraint_type,
-      severity: config.severity,
-      title: config.title,
-      message: config.message,
-      entity_id: null,
-      entity_type: 'shop',
+      shop_id:        shopId,
+      alert_key:      `constraint:shop-${shopId}:${row.constraint_type}`,
+      source:         'constraint',
+      alert_type:     row.constraint_type,
+      severity:       config.severity,
+      title:          config.title,
+      message:        config.message,
+      entity_id:      null,
+      entity_type:    'shop',
       revenue_impact: revenue,
-      is_active: true,
+      is_active:      true,
+      category:       config.category,
+      audience:       'all' as AlertAudience,
     };
   });
 }
@@ -202,6 +246,7 @@ async function aggregateConstraintAlerts(
  * SLA BREACH ALERTS
  * -----------------
  * Aggregate SLA breaches into a single shop-level alert.
+ * Category: revenue_at_risk — SLA breach = customer complaint imminent.
  */
 async function aggregateSlaAlerts(
   trx: Knex.Transaction,
@@ -216,32 +261,37 @@ async function aggregateSlaAlerts(
     .first();
 
   const count = Number(row?.breach_count ?? 0);
+
   if (count === 0) {
     return [{
-      shop_id: shopId,
-      alert_key: `sla:shop-${shopId}:shipping_breach`,
-      source: 'snapshot',
-      alert_type: 'sla_breach',
-      severity: 'critical',
-      title: 'SLA breach resolved',
-      message: 'All orders are within SLA.',
+      shop_id:     shopId,
+      alert_key:   `sla:shop-${shopId}:shipping_breach`,
+      source:      'snapshot',
+      alert_type:  'sla_breach',
+      severity:    'critical',
+      title:       'SLA breach resolved',
+      message:     'All orders are within SLA.',
       entity_type: 'shop',
-      is_active: false,
+      is_active:   false,
+      category:    'revenue_at_risk',
+      audience:    'all',
     }];
   }
 
   return [{
-    shop_id: shopId,
-    alert_key: `sla:shop-${shopId}:shipping_breach`,
-    source: 'snapshot',
-    alert_type: 'sla_breach',
-    severity: 'critical',
-    title: `${count} order${count > 1 ? 's' : ''} past shipping SLA`,
-    message: `${count} order${count > 1 ? 's have' : ' has'} breached the shipping SLA window and ${count > 1 ? 'are' : 'is'} at risk of customer complaints.`,
-    entity_id: null,
-    entity_type: 'shop',
+    shop_id:        shopId,
+    alert_key:      `sla:shop-${shopId}:shipping_breach`,
+    source:         'snapshot',
+    alert_type:     'sla_breach',
+    severity:       'critical',
+    title:          `${count} order${count > 1 ? 's' : ''} past shipping SLA`,
+    message:        `${count} order${count > 1 ? 's have' : ' has'} breached the shipping SLA window and ${count > 1 ? 'are' : 'is'} at risk of customer complaints.`,
+    entity_id:      null,
+    entity_type:    'shop',
     revenue_impact: Number(row?.total_revenue ?? 0),
-    is_active: true,
+    is_active:      true,
+    category:       'revenue_at_risk',
+    audience:       'all',
   }];
 }
 
@@ -249,6 +299,7 @@ async function aggregateSlaAlerts(
  * REVENUE AT RISK ALERT
  * ---------------------
  * Surfaces when significant revenue is blocked by constraints.
+ * Category: revenue_at_risk — direct commercial consequence signal.
  */
 async function aggregateRevenueAlerts(
   trx: Knex.Transaction,
@@ -258,42 +309,46 @@ async function aggregateRevenueAlerts(
     trx('orders_operational_control_snapshot')
       .where({ shop_id: shopId })
       .orderBy([
-        { column: 'snapshot_date', order: 'desc' },
-        { column: 'aggregate_version', order: 'desc' },
+        { column: 'snapshot_date',      order: 'desc' },
+        { column: 'aggregate_version',  order: 'desc' },
       ])
       .select('at_risk_revenue', 'constrained_orders')
       .first()
   );
 
-  const atRisk = Number(snapshot?.at_risk_revenue ?? 0);
+  const atRisk      = Number(snapshot?.at_risk_revenue ?? 0);
   const constrained = Number(snapshot?.constrained_orders ?? 0);
 
   if (atRisk < 100 || constrained === 0) {
     return [{
-      shop_id: shopId,
-      alert_key: `revenue:shop-${shopId}:at_risk`,
-      source: 'snapshot',
-      alert_type: 'revenue_at_risk',
-      severity: 'warning',
-      title: 'Revenue on track',
-      message: 'No significant revenue is currently at risk.',
+      shop_id:     shopId,
+      alert_key:   `revenue:shop-${shopId}:at_risk`,
+      source:      'snapshot',
+      alert_type:  'revenue_at_risk',
+      severity:    'warning',
+      title:       'Revenue on track',
+      message:     'No significant revenue is currently at risk.',
       entity_type: 'shop',
-      is_active: false,
+      is_active:   false,
+      category:    'revenue_at_risk',
+      audience:    'all',
     }];
   }
 
   return [{
-    shop_id: shopId,
-    alert_key: `revenue:shop-${shopId}:at_risk`,
-    source: 'snapshot',
-    alert_type: 'revenue_at_risk',
-    severity: atRisk > 5000 ? 'critical' : 'warning',
-    title: `$${Math.round(atRisk).toLocaleString()} revenue at risk`,
-    message: `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(atRisk).toLocaleString()} in revenue.`,
-    entity_id: null,
-    entity_type: 'shop',
+    shop_id:        shopId,
+    alert_key:      `revenue:shop-${shopId}:at_risk`,
+    source:         'snapshot',
+    alert_type:     'revenue_at_risk',
+    severity:       atRisk > 5000 ? 'critical' : 'warning',
+    title:          `$${Math.round(atRisk).toLocaleString()} revenue at risk`,
+    message:        `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(atRisk).toLocaleString()} in revenue.`,
+    entity_id:      null,
+    entity_type:    'shop',
     revenue_impact: atRisk,
-    is_active: true,
+    is_active:      true,
+    category:       'revenue_at_risk',
+    audience:       'all',
   }];
 }
 
@@ -303,9 +358,7 @@ async function aggregateRevenueAlerts(
  * Called after every snapshot recomputation.
  * Runs inside a transaction with app.current_tenant set.
  */
-export async function aggregateAlertsForShop(
-  shopId: number
-): Promise<void> {
+export async function aggregateAlertsForShop(shopId: number): Promise<void> {
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
@@ -327,7 +380,7 @@ export async function aggregateAlertsForShop(
 
     console.info('[ALERTS_AGGREGATED]', {
       shopId,
-      total: allAlerts.length,
+      total:  allAlerts.length,
       active: allAlerts.filter(a => a.is_active).length,
     });
   });

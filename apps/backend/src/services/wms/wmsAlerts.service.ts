@@ -7,24 +7,29 @@ import { dispatchNotification } from '../notifications/notificationDispatch.serv
  * --------------------------
  * Proactive alert firing for WMS warehouse signals.
  *
- * - wms:exception:pick:{batchId}      — pick exception raised
- * - wms:exception:pack:{batchId}      — pack exception raised
- * - wms:stow:pending:{stowTaskId}     — stow task created (auto-resolves on confirm)
- * - wms:batch:ready_to_pack:{batchId} — pick complete, packer needed
- * - wms:batch:ready_to_ship:{batchId} — pack complete, shipment needed
- * - wms:receive:arrived:{poId}                              — PO shipped, receive session needed (FEAT-004)
- * - wms:receive:exception:{jobId}:{variantId}               — inspection exception raised (FEAT-004)
+ * Alert key format (KI-1 fix — colon-delimited, matches frontend routing):
+ *   wms:exception:pick:{batchId}
+ *   wms:exception:pack:{batchId}
+ *   wms:stow:pending:{stowTaskId}
+ *   wms:stow:exception:{stowTaskId}:{exceptionType}
+ *   wms:batch:ready_to_pack:{batchId}
+ *   wms:batch:ready_to_ship:{batchId}
+ *   wms:batch:released:{batchId}
+ *   wms:receive:arrived:{poId}
+ *   wms:receive:exception:{jobId}:{variantId}
  *
- * All alerts:
+ * Category mapping (blueprint §6):
+ *   warehouse_floor  — pick/pack/stow/batch signals  (audience: operator)
+ *   supplier_inbound — receive/PO signals             (audience: operator or owner)
+ *
+ * Rules:
  * - Upsert on (shop_id, alert_key) — idempotent
  * - Auto-resolve when underlying condition clears
- * - Visible in AlertsPage to owner/admin roles
- *
- * Caller passes the transaction — alerts are written atomically
- * with the event that triggered them.
  */
 
 type AlertSeverity = 'critical' | 'warning' | 'info';
+type AlertCategory = 'warehouse_floor' | 'supplier_inbound' | 'stock_reorder' | 'revenue_at_risk' | 'money_margin' | 'data_trust';
+type AlertAudience = 'operator' | 'owner' | 'all';
 
 async function upsertWmsAlert(
   trx: Knex | Knex.Transaction,
@@ -38,35 +43,33 @@ async function upsertWmsAlert(
     entityId?: string;
     entityType?: string;
     isActive: boolean;
+    category: AlertCategory;
+    audience: AlertAudience;
   }
 ): Promise<void> {
   const {
-    shopId,
-    alertKey,
-    alertType,
-    severity,
-    title,
-    message,
-    entityId,
-    entityType,
-    isActive,
+    shopId, alertKey, alertType, severity,
+    title, message, entityId, entityType,
+    isActive, category, audience,
   } = params;
 
   await trx.raw(`
     INSERT INTO alerts (
       shop_id, alert_key, source, alert_type, severity,
       title, message, entity_id, entity_type,
-      revenue_impact, is_active, dismissed_at
+      revenue_impact, is_active, category, audience, dismissed_at
     ) VALUES (
       ?, ?, 'wms', ?, ?,
       ?, ?, ?, ?,
-      NULL, ?, ?
+      NULL, ?, ?, ?, ?
     )
     ON CONFLICT (shop_id, alert_key) DO UPDATE SET
-      is_active = EXCLUDED.is_active,
-      title = EXCLUDED.title,
-      message = EXCLUDED.message,
-      updated_at = CURRENT_TIMESTAMP,
+      is_active   = EXCLUDED.is_active,
+      title       = EXCLUDED.title,
+      message     = EXCLUDED.message,
+      category    = EXCLUDED.category,
+      audience    = EXCLUDED.audience,
+      updated_at  = CURRENT_TIMESTAMP,
       dismissed_at = CASE
         WHEN EXCLUDED.is_active = false THEN CURRENT_TIMESTAMP
         ELSE alerts.dismissed_at
@@ -74,12 +77,13 @@ async function upsertWmsAlert(
   `, [
     shopId, alertKey, alertType, severity,
     title, message, entityId ?? null, entityType ?? null,
-    isActive, isActive ? null : new Date(),
+    isActive, category, audience, isActive ? null : new Date(),
   ]);
 }
 
 // ─────────────────────────────────────────
 // Pick/Pack Exception Raised
+// category: warehouse_floor | audience: operator (floor signal)
 // ─────────────────────────────────────────
 
 export async function firePickExceptionAlert(
@@ -95,27 +99,28 @@ export async function firePickExceptionAlert(
   const { shopId, batchId, stage, exceptionType, variantTitle } = params;
   const batchShort = batchId.slice(0, 8).toUpperCase();
   const stageLabel = stage === 'pick' ? 'Pick' : 'Pack';
-  const typeLabel = exceptionType.replace(/_/g, ' ');
+  const typeLabel  = exceptionType.replace(/_/g, ' ');
 
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:exception:${stage}:${batchId}`,
-    alertType: stage === 'pick' ? 'wms_pick_exception' : 'wms_pack_exception',
-    severity: 'warning',
-    title: `${stageLabel} exception — ${typeLabel}`,
-    message: `${stageLabel} exception reported on batch ${batchShort}${variantTitle ? ` for ${variantTitle}` : ''}. Review in Problem Center.`,
-    entityId: batchId,
+    alertKey:   `wms:exception:${stage}:${batchId}`,
+    alertType:  stage === 'pick' ? 'wms_pick_exception' : 'wms_pack_exception',
+    severity:   'warning',
+    title:      `${stageLabel} exception — ${typeLabel}`,
+    message:    `${stageLabel} exception reported on batch ${batchShort}${variantTitle ? ` for ${variantTitle}` : ''}. Review in Problem Center.`,
+    entityId:   batchId,
     entityType: 'pick_batch',
-    isActive: true,
+    isActive:   true,
+    category:   'warehouse_floor',
+    audience:   'operator',
   });
 
-  // Notify owner/admin — exception needs supervisor review
   dispatchNotification({
     shopId,
     payload: {
-      title: `${stage === 'pick' ? 'Pick' : 'Pack'} exception reported`,
-      body: `Batch ${batchId.slice(0, 8).toUpperCase()} — ${exceptionType.replace(/_/g, ' ')}. Review in Problem Center.`,
-      data: { route: '/problem-center', batchId },
+      title: `${stageLabel} exception reported`,
+      body:  `Batch ${batchShort} — ${typeLabel}. Review in Problem Center.`,
+      data:  { route: '/problem-center', batchId },
     },
     broadcastToRole: 'owner',
   }).catch((err) => console.error('[WMS_EXCEPTION_PUSH_FAILED]', err.message));
@@ -125,6 +130,7 @@ export async function firePickExceptionAlert(
 
 // ─────────────────────────────────────────
 // Stow Task Created / Resolved
+// category: warehouse_floor | audience: operator
 // ─────────────────────────────────────────
 
 export async function fireStowTaskAlert(
@@ -143,16 +149,18 @@ export async function fireStowTaskAlert(
 
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:stow:pending:${stowTaskId}`,
-    alertType: 'wms_stow_pending',
-    severity: 'info',
-    title: isActive ? 'Stow task pending' : 'Stow task completed',
-    message: isActive
+    alertKey:   `wms:stow:pending:${stowTaskId}`,
+    alertType:  'wms_stow_pending',
+    severity:   'info',
+    title:      isActive ? 'Stow task pending' : 'Stow task completed',
+    message:    isActive
       ? `A stow task was created from ${triggerLabel}. Assign an operator to stow.`
-      : `Stow task completed successfully.`,
-    entityId: stowTaskId,
+      : 'Stow task completed successfully.',
+    entityId:   stowTaskId,
     entityType: 'stow_task',
     isActive,
+    category:   'warehouse_floor',
+    audience:   'operator',
   });
 
   console.info('[WMS_STOW_ALERT_FIRED]', { shopId, stowTaskId, isActive });
@@ -160,9 +168,9 @@ export async function fireStowTaskAlert(
 
 // ─────────────────────────────────────────
 // Stow Exception
+// category: warehouse_floor | audience: owner (supervisor review needed)
 // ─────────────────────────────────────────
-// Fires when operator reports an exception during stow.
-// Targets owner/admin — stow exceptions require supervisor review.
+
 export async function fireStowExceptionAlert(
   trx: Knex | Knex.Transaction,
   params: {
@@ -174,55 +182,57 @@ export async function fireStowExceptionAlert(
 ): Promise<void> {
   const { shopId, stowTaskId, exceptionType, quantity } = params;
   const typeLabel = exceptionType.replace(/_/g, ' ');
+
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:stow:exception:${stowTaskId}:${exceptionType}`,
-    alertType: 'wms_stow_exception',
-    severity: 'warning',
-    title: `Stow exception — ${typeLabel}`,
-    message: `${quantity} unit${quantity > 1 ? 's' : ''} reported as ${typeLabel} during stow. Item moved to problem bin.`,
-    entityId: stowTaskId,
+    alertKey:   `wms:stow:exception:${stowTaskId}:${exceptionType}`,
+    alertType:  'wms_stow_exception',
+    severity:   'warning',
+    title:      `Stow exception — ${typeLabel}`,
+    message:    `${quantity} unit${quantity > 1 ? 's' : ''} reported as ${typeLabel} during stow. Item moved to problem bin.`,
+    entityId:   stowTaskId,
     entityType: 'stow_task',
-    isActive: true,
+    isActive:   true,
+    category:   'warehouse_floor',
+    audience:   'owner',
   });
+
   console.info('[WMS_STOW_EXCEPTION_ALERT_FIRED]', { shopId, stowTaskId, exceptionType, quantity });
-};
+}
 
 // ─────────────────────────────────────────
 // Batch Ready to Pack
+// category: warehouse_floor | audience: operator
 // ─────────────────────────────────────────
 
 export async function fireBatchReadyToPackAlert(
   trx: Knex | Knex.Transaction,
-  params: {
-    shopId: number;
-    batchId: string;
-    isActive: boolean;
-  }
+  params: { shopId: number; batchId: string; isActive: boolean }
 ): Promise<void> {
   const { shopId, batchId, isActive } = params;
   const batchShort = batchId.slice(0, 8).toUpperCase();
 
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:batch:ready_to_pack:${batchId}`,
-    alertType: 'wms_batch_ready_to_pack',
-    severity: 'info',
-    title: 'Batch ready to pack',
-    message: `Batch ${batchShort} pick is complete. A packer can now claim and start packing.`,
-    entityId: batchId,
+    alertKey:   `wms:batch:ready_to_pack:${batchId}`,
+    alertType:  'wms_batch_ready_to_pack',
+    severity:   'info',
+    title:      'Batch ready to pack',
+    message:    `Batch ${batchShort} pick is complete. A packer can now claim and start packing.`,
+    entityId:   batchId,
     entityType: 'pick_batch',
     isActive,
+    category:   'warehouse_floor',
+    audience:   'operator',
   });
 
-  // Notify operators — packer needed (broadcast to pool)
   if (isActive) {
     dispatchNotification({
       shopId,
       payload: {
         title: 'Batch ready to pack',
-        body: `Batch ${batchId.slice(0, 8).toUpperCase()} pick complete. Claim it to start packing.`,
-        data: { route: '/wms', batchId },
+        body:  `Batch ${batchShort} pick complete. Claim it to start packing.`,
+        data:  { route: '/wms', batchId },
       },
       broadcastToRole: 'operator',
     }).catch((err) => console.error('[WMS_READY_TO_PACK_PUSH_FAILED]', err.message));
@@ -233,39 +243,37 @@ export async function fireBatchReadyToPackAlert(
 
 // ─────────────────────────────────────────
 // Batch Ready to Ship
+// category: warehouse_floor | audience: operator
 // ─────────────────────────────────────────
 
 export async function fireBatchReadyToShipAlert(
   trx: Knex | Knex.Transaction,
-  params: {
-    shopId: number;
-    batchId: string;
-    isActive: boolean;
-  }
+  params: { shopId: number; batchId: string; isActive: boolean }
 ): Promise<void> {
   const { shopId, batchId, isActive } = params;
   const batchShort = batchId.slice(0, 8).toUpperCase();
 
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:batch:ready_to_ship:${batchId}`,
-    alertType: 'wms_batch_ready_to_ship',
-    severity: 'info',
-    title: 'Batch ready to ship',
-    message: `Batch ${batchShort} packing is complete. Orders are ready for ship confirmation.`,
-    entityId: batchId,
+    alertKey:   `wms:batch:ready_to_ship:${batchId}`,
+    alertType:  'wms_batch_ready_to_ship',
+    severity:   'info',
+    title:      'Batch ready to ship',
+    message:    `Batch ${batchShort} packing is complete. Orders are ready for ship confirmation.`,
+    entityId:   batchId,
     entityType: 'pick_batch',
     isActive,
+    category:   'warehouse_floor',
+    audience:   'operator',
   });
 
-  // Notify owner/admin — ship confirmation needed
   if (isActive) {
     dispatchNotification({
       shopId,
       payload: {
         title: 'Batch ready to ship',
-        body: `Batch ${batchId.slice(0, 8).toUpperCase()} packing complete. Confirm shipment.`,
-        data: { route: '/wms', batchId },
+        body:  `Batch ${batchShort} packing complete. Confirm shipment.`,
+        data:  { route: '/wms', batchId },
       },
       broadcastToRole: 'owner',
     }).catch((err) => console.error('[WMS_READY_TO_SHIP_PUSH_FAILED]', err.message));
@@ -274,67 +282,81 @@ export async function fireBatchReadyToShipAlert(
   console.info('[WMS_READY_TO_SHIP_ALERT_FIRED]', { shopId, batchId, isActive });
 }
 
-// FEAT-004: Fires when PO transitions to `shipped` — triggers operator receive session.
-// Alert key is deterministic (idempotent on re-advance). Resolves when receive job closes.
+// ─────────────────────────────────────────
+// PO Shipped — Receive Session Needed (FEAT-004)
+// category: supplier_inbound | audience: operator
+// ─────────────────────────────────────────
+
 export async function fireReceiveArrivedAlert(
   trx: Knex.Transaction,
   params: { shopId: number; poId: string; supplierName: string; isActive?: boolean }
 ): Promise<void> {
   const { shopId, poId, supplierName, isActive = true } = params;
   const poShort = poId.slice(0, 8).toUpperCase();
+
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:receive:arrived:${poId}`,
-    alertType: 'wms_receive_arrived',
-    severity: 'info',
-    title: 'Shipment arrived — receive required',
-    message: `PO ${poShort} from ${supplierName} is marked shipped. Open a receive session to process inbound stock.`,
-    entityId: poId,
+    alertKey:   `wms:receive:arrived:${poId}`,
+    alertType:  'wms_receive_arrived',
+    severity:   'info',
+    title:      'Shipment arrived — receive required',
+    message:    `PO ${poShort} from ${supplierName} is marked shipped. Open a receive session to process inbound stock.`,
+    entityId:   poId,
     entityType: 'purchase_order',
     isActive,
+    category:   'supplier_inbound',
+    audience:   'operator',
   });
-  // Notify all operators — inbound stock needs processing
+
   if (isActive) {
     dispatchNotification({
       shopId,
       payload: {
         title: 'Shipment arrived',
-        body: `PO ${poShort} from ${supplierName} ready to receive.`,
-        data: { route: '/wms', poId },
+        body:  `PO ${poShort} from ${supplierName} ready to receive.`,
+        data:  { route: '/wms', poId },
       },
       broadcastToRole: 'operator',
     }).catch((err) => console.error('[WMS_RECEIVE_ARRIVED_PUSH_FAILED]', err.message));
   }
+
   console.info('[WMS_RECEIVE_ARRIVED_ALERT_FIRED]', { shopId, poId, isActive });
 }
 
-// FEAT-004: Fires when an inspection exception is raised during a receive session.
-// Targets owner/admin — operator cannot self-resolve receive exceptions.
+// ─────────────────────────────────────────
+// Receive Inspection Exception (FEAT-004)
+// category: supplier_inbound | audience: owner (operator cannot self-resolve)
+// ─────────────────────────────────────────
+
 export async function fireReceiveExceptionAlert(
   trx: Knex.Transaction,
   params: { shopId: number; receiveJobId: string; lasyncroVariantId: string; exceptionType: string }
 ): Promise<void> {
   const { shopId, receiveJobId, lasyncroVariantId, exceptionType } = params;
   const jobShort = receiveJobId.slice(0, 8).toUpperCase();
+
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:receive:exception:${receiveJobId}:${lasyncroVariantId}`,
-    alertType: 'wms_receive_exception',
-    severity: 'warning',
-    title: 'Receive exception reported',
-    message: `Job ${jobShort}: ${exceptionType} exception on variant ${lasyncroVariantId.slice(0, 8)}.`,
-    entityId: receiveJobId,
+    alertKey:   `wms:receive:exception:${receiveJobId}:${lasyncroVariantId}`,
+    alertType:  'wms_receive_exception',
+    severity:   'warning',
+    title:      'Receive exception reported',
+    message:    `Job ${jobShort}: ${exceptionType} exception on variant ${lasyncroVariantId.slice(0, 8)}.`,
+    entityId:   receiveJobId,
     entityType: 'receive_job',
-    isActive: true,
+    isActive:   true,
+    category:   'supplier_inbound',
+    audience:   'owner',
   });
+
   console.info('[WMS_RECEIVE_EXCEPTION_ALERT_FIRED]', { shopId, receiveJobId, lasyncroVariantId, exceptionType });
 }
 
 // ─────────────────────────────────────────
 // Batch Released (pick job created)
+// category: warehouse_floor | audience: operator
 // ─────────────────────────────────────────
-// Fires when owner/auto-release creates a pick batch.
-// Targets owner/admin alert inbox + notifies assigned operator or operator pool.
+
 export async function fireBatchReleasedAlert(
   trx: Knex | Knex.Transaction,
   params: {
@@ -347,16 +369,20 @@ export async function fireBatchReleasedAlert(
 ): Promise<void> {
   const { shopId, batchId, orderCount, lineItems, assignedOperatorId } = params;
   const batchShort = batchId.slice(0, 8).toUpperCase();
+
   await upsertWmsAlert(trx, {
     shopId,
-    alertKey: `wms:batch:released:${batchId}`,
-    alertType: 'wms_batch_released',
-    severity: 'info',
-    title: `Pick batch released — ${orderCount} order${orderCount > 1 ? 's' : ''}`,
-    message: `Batch ${batchShort} is ready to pick (${lineItems} line items). ${assignedOperatorId ? 'Assigned to operator.' : 'Available to any operator.'}`,
-    entityId: batchId,
+    alertKey:   `wms:batch:released:${batchId}`,
+    alertType:  'wms_batch_released',
+    severity:   'info',
+    title:      `Pick batch released — ${orderCount} order${orderCount > 1 ? 's' : ''}`,
+    message:    `Batch ${batchShort} is ready to pick (${lineItems} line items). ${assignedOperatorId ? 'Assigned to operator.' : 'Available to any operator.'}`,
+    entityId:   batchId,
     entityType: 'pick_batch',
-    isActive: true,
+    isActive:   true,
+    category:   'warehouse_floor',
+    audience:   'operator',
   });
+
   console.info('[WMS_BATCH_RELEASED_ALERT_FIRED]', { shopId, batchId, orderCount, lineItems, assignedOperatorId });
 }
