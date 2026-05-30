@@ -1,0 +1,165 @@
+---
+title: "Har Shopify et indbygget lagerstyringssystem?"
+titleAccent: "Hvad det gør — og ikke gør."
+description: "Shopify holder styr på lagerniveauer — men styrer ikke dit lager. Her er præcis hvor Shopifys indbyggede værktøjer stopper, hvad et WMS egentlig gør, og hvordan du lukker hullet uden et enterprise-system."
+date: "2026-05-30"
+lastReviewed: "2026-05-30"
+author: "LaSyncro"
+tags: ["shopify", "wms", "inventory", "operations"]
+primaryKeyword: "shopify lagerstyring"
+secondaryKeywords: ["lagerstyringssystem shopify", "wms shopify danmark", "shopify lager lille virksomhed", "shopify lagersynkronisering", "shopify lagersystem"]
+vector: 1
+cta_text: "LaSyncro tilføjer et komplet lagerstyringslag til Shopify — operationelt på 60 sekunder, ikke 6 uger."
+cta_url: "https://www.lasyncro.com/#waitlist"
+faq:
+  - question: "Har Shopify et indbygget lagerstyringssystem (WMS)?"
+    answer: "Nej. Shopify inkluderer grundlæggende lagersporing — lagerantal pr. variant, understøttelse af flere lokationer og overførselsregistre — men mangler lagerstyringsfunktioner som hylde- og placeringssporing, stregkodedrevet plukning, modtagelsesarbejdsgange og ruteoptimeringslevering. Forhandlere, der driver deres eget lager, har brug for et dedikeret WMS, der integrerer med Shopify."
+  - question: "Hvad er forskellen mellem lagerstyring og et WMS?"
+    answer: "Lagerstyring fortæller dig hvad du har — lagerantal, lokationer og niveauer. Et lagerstyringssystem (WMS) fortæller dig hvor det er, hvordan det bevæger sig, og hvad der skal gøres som næste skridt. Shopify giver dig det første. Et WMS giver dig det andet. De fleste forhandlere indser, at de har brug for begge dele, når de passerer 50 ordrer om dagen eller 200 aktive varenumre."
+  - question: "Kan jeg bruge Shopify til lagerstyring med flere lokationer?"
+    answer: "Shopify understøtter flere lagerlokationer og kan tildele ordrer til at blive opfyldt fra specifikke lokationer. Det håndterer dog ikke de fysiske operationer inden for hver lokation — ingen hyllesporing, ingen plukruteoptimering, ingen skanningsbaseret modtagelse. Flere lokationer i Shopify er lagersynlighed, ikke lagerstyring."
+  - question: "Hvad sker der, når Shopifys lagerantal ikke stemmer overens med mit faktiske lager?"
+    answer: "Forskellen mellem Shopifys antal og det fysiske lager kaldes lagerafvigelse. Det opbygges af uregistrerede bevægelser — returvarer, der lægges tilbage uden en genopfyldning, plukfejl der ikke korrigeres, beskadigede varer der fjernes uden justering. Uden handling fører det til oversalg, falske udsolgte produkter og unøjagtige efterspørgselsprognoser. Et skanningsbaseret WMS eliminerer afvigelse ved at registrere hver fysisk bevægelse i realtid."
+  - question: "Hvilket WMS passer bedst til et lille Shopify-lager i Danmark?"
+    answer: "For danske Shopify-forhandlere med 1–30 lagermedarbejdere og et eget lager bør du lede efter et WMS, der forbinder via Shopify OAuth (ikke CSV-eksport), understøtter kameraskanningsbaseret plukning og modtagelse uden dedikeret hardware, leverer et uforanderligt hændelsesregister frem for øjebliksbilleder, og er designet til 1–10 personers driftsteams. Opsætning bør tage minutter, ikke uger. Enterprise-systemer som Ongoing WMS er designet til 3PL og omnichannel-forhandlere med fysiske butikker — ikke til DTC Shopify-lagre med lille team."
+relatedLinks:
+  - href: "/blog/shopify-lagerhantering"
+    title: "Har Shopify ett inbyggt lagerhanteringssystem? (Svenska)"
+    description: "Den svenske udgave af denne guide — komplet WMS-gennemgang."
+  - href: "/blog/shopify-warehouse-management"
+    title: "Does Shopify Have Built-In Warehouse Management?"
+    description: "The English version of this guide — full WMS capability breakdown."
+  - href: "/blog/how-to-fix-inventory-drift-shopify"
+    title: "How to Fix Inventory Drift in Shopify"
+    description: "The most common operational failure in small Shopify warehouses."
+  - href: "/blog/best-wms-for-shopify-small-business"
+    title: "Best WMS for Shopify Small Business (2026)"
+    description: "Honest comparison of WMS options for small Shopify warehouses."
+---
+
+import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
+import NumberedH3 from '@/components/article/NumberedH3'
+import Checklist from '@/components/article/Checklist'
+
+<QuickAnswer>
+Shopify inkluderer grundlæggende lagersporing — lagerantal pr. variant, understøttelse af flere lokationer og overførselsregistre — men mangler lagerstyringsfunktioner som hylde- og placeringssporing, stregkodedrevet plukning, modtagelsesarbejdsgange og ruteoptimeringslevering. Forhandlere, der driver deres eget lager, har brug for et dedikeret WMS, der integrerer med Shopify for at lukke hullet.
+</QuickAnswer>
+
+<HeroVisual
+  leftLabel="Hvad Shopify holder styr på"
+  leftHeading="Lagersynlighed"
+  leftItems="Lagerantal pr. variant|Understøttelse af flere lokationer|Overførselsregistre|Alarmer for lavt lager"
+  rightLabel="Hvad et WMS tilføjer"
+  rightHeading="Lagerstyring"
+  rightItems="Hylle- og placeringssporing|Skanningsbaseret modtagelse|Plukruteoptimering|Uforanderligt hændelsesregister"
+  caption="Shopify fortæller dig hvad du har. Et WMS fortæller dig hvor det er, hvordan det bevæger sig, og hvad der skal gøres som næste skridt."
+/>
+
+Hvis du driver et eget lager og bruger Shopify, har du med stor sandsynlighed mærket dette hul. Din Shopify-admin viser lagerantal. Den modtager ordrer. Den reducerer lageret, når noget sælges. Men den kan ikke fortælle dig, hvor i dit lager en vare faktisk befinder sig, hvem der skal hente den, om den rigtige vare blev plukket — eller om morgendagens levering stemmer overens med indkøbsordren.
+
+Hullet — mellem lagersynlighed og lagerstyring — er der, hvor de fleste voksende Shopify-forhandlere taber tid, begår fejl og opbygger de afvigelser, der til sidst forårsager udsolgte produkter og oversalg.
+
+Denne guide dækker præcis, hvad Shopify tilbyder indbygget, hvad et lagerstyringssystem faktisk gør, de specifikke fejlpunkter der opstår, når du driver et lager udelukkende på Shopify — og hvad du skal lede efter i et WMS tilpasset SMB Shopify-virksomheder.
+
+## Hvad Shopify faktisk inkluderer for lagerstyring
+
+Shopifys indbyggede lagerværktøjer er genuint nyttige ved lav volumen. At forstå præcis hvad de dækker hjælper dig med at identificere præcis, hvor hullet begynder.
+
+### Lagerantal pr. variant
+
+Shopify sporer lager pr. produktvariant på tværs af flere lokationer. Når en ordre afgives, fratrækkes det relevante varenummer automatisk. Når du modtager nyt lager, kan du justere antal manuelt eller via en tilknyttet app. Dette er fundamentet — og det fungerer godt, når driften er simpel.
+
+### Understøttelse af flere lokationer
+
+Shopify understøtter flere lagerlokationer og kan dirigere ordrer til at blive opfyldt fra specifikke lokationer. Du kan angive prioritet, flytte lager mellem lokationer og se lager pr. lokation i admin. Nyttigt for forhandlere med en butik ved siden af et lager, eller der opfylder fra flere steder.
+
+Hvad det ikke gør: håndtere de fysiske operationer inden for hver lokation. Det ved, at du har 47 enheder af varenummer XYZ på Lager 1. Det ved ikke, hvor i det lager de 47 enheder befinder sig, hvilke der skal plukkes først, eller om de er i salgbar stand.
+
+### Grundlæggende alarmer for lavt lager
+
+Shopify kan give dig besked, når et produkt når et antal, du definerer. Det er et grundlæggende efterspørgselssignal — ikke efterspørgselsprognosticering, ikke risikovurdering for genopfyldning, men tilstrækkeligt til at udløse en manuel genopfyldningsbeslutning ved lav volumen.
+
+### Overførselsregistre mellem lokationer
+
+Shopify understøtter lagerbevægelser mellem lokationer med et grundlæggende register over, hvad der er overført og hvornår. Der er ingen skanningsverifikation, ingen afvigelsesregistrering og ingen revisionshistorik over, hvem der har flyttet hvad — blot en mængdejustering mellem to lokationssummer.
+
+### Den centrale distinktion
+
+Shopifys værktøjer er lagersynlighed — de fortæller dig, hvad du har. Lagerstyring fortæller dig, hvor det er, hvordan det bevæger sig, og hvad der skal gøres som næste skridt. De fleste forhandlere mærker ikke hullet, før ordrevolumet stiger og manuelle processer begynder at bryde sammen under presset.
+
+<ArticleImage
+  src="ba-flow-strip.png"
+  alt="LaSyncro lagerstyringflow der viser de fem kernefunktioner i et WMS som mangler i Shopifys indbyggede lagerværktøjer"
+  caption="Fem funktioner Shopify ikke tilbyder — og som ethvert voksende lager før eller siden har brug for."
+/>
+
+## Hvad lagerstyring egentlig betyder
+
+Et rigtigt lagerstyringssystem (WMS) leverer fem kernefunktioner, som Shopify mangler.
+
+<NumberedH3 num="01">Modtagelsesarbejdsgange</NumberedH3>
+
+Når en leverandørlevering ankommer, giver et WMS en struktureret modtagelsesproces: scan varer ind mod indkøbsordren, registrer afvigelser med det samme, tildel modtaget lager til specifikke lagerpladser og opdater lageret i realtid. Hver levering bliver en verificeret, tidsstemplet hændelse — ikke en manuel mængdejustering foretaget efter optælling.
+
+Det har betydning, fordi en enkelt fejltælling på en indkøbsordre skaber en kædereaktion: forkerte lagerantal, oversalg, akutte genopfyldningsordrer, udsolgte produkter, øgede returneringer og spildt tid på genoptælling. Skanningsbaseret modtagelse forhindrer kæden ved kilden.
+
+<NumberedH3 num="02">Hylle- og placeringssporing</NumberedH3>
+
+Et WMS ved, at varenummer 103 er i Gang 2, Hylde B, Felt 14 — ikke blot "Lager 1". Det muliggør styret indlagring (fortæller operatører præcis, hvor indgående varer skal placeres), styret plukning (leder plukkere til den rigtige placering uden at de skal lede) og cyklisk optælling (revision af specifikke placeringer frem for hele lageret).
+
+Uden placeringssporing bliver et lager med 500+ varenumre sværere og sværere at drive præcist i takt med væksten.
+
+<NumberedH3 num="03">Skanningsbaserede bekræftelser</NumberedH3>
+
+Hver fysisk bevægelse — modtagelse, indlagring, plukning, pakning, returnering — bekræftes via en skanning. Skanningen er posten. Det eliminerer hullet mellem fysisk virkelighed og systemtilstand, der forårsager lagerafvigelse. Det skaber også en uforanderlig revisionshistorik: hver bevægelse har et tidsstempel, et operatør-ID og en placering.
+
+<NumberedH3 num="04">Plukruteoptimering</NumberedH3>
+
+Et WMS leder plukkere effektivt gennem lageret — grupperer varer efter placering, sekvenserer plukning for at minimere gåafstand og batchbehandler flere ordrer hvor det er muligt. Ved 20 ordrer om dagen er det rart at have. Ved 200 ordrer om dagen er det forskellen på et lager, der leverer til tiden, og et der ikke gør.
+
+<NumberedH3 num="05">Uforanderligt hændelsesregister</NumberedH3>
+
+Et WMS registrerer hver lagerbevægelse som en hændelse — ikke blot et øjebliksbillede af det aktuelle antal. Det betyder, at du kan afspille præcis, hvad der skete med et specifikt varenummer på et hvilket som helst tidspunkt. Når lageret er forkert, behøver du ikke gætte — du kan spore hver bevægelse tilbage til dens kilde. Shopify gemmer det aktuelle antal. Et WMS gemmer historikken, der producerede det.
+
+## De specifikke problemer der opstår uden et WMS
+
+Tre mønstre opstår konsekvent, når Shopify-forhandlere driver lager uden et WMS.
+
+**Lagerafvigelse opbygges stille og roligt.** Hver uregistreret bevægelse — en returnering der lægges tilbage uden en genopfyldning, en plukfejl der ikke korrigeres, en defekt enhed der fjernes uden Shopify-justering — skaber en lille uoverensstemmelse. Disse summeres. Inden for uger eller måneder er forskellen mellem Shopifys antal og det fysiske lager stor nok til at forårsage oversalg og udsolgte produkter.
+
+**Plukning og pakning er fejlbehæftet uden verifikation.** Når plukkere navigerer fra hukommelse eller en udskrevet liste uden skanningskontrol, sendes forkerte varer. Hver returneret pakke uden en korrekt plukfejl som oprindelse repræsenterer fragtomkostninger, returneringsomkostninger og kundeserviceomkostninger, som et WMS ville have forhindret ved skanningspunktet.
+
+**Modtagelse uden verifikation skaber falske lagerantal.** Hvis en leverandør sender 95 enheder i stedet for 100, og du justerer Shopify til 100 baseret på indkøbsordren frem for faktisk optælling, lever du med 5 enheder falsk lager pr. levering. Ved 10 leverancer om måneden er det 50 enheder forkert lager, der venter på at forårsage problemer.
+
+<ProductVisual
+  badge="Produkt · Lagerstyring"
+  title="Realtidslager, plukning og pakning, modtagelse af indkøbsordrer og leverandørpræstation — bygget til Shopify DTC-lagre"
+  caption="Lagerstyringslaget der holder Shopifys registre nøjagtige, mens dit team fokuserer på levering, ikke afstemning."
+/>
+
+## Hvornår har du brug for et WMS til dit Shopify-lager?
+
+Tre tydelige signaler indikerer, at du har passeret grænsen for, hvad Shopify native kan håndtere.
+
+**Du bruger mere end 30 minutter om dagen på at afstemme lagerafvigelser.** Hvis du tæller om, justerer og fejlfinder forskelle mellem Shopifys antal og fysisk lager, er det tid, et WMS automatiserer bort med det samme.
+
+**Du opdager udsolgte produkter fra kundeklager, ikke fra dit system.** Det betyder, at dit lager giver dig en falsk tryghedsfølelse. En kunde, der finder dit udsolgte produkt for dig, er en tabt ordre, en potentiel tilbageføring og et troværdighedsunderskud — alt i ét.
+
+**Mere end én person arbejder i lageret uden et koordineret pluksystem.** Så snart du har to plukkere, der arbejder fra hukommelse eller papirlister, begynder ordrerne at interferere med hinanden. Det sker hurtigere end de fleste forventer.
+
+## Hvad du skal lede efter i et WMS til et lille Shopify-lager
+
+<Checklist items="Forbinder det via Shopify OAuth — ikke CSV-eksport eller manuel synkronisering?|Understøtter det kameraskanningsbaseret plukning og modtagelse uden dedikeret stregkodehardware?|Leverer det et uforanderligt hændelsesregister, ikke blot øjebliksbilleder af aktuelle antal?|Er det designet til 1–10 personers lagerteams, ikke enterprise-driftschefer?|Hvad er den faktiske opsætningstid — minutter eller uger?|Opdaterer det Shopify-lageret i realtid fra hver skanning — ikke efter en synkroniseringsplan?|Viser det efterspørgselssignaler — advarsel om lavt lager, genopfyldningsrisiko, leverandørpræstation?" />
+
+<ProductVisual
+  badge="Produkt · Shopify-native WMS"
+  title="Forbind til Shopify på 60 sekunder. Se dit første lagerrisiko inden for 4 minutter. Operationelt samme dag."
+  caption="Intet implementeringsprojekt. Ingen konsulent. Ingen hardware. Dit lagerteam er i gang på én dag."
+/>
+
+De fleste danske Shopify-forhandlere driver deres lagre med et regneark, en WhatsApp-gruppe og Shopifys indbyggede antal. Det fungerer, indtil det ikke længere gør — og det holder typisk op med at fungere på det værst tænkelige tidspunkt: en høj sæson, en stor kampagne eller præcis når en anden person slutter sig til lagerteamet.
+
+Hullet mellem Shopifys lagersynlighed og hvad et lille lager faktisk har brug for for at fungere korrekt er ikke et Shopify-problem. Det er et kategorikendskabshul. Shopify er ikke et WMS — og det er ikke designet til at være det. Det rigtige værktøj til lageroperationer er et, der forbinder til Shopify og håndterer de fysiske bevægelser, der holder Shopifys registre nøjagtige.
