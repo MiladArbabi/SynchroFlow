@@ -38,10 +38,11 @@ import {
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from '../../api/axiosConfig';
 import { Popper, Paper, ClickAwayListener, Tooltip } from '@mui/material';
-import { Cast, ExternalLink } from 'lucide-react';
+import { Cast, ExternalLink, Copy } from 'lucide-react';
+import { useToast } from '../../contexts/ToastContext';
 
 // ─── HELPERS ──────────────────────────────────────────────────
 
@@ -747,35 +748,62 @@ function Zone5CostStory({ cost, loading, fmt }: {
   );
 }
 
-type DisplayToken = { id: string; label: string | null; active: boolean; last_seen_at: string | null };
-
 function CastButton() {
   const pal = useAppTheme();
   const theme = useTheme();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { show } = useToast();
   const anchorRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const { data } = useQuery<{ tokens: DisplayToken[] }>({
-    queryKey: ['display-tokens'],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/wms/analytics/display-tokens');
-      return data;
-    },
-    refetchInterval: 30_000,
-  });
+  const buildUrl = (raw: string) =>
+    `${window.location.origin}/wms/analytics/display?token=${encodeURIComponent(raw)}`;
 
-  const tokens = data?.tokens ?? [];
-  const activeCount = tokens.filter(t => t.active).length;
+  // Creates a token on demand, returns the raw token immediately.
+  // Old tokens persist in DB for heartbeat tracking; cleaned up from Settings.
+  const provisionToken = async (): Promise<string> => {
+    const { data } = await axiosInstance.post('/api/v1/wms/analytics/display-tokens', { label: 'Cast display' });
+    queryClient.invalidateQueries({ queryKey: ['display-tokens'] });
+    return data.raw_token as string;
+  };
+
+  const handleCopyLink = async () => {
+    setBusy(true);
+    try {
+      const raw = await provisionToken();
+      await navigator.clipboard.writeText(buildUrl(raw));
+      show('Display link copied to clipboard', 'success');
+      setOpen(false);
+    } catch (err) {
+      console.error('[Cast] copy link failed', err);
+      show('Could not create display link', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleOpenDisplay = async () => {
+    setBusy(true);
+    // Open the tab synchronously to avoid popup blockers, then navigate it once the token is ready.
+    const tab = window.open('', '_blank');
+    try {
+      const raw = await provisionToken();
+      if (tab) tab.location.href = buildUrl(raw);
+      setOpen(false);
+    } catch (err) {
+      console.error('[Cast] open display failed', err);
+      if (tab) tab.close();
+      show('Could not open display', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleClose = (e: MouseEvent | TouchEvent) => {
     if (anchorRef.current?.contains(e.target as Node)) return;
     setOpen(false);
-  };
-
-  const openDisplay = () => {
-    setOpen(false);
-    navigate('/settings');
   };
 
   return (
@@ -792,24 +820,12 @@ function CastButton() {
             cursor: 'pointer', flexShrink: 0,
             '&:hover': { bgcolor: 'var(--bg-2)', borderColor: 'var(--accent)' },
             transition: 'all 0.15s',
-            position: 'relative',
           }}
         >
           <Cast size={14} strokeWidth={1.75} color={open ? 'var(--accent)' : 'var(--ink-3)'} />
           <Typography sx={{ fontSize: 12, fontWeight: 500, color: open ? 'var(--accent)' : 'var(--ink-3)' }}>
             Cast
           </Typography>
-          {activeCount > 0 && (
-            <Box sx={{
-              position: 'absolute', top: -4, right: -4,
-              width: 14, height: 14, borderRadius: '50%',
-              bgcolor: theme.palette.success.main,
-              border: '2px solid var(--bg)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>
-              <Typography sx={{ fontSize: 8, fontWeight: 700, color: 'white', lineHeight: 1 }}>{activeCount}</Typography>
-            </Box>
-          )}
         </Box>
       </Tooltip>
 
@@ -829,51 +845,52 @@ function CastButton() {
           }}>
             <Box sx={{ px: 2, py: 1.25, borderBottom: `0.5px solid ${pal.rule}` }}>
               <Typography sx={{ fontSize: 11, fontWeight: 700, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                Floor Displays
+                Cast to Floor Display
               </Typography>
             </Box>
 
-            {tokens.length === 0 ? (
-              <Box sx={{ px: 2, py: 1.5 }}>
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mb: 1 }}>
-                  No display URLs yet.
-                </Typography>
-                <Box
+            <Box sx={{ py: 0.5 }}>
+              <Box
+                onClick={busy ? undefined : handleCopyLink}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5,
+                  px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.5 : 1,
+                  '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' },
+                }}
+              >
+                <Copy size={14} color="var(--ink-3)" strokeWidth={1.75} />
+                <Box>
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.3 }}>Copy display link</Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>Paste into any TV browser</Typography>
+                </Box>
+              </Box>
+
+              <Box
+                onClick={busy ? undefined : handleOpenDisplay}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5,
+                  px: 2, py: 0.875, cursor: busy ? 'default' : 'pointer',
+                  opacity: busy ? 0.5 : 1,
+                  '&:hover': { bgcolor: busy ? 'transparent' : 'var(--bg-2)' },
+                }}
+              >
+                <ExternalLink size={14} color="var(--ink-3)" strokeWidth={1.75} />
+                <Box>
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)', lineHeight: 1.3 }}>Open display now</Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>Launch in a new tab</Typography>
+                </Box>
+              </Box>
+
+              <Box sx={{ px: 2, py: 0.875, borderTop: `0.5px solid ${pal.rule}` }}>
+                <Typography
                   onClick={() => { setOpen(false); navigate('/settings'); }}
-                  sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}
+                  sx={{ fontSize: 11, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--accent)' } }}
                 >
-                  Create one in Settings →
-                </Box>
+                  Manage displays in Settings →
+                </Typography>
               </Box>
-            ) : (
-              <Box sx={{ py: 0.5 }}>
-                {tokens.map(token => (
-                  <Box
-                    key={token.id}
-                    onClick={() => openDisplay()}
-                    sx={{
-                      display: 'flex', alignItems: 'center', gap: 1.5,
-                      px: 2, py: 0.875, cursor: 'pointer',
-                      '&:hover': { bgcolor: 'var(--bg-2)' },
-                    }}
-                  >
-                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, bgcolor: token.active ? theme.palette.success.main : 'var(--rule)' }} />
-                    <Typography sx={{ fontSize: 13, color: 'var(--ink)', flex: 1 }}>
-                      {token.label || 'Unlabelled display'}
-                    </Typography>
-                    <ExternalLink size={12} color="var(--ink-4)" />
-                  </Box>
-                ))}
-                <Box sx={{ px: 2, py: 0.875, borderTop: `0.5px solid ${pal.rule}` }}>
-                  <Typography
-                    onClick={() => { setOpen(false); navigate('/settings'); }}
-                    sx={{ fontSize: 11, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--accent)' } }}
-                  >
-                    Manage displays in Settings →
-                  </Typography>
-                </Box>
-              </Box>
-            )}
+            </Box>
           </Paper>
         </ClickAwayListener>
       </Popper>

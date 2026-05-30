@@ -54,10 +54,12 @@ Module mounted at `/alerts/*` (`LifecycleRouteHost.tsx` ~L221; import ~L39; vite
 ## 4. Backend endpoints
 
 **Existing:**
+
 - `GET /api/v1/alerts` — ranked inbox (polled 30s). Returns `Alert[]` + meta.
 - `POST /api/v1/alerts/:id/dismiss` — **retiring** (replaced by resolve; see KI-2).
 
 **Required for this sprint (depends on backend-sprint schema):**
+
 - `POST /api/v1/alerts/:id/acknowledge` → sets `acknowledged_at`, `acknowledged_by`.
 - `POST /api/v1/alerts/:id/snooze` → body `{ until: ISO }` → sets `snoozed_until`.
 - `POST /api/v1/alerts/:id/resolve` → owner/admin only; sets `resolved_at` manually.
@@ -155,6 +157,7 @@ Action hierarchy: primary = deep link; secondary = Acknowledge + Snooze; Resolve
 ## 10. Design system (FT2)
 
 Via `useModuleTheme()` (DS-001) — no hardcoded hex.
+
 - Surfaces: `--bg` (page) / `--surface` (cards).
 - Borders: `--rule`, 0.5px. fontWeight ≤ 500.
 - Accent: `--accent #FF6B2B`, `--accent-hover #FF8C5A`, `--accent-ghost rgba(255,107,43,0.12)`.
@@ -220,4 +223,3 @@ Via `useModuleTheme()` (DS-001) — no hardcoded hex.
 - Resolved-tab retention window (30/60/90 days) before archival.
 - Does the Rules tab render disabled-with-preview, or hide until backend ships? (Lean: preview.)
 - FT2DateRangeBar on Resolved tab only (Inbox/Snoozed are live) — confirm in audit.
-````
