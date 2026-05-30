@@ -70,6 +70,23 @@ export const httpGetAlerts = async (req: Request, res: Response) => {
          .whereRaw('(snoozed_until IS NULL OR snoozed_until <= now())');
       }
 
+      /**
+       * AUDIENCE FILTER
+       * ---------------
+       * Operators only see warehouse_floor alerts — they have no lever
+       * to pull on revenue, margin, stock, or supplier intelligence.
+       * owner/admin see all audiences.
+       * Enforced server-side — not bypassable via client filters.
+       */
+      const rolesRaw = req.user?.roles ?? [];
+      const roles    = Array.isArray(rolesRaw) ? rolesRaw : [rolesRaw];
+      const isOperator = !roles.includes('owner') && !roles.includes('admin');
+      if (isOperator) {
+        q.where(function () {
+          this.where({ audience: 'operator' }).orWhere({ audience: 'all' });
+        });
+      }
+
       return q;
     });
 
