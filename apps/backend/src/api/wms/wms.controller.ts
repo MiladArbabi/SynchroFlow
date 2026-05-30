@@ -20,6 +20,12 @@ import { rebuildInventoryProjectionForVariants } from '../../services/inventory/
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
 import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
 
+import {
+  raisePackDecisionRequest,
+  getPackDecisionRequest,
+  resolvePackDecisionRequest,
+} from '../../services/wms/packDecision.service.js';
+
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
 // ─────────────────────────────────────────
@@ -2294,5 +2300,139 @@ export const httpReportStowException = async (req: Request, res: Response) => {
   } catch (err: unknown) {
     console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Stow exception failed: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// PACK DECISION REQUESTS
+// ─────────────────────────────────────────
+
+/**
+ * POST /api/v1/wms/pack/decision-request
+ * ----------------------------------------
+ * Operator raises a blocking decision request (item_missing, short_pick).
+ * Pack job pauses on this order until owner resolves.
+ */
+export const httpRaisePackDecision = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const {
+    pick_batch_id, lasyncro_order_id, lasyncro_line_item_id,
+    exception_type, question,
+  } = req.body;
+
+  if (!pick_batch_id)         return res.status(400).json({ error: 'pick_batch_id is required' });
+  if (!lasyncro_order_id)     return res.status(400).json({ error: 'lasyncro_order_id is required' });
+  if (!lasyncro_line_item_id) return res.status(400).json({ error: 'lasyncro_line_item_id is required' });
+  if (!['item_missing', 'short_pick'].includes(exception_type)) {
+    return res.status(400).json({ error: 'exception_type must be item_missing or short_pick' });
+  }
+  if (!['ship_partial', 'hold_and_requeue'].includes(question)) {
+    return res.status(400).json({ error: 'question must be ship_partial or hold_and_requeue' });
+  }
+
+  try {
+    const request = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return raisePackDecisionRequest(trx, {
+        shopId,
+        pickBatchId:         pick_batch_id,
+        lasyncroOrderId:     lasyncro_order_id,
+        lasyncroLineItemId:  lasyncro_line_item_id,
+        exceptionType:       exception_type,
+        question,
+        raisedBy:            userId,
+      });
+    });
+
+    return res.status(201).json({ request });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[PACK_DECISION_RAISE_FAILED]', { shopId, userId, error: message });
+    return res.status(500).json({ error: `Failed to raise pack decision: ${message}` });
+  }
+};
+
+/**
+ * GET /api/v1/wms/pack/decision-request/:requestId
+ * --------------------------------------------------
+ * Mobile polls this until status !== 'pending'.
+ * Returns current status + partial_shipment decision.
+ */
+export const httpGetPackDecision = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const requestId = String(req.params.requestId);
+
+  try {
+    const request = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return getPackDecisionRequest(trx, requestId, shopId);
+    });
+
+    if (!request) return res.status(404).json({ error: 'Decision request not found' });
+    return res.status(200).json({ request });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[PACK_DECISION_GET_FAILED]', { shopId, requestId, error: message });
+    return res.status(500).json({ error: `Failed to get pack decision: ${message}` });
+  }
+};
+
+/**
+ * POST /api/v1/wms/pack/decision-request/:requestId/resolve
+ * ----------------------------------------------------------
+ * Owner/admin approves or rejects the decision.
+ * approved + partial_shipment=true  → packer proceeds with partial ship
+ * approved + partial_shipment=false → packer holds
+ * rejected                          → order requeued
+ * Role enforcement: controller checks owner/admin — backend guard.
+ */
+export const httpResolvePackDecision = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  const rolesRaw = req.user?.roles ?? [];
+  const roles    = Array.isArray(rolesRaw) ? rolesRaw : [rolesRaw];
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const canResolve = roles.includes('owner') || roles.includes('admin');
+  if (!canResolve) {
+    return res.status(403).json({ error: 'Only owners and admins can resolve pack decisions' });
+  }
+
+  const requestId = String(req.params.requestId);
+  const { status, partial_shipment, note } = req.body;
+
+  if (!['approved', 'rejected'].includes(status)) {
+    return res.status(400).json({ error: 'status must be approved or rejected' });
+  }
+
+  try {
+    const request = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return resolvePackDecisionRequest(trx, {
+        requestId,
+        shopId,
+        resolvedBy:      userId,
+        status,
+        partialShipment: partial_shipment,
+        note,
+      });
+    });
+
+    return res.status(200).json({ request });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'PACK_DECISION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Decision request not found' });
+    }
+    if (message === 'PACK_DECISION_ALREADY_RESOLVED') {
+      return res.status(409).json({ error: 'Decision already resolved' });
+    }
+    console.error('[PACK_DECISION_RESOLVE_FAILED]', { shopId, userId, requestId, error: message });
+    return res.status(500).json({ error: `Failed to resolve pack decision: ${message}` });
   }
 };

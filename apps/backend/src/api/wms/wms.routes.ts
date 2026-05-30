@@ -37,6 +37,9 @@ import {
   httpResolveProblemTask,
   httpPatchWmsSettings,
   httpSetOrderPriority,
+  httpRaisePackDecision,
+  httpGetPackDecision,
+  httpResolvePackDecision,
 } from './wms.controller.js';
 import {
   httpGetPickAnalytics,
@@ -455,6 +458,34 @@ router.delete(
   requireTier('growth'),
   requireAction('wms:read'),
   httpRevokeDisplayToken
+);
+
+// ─── PACK DECISION REQUESTS ───────────────────────────────────────────────────
+// Operator raises blocking decision → owner resolves → packer proceeds.
+router.post(
+  '/pack/decision-request',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:pack:scan'),
+  httpRaisePackDecision
+);
+router.get(
+  '/pack/decision-request/:requestId',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetPackDecision
+);
+router.post(
+  '/pack/decision-request/:requestId/resolve',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:batch:release'),
+  // wms:batch:release is the existing owner-only action gate
+  httpResolvePackDecision
 );
 
 export default router;
