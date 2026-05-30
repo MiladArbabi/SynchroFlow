@@ -1,5 +1,5 @@
 // apps/mobile/src/screens/PackScreen.tsx
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
   Alert, TouchableOpacity, ScrollView,
@@ -30,33 +30,61 @@ type Order = {
   line_items: LineItem[];
 };
 
-type ScreenPhase = 'brief' | 'item_scan' | 'invoice_scan' | 'complete';
+/**
+ * SCREEN PHASES
+ * -------------
+ * brief            : job overview + claim
+ * item_scan        : scan each line item
+ * awaiting_decision: blocked — item_missing/short_pick raised,
+ *                    polling for owner resolution
+ * invoice_scan     : all items processed, scan invoice to ship
+ * complete         : all orders packed and shipped
+ */
+type ScreenPhase = 'brief' | 'item_scan' | 'awaiting_decision' | 'invoice_scan' | 'complete';
+
+/**
+ * BLOCKING exceptions — require owner/admin decision before advancing.
+ * All other exceptions (product_defect, packaging_defect, wrong_item)
+ * go to the problem bin and the packer advances immediately.
+ */
+const BLOCKING_EXCEPTIONS = new Set(['item_missing', 'short_pick']);
 
 const PACK_EXCEPTIONS = [
-  { type: 'product_defect', label: 'Damaged', icon: 'hammer-outline' },
-  { type: 'packaging_defect', label: 'Packaging', icon: 'cube-outline' },
-  { type: 'wrong_item', label: 'Wrong item', icon: 'swap-horizontal-outline' },
-  { type: 'short_pick', label: 'Short pick', icon: 'remove-circle-outline' },
-  { type: 'item_missing', label: 'Item missing', icon: 'search-outline' },
+  { type: 'product_defect',   label: 'Damaged',      icon: 'hammer-outline' },
+  { type: 'packaging_defect', label: 'Packaging',     icon: 'cube-outline' },
+  { type: 'wrong_item',       label: 'Wrong item',    icon: 'swap-horizontal-outline' },
+  { type: 'short_pick',       label: 'Short pick',    icon: 'remove-circle-outline' },
+  { type: 'item_missing',     label: 'Item missing',  icon: 'search-outline' },
 ];
+
+// Poll interval for decision request resolution (ms)
+const DECISION_POLL_INTERVAL_MS = 4_000;
 
 export default function PackScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
-  const route = useRoute<TaskStackScreenProps<'Pack'>['route']>();
-  const { task } = route.params;
+  const route      = useRoute<TaskStackScreenProps<'Pack'>['route']>();
+  const { task }   = route.params;
 
-  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('brief');
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [currentOrderIndex, setCurrentOrderIndex] = useState(0);
-  const [currentLineIndex, setCurrentLineIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [screenPhase,        setScreenPhase]        = useState<ScreenPhase>('brief');
+  const [orders,              setOrders]              = useState<Order[]>([]);
+  const [currentOrderIndex,  setCurrentOrderIndex]  = useState(0);
+  const [currentLineIndex,   setCurrentLineIndex]   = useState(0);
+  const [loading,             setLoading]             = useState(true);
+  const [submitting,          setSubmitting]          = useState(false);
+  const [error,               setError]               = useState<string | null>(null);
 
-  const currentOrder = orders[currentOrderIndex] ?? null;
-  const unscannedLines = currentOrder?.line_items.filter(li => !li.pack_scanned) ?? [];
-  const currentLine = unscannedLines[0] ?? null;
-  const scannedCount = currentOrder?.line_items.filter(li => li.pack_scanned).length ?? 0;
+  // Decision request state — set when a blocking exception is raised
+  const [pendingDecisionId,   setPendingDecisionId]  = useState<string | null>(null);
+  const [pendingDecisionType, setPendingDecisionType]= useState<string | null>(null);
+  // partial_shipment value once owner approves
+  const [approvedPartial,     setApprovedPartial]    = useState<boolean>(false);
+
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const currentOrder    = orders[currentOrderIndex] ?? null;
+  const unscannedLines  = currentOrder?.line_items.filter(li => !li.pack_scanned) ?? [];
+  const currentLine     = unscannedLines[0] ?? null;
+  const scannedCount    = currentOrder?.line_items.filter(li => li.pack_scanned).length ?? 0;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +100,13 @@ export default function PackScreen() {
   }, [task.id]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // ── Clean up poll timer on unmount ────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    };
+  }, []);
 
   // ── Claim pack ────────────────────────────────────────────────────────────
   const handleClaim = useCallback(async () => {
@@ -96,7 +131,6 @@ export default function PackScreen() {
   const handleItemScan = useCallback(async (scannedValue: string) => {
     if (!currentOrder || !currentLine) return;
 
-    // Resolve barcode
     const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
       scanned_value: scannedValue,
     });
@@ -113,16 +147,14 @@ export default function PackScreen() {
       });
     }
 
-    // Confirm pack scan
     await apiClient.post('/api/v1/wms/pack/scan', {
-      pick_batch_id: task.id,
-      lasyncro_order_id: currentOrder.lasyncro_order_id,
+      pick_batch_id:         task.id,
+      lasyncro_order_id:     currentOrder.lasyncro_order_id,
       lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
-      lasyncro_variant_id: currentLine.lasyncro_variant_id,
-      quantity_confirmed: currentLine.quantity,
+      lasyncro_variant_id:   currentLine.lasyncro_variant_id,
+      quantity_confirmed:    currentLine.quantity,
     });
 
-    // Mark line as scanned
     setOrders(prev =>
       prev.map((o, i) =>
         i === currentOrderIndex
@@ -138,18 +170,15 @@ export default function PackScreen() {
       )
     );
 
-    // Check if all lines scanned for this order
     const remainingAfter = unscannedLines.filter(
       li => li.lasyncro_line_item_id !== currentLine.lasyncro_line_item_id
     );
 
-    if (remainingAfter.length === 0) {
-      // All items scanned → move to invoice scan
-      setScreenPhase('invoice_scan');
-    }
+    if (remainingAfter.length === 0) setScreenPhase('invoice_scan');
   }, [currentOrder, currentLine, currentOrderIndex, unscannedLines, task.id]);
 
   // ── Confirm invoice scan → ship ───────────────────────────────────────────
+  // partialShipment defaults to approvedPartial set by decision resolution.
   const handleInvoiceScan = useCallback(async (scannedValue: string) => {
     if (!currentOrder) return;
 
@@ -160,10 +189,14 @@ export default function PackScreen() {
       });
     }
 
+    // Use partial_shipment decision from owner if one was made; default false
     await apiClient.post(`/api/v1/wms/batch/${task.id}/ship`, {
       lasyncro_order_id: currentOrder.lasyncro_order_id,
-      partial_shipment: false,
+      partial_shipment:  approvedPartial,
     });
+
+    // Reset partial flag for next order
+    setApprovedPartial(false);
 
     const nextIndex = currentOrderIndex + 1;
     if (nextIndex >= orders.length) {
@@ -172,10 +205,7 @@ export default function PackScreen() {
       } catch (err: unknown) {
         const msg = (err as { response?: { data?: { error?: string } } })
           ?.response?.data?.error ?? 'Failed to complete pack.';
-        // If already complete, still show complete screen
-        if (!msg.includes('pack_complete')) {
-          Alert.alert('Warning', msg);
-        }
+        if (!msg.includes('pack_complete')) Alert.alert('Warning', msg);
       }
       setScreenPhase('complete');
     } else {
@@ -183,35 +213,149 @@ export default function PackScreen() {
       setCurrentLineIndex(0);
       setScreenPhase('item_scan');
     }
-  }, [currentOrder, currentOrderIndex, orders.length, task.id]);
+  }, [currentOrder, currentOrderIndex, orders.length, approvedPartial, task.id]);
 
   // ── Report exception ──────────────────────────────────────────────────────
   const handleItemException = useCallback(async (exceptionType: string, quantity: number = 1) => {
     if (!currentOrder || !currentLine) return;
-    await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
-        lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
-        lasyncro_variant_id: currentLine.lasyncro_variant_id,
-        exception_type: exceptionType,
-        stage: 'pack',
-        quantity_required: currentLine.quantity,
-        quantity_found: currentLine.quantity - quantity,
-      });
-    // Create PROB label + problem center task for physical bin routing
-    const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
-      lasyncro_variant_id: currentLine.lasyncro_variant_id,
-      quantity,
-      exception_type: exceptionType,
-      source: 'pack',
-      source_exception_id: task.id,
-    });
-    if (exceptionType !== 'item_missing') {
-      Alert.alert(
-        '⚠ Place in Problem Bin',
-        `Label ${probData.prob_label} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
-        [{ text: 'Got it', style: 'default' }]
-      );
+
+    /**
+     * BLOCKING EXCEPTIONS — item_missing, short_pick
+     * ------------------------------------------------
+     * Cannot self-resolve. Raise a PackDecisionRequest, pause the pack
+     * job on this order, and wait for owner/admin to approve or reject.
+     *
+     * NON-BLOCKING exceptions (product_defect, packaging_defect, wrong_item)
+     * go to the problem bin and the packer advances immediately — unchanged.
+     */
+    if (BLOCKING_EXCEPTIONS.has(exceptionType)) {
+      try {
+        setSubmitting(true);
+
+        // Report exception to WMS
+        await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
+          lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+          lasyncro_variant_id:   currentLine.lasyncro_variant_id,
+          exception_type:        exceptionType,
+          stage:                 'pack',
+          quantity_required:     currentLine.quantity,
+          quantity_found:        0,
+        });
+
+        // Raise decision request — blocks pack job until owner resolves
+        const { data } = await apiClient.post('/api/v1/wms/pack/decision-request', {
+          pick_batch_id:         task.id,
+          lasyncro_order_id:     currentOrder.lasyncro_order_id,
+          lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+          exception_type:        exceptionType,
+          question:              'ship_partial',
+        });
+
+        setPendingDecisionId(data.request.id);
+        setPendingDecisionType(exceptionType);
+        setScreenPhase('awaiting_decision');
+
+        // Start polling — check every 4s until owner resolves
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = setInterval(async () => {
+          try {
+            const { data: pollData } = await apiClient.get(
+              `/api/v1/wms/pack/decision-request/${data.request.id}`
+            );
+            const resolved = pollData.request;
+
+            if (resolved.status === 'approved') {
+              if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+              setPendingDecisionId(null);
+              setApprovedPartial(resolved.partial_shipment === true);
+
+              // Mark line as scanned to advance
+              setOrders(prev =>
+                prev.map((o, i) =>
+                  i === currentOrderIndex
+                    ? {
+                        ...o,
+                        line_items: o.line_items.map(li =>
+                          li.lasyncro_line_item_id === currentLine.lasyncro_line_item_id
+                            ? { ...li, pack_scanned: true }
+                            : li
+                        ),
+                      }
+                    : o
+                )
+              );
+
+              const remainingAfter = unscannedLines.filter(
+                li => li.lasyncro_line_item_id !== currentLine.lasyncro_line_item_id
+              );
+              setScreenPhase(remainingAfter.length === 0 ? 'invoice_scan' : 'item_scan');
+
+              const action = resolved.partial_shipment
+                ? 'Ship partial order approved.'
+                : 'Hold approved — order will be re-queued.';
+              Alert.alert('Decision received', resolved.note
+                ? `${action}\n\nNote: ${resolved.note}`
+                : action
+              );
+
+            } else if (resolved.status === 'rejected') {
+              if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+              setPendingDecisionId(null);
+              // Skip order — move to next
+              const nextIndex = currentOrderIndex + 1;
+              if (nextIndex >= orders.length) {
+                setScreenPhase('complete');
+              } else {
+                setCurrentOrderIndex(nextIndex);
+                setCurrentLineIndex(0);
+                setScreenPhase('item_scan');
+              }
+              Alert.alert(
+                'Order held',
+                resolved.note
+                  ? `This order has been held by the owner.\n\nNote: ${resolved.note}`
+                  : 'This order has been held by the owner and will be re-queued.'
+              );
+            }
+          } catch {
+            // Poll failure is non-fatal — retry on next interval
+          }
+        }, DECISION_POLL_INTERVAL_MS);
+
+      } catch (err: unknown) {
+        const msg = (err as { response?: { data?: { error?: string } } })
+          ?.response?.data?.error ?? 'Failed to raise decision request.';
+        Alert.alert('Error', msg);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
     }
-    // Mark as scanned to advance
+
+    // ── Non-blocking exceptions — existing flow unchanged ─────────────────
+    await apiClient.post(`/api/v1/wms/batch/${task.id}/exception`, {
+      lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+      lasyncro_variant_id:   currentLine.lasyncro_variant_id,
+      exception_type:        exceptionType,
+      stage:                 'pack',
+      quantity_required:     currentLine.quantity,
+      quantity_found:        currentLine.quantity - quantity,
+    });
+
+    const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
+      lasyncro_variant_id:  currentLine.lasyncro_variant_id,
+      quantity,
+      exception_type:       exceptionType,
+      source:               'pack',
+      source_exception_id:  task.id,
+    });
+
+    Alert.alert(
+      '⚠ Place in Problem Bin',
+      `Label ${probData.prob_label} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
+      [{ text: 'Got it', style: 'default' }]
+    );
+
     setOrders(prev =>
       prev.map((o, i) =>
         i === currentOrderIndex
@@ -226,13 +370,13 @@ export default function PackScreen() {
           : o
       )
     );
+
     const remainingAfter = unscannedLines.filter(
       li => li.lasyncro_line_item_id !== currentLine.lasyncro_line_item_id
     );
-    if (remainingAfter.length === 0) {
-      setScreenPhase('invoice_scan');
-    }
-  }, [currentOrder, currentLine, currentOrderIndex, unscannedLines, task.id]);
+    if (remainingAfter.length === 0) setScreenPhase('invoice_scan');
+
+  }, [currentOrder, currentLine, currentOrderIndex, unscannedLines, orders.length, task.id]);
 
   // ── BRIEF SCREEN ──────────────────────────────────────────────────────────
   if (screenPhase === 'brief') {
@@ -317,6 +461,35 @@ export default function PackScreen() {
     );
   }
 
+  // ── AWAITING DECISION SCREEN ──────────────────────────────────────────────
+  if (screenPhase === 'awaiting_decision') {
+    const exceptionLabel = pendingDecisionType === 'item_missing'
+      ? 'Item missing'
+      : 'Short pick';
+    return (
+      <Screen>
+        <AppHeader
+          title={`Pack · Order ${currentOrderIndex + 1}/${orders.length}`}
+          rightAction={{ icon: 'close-outline', onPress: () => navigation.goBack() }}
+        />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} size="large" />
+          <Text style={styles.decisionTitle}>Waiting for owner decision</Text>
+          <Text style={styles.decisionSub}>
+            {exceptionLabel} reported on order #{currentOrder?.external_order_id}.{'\n'}
+            The owner has been notified and must approve or reject before you can continue.
+          </Text>
+          <View style={styles.decisionId}>
+            <Text style={styles.decisionIdText}>
+              Request ID: {pendingDecisionId?.slice(0, 8).toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.decisionPolling}>Checking for updates every 4s…</Text>
+        </View>
+      </Screen>
+    );
+  }
+
   if (!currentOrder) return null;
 
   // ── ITEM SCAN PHASE ───────────────────────────────────────────────────────
@@ -330,16 +503,16 @@ export default function PackScreen() {
         />
         <WorkflowStep
           context={{
-            label: 'Order',
-            value: `#${currentOrder.external_order_id}`,
+            label:    'Order',
+            value:    `#${currentOrder.external_order_id}`,
             sublabel: `${currentOrder.currency} ${Number(currentOrder.total_price).toFixed(2)} · ${scannedCount}/${totalLines} items scanned`,
           }}
           item={{
-            title: currentLine.title,
-            sku: currentLine.sku,
-            quantity: currentLine.quantity,
+            title:        currentLine.title,
+            sku:          currentLine.sku,
+            quantity:     currentLine.quantity,
             currentIndex: scannedCount + 1,
-            totalCount: totalLines,
+            totalCount:   totalLines,
           }}
           exceptions={PACK_EXCEPTIONS}
           onConfirm={handleItemScan}
@@ -361,16 +534,18 @@ export default function PackScreen() {
         />
         <WorkflowStep
           context={{
-            label: 'Ready to ship',
-            value: `#${currentOrder.external_order_id}`,
-            sublabel: 'All items verified. Seal parcel and attach shipping label.',
+            label:    'Ready to ship',
+            value:    `#${currentOrder.external_order_id}`,
+            sublabel: approvedPartial
+              ? '⚠ Partial shipment approved — missing item excluded.'
+              : 'All items verified. Seal parcel and attach shipping label.',
           }}
           item={{
-            title: 'Scan invoice barcode',
-            sku: `${currentOrder.line_items.length} item${currentOrder.line_items.length !== 1 ? 's' : ''} confirmed`,
-            quantity: currentOrder.line_items.reduce((s, li) => s + li.quantity, 0),
+            title:        'Scan invoice barcode',
+            sku:          `${currentOrder.line_items.length} item${currentOrder.line_items.length !== 1 ? 's' : ''} confirmed`,
+            quantity:     currentOrder.line_items.reduce((s, li) => s + li.quantity, 0),
             currentIndex: currentOrderIndex + 1,
-            totalCount: orders.length,
+            totalCount:   orders.length,
           }}
           exceptions={[{ type: 'other', label: 'Cannot ship this order' }]}
           inputPrefix="#"
@@ -389,32 +564,45 @@ export default function PackScreen() {
 }
 
 const styles = StyleSheet.create({
-  summaryRow: {
-    justifyContent: 'space-around',
-    paddingVertical: spacing.md,
-  },
-  summaryItem: { alignItems: 'center', gap: spacing.xs },
-  summaryValue: { color: colors.accent, fontSize: font.size.lg, fontWeight: font.weight.bold },
-  summaryLabel: { color: colors.ink3, fontSize: font.size.xs },
-  list: { padding: spacing.md, paddingBottom: 120 },
-  orderCard: { gap: spacing.xs, marginBottom: spacing.sm },
-  orderId: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
-  orderTotal: { color: colors.ink3, fontSize: font.size.sm },
-  lineText: { color: colors.ink3, fontSize: font.size.sm },
-  footer: {
+  summaryRow:      { justifyContent: 'space-around', paddingVertical: spacing.md },
+  summaryItem:     { alignItems: 'center', gap: spacing.xs },
+  summaryValue:    { color: colors.accent, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  summaryLabel:    { color: colors.ink3, fontSize: font.size.xs },
+  list:            { padding: spacing.md, paddingBottom: 120 },
+  orderCard:       { gap: spacing.xs, marginBottom: spacing.sm },
+  orderId:         { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
+  orderTotal:      { color: colors.ink3, fontSize: font.size.sm },
+  lineText:        { color: colors.ink3, fontSize: font.size.sm },
+  footer:          {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     padding: spacing.lg, paddingBottom: spacing.xl,
     backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.rule,
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
-  errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
-  completeIcon: { fontSize: 64, marginBottom: spacing.md },
-  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
-  completeSub: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
-  completeBtn: {
+  center:          { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  errorText:       { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
+  completeIcon:    { fontSize: 64, marginBottom: spacing.md },
+  completeTitle:   { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  completeSub:     { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  completeBtn:     {
     backgroundColor: colors.accent, borderRadius: 12,
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
     width: '100%', alignItems: 'center',
   },
   completeBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  // ── Decision waiting screen ───────────────────────────────────────────────
+  decisionTitle:   {
+    color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.semibold,
+    marginTop: spacing.lg, marginBottom: spacing.sm, textAlign: 'center',
+  },
+  decisionSub:     {
+    color: colors.ink3, fontSize: font.size.sm, textAlign: 'center',
+    lineHeight: 20, marginBottom: spacing.lg,
+  },
+  decisionId:      {
+    backgroundColor: colors.bg2, borderRadius: 8,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  decisionIdText:  { color: colors.ink3, fontSize: font.size.xs, fontFamily: 'monospace' },
+  decisionPolling: { color: colors.ink4, fontSize: font.size.xs },
 });
