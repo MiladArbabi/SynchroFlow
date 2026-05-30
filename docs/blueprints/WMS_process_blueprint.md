@@ -271,7 +271,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 
 ### 2.5 PACK EXECUTION  [LIVE]  
 
-✅ Pack session implemented. Pack exceptions live. Problem resolution thread (WM‑33) still planned.
+✅ Pack session implemented. Pack exceptions live. Pack decision request pattern shipped (WM‑33 ✅ — see wms_pack_decision_playbook.md).
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
@@ -282,11 +282,13 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 - **Single‑item order**: scan item → scan invoice → pack confirmed  
 - **Multi‑item order**: scan all items → all confirmed → scan invoice → pack confirmed  
 - **Problem** → `pack_exceptions` written → alert fired → push to owner/admin  
-- **Problem resolution (WM‑33)**: owner resolves → `full_resolve` / `partial_ship` / `cancelled`  
+- **Blocking exceptions** (`item_missing`, `short_pick`): raises `PackDecisionRequest` → pack pauses → owner notified (push + alert) → owner approves/rejects → packer advances ✅  
+- **Non-blocking exceptions** (`product_defect`, `packaging_defect`, `wrong_item`): problem bin → advance immediately ✅  
 
-**Pack Problem Resolution [PLANNED — WM‑33]**  
-`pack_exception_threads` table planned — not yet implemented:  
-`thread_id`, `shop_id`, `pack_exception_id`, `lasyncro_order_id`, `messages` (jsonb), `resolution` enum, `resolved_by`, `resolved_at`
+**Pack Decision Request [LIVE — WM‑33 ✅ — Migration 0111]**  
+`pack_exception_threads` pattern retired. Replaced by `pack_decision_requests` table:  
+`id`, `shop_id`, `pick_batch_id`, `lasyncro_order_id`, `lasyncro_line_item_id`, `exception_type`, `question`, `status` (`pending|approved|rejected`), `partial_shipment`, `raised_by`, `raised_at`, `resolved_by`, `resolved_at`, `note`  
+See full contract: `docs/playbooks/wms_pack_decision_playbook.md`
 
 ---
 
@@ -361,7 +363,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 | `receive_job_lines`             | —         | 🔴 PLANNED    | FEAT‑004                                                           |
 | `receive_exceptions`            | —         | 🔴 PLANNED    | FEAT‑004                                                           |
 | `barcode_print_jobs`            | —         | 🔴 PLANNED    | FEAT‑004                                                           |
-| `pack_exception_threads`        | —         | 🔴 PLANNED    | WM‑33                                                              |
+| `pack_decision_requests`        | 0111      | ✅ LIVE       | WM‑33 — replaced pack_exception_threads pattern                    |
 | `variant_location_assignments`  | —         | 🔴 PLANNED    | WM‑36                                                              |
 
 ---
@@ -378,7 +380,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 | `wms:exception:pick:{batchId}`                   | `wms_pick_exception`       | warning  | owner/admin  | Pick exception reported               | ✅ LIVE       |
 | `wms:batch:ready_to_pack:{batchId}`              | `wms_batch_ready_to_pack`  | info     | operators    | Pick complete                         | ✅ LIVE       |
 | `wms:exception:pack:{batchId}`                   | `wms_pack_exception`       | warning  | owner/admin  | Pack exception reported               | ✅ LIVE       |
-| `wms:pack:problem_resolved:{exceptionId}`        | `wms_pack_problem_resolved`| info     | packer       | Problem resolved by admin             | 🔴 WM‑33      |
+| `wms:pack:decision_resolved:{requestId}`         | `wms_pack_decision_resolved`| info    | packer       | Owner approved/rejected pack decision | ✅ LIVE       |
 | `wms:batch:ready_to_ship:{batchId}`              | `wms_batch_ready_to_ship`  | info     | owner/admin  | Pack complete                         | ✅ LIVE       |
 | `wms:idle:pick:{userId}`                         | `wms_operator_idle`        | warning  | owner/admin  | Picker idle > threshold               | ✅ LIVE       |
 | `wms:idle:pack:{userId}`                         | `wms_operator_idle`        | warning  | owner/admin  | Packer idle > threshold               | ✅ LIVE       |

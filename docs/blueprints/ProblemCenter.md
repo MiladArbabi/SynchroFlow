@@ -262,7 +262,7 @@ Tracked as **INV-PC-03** — highest priority open item.
 | **INV-PC-05** | P2 | 🔴 OPEN | `return` resolution creates no PO return line — cascade not implemented |
 | **INV-PC-06** | P2 | 🔴 OPEN | Replacement finder (`GET /problem-center/:taskId/replacement`) has no frontend surface — when `find_replacement` action selected, replacement locations must render inline |
 | **INV-PC-07** | P2 | 🔴 OPEN | `problem_bin_location` is empty string in seeded `shop_wms_settings` — must be non-empty for PROB label + operator instructions to be meaningful. Add validation + onboarding prompt |
-| **INV-PC-08** | P3 | 🔴 OPEN | Pack exception alert (`wms_pack_exception`) never fires — `packScan.service.ts` has no call to alert system (ISSUE-006 carried forward) |
+| **INV-PC-08** | P3 | ✅ RESOLVED | Pack exception alerts now fire via `firePickExceptionAlert()` in `packDecision.service.ts` when blocking exceptions raised. Non-blocking exceptions fire via `wmsAlerts.service.ts`. |
 | **INV-PC-09** | P3 | 🔴 OPEN | Operator post-exception instruction ("Move to problem bin: X") does not show if `problem_bin_location` is empty — should guard and prompt owner to configure |
 | **INV-PC-10** | P3 | 🔴 OPEN | No mobile `ProblemCenterScreen` in React Native app — operators resolve on web only |
 
@@ -389,15 +389,33 @@ All Problem Center UI must comply with LaSyncro FT2 DS:
 ### v1.2 — May 27, 2026
 
 **INV-PC-06 — RECLASSIFIED:** Replacement finder is NOT a Problem Center UI feature.
-
 Replacement suggestions belong contextually inside pick-job and pack-job workflows:
 
 - **Pick job:** Post-pick-list screen shows alternates for unresolved exceptions before handoff to pack (GH issue created)
 - **Pack job:** "Item missing" button creates problem_center_tasks row + ships partial + notifies Problem Center (GH issue created)
-
 The Problem Center remains a supervisor resolution queue only. Operators interact with replacement finder inside their active workflow, not from a supervisor table.
-
 `GET /api/v1/wms/problem-center/:taskId/replacement` endpoint remains valid — will be consumed by pick-job completion screen in the pick-job refinement sprint.
+
+---
+
+## 11. Pack Decision Requests — Pending Decisions Strip [LIVE — May 30, 2026]
+
+`PendingDecisionsStrip` component renders above the exceptions table in `ProblemCenterPage.tsx` whenever `pack_decision_requests` with `status=pending` exist for the shop.
+
+**What it shows:**
+
+- Exception type + order reference + batch short ID + time raised
+- "Ship partial" (approve, `partial_shipment=true`) and "Hold order" (reject) actions
+- Optional note dialog before confirming
+- Polls `GET /api/v1/wms/pack/decision-requests?status=pending` every 10s
+
+**Why here and not only in Alerts:**
+
+- Alerts surface is optimised for triage (see it, route to module)
+- Problem Center is the resolution surface — owner is already here to resolve exceptions
+- Packer is blocked in real time — 10s poll here vs 30s poll on Alerts
+
+**Full contract:** `docs/playbooks/wms_pack_decision_playbook.md`
 
 ### v1.3 — May 28, 2026
 
