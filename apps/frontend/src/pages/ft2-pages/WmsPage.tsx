@@ -20,6 +20,63 @@ import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useSearchParams } from 'react-router-dom';
 import PlanGate from '../../components/PlanGate';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { Box, Typography, TextField, Button, Alert } from '@mui/material';
+import { useAppTheme } from '../../hooks/useAppTheme';
+import { AlertTriangle } from 'lucide-react';
+
+/**
+ * ProblemBinPrompt
+ * ----------------
+ * Inline banner shown when problem_bin_location is not configured.
+ * Exceptions cannot be meaningfully routed without a physical bin location.
+ * Owner must set this before any exception workflows are used.
+ */
+function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }: {
+  binInput: string;
+  setBinInput: (v: string) => void;
+  binSaving: boolean;
+  binError: string | null;
+  onSave: () => void;
+}) {
+  const pal = useAppTheme();
+  return (
+    <Box sx={{
+      mx: 3, mt: 2, mb: 0,
+      border: `0.5px solid var(--accent-border)`,
+      borderRadius: '10px', bgcolor: 'var(--accent-ghost)',
+      p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
+    }}>
+      <AlertTriangle size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
+      <Box sx={{ flex: 1, minWidth: 200 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.ink }}>
+          Problem bin not configured
+        </Typography>
+        <Typography sx={{ fontSize: 12, color: pal.ink3 }}>
+          Set a physical bin code so operators know where to route exception items.
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexShrink: 0 }}>
+        <TextField
+          size="small"
+          value={binInput}
+          onChange={(e) => setBinInput(e.target.value.toUpperCase())}
+          placeholder="e.g. PROB-BIN-A"
+          sx={{ width: 160, '& input': { fontSize: 13, fontFamily: 'monospace' } }}
+          onKeyDown={(e) => e.key === 'Enter' && onSave()}
+        />
+        <Button
+          variant="contained" size="small"
+          disabled={!binInput.trim() || binSaving}
+          onClick={onSave}
+          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent-hover)' }, fontSize: 12, fontWeight: 500 }}
+        >
+          {binSaving ? 'Saving…' : 'Save'}
+        </Button>
+      </Box>
+      {binError && <Alert severity="error" sx={{ width: '100%', py: 0, fontSize: 12 }}>{binError}</Alert>}
+    </Box>
+  );
+}
 
 /**
  * WMS GATE PAGE
@@ -32,7 +89,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 
 export default function WmsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data, isLoading, isError, refetch, stowTasks } = useWms();
+  const { data, isLoading, isError, refetch, stowTasks, settings } = useWms();
   const { data: gridData } = useWarehouseGrid();
 
   const { user } = useAuth();
@@ -301,6 +358,28 @@ export default function WmsPage() {
     return data;
   }, []);
 
+  const problemBinMissing = settings !== null && !settings?.problem_bin_location;
+  const [binInput, setBinInput]     = useState('');
+  const [binSaving, setBinSaving]   = useState(false);
+  const [binError,  setBinError]    = useState<string | null>(null);
+
+  const handleSaveProblemBin = async () => {
+    if (!binInput.trim()) return;
+    setBinSaving(true);
+    setBinError(null);
+    try {
+      await axiosInstance.patch('/api/v1/wms/settings', {
+        problem_bin_location: binInput.trim().toUpperCase(),
+      });
+      refetch();
+      setBinInput('');
+    } catch {
+      setBinError('Failed to save. Try again.');
+    } finally {
+      setBinSaving(false);
+    }
+  };
+
   return (
     // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
@@ -309,6 +388,13 @@ export default function WmsPage() {
       { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
       { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
     ]} />
+    {problemBinMissing && <ProblemBinPrompt
+      binInput={binInput}
+      setBinInput={setBinInput}
+      binSaving={binSaving}
+      binError={binError}
+      onSave={() => void handleSaveProblemBin()}
+    />}
     <WmsModuleFT2
       data={data ?? null}
       isLoading={isLoading}

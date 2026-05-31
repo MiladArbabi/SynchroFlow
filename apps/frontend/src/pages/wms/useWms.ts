@@ -24,14 +24,23 @@ export function useWms() {
     refetchInterval: 10_000,
   });
 
+  const { data: settingsData, refetch: refetchSettings } = useQuery({
+    queryKey: ['wms', 'settings'],
+    queryFn: () =>
+      axiosInstance.get('/api/v1/wms/settings').then((r) => r.data.settings),
+    staleTime: 60_000, // settings change rarely
+  });
+
   return {
     data,
     isLoading,
     isError,
     stowTasks: stowData ?? [],
+    settings: settingsData ?? null,
     refetch: () => {
       void refetch();
       void refetchStow();
+      void refetchSettings();
     },
   };
 }
