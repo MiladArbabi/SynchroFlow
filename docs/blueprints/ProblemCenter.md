@@ -257,8 +257,8 @@ Tracked as **INV-PC-03** — highest priority open item.
 |---|---|---|---|
 | **INV-PC-01** | P2 | 🔴 OPEN | Stow exceptions write inventory movement immediately at report time; pick exceptions defer to resolve. Inconsistent — should unify to deferred (resolve-time) movement writes |
 | **INV-PC-02** | P3 | 🔴 OPEN | `ProblemCenterModuleFT2` uses legacy `PickException` type with stubbed fields (`quantity_found=0`, `lasyncro_line_item_id=task_id`). Module needs its own native type aligned to `problem_center_tasks` shape |
-| **INV-PC-03** | P1 | 🔴 OPEN | Resolve modal calls legacy `pick-exceptions` endpoint (note-only, no cascade). Must be rewired to `httpResolveProblemTask` with action selector UI — `re_stow`, `discard`, `write_off`, `return`, `quarantine` |
-| **INV-PC-04** | P1 | 🔴 OPEN | `re_stow` resolution creates no stow task — cascade not implemented. Must create `stow_tasks` row so item re-enters inventory workflow |
+| **INV-PC-03** | P1 | ✅ RESOLVED | Resolve modal correctly calls `POST /api/v1/wms/problem-center/:taskId/resolve` → `httpResolveProblemTask` with full action selector UI (re_stow / discard / write_off / quarantine / find_replacement) |
+| **INV-PC-04** | P1 | ✅ RESOLVED | `re_stow` cascade creates `stow_tasks` row — operator physically re-stows from problem bin. `discard`/`write_off` write `inventory_movements` and decrement `inventory_truth`. All cascades implemented in `httpResolveProblemTask`. |
 | **INV-PC-05** | P2 | 🔴 OPEN | `return` resolution creates no PO return line — cascade not implemented |
 | **INV-PC-06** | P2 | 🔴 OPEN | Replacement finder (`GET /problem-center/:taskId/replacement`) has no frontend surface — when `find_replacement` action selected, replacement locations must render inline |
 | **INV-PC-07** | P2 | 🔴 OPEN | `problem_bin_location` is empty string in seeded `shop_wms_settings` — must be non-empty for PROB label + operator instructions to be meaningful. Add validation + onboarding prompt |
