@@ -50,7 +50,7 @@ Implemented enum on `purchase_orders.status`:
 | `on_time_rate`      | % of received POs where `actual_delivery_date ≤ expected_delivery_date`               | Every receive action   |
 | `fill_rate`         | `total quantity_received / total quantity_ordered × 100`                              | Every receive action   |
 | `avg_delivery_days` | Mean of `(actual − expected)` in days. Negative = early, positive = late.             | Every receive action   |
-| `defect_rate`       | % of received units flagged as defective (WMS pick exceptions)                         | FEAT‑004 — not yet live|
+| `defect_rate`       | % of received units flagged as defective (WMS pick exceptions)                         | ✅ LIVE — FEAT‑004      |
 | `total_pos`         | Lifetime count of fully received POs                                                  | On status → `received` |
 
 **API Endpoints [LIVE]**
@@ -65,7 +65,7 @@ Implemented enum on `purchase_orders.status`:
 | PATCH  | `/api/v1/suppliers/purchase-orders/:poId/status`              | Advance PO status                                      |
 | POST   | `/api/v1/suppliers/purchase-orders/:poId/receive`             | Record received quantities (FEAT‑004 will call this)   |
 
-**When PO marked `shipped` [PLANNED — FEAT‑004]**  
+**When PO marked `shipped` [LIVE — FEAT‑004 ✅]**
 
 - System generates an alert/task in Alerts module: `wms:receive:arrived:{poId}`  
 - Alert links to WMS Receive Session screen  
@@ -74,7 +74,7 @@ Implemented enum on `purchase_orders.status`:
 
 ---
 
-### 1.2 RECEIVE JOB  [PLANNED — FEAT‑004]  
+### 1.2 RECEIVE JOB  [LIVE — FEAT‑004 ✅]
 
 ⚠️ Designed. Not yet implemented. Alert trigger from Suppliers Portal is the integration point.
 
@@ -102,7 +102,7 @@ PO transitions to `shipped` → system creates `receive_jobs` record linked to P
 
 ---
 
-### 1.3 INSPECTION PROCESS  [PLANNED — FEAT‑004]  
+### 1.3 INSPECTION PROCESS  [LIVE — FEAT‑004 ✅]
 
 ⚠️ Designed. Not yet implemented.
 
@@ -359,10 +359,10 @@ See full contract: `docs/playbooks/wms_pack_decision_playbook.md`
 | `suppliers`                     | 0094      | ✅ LIVE       | `on_time_rate`, `fill_rate`, `avg_delivery_days`, `defect_rate`, `total_pos` |
 | `purchase_orders`               | 0095      | ✅ LIVE       | full status enum, `receive_notes`, `parent_po_id`                  |
 | `purchase_order_line_items`     | 0096      | ✅ LIVE       | `description`, `quantity_ordered`, `quantity_received`, `unit_cost_cents` |
-| `receive_jobs`                  | —         | 🔴 PLANNED    | FEAT‑004                                                           |
-| `receive_job_lines`             | —         | 🔴 PLANNED    | FEAT‑004                                                           |
-| `receive_exceptions`            | —         | 🔴 PLANNED    | FEAT‑004                                                           |
-| `barcode_print_jobs`            | —         | 🔴 PLANNED    | FEAT‑004                                                           |
+| `receive_jobs`                  | 0097      | ✅ LIVE       | FEAT‑004                                                           |
+| `receive_job_lines`             | 0098      | ✅ LIVE       | FEAT‑004                                                           |
+| `receive_exceptions`            | 0099      | ✅ LIVE       | FEAT‑004                                                           |
+| `barcode_print_jobs`            | 0100      | ✅ LIVE       | FEAT‑004                                                           |
 | `pack_decision_requests`        | 0111      | ✅ LIVE       | WM‑33 — replaced pack_exception_threads pattern                    |
 | `variant_location_assignments`  | —         | 🔴 PLANNED    | WM‑36                                                              |
 
@@ -372,8 +372,8 @@ See full contract: `docs/playbooks/wms_pack_decision_playbook.md`
 
 | Alert Key                                        | Type                       | Severity | Target       | Trigger                               | Status        |
 |--------------------------------------------------|----------------------------|----------|--------------|---------------------------------------|---------------|
-| `wms:receive:arrived:{poId}`                     | `wms_receive_arrived`      | info     | operators    | PO marked `shipped`                   | 🔴 FEAT‑004   |
-| `wms:receive:exception:{jobId}`                  | `wms_receive_exception`    | warning  | owner/admin  | Inspection problem found              | 🔴 FEAT‑004   |
+| `wms:receive:arrived:{poId}`                     | `wms_receive_arrived`      | info     | operators    | PO marked `shipped`                   | ✅ LIVE       |
+| `wms:receive:exception:{jobId}`                  | `wms_receive_exception`    | warning  | owner/admin  | Inspection problem found              | ✅ LIVE       |
 | `wms:barcode:print:{jobId}`                      | `wms_barcode_print`        | info     | operator     | Barcode print job ready               | 🔴 FEAT‑004   |
 | `wms:stow:pending:{taskId}`                      | `wms_stow_pending`         | info     | operators    | Stow task created                     | ✅ LIVE       |
 | `wms:batch:released:{batchId}`                   | `wms_batch_released`       | info     | operators    | Batch released from pool              | ✅ LIVE       |
@@ -458,10 +458,10 @@ SKU Gaps                  Push to packer(s)
 | FEAT‑001   | P1       | ✅ DONE         | Suppliers Portal — suppliers, POs, line items, rating auto‑compute                          |
 | FEAT‑002   | P1       | ✅ DONE         | Floor Planning module — location management, barcode display                                |
 | FEAT‑003   | P2       | 📋 PLANNED      | Manpower Module — operator roster, shift scheduling, task notifications, workforce financials |
-| FEAT‑004   | P1       | 📋 PLANNED      | WMS Receive Sessions — alert on PO shipped, operator receive flow, inspection, barcode print, supplier rating update |
+| FEAT‑004   | P1       | ✅ LIVE         | WMS Receive Sessions — alert on PO shipped, operator receive flow, inspection, barcode print, supplier rating update. Migrations 0097–0100. |
 | WM‑31      | P1       | ✅ DONE         | Role/Entitlement Management UI — member management, role changes                            |
-| WM‑32      | P1       | 📋 PLANNED      | Receive Job — full inbound pipeline (PO → inspection → barcode → stow)                      |
-| WM‑33      | P1       | 📋 PLANNED      | Pack Problem Centre — exception threads, resolution flow, partial ship                       |
+| WM‑32      | P1       | ✅ LIVE         | Receive Job — full inbound pipeline (PO → inspection → barcode → stow). Migrations 0097–0100. |
+| WM‑33      | P1       | ✅ LIVE         | Pack Decision Requests — replaces pack_exception_threads. Migration 0111. See wms_pack_decision_playbook.md |
 | WM‑34      | P1       | 📋 PLANNED      | Invoice + shipping label print on pack claim                                                |
 | WM‑35      | P2       | 📋 PLANNED      | Batch Management Settings UI — configurable release parameters                              |
 | WM‑36      | P2       | 📋 PLANNED      | Location suggestion engine — home location, proximity, empty bin                             |
