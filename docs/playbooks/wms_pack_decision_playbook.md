@@ -184,5 +184,5 @@ messages array for owner-operator threading. Retired in favour of
 ## 11. Open / Fast-Follow
 
 - Alert `wms_pack_exception` deep link currently points to `/problem-center` ✅
-- Rejected decisions should requeue the order back to the order pool (backend — not yet implemented)
+- ✅ Rejected decisions requeue order to pool — `pick_batch_orders` row deleted on rejection; order re-surfaces in `GET /wms/order-pool` immediately (pool query: `WHERE pick_batch_orders IS NULL`)
 - Decision history visible in order detail page (fast-follow)
