@@ -1,7 +1,8 @@
 # Order Pool — Blueprint & System Contract
 
 **Last updated: May 2026**
-**Status: Backend partial — Frontend not yet built**
+**Status: ✅ Live — Backend + Frontend both implemented**
+**Frontend:** `ReleaseQueuePage.tsx` (order pool + batch release) + `FulfillmentQueuePage.tsx` (active batches)
 **Depends on:** constraint_system_blueprint.md, WMS_process_blueprint.md, WarehouseGrid.md
 
 ---
