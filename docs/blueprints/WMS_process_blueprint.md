@@ -499,4 +499,4 @@ SKU Gaps                  Push to packer(s)
 
 | ID | Surface | Gap | Priority |
 |----|---------|-----|----------|
-| WEB-STOW-01 | Web WMS | `StowSessionPage` not built — web has claim/confirm card only. Mobile has 5 phases (summary → location_scan → product_scan → qty_confirm → complete), partial stow, shortfall modal, 3 exception types. | P2 — operator can use mobile; owner can claim/confirm on web |
+| WEB-STOW-01 | Web WMS | ✅ RESOLVED — `StowSessionPage` built and verified May 31, 2026. 5 phases (summary → location_scan → product_scan → qty_confirm → complete), partial stow, shortfall exception dialog with multi-exception support, miscount escape hatch. inventory_truth verified via SQL after confirm. | P2 |

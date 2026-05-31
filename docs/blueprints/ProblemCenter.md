@@ -212,7 +212,7 @@ These are the flows that automatically create `problem_center_tasks` rows:
 | **Receive** | Receive rejection | Receive controller | Via `receive_rejection` exception type |
 | **Returns** | Return shortfall / repackaging | Returns controller | Via `returns` source |
 
-⚠️ **Stow exceptions write inventory movement immediately** (at report time), before resolution. This differs from pick exceptions which defer the movement to resolve time. This inconsistency should be unified — tracked as INV-PC-01.
+✅ **Stow exceptions now defer inventory impact to resolve time** — unified with pick exceptions. `httpReportStowException` creates `problem_center_tasks` row only. `httpResolveProblemTask` writes the inventory movement on owner resolution (INV-PC-01 resolved May 31, 2026).
 
 ---
 
@@ -255,16 +255,16 @@ Tracked as **INV-PC-03** — highest priority open item.
 
 | ID | Priority | Status | Description |
 |---|---|---|---|
-| **INV-PC-01** | P2 | 🔴 OPEN | Stow exceptions write inventory movement immediately at report time; pick exceptions defer to resolve. Inconsistent — should unify to deferred (resolve-time) movement writes |
+| **INV-PC-01** | P2 | ✅ RESOLVED | Stow exceptions now defer inventory impact to resolve time — unified with pick exceptions. `httpReportStowException` no longer writes `inventory_movements` at report time. Movement written by `httpResolveProblemTask` on owner resolution. |
 | **INV-PC-02** | P3 | 🔴 OPEN | `ProblemCenterModuleFT2` uses legacy `PickException` type with stubbed fields (`quantity_found=0`, `lasyncro_line_item_id=task_id`). Module needs its own native type aligned to `problem_center_tasks` shape |
 | **INV-PC-03** | P1 | ✅ RESOLVED | Resolve modal correctly calls `POST /api/v1/wms/problem-center/:taskId/resolve` → `httpResolveProblemTask` with full action selector UI (re_stow / discard / write_off / quarantine / find_replacement) |
 | **INV-PC-04** | P1 | ✅ RESOLVED | `re_stow` cascade creates `stow_tasks` row — operator physically re-stows from problem bin. `discard`/`write_off` write `inventory_movements` and decrement `inventory_truth`. All cascades implemented in `httpResolveProblemTask`. |
 | **INV-PC-05** | P2 | 🔴 OPEN | `return` resolution creates no PO return line — cascade not implemented |
 | **INV-PC-06** | P2 | 🔴 OPEN | Replacement finder (`GET /problem-center/:taskId/replacement`) has no frontend surface — when `find_replacement` action selected, replacement locations must render inline |
-| **INV-PC-07** | P2 | 🔴 OPEN | `problem_bin_location` is empty string in seeded `shop_wms_settings` — must be non-empty for PROB label + operator instructions to be meaningful. Add validation + onboarding prompt |
+| **INV-PC-07** | P2 | ✅ RESOLVED | `ProblemBinPrompt` banner shown in WmsPage when `problem_bin_location` is null/empty. Owner sets bin code inline (PATCH /wms/settings). `useWms` now fetches settings on load. |
 | **INV-PC-08** | P3 | ✅ RESOLVED | Pack exception alerts now fire via `firePickExceptionAlert()` in `packDecision.service.ts` when blocking exceptions raised. Non-blocking exceptions fire via `wmsAlerts.service.ts`. |
 | **INV-PC-09** | P3 | 🔴 OPEN | Operator post-exception instruction ("Move to problem bin: X") does not show if `problem_bin_location` is empty — should guard and prompt owner to configure |
-| **INV-PC-10** | P3 | 🔴 OPEN | No mobile `ProblemCenterScreen` in React Native app — operators resolve on web only |
+| **INV-PC-10** | P3 | ✅ RESOLVED | `OperatorProblemCenterScreen` added as 5th tab in OperatorTabs. Read-only — shows open/investigating tasks, PROB label, bin location. Resolve remains owner-only (DispatchScreen). |
 
 ---
 
