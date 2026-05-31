@@ -87,7 +87,7 @@ pending → in_progress → closed
 3. If count is short → shortfall modal → exception type selection → PROBLEM BIN routing
 4. "I miscounted" path → accepts full expected quantity, no exception
 
-### Path B — Continuous scan mode (available when barcodes exist)
+### Path B — Scan mode ✅ LIVE on webapp May 31, 2026 (available when barcodes exist in Shopify)
 
 1. Operator selects "Scan items" on brief screen
 2. Full-screen camera viewfinder with dynamic bounds overlay
