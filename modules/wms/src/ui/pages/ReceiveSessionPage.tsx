@@ -110,6 +110,19 @@ export default function ReceiveSessionPage({
   const [deliveryDate, setDeliveryDate] = useState('');
   const [closeDialog, setCloseDialog] = useState(false);
 
+  // ── Shortfall modal state ──────────────────────────────────────────────────
+  const [shortfallModal, setShortfallModal] = useState<{
+    line: ReceiveJobLine;
+    accepted: number;
+    totalShortfall: number;
+    remainingShortfall: number;
+  } | null>(null);
+  const [shortfallExceptionType, setShortfallExceptionType] = useState<ExceptionType | null>(null);
+  const [shortfallExceptionQty, setShortfallExceptionQty] = useState('');
+  const [shortfallExceptionNotes, setShortfallExceptionNotes] = useState('');
+  const [shortfallSubmitting, setShortfallSubmitting] = useState(false);
+  const [shortfallQtyError, setShortfallQtyError] = useState<string | null>(null);
+
   const currentLine = lines[currentIndex];
   const isLastLine = currentIndex === lines.length - 1;
   const progress = Math.round((currentIndex / lines.length) * 100);
@@ -124,6 +137,24 @@ export default function ReceiveSessionPage({
 
   const handleConfirmBatch = useCallback(async () => {
     if (!currentLine) return;
+
+    const shortfall = currentLine.quantity_expected - accepted;
+
+    // Shortfall detected — force exception reporting before allowing confirmation
+    if (shortfall > 0) {
+      setShortfallModal({
+        line: currentLine,
+        accepted,
+        totalShortfall: shortfall,
+        remainingShortfall: shortfall,
+      });
+      setShortfallExceptionType(null);
+      setShortfallExceptionQty('');
+      setShortfallExceptionNotes('');
+      return;
+    }
+
+    // All units accounted — submit directly
     setSubmitting(true);
     setSubmitError(null);
     try {
@@ -131,7 +162,7 @@ export default function ReceiveSessionPage({
         lasyncro_variant_id: currentLine.lasyncro_variant_id,
         receive_job_line_id: currentLine.receive_job_line_id,
         quantity_accepted: accepted,
-        quantity_rejected: rejected,
+        quantity_rejected: 0,
       });
       resetForNext();
       if (isLastLine) {
@@ -144,7 +175,115 @@ export default function ReceiveSessionPage({
     } finally {
       setSubmitting(false);
     }
-  }, [currentLine, accepted, rejected, isLastLine, onInspectLine, resetForNext]);
+  }, [currentLine, accepted, isLastLine, onInspectLine, resetForNext]);
+
+  // ── Submit inspection after all shortfall exceptions accounted for ─────────
+  const submitInspectionAfterShortfall = useCallback(async (
+    line: ReceiveJobLine,
+    acceptedQty: number,
+    totalShortfall: number,
+  ) => {
+    setShortfallSubmitting(true);
+    try {
+      await onInspectLine({
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        receive_job_line_id: line.receive_job_line_id,
+        quantity_accepted: acceptedQty,
+        quantity_rejected: totalShortfall,
+      });
+      setShortfallModal(null);
+      setShortfallExceptionType(null);
+      setShortfallExceptionQty('');
+      setShortfallExceptionNotes('');
+      setShortfallQtyError(null);
+      resetForNext();
+      if (isLastLine) {
+        setCloseDialog(true);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Failed to submit inspection.');
+    } finally {
+      setShortfallSubmitting(false);
+    }
+  }, [onInspectLine, resetForNext, isLastLine]);
+
+  // ── Shortfall modal confirm — report one exception chunk ───────────────────
+  const handleShortfallConfirm = useCallback(async () => {
+    if (!shortfallModal || !shortfallExceptionType) return;
+    const qty = parseInt(shortfallExceptionQty, 10);
+    if (!shortfallExceptionQty.trim() || isNaN(qty) || qty <= 0) {
+      setShortfallQtyError('Enter a quantity to continue.');
+      return;
+    }
+    if (qty > shortfallModal.remainingShortfall) {
+      setShortfallQtyError(`Maximum is ${shortfallModal.remainingShortfall}.`);
+      return;
+    }
+    setShortfallQtyError(null);
+
+    const needsNotes = shortfallExceptionType === 'barcode_mismatch' || shortfallExceptionType === 'other';
+    if (needsNotes && !shortfallExceptionNotes.trim()) return;
+
+    setShortfallSubmitting(true);
+    try {
+      await onReportException({
+        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
+        receive_job_line_id: shortfallModal.line.receive_job_line_id,
+        exception_type: shortfallExceptionType,
+        quantity_affected: qty,
+        notes: shortfallExceptionNotes.trim() || `${qty} unit${qty > 1 ? 's' : ''} unaccounted during receive`,
+      });
+
+      const newRemaining = shortfallModal.remainingShortfall - qty;
+
+      if (newRemaining > 0) {
+        // More shortfall to account for — loop
+        setShortfallModal((prev) => prev ? { ...prev, remainingShortfall: newRemaining } : null);
+        setShortfallExceptionType(null);
+        setShortfallExceptionQty('');
+        setShortfallExceptionNotes('');
+      } else {
+        // All accounted — submit inspection
+        await submitInspectionAfterShortfall(
+          shortfallModal.line,
+          shortfallModal.accepted,
+          shortfallModal.totalShortfall,
+        );
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Failed to report exception.');
+    } finally {
+      setShortfallSubmitting(false);
+    }
+  }, [shortfallModal, shortfallExceptionType, shortfallExceptionQty, shortfallExceptionNotes, onReportException, submitInspectionAfterShortfall]);
+
+  // ── Miscount escape hatch — accept full expected, no exception ─────────────
+  const handleMiscount = useCallback(async () => {
+    if (!shortfallModal) return;
+    setShortfallModal(null);
+    setAccepted(shortfallModal.line.quantity_expected);
+    setShortfallSubmitting(true);
+    try {
+      await onInspectLine({
+        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
+        receive_job_line_id: shortfallModal.line.receive_job_line_id,
+        quantity_accepted: shortfallModal.line.quantity_expected,
+        quantity_rejected: 0,
+      });
+      resetForNext();
+      if (isLastLine) {
+        setCloseDialog(true);
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Failed to submit inspection.');
+    } finally {
+      setShortfallSubmitting(false);
+    }
+  }, [shortfallModal, onInspectLine, resetForNext, isLastLine]);
 
   const handleReportException = useCallback(async () => {
     if (!currentLine || !exceptionType) return;
@@ -320,6 +459,96 @@ export default function ReceiveSessionPage({
           Report Problem
         </Button>
       </Box>
+
+      {/* SHORTFALL MODAL — forces exception reporting when accepted < expected */}
+      <Dialog open={!!shortfallModal} fullWidth maxWidth="sm">
+        <DialogTitle>
+          {shortfallModal && shortfallModal.remainingShortfall < shortfallModal.totalShortfall
+            ? `${shortfallModal.remainingShortfall} unit${shortfallModal.remainingShortfall > 1 ? 's' : ''} still unaccounted`
+            : `${shortfallModal?.totalShortfall} unit${(shortfallModal?.totalShortfall ?? 0) > 1 ? 's' : ''} short — what happened?`
+          }
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              Expected {shortfallModal?.line.quantity_expected}, accepted {shortfallModal?.accepted}.
+              Account for all {shortfallModal?.remainingShortfall} unit{(shortfallModal?.remainingShortfall ?? 0) > 1 ? 's' : ''} before continuing.
+            </Typography>
+
+            {(Object.keys(EXCEPTION_LABELS) as ExceptionType[]).map((type) => (
+              <Button
+                key={type}
+                variant={shortfallExceptionType === type ? 'contained' : 'outlined'}
+                color={type === 'defect' || type === 'wrong_item' ? 'error' : 'warning'}
+                fullWidth
+                size="large"
+                onClick={() => setShortfallExceptionType(type)}
+                sx={{ borderRadius: 2, justifyContent: 'flex-start' }}
+              >
+                {EXCEPTION_LABELS[type]}
+              </Button>
+            ))}
+
+            {shortfallExceptionType && (
+              <TextField
+                label={`Qty affected (max ${shortfallModal?.remainingShortfall})`}
+                type="number"
+                size="small"
+                value={shortfallExceptionQty}
+                onChange={(e) => {
+                  setShortfallExceptionQty(e.target.value);
+                  setShortfallQtyError(null);
+                }}
+                inputProps={{ min: 1, max: shortfallModal?.remainingShortfall }}
+                fullWidth
+                error={!!shortfallQtyError}
+                helperText={shortfallQtyError ?? undefined}
+                placeholder={`Enter qty (max ${shortfallModal?.remainingShortfall})`}
+              />
+            )}
+
+            {(shortfallExceptionType === 'barcode_mismatch' || shortfallExceptionType === 'other') && (
+              <TextField
+                label={shortfallExceptionType === 'barcode_mismatch' ? 'Scanned barcode value' : 'Notes'}
+                value={shortfallExceptionNotes}
+                onChange={(e) => setShortfallExceptionNotes(e.target.value)}
+                fullWidth
+                required
+                multiline={shortfallExceptionType === 'other'}
+                rows={shortfallExceptionType === 'other' ? 2 : 1}
+                placeholder={shortfallExceptionType === 'barcode_mismatch' ? 'Enter the barcode printed on the unit' : 'Describe the problem'}
+              />
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ justifyContent: 'space-between', px: 3, pb: 2 }}>
+          {shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall && (
+          <Box
+            onClick={() => !shortfallSubmitting && void handleMiscount()}
+            sx={{
+              display: 'inline-flex', alignItems: 'center',
+              px: 1.25, py: 0.5,
+              fontSize: 11, fontWeight: 500,
+              color: 'var(--accent)',
+              border: '0.5px solid var(--accent-border)',
+              borderRadius: '6px', cursor: shortfallSubmitting ? 'not-allowed' : 'pointer',
+              opacity: shortfallSubmitting ? 0.4 : 1,
+              '&:hover': { opacity: shortfallSubmitting ? 0.4 : 0.75 },
+            }}
+          >
+            I miscounted — accept all {shortfallModal?.line.quantity_expected}
+          </Box>
+          )}
+          <Button
+            variant="contained"
+            disabled={!shortfallExceptionType || shortfallSubmitting}
+            onClick={() => void handleShortfallConfirm()}
+            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+          >
+            {shortfallSubmitting ? 'Saving...' : 'Confirm exception'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* EXCEPTION DIALOG */}
       <Dialog open={exceptionDialog} onClose={() => setExceptionDialog(false)} fullWidth>

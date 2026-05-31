@@ -141,12 +141,12 @@ To enable full inventory tracking, use the variant autocomplete when creating PO
 
 For variant-linked lines only (steps 7–10 skipped for unlinked lines):
 
-7. **Inventory movements written** — one `inbound_purchase` movement per accepted line
+1. **Inventory movements written** — one `inbound_purchase` movement per accepted line
    (deterministic UUID via uuidv5 — idempotent on replay)
-8. **Inventory truth upserted** — `on_hand_quantity` and `available_quantity` incremented
+2. **Inventory truth upserted** — `on_hand_quantity` and `available_quantity` incremented
    at `WH-{shopId}-ROOT`
-9. **Barcode print jobs created** — one per accepted variant
-10. **Stow tasks created** — one per accepted line at ROOT location
+3. **Barcode print jobs created** — one per accepted variant
+4. **Stow tasks created** — one per accepted line at ROOT location
 
 All-or-nothing. Failure rolls back entire close. Job remains open and retryable.
 
@@ -175,6 +175,7 @@ All-or-nothing. Failure rolls back entire close. Job remains open and retryable.
 3. Order — `external_order_identity_map.external_order_id`
 
 ### Barcode types supported
+
 `qr`, `ean13`, `ean8`, `code128`, `code39`, `upc_a`, `upc_e`
 
 ---
@@ -283,4 +284,110 @@ Status: Not yet built. Backend endpoint required:
 - `receive_job_lines` schema changes
 
 **Rationale:** These are inventory accuracy primitives. A bug here creates ghost
-inventory or missing stock that may be undetectable without a full physical count.
+inventory or missing stock that may be undetectable without a full physical count
+---
+
+## 13. Session Log
+
+### May 31, 2026 — Receive Workflow UI Simulation & Audit
+
+**Session type:** Full UI simulation + backend audit
+**Conducted by:** Owner (Milad) + Claude
+**Scope:** Receive workflow end-to-end on webapp — PO creation → receive job → inspection → close → stow tasks
+
+---
+
+#### Changes Applied
+
+**RECEIVE-FIX-01 — Blocked unlinked PO line items at submission**
+
+- **Problem:** PO creation modal allowed free-text line items with no `lasyncro_variant_id`. These passed validation and were saved. On receive close, `receiveJob.service.ts:286` silently skipped these lines — no inventory movement, no stow task, no error. 25 accepted units vanished.
+- **Root cause:** `handleSubmit` in `CreatePoDialog` had no variant-link validation. Backend guard at line 286 (`if (!line.lasyncro_variant_id) continue`) is correct by design but was never surfaced to the operator.
+- **Fix:** Added validation in `CreatePoDialog.handleSubmit` — any line item without `lasyncro_variant_id` blocks submission with a descriptive error message naming the unlinked item.
+- **File:** `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx`
+- **Status:** ✅ Applied and verified
+
+**RECEIVE-FIX-02 — Tooltip and Shopify link on unlinked line items**
+
+- **Problem:** When operator types a product name that doesn't match any catalog entry, no feedback was shown.
+- **Fix:** TextField shows red error state + helperText: "Not linked to Shopify catalog — [create the product in Shopify first →](https://admin.shopify.com/store/products/new) Then re-sync." Link opens Shopify admin products/new in new tab.
+- **File:** `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx`
+- **Status:** ✅ Applied and verified
+
+**RECEIVE-FIX-03 — Camera opens on webapp stow session (BUG-02)**
+
+- **Problem:** `StowSessionPage.tsx` used `BarcodeScanSurface` (mobile camera component) for both `location_scan` and `product_scan` phases. On webapp, this unconditionally opened the PC webcam — wrong UX for desktop, alarming for real users.
+- **Root cause:** `StowSessionPage` was built reusing the mobile component without a desktop-appropriate alternative.
+- **Fix:** Created `ScanInput` component (text field, autofocus, submits on Enter) inline in `StowSessionPage.tsx`. Replaced both `BarcodeScanSurface` instances. Accepts typed location/barcode codes and USB/Bluetooth scanner input (fires as keyboard events).
+- **File:** `modules/wms/src/ui/pages/StowSessionPage.tsx`
+- **Status:** ✅ Applied and verified
+
+---
+
+#### Bugs Found — Deferred / Pending
+
+**RECEIVE-PENDING-01 — No shortfall guard on receive session (webapp)**
+
+- **Problem:** Webapp `ReceiveSessionPage` allows confirming a line item with `accepted = 0` or any quantity less than expected without triggering exception reporting. Mobile `ReceiveJobScreen` has a full shortfall modal that intercepts any `accepted < expected` and forces exception type selection + Problem Center routing before allowing confirmation.
+- **Impact:** Operators can close receive jobs with 0 accepted units silently. No stow tasks created, no inventory written, no alert. Confirmed in live test — two lines closed with 0 accepted, no stow tasks generated.
+- **Required fix (Phase 1):** Mirror mobile shortfall modal in webapp — intercept on confirm, require exception type + qty for all shortfall units, loop until fully accounted, call Problem Center on each exception.
+- **Required fix (Phase 2):** Add scan path to webapp receive session — mode selector (Count / Scan), `ScanInput`-based scan, barcode resolution per scan, auto-confirm on expected count, overcount dialog.
+- **Status:** 🔴 PENDING — Phase 1 is next implementation task
+
+**RECEIVE-PENDING-02 — No products/create webhook**
+
+- **Problem:** When a new product is created in Shopify, LaSyncro does not pick it up automatically. No `products/create` webhook registered. Owner must trigger manual resync before the new product appears in PO variant search.
+- **Workaround documented in UI:** Tooltip links to Shopify admin and says "Then re-sync."
+- **GitHub issue:** #996
+- **Status:** 🔴 PENDING
+
+**RECEIVE-PENDING-03 — Live pill has no resync trigger**
+
+- **Problem:** The Live pill in the top nav is a static indicator. There is no UI-accessible manual resync trigger. Owner must know to navigate to settings or use CLI.
+- **GitHub issue:** Created (resync from Live pill)
+- **Status:** 🔴 PENDING
+
+---
+
+#### Verified Working (May 31, 2026)
+
+| Step | Result |
+|------|--------|
+| PO creation with new supplier | ✅ |
+| PO creation with catalog-linked line items | ✅ |
+| Unlinked line item blocked at submission | ✅ |
+| Tooltip + Shopify link on unlinked input | ✅ |
+| PO status: Draft → On the way → Arrived | ✅ |
+| Receive Via WMS button on Arrived POs | ✅ |
+| Navigation to WMS Operations on receive job create | ✅ |
+| Line-by-line inspection with Set All shortcut | ✅ |
+| Confirm Batch → Confirm & Finish on last line | ✅ |
+| Close session modal with delivery date | ✅ |
+| Stow tasks created after close (variant-linked lines only) | ✅ |
+| Stow tasks visible in WMS Operations | ✅ |
+| Webapp stow uses text input not camera | ✅ |
+| PO status advances to `received` on close | ✅ |
+| `quantity_accepted` written to `receive_job_lines` | ✅ |
+| `inventory_movements` written on close | ✅ |
+| `inventory_truth` updated on close | ✅ |
+
+### RECEIVE-PENDING-01 — Webapp shortfall guard — ✅ RESOLVED May 31, 2026
+
+**What was built:**
+
+- `ReceiveSessionPage.tsx` — `handleConfirmBatch` now intercepts any `accepted < expected` and opens a shortfall modal instead of allowing silent confirmation
+- Shortfall modal mirrors mobile `ReceiveJobScreen` exactly: exception type selection, qty input (always blank — operator must type), loops until `remainingShortfall = 0`
+- Multi-exception support: operator can split shortfall across multiple exception types (e.g. 1 defect + 2 wrong quantity)
+- Problem Center called on each exception chunk via `WmsPage.handleReportReceiveException` (added `POST /api/v1/wms/problem-center` call)
+- "I miscounted" escape hatch — accepts full expected qty, no exception filed — hidden once any exception has been committed to prevent orphaned PROB tasks
+- Dynamic description text updates remaining count as exceptions are reported
+- Inline qty validation with error message — empty or over-max blocked with user-facing warning
+- Confirm Exception button: accent orange per UX playbook (`var(--accent)`, `borderRadius: 6px`, `fontWeight: 600`)
+- Miscount button: ghost pill per UX playbook (`var(--accent-border)`, `0.5px solid`)
+
+**Files changed:**
+
+- `modules/wms/src/ui/pages/ReceiveSessionPage.tsx`
+- `apps/frontend/src/pages/ft2-pages/WmsPage.tsx`
+
+**Verified via UI simulation May 31, 2026 ✅**

@@ -1,6 +1,5 @@
 // modules/wms/src/ui/pages/StowSessionPage.tsx
-
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Box, Paper, Typography, Button, Alert, Chip, Divider,
   Dialog, DialogTitle, DialogContent, DialogActions,
@@ -9,7 +8,6 @@ import {
 import {
   CheckCircle, MapPin, Package, ArrowLeft, RotateCcw,
 } from 'lucide-react';
-import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
 import type { WmsStowTask } from './WmsModuleFT2.js';
 
 /**
@@ -57,6 +55,41 @@ const STOW_EXCEPTIONS = [
   { type: 'product_defect',   label: 'Damaged' },
   { type: 'packaging_defect', label: 'Packaging issue' },
 ];
+
+/**
+ * SCAN INPUT
+ * ----------
+ * Webapp equivalent of BarcodeScanSurface for desktop use.
+ * Accepts typed input or USB/Bluetooth scanner (fires as keyboard input).
+ * Auto-focuses on mount. Submits on Enter key.
+ */
+function ScanInput({ hint, onSubmit }: { hint: string; onSubmit: (value: string) => void }) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <TextField
+      inputRef={inputRef}
+      fullWidth
+      size="small"
+      placeholder={hint}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && value.trim()) {
+          onSubmit(value.trim());
+          setValue('');
+        }
+      }}
+      helperText="Type or scan — press Enter to confirm"
+      autoComplete="off"
+    />
+  );
+}
 
 export default function StowSessionPage({
   initialTaskId,
@@ -396,9 +429,9 @@ export default function StowSessionPage({
           )}
         </Paper>
 
-        <BarcodeScanSurface
-          onScan={(v) => void handleLocationScan(v)}
+        <ScanInput
           hint="Scan bin barcode or type location code"
+          onSubmit={(v) => void handleLocationScan(v)}
         />
 
         {submitError && <Alert severity="error" sx={{ mt: 2 }}>{submitError}</Alert>}
@@ -433,9 +466,9 @@ export default function StowSessionPage({
           </Typography>
         </Paper>
 
-        <BarcodeScanSurface
-          onScan={(v) => void handleProductScan(v)}
-          hint="Scan product barcode"
+        <ScanInput
+          hint="Scan product barcode or type barcode value"
+          onSubmit={(v) => void handleProductScan(v)}
         />
 
         {submitError && <Alert severity="error" sx={{ mt: 2 }}>{submitError}</Alert>}

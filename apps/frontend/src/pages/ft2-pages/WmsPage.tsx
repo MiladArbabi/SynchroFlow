@@ -307,7 +307,17 @@ export default function WmsPage() {
     jobId: string,
     params: { lasyncro_variant_id: string; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }
   ) => {
+    // 1. Record exception against the receive job line
     await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
+    // 2. Create Problem Center task + PROB label — mirrors mobile ReceiveJobScreen behaviour
+    if (params.lasyncro_variant_id) {
+      await axiosInstance.post('/api/v1/wms/problem-center', {
+        lasyncro_variant_id: params.lasyncro_variant_id,
+        quantity: params.quantity_affected,
+        exception_type: params.exception_type,
+        source: 'receive',
+      });
+    }
   }, []);
 
   const handleCloseReceiveJob = useCallback(async (

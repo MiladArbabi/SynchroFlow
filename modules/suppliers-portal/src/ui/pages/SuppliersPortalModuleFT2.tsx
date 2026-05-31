@@ -229,6 +229,9 @@ function CreatePoDialog({
       if (!item.description.trim()) return setError('All line items need a description.');
       const qty = parseInt(item.quantity_ordered, 10);
       if (isNaN(qty) || qty < 1) return setError('All line items need a valid quantity (≥ 1).');
+      if (!item.lasyncro_variant_id) return setError(
+        `"${item.description.trim()}" is not linked to a Shopify product. Search and select it from the dropdown, or create it in Shopify first then search here.`
+      );
     }
 
     setSubmitting(true);
@@ -347,6 +350,24 @@ function CreatePoDialog({
                     size="small"
                     fullWidth
                     value={variantSearch[item.key] ?? item.description}
+                    error={(variantSearch[item.key]?.length ?? 0) > 0 && !item.lasyncro_variant_id && variantOptions.length === 0}
+                    helperText={
+                      (variantSearch[item.key]?.length ?? 0) > 0 && !item.lasyncro_variant_id && variantOptions.length === 0
+                        ? (
+                          <span>
+                            Not linked to Shopify catalog —{' '}
+                             <a
+                              href="https://admin.shopify.com/store/products/new"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              >
+                              create the product in Shopify first →
+                            </a>
+                            <br />Then re-sync.
+                          </span>
+                        )
+                        : undefined
+                    }
                     onKeyDown={(e) => {
                       if (!variantOptions.length) return;
                       if (e.key === 'ArrowDown') {
