@@ -2433,19 +2433,27 @@ export const httpListPackDecisions = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const status = (req.query.status as string) ?? 'pending';
+  const status  = (req.query.status   as string) ?? 'pending';
+  const orderId = (req.query.order_id as string) ?? null;
 
   try {
     let requests: Record<string, unknown>[] = [];
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      requests = await trx('pack_decision_requests as pdr')
-        .where({ 'pdr.shop_id': shopId, 'pdr.status': status })
+
+      const q = trx('pack_decision_requests as pdr')
+        .where({ 'pdr.shop_id': shopId })
         .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'pdr.lasyncro_order_id')
         .leftJoin('order_line_items as oli', 'oli.lasyncro_line_item_id', 'pdr.lasyncro_line_item_id')
         .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-        .orderBy('pdr.raised_at', 'asc')
-        .select(
+        .orderBy('pdr.raised_at', 'asc');
+
+      // status=all returns every decision regardless of status (used by Order Detail page)
+      if (status !== 'all') q.where({ 'pdr.status': status });
+      // order_id scopes to a specific order (used by Order Detail page)
+      if (orderId) q.where({ 'pdr.lasyncro_order_id': orderId });
+
+      requests = await q.select(
           'pdr.id',
           'pdr.pick_batch_id',
           'pdr.lasyncro_order_id',

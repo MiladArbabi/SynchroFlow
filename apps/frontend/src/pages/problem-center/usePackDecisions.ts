@@ -81,3 +81,23 @@ export function useResolvePackDecision() {
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['pack-decisions'] }),
   });
 }
+
+/**
+ * useOrderPackDecisions
+ * ---------------------
+ * Fetches all pack decision requests for a specific order — all statuses.
+ * Used in Order Detail page to show decision history.
+ */
+export function useOrderPackDecisions(lasyncroOrderId: string | null) {
+  return useQuery<{ requests: PackDecisionRequest[]; total: number }>({
+    queryKey: ['pack-decisions', 'order', lasyncroOrderId],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get(
+        `/api/v1/wms/pack/decision-requests?status=all&order_id=${lasyncroOrderId}`
+      );
+      return data;
+    },
+    enabled: !!lasyncroOrderId,
+    staleTime: 30_000,
+  });
+}
