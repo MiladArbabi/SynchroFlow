@@ -192,6 +192,33 @@ export async function resolvePackDecisionRequest(
     })
     .returning('*');
 
+  /**
+   * REQUEUE ON REJECTION
+   * --------------------
+   * Remove order from pick_batch_orders so it re-surfaces in the
+   * order pool (GET /wms/order-pool filters WHERE pick_batch_orders IS NULL).
+   * order_warehouse_status is NOT touched — monotonic trigger blocks
+   * backward transitions. The order stays in its current warehouse
+   * status for audit; what matters for re-release is the pool query.
+   * order_fulfillment_status remains pending/processing — unchanged.
+   */
+  if (status === 'rejected') {
+    await trx('pick_batch_orders')
+      .where({
+        lasyncro_order_id: existing.lasyncro_order_id,
+        shop_id:           shopId,
+      })
+      .delete();
+
+    console.info('[PACK_DECISION_ORDER_REQUEUED]', {
+      requestId,
+      lasyncroOrderId: existing.lasyncro_order_id,
+      pickBatchId:     existing.pick_batch_id,
+      shopId,
+      resolvedBy,
+    });
+  }
+
   console.info('[PACK_DECISION_RESOLVED]', {
     id: requestId, shopId, status, partialShipment, resolvedBy,
   });
