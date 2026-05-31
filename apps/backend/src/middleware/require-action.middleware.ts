@@ -76,6 +76,15 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'floor-planning:read':      ['owner', 'admin'],
   'floor-planning:write':     ['owner', 'admin'],
 
+  // ── ALERTS ─────────────────────────────────────────────────
+  'alerts:read':              ['owner', 'admin', 'operator'],
+  // audience filtering enforced server-side in controller
+  'alerts:acknowledge':       ['owner', 'admin', 'operator'],
+  'alerts:snooze':            ['owner', 'admin', 'operator'],
+  'alerts:resolve':           ['owner', 'admin'],
+  'alerts:rules:read':        ['owner', 'admin'],
+  'alerts:rules:write':       ['owner', 'admin'],
+
   // ── ORDER NEXUS ────────────────────────────────────────────────────────────
   'orders:prioritise':        ['owner', 'admin'],
 

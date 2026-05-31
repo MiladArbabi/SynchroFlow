@@ -112,12 +112,14 @@ export const httpAcknowledgeAlert = async (req: Request, res: Response) => {
 
     const { alertId } = req.params;
 
+    let notFound = false;
+
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const updated = await trx('alerts')
         .where({ id: alertId, shop_id: shopId })
-        .whereNull('acknowledged_at') // idempotent — skip if already acknowledged
+        .whereNull('acknowledged_at')
         .update({
           acknowledged_at: trx.fn.now(),
           acknowledged_by: userId ?? null,
@@ -125,14 +127,14 @@ export const httpAcknowledgeAlert = async (req: Request, res: Response) => {
         });
 
       if (updated === 0) {
-        // Either not found or already acknowledged — both are acceptable
         const exists = await trx('alerts')
           .where({ id: alertId, shop_id: shopId })
           .first('id');
-        if (!exists) return res.status(404).json({ error: 'Alert not found' });
+        if (!exists) notFound = true;
       }
     });
 
+    if (notFound) return res.status(404).json({ error: 'Alert not found' });
     return res.status(200).json({ message: 'Alert acknowledged' });
 
   } catch (error) {
@@ -161,6 +163,8 @@ export const httpSnoozeAlert = async (req: Request, res: Response) => {
       return res.status(400).json({ error: '`until` must be in the future' });
     }
 
+    let notFound = false;
+
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
@@ -171,9 +175,10 @@ export const httpSnoozeAlert = async (req: Request, res: Response) => {
           updated_at:    trx.fn.now(),
         });
 
-      if (updated === 0) return res.status(404).json({ error: 'Alert not found' });
+      if (updated === 0) notFound = true;
     });
 
+    if (notFound) return res.status(404).json({ error: 'Alert not found' });
     return res.status(200).json({ message: 'Alert snoozed', until });
 
   } catch (error) {
@@ -199,6 +204,8 @@ export const httpResolveAlert = async (req: Request, res: Response) => {
 
     const { alertId } = req.params;
 
+    let notFound = false;
+
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
@@ -210,9 +217,10 @@ export const httpResolveAlert = async (req: Request, res: Response) => {
           updated_at:  trx.fn.now(),
         });
 
-      if (updated === 0) return res.status(404).json({ error: 'Alert not found' });
+      if (updated === 0) notFound = true;
     });
 
+    if (notFound) return res.status(404).json({ error: 'Alert not found' });
     return res.status(200).json({ message: 'Alert resolved' });
 
   } catch (error) {
