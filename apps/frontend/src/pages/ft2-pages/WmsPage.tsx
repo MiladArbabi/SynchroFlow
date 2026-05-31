@@ -268,6 +268,39 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/confirm`);
   }, []);
 
+  const handleFetchStowTasks = useCallback(async () => {
+    const { data } = await axiosInstance.get('/api/v1/wms/stow-tasks');
+    return data.stow_tasks ?? [];
+  }, []);
+
+  const handleResolveLocation = useCallback(async (scannedValue: string) => {
+    try {
+      const { data } = await axiosInstance.post('/api/v1/wms/location/resolve', {
+        scanned_value: scannedValue,
+      });
+      return data?.location_code ? data : null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const handleAssignStowLocation = useCallback(async (taskId: string, locationCode: string) => {
+    await axiosInstance.patch(`/api/v1/wms/stow-tasks/${taskId}/location`, {
+      location_code: locationCode,
+    });
+  }, []);
+
+  const handleReportStowException = useCallback(async (
+    taskId: string,
+    params: { exception_type: string; quantity: number; notes?: string }
+  ) => {
+    const { data } = await axiosInstance.post(
+      `/api/v1/wms/stow-tasks/${taskId}/exception`,
+      params
+    );
+    return data;
+  }, []);
+
   return (
     // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
@@ -308,6 +341,10 @@ export default function WmsPage() {
       stowTasks={stowTasks}
       onClaimStowTask={handleClaimStowTask}
       onConfirmStow={handleConfirmStow}
+      onFetchStowTasks={handleFetchStowTasks}
+      onResolveLocation={handleResolveLocation}
+      onAssignStowLocation={handleAssignStowLocation}
+      onReportStowException={handleReportStowException}
     />
    </PlanGate>
   );

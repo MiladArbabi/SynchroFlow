@@ -22,8 +22,9 @@ import PackSessionPage, {
   type PackOrder,
 } from './PackSessionPage.js';
 import ReceiveSessionPage, {
-  type ReceiveJobLine,
+type ReceiveJobLine,
 } from './ReceiveSessionPage.js';
+import StowSessionPage from './StowSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 
@@ -123,6 +124,11 @@ export type WmsModuleFT2Props = {
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
   onConfirmStow?: (taskId: string) => Promise<void>;
+  // Full stow session callbacks
+  onFetchStowTasks?: () => Promise<WmsStowTask[]>;
+  onResolveLocation?: (scannedValue: string) => Promise<{ location_code: string } | null>;
+  onAssignStowLocation?: (taskId: string, locationCode: string) => Promise<void>;
+  onReportStowException?: (taskId: string, params: { exception_type: string; quantity: number; notes?: string }) => Promise<{ prob_label?: string; problem_bin?: string }>;
   isOnline: boolean;
   queuedCount: number;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
@@ -416,6 +422,7 @@ type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; batchId: string; orders: PackOrder[] }
   | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
+  | { type: 'stow'; taskId: string }
   | null;
 
 function WmsModuleFT2Inner({
@@ -448,6 +455,10 @@ function WmsModuleFT2Inner({
   stowTasks,
   onClaimStowTask,
   onConfirmStow,
+  onFetchStowTasks,
+  onResolveLocation,
+  onAssignStowLocation,
+  onReportStowException,
   gridLocations,
   pendingReceiveSession,
   onRaisePackDecision,
@@ -553,6 +564,23 @@ function WmsModuleFT2Inner({
     );
   }
 
+  // Active stow session
+  if (activeSession?.type === 'stow') {
+    return (
+      <StowSessionPage
+        initialTaskId={activeSession.taskId}
+        onComplete={exitSession}
+        onFetchTasks={onFetchStowTasks ?? (() => Promise.resolve([]))}
+        onResolveLocation={onResolveLocation ?? (() => Promise.resolve(null))}
+        onAssignLocation={(taskId, locationCode) => onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve()}
+        onClaimTask={(taskId) => onClaimStowTask?.(taskId) ?? Promise.resolve()}
+        onResolveBarcode={onResolveBarcode}
+        onConfirmStow={(taskId, qty) => onConfirmStow?.(taskId) ?? Promise.resolve()}
+        onReportException={(taskId, params) => onReportStowException?.(taskId, params) ?? Promise.resolve({})}
+      />
+    );
+  }
+
   return (
     <Box sx={{ p: 2, maxWidth: 600, mx: 'auto' }}>
 
@@ -625,7 +653,7 @@ function WmsModuleFT2Inner({
             <StowTaskCard
               key={task.stow_task_id}
               task={task}
-              onClaim={(id) => void onClaimStowTask?.(id).then(onRefresh)}
+              onClaim={(id) => setActiveSession({ type: 'stow', taskId: id })}
               onConfirm={(id) => void onConfirmStow?.(id).then(onRefresh)}
             />
           ))}
