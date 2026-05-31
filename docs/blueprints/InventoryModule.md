@@ -283,7 +283,7 @@ All three wired into `ProductsOperatorSummary.provider.ts` via parallel `Promise
 | INV-10 | ✅ RESOLVED — full UX rebuild complete |
 | INV-CAT-01 | 🔵 REGISTERED — Product detail panel, defer Sprint 5 |
 | INV-DR-01 | 🔵 REGISTERED — Date range bar audit needed on Intelligence tab |
-| INV-04 | 🔴 OPEN — variance_count null in WMS Readiness |
+| INV-04 | ✅ RESOLVED May 28, 2026 — variance_count returns 0 (not null). See section INV-04 resolution note. |
 | INV-06 | 🔴 OPEN — test/seed variants still in Costs tab |
 | INV-07 | 🔴 OPEN — image_url null for 3 products |
 ---
