@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/ReceiveSessionPage.tsx
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -13,36 +13,39 @@ import {
   DialogActions,
   TextField,
   Chip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   useTheme,
 } from '@mui/material';
-import { CheckCircle, AlertTriangle, PackageX, ScanBarcode } from 'lucide-react';
+import { CheckCircle, AlertTriangle, PackageX, ScanBarcode, Hash, BarChart2 } from 'lucide-react';
 
 /**
  * RECEIVE SESSION PAGE (FEAT-004)
  * --------------------------------
- * Mobile-first operator interface for processing inbound PO shipments.
+ * Operator interface for processing inbound PO shipments.
+ * Supports two inspection paths:
  *
- * Three zones per variant screen:
- * ┌─────────────────────────────────────┐
- * │  ZONE 1 — VARIANT IDENTITY          │
- * │  Product title, SKU, expected qty   │
- * ├─────────────────────────────────────┤
- * │  ZONE 2 — INSPECTION COUNTER        │
- * │  [✓ Accepted: 0] [✗ Rejected: 0]   │
- * │  Tap + for each accepted unit       │
- * ├─────────────────────────────────────┤
- * │  ZONE 3 — ACTION                    │
- * │  [Report Problem] [Confirm Batch]   │
- * └─────────────────────────────────────┘
+ * PATH A — Count mode (always available)
+ *   One variant per screen. Operator taps +/− or uses Set All.
+ *   Shortfall → exception modal → Problem Center routing.
  *
- * Flow:
- * 1. One variant per screen — operator taps + for each accepted unit
- * 2. Report Problem → exception dialog (defect, wrong item, barcode mismatch, etc.)
- * 3. Confirm Batch → inspectLine API called → advance to next variant
- * 4. Last variant confirmed → closeJob API called → done
+ * PATH B — Scan mode (when manufacturer barcodes exist in Shopify)
+ *   Free-scan: operator scans any unit in the delivery.
+ *   System resolves barcode → PO line → increments count.
+ *   Auto-confirms when scan count = expected qty.
+ *   Overcount → confirmation dialog.
+ *   Lines without barcodes → inline count fallback.
+ *
+ * Session phases: brief → inspect → summary → (close dialog) → done
  *
  * API calls injected via props — module stays decoupled from HTTP layer.
  */
+
+type SessionPhase = 'brief' | 'inspect' | 'summary';
+type InspectMode = 'count' | 'scan';
 
 export interface ReceiveJobLine {
   receive_job_line_id: string;
@@ -51,6 +54,8 @@ export interface ReceiveJobLine {
   variant_title: string | null;
   description: string | null;
   quantity_expected: number;
+  inspection_complete?: boolean;
+  quantity_accepted?: number;
 }
 
 export interface ReceiveSessionPageProps {
@@ -73,6 +78,7 @@ export interface ReceiveSessionPageProps {
   }) => Promise<void>;
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
+  onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
 }
 
 type ExceptionType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'barcode_mismatch' | 'other';
@@ -95,9 +101,11 @@ export default function ReceiveSessionPage({
   onReportException,
   onCloseJob,
   onComplete,
+  onResolveBarcode,
 }: ReceiveSessionPageProps) {
   const theme = useTheme();
 
+  // ── Count mode state ───────────────────────────────────────────────────────
   const [currentIndex, setCurrentIndex] = useState(0);
   const [accepted, setAccepted] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -109,6 +117,140 @@ export default function ReceiveSessionPage({
   const [closing, setClosing] = useState(false);
   const [deliveryDate, setDeliveryDate] = useState('');
   const [closeDialog, setCloseDialog] = useState(false);
+
+  // ── Scan mode state ────────────────────────────────────────────────────────
+  // Initialise from backend state — supports session resume after refresh
+  const initialScanCounts: Record<string, number> = {};
+  const initialConfirmedLines = new Set<string>();
+  for (const line of lines) {
+    if (line.inspection_complete) {
+      initialConfirmedLines.add(line.receive_job_line_id);
+      initialScanCounts[line.receive_job_line_id] = line.quantity_accepted ?? line.quantity_expected;
+    }
+  }
+  // scanCounts: { [receive_job_line_id]: number } — units scanned per line
+  const [scanCounts, setScanCounts] = useState<Record<string, number>>(initialScanCounts);
+  // confirmedLines: set of receive_job_line_ids that have been inspected
+  const [confirmedLines, setConfirmedLines] = useState<Set<string>>(initialConfirmedLines);
+  // Resume brief screen only if no lines are already confirmed — otherwise go straight to inspect
+  const hasPartialProgress = initialConfirmedLines.size > 0;
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanProcessing, setScanProcessing] = useState(false);
+  // overcountLine: holds line that was scanned over expected qty — triggers dialog
+  const [overcountLine, setOvercountLine] = useState<ReceiveJobLine | null>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const [flashLine, setFlashLine] = useState<string | null>(null);
+  const [scanInputValue, setScanInputValue] = useState('');
+
+  // ── Session phase + mode ───────────────────────────────────────────────────
+  // Persist inspect mode in sessionStorage — survives refresh within the same tab
+  const storedMode = sessionStorage.getItem(`receive-mode-${receiveJobId}`);
+  const [inspectMode, setInspectMode] = useState<InspectMode>(
+    storedMode === 'scan' && onResolveBarcode ? 'scan'
+    : hasPartialProgress && onResolveBarcode ? 'scan'
+    : 'count'
+  );
+  
+  // Skip brief screen if resuming a partially-completed session
+  const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
+    hasPartialProgress || storedMode ? 'inspect' : 'brief'
+  );
+  
+  // Auto-focus scan input when in scan mode
+  useEffect(() => {
+    if (sessionPhase === 'inspect' && inspectMode === 'scan') {
+      scanInputRef.current?.focus();
+    }
+  }, [sessionPhase, inspectMode]);
+
+  // Re-focus after error — error Alert renders and steals focus
+  useEffect(() => {
+    if (sessionPhase === 'inspect' && inspectMode === 'scan') {
+      setTimeout(() => scanInputRef.current?.focus(), 50);
+    }
+  }, [scanError, sessionPhase, inspectMode]);
+
+  // ── Scan handler — free-scan: resolves barcode against all PO lines ────────
+  const handleScan = useCallback(async (scannedValue: string) => {
+    if (!onResolveBarcode || scanProcessing) return;
+    setScanProcessing(true);
+    setScanError(null);
+    try {
+      const resolved = await onResolveBarcode(scannedValue);
+      if (!resolved?.lasyncro_variant_id) {
+        setScanError(`Not recognised — no product matched for "${scannedValue}"`);
+        return;
+      }
+      const matchedLine = lines.find(
+        (l) => l.lasyncro_variant_id === resolved.lasyncro_variant_id
+      );
+      if (!matchedLine) {
+        setScanError(`Not in this PO — scanned barcode matches a different product`);
+        return;
+      }
+      if (confirmedLines.has(matchedLine.receive_job_line_id)) {
+        setScanError(`Already confirmed — ${matchedLine.sku ?? matchedLine.variant_title ?? 'this item'} is fully received`);
+        return;
+      }
+      const current = scanCounts[matchedLine.receive_job_line_id] ?? 0;
+      const next = current + 1;
+      if (next > matchedLine.quantity_expected) {
+        // Overcount — pause and confirm with operator
+        setOvercountLine(matchedLine);
+        return;
+      }
+      setScanCounts((prev) => ({ ...prev, [matchedLine.receive_job_line_id]: next }));
+      // Flash the matched line green briefly as scan confirmation
+      setFlashLine(matchedLine.receive_job_line_id);
+      setTimeout(() => {
+        setFlashLine(null);
+        scanInputRef.current?.focus();
+      }, 600);
+      if (next === matchedLine.quantity_expected) {
+        // Auto-confirm this line
+        setScanProcessing(true);
+        try {
+          await onInspectLine({
+            lasyncro_variant_id: matchedLine.lasyncro_variant_id,
+            receive_job_line_id: matchedLine.receive_job_line_id,
+            quantity_accepted: next,
+            quantity_rejected: 0,
+          });
+        } catch (inspectErr: any) {
+          // 409 = already inspected — treat as confirmed, not an error
+          if (inspectErr?.response?.status !== 409) throw inspectErr;
+        }
+        setConfirmedLines((prev) => new Set([...prev, matchedLine.receive_job_line_id]));
+        setScanError(null);
+        // Check if all lines confirmed
+        const newConfirmed = new Set([...confirmedLines, matchedLine.receive_job_line_id]);
+        if (newConfirmed.size === lines.length) {
+          setSessionPhase('summary');
+        } else {
+          setTimeout(() => scanInputRef.current?.focus(), 50);
+        }
+      }
+    } catch {
+      setScanError('Scan failed — check connection and try again');
+    } finally {
+      setScanProcessing(false);
+      scanInputRef.current?.focus();
+    }
+  }, [onResolveBarcode, scanProcessing, lines, confirmedLines, scanCounts, onInspectLine]);
+
+  // ── Overcount confirm — add one more unit ──────────────────────────────────
+  const handleOvercountAccept = useCallback(async () => {
+    if (!overcountLine) return;
+    const next = (scanCounts[overcountLine.receive_job_line_id] ?? 0) + 1;
+    setScanCounts((prev) => ({ ...prev, [overcountLine.receive_job_line_id]: next }));
+    setOvercountLine(null);
+    scanInputRef.current?.focus();
+  }, [overcountLine, scanCounts]);
+
+  const handleOvercountReject = useCallback(() => {
+    setOvercountLine(null);
+    scanInputRef.current?.focus();
+  }, []);
 
   // ── Shortfall modal state ──────────────────────────────────────────────────
   const [shortfallModal, setShortfallModal] = useState<{
@@ -137,6 +279,16 @@ export default function ReceiveSessionPage({
 
   const handleConfirmBatch = useCallback(async () => {
     if (!currentLine) return;
+
+    // In scan mode — Confirm Batch advances to summary if all lines confirmed
+    if (inspectMode === 'scan') {
+      if (confirmedLines.size === lines.length) {
+        setSessionPhase('summary');
+      } else {
+        setSubmitError(`${lines.length - confirmedLines.size} line${lines.length - confirmedLines.size > 1 ? 's' : ''} still need scanning before you can continue.`);
+      }
+      return;
+    }
 
     const shortfall = currentLine.quantity_expected - accepted;
 
@@ -320,8 +472,200 @@ export default function ReceiveSessionPage({
     }
   }, [deliveryDate, onCloseJob, onComplete]);
 
+  const totalUnits = lines.reduce((s, l) => s + l.quantity_expected, 0);
+
+  // ── BRIEF SCREEN ──────────────────────────────────────────────────────────
+  if (sessionPhase === 'brief') {
+    return (
+      <Box sx={{ p: 3, maxWidth: 560, mx: 'auto' }}>
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>Receive from {supplierName}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          {lines.length} variant{lines.length !== 1 ? 's' : ''} · {totalUnits} units expected
+        </Typography>
+
+        {/* LINE ITEM SUMMARY */}
+        <Paper variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600, fontSize: 11 }}>Product</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Expected</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {lines.map((line) => (
+                <TableRow key={line.receive_job_line_id}>
+                  <TableCell sx={{ fontSize: 12 }}>
+                    <Typography variant="body2" fontWeight={500} noWrap>
+                      {line.variant_title && line.variant_title !== 'Default Title'
+                        ? line.variant_title
+                        : line.description ?? line.sku ?? '—'}
+                    </Typography>
+                    {line.sku && (
+                      <Typography variant="caption" color="text.secondary">{line.sku}</Typography>
+                    )}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontSize: 12 }}>{line.quantity_expected}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+
+        {/* MODE SELECTOR */}
+        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 1.5, display: 'block', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+          How do you want to inspect?
+        </Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 3 }}>
+          <Paper
+            variant="outlined"
+            onClick={() => { setInspectMode('count'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'count'); }}
+            sx={{
+              p: 2, borderRadius: 2, cursor: 'pointer',
+              borderColor: inspectMode === 'count' ? 'var(--accent)' : 'divider',
+              bgcolor: inspectMode === 'count' ? 'var(--accent-ghost)' : 'transparent',
+              transition: 'all 0.15s',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Hash size={20} color={inspectMode === 'count' ? 'var(--accent)' : theme.palette.text.secondary} />
+              <Box>
+                <Typography variant="body2" fontWeight={600} color={inspectMode === 'count' ? 'var(--accent)' : 'text.primary'}>
+                  Count by hand
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Tap + for each accepted unit. Always available.
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+
+          <Paper
+            variant="outlined"
+            onClick={() => { if (onResolveBarcode) { setInspectMode('scan'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'scan'); } }}
+            sx={{
+              p: 2, borderRadius: 2,
+              cursor: onResolveBarcode ? 'pointer' : 'not-allowed',
+              opacity: onResolveBarcode ? 1 : 0.45,
+              borderColor: inspectMode === 'scan' ? 'var(--accent)' : 'divider',
+              bgcolor: inspectMode === 'scan' ? 'var(--accent-ghost)' : 'transparent',
+              transition: 'all 0.15s',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <ScanBarcode size={20} color={inspectMode === 'scan' ? 'var(--accent)' : theme.palette.text.secondary} />
+              <Box>
+                <Typography variant="body2" fontWeight={600} color={inspectMode === 'scan' ? 'var(--accent)' : 'text.primary'}>
+                  Scan barcodes
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Free-scan any unit — system matches it to the right PO line automatically.
+                  {!onResolveBarcode && ' (Not available — barcode resolver not connected)'}
+                </Typography>
+              </Box>
+            </Box>
+          </Paper>
+        </Box>
+
+        <Button
+          variant="contained"
+          fullWidth
+          size="large"
+          onClick={() => setSessionPhase('inspect')}
+          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+        >
+          Start Receiving
+        </Button>
+      </Box>
+    );
+  }
+
+  // ── SUMMARY SCREEN ────────────────────────────────────────────────────────
+  if (sessionPhase === 'summary') {
+    const totalAccepted = lines.reduce((s, l) => {
+      if (inspectMode === 'scan') return s + (scanCounts[l.receive_job_line_id] ?? 0);
+      return s + (confirmedLines.has(l.receive_job_line_id) ? (scanCounts[l.receive_job_line_id] ?? l.quantity_expected) : accepted);
+    }, 0);
+    const totalRejected = totalUnits - totalAccepted;
+
+    return (
+      <Box sx={{ p: 3, maxWidth: 560, mx: 'auto' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5 }}>
+          <CheckCircle size={28} color={theme.palette.success.main} />
+          <Typography variant="h6" fontWeight={600}>Inspection complete</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          {supplierName} · {lines.length} variant{lines.length !== 1 ? 's' : ''}
+        </Typography>
+
+        {/* PER-LINE SUMMARY */}
+        <Paper variant="outlined" sx={{ mb: 3, borderRadius: 2 }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600, fontSize: 11 }}>Product</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Expected</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 11 }}>Accepted</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {lines.map((line) => {
+                const lineAccepted = inspectMode === 'scan'
+                  ? (scanCounts[line.receive_job_line_id] ?? 0)
+                  : (confirmedLines.has(line.receive_job_line_id) ? line.quantity_expected : 0);
+                const short = line.quantity_expected - lineAccepted;
+                return (
+                  <TableRow key={line.receive_job_line_id}>
+                    <TableCell sx={{ fontSize: 12 }}>
+                      <Typography variant="body2" fontWeight={500} noWrap>
+                        {line.variant_title && line.variant_title !== 'Default Title'
+                          ? line.variant_title
+                          : line.description ?? line.sku ?? '—'}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12 }}>{line.quantity_expected}</TableCell>
+                    <TableCell align="right" sx={{ fontSize: 12 }}>
+                      <Typography variant="body2" color={short > 0 ? 'error' : 'success.main'} fontWeight={600}>
+                        {lineAccepted}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600, fontSize: 12 }}>Total</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 12 }}>{totalUnits}</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600, fontSize: 12 }}>
+                  <Typography variant="body2" color={totalRejected > 0 ? 'error' : 'success.main'} fontWeight={600}>
+                    {totalAccepted}
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </Paper>
+
+        {totalRejected > 0 && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {totalRejected} unit{totalRejected > 1 ? 's' : ''} short — exceptions have been logged to the Problem Center.
+          </Alert>
+        )}
+
+        <Button
+          variant="contained"
+          fullWidth
+          size="large"
+          onClick={() => setCloseDialog(true)}
+          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+        >
+          Close & Create Stow Tasks
+        </Button>
+      </Box>
+    );
+  }
+
   // ── DONE SCREEN ───────────────────────────────────────────
-  if (!currentLine && !closeDialog) {
+  if (!currentLine && !closeDialog && sessionPhase === 'inspect' && inspectMode === 'count') {
     return (
       <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 3 }}>
         <CheckCircle size={56} color={theme.palette.success.main} />
@@ -371,11 +715,152 @@ export default function ReceiveSessionPage({
         </Box>
       </Paper>
 
-      {/* ZONE 2 — INSPECTION COUNTER */}
+      {/* ZONE 2 — SCAN MODE or COUNT MODE */}
       <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, p: 2, borderRadius: 2, flex: '0 0 auto' }}>
-        <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
-          Inspection count
-        </Typography>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+            {inspectMode === 'scan' ? 'Scan mode' : 'Inspection count'}
+          </Typography>
+          {inspectMode === 'scan' && (
+            <Box
+              onClick={() => { setInspectMode('count'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'count'); }}
+              sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500,
+                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+                borderRadius: '6px', cursor: 'pointer',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              <Hash size={12} /> Switch to count
+            </Box>
+          )}
+          {inspectMode === 'count' && onResolveBarcode && (
+            <Box
+              onClick={() => { setInspectMode('scan'); sessionStorage.setItem(`receive-mode-${receiveJobId}`, 'scan'); }}
+              sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500,
+                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+                borderRadius: '6px', cursor: 'pointer',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              <ScanBarcode size={12} /> Switch to scan
+            </Box>
+          )}
+        </Box>
+
+        {inspectMode === 'scan' ? (
+          <Box>
+            {/* SCAN PROGRESS — all lines */}
+            <Box sx={{ mb: 2 }}>
+              {lines.map((line) => {
+                const count = scanCounts[line.receive_job_line_id] ?? 0;
+                const isConfirmed = confirmedLines.has(line.receive_job_line_id);
+                return (
+                  <Box
+                    key={line.receive_job_line_id}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1, mb: 0.75,
+                      px: 1, py: 0.5, borderRadius: '6px',
+                      bgcolor: flashLine === line.receive_job_line_id
+                        ? 'rgba(34,197,94,0.15)'
+                        : 'transparent',
+                      transition: 'background-color 0.4s ease',
+                    }}
+                  >
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography variant="caption" noWrap color={isConfirmed ? 'success.main' : 'text.primary'} fontWeight={isConfirmed ? 600 : 400}>
+                        {line.variant_title && line.variant_title !== 'Default Title'
+                          ? line.variant_title
+                          : line.description ?? line.sku ?? '—'}
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={`${count} / ${line.quantity_expected}`}
+                      size="small"
+                      color={isConfirmed ? 'success' : count > 0 ? 'primary' : 'default'}
+                      variant={isConfirmed ? 'filled' : 'outlined'}
+                    />
+                    {isConfirmed && <CheckCircle size={14} color={theme.palette.success.main} />}
+                  </Box>
+                );
+              })}
+            </Box>
+
+            {/* RESUME NOTICE — mid-scan progress (not yet confirmed) is lost on refresh */}
+            {hasPartialProgress && lines.some(l =>
+              !confirmedLines.has(l.receive_job_line_id) &&
+              (scanCounts[l.receive_job_line_id] ?? 0) === 0 &&
+              !l.inspection_complete
+            ) && (
+              <Alert severity="info" sx={{ mb: 1.5, py: 0.5, fontSize: 12 }}>
+                Session resumed — fully scanned lines are restored. Any partial scans must be re-scanned.
+              </Alert>
+            )}
+
+            {/* SCAN INPUT */}
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                inputRef={scanInputRef}
+                fullWidth
+                size="small"
+                placeholder="Scan barcode or type and press Enter"
+                disabled={scanProcessing}
+                value={scanInputValue}
+                onChange={(e) => setScanInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = scanInputValue.trim();
+                    if (val) {
+                      void handleScan(val);
+                      setScanInputValue('');
+                    }
+                  }
+                }}
+                helperText={scanProcessing ? 'Processing...' : 'Scanner auto-submits · manual entry: press Enter or tap Scan'}
+                autoComplete="off"
+              />
+              {scanInputValue.trim() && (
+                <Button
+                  variant="contained"
+                  size="small"
+                  disabled={scanProcessing}
+                  onClick={() => {
+                    const val = scanInputValue.trim();
+                    if (val) {
+                      void handleScan(val);
+                      setScanInputValue('');
+                    }
+                  }}
+                  sx={{
+                    bgcolor: 'var(--accent)',
+                    '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    mt: 0.25,
+                    minWidth: 64,
+                  }}
+                >
+                  Scan
+                </Button>
+              )}
+            </Box>
+
+            {scanError && (
+              <Alert severity="error" sx={{ mt: 1, py: 0.5 }} onClose={() => setScanError(null)}>
+                {scanError}
+              </Alert>
+            )}
+          </Box>
+        ) : (
+          <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+            Inspection count
+          </Typography>
+        )}
+        {inspectMode === 'count' && (
         <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
 
           {/* ACCEPTED */}
@@ -426,6 +911,7 @@ export default function ReceiveSessionPage({
             </Button>
           </Box>
         </Box>
+        )}
       </Paper>
 
       {/* ZONE 3 — ACTIONS */}
@@ -439,12 +925,15 @@ export default function ReceiveSessionPage({
           color="success"
           fullWidth
           size="large"
-          disabled={submitting || totalCounted === 0}
+          disabled={submitting || (inspectMode === 'count' && totalCounted === 0)}
           onClick={() => void handleConfirmBatch()}
           startIcon={<CheckCircle size={20} />}
           sx={{ borderRadius: 2, fontWeight: 700, py: 1.8, fontSize: 16 }}
         >
-          {submitting ? 'Confirming...' : isLastLine ? 'Confirm & Finish' : 'Confirm Batch'}
+          {submitting ? 'Confirming...'
+            : inspectMode === 'scan' ? 'Finish & Review'
+            : isLastLine ? 'Confirm & Finish'
+            : 'Confirm Batch'}
         </Button>
 
         <Button
@@ -461,7 +950,12 @@ export default function ReceiveSessionPage({
       </Box>
 
       {/* SHORTFALL MODAL — forces exception reporting when accepted < expected */}
-      <Dialog open={!!shortfallModal} fullWidth maxWidth="sm">
+      <Dialog open={!!shortfallModal} onClose={() => {
+        // Only allow close if no exceptions have been committed yet
+        if (shortfallModal && shortfallModal.remainingShortfall === shortfallModal.totalShortfall) {
+          setShortfallModal(null);
+        }
+      }} fullWidth maxWidth="sm">
         <DialogTitle>
           {shortfallModal && shortfallModal.remainingShortfall < shortfallModal.totalShortfall
             ? `${shortfallModal.remainingShortfall} unit${shortfallModal.remainingShortfall > 1 ? 's' : ''} still unaccounted`
@@ -546,6 +1040,30 @@ export default function ReceiveSessionPage({
             sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
           >
             {shortfallSubmitting ? 'Saving...' : 'Confirm exception'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* OVERCOUNT DIALOG — scan mode: operator scanned more than expected */}
+      <Dialog open={!!overcountLine} fullWidth maxWidth="sm">
+        <DialogTitle>Extra unit scanned</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary">
+            You've already scanned {overcountLine ? scanCounts[overcountLine.receive_job_line_id] ?? 0 : 0} of {overcountLine?.quantity_expected} expected units
+            for <strong>{overcountLine?.variant_title && overcountLine.variant_title !== 'Default Title'
+              ? overcountLine.variant_title
+              : overcountLine?.description ?? overcountLine?.sku ?? 'this product'}</strong>.
+            Add another?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleOvercountReject} color="inherit">No — skip it</Button>
+          <Button
+            variant="contained"
+            onClick={() => void handleOvercountAccept()}
+            sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
+          >
+            Yes — add it
           </Button>
         </DialogActions>
       </Dialog>

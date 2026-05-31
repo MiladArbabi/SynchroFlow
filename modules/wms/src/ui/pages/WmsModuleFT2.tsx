@@ -120,6 +120,7 @@ export type WmsModuleFT2Props = {
     note: string | null;
   }>;
   onRefresh: () => void;
+  onSessionExit?: () => void;
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
@@ -450,6 +451,7 @@ function WmsModuleFT2Inner({
   onPackComplete,
   onConfirmShipment,
   onRefresh,
+  onSessionExit,
   isOnline,
   queuedCount,
   stowTasks,
@@ -512,6 +514,7 @@ function WmsModuleFT2Inner({
   const exitSession = () => {
     setActiveSession(null);
     onRefresh();
+    onSessionExit?.();
   };
 
   // Active pick session
@@ -560,6 +563,7 @@ function WmsModuleFT2Inner({
         onReportException={(params) => onReportReceiveException?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onComplete={exitSession}
+        onResolveBarcode={onResolveBarcode}
       />
     );
   }

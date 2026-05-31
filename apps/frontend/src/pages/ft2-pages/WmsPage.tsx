@@ -122,8 +122,8 @@ export default function WmsPage() {
   useEffect(() => {
     const receiveJobId = searchParams.get('receiveJobId');
     if (!receiveJobId) return;
-    // Clean param immediately — prevents re-trigger on refresh
-    setSearchParams({}, { replace: true });
+    // Keep param in URL while session is active — enables refresh recovery
+    // Param is cleaned only when session completes (exitSession below)
     handleFetchReceiveJob(receiveJobId)
       .then((result) => {
         // Hand off pre-fetched job to WmsModuleFT2 — auto-enters receive session on mount
@@ -430,6 +430,7 @@ export default function WmsPage() {
       onRaisePackDecision={handleRaisePackDecision}
       onPollPackDecision={handlePollPackDecision}
       onRefresh={refetch}
+      onSessionExit={() => setSearchParams({}, { replace: true })}
       gridLocations={gridData?.locations}
       pendingReceiveSession={pendingReceiveSession}
       isOnline={isOnline}

@@ -391,6 +391,13 @@ function CreatePoDialog({
                         setFocusedOptionIndex(-1);
                       }
                     }}
+                    onBlur={() => {
+                      // Delay clear so click on dropdown option registers first
+                      setTimeout(() => {
+                        setVariantOptions([]);
+                        setFocusedOptionIndex(-1);
+                      }, 150);
+                    }}
                     onChange={async (e) => {
                       setFocusedOptionIndex(-1);
                       const q = e.target.value;
@@ -449,16 +456,37 @@ function CreatePoDialog({
                   value={item.quantity_ordered}
                   onChange={(e) => updateLineItem(item.key, 'quantity_ordered', e.target.value)}
                   inputProps={{ min: 1 }}
+                  error={item.quantity_ordered !== '' && (isNaN(parseInt(item.quantity_ordered, 10)) || parseInt(item.quantity_ordered, 10) < 1)}
+                  helperText={item.quantity_ordered !== '' && (isNaN(parseInt(item.quantity_ordered, 10)) || parseInt(item.quantity_ordered, 10) < 1) ? 'Enter a whole number ≥ 1' : undefined}
                   sx={{ flex: 1 }}
                 />
                 <TextField
                   label="Unit cost"
                   size="small"
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   value={item.unit_cost_cents}
-                  onChange={(e) => updateLineItem(item.key, 'unit_cost_cents', e.target.value)}
-                  inputProps={{ min: 0, step: 0.01 }}
-                  sx={{ flex: 1.5 }}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Allow only positive numbers with up to 2 decimal places
+                    if (raw === '' || /^\d*\.?\d{0,2}$/.test(raw)) {
+                      updateLineItem(item.key, 'unit_cost_cents', raw);
+                    }
+                  }}
+                  onBlur={(e) => {
+                    const val = parseFloat(e.target.value);
+                    if (!isNaN(val)) {
+                      updateLineItem(item.key, 'unit_cost_cents', val.toFixed(2));
+                    }
+                  }}
+                  error={item.unit_cost_cents !== '' && isNaN(parseFloat(item.unit_cost_cents))}
+                  helperText={item.unit_cost_cents !== '' && isNaN(parseFloat(item.unit_cost_cents)) ? 'Enter a number (e.g. 12.99)' : undefined}
+                  inputProps={{}}
+                  InputProps={{
+                    startAdornment: (
+                      <Box component="span" sx={{ mr: 0.5, color: 'text.secondary', fontSize: 13 }}>$</Box>
+                    ),
+                  }}
                 />
                 <IconButton
                   size="small"
