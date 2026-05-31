@@ -13,6 +13,8 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // industries and features: no content yet — getAllSlugs returns [] safely
   const industrySlugs = getAllSlugs('industries')
   const featureSlugs  = getAllSlugs('features')
+  // glossary: grows with each new term added to /content/glossary/
+  const glossaryItems  = getAllContent('glossary')
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: BASE_URL,                    lastModified: new Date('2026-05-01'), priority: 1.0, changeFrequency: 'weekly'  },
@@ -24,6 +26,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${BASE_URL}/pricing`,         lastModified: new Date('2026-05-21'), priority: 0.8, changeFrequency: 'monthly'  },
     { url: `${BASE_URL}/faq`,             lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly'  },
     { url: `${BASE_URL}/getting-started`, lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly'  },
+    { url: `${BASE_URL}/glossary`, lastModified: new Date(), priority: 0.8, changeFrequency: 'weekly' },
   ]
 
   const dynamicRoutes: MetadataRoute.Sitemap = [
@@ -51,6 +54,13 @@ export default function sitemap(): MetadataRoute.Sitemap {
     ...featureSlugs.map((slug) => ({
       url:             `${BASE_URL}/features/${slug}`,
       lastModified:    new Date(),
+      priority:        0.7,
+      changeFrequency: 'monthly' as const,
+    })),
+    // Glossary — definition pages; priority 0.7, monthly change expected
+    ...glossaryItems.map(({ slug, frontmatter }) => ({
+      url:             `${BASE_URL}/glossary/${slug}`,
+      lastModified:    new Date(frontmatter.lastReviewed),
       priority:        0.7,
       changeFrequency: 'monthly' as const,
     })),

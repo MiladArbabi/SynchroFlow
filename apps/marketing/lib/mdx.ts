@@ -8,7 +8,7 @@ import matter from 'gray-matter'
 
 const contentRoot = path.join(process.cwd(), 'content')
 
-export type ContentType = 'blog' | 'compare' | 'industries' | 'features'
+export type ContentType = 'blog' | 'compare' | 'industries' | 'features' | 'glossary'
 
 export interface Frontmatter {
   title: string

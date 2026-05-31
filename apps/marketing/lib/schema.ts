@@ -95,3 +95,26 @@ export function generateBreadcrumbSchema(
     })),
   }
 }
+
+/** DefinedTerm schema — used on glossary pages for AEO citation.
+ *  AI engines (Perplexity, ChatGPT, Gemini) use DefinedTerm to cite
+ *  definitions directly. This is the primary AEO schema for glossary pages. */
+export function generateDefinedTermSchema({
+  name,
+  description,
+}: {
+  name: string
+  description: string
+}) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'DefinedTerm',
+    name,
+    description,
+    inDefinedTermSet: {
+      '@type': 'DefinedTermSet',
+      name: 'LaSyncro Warehouse Operations Glossary',
+      url: 'https://www.lasyncro.com/glossary',
+    },
+  }
+}
