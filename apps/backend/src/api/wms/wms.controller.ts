@@ -2217,39 +2217,24 @@ export const httpReportStowException = async (req: Request, res: Response) => {
 
       const affectedQty = Math.min(quantity, task.quantity);
       const movementType = exception_type === 'item_missing' ? 'shrinkage' : 'damage';
-      const locationCode = task.location_code ?? `WH-${shopId}-ROOT`;
 
-      // Write inventory movement (shrinkage or damage)
-      const movementId = crypto.randomUUID();
-      const deviceEventId = crypto.randomUUID();
-
-      await trx('inventory_movements')
-        .insert({
-          lasyncro_inventory_movement_id: movementId,
-          lasyncro_variant_id: task.lasyncro_variant_id,
-          shop_id: shopId,
-          movement_type: movementType,
-          quantity_delta: -affectedQty,
-          location_code: locationCode,
-          reference_type: 'stow_task',
-          reference_id: taskId,
-          platform: 'wms',
-          occurred_at: new Date(),
-          device_event_id: deviceEventId,
-          operator_id: userId,            // traceability: operator who reported exception
-          triggered_by: 'stow_confirm',   // traceability: occurred during stow workflow
-        })
-        .onConflict(['device_event_id']).ignore();
-
-      // Decrement inventory_truth
-      await trx('inventory_truth')
-        .where({ shop_id: shopId, lasyncro_variant_id: task.lasyncro_variant_id, location_code: locationCode })
-        .update({
-          on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [affectedQty]),
-          available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [affectedQty]),
-          sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [affectedQty]),
-          updated_at: new Date(),
-        });
+      /**
+       * INV-PC-01 FIX — deferred inventory impact
+       * ------------------------------------------
+       * Previously wrote inventory_movements + decremented inventory_truth
+       * immediately at exception report time. This was inconsistent with
+       * pick exceptions which defer inventory impact to resolve time.
+       *
+       * Unified pattern: exception report → problem_center_tasks row only.
+       * Inventory movement written by httpResolveProblemTask on owner
+       * resolution (discard → damage movement, write_off → shrinkage,
+       * re_stow → new stow task, quarantine → location transfer).
+       *
+       * This ensures:
+       * - Supervisor reviews before inventory is affected
+       * - Audit trail: resolution action drives movement, not report time
+       * - Consistent with pick/pack exception lifecycle
+       */
 
       // Create problem center task
       const seqResult = await trx.raw(`
