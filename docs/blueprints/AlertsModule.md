@@ -201,7 +201,7 @@ Via `useAppTheme()` (canonical hook — `useModuleTheme` does not exist).
 
 - ALR-07 backend columns (`acknowledged_at`, `acknowledged_by`, `snoozed_until`) — **shipped** in base migration 0079.
 - ALR-05 `category` field — **populated** by all producers (aggregator, demand, wms).
-- Operator audience filtering (mobile fast-follow) needs `audience` field + role model — `audience` column now in schema, role model TBD with WMS/operator sprint.
+- Operator audience filtering ✅ — `audience` column in schema, populated by all producers, enforced server-side in `httpGetAlerts` (operators see `warehouse_floor` + `all` only). Role model shipped via `requireAction` middleware.
 - Rules engine backend (`shop_alert_rules`, evaluation hooks) — separate sprint.
 
 ---
@@ -209,7 +209,7 @@ Via `useAppTheme()` (canonical hook — `useModuleTheme` does not exist).
 ## 13. Open questions
 
 - Resolved-tab retention window (30/60/90 days) before archival.
-- Operator web access vs mobile-only — to be decided in operator/WMS sprint.
+- Operator web access vs mobile-only — ✅ decided: operators have both web (WMS/Operations surface) and mobile access. Web is not locked to owner-only. Audience filtering enforced server-side.
 - Escalation worker (phase 2) — strongest anti-firefighting feature, deferred.
 - External routing (Slack / email digest / webhook) — phase 2.
 - FT2DateRangeBar on Resolved tab only — confirm in next audit.
