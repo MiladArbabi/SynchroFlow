@@ -492,3 +492,11 @@ SKU Gaps                  Push to packer(s)
 ### Cross-references
 
 **Cross-references:** OrderPool.md — pool feeds batch release. WarehouseGrid.md — spatial pick route uses floor coordinates. constraint_system_blueprint.md — constraint resolution gates pool entry.
+
+---
+
+## PARITY GAP REGISTER — Updated May 31, 2026
+
+| ID | Surface | Gap | Priority |
+|----|---------|-----|----------|
+| WEB-STOW-01 | Web WMS | `StowSessionPage` not built — web has claim/confirm card only. Mobile has 5 phases (summary → location_scan → product_scan → qty_confirm → complete), partial stow, shortfall modal, 3 exception types. | P2 — operator can use mobile; owner can claim/confirm on web |
