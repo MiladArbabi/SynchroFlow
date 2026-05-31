@@ -28,10 +28,9 @@ import ScannerScreen from './src/screens/ScannerScreen';
 
 import OwnerSettingsScreen from './src/screens/OwnerSettingsScreen';
 import OperatorSettingsScreen from './src/screens/OperatorSettingsScreen';
+import OperatorProblemCenterScreen from './src/screens/OperatorProblemCenterScreen';
 import OperatorPerformanceScreen from './src/screens/OperatorPerformanceScreen';
 import IntelligenceScreen from './src/intelligence/IntelligenceScreen';
-import DemandScreen from './src/screens/DemandScreen';
-import CashFlowScreen from './src/screens/CashFlowScreen';
 
 // ─── Tab icon ────────────────────────────────────────────────────────────────
 function TabIcon({ name, focused }: { name: keyof typeof Ionicons.glyphMap; focused: boolean }) {
@@ -241,6 +240,14 @@ function OperatorTabs() {
         options={{
           tabBarIcon: ({ focused }) => <TabIcon name="calendar-outline" focused={focused} />,
           tabBarLabel: 'Calendar',
+        }}
+      />
+      <OperatorTab.Screen
+        name="Problems"
+        component={OperatorProblemCenterScreen}
+        options={{
+          tabBarIcon: ({ focused }) => <TabIcon name="warning-outline" focused={focused} />,
+          tabBarLabel: 'Problems',
         }}
       />
       <OperatorTab.Screen
