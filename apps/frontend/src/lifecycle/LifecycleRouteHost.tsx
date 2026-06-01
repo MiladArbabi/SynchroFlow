@@ -29,7 +29,7 @@ import OrdersPage from 'pages/ft1-pages/OrdersPage';
 import ProductsPage from 'pages/ft1-pages/ProductsPage';
 import CustomersPage from 'pages/ft1-pages/CustomersPage';
 import FinancesPage from 'pages/ft1-pages/FinancesPage';
-import WelcomePage from 'pages/onboarding/WelcomePage';
+/* import WelcomePage from 'pages/onboarding/WelcomePage'; */
 import AlertsPage from 'pages/ft2-pages/AlertsPage';
 
 // FT2 pages (observability / governed truth surfaces)
@@ -60,6 +60,7 @@ import ProblemCenterPage from 'pages/ft2-pages/ProblemCenterPage';
 
 import { EmptyDashboardState } from 'components/EmptyStates/EmptyDashboardState';
 import SyncAnimationPage from 'activation/SyncAnimationPage';
+import ConnectStorePage from 'pages/authentication/ConnectStorePage';
 
 // NOTE:
 // - Never reuse FT1 pages for FT2
@@ -95,7 +96,7 @@ export function LifecycleRouteHost() {
     if (location.pathname !== '/') {
       return <Navigate to="/" replace />;
     }
-    return <WelcomePage />;
+    return <ConnectStorePage />;
   }
 
   /**

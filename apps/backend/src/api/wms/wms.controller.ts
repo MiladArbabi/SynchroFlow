@@ -114,6 +114,7 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'it.lasyncro_variant_id',
           'oli.lasyncro_variant_id'
         )
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
         .leftJoin('pick_scan_log as psl', (join) => {
           join
             .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
@@ -147,7 +148,8 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'oli.lasyncro_variant_id',
           'oli.lasyncro_order_id',
           'oli.sku',
-          'oli.title',
+          trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
+          trx.raw(`oli.title as variant_title`),
           'oli.quantity',
           trx.raw(`COALESCE(it.location_code, ?) as location_code`, [`WH-${shopId}-ROOT`])
         );

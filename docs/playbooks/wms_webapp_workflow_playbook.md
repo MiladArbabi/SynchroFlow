@@ -345,13 +345,18 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 - **Session key:** `?stowTaskId=` in URL
 - **Known gap:** `ScanInput` already implemented. Brief + Summary screens need adding.
 
-### Pick *(next after Stow)*
+### Pick *(complete — June 1, 2026)*
 
-- **Brief:** batch summary (order count, line item count, total units), sorted pick route, Claim & Start
-- **Inspect (scan):** free-scan items, per-line progress, auto-confirm, exception modal
-- **Summary:** all lines picked, exceptions logged, Pick Complete CTA
-- **Session key:** `?batchId=` in URL
-- **Known gap:** Brief + Summary screens need adding. Scan mode not yet on webapp.
+- **Brief:** batch summary (line item count, total units), optimized route instruction, Start Picking CTA
+- **Inspect:** single-item-per-screen, two-scan (or three-scan for qty > 1) pattern:
+  - `location_scan` — ScanInput matches against `location_code` (client-side, accepts `LOC-A-1-3-7` or `A-1-3-7`)
+  - `product_scan` — ScanInput resolved via `POST /api/v1/wms/barcode/resolve`
+  - `qty_confirm` — numeric input, only shown when `line_item.quantity > 1`, operator counts and confirms
+- **Track UI:** 3-point animated progress track. Active node pulses orange. Confirmed node solid green. Inactive node faded grey. Line fills left→right as steps complete.
+- **Summary:** per-line results (picked vs exception), exception count warning, Confirm Pick Complete CTA
+- **Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`
+- **Exception:** full taxonomy (item_missing, short_pick, defect, packaging_damage, wrong_item, wrong_variant, wrong_quantity, barcode_mismatch, other). Problem Center called on every exception alongside `/batch/:id/exception`.
+- **Backend API:** `GET /api/v1/wms/batch/:id/line-items` returns `product_title` (from `products` join) + `variant_title` (from `order_line_items.title`). Items pre-sorted by `warehouse_locations.position_x/y` for optimized pick route.
 
 ### Pack/Ship *(last)*
 
@@ -388,9 +393,9 @@ Before writing any code for a new webapp workflow, run through this checklist:
 | ID | Workflow | Description | Priority |
 |----|----------|-------------|----------|
 | WEB-STOW-03 | Stow | ✅ RESOLVED June 1, 2026 — Brief + Summary screens built, 15 bugs fixed, UI simulation complete. See §12. | P1 |
-| WEB-PICK-01 | Pick | Add Brief screen to pick session | P1 |
-| WEB-PICK-02 | Pick | Add scan mode (free-scan) to pick session | P1 |
-| WEB-PICK-03 | Pick | Add Summary screen to pick session | P1 |
+| WEB-PICK-01 | Pick | ✅ RESOLVED June 1, 2026 — Brief screen added: batch ID, line item count, total units, optimized route instruction, Start Picking CTA. | P1 |
+| WEB-PICK-02 | Pick | ✅ RESOLVED June 1, 2026 — Two-scan pattern per item: location_scan (client-side match) → product_scan (barcode resolver) → optional qty_confirm (quantity > 1). Camera/BarcodeScanSurface removed. 3-point animated track UI with pulse animation. | P1 |
+| WEB-PICK-03 | Pick | ✅ RESOLVED June 1, 2026 — Summary screen: per-line results, exception count, Confirm Pick Complete CTA. Problem Center wired on every exception. Session persistence via ?batchId= URL param. product_title + variant_title added to line-items API. Full backend + UI simulation verified. | P1 |
 | WEB-PACK-01 | Pack | Audit Brief + Summary presence | P1 |
 | WEB-RECEIVE-03 | Receive | Scan path (Path B) on webapp — Phase 2: per-unit barcodes | P2 |
 | WEBHOOK-01 | Backend | Register products/create + products/update webhooks | P1 |
@@ -497,3 +502,81 @@ Brief → location_scan → product_scan → qty_confirm → summary → complet
 **Shortfall modal:** mandatory, non-dismissible, blank qty, miscount escape hatch hidden after first exception committed
 
 **Summary screen shows:** Location · Product · Units placing · Exceptions filed (if any) · Confirm & Stow CTA
+---
+
+## 13. Pick Workflow — UI Simulation Findings (June 1, 2026)
+
+Derived from full webapp UI simulation and audit. All findings apply to future workflows unless noted.
+
+### Bugs Found & Resolved
+
+| ID | Description | Fix Applied |
+|----|-------------|-------------|
+| PICK-AUD-01/02 | `BarcodeScanSurface` + `Camera` import in use — opened PC webcam on product scan | Removed entirely. All scan input is `ScanInput` (TextField + Enter-to-submit) per Playbook §2 |
+| PICK-AUD-03 | No Brief screen | Added `brief` phase: batch ID, line item count, total units, route instruction, Start Picking CTA |
+| PICK-AUD-04 | Single-item-per-screen with no location scan | Added `location_scan` phase with client-side barcode match. `product_scan` phase follows. Optional `qty_confirm` phase for quantity > 1 |
+| PICK-AUD-05 | No Summary screen | Added `summary` phase: per-line results (picked vs exception), exception count warning, Confirm Pick Complete CTA |
+| PICK-AUD-06 | No session persistence | `?batchId=` URL param via `pendingPickBatchId` prop + `onPickSessionEnter` callback — mirrors Stow pattern |
+| PICK-AUD-07 | `void handler()` on all async callbacks | Replaced with `.catch()` throughout |
+| PICK-AUD-08 | MUI `color=` props (`success`, `warning`, `error`) on Buttons | Replaced with `sx={{ bgcolor: 'var(--accent)' }}` pattern throughout |
+| PICK-AUD-09 | `fontWeight={700}` violations in 9 places | All normalised to `600` |
+| PICK-AUD-10 | Exception types incomplete — missing `wrong_item`, `wrong_variant`, `barcode_mismatch`, `other` | Full Playbook §3 taxonomy implemented |
+| PICK-AUD-11 | Problem Center never called on exception | `onCreateProblemTask` prop added. Called in sequence after `onReportException` on every exception |
+| PICK-AUD-12/13 | No URL param session persistence in `WmsModuleFT2` or `WmsPage` | `pendingPickBatchId` prop + `onPickSessionEnter` wired in both files |
+| BACKEND-01 | `GET /batch/:id/line-items` returned `title` (variant title only, no product name) | Added `products` join, now returns `product_title` + `variant_title` separately |
+| UI-BUG-01 | Node 3 (qty confirm) absolutely positioned outside relative container — rendered in top nav | Removed premature closing `</Box>` before Node 3 block. Container now correctly wraps all three nodes |
+
+### Pick-Specific Pitfalls — Do Not Repeat
+
+**`external_product_identity_map` rows required for barcode resolution**
+Variants seeded directly into `variants` (not via Shopify sync) have no identity map rows.
+The barcode resolver returns null — scans silently fail. Always seed `external_product_identity_map`
+before UI simulation. See `docs/psql/README.md` § Dev Barcode Seeding for the exact pattern.
+
+**`external_variant_id` must be unique per `(shop_id, platform, external_product_id, external_variant_id)`**
+Two variants from the same product (e.g. LINEN-GRY-M and LINEN-GRY-L) must use distinct
+`external_variant_id` values (e.g. `dev-variant-linen-grym` vs `dev-variant-linen-gryl`).
+`ON CONFLICT DO NOTHING` silently swallows duplicates — always verify with a SELECT after insert.
+
+**Variant UUIDs change on every DB reset**
+Never hardcode variant UUIDs in seed commands. Always re-query `variants` for current UUIDs first.
+
+**`product_title` vs `variant_title` are distinct fields**
+`order_line_items.title` stores the variant title (e.g. "Blue / XL"), not the product name.
+Product name requires a join to `products`. The `LineItem` interface reflects this:
+`product_title: string` (from products join) and `variant_title: string | null` (from oli.title).
+
+**Absolute positioning within relative container — closing tag discipline**
+The 3-point track card uses `position: relative` on the outer container. All three node `Box`
+elements must be inside this container. A premature `</Box>` before Node 3 causes it to escape
+to the nearest positioned ancestor in the DOM (the top nav). Always verify container nesting
+with `sed -n` before and after inserting absolutely positioned children.
+
+**qty_confirm phase only appears when `quantity > 1`**
+For single-unit line items the flow is: location_scan → product_scan → advance.
+For multi-unit line items: location_scan → product_scan → qty_confirm → advance.
+The track renders 2 nodes (qty=1) or 3 nodes (qty>1) dynamically via `needsQtyConfirm`.
+
+### Updated Pick Contract
+
+`brief → location_scan → product_scan → [qty_confirm] → summary → done`
+
+| Phase | Track node | Active color | Step banner |
+|-------|-----------|--------------|-------------|
+| `brief` | — | — | — |
+| `location_scan` | Node 1 at 25%/33% pulsing | orange (`var(--accent)`) | "Step 1 of 2/3 — Walk to the location and scan the bin barcode." |
+| `product_scan` | Node 2 at 50%/66% pulsing | orange (`var(--accent)`) | "Step 2 of 2/3 — Find the item and scan the product barcode." |
+| `qty_confirm` | Node 3 at 75% pulsing | orange (`var(--accent)`) | "Step 3 of 3 — Count the units and confirm the quantity." |
+| `summary` | — | — | — |
+| `done` | — | — | — |
+
+**Track line fill:** 0% → 50%/66% (after location) → 75%/100% (after product, qty=1 completes) → 100% (after qty confirm)
+
+**Node positions with qty=1 (2-node):** Location at 33%, Product at 66%
+**Node positions with qty>1 (3-node):** Location at 25%, Product at 50%, Qty at 75%
+
+**Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`
+
+**Exception dialog:** non-dismissible (`onClose={() => undefined}`), full taxonomy, notes required for `barcode_mismatch` + `other`, qty field for `short_pick`
+
+**Summary screen shows:** per-line product title + variant + location + status (picked/exception) · exception type label · picked count · exception count · Confirm Pick Complete CTA

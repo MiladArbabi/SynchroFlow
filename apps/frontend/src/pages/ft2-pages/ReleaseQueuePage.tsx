@@ -154,8 +154,9 @@ export default function ReleaseQueuePage() {
         {/* SUCCESS BANNER */}
         {releaseSuccess && (
           <Alert severity="success" sx={{ mb: 3 }}>
-            Batch released — {releaseSuccess.orderCount} orders · operators notified.
+            Batch released — {releaseSuccess.orderCount} orders · operators notified. See batch {releaseSuccess.batchId} in Fulfillment.
           </Alert>
+          //TODO: deep-link fulfillment on the banner, so when batch is released, user can click and go the released job.
         )}
 
         {isError && <Alert severity="error" sx={{ mb: 3 }}>Failed to load order pool.</Alert>}

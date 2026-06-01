@@ -12,6 +12,7 @@ import { axiosInstance } from 'api/axiosConfig';
 import type {
   ConfirmScanParams,
   ReportExceptionParams,
+  CreateProblemTaskParams,
   LineItem,
   PackOrder,
 } from '@lasyncro/wms';
@@ -178,6 +179,10 @@ export default function WmsPage() {
       ...params,
       stage: 'pick',
     });
+  }, []);
+
+  const handleCreateProblemTask = useCallback(async (params: CreateProblemTaskParams) => {
+    await axiosInstance.post('/api/v1/wms/problem-center', params);
   }, []);
 
   const handlePickComplete = useCallback(async (batchId: string) => {
@@ -419,6 +424,7 @@ export default function WmsPage() {
       onResolveBarcode={handleResolveBarcode}
       onConfirmScan={handleConfirmScan}
       onReportException={handleReportException}
+      onCreateProblemTask={handleCreateProblemTask}
       onPickComplete={handlePickComplete}
       onClaimPack={handleClaimPack}
       onFetchPackOrders={handleFetchPackOrders}
@@ -435,6 +441,8 @@ export default function WmsPage() {
       pendingReceiveSession={pendingReceiveSession}
       pendingStowTaskId={searchParams.get('stowTaskId')}
       onStowSessionEnter={(id) => setSearchParams({ stowTaskId: id }, { replace: true })}
+      pendingPickBatchId={searchParams.get('batchId')}
+      onPickSessionEnter={(id) => setSearchParams({ batchId: id }, { replace: true })}
       isOnline={isOnline}
       queuedCount={queuedCount}
       stowTasks={stowTasks}

@@ -295,3 +295,59 @@ If you need to reset data to test → something upstream is wrong.
 This playbook exists to ensure that never happens.
 
 ```
+---
+
+## X. Dev Barcode Seeding — WMS Scan Testing
+
+### Context
+Variants seeded directly into the `variants` table (not via Shopify sync pipeline) have no rows
+in `external_product_identity_map` — the barcode resolver (`POST /api/v1/wms/barcode/resolve`)
+will return null for any barcode scan against these variants.
+
+Before any WMS pick/stow UI simulation on a fresh DB, seed barcodes for the relevant variants.
+
+### Step 1 — Resolve current variant IDs (UUIDs change on every DB reset)
+
+````sql
+SET app.current_tenant = '1';
+SELECT v.lasyncro_variant_id, v.sku
+FROM variants v
+WHERE v.shop_id = 1
+AND v.sku IN ('TOTE-BLK','WOOL-BLK','WOOL-GRN','LINEN-GRY-M','LINEN-GRY-L','LINEN-GRY-S','LINEN-NVY-L')
+ORDER BY v.sku;
+````
+
+### Step 2 — Insert identity map rows with barcode = SKU
+
+````sql
+SET app.current_tenant = '1';
+INSERT INTO external_product_identity_map
+  (id, shop_id, lasyncro_variant_id, platform, external_product_id, external_variant_id, external_sku, barcode)
+VALUES
+  (gen_random_uuid(), 1, '<TOTE-BLK-UUID>',    'shopify', 'dev-product-tote',  'dev-variant-tote-blk',   'TOTE-BLK',    'TOTE-BLK'),
+  (gen_random_uuid(), 1, '<WOOL-BLK-UUID>',    'shopify', 'dev-product-wool',  'dev-variant-wool-blk',   'WOOL-BLK',    'WOOL-BLK'),
+  (gen_random_uuid(), 1, '<WOOL-GRN-UUID>',    'shopify', 'dev-product-wool',  'dev-variant-wool-grn',   'WOOL-GRN',    'WOOL-GRN'),
+  (gen_random_uuid(), 1, '<LINEN-GRY-M-UUID>', 'shopify', 'dev-product-linen', 'dev-variant-linen-grym', 'LINEN-GRY-M', 'LINEN-GRY-M'),
+  (gen_random_uuid(), 1, '<LINEN-GRY-L-UUID>', 'shopify', 'dev-product-linen', 'dev-variant-linen-gryl', 'LINEN-GRY-L', 'LINEN-GRY-L'),
+  (gen_random_uuid(), 1, '<LINEN-GRY-S-UUID>', 'shopify', 'dev-product-linen', 'dev-variant-linen-grys', 'LINEN-GRY-S', 'LINEN-GRY-S'),
+  (gen_random_uuid(), 1, '<LINEN-NVY-L-UUID>', 'shopify', 'dev-product-linen', 'dev-variant-linen-nvyl', 'LINEN-NVY-L', 'LINEN-NVY-L')
+ON CONFLICT DO NOTHING;
+````
+
+### Critical rules
+- `external_variant_id` MUST be unique per `(shop_id, platform, external_product_id, external_variant_id)`.
+  Two variants from the same product (e.g. LINEN-GRY-M and LINEN-GRY-L) must use distinct `external_variant_id` values.
+- Barcode resolver resolution order: `external_product_identity_map.barcode` → `external_product_identity_map.external_sku` → `barcode_print_jobs.barcode_value`
+- UUIDs in `variants` change on every DB reset — always re-query Step 1 before inserting.
+- `ON CONFLICT DO NOTHING` is safe — if the row exists the barcode is already seeded.
+
+### Verify after seeding
+
+````sql
+SET app.current_tenant = '1';
+SELECT epim.lasyncro_variant_id, epim.barcode, v.sku
+FROM external_product_identity_map epim
+JOIN variants v ON v.lasyncro_variant_id = epim.lasyncro_variant_id
+WHERE v.shop_id = 1 AND v.sku IS NOT NULL
+ORDER BY v.sku;
+````

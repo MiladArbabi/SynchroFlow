@@ -17,6 +17,7 @@ import PickSessionPage, {
   type LineItem,
   type ConfirmScanParams,
   type ReportExceptionParams,
+  type CreateProblemTaskParams,
 } from './PickSessionPage.js';
 import PackSessionPage, {
   type PackOrder,
@@ -92,6 +93,7 @@ export type WmsModuleFT2Props = {
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
   onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
   onReportException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
+  onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
   onPickComplete: (batchId: string) => Promise<void>;
 
   onClaimPack: (batchId: string) => Promise<void>;
@@ -138,6 +140,10 @@ export type WmsModuleFT2Props = {
   pendingStowTaskId?: string | null;
   /** Called when operator claims a stow task — parent sets URL param for refresh recovery. */
   onStowSessionEnter?: (taskId: string) => void;
+  /** Pick batch ID from URL param — auto-enters pick session on mount. */
+  pendingPickBatchId?: string | null;
+  /** Called when operator enters a pick session — parent sets URL param for refresh recovery. */
+  onPickSessionEnter?: (batchId: string) => void;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -446,6 +452,7 @@ function WmsModuleFT2Inner({
   onResolveBarcode,
   onConfirmScan,
   onReportException,
+  onCreateProblemTask,
   onPickComplete,
   onClaimPack,
   onFetchPackOrders,
@@ -469,6 +476,8 @@ function WmsModuleFT2Inner({
   pendingReceiveSession,
   pendingStowTaskId,
   onStowSessionEnter,
+  pendingPickBatchId,
+  onPickSessionEnter,
   onRaisePackDecision,
   onPollPackDecision
 }: WmsModuleFT2Props) {
@@ -485,11 +494,18 @@ function WmsModuleFT2Inner({
       setActiveSession({ type: 'receive', ...pendingReceiveSession });
     }
   }, [pendingReceiveSession]);
+
   useEffect(() => {
     if (pendingStowTaskId) {
       setActiveSession({ type: 'stow', taskId: pendingStowTaskId });
     }
   }, [pendingStowTaskId]);
+
+  useEffect(() => {
+    if (pendingPickBatchId) {
+      enterPickSession(pendingPickBatchId, false).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -503,6 +519,7 @@ function WmsModuleFT2Inner({
       if (claim) await onClaimBatch(batchId);
       const items = await onFetchLineItems(batchId);
       setActiveSession({ type: 'pick', batchId, lineItems: items });
+      onPickSessionEnter?.(batchId);
     } catch (err: any) {
       setSessionError(err?.message ?? 'Failed to start pick session.');
     } finally {
@@ -540,6 +557,7 @@ function WmsModuleFT2Inner({
         onResolveBarcode={onResolveBarcode}
         onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
         onReportException={(params) => onReportException(activeSession.batchId, params)}
+        onCreateProblemTask={onCreateProblemTask}
         onPickComplete={() => onPickComplete(activeSession.batchId)}
       />
     );
