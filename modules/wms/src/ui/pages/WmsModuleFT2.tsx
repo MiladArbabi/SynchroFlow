@@ -134,6 +134,10 @@ export type WmsModuleFT2Props = {
   queuedCount: number;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
   pendingReceiveSession?: { receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] } | null;
+  /** Stow task ID from URL param — auto-enters stow session on mount. */
+  pendingStowTaskId?: string | null;
+  /** Called when operator claims a stow task — parent sets URL param for refresh recovery. */
+  onStowSessionEnter?: (taskId: string) => void;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -463,6 +467,8 @@ function WmsModuleFT2Inner({
   onReportStowException,
   gridLocations,
   pendingReceiveSession,
+  pendingStowTaskId,
+  onStowSessionEnter,
   onRaisePackDecision,
   onPollPackDecision
 }: WmsModuleFT2Props) {
@@ -470,14 +476,21 @@ function WmsModuleFT2Inner({
   const [activeSession, setActiveSession] = useState<ActiveSession>(
     pendingReceiveSession
       ? { type: 'receive', ...pendingReceiveSession }
+      : pendingStowTaskId
+      ? { type: 'stow', taskId: pendingStowTaskId }
       : null
   );
-
   useEffect(() => {
     if (pendingReceiveSession) {
       setActiveSession({ type: 'receive', ...pendingReceiveSession });
     }
   }, [pendingReceiveSession]);
+  useEffect(() => {
+    if (pendingStowTaskId) {
+      setActiveSession({ type: 'stow', taskId: pendingStowTaskId });
+    }
+  }, [pendingStowTaskId]);
+
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -657,7 +670,7 @@ function WmsModuleFT2Inner({
             <StowTaskCard
               key={task.stow_task_id}
               task={task}
-              onClaim={(id) => setActiveSession({ type: 'stow', taskId: id })}
+              onClaim={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
               onConfirm={(id) => void onConfirmStow?.(id).then(onRefresh)}
             />
           ))}

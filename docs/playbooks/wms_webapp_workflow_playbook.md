@@ -64,6 +64,7 @@ All barcode/location/product scanning on the webapp uses a text `TextField` with
 ```
 
 ### Behaviour rules
+
 - **Enter-to-submit is primary** — USB/BT scanners send Enter automatically. Never change this.
 - **Inline Scan button** appears only when input has a value — gives manual typists a visible submit target
 - **Auto-focus on mount** — `useEffect` focuses `scanInputRef.current` when entering scan phase
@@ -72,6 +73,7 @@ All barcode/location/product scanning on the webapp uses a text `TextField` with
 - **Clear input after submit** — always `setScanInputValue('')` after processing
 
 ### Focus re-focus pattern (copy exactly)
+
 ```tsx
 // Auto-focus on phase enter
 useEffect(() => {
@@ -104,6 +106,7 @@ accepted < expected
 ```
 
 ### Exception types (standard set — do not modify without updating all workflows)
+
 ```typescript
 type ExceptionType =
   | 'defect'            // unit physically damaged
@@ -116,6 +119,7 @@ type ExceptionType =
 ```
 
 ### Miscount escape hatch — strict rules
+
 - Shows as a ghost pill button (NOT a filled button) — `var(--accent-border)` outline
 - ONLY visible before any exception has been committed in the current shortfall
 - DISAPPEARS once first exception is reported — prevents orphaned PROB tasks
@@ -123,6 +127,7 @@ type ExceptionType =
 
 ### Problem Center — always called on exception
 Every exception report MUST call two endpoints in sequence:
+
 1. `POST /api/v1/suppliers/receive-jobs/:jobId/exception` (or workflow equivalent)
 2. `POST /api/v1/wms/problem-center` with `{ lasyncro_variant_id, quantity, exception_type, source }`
 
@@ -153,12 +158,14 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 | Submitting an exception | `Confirm Exception` |
 
 ### Confirm button disabled states
+
 - **Count mode:** disabled when `totalCounted === 0`
 - **Scan mode:** never disabled — shows "Finish & Review" which gates at `confirmedLines.size === lines.length`
 - **Exception modal:** disabled when no exception type selected OR qty field empty
 
 ### Progress indicators
 Every inspect phase MUST show:
+
 - Linear progress bar (top of screen) showing `currentIndex / total` as percentage
 - Text label: `Variant N of M — SupplierName` or `Task N of M`
 - Per-item progress in scan mode: `N / expected` chip per line
@@ -173,6 +180,7 @@ Active sessions MUST survive page refresh. Operators work in warehouses with unr
 ### Implementation pattern
 
 **Step 1 — Keep session ID in URL while active:**
+
 ```tsx
 // Keep ?receiveJobId= (or ?batchId=, ?stowTaskId=) in URL while session active
 // Only clean param when session completes via onSessionExit
@@ -180,6 +188,7 @@ onSessionExit={() => setSearchParams({}, { replace: true })}
 ```
 
 **Step 2 — Restore confirmed state from backend on re-entry:**
+
 ```tsx
 // On session mount, initialise confirmed state from backend-persisted data
 const initialConfirmedLines = new Set<string>();
@@ -190,6 +199,7 @@ const hasPartialProgress = initialConfirmedLines.size > 0;
 ```
 
 **Step 3 — Persist mode in sessionStorage:**
+
 ```tsx
 // Persist inspect mode — survives refresh within same tab
 const storedMode = sessionStorage.getItem(`receive-mode-${jobId}`);
@@ -197,6 +207,7 @@ const storedMode = sessionStorage.getItem(`receive-mode-${jobId}`);
 ```
 
 **Step 4 — Skip brief screen on resume:**
+
 ```tsx
 const [sessionPhase, setSessionPhase] = useState<SessionPhase>(
   hasPartialProgress || storedMode ? 'inspect' : 'brief'
@@ -220,16 +231,19 @@ Mid-scan progress (not yet confirmed to backend) cannot be restored. Show an inf
 ## 6. Form Input Standards
 
 ### Numeric fields
+
 - **Qty fields:** `type="number"`, validate on change, show inline error `helperText` when invalid
 - **Cost/price fields:** `type="text"`, `inputMode="decimal"`, regex `/^\d*\.?\d{0,2}$/` on change, auto-format to 2 decimal places on blur, `$` start adornment
 - **Never block input silently** — always show a `helperText` error when input is rejected
 
 ### Dropdown with search (variant autocomplete)
+
 - Clear `variantOptions` on `onBlur` with 150ms delay (allows click on dropdown option to register first)
 - `variantOptions` must be per-line-item scoped OR cleared between line interactions to prevent overlay blocking adjacent fields
 - Always validate that a variant is selected before allowing form submission — free-text without variant link must be blocked with a named error
 
 ### Linked vs unlinked items
+
 - PO line items MUST be linked to a Shopify variant (`lasyncro_variant_id` non-null)
 - Free-text entries (no variant) must be blocked at form submit with error: `"[description] is not linked to a Shopify product. Search and select it from the dropdown, or create it in Shopify first."`
 - Tooltip on unlinked field: link to `https://admin.shopify.com/store/products/new` + "Then re-sync."
@@ -251,6 +265,7 @@ Operator scans any item in the batch
 ```
 
 ### Green flash pattern
+
 ```tsx
 const [flashLine, setFlashLine] = useState<string | null>(null);
 
@@ -267,6 +282,7 @@ sx={{
 
 ### 409 handling on auto-confirm
 When a line reaches expected count and `onInspectLine` is called, a 409 means it was already confirmed in a prior session. Treat as success:
+
 ```tsx
 try {
   await onInspectLine({ ... });
@@ -278,6 +294,7 @@ try {
 
 ### Overcount dialog
 When scan count exceeds expected qty, pause and confirm:
+
 - "You've already scanned N of N expected. Add another?"
 - Yes → increment and continue
 - No → dismiss, refocus input
@@ -287,11 +304,13 @@ When scan count exceeds expected qty, pause and confirm:
 ## 8. Barcode Architecture
 
 ### Resolution order (POST /api/v1/wms/barcode/resolve)
+
 1. `external_product_identity_map.barcode` — manufacturer barcode (EAN/UPC from Shopify)
 2. `external_product_identity_map.external_sku` — SKU
 3. `barcode_print_jobs.barcode_value` — LaSyncro-generated barcode
 
 ### Barcode generation timing
+
 - **During receive:** operator scans manufacturer barcodes (from Shopify sync)
 - **On receive close:** LaSyncro generates variant-level barcodes → `barcode_print_jobs`
 - **After receive:** operator prints and attaches LaSyncro labels before stowing
@@ -311,6 +330,7 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 ## 9. Workflow-Specific Contracts
 
 ### Receive
+
 - **Brief:** supplier name, variant table, mode selector (Count / Scan), Start button
 - **Inspect (count):** one variant per screen, +/− counter, Set All shortcut, shortfall modal on confirm
 - **Inspect (scan):** free-scan all lines simultaneously, per-line progress chips, green flash on hit
@@ -318,6 +338,7 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 - **Session key:** `?receiveJobId=` in URL · `receive-mode-{jobId}` in sessionStorage
 
 ### Stow *(next to audit)*
+
 - **Brief:** stow task summary (SKU, qty, source), assigned location if known, Start button
 - **Inspect:** location scan/type → product scan/type → qty confirm → shortfall modal
 - **Summary:** location confirmed, qty placed, exceptions logged
@@ -325,6 +346,7 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 - **Known gap:** `ScanInput` already implemented. Brief + Summary screens need adding.
 
 ### Pick *(next after Stow)*
+
 - **Brief:** batch summary (order count, line item count, total units), sorted pick route, Claim & Start
 - **Inspect (scan):** free-scan items, per-line progress, auto-confirm, exception modal
 - **Summary:** all lines picked, exceptions logged, Pick Complete CTA
@@ -332,6 +354,7 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 - **Known gap:** Brief + Summary screens need adding. Scan mode not yet on webapp.
 
 ### Pack/Ship *(last)*
+
 - **Brief:** order summary (items, customer, shipping method), Claim & Start
 - **Inspect:** scan each item per order, confirm all items present, Ship confirmation
 - **Summary:** all orders packed, ship confirmation per order
@@ -364,7 +387,7 @@ Before writing any code for a new webapp workflow, run through this checklist:
 
 | ID | Workflow | Description | Priority |
 |----|----------|-------------|----------|
-| WEB-STOW-03 | Stow | Add Brief + Summary screens to StowSessionPage | P1 |
+| WEB-STOW-03 | Stow | ✅ RESOLVED June 1, 2026 — Brief + Summary screens built, 15 bugs fixed, UI simulation complete. See §12. | P1 |
 | WEB-PICK-01 | Pick | Add Brief screen to pick session | P1 |
 | WEB-PICK-02 | Pick | Add scan mode (free-scan) to pick session | P1 |
 | WEB-PICK-03 | Pick | Add Summary screen to pick session | P1 |
@@ -373,3 +396,104 @@ Before writing any code for a new webapp workflow, run through this checklist:
 | WEBHOOK-01 | Backend | Register products/create + products/update webhooks | P1 |
 | UX-RESYNC-01 | Top Nav | Live pill triggers manual resync | P2 |
 | GH-998 | Backend | Per-unit barcode tracking (inventory_units table) | P3 |
+
+---
+
+## 12. Stow Workflow — UI Simulation Findings (June 1, 2026)
+
+Derived from full webapp UI simulation and audit. All findings apply to future workflows unless noted.
+
+### Bugs Found & Resolved
+
+| ID | Description | Fix Applied |
+|----|-------------|-------------|
+| STOW-AUD-01 | No Summary screen — operator committed directly from qty_confirm with no review step | Added `summary` phase between `qty_confirm` and `complete` |
+| STOW-AUD-02 | Scan errors silently swallowed — `void handler()` discarded rejected promises, `submitError` never set | Replaced with `.catch()` inline on both `ScanInput` call sites |
+| STOW-AUD-03 | Shortfall modal dismissible via backdrop click — operator could bypass mandatory exception flow | `onClose={() => undefined}` — backdrop and Escape both neutralised |
+| STOW-AUD-04 | `exQtyInput` pre-filled with shortfall qty — violates Playbook §3 (always blank) | `setExQtyInput('')` on shortfall dialog open |
+| STOW-AUD-05 | Miscount escape hatch never disappeared — visible even after first exception committed | Wrapped in `{(shortfallDialog?.reported.length ?? 0) === 0 && (...)}` |
+| STOW-AUD-06 | No inline Scan button on `ScanInput` — manual typists had no visible submit target | Added conditional `Button` appearing only when input has value |
+| STOW-AUD-07 | No re-focus after error — Alert render stole focus from scan input | Added `useEffect` on `error` prop: `setTimeout(() => inputRef.current?.focus(), 50)` |
+| STOW-AUD-08 | No `LinearProgress` bar on Inspect phases | Added `LinearProgress` after header `Box` on all three inspect phases |
+| STOW-AUD-09 | No session persistence — refresh lost active session | Option B: frontend reads `?stowTaskId=` from URL, passes as `pendingStowTaskId` prop to `WmsModuleFT2`, auto-enters session on mount |
+| STOW-AUD-10 | Brief screen had no title or orientation heading | Added "Stow Session" heading + subtitle before stats strip |
+| STOW-AUD-11 | `opacity: 0.15` on container Box affected child Typography opacity | Replaced with `bgcolor: alpha(theme.palette.success.main, 0.15)` using MUI `alpha` utility |
+| STOW-AUD-12 | `summary` phase name collided with upcoming Summary screen naming | Renamed to `brief` — `summary` reserved for the review-before-commit screen |
+| UI-BUG-01/02 | Chip labels swapped — `location_scan` showed "Scan product", `product_scan` showed "Confirm quantity" | Corrected to "Scan location" (warning) and "Scan product" (info) respectively |
+| UI-BUG-03 | No explicit operator instruction on scan order | Added `Alert` Step 1 of 2 / Step 2 of 2 banners under progress bar on each inspect phase |
+| UI-BUG-04/05 | `fontWeight={700}` violations throughout, "Back To Operations" capitalisation | All `fontWeight` normalised to `600` per Playbook. CTA label lowercased. |
+| BONUS | `qty_confirm` back button pointed to `brief` instead of `product_scan`, Chip label wrong | Fixed navigation and label |
+
+---
+
+### Stow-Specific Pitfalls — Do Not Repeat
+
+**Session persistence — always Option B (URL param via frontend props)**
+Never use `sessionStorage` alone for WMS session recovery. The established pattern is:
+
+- Frontend reads `?{workflow}Id=` from URL via `useSearchParams`
+- Passes as `pending{Workflow}` prop to `WmsModuleFT2`
+- Module auto-enters session on mount via `useEffect`
+- `onSessionExit` clears param via `setSearchParams({}, { replace: true })`
+- `onSessionEnter` sets param via `setSearchParams({ {workflow}Id: id }, { replace: true })`
+
+**Never use `void handler()` on async scan callbacks**
+`void` discards the promise. Always use `.catch()` to surface errors to `submitError`:
+
+```tsx
+onSubmit={(v) => {
+  void handleScan(v).catch((err: unknown) => {
+    const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Scan failed.');
+    setSubmitError(msg);
+  });
+}}
+```
+
+**Never use `color="warning"` on MUI Buttons**
+Renders MUI amber/yellow. Always use `sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}`.
+
+**Never use `opacity` on a container to tint child content**
+Use `alpha(theme.palette.success.main, 0.15)` as `bgcolor` directly. Container opacity bleeds through to all children.
+
+**Never pre-fill exception qty fields**
+Playbook §3 is absolute: qty field in shortfall/exception modal always starts blank. Pre-filling removes operator accountability.
+
+**Never use `BarcodeScanSurface` on webapp**
+It opens the device camera. Webapp scan input is always the `ScanInput` TextField pattern from Playbook §2.
+
+**Chip labels must match phase exactly**
+Always verify chip label, chip color, and `ScanInput` hint are consistent with the active phase:
+
+- `location_scan` → chip "Scan location" `color="warning"`, hint "Scan bin barcode or type location code"
+- `product_scan` → chip "Scan product" `color="info"`, hint "Scan product barcode or type barcode value"
+- `qty_confirm` → chip "Confirm quantity" `color="success"`
+
+**Step orientation banners are mandatory on scan phases**
+Every scan phase must show an `Alert icon={false}` banner stating which step the operator is on and what to scan. Operators in a warehouse context cannot be expected to infer scan order from phase chips alone.
+
+**`fontWeight` max is `600` — enforce on every Typography**
+`fontWeight={700}` is a Playbook violation. Run this before every PR:
+
+```zsh
+grep -n "fontWeight={700}\|fontWeight: 700" modules/wms/src/ui/pages/StowSessionPage.tsx
+```
+
+---
+
+### Updated Stow Contract (§9 replacement)
+Brief → location_scan → product_scan → qty_confirm → summary → complete
+
+| Phase | Chip | Color | ScanInput hint | Step banner |
+|-------|------|-------|----------------|-------------|
+| `brief` | — | — | — | — |
+| `location_scan` | Scan location | warning | "Scan bin barcode or type location code" | "Step 1 of 2 — Scan or type the bin barcode to confirm the destination location." |
+| `product_scan` | Scan product | info | "Scan product barcode or type barcode value" | "Step 2 of 2 — Scan or type the product barcode to verify you have the correct item." |
+| `qty_confirm` | Confirm quantity | success | — | — |
+| `summary` | Review & confirm | primary | — | — |
+| `complete` | — | — | — | — |
+
+**Session key:** `?stowTaskId=` in URL, set by `onStowSessionEnter`, cleared by `onSessionExit`
+
+**Shortfall modal:** mandatory, non-dismissible, blank qty, miscount escape hatch hidden after first exception committed
+
+**Summary screen shows:** Location · Product · Units placing · Exceptions filed (if any) · Confirm & Stow CTA

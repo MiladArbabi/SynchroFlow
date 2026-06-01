@@ -4,6 +4,8 @@ import {
   Box, Paper, Typography, Button, Alert, Chip, Divider,
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, useTheme, CircularProgress, IconButton,
+  LinearProgress,
+  alpha,
 } from '@mui/material';
 import {
   CheckCircle, MapPin, Package, ArrowLeft, RotateCcw,
@@ -48,7 +50,7 @@ export interface StowSessionPageProps {
   }) => Promise<StowExceptionResult>;
 }
 
-type Phase = 'summary' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'complete';
+type Phase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'summary' | 'complete';
 
 const STOW_EXCEPTIONS = [
   { type: 'item_missing',     label: 'Item missing' },
@@ -63,7 +65,7 @@ const STOW_EXCEPTIONS = [
  * Accepts typed input or USB/Bluetooth scanner (fires as keyboard input).
  * Auto-focuses on mount. Submits on Enter key.
  */
-function ScanInput({ hint, onSubmit }: { hint: string; onSubmit: (value: string) => void }) {
+function ScanInput({ hint, onSubmit, error }: { hint: string; onSubmit: (value: string) => void; error?: string | null }) {
   const [value, setValue] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -71,23 +73,41 @@ function ScanInput({ hint, onSubmit }: { hint: string; onSubmit: (value: string)
     inputRef.current?.focus();
   }, []);
 
+  useEffect(() => {
+    if (error) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [error]);
+
+  const handleSubmit = () => {
+    const val = value.trim();
+    if (val) { onSubmit(val); setValue(''); }
+  };
+
   return (
-    <TextField
-      inputRef={inputRef}
-      fullWidth
-      size="small"
-      placeholder={hint}
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && value.trim()) {
-          onSubmit(value.trim());
-          setValue('');
-        }
-      }}
-      helperText="Type or scan — press Enter to confirm"
-      autoComplete="off"
-    />
+    <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+      <TextField
+        inputRef={inputRef}
+        fullWidth
+        size="small"
+        placeholder={hint}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') handleSubmit();
+        }}
+        helperText="Type or scan — press Enter to confirm"
+        autoComplete="off"
+      />
+      {value.trim() && (
+        <Button
+          variant="contained"
+          size="small"
+          onClick={handleSubmit}
+          sx={{ bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600, mt: '2px', flexShrink: 0 }}
+        >
+          Scan
+        </Button>
+      )}
+    </Box>
   );
 }
 
@@ -104,7 +124,7 @@ export default function StowSessionPage({
 }: StowSessionPageProps) {
   const theme = useTheme();
 
-  const [phase,            setPhase]            = useState<Phase>('summary');
+  const [phase,            setPhase]            = useState<Phase>('brief');
   const [tasks,            setTasks]            = useState<WmsStowTask[]>([]);
   const [currentIndex,     setCurrentIndex]     = useState(0);
   const [loading,          setLoading]          = useState(true);
@@ -125,6 +145,8 @@ export default function StowSessionPage({
   const [exType,     setExType]     = useState('');
   const [exQtyInput, setExQtyInput] = useState('');
   const [exSubmitting, setExSubmitting] = useState(false);
+  const [pendingStow, setPendingStow] = useState<{ qty: number; exceptionsFiled: boolean } | null>(null);
+  const [filedExceptions, setFiledExceptions] = useState<Array<{ type: string; qty: number; label: string }>>([]);
 
   const currentTask = tasks[currentIndex] ?? null;
   const isLastTask  = currentIndex === tasks.length - 1;
@@ -169,6 +191,8 @@ export default function StowSessionPage({
       setConfirmedLocation(null);
       setQtyInput('');
       setShortfallDialog(null);
+      setPendingStow(null);
+      setFiledExceptions([]);
       setPhase('location_scan');
     }
   }, [currentIndex, tasks]);
@@ -268,10 +292,12 @@ export default function StowSessionPage({
     if (shortfall > 0) {
       setShortfallDialog({ qty, shortfall, reported: [] });
       setExType('');
-      setExQtyInput(String(shortfall));
+      setExQtyInput('');
       return;
     }
-    await submitStow(qty);
+    setPendingStow({ qty, exceptionsFiled: false });
+    setFiledExceptions([]);
+    setPhase('summary');
   }, [qtyInput, remainingQty, submitStow]);
 
   // ── Shortfall exception confirm ───────────────────────────────────────────
@@ -304,8 +330,10 @@ export default function StowSessionPage({
         setExType('');
         setExQtyInput('');
       } else {
+        setFiledExceptions(newReported);
         setShortfallDialog(null);
-        await submitStow(shortfallDialog.qty, true);
+        setPendingStow({ qty: shortfallDialog.qty, exceptionsFiled: true });
+        setPhase('summary');
       }
     } catch {
       setSubmitError('Failed to report exception.');
@@ -315,7 +343,7 @@ export default function StowSessionPage({
   }, [shortfallDialog, currentTask, exType, exQtyInput, onReportException, submitStow]);
 
   // ── SUMMARY ───────────────────────────────────────────────────────────────
-  if (phase === 'summary') {
+  if (phase === 'brief') {
     return (
       <Box sx={{ p: 3, maxWidth: 600, mx: 'auto' }}>
         {loading ? (
@@ -327,8 +355,13 @@ export default function StowSessionPage({
         ) : tasks.length === 0 ? (
           <Alert severity="info">No stow tasks pending.</Alert>
         ) : (
-          <>
-            {/* Summary strip */}
+         <>
+            <Box sx={{ mb: 3 }}>
+             <Typography variant="h6" fontWeight={600}>Stow Session</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Review your tasks below, then start stowing.
+              </Typography>
+            </Box>
             <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
               {[
                 { label: 'SKUs',   value: tasks.length },
@@ -336,7 +369,7 @@ export default function StowSessionPage({
                 { label: 'Locations', value: new Set(tasks.map(t => t.location_code).filter(Boolean)).size },
               ].map(({ label, value }) => (
                 <Paper key={label} variant="outlined" sx={{ flex: 1, p: 2, textAlign: 'center', borderRadius: 2 }}>
-                  <Typography variant="h5" fontWeight={700} color="warning.main">{value}</Typography>
+                  <Typography variant="h5" fontWeight={600} color="warning.main">{value}</Typography>
                   <Typography variant="caption" color="text.secondary">{label}</Typography>
                 </Paper>
               ))}
@@ -364,7 +397,7 @@ export default function StowSessionPage({
 
             <Button
               variant="contained" size="large" fullWidth
-              sx={{ borderRadius: 2, fontWeight: 700 }}
+              sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
               onClick={() => setPhase('location_scan')}
             >
               Start stowing
@@ -380,13 +413,13 @@ export default function StowSessionPage({
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 4, textAlign: 'center', minHeight: 400 }}>
         <CheckCircle size={56} color={theme.palette.success.main} />
-        <Typography variant="h5" fontWeight={700} sx={{ mt: 2 }}>
+        <Typography variant="h5" fontWeight={600} sx={{ mt: 2 }}>
           Stow complete
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1, mb: 4 }}>
           {tasks.length} SKU{tasks.length !== 1 ? 's' : ''} stowed. Inventory updated.
         </Typography>
-        <Button variant="contained" size="large" sx={{ borderRadius: 2, fontWeight: 700 }} onClick={onComplete}>
+        <Button variant="contained" size="large" sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }} onClick={onComplete}>
           Back to operations
         </Button>
       </Box>
@@ -401,14 +434,17 @@ export default function StowSessionPage({
   if (phase === 'location_scan') {
     return (
       <Box sx={{ p: 2, maxWidth: 560, mx: 'auto' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <IconButton onClick={() => setPhase('summary')} size="small">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <IconButton onClick={() => setPhase('brief')} size="small">
             <ArrowLeft size={18} />
           </IconButton>
           <Typography variant="subtitle2" color="text.secondary">{progressLabel}</Typography>
           <Chip label="Scan location" size="small" color="warning" sx={{ ml: 'auto' }} />
         </Box>
-
+        <LinearProgress variant="determinate" value={((currentIndex + 1) / tasks.length) * 100} sx={{ mb: 2, borderRadius: 1 }} />
+        <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.5, fontSize: 13 }}>
+          <strong>Step 1 of 2</strong> — Scan or type the bin barcode to confirm the destination location.
+        </Alert>
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
             <Package size={14} />
@@ -431,7 +467,13 @@ export default function StowSessionPage({
 
         <ScanInput
           hint="Scan bin barcode or type location code"
-          onSubmit={(v) => void handleLocationScan(v)}
+          error={submitError}
+          onSubmit={(v) => {
+            void handleLocationScan(v).catch((err: unknown) => {
+              const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Location scan failed.');
+              setSubmitError(msg);
+            });
+          }}
         />
 
         {submitError && <Alert severity="error" sx={{ mt: 2 }}>{submitError}</Alert>}
@@ -443,14 +485,17 @@ export default function StowSessionPage({
   if (phase === 'product_scan') {
     return (
       <Box sx={{ p: 2, maxWidth: 560, mx: 'auto' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-          <IconButton onClick={() => setPhase('location_scan')} size="small">
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <IconButton onClick={() => setPhase('product_scan')} size="small">
             <ArrowLeft size={18} />
           </IconButton>
           <Typography variant="subtitle2" color="text.secondary">{progressLabel}</Typography>
           <Chip label="Scan product" size="small" color="info" sx={{ ml: 'auto' }} />
         </Box>
-
+        <LinearProgress variant="determinate" value={((currentIndex + 1) / tasks.length) * 100} sx={{ mb: 2, borderRadius: 1 }} />
+        <Alert severity="info" icon={false} sx={{ mb: 2, py: 0.5, fontSize: 13 }}>
+          <strong>Step 2 of 2</strong> — Scan or type the product barcode to verify you have the correct item.
+        </Alert>
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: theme.palette.success.main }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0.5 }}>
             <MapPin size={13} color={theme.palette.success.main} />
@@ -468,7 +513,13 @@ export default function StowSessionPage({
 
         <ScanInput
           hint="Scan product barcode or type barcode value"
-          onSubmit={(v) => void handleProductScan(v)}
+          error={submitError}
+          onSubmit={(v) => {
+            void handleProductScan(v).catch((err: unknown) => {
+              const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Product scan failed.');
+              setSubmitError(msg);
+            });
+          }}
         />
 
         {submitError && <Alert severity="error" sx={{ mt: 2 }}>{submitError}</Alert>}
@@ -480,26 +531,27 @@ export default function StowSessionPage({
   if (phase === 'qty_confirm') {
     return (
       <Box sx={{ p: 2, maxWidth: 560, mx: 'auto' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <IconButton onClick={() => setPhase('product_scan')} size="small">
             <ArrowLeft size={18} />
           </IconButton>
           <Typography variant="subtitle2" color="text.secondary">{progressLabel}</Typography>
           <Chip label="Confirm quantity" size="small" color="success" sx={{ ml: 'auto' }} />
         </Box>
+        <LinearProgress variant="determinate" value={((currentIndex + 1) / tasks.length) * 100} sx={{ mb: 2, borderRadius: 1 }} />
 
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
             Location
           </Typography>
-          <Typography variant="body1" fontWeight={700}>{confirmedLocation}</Typography>
+          <Typography variant="body1" fontWeight={600}>{confirmedLocation}</Typography>
         </Paper>
 
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
             Product
           </Typography>
-          <Typography variant="body1" fontWeight={700}>
+          <Typography variant="body1" fontWeight={600}>
             {currentTask.variant_title ?? currentTask.sku ?? '—'}
           </Typography>
           {currentTask.sku && (
@@ -519,6 +571,7 @@ export default function StowSessionPage({
             type="number"
             value={qtyInput}
             onChange={(e) => setQtyInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleQtyConfirm(); }}
             placeholder={`/ ${remainingQty}`}
             autoFocus
             size="small"
@@ -538,7 +591,7 @@ export default function StowSessionPage({
         <Button
           variant="contained" size="large" fullWidth
           disabled={submitting}
-          sx={{ borderRadius: 2, fontWeight: 700 }}
+          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={() => void handleQtyConfirm()}
         >
           {submitting ? 'Confirming…' : 'Confirm stow'}
@@ -547,7 +600,7 @@ export default function StowSessionPage({
         {/* Shortfall exception dialog */}
         <Dialog
           open={!!shortfallDialog}
-          onClose={() => setShortfallDialog(null)}
+          onClose={() => undefined}
           fullWidth maxWidth="xs"
         >
           <DialogTitle sx={{ fontSize: 16, fontWeight: 600 }}>
@@ -565,7 +618,7 @@ export default function StowSessionPage({
             {shortfallDialog?.reported.map((ex, i) => (
               <Box key={i} sx={{
                 mb: 1, p: 1, borderRadius: 1,
-                bgcolor: 'success.main', opacity: 0.15,
+                bgcolor: alpha(theme.palette.success.main, 0.15),
               }}>
                 <Typography variant="caption" color="success.main">
                   ✓ {ex.qty} × {ex.type} → {ex.label}
@@ -601,25 +654,101 @@ export default function StowSessionPage({
           </DialogContent>
           <DialogActions sx={{ flexDirection: 'column', gap: 1, px: 2, pb: 2 }}>
             <Button
-              variant="contained" fullWidth color="warning"
-              disabled={!exType || exSubmitting}
-              onClick={() => void handleShortfallConfirm()}
+                variant="contained" fullWidth
+                disabled={!exType || exSubmitting}
+                sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                onClick={() => void handleShortfallConfirm()}
             >
               {exSubmitting ? 'Processing…' : 'Report & continue'}
             </Button>
-            <Button
-              fullWidth size="small" color="inherit"
-              startIcon={<RotateCcw size={14} />}
-              onClick={() => { setShortfallDialog(null); void submitStow(remainingQty); }}
-              disabled={exSubmitting}
-            >
-              I miscounted — all {remainingQty} are here
-            </Button>
+            {(shortfallDialog?.reported.length ?? 0) === 0 && (
+              <Button
+                fullWidth size="small" color="inherit"
+                startIcon={<RotateCcw size={14} />}
+                onClick={() => { setShortfallDialog(null); void submitStow(remainingQty); }}
+                disabled={exSubmitting}
+              >
+                I miscounted — all {remainingQty} are here
+              </Button>
+            )}
           </DialogActions>
         </Dialog>
       </Box>
     );
-  }
+  };
+
+  // ── SUMMARY ───────────────────────────────────────────────────────────────
+  if (phase === 'summary' && pendingStow && currentTask) {
+    return (
+      <Box sx={{ p: 2, maxWidth: 560, mx: 'auto' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+          <IconButton onClick={() => setPhase('qty_confirm')} size="small">
+            <ArrowLeft size={18} />
+          </IconButton>
+          <Typography variant="subtitle2" color="text.secondary">{progressLabel}</Typography>
+          <Chip label="Review & confirm" size="small" color="primary" sx={{ ml: 'auto' }} />
+        </Box>
+        <LinearProgress variant="determinate" value={((currentIndex + 1) / tasks.length) * 100} sx={{ mb: 2, borderRadius: 1 }} />
+
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>Review before stowing</Typography>
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+            Location
+          </Typography>
+          <Typography variant="body1" fontWeight={600}>{confirmedLocation}</Typography>
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+            Product
+          </Typography>
+          <Typography variant="body1" fontWeight={600}>
+            {currentTask.variant_title ?? currentTask.sku ?? '—'}
+          </Typography>
+          {currentTask.sku && (
+            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+              {currentTask.sku}
+            </Typography>
+          )}
+        </Paper>
+
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>
+            Units placing
+          </Typography>
+          <Typography variant="body1" fontWeight={600}>
+            {pendingStow.qty} of {remainingQty}
+          </Typography>
+        </Paper>
+
+        {filedExceptions.length > 0 && (
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, borderColor: 'warning.main' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600, display: 'block', mb: 1 }}>
+              Exceptions filed
+            </Typography>
+            {filedExceptions.map((ex, i) => (
+              <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+                <Typography variant="body2">{ex.type.replace(/_/g, ' ')}</Typography>
+                <Typography variant="body2" fontWeight={600}>{ex.qty} units → {ex.label}</Typography>
+              </Box>
+            ))}
+          </Paper>
+        )}
+
+        {submitError && <Alert severity="error" sx={{ mb: 2 }}>{submitError}</Alert>}
+
+        <Button
+          variant="contained" size="large" fullWidth
+          disabled={submitting}
+          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+          onClick={() => void submitStow(pendingStow.qty, pendingStow.exceptionsFiled)}
+        >
+          {submitting ? 'Confirming…' : 'Confirm & Stow'}
+        </Button>
+      </Box>
+    );
+  };
 
   return null;
 }

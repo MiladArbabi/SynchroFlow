@@ -651,14 +651,25 @@ export default function ReceiveSessionPage({
           </Alert>
         )}
 
+        <TextField
+          label="Actual delivery date (optional)"
+          type="date"
+          size="small"
+          fullWidth
+          value={deliveryDate}
+          onChange={(e) => setDeliveryDate(e.target.value)}
+          InputLabelProps={{ shrink: true }}
+          sx={{ mb: 2 }}
+        />
         <Button
           variant="contained"
           fullWidth
           size="large"
-          onClick={() => setCloseDialog(true)}
+          disabled={closing}
+          onClick={() => void handleCloseJob()}
           sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
         >
-          Close & Create Stow Tasks
+          {closing ? 'Closing...' : 'Close & Create Stow Tasks'}
         </Button>
       </Box>
     );

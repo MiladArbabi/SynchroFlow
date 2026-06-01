@@ -433,6 +433,8 @@ export default function WmsPage() {
       onSessionExit={() => setSearchParams({}, { replace: true })}
       gridLocations={gridData?.locations}
       pendingReceiveSession={pendingReceiveSession}
+      pendingStowTaskId={searchParams.get('stowTaskId')}
+      onStowSessionEnter={(id) => setSearchParams({ stowTaskId: id }, { replace: true })}
       isOnline={isOnline}
       queuedCount={queuedCount}
       stowTasks={stowTasks}

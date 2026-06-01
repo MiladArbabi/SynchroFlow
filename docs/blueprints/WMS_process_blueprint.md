@@ -499,11 +499,20 @@ SKU Gaps                  Push to packer(s)
 
 | ID | Surface | Gap | Priority |
 |----|---------|-----|----------|
+
 | WEB-STOW-01 | Web WMS | ✅ RESOLVED — `StowSessionPage` built and verified May 31, 2026. 5 phases (summary → location_scan → product_scan → qty_confirm → complete), partial stow, shortfall exception dialog with multi-exception support, miscount escape hatch. inventory_truth verified via SQL after confirm. | P2 |
+
 | WEB-RECEIVE-01 | Web Suppliers Portal | ✅ RESOLVED May 31, 2026 — Unlinked PO line items (free-text, no variant) blocked at PO creation modal submit. Error names the unlinked item. Tooltip + Shopify admin link + re-sync instruction shown inline when text is typed without selecting from catalog. `receiveJob.service.ts:286` guard is now correct by design, not silent failure. | P1 |
+
 | WEB-RECEIVE-02 | Web WMS Receive Session | ✅ RESOLVED May 31, 2026 — Shortfall modal implemented mirroring mobile. Multi-exception loop, Problem Center routing, miscount escape hatch hidden after first exception committed, inline qty validation, UX playbook compliant buttons. Phase 2 (scan path) remains backlog. | P1 |
+
 | WEB-STOW-02 | Web WMS Stow Session | ✅ RESOLVED May 31, 2026 — `StowSessionPage` used `BarcodeScanSurface` (mobile camera component) for location_scan and product_scan phases, opening the PC webcam on webapp. Fixed by creating inline `ScanInput` component (TextField, autofocus, Enter-to-submit). Accepts typed input and USB/BT scanner events. Both phases updated. | P1 |
+
 | WEBHOOK-01 | Backend / Shopify Integration | 🔴 PENDING — No `products/create` webhook registered. New Shopify products not ingested automatically. Workaround: manual resync. GitHub issue #996. Also need `products/update` for variant/barcode changes. | P1 |
+
 | UX-RESYNC-01 | Web Top Nav | 🔴 PENDING — Live pill is static. No UI-accessible manual resync trigger. GitHub issue created. Required for owner workflow: create product in Shopify → click Live pill → resync → product appears in PO search. | P2 |
+
 | WEB-RECEIVE-03 | Web WMS Receive Session | ✅ RESOLVED May 31, 2026 — Path B (scan mode) implemented on webapp. Free-scan pattern: operator scans any unit, system resolves barcode to PO line, increments count, green flash on hit, auto-confirms at expected qty, overcount dialog, session persistence via URL param + sessionStorage, resume banner for lost mid-scan progress. See `docs/playbooks/wms_webapp_workflow_playbook.md` for full scan pattern contract. | P1 |
 | WEB-RECEIVE-04 | Web Suppliers Portal | ✅ RESOLVED May 31, 2026 — Unit cost field: type="text", inputMode="decimal", regex validation, auto-format to 2dp on blur, $ adornment. Qty field: type="number", inline error on invalid. Variant dropdown onBlur clears options with 150ms delay to prevent overlay blocking adjacent fields. | P2 |
+
+| WEB-STOW-03 | Web WMS Stow Session | ✅ RESOLVED June 1, 2026 — Full Playbook-compliant Stow workflow implemented and UI-simulated. Phase renamed `summary` → `brief`. New `summary` phase added between `qty_confirm` and `complete`. 15 bugs resolved (scan error swallowing, modal bypass, pre-filled qty, miscount hatch, ScanInput inline button, re-focus after error, LinearProgress, session persistence via URL param Option B, chip label mismatches, step orientation banners, fontWeight violations, alpha tinting, back navigation). All five simulation tests passed (wrong barcode, wrong product, refresh recovery, back nav, error states). Build clean. See `docs/playbooks/wms_webapp_workflow_playbook.md` §12 for full findings register. | P1 |
