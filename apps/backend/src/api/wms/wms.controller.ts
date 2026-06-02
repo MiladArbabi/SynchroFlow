@@ -540,6 +540,7 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
       // Get line items per order
       const orderIds = batchOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
       const lineItems = await trx('order_line_items as oli')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
         .leftJoin('pack_scan_log as psl', (join) => {
           join
             .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
@@ -551,7 +552,8 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
           'oli.lasyncro_order_id',
           'oli.lasyncro_variant_id',
           'oli.sku',
-          'oli.title',
+          trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
+          trx.raw(`oli.title as variant_title`),
           'oli.quantity',
           trx.raw('CASE WHEN psl.scan_id IS NOT NULL THEN true ELSE false END as pack_scanned')
         );

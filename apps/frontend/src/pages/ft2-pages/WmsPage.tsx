@@ -443,6 +443,8 @@ export default function WmsPage() {
       onStowSessionEnter={(id) => setSearchParams({ stowTaskId: id }, { replace: true })}
       pendingPickBatchId={searchParams.get('batchId')}
       onPickSessionEnter={(id) => setSearchParams({ batchId: id }, { replace: true })}
+      pendingPackBatchId={searchParams.get('packBatchId')}
+      onPackSessionEnter={(id) => setSearchParams({ packBatchId: id }, { replace: true })}
       isOnline={isOnline}
       queuedCount={queuedCount}
       stowTasks={stowTasks}

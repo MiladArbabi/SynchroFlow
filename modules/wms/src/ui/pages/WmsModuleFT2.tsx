@@ -144,6 +144,10 @@ export type WmsModuleFT2Props = {
   pendingPickBatchId?: string | null;
   /** Called when operator enters a pick session — parent sets URL param for refresh recovery. */
   onPickSessionEnter?: (batchId: string) => void;
+  /** Pack batch ID from URL param — auto-enters pack session on mount. */
+  pendingPackBatchId?: string | null;
+  /** Called when operator enters a pack session — parent sets URL param for refresh recovery. */
+  onPackSessionEnter?: (batchId: string) => void;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -478,6 +482,8 @@ function WmsModuleFT2Inner({
   onStowSessionEnter,
   pendingPickBatchId,
   onPickSessionEnter,
+  pendingPackBatchId,
+  onPackSessionEnter,
   onRaisePackDecision,
   onPollPackDecision
 }: WmsModuleFT2Props) {
@@ -504,6 +510,12 @@ function WmsModuleFT2Inner({
   useEffect(() => {
     if (pendingPickBatchId) {
       enterPickSession(pendingPickBatchId, false).catch(() => {});
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (pendingPackBatchId) {
+      enterPackSession(pendingPackBatchId, false).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -534,6 +546,7 @@ function WmsModuleFT2Inner({
       if (claim) await onClaimPack(batchId);
       const orders = await onFetchPackOrders(batchId);
       setActiveSession({ type: 'pack', batchId, orders });
+      onPackSessionEnter?.(batchId);
     } catch (err: any) {
       setSessionError(err?.message ?? 'Failed to start pack session.');
     } finally {
@@ -578,6 +591,7 @@ function WmsModuleFT2Inner({
         onPackComplete={() => onPackComplete(activeSession.batchId)}
         onRaiseDecision={(params) => onRaisePackDecision(activeSession.batchId, params)}
         onPollDecision={onPollPackDecision}
+        onCreateProblemTask={onCreateProblemTask}
       />
     );
   }

@@ -1,15 +1,15 @@
 // modules/wms/src/ui/pages/PackSessionPage.tsx
 import { useState, useCallback, useEffect, useRef } from 'react';
+import type { CreateProblemTaskParams } from './PickSessionPage.js';
 import {
   Box, Paper, Typography, Button, Alert, Chip, Divider,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  CircularProgress, TextField, useTheme,
+  CircularProgress, LinearProgress, TextField, useTheme,
 } from '@mui/material';
 import {
   CheckCircle, XCircle, Package, PackageCheck,
   AlertTriangle, Printer, Clock,
 } from 'lucide-react';
-import { BarcodeScanSurface } from '../components/BarcodeScanSurface.js';
 
 /**
  * PACK SESSION PAGE
@@ -42,7 +42,8 @@ export interface PackLineItem {
   lasyncro_order_id: string;
   lasyncro_variant_id: string;
   sku: string | null;
-  title: string;
+  product_title: string;
+  variant_title: string | null;
   quantity: number;
   pack_scanned: boolean;
 }
@@ -94,8 +95,11 @@ export interface PackSessionPageProps {
     partial_shipment: boolean | null;
     note: string | null;
   }>;
+  /** Called after every exception — creates a Problem Center task. */
+  onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
 }
 
+type SessionPhase = 'brief' | 'active' | 'summary';
 type ScanState = 'scanning' | 'wrong_item' | 'accepted' | 'processing' | 'awaiting_decision';
 
 const DECISION_POLL_MS = 4_000;
@@ -112,8 +116,10 @@ export default function PackSessionPage({
   onConfirmShipment,
   onRaiseDecision,
   onPollDecision,
+  onCreateProblemTask,
 }: PackSessionPageProps) {
   const theme = useTheme();
+  const [phase,              setPhase]              = useState<SessionPhase>('brief');
   const [currentOrderIndex,  setCurrentOrderIndex]  = useState(0);
   const [currentItemIndex,   setCurrentItemIndex]   = useState(0);
   const [scanState,           setScanState]           = useState<ScanState>('scanning');
@@ -126,7 +132,14 @@ export default function PackSessionPage({
   const [pendingDecisionId,   setPendingDecisionId]   = useState<string | null>(null);
   const [pendingExceptionType,setPendingExceptionType]= useState<string | null>(null);
   const [approvedPartial,     setApprovedPartial]     = useState(false);
+  const [packResults,         setPackResults]         = useState<Array<{
+    orderId: string;
+    externalOrderId: string;
+    status: 'shipped' | 'partial' | 'skipped';
+  }>>([]);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const scanInputRef   = useRef<HTMLInputElement>(null);
+  const [scanInputValue, setScanInputValue] = useState('');
 
   const currentOrder    = orders[currentOrderIndex];
   const unscannedItems  = currentOrder?.line_items.filter((li) => !li.pack_scanned) ?? [];
@@ -138,37 +151,26 @@ export default function PackSessionPage({
     return () => { if (pollTimerRef.current) clearInterval(pollTimerRef.current); };
   }, []);
 
+  useEffect(() => {
+    if (scanState === 'scanning') setTimeout(() => scanInputRef.current?.focus(), 50);
+  }, [scanState]);
+
+  useEffect(() => {
+    if (scanState === 'scanning') setTimeout(() => scanInputRef.current?.focus(), 50);
+  }, [submitError, scanState]);
+
   const advanceToNextOrder = useCallback(() => {
     setOrderComplete(false);
     setScanState('scanning');
     setCurrentItemIndex(0);
     setApprovedPartial(false);
+
     if (isLastOrder) {
-      void (async () => {
-        setCompletingPack(true);
-        try {
-          await onPackComplete();
-          onComplete();
-        } catch {
-          setSubmitError('Pack complete failed.');
-          setCompletingPack(false);
-        }
-      })();
+      setPhase('summary');
     } else {
       setCurrentOrderIndex((i) => i + 1);
     }
-  }, [isLastOrder, onPackComplete, onComplete]);
-
-  const handlePackComplete = useCallback(async () => {
-    setCompletingPack(true);
-    try {
-      await onPackComplete();
-      onComplete();
-    } catch {
-      setSubmitError('Pack complete failed.');
-      setCompletingPack(false);
-    }
-  }, [onPackComplete, onComplete]);
+  }, [isLastOrder, setPhase]);
 
   const handleScan = useCallback(async (scannedValue: string) => {
     if (!currentItem || scanState !== 'scanning') return;
@@ -216,7 +218,7 @@ export default function PackSessionPage({
    * - item_missing, short_pick → raise decision request, poll
    */
   const handleReportException = useCallback(async (
-    type: 'item_missing' | 'short_pick' | 'product_defect' | 'packaging_defect',
+    type: 'item_missing' | 'short_pick' | 'product_defect' | 'packaging_defect' | 'wrong_item',
   ) => {
     if (!currentItem || !currentOrder) return;
     setExceptionDialog(false);
@@ -231,6 +233,12 @@ export default function PackSessionPage({
         exception_type:        type,
         quantity_required:     currentItem.quantity,
         quantity_found:        0,
+      });
+      await onCreateProblemTask({
+        lasyncro_variant_id: currentItem.lasyncro_variant_id,
+        quantity:            currentItem.quantity,
+        exception_type:      type,
+        source:              'pack' as any,
       });
     } catch {
       console.error('[PACK_SESSION] Exception report failed', { type });
@@ -268,9 +276,9 @@ export default function PackSessionPage({
 
           if (result.status === 'approved') {
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
-            setPendingDecisionId(null);
-            setApprovedPartial(result.partial_shipment === true);
-            setScanState('scanning');
+              setPendingDecisionId(null);
+              setApprovedPartial(result.partial_shipment === true);
+              setScanState('scanning');
 
             // Mark item as processed, advance
             if (currentItemIndex >= unscannedItems.length - 1) {
@@ -283,7 +291,11 @@ export default function PackSessionPage({
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
             setPendingDecisionId(null);
             setScanState('scanning');
-            // Skip order — held by owner, move to next
+            setPackResults((prev) => [...prev, {
+              orderId: currentOrder.lasyncro_order_id,
+              externalOrderId: currentOrder.external_order_id,
+              status: 'skipped',
+            }]);
             advanceToNextOrder();
           }
         } catch {
@@ -313,12 +325,146 @@ export default function PackSessionPage({
   const handleShipAndAdvance = useCallback(async (partial = false) => {
     try {
       await onConfirmShipment(currentOrder.lasyncro_order_id, partial);
+      setPackResults((prev) => [...prev, {
+        orderId: currentOrder.lasyncro_order_id,
+        externalOrderId: currentOrder.external_order_id,
+        status: partial ? 'partial' : 'shipped',
+      }]);
     } catch {
       console.error('[PACK_SESSION] Ship confirmation failed');
     } finally {
       advanceToNextOrder();
     }
   }, [currentOrder, onConfirmShipment, advanceToNextOrder]);
+
+  const totalOrders    = orders.length;
+  const totalLineItems = orders.reduce((acc, o) => acc + o.line_items.length, 0);
+  const totalUnits     = orders.reduce((acc, o) => acc + o.line_items.reduce((a, li) => a + li.quantity, 0), 0);
+
+  if (phase === 'brief') {
+    return (
+      <Box sx={{ p: 2, maxWidth: 480, mx: 'auto' }}>
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>
+          Pack Session
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Batch {pickBatchId.slice(-6).toUpperCase()}
+        </Typography>
+        <Paper variant="outlined" sx={{ borderRadius: '6px', p: 2, mb: 2, display: 'flex', gap: 2 }}>
+          <Box sx={{ flex: 1, textAlign: 'center' }}>
+            <Typography variant="h4" fontWeight={600}>{totalOrders}</Typography>
+            <Typography variant="caption" color="text.secondary">Orders</Typography>
+          </Box>
+          <Box sx={{ flex: 1, textAlign: 'center' }}>
+            <Typography variant="h4" fontWeight={600}>{totalLineItems}</Typography>
+            <Typography variant="caption" color="text.secondary">Line items</Typography>
+          </Box>
+          <Box sx={{ flex: 1, textAlign: 'center' }}>
+            <Typography variant="h4" fontWeight={600}>{totalUnits}</Typography>
+            <Typography variant="caption" color="text.secondary">Total units</Typography>
+          </Box>
+        </Paper>
+        <Alert icon={false} sx={{ mb: 3, borderRadius: '6px' }}>
+          Pack order by order. Scan each item to verify it matches the order before sealing.
+        </Alert>
+        <Button
+          variant="contained"
+          fullWidth
+          size="large"
+          onClick={() => setPhase('active')}
+          sx={{
+            borderRadius: '6px',
+            fontWeight: 600,
+            bgcolor: 'var(--accent)',
+            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+          }}
+        >
+          Start Packing
+        </Button>
+      </Box>
+    );
+  }
+
+  if (phase === 'summary') {
+    const shippedCount = packResults.filter((r) => r.status === 'shipped').length;
+    const partialCount = packResults.filter((r) => r.status === 'partial').length;
+    const skippedCount = packResults.filter((r) => r.status === 'skipped').length;
+    const STATUS_LABEL: Record<string, string> = {
+      shipped: 'Shipped',
+      partial: 'Partial shipment',
+      skipped: 'Held — re-queued',
+    };
+    return (
+      <Box sx={{ p: 2, maxWidth: 480, mx: 'auto' }}>
+        <Typography variant="h6" fontWeight={600} sx={{ mb: 0.5 }}>Pack Summary</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Review before confirming</Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
+          <Paper variant="outlined" sx={{ flex: 1, borderRadius: '6px', p: 1.5, textAlign: 'center' }}>
+            <Typography variant="h5" fontWeight={600} color="success.main">{shippedCount}</Typography>
+            <Typography variant="caption" color="text.secondary">Shipped</Typography>
+          </Paper>
+          {partialCount > 0 && (
+            <Paper variant="outlined" sx={{ flex: 1, borderRadius: '6px', p: 1.5, textAlign: 'center' }}>
+              <Typography variant="h5" fontWeight={600} color="warning.main">{partialCount}</Typography>
+              <Typography variant="caption" color="text.secondary">Partial</Typography>
+            </Paper>
+          )}
+          {skippedCount > 0 && (
+            <Paper variant="outlined" sx={{ flex: 1, borderRadius: '6px', p: 1.5, textAlign: 'center' }}>
+              <Typography variant="h5" fontWeight={600} color="error.main">{skippedCount}</Typography>
+              <Typography variant="caption" color="text.secondary">Held</Typography>
+            </Paper>
+          )}
+        </Box>
+        {skippedCount > 0 && (
+          <Alert icon={false} severity="warning" sx={{ mb: 2, borderRadius: '6px' }}>
+            {skippedCount} order{skippedCount > 1 ? 's were' : ' was'} held by owner and re-queued.
+          </Alert>
+        )}
+        <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {packResults.map((r) => (
+            <Paper
+              key={r.orderId}
+              variant="outlined"
+              sx={{ borderRadius: '6px', p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5 }}
+            >
+              {r.status === 'shipped' && <CheckCircle size={18} color={theme.palette.success.main} />}
+              {r.status === 'partial' && <AlertTriangle size={18} color={theme.palette.warning.main} />}
+              {r.status === 'skipped' && <XCircle size={18} color={theme.palette.error.main} />}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography variant="body2" fontWeight={500}>#{r.externalOrderId}</Typography>
+              </Box>
+              <Typography variant="caption" color="text.secondary">{STATUS_LABEL[r.status]}</Typography>
+            </Paper>
+          ))}
+        </Box>
+        {submitError && <Alert severity="error" sx={{ mb: 2, borderRadius: '6px' }}>{submitError}</Alert>}
+        <Button
+          variant="contained"
+          fullWidth
+          size="large"
+          disabled={completingPack}
+          onClick={() => {
+            setCompletingPack(true);
+            onPackComplete()
+              .then(() => onComplete())
+              .catch(() => {
+                setSubmitError('Pack complete failed. Please try again.');
+                setCompletingPack(false);
+              });
+          }}
+          sx={{
+            borderRadius: '6px',
+            fontWeight: 600,
+            bgcolor: 'var(--accent)',
+            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+          }}
+        >
+          {completingPack ? 'Confirming…' : 'Confirm Pack Complete'}
+        </Button>
+      </Box>
+    );
+  }
 
   if (!currentOrder) return null;
 
@@ -329,12 +475,12 @@ export default function PackSessionPage({
         <Paper
           variant="outlined"
           sx={{
-            p: 3, borderRadius: 2, textAlign: 'center',
+            p: 3, borderRadius: '6px', textAlign: 'center',
             borderColor: theme.palette.success.main,
           }}
         >
           <PackageCheck size={48} color={theme.palette.success.main} />
-          <Typography variant="h6" fontWeight={700} sx={{ mt: 2 }}>
+          <Typography variant="h6" fontWeight={600} sx={{ mt: 2 }}>
             Order Complete
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 0.5 }}>
@@ -351,15 +497,17 @@ export default function PackSessionPage({
           <Button
             variant="outlined" fullWidth size="large"
             startIcon={<Printer size={18} />}
-            onClick={() => void handlePrintAndAdvance()}
-            sx={{ borderRadius: 2, fontWeight: 700, mb: 1 }}
+            onClick={() => { handlePrintAndAdvance().catch((err: unknown) => { 
+              setSubmitError((err as any)?.message ?? 'Print failed.'); }); }}
+            sx={{ borderRadius: '6px', fontWeight: 600, mb: 1 }}
           >
             Open Shopify label & {isLastOrder ? 'Complete Pack' : 'Next Order'}
           </Button>
           <Button
             variant="contained" fullWidth size="large"
-            onClick={() => void handleShipAndAdvance(approvedPartial)}
-            sx={{ borderRadius: 2, fontWeight: 700 }}
+            onClick={() => { handleShipAndAdvance(approvedPartial).catch((err: unknown) => { 
+              setSubmitError((err as any)?.message ?? 'Ship confirmation failed.'); }); }}
+            sx={{ borderRadius: '6px', fontWeight: 600 }}
           >
             {isLastOrder ? 'Ship & Complete Pack' : 'Ship & Next Order'}
           </Button>
@@ -374,7 +522,7 @@ export default function PackSessionPage({
     return (
       <Box sx={{ p: 2, maxWidth: 480, mx: 'auto', textAlign: 'center' }}>
         <Paper variant="outlined" sx={{
-          p: 3, borderRadius: 2,
+          p: 3, borderRadius: '6px',
           borderColor: theme.palette.warning.main,
         }}>
           <CircularProgress color="warning" size={40} />
@@ -406,10 +554,23 @@ export default function PackSessionPage({
   // ── ACTIVE SCAN PHASE ────────────────────────────────────────────────────
   return (
     <Box sx={{ p: 2, maxWidth: 480, mx: 'auto' }}>
+      {/* Batch progress */}
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            Order {currentOrderIndex + 1} of {orders.length}
+          </Typography>
+        </Box>
+        <LinearProgress
+          variant="determinate"
+          value={Math.round((currentOrderIndex / orders.length) * 100)}
+          sx={{ borderRadius: '6px', height: 6 }}
+        />
+      </Box>
       {/* Order header */}
       <Box sx={{ mb: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-          <Typography variant="subtitle2" fontWeight={700}>
+          <Typography variant="subtitle2" fontWeight={600}>
             #{currentOrder.external_order_id}
           </Typography>
           <Chip
@@ -430,7 +591,10 @@ export default function PackSessionPage({
         <Box sx={{ mb: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
             <Package size={16} />
-            <Typography variant="body2" fontWeight={600}>{currentItem.title}</Typography>
+            <Typography variant="body2" fontWeight={600}>{currentItem.product_title}</Typography>
+            {currentItem.variant_title && (
+              <Typography variant="caption" color="text.secondary">{currentItem.variant_title}</Typography>
+            )}
           </Box>
           {currentItem.sku && (
             <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
@@ -443,17 +607,62 @@ export default function PackSessionPage({
         </Box>
       ) : null}
 
+      {/* Step orientation banner */}
+      {scanState === 'scanning' && (
+        <Alert icon={false} sx={{ mb: 1.5, borderRadius: '6px', py: 0.5 }}>
+          Scan the item barcode to verify it matches this order line.
+        </Alert>
+      )}
       {/* Scan surface */}
       {scanState === 'scanning' && (
-        <BarcodeScanSurface
-          onScan={(v) => void handleScan(v)}
-          hint="Scan item barcode"
-        />
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <TextField
+            inputRef={scanInputRef}
+            fullWidth
+            size="small"
+            type="text"
+            placeholder="Scan item barcode or type barcode value"
+            value={scanInputValue}
+            onChange={(e) => setScanInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && scanInputValue.trim()) {
+                const val = scanInputValue.trim();
+                setScanInputValue('');
+                handleScan(val).catch((err: unknown) => {
+                  const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Scan failed.');
+                  setSubmitError(msg);
+                });
+              }
+            }}
+            helperText="Scanner auto-submits · manual entry: press Enter"
+            autoComplete="off"
+          />
+          {scanInputValue.trim() && (
+            <Button
+              variant="contained"
+              onClick={() => {
+                const val = scanInputValue.trim();
+                setScanInputValue('');
+                handleScan(val).catch((err: unknown) => {
+                  const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Scan failed.');
+                  setSubmitError(msg);
+                });
+              }}
+              sx={{
+                bgcolor: 'var(--accent)', borderRadius: '6px', fontWeight: 600,
+                '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+                flexShrink: 0,
+              }}
+            >
+              Scan
+            </Button>
+          )}
+        </Box>
       )}
 
       {scanState === 'processing' && (
         <Paper sx={{
-          aspectRatio: '4/3', borderRadius: 3,
+          borderRadius: '6px', py: 4,
           bgcolor: 'action.hover',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
@@ -463,13 +672,13 @@ export default function PackSessionPage({
 
       {scanState === 'wrong_item' && (
         <Paper sx={{
-          aspectRatio: '4/3', borderRadius: 3,
+          borderRadius: '6px', py: 4,
           bgcolor: theme.palette.error.main,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', gap: 1,
         }}>
           <XCircle size={48} color={theme.palette.error.contrastText} />
-          <Typography variant="h6" sx={{ color: theme.palette.error.contrastText, fontWeight: 700 }}>
+          <Typography variant="h6" sx={{ color: theme.palette.error.contrastText, fontWeight: 600 }}>
             Wrong Item
           </Typography>
           <Typography variant="caption" sx={{ color: theme.palette.error.contrastText, opacity: 0.8 }}>
@@ -480,13 +689,13 @@ export default function PackSessionPage({
 
       {scanState === 'accepted' && (
         <Paper sx={{
-          aspectRatio: '4/3', borderRadius: 3,
+          borderRadius: '6px', py: 4,
           bgcolor: theme.palette.success.main,
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', gap: 1,
         }}>
           <CheckCircle size={48} color={theme.palette.success.contrastText} />
-          <Typography variant="h6" sx={{ color: theme.palette.success.contrastText, fontWeight: 700 }}>
+          <Typography variant="h6" sx={{ color: theme.palette.success.contrastText, fontWeight: 600 }}>
             Verified
           </Typography>
         </Paper>
@@ -497,7 +706,8 @@ export default function PackSessionPage({
       {scanState === 'scanning' && (
         <Box sx={{ mt: 2 }}>
           <Button
-            variant="outlined" color="warning" fullWidth size="small"
+            variant="outlined" fullWidth size="small"
+            sx={{ borderColor: 'warning.main', color: 'warning.main' }}
             startIcon={<AlertTriangle size={14} />}
             onClick={() => setExceptionDialog(true)}
           >
@@ -511,7 +721,7 @@ export default function PackSessionPage({
       )}
 
       {/* EXCEPTION DIALOG */}
-      <Dialog open={exceptionDialog} onClose={() => setExceptionDialog(false)} fullWidth>
+      <Dialog open={exceptionDialog} onClose={() => undefined} fullWidth maxWidth="xs">
         <DialogTitle>Report Issue</DialogTitle>
         <DialogContent>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
@@ -520,14 +730,18 @@ export default function PackSessionPage({
               Requires owner decision
             </Typography>
             <Button
-              variant="outlined" color="warning" fullWidth
-              onClick={() => void handleReportException('item_missing')}
+              variant="outlined" fullWidth
+              sx={{ borderColor: 'warning.main', color: 'warning.main' }}
+              onClick={() => { handleReportException('item_missing').catch((err: unknown) => { 
+                setSubmitError((err as any)?.message ?? 'Failed to report exception.'); }); }}
             >
               Item Missing at Pack
             </Button>
             <Button
-              variant="outlined" color="warning" fullWidth
-              onClick={() => void handleReportException('short_pick')}
+              variant="outlined" fullWidth
+              sx={{ borderColor: 'warning.main', color: 'warning.main' }}
+              onClick={() => { handleReportException('short_pick').catch((err: unknown) => { 
+                setSubmitError((err as any)?.message ?? 'Failed to report exception.'); }); }}
             >
               Short Pick
             </Button>
@@ -537,16 +751,26 @@ export default function PackSessionPage({
               Problem bin — advance immediately
             </Typography>
             <Button
-              variant="outlined" color="error" fullWidth
-              onClick={() => void handleReportException('product_defect')}
+              variant="outlined" fullWidth
+              sx={{ borderColor: 'error.main', color: 'error.main' }}
+              onClick={() => { handleReportException('product_defect').catch((err: unknown) => { 
+                setSubmitError((err as any)?.message ?? 'Failed to report exception.'); }); }}
             >
               Product Defect
             </Button>
             <Button
               variant="outlined" fullWidth
-              onClick={() => void handleReportException('packaging_defect')}
+              onClick={() => { handleReportException('packaging_defect').catch((err: unknown) => { 
+                setSubmitError((err as any)?.message ?? 'Failed to report exception.'); }); }}
             >
               Packaging Defect
+            </Button>
+            <Button
+              variant="outlined" fullWidth
+              onClick={() => { handleReportException('wrong_item').catch((err: unknown) => { 
+                setSubmitError((err as any)?.message ?? 'Failed to report exception.'); }); }}
+            >
+              Wrong Item
             </Button>
           </Box>
         </DialogContent>
