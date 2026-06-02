@@ -4,226 +4,131 @@
 
 ## 1. What Packing & Shipping Means in LaSyncro
 
-Packing is not just putting items in a box.
-
-Shipping is not just sending it out.
-
-Together, they are:
-→ **the final verification step before an order leaves your system**
-
----
-
-Without LaSyncro:
-
-* items are packed based on memory
-* checked manually (sometimes)
-* shipped with uncertainty
-
----
-
-With LaSyncro:
-
-→ Every order is:
-
-* verified
-* confirmed
-* ready to dispatch with confidence
+Packing is the final verification step before an order leaves your warehouse.
+Every item is scanned, every order is confirmed, every shipment is deliberate.
 
 ---
 
 ## 2. What You Need Before You Start
 
-* Items already picked and confirmed
-* Packing station ready
-* LaSyncro app open on your phone
+- Items already picked and placed in a roller bin
+- Packing station ready (box/bag, tape, packing materials)
+- LaSyncro open on the packing station screen
+- Printer connected for invoices and shipping labels
 
 ---
 
-## 3. The Flow (Simple)
-
-```text id="b2m7qx"
-Assemble → Verify → Seal → Dispatch
-```
-
-No guessing. No double-check loops.
+## 3. The Flow
+Grab item → Scan barcode → Verify → Pack → Seal → Dispatch
 
 ---
 
 ## 4. Step-by-Step
 
----
+### Step 1 — Claim the batch
 
-### Step 1 — Open Packing on Your Phone
-
-* Open LaSyncro
-* Go to packing tasks
-
-You will see:
-→ the order and its required items
+The packing screen shows batches ready to pack. Tap **Claim & Start Packing**.
+The system records you as the packer for accountability and audit.
 
 ---
 
-### Step 2 — Assemble the Order
+### Step 2 — Grab any item from the bin and scan it
 
-* place all picked items into the box
+Items in the bin are not in any particular order. That is expected.
+Reach in, grab the first item you touch, and scan its barcode.
 
-At this point:
-→ items are collected, but not yet verified
-
----
-
-### Step 3 — Verify Each Item
-
-* scan each item using your phone
+The screen instantly shows:
+- Product image
+- Product name and variant
+- Which order it belongs to
+- All other items in the same order (so you can find them in the bin)
 
 ---
 
-### What happens instantly:
+### Step 3 — Invoice and shipping label print automatically
+
+As soon as the first item of an order is scanned:
+→ The invoice (A4) prints at your station
+→ The shipping label prints at your station
+
+You do not need to tap anything. This happens automatically.
 
 ---
 
-#### ✅ Correct Item
+### Step 4 — Pack the order
 
-→ confirmed as part of the order
-
----
-
-#### ⚠️ Issue Detected (Problem-Center)
-
-Examples:
-
-* wrong item
-* damaged item
-* missing item
-* barcode unreadable
+- Find all remaining items for this order (shown on screen with images)
+- Scan each one to verify
+- Place all items in the box or bag
+- Insert the invoice
+- Seal the parcel
 
 ---
 
-When this happens:
+### Step 5 — Scan the invoice barcode
 
-→ the issue is captured
-→ logged in **Problem-Center**
-→ routed for resolution
+The invoice has a barcode printed on it.
+Scan it to confirm the shipment.
 
-You do NOT:
-
-* ship anyway
-* guess
-* fix silently
+What happens instantly:
+→ Order marked as shipped in LaSyncro
+→ Shopify order marked as fulfilled
+→ Customer receives shipping confirmation email
 
 ---
 
-### Step 4 — Confirm Completion
+### Step 6 — Attach shipping label and dispatch
 
-Once all items are verified:
+- Attach the printed shipping label to the sealed parcel
+- Place it on the dispatch shelf or conveyor
 
-→ the system confirms:
-
-* order is complete
-* ready to ship
+The screen clears and is ready for the next item scan.
 
 ---
 
-### Step 5 — Seal the Box
+### Step 7 — Repeat until the bin is empty
 
-* close and seal the package
-
-Now:
-→ this is a **verified shipment**
+Keep scanning items until the bin is empty.
+The system tracks everything. When all items are confirmed, the batch closes automatically.
 
 ---
 
-### Step 6 — Dispatch
+## 5. Exceptions — What to Do When Something Is Wrong
 
-* move the box to shipping
-* load for delivery
+### Item not found / missing
+→ Report **Item Missing at Pack** — owner is notified and must approve or reject before you continue
 
----
+### Short pick (fewer units than expected)
+→ Report **Short Pick** — same owner approval flow
 
-## 5. What Changes Operationally
+### Item damaged
+→ Report **Product Defect** — goes to Problem Center, you advance immediately
 
-Before:
+### Packaging damaged
+→ Report **Packaging Defect** — goes to Problem Center, you advance immediately
 
-* “Did we pack everything?”
-* “Let’s check again…”
-* “Hope it’s correct”
-
----
-
-After:
-
-→ packing becomes:
-
-* controlled
-* verified
-* final
+### Wrong item in the bin
+→ Report **Wrong Item** — goes to Problem Center, you advance immediately
 
 ---
 
 ## 6. Why This Step Is Critical
 
-This is the last moment to catch errors.
-
-If something goes wrong here:
-→ it reaches the customer
-
----
-
-That leads to:
-
-* returns
-* refunds
-* loss of trust
+This is the last moment to catch errors before they reach the customer.
+A wrong item shipped = a return, a refund, a lost customer.
+The scan is your proof that the right item left the building.
 
 ---
 
-## 7. What Good Packing & Shipping Looks Like
+## 7. Common Mistakes to Avoid
 
-* every item is scanned
-* nothing is assumed
-* the box is sealed with certainty
-* shipping is immediate
-
----
-
-## 8. Common Mistakes to Avoid
-
-* packing without scanning
-* skipping verification
-* ignoring mismatches
-* shipping before confirmation
+- Packing without scanning — the system has no record, the customer has no confidence
+- Skipping the invoice scan — the order stays open in Shopify, customer gets no email
+- Reporting nothing when something is wrong — the problem disappears from the system and reappears as a return
 
 ---
 
-If you skip verification:
-→ you undo all previous steps
+## 8. Where to Go Next
 
----
-
-## 9. How This Connects to Returns & Refunds
-
-If this step is done correctly:
-
-→ returns decrease
-→ refunds decrease
-→ customer trust increases
-
----
-
-If not:
-
-→ problems shift to:
-
-* returns
-* customer complaints
-* support workload
-
----
-
-## 10. Where to Go Next
-
-After shipping:
-
+After all parcels are dispatched:
 → **Returns & Refunds (Handling What Comes Back)**
-
----

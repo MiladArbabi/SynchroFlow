@@ -269,21 +269,43 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 
 ---
 
-### 2.5 PACK EXECUTION  [LIVE]  
+### 2.5 PACK EXECUTION  [LIVE — WEB-PACK-01 ✅ | WEB-PACK-02 PLANNED]
 
 ✅ Pack session implemented. Pack exceptions live. Pack decision request pattern shipped (WM‑33 ✅ — see wms_pack_decision_playbook.md).
+⚠️ Current webapp UI is order-centric (WEB-PACK-01). Intended production UX is item-centric free-scan (WEB-PACK-02 — blocked on WM-34 print sprint and WM-38 carrier integration).
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
 
-**Pack Flow — per order**  
+**Current Pack Flow — order-centric [WEB-PACK-01 ✅]**
 
-- Packer claims batch (separate from picker — enforced at service layer)  
-- **Single‑item order**: scan item → scan invoice → pack confirmed  
-- **Multi‑item order**: scan all items → all confirmed → scan invoice → pack confirmed  
-- **Problem** → `pack_exceptions` written → alert fired → push to owner/admin  
-- **Blocking exceptions** (`item_missing`, `short_pick`): raises `PackDecisionRequest` → pack pauses → owner notified (push + alert) → owner approves/rejects → packer advances ✅  
-- **Non-blocking exceptions** (`product_defect`, `packaging_defect`, `wrong_item`): problem bin → advance immediately ✅  
+- Packer claims batch (separate from picker — enforced at service layer)
+- Orders presented sequentially. Per order: packer scans each line item barcode → verified → ship confirmation tapped → advance to next order
+- **Blocking exceptions** (`item_missing`, `short_pick`): raises `PackDecisionRequest` → pack pauses → owner notified (push + alert) → owner approves/rejects → packer advances ✅
+- **Non-blocking exceptions** (`product_defect`, `packaging_defect`, `wrong_item`): problem bin → advance immediately ✅
+
+**Intended Pack Flow — item-centric free-scan [WEB-PACK-02 PLANNED]**
+
+Operational reality: picked items arrive at packing station in a roller bin in no particular order. Packer grabs whatever is on top and scans it. UI must be item-centric, not order-centric.
+Packer scans any item barcode (USB/BT scanner or manual)
+→ Barcode resolved → matched to order + line item within active batch
+→ Screen shows: variant image (large), product name, variant, SKU, order number
+→ If multi-item order: thumbnail strip of other items in same order shown below
+→ [WM-34] Auto-print invoice (A4) + shipping label on first item scan per order
+→ Packer places item(s) in box, inserts invoice
+→ [WM-34] Packer scans invoice barcode → ship confirmed + Shopify writeback
+→ Green flash → screen clears → ready for next scan
+→ Batch auto-completes when all items confirmed — no manual pack-complete tap
+
+**Blocked on:**
+
+- WM-34: Invoice barcode generation + print-on-scan infrastructure
+- WM-38: Carrier integration — shipping label format per carrier, tracking number ingestion
+
+**Pack Decision Request [LIVE — WM‑33 ✅ — Migration 0111]**  
+`pack_exception_threads` pattern retired. Replaced by `pack_decision_requests` table:  
+`id`, `shop_id`, `pick_batch_id`, `lasyncro_order_id`, `lasyncro_line_item_id`, `exception_type`, `question`, `status` (`pending|approved|rejected`), `partial_shipment`, `raised_by`, `raised_at`, `resolved_by`, `resolved_at`, `note`  
+See full contract: `docs/playbooks/wms_pack_decision_playbook.md`
 
 **Pack Decision Request [LIVE — WM‑33 ✅ — Migration 0111]**  
 `pack_exception_threads` pattern retired. Replaced by `pack_decision_requests` table:  
@@ -439,7 +461,8 @@ SKU Gaps                  Push to packer(s)
                               ↓
                     Packer claims pack
                               ↓
-                    Per‑order scan + invoice/label print
+                    Item-centric free-scan (WEB-PACK-02)
+                    [current: per-order scan WEB-PACK-01]
                               ↓
                     Problem? → Problem Centre (WM‑33)
                               ↓
@@ -462,7 +485,9 @@ SKU Gaps                  Push to packer(s)
 | WM‑31      | P1       | ✅ DONE         | Role/Entitlement Management UI — member management, role changes                            |
 | WM‑32      | P1       | ✅ LIVE         | Receive Job — full inbound pipeline (PO → inspection → barcode → stow). Migrations 0097–0100. |
 | WM‑33      | P1       | ✅ LIVE         | Pack Decision Requests — replaces pack_exception_threads. Migration 0111. See wms_pack_decision_playbook.md |
-| WM‑34      | P1       | 📋 PLANNED      | Invoice + shipping label print on pack claim                                                |
+| WM‑34      | P1       | 📋 PLANNED      | Invoice print infrastructure — barcode generation per order, print-on-first-item-scan, invoice barcode scan to confirm shipment. Prerequisite for WEB-PACK-02. |
+| WM‑38      | P1       | 📋 PLANNED      | Carrier integration — per-carrier shipping label format (DHL, UPS, Royal Mail etc), label generation on pack, tracking number ingestion, carrier tracking deep links in Outbound module. Prerequisite for WEB-PACK-02 and tracking column in orders/outbound view. |
+| WEB-PACK-02 | P1      | 📋 PLANNED      | Pack UI redesign — item-centric free-scan. Packer scans any item, system resolves to order+line item, shows variant image + order context + sibling item thumbnails for multi-item orders. Auto-print invoice+label on first scan. Invoice barcode scan confirms shipment. Batch auto-completes. Removes Brief, Summary, Order Complete screens. Blocked on WM-34 + WM-38. |
 | WM‑35      | P2       | 📋 PLANNED      | Batch Management Settings UI — configurable release parameters                              |
 | WM‑36      | P2       | 📋 PLANNED      | Location suggestion engine — home location, proximity, empty bin                             |
 | WM‑37      | P2       | 📋 PLANNED      | Partial order re‑release — unshipped line items re‑queued                                    |

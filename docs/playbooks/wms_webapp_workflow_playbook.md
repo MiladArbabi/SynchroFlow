@@ -649,3 +649,36 @@ Pick uses `?batchId=`. Pack uses `?packBatchId=`. Both can be active simultaneou
 
 **Exception dialog:** non-dismissible, blocking section (warning) above divider, non-blocking section (error/default) below divider
 **Session key:** `?packBatchId=` in URL, set by `onPackSessionEnter`, cleared by `onSessionExit`
+
+### WEB-PACK-02 — Target State (Planned)
+
+The WEB-PACK-01 implementation above is a transitional, Playbook-compliant implementation.
+The intended production UX is fundamentally different and blocked on two prerequisites:
+
+**Prerequisites:**
+- WM-34: Invoice print infrastructure (barcode generation, print-on-scan, invoice barcode scan)
+- WM-38: Carrier integration (per-carrier label format, tracking number ingestion)
+
+**Target flow (item-centric free-scan):**
+Empty screen + ScanInput always focused
+→ Packer scans any item barcode from the roller bin
+→ Barcode resolved to order + line item within active batch
+→ Screen: variant image (large) + product/variant/SKU + order number
+→ If multi-item order: thumbnail strip of sibling items below
+→ [WM-34] Invoice (A4) + shipping label auto-print on first item scan per order
+→ Packer scans remaining items for same order (same free-scan, any order)
+→ [WM-34] Packer scans invoice barcode → ship confirmed + Shopify writeback
+→ Green flash → screen clears → next scan
+→ Batch auto-completes when all items confirmed
+
+**Screens removed in WEB-PACK-02 (vs WEB-PACK-01):**
+- Brief screen
+- Order-by-order sequential flow
+- Order Complete intermediate screen
+- Summary screen
+- Manual "Ship & Next Order" CTA → replaced by invoice barcode scan
+
+**Key backend requirement:**
+Barcode resolver must return order + line item context when a variant barcode is scanned within an active pack batch — not just the variant ID. The resolver already handles this partially (see `wms.controller.ts` barcode resolution endpoint).
+
+**`image_url` is available:** `variants.image_url` synced from Shopify (`shopifyProducts.core.ts`). Needs to be added to the `/batch/:id/orders` line items query.
