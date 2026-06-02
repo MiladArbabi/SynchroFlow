@@ -35,6 +35,11 @@ export async function registerShopifyWebhooks(
     'inventory_levels/update',
     'inventory_items/update',
 
+    // Catalog — automatic product ingestion on create/update
+    // Eliminates manual resync requirement for new Shopify products
+    'products/create',
+    'products/update',
+
     // App lifecycle
     'app/uninstalled',
   ];
@@ -51,7 +56,7 @@ export async function registerShopifyWebhooks(
   }
 
   for (const topic of topics) {
-    await fetch(`https://${shopDomain}/admin/api/2024-01/webhooks.json`, {
+    const res = await fetch(`https://${shopDomain}/admin/api/2024-01/webhooks.json`, {
       method: 'POST',
       headers: {
         'X-Shopify-Access-Token': accessToken,
@@ -60,22 +65,20 @@ export async function registerShopifyWebhooks(
       body: JSON.stringify({
         webhook: {
           topic,
-          /**
-           * WEBHOOK ENDPOINT (CRITICAL)
-           * ----------------------------
-           * Must EXACTLY match Express route:
-           * app.use('/api/v1/shopify', ...)
-           * router.post('/webhooks', ...)
-           *
-           * Final path:
-           * /api/v1/shopify/webhooks
-           */
           address: `${process.env.APP_BASE_URL}/api/v1/shopify/webhooks`,
           format: 'json',
         },
       }),
     });
 
-    console.info('[SHOPIFY_WEBHOOK_REGISTERED]', { topic });
+    if (res.ok) {
+      console.info('[SHOPIFY_WEBHOOK_REGISTERED]', { topic });
+    } else if (res.status === 422) {
+      // Already registered — not an error
+      console.info('[SHOPIFY_WEBHOOK_ALREADY_REGISTERED]', { topic, status: res.status });
+    } else {
+      const body = await res.text();
+      console.error('[SHOPIFY_WEBHOOK_REGISTRATION_FAILED]', { topic, status: res.status, body });
+    }
   }
 }

@@ -19,6 +19,8 @@ import { handleOrderFulfillment } from './handlers/handleOrderFulfillment.js';
 import { handleOrderPaid } from './handlers/handleOrderPaid.js';
 import { handleRefundCreated } from './handlers/handleRefundCreated.js';
 import { handleInventoryLevelUpdate } from './handlers/handleInventoryLevelUpdate.js';
+import { handleProductCreated } from './handlers/handleProductCreated.js';
+import { handleProductUpdated } from './handlers/handleProductUpdated.js';
 
 /**
  * Shopify Webhook Route Registration
@@ -116,6 +118,19 @@ WebhookRouter.register({
       eventId: envelope.eventId
     });
   },
+});
+
+// Catalog sync — new and updated Shopify products ingested automatically
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'products/create',
+  handle: handleProductCreated,
+});
+
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'products/update',
+  handle: handleProductUpdated,
 });
 
 export async function shopifyWebhookHandler(

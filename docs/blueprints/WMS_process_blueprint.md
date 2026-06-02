@@ -533,9 +533,9 @@ SKU Gaps                  Push to packer(s)
 
 | WEB-STOW-02 | Web WMS Stow Session | ✅ RESOLVED May 31, 2026 — `StowSessionPage` used `BarcodeScanSurface` (mobile camera component) for location_scan and product_scan phases, opening the PC webcam on webapp. Fixed by creating inline `ScanInput` component (TextField, autofocus, Enter-to-submit). Accepts typed input and USB/BT scanner events. Both phases updated. | P1 |
 
-| WEBHOOK-01 | Backend / Shopify Integration | 🔴 PENDING — No `products/create` webhook registered. New Shopify products not ingested automatically. Workaround: manual resync. GitHub issue #996. Also need `products/update` for variant/barcode changes. | P1 |
+| WEBHOOK-01 | Backend / Shopify Integration | ✅ RESOLVED June 2, 2026 — products/create + products/update registered. Dual-secret HMAC verification (admin + app secrets). REST payload normalizer to GQL edge format. Token decryption fixed. End-to-end verified. GitHub #996. | P1 |
 
-| UX-RESYNC-01 | Web Top Nav | 🔴 PENDING — Live pill is static. No UI-accessible manual resync trigger. GitHub issue created. Required for owner workflow: create product in Shopify → click Live pill → resync → product appears in PO search. | P2 |
+| UX-RESYNC-01 | Web Top Nav | ✅ RESOLVED June 2, 2026 — Live pill opens Catalog Sync popover with status, product/variant/order counts, recently synced products list, ghost-orange resync CTA. GitHub #997 closed. #999 + #1000 filed for expansion + stability. | P2 |
 
 | WEB-RECEIVE-03 | Web WMS Receive Session | ✅ RESOLVED May 31, 2026 — Path B (scan mode) implemented on webapp. Free-scan pattern: operator scans any unit, system resolves barcode to PO line, increments count, green flash on hit, auto-confirms at expected qty, overcount dialog, session persistence via URL param + sessionStorage, resume banner for lost mid-scan progress. See `docs/playbooks/wms_webapp_workflow_playbook.md` for full scan pattern contract. | P1 |
 | WEB-RECEIVE-04 | Web Suppliers Portal | ✅ RESOLVED May 31, 2026 — Unit cost field: type="text", inputMode="decimal", regex validation, auto-format to 2dp on blur, $ adornment. Qty field: type="number", inline error on invalid. Variant dropdown onBlur clears options with 150ms delay to prevent overlay blocking adjacent fields. | P2 |

@@ -39,9 +39,9 @@ export interface IntegrationContextValue {
   bootState: IntegrationBootState;
   existence: IntegrationExistence | null;
   syncState: IntegrationSyncState | null;
-
   hasIntegration: boolean;
   isSyncComplete: boolean;
+  integrationId: number | null;
 
   refresh: () => void;
 }

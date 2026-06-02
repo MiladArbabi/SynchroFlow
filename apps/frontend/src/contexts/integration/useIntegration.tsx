@@ -24,36 +24,13 @@ import {
 /* -------------------------------------------------------------------------- */
 
 export interface UseIntegrationResult {
-  /**
-   * True once the integration model has resolved at least once.
-   * While false, consumers must assume NOTHING.
-   */
   bootResolved: boolean;
-
   isResolved: boolean;
-
-  /**
-   * Structural existence of an integration.
-   * - NONE    → no integration record exists
-   * - EXISTS  → integration exists (regardless of sync progress)
-   */
   existence: IntegrationExistence;
-
-  /**
-   * High-level sync status.
-   * Collapsed, stable, and UI-safe.
-   */
   syncStatus: IntegrationSyncState;
-
-  /**
-   * Convenience booleans (derived, non-authoritative).
-   */
   hasIntegration: boolean;
   isSyncComplete: boolean;
-
-  /**
-   * Manual refresh escape hatch.
-   */
+  integrationId: number | null;
   refresh: () => void;
 }
 
@@ -78,15 +55,12 @@ export function useIntegration(): UseIntegrationResult {
 
   return {
     bootResolved: ctx.bootState === 'READY',
-
     isResolved: ctx.bootState === 'READY',
-
     existence,
     syncStatus,
-
     hasIntegration: existence === 'EXISTS',
     isSyncComplete: syncStatus === 'COMPLETED',
-
+    integrationId: ctx.integrationId ?? null,
     refresh: ctx.refresh,
   };
 }

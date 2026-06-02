@@ -92,6 +92,7 @@ const ALLOWED_CONTEXTS = [
   'shopify.dev',        // dev-only (already guarded by NODE_ENV)
   'shopify.billing',    // Shopify RecurringApplicationCharge API (MON-09)
   'shopify-token-backfill', // Historical refund backfill — one-shot per shop
+  'shopify.webhook.registration', // Webhook topic registration on sync
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {

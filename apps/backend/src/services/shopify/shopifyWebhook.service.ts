@@ -1,5 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
 import { registerShopifyWebhooks } from './shopifyWebhooks.core.js';
+import { decrypt } from '../../security/encryption.service.js';
 
 /**
  * SHOPIFY WEBHOOK REGISTRATION SERVICE
@@ -22,10 +23,12 @@ export const registerWebhooksForShop = async (shopId: number) => {
     throw new Error('[WEBHOOK_REGISTRATION_FAILED] Missing shop domain or token');
   }
 
+  const accessToken = decrypt(installationRow.access_token, 'shopify.webhook.registration');
+
   try {
     await registerShopifyWebhooks(
       installationRow.shop_domain,
-      installationRow.access_token
+      accessToken
     );
 
     console.info('[SHOPIFY_WEBHOOKS_REGISTERED]', { shopId });

@@ -48,6 +48,10 @@ router.post('/', async (req: Request, res: Response) => {
     case 'inventory_items/update':
       return shopifyWebhookHandler(req, res);
 
+    case 'products/create':
+    case 'products/update':
+      return shopifyWebhookHandler(req, res);
+
     default:
       return res.status(200).json({ status: 'ignored' });
   }

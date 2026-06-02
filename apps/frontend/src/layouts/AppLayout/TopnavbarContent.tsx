@@ -16,6 +16,7 @@ import { useAlerts, useAcknowledgeAlert, type Alert } from '../../pages/alerts/u
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useIntegration } from '../../contexts/integration/useIntegration';
+import { axiosInstance } from "api/axiosConfig";
 
 /**
  * TOPNAV BELL — ALERTS DROPDOWN SHEET
@@ -198,8 +199,54 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
   // Top 6 for the sheet — already ranked by backend (severity → revenue)
   const sheetAlerts  = allInbox.slice(0, 6);
 
-  const { isSyncComplete } = useIntegration();
+  const { isSyncComplete, integrationId, refresh } = useIntegration();
   const isLive = isSyncComplete;
+  const [resyncing, setResyncing] = useState(false);
+  const [syncAnchor, setSyncAnchor] = useState<null | HTMLElement>(null);
+  const [syncDetail, setSyncDetail] = useState<null | {
+    lastSyncedAt: string | null;
+    counts: { orders: number; variants: number; products: number };
+    recentProducts: { title: string; status: string; updated_at: string }[];
+  }>(null);
+
+  const handlePillClick = (e: React.MouseEvent<HTMLElement>) => {
+    setSyncAnchor(e.currentTarget);
+    // Refetch silently — preserve previous data while loading
+    axiosInstance
+      .get('/api/v1/integrations/sync-status')
+      .then((res) => setSyncDetail({
+        lastSyncedAt: res.data.lastSyncedAt ?? null,
+        counts: res.data.counts,
+        recentProducts: res.data.recentProducts ?? [],
+      }))
+      .catch((err) => console.error('[SYNC_DETAIL_FETCH_FAILED]', err));
+  };
+
+  const handleResync = () => {
+    if (!integrationId || resyncing) return;
+    setResyncing(true);
+    axiosInstance
+      .post(`/api/v1/integrations/sync/${integrationId}`)
+      .then(() => {
+        refresh();
+        return axiosInstance.get('/api/v1/integrations/sync-status');
+      })
+      .then((res) => setSyncDetail({
+        lastSyncedAt: res.data.lastSyncedAt ?? null,
+        counts: res.data.counts,
+        recentProducts: res.data.recentProducts ?? [],
+      }))
+      .catch((err) => console.error('[RESYNC_FAILED]', err))
+      .finally(() => setResyncing(false));
+  };
+
+  const formatTimeAgo = (iso: string) => {
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
 
   const [bellAnchor, setBellAnchor] = useState<null | HTMLElement>(null);
   const sheetOpen = Boolean(bellAnchor);
@@ -373,24 +420,125 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
 
         {/* SYNC STATUS PILL */}
         {isFt2 && (
-          <Box sx={{
-            display: 'flex', alignItems: 'center', gap: 0.6,
-            px: 1.25, py: 0.375, borderRadius: '20px', flexShrink: 0,
-            bgcolor: isLive ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
-            border: `0.5px solid ${isLive ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
-          }}>
-            <Box sx={{
-              width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-              bgcolor: isLive ? '#22C55E' : '#F59E0B',
-              boxShadow: isLive ? '0 0 4px rgba(34,197,94,0.6)' : '0 0 4px rgba(245,158,11,0.6)',
-            }} />
-            <Typography sx={{
-              fontSize: 11, fontWeight: 500, lineHeight: 1, whiteSpace: 'nowrap',
-              color: isLive ? '#22C55E' : '#F59E0B',
-            }}>
-              {isLive ? 'Live' : 'Syncing'}
-            </Typography>
-          </Box>
+          <>
+            <Box
+              onClick={handlePillClick}
+              sx={{
+                display: 'flex', alignItems: 'center', gap: 0.6,
+                px: 1.25, py: 0.375, borderRadius: '20px', flexShrink: 0,
+                bgcolor: isLive ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)',
+                border: `0.5px solid ${isLive ? 'rgba(34,197,94,0.3)' : 'rgba(245,158,11,0.3)'}`,
+                cursor: 'pointer',
+                opacity: resyncing ? 0.6 : 1,
+                transition: 'opacity 0.2s',
+              }}>
+              <Box sx={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                bgcolor: isLive ? '#22C55E' : '#F59E0B',
+                boxShadow: isLive ? '0 0 4px rgba(34,197,94,0.6)' : '0 0 4px rgba(245,158,11,0.6)',
+              }} />
+              <Typography sx={{
+                fontSize: 11, fontWeight: 500, lineHeight: 1, whiteSpace: 'nowrap',
+                color: isLive ? '#22C55E' : '#F59E0B',
+              }}>
+                {resyncing ? 'Syncing…' : isLive ? 'Live' : 'Syncing'}
+              </Typography>
+            </Box>
+
+            {/* SYNC STATUS POPOVER */}
+            <Popover
+              open={Boolean(syncAnchor)}
+              anchorEl={syncAnchor}
+              onClose={() => setSyncAnchor(null)}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              slotProps={{ paper: {
+                sx: { mt: 1, width: 300, borderRadius: '10px', p: 2,
+                  bgcolor: 'background.paper', boxShadow: '0 4px 24px rgba(0,0,0,0.18)' }
+              }}}
+            >
+              {/* Header */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>Catalog Sync</Typography>
+                <Box
+                  onClick={handleResync}
+                  sx={{
+                    fontSize: 11, fontWeight: 500, px: 1.25, py: 0.4,
+                    borderRadius: '6px', cursor: resyncing ? 'default' : 'pointer',
+                    bgcolor: 'var(--accent-ghost)', color: 'var(--accent)',
+                    border: '0.5px solid var(--accent-border)',
+                    opacity: resyncing ? 0.5 : 1, transition: 'opacity 0.2s',
+                    userSelect: 'none',
+                    '&:hover': { opacity: resyncing ? 0.5 : 0.75 },
+                  }}
+                >
+                  {resyncing ? 'Syncing…' : '↻ Resync'}
+                </Box>
+              </Box>
+
+              {/* Status + last synced */}
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%',
+                    bgcolor: isLive ? '#22C55E' : '#F59E0B',
+                    boxShadow: isLive ? '0 0 4px rgba(34,197,94,0.6)' : '0 0 4px rgba(245,158,11,0.6)',
+                  }} />
+                  <Typography sx={{ fontSize: 11, color: isLive ? '#22C55E' : '#F59E0B', fontWeight: 500 }}>
+                    {isLive ? 'Live' : 'Syncing'}
+                  </Typography>
+                </Box>
+                <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
+                  {syncDetail?.lastSyncedAt ? `Updated ${formatTimeAgo(syncDetail.lastSyncedAt)}` : '—'}
+                </Typography>
+              </Box>
+
+              {/* Counts strip */}
+              {syncDetail && (
+                <Box sx={{ display: 'flex', gap: 1, mb: 1.5 }}>
+                  {[
+                    { label: 'Products', value: syncDetail.counts.products },
+                    { label: 'Variants', value: syncDetail.counts.variants },
+                    { label: 'Orders', value: syncDetail.counts.orders },
+                  ].map(({ label, value }) => (
+                    <Box key={label} sx={{ flex: 1, textAlign: 'center', py: 0.75,
+                      bgcolor: 'rgba(255,255,255,0.04)', borderRadius: '6px' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{value}</Typography>
+                      <Typography sx={{ fontSize: 10, color: 'text.secondary' }}>{label}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              )}
+
+              {/* Recent products */}
+              {syncDetail && syncDetail.recentProducts.length > 0 && (
+                <>
+                  <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'text.secondary',
+                    textTransform: 'uppercase', letterSpacing: 0.5, mb: 0.75 }}>
+                    Recently synced
+                  </Typography>
+                  {syncDetail.recentProducts.map((p, i) => (
+                    <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between',
+                      alignItems: 'center', py: 0.5 }}>
+                      <Typography sx={{ fontSize: 12, fontWeight: 500,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        maxWidth: 190 }}>
+                        {p.title}
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, color: 'text.secondary', flexShrink: 0, ml: 1 }}>
+                        {formatTimeAgo(p.updated_at)}
+                      </Typography>
+                    </Box>
+                  ))}
+                </>
+              )}
+
+              {!syncDetail && (
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', textAlign: 'center', py: 1 }}>
+                  Loading…
+                </Typography>
+              )}
+            </Popover>
+          </>
         )}
       </Box>
     </Box>

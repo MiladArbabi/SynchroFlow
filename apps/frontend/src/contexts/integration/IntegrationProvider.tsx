@@ -19,6 +19,7 @@ import {
 /* -------------------------------------------------------------------------- */
 
 interface SyncStatus {
+  integrationId: number | null;
   status:
     | 'PENDING'
     | 'SYNCING_PRODUCTS'
@@ -30,7 +31,7 @@ interface SyncStatus {
     | 'COMPLETED'
     | 'FAILED'
     | 'NOT_FOUND';
-}
+  }
 
 const fetchSyncStatus = async (): Promise<SyncStatus> => {
   const { data } = await axiosInstance.get(
@@ -109,10 +110,11 @@ export function IntegrationProvider({
     if (!bootResolvedRef.current && isLoading) {
       return {
         bootState: 'BOOTING',
-        existence: lastExistenceRef.current, // 👈 preserve truth
+        existence: lastExistenceRef.current,
         syncState: lastSyncRef.current,
         hasIntegration: lastExistenceRef.current === 'EXISTS',
         isSyncComplete: lastSyncRef.current === 'COMPLETED',
+        integrationId: null,
         refresh,
       };
     }
@@ -120,7 +122,6 @@ export function IntegrationProvider({
     if (data) {
       bootResolvedRef.current = true;
 
-      // Explicit non-existence signal from backend
       if (data.status === 'NOT_FOUND') {
         lastExistenceRef.current = 'NONE';
         lastSyncRef.current = null;
@@ -131,13 +132,13 @@ export function IntegrationProvider({
           syncState: null,
           hasIntegration: false,
           isSyncComplete: false,
+          integrationId: null,
           refresh,
         };
       }
 
       const syncState = mapSyncState(data.status);
 
-      // EXISTENCE is only true if backend confirms a real integration
       lastExistenceRef.current = 'EXISTS';
       lastSyncRef.current = syncState;
 
@@ -147,9 +148,10 @@ export function IntegrationProvider({
         syncState,
         hasIntegration: true,
         isSyncComplete: syncState === 'COMPLETED',
+        integrationId: data.integrationId ?? null,
         refresh,
       };
-    }
+    };
 
     // auth churn → preserve last known truth
     return {
@@ -158,6 +160,7 @@ export function IntegrationProvider({
       syncState: lastSyncRef.current,
       hasIntegration: lastExistenceRef.current === 'EXISTS',
       isSyncComplete: lastSyncRef.current === 'COMPLETED',
+      integrationId: null,
       refresh,
     };
   }, [data, isLoading, refresh]);

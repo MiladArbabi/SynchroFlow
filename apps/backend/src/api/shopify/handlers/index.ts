@@ -17,4 +17,6 @@ export * from './handleOrderFulfillment.js';
 export * from './handleRefundCreated.js'
 export * from './handleOrderCreated.js'
 export * from './handleOrderPaid.js'
+export * from './handleProductCreated.js'
+export * from './handleProductUpdated.js'
 

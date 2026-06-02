@@ -404,8 +404,8 @@ Before writing any code for a new webapp workflow, run through this checklist:
 | WEB-PICK-03 | Pick | ✅ RESOLVED June 1, 2026 — Summary screen: per-line results, exception count, Confirm Pick Complete CTA. Problem Center wired on every exception. Session persistence via ?batchId= URL param. product_title + variant_title added to line-items API. Full backend + UI simulation verified. | P1 |
 | WEB-PACK-01 | Pack | ✅ RESOLVED June 2, 2026 — Full Playbook-compliant Pack workflow audited and implemented. 17 issues resolved. Brief screen (batch summary), ScanInput pattern, session persistence (?packBatchId= URL param), LinearProgress, step banner, Summary screen (per-order shipped/partial/skipped results), Problem Center on every exception, wrong_item added to dialog, product_title + variant_title split on backend. Backend smoke test passed: single-item + multi-item orders, ship confirmation, pack-complete. See §14. | P1 |
 | WEB-RECEIVE-03 | Receive | Scan path (Path B) on webapp — Phase 2: per-unit barcodes | P2 |
-| WEBHOOK-01 | Backend | Register products/create + products/update webhooks | P1 |
-| UX-RESYNC-01 | Top Nav | Live pill triggers manual resync | P2 |
+| WEBHOOK-01 | Backend | ✅ RESOLVED June 2, 2026 — products/create + products/update webhooks registered. Dual-secret HMAC verification fixed. REST→GQL normalizer built. End-to-end verified. | P1 |
+| UX-RESYNC-01 | Top Nav | ✅ RESOLVED June 2, 2026 — Live pill wired to Catalog Sync popover. Shows status, counts, recently synced products, ghost-orange resync trigger. GitHub #999 + #1000 filed for future expansion. | P2 |
 | GH-998 | Backend | Per-unit barcode tracking (inventory_units table) | P3 |
 
 ---

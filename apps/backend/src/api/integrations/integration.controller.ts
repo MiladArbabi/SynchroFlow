@@ -526,10 +526,12 @@ export const getSyncStatus = async (req: Request, res: Response) => {
     const integration = await db('integrations')
       .where({ shop_id: shopId, platform: 'shopify' })
       .first(
+        'id',
         'sync_status',
         'sync_progress_current',
         'sync_progress_total',
-        'sync_last_error'
+        'sync_last_error',
+        'updated_at'
       );
 
     if (!integration) {
@@ -553,14 +555,32 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 
     // Fetch real entity counts for sync animation counters.
     // These are cheap COUNT queries — no joins, PK-indexed by shop_id.
-    const [orderCount, variantCount, customerCount] = await Promise.all([
+    const [orderCount, variantCount, customerCount, productCount, recentProducts] = await Promise.all([
       db('orders').where({ shop_id: shopId }).count('* as count').first(),
       db('variants').where({ shop_id: shopId }).count('* as count').first(),
       db('customers').where({ shop_id: shopId }).count('* as count').first(),
+      db('products').where({ shop_id: shopId }).count('* as count').first(),
+      // DISTINCT ON: deduplicate products updated by both products/create and products/update
+      db('products')
+        .where({ shop_id: shopId })
+        .select('title', 'status', 'updated_at')
+        .orderBy('updated_at', 'desc')
+        .limit(10)
+        .then((rows) => {
+          const seen = new Set<string>();
+          return rows
+            .filter((r) => {
+              if (seen.has(r.title)) return false;
+              seen.add(r.title);
+              return true;
+            })
+            .slice(0, 5);
+        }),
     ]);
-
     res.json({
+      integrationId: integration.id,
       status: integration.sync_status,
+      lastSyncedAt: integration.updated_at ?? null,
       progress: {
         current: integration.sync_progress_current,
         total: integration.sync_progress_total,
@@ -570,7 +590,9 @@ export const getSyncStatus = async (req: Request, res: Response) => {
         orders:    Number((orderCount as any)?.count ?? 0),
         variants:  Number((variantCount as any)?.count ?? 0),
         customers: Number((customerCount as any)?.count ?? 0),
+        products:  Number((productCount as any)?.count ?? 0),
       },
+      recentProducts,
       lastError: integration.sync_last_error,
     });
   } catch (error) {

@@ -77,23 +77,10 @@ export function createWebhookVerifier(config: VerifyConfig) {
       });
     }
 
-    // ─────────────────────────────────────────────
-    // DEBUG (TEMPORARY): Raw body inspection
-    // Purpose: Verify exact byte sequence used for HMAC
-    // REMOVE after verification succeeds
-    // ─────────────────────────────────────────────
-    console.log('[WEBHOOK VERIFY] rawBody utf8:', rawBody.toString('utf8'));
-    console.log('[WEBHOOK VERIFY] rawBody hex :', rawBody.toString('hex'));
-    console.log('[WEBHOOK VERIFY] signature  :', signature);
-    // ─────────────────────────────────────────────
-
     const expected = crypto
       .createHmac('sha256', secret)
       .update(rawBody)
       .digest(config.digest);
-
-    // Optional but useful while debugging
-    console.log('[WEBHOOK VERIFY] expected   :', expected);
 
     const sig = Buffer.from(signature.trim(), 'utf8');
     const exp = Buffer.from(expected, 'utf8');
