@@ -358,13 +358,19 @@ GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requi
 - **Exception:** full taxonomy (item_missing, short_pick, defect, packaging_damage, wrong_item, wrong_variant, wrong_quantity, barcode_mismatch, other). Problem Center called on every exception alongside `/batch/:id/exception`.
 - **Backend API:** `GET /api/v1/wms/batch/:id/line-items` returns `product_title` (from `products` join) + `variant_title` (from `order_line_items.title`). Items pre-sorted by `warehouse_locations.position_x/y` for optimized pick route.
 
-### Pack/Ship *(last)*
+### Pack/Ship *(complete — June 2, 2026)*
 
-- **Brief:** order summary (items, customer, shipping method), Claim & Start
-- **Inspect:** scan each item per order, confirm all items present, Ship confirmation
-- **Summary:** all orders packed, ship confirmation per order
-- **Session key:** `?batchId=` in URL
-- **Known gap:** Brief + Summary screens need auditing.
+- **Brief:** batch summary (order count, line item count, total units), Start Packing CTA
+- **Inspect:** order-by-order scan. Per order: scan each line item barcode via `ScanInput` → barcode resolved via `POST /api/v1/wms/barcode/resolve` → match confirmed → `order_complete` flag returned by `POST /api/v1/wms/pack/scan`. On `order_complete`: ship via `POST /api/v1/wms/batch/:id/ship`, advance to next order.
+- **Blocking exceptions** (`item_missing`, `short_pick`): raise `PackDecisionRequest` → `awaiting_decision` phase → poll `GET /pack/decision-request/:id` every 4s → approved: advance with `partial_shipment` flag → rejected: record as `skipped`, requeue.
+- **Non-blocking exceptions** (`product_defect`, `packaging_defect`, `wrong_item`): problem bin → advance immediately.
+- **Summary:** per-order results (shipped / partial / skipped), counts strip, Confirm Pack Complete CTA → `POST /api/v1/wms/batch/:id/pack-complete`.
+- **Session key:** `?packBatchId=` in URL, set by `onPackSessionEnter`, cleared by `onSessionExit`
+- **Exception dialog:** non-dismissible (`onClose={() => undefined}`), split into blocking (warning style) / non-blocking (error style) sections.
+- **Progress:** `LinearProgress` bar showing current order index / total orders at top of inspect phase.
+- **Step banner:** `Alert icon={false}` on scan phase — "Scan the item barcode to verify it matches this order line."
+- **Backend API:** `GET /api/v1/wms/batch/:id/orders` returns `product_title` (products join) + `variant_title` (oli.title). `POST /api/v1/wms/pack/scan` returns `{ scan_id, order_complete }`. `POST /api/v1/wms/batch/:id/ship` accepts `{ lasyncro_order_id, partial_shipment }`. `POST /api/v1/wms/batch/:id/pack-complete` closes batch.
+- **Pack complete route:** `/batch/:batchId/pack-complete` (hyphen) — not `/pack/complete`.
 
 ---
 
@@ -396,7 +402,7 @@ Before writing any code for a new webapp workflow, run through this checklist:
 | WEB-PICK-01 | Pick | ✅ RESOLVED June 1, 2026 — Brief screen added: batch ID, line item count, total units, optimized route instruction, Start Picking CTA. | P1 |
 | WEB-PICK-02 | Pick | ✅ RESOLVED June 1, 2026 — Two-scan pattern per item: location_scan (client-side match) → product_scan (barcode resolver) → optional qty_confirm (quantity > 1). Camera/BarcodeScanSurface removed. 3-point animated track UI with pulse animation. | P1 |
 | WEB-PICK-03 | Pick | ✅ RESOLVED June 1, 2026 — Summary screen: per-line results, exception count, Confirm Pick Complete CTA. Problem Center wired on every exception. Session persistence via ?batchId= URL param. product_title + variant_title added to line-items API. Full backend + UI simulation verified. | P1 |
-| WEB-PACK-01 | Pack | Audit Brief + Summary presence | P1 |
+| WEB-PACK-01 | Pack | ✅ RESOLVED June 2, 2026 — Full Playbook-compliant Pack workflow audited and implemented. 17 issues resolved. Brief screen (batch summary), ScanInput pattern, session persistence (?packBatchId= URL param), LinearProgress, step banner, Summary screen (per-order shipped/partial/skipped results), Problem Center on every exception, wrong_item added to dialog, product_title + variant_title split on backend. Backend smoke test passed: single-item + multi-item orders, ship confirmation, pack-complete. See §14. | P1 |
 | WEB-RECEIVE-03 | Receive | Scan path (Path B) on webapp — Phase 2: per-unit barcodes | P2 |
 | WEBHOOK-01 | Backend | Register products/create + products/update webhooks | P1 |
 | UX-RESYNC-01 | Top Nav | Live pill triggers manual resync | P2 |
@@ -580,3 +586,66 @@ The track renders 2 nodes (qty=1) or 3 nodes (qty>1) dynamically via `needsQtyCo
 **Exception dialog:** non-dismissible (`onClose={() => undefined}`), full taxonomy, notes required for `barcode_mismatch` + `other`, qty field for `short_pick`
 
 **Summary screen shows:** per-line product title + variant + location + status (picked/exception) · exception type label · picked count · exception count · Confirm Pick Complete CTA
+
+---
+
+## 14. Pack Workflow — Audit Findings (June 2, 2026)
+
+Derived from full audit and backend smoke test. All findings apply to future workflows unless noted.
+
+### Bugs Found & Resolved
+
+| ID | Description | Fix Applied |
+|----|-------------|-------------|
+| PACK-AUD-01 | `BarcodeScanSurface` imported and used — opened PC webcam | Removed. All scan input is `ScanInput` (TextField + Enter-to-submit) per Playbook §2 |
+| PACK-AUD-02 | No Brief screen | Added `brief` phase: order count, line item count, total units, Start Packing CTA |
+| PACK-AUD-03 | No Summary screen | Added `summary` phase: per-order shipped/partial/skipped results, counts strip, Confirm Pack Complete CTA |
+| PACK-AUD-04 | No session persistence | `?packBatchId=` URL param via `pendingPackBatchId` prop + `onPackSessionEnter` — mirrors Pick/Stow pattern |
+| PACK-AUD-05 | No `scanInputRef`, no auto-focus, no re-focus after error | `scanInputRef` added. Two `useEffect`s: focus on `scanState === 'scanning'` phase enter and on `submitError` change |
+| PACK-AUD-06 | `void handler()` on all async callbacks | Replaced with `.catch()` throughout — errors surface to `submitError` |
+| PACK-AUD-07 | `fontWeight={700}` in 6 places | All normalised to `600` per Playbook |
+| PACK-AUD-08 | MUI `color=` props on Buttons | Replaced with `sx={{ borderColor, color }}` using MUI theme tokens |
+| PACK-AUD-09 | `borderRadius: 2/3` throughout | All replaced with `'6px'` per Playbook |
+| PACK-AUD-10 | `aspectRatio: '4/3'` on state feedback Papers — mobile camera dimension | Replaced with `py: 4` content-sized layout |
+| PACK-AUD-11 | No LinearProgress batch progress bar | Added above order header — shows current order index / total orders |
+| PACK-AUD-12 | No step orientation banner | Added `Alert icon={false}` on scan phase |
+| PACK-AUD-13 | Problem Center never called on exception | `onCreateProblemTask` prop added, called in sequence after `onReportException` on every exception |
+| PACK-AUD-14 | `wrong_item` missing from exception dialog | Added to non-blocking section. Type signature extended. |
+| PACK-AUD-15 | `PackLineItem.title` single field — no product name separation | Backend: added `products` join to `/batch/:id/orders` line items query. Interface: split into `product_title` + `variant_title`. Render updated. |
+| PACK-AUD-16 | Dead `handlePackComplete` function — never called | Removed |
+| PACK-AUD-17 | Exception dialog dismissible via backdrop/Escape | `onClose={() => undefined}` + `maxWidth="xs"` — matches Pick pattern |
+
+### Pack-Specific Pitfalls — Do Not Repeat
+
+**Pack complete route is `/batch/:batchId/pack-complete` (hyphen)**
+Not `/pack/complete`. The route uses a hyphen, not a slash. Confirmed in `wms.routes.ts` line 160. Frontend (`WmsPage.tsx`) is correct. Any future smoke test or curl must use the hyphen form.
+
+**`pick_scan_log` is append-only**
+Trigger `prevent_pick_scan_log_mutation()` blocks DELETE and UPDATE at DB level. Never attempt to clean up pick scan log rows in dev teardown. Use `pack_scan_log`, `pick_batch_orders`, `pick_batches`, `order_*` tables for test cleanup only.
+
+**`external_order_id` must be numeric**
+`external_order_identity_map` has a CHECK constraint: `external_order_id ~ '^[0-9]+$'`. All test order IDs must be numeric strings (e.g. `'9000000001'`), not human-readable slugs.
+
+**Pack has two exception classes — never collapse them**
+Blocking (`item_missing`, `short_pick`) → `PackDecisionRequest` → owner approval loop.
+Non-blocking (`product_defect`, `packaging_defect`, `wrong_item`) → problem bin → advance immediately.
+The dialog must always show both sections separately with clear labels.
+
+**`packResults` state drives the Summary screen**
+Results are accumulated per order as `{ orderId, externalOrderId, status: 'shipped' | 'partial' | 'skipped' }`. `handleShipAndAdvance` records `shipped/partial`. Rejected decision records `skipped`. Last order transitions to `phase === 'summary'` instead of calling `onPackComplete` directly — `onPackComplete` is called only from the Summary CTA.
+
+**Session persistence uses `packBatchId` — not `batchId`**
+Pick uses `?batchId=`. Pack uses `?packBatchId=`. Both can be active simultaneously in theory (different operators). Keep them distinct.
+
+### Updated Pack Contract (§9 replacement — see above)
+
+`brief → active (order loop) → summary → done`
+
+| Phase | Content |
+|-------|---------|
+| `brief` | Order count · Line item count · Total units · Start Packing CTA |
+| `active` | LinearProgress (order N of M) · Order header · Current item · Step banner · ScanInput · State feedback (processing/wrong_item/accepted) · Report Issue button · awaiting_decision screen when blocking exception pending |
+| `summary` | Shipped/partial/skipped counts strip · Per-order result rows with icons · Confirm Pack Complete CTA |
+
+**Exception dialog:** non-dismissible, blocking section (warning) above divider, non-blocking section (error/default) below divider
+**Session key:** `?packBatchId=` in URL, set by `onPackSessionEnter`, cleared by `onSessionExit`
