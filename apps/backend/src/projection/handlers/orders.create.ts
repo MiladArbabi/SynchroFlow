@@ -264,6 +264,39 @@ export async function handleOrdersCreate({
         payload.shippingAddress?.countryCode ??
         payload.shipping_address?.country_code ??
         null,
+
+      /**
+       * FULL SHIPPING ADDRESS (WM-34)
+       * ------------------------------
+       * Captured for invoice PDF generation.
+       * Supports both REST and GraphQL Shopify payloads.
+       * All nullable — digital/gift card orders have no shipping address.
+       */
+      shipping_name:
+        payload.shippingAddress?.name ??
+        payload.shipping_address?.name ??
+        null,
+      shipping_address1:
+        payload.shippingAddress?.address1 ??
+        payload.shipping_address?.address1 ??
+        null,
+      shipping_address2:
+        payload.shippingAddress?.address2 ??
+        payload.shipping_address?.address2 ??
+        null,
+      shipping_city:
+        payload.shippingAddress?.city ??
+        payload.shipping_address?.city ??
+        null,
+      shipping_zip:
+        payload.shippingAddress?.zip ??
+        payload.shipping_address?.zip ??
+        null,
+      shipping_phone:
+        payload.shippingAddress?.phone ??
+        payload.shipping_address?.phone ??
+        null,
+
       created_at: canonicalEventTime,
       updated_at: canonicalEventTime,
     });

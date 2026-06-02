@@ -241,7 +241,34 @@ export async function releaseBatch(
         : { broadcastToRole: 'operator' as const }),
   }).catch((err) => console.error('[PICK_BATCH_RELEASED_PUSH_FAILED]', err.message));
 
-  // 6. Initialize warehouse status for all selected orders
+  // 6. Generate WMS barcode per order (WM-34)
+  //    LSO-{8 char uppercase alphanumeric} — physical order identity
+  //    from warehouse entry to ship confirmation.
+  //    Generated at batch release (not claim) — orders need a barcode
+  //    before the packer touches them.
+  //    onConflict: ignore — idempotent if batch is re-released.
+  const generateWmsBarcode = (): string => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = 'LSO-';
+    for (let i = 0; i < 8; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
+  };
+
+  for (const orderId of selectedOrderIds) {
+    await trx('orders')
+      .where({ lasyncro_order_id: orderId, shop_id: shopId })
+      .whereNull('wms_barcode')
+      .update({ wms_barcode: generateWmsBarcode() });
+  }
+
+  console.info('[WMS_BARCODES_GENERATED]', {
+    pick_batch_id: pickBatchId,
+    order_count: selectedOrderIds.length,
+  });
+
+  // 7. Initialize warehouse status for all selected orders
   await trx('order_warehouse_status').insert(
     selectedOrderIds.map((orderId) => ({
       lasyncro_order_id: orderId,
@@ -256,7 +283,7 @@ export async function releaseBatch(
     updated_at: new Date(),
   });
 
-  // 7. Initialize line item warehouse status for all selected orders
+  // 8. Initialize line item warehouse status for all selected orders
   for (const orderId of selectedOrderIds) {
     const lineItems = await trx('order_line_items')
       .where({ lasyncro_order_id: orderId })

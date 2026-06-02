@@ -86,6 +86,16 @@ query getOrders($cursor: String) {
         customer {
           id
         }
+        shippingAddress {
+          name
+          address1
+          address2
+          city
+          zip
+          phone
+          provinceCode
+          countryCode
+        }
         lineItems(first: 20) {
           edges {
             node {

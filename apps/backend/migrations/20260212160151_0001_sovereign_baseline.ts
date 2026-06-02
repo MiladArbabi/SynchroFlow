@@ -214,6 +214,22 @@ export async function up(knex: Knex): Promise<void> {
     table.string('shipping_province', 100).nullable();
     table.string('shipping_country_code', 2).nullable();
 
+    /**
+     * SHIPPING ADDRESS (WM-34)
+     * ------------------------
+     * Full recipient address captured from Shopify order webhook payload.
+     * Required for invoice PDF generation — packer inserts invoice in parcel.
+     *
+     * Fields match Shopify REST shipping_address object.
+     * All nullable — some orders (digital, gift cards) have no shipping address.
+     */
+    table.string('shipping_name', 255).nullable();
+    table.string('shipping_address1', 255).nullable();
+    table.string('shipping_address2', 255).nullable();
+    table.string('shipping_city', 100).nullable();
+    table.string('shipping_zip', 20).nullable();
+    table.string('shipping_phone', 50).nullable();
+
     table.timestamp('created_at', { useTz: true }).notNullable();
     table.timestamp('updated_at', { useTz: true }).notNullable();
     table.index(['shop_id', 'order_created_at']);
