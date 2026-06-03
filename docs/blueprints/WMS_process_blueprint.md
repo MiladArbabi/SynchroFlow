@@ -272,7 +272,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 ### 2.5 PACK EXECUTION  [LIVE — WEB-PACK-01 ✅ | WEB-PACK-02 PLANNED]
 
 ✅ Pack session implemented. Pack exceptions live. Pack decision request pattern shipped (WM‑33 ✅ — see wms_pack_decision_playbook.md).
-⚠️ Current webapp UI is order-centric (WEB-PACK-01). Intended production UX is item-centric free-scan (WEB-PACK-02 — blocked on WM-34 print sprint and WM-38 carrier integration).
+⚠️ Current webapp UI is order-centric (WEB-PACK-01). Intended production UX is item-centric free-scan (WEB-PACK-02 — blocked on WM-38 carrier integration prerequisite now met — see WM-38 ✅).
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
@@ -299,8 +299,8 @@ Packer scans any item barcode (USB/BT scanner or manual)
 
 **Blocked on:**
 
-- WM-34: Invoice barcode generation + print-on-scan infrastructure
-- WM-38: Carrier integration — shipping label format per carrier, tracking number ingestion
+- ~~WM-34: Invoice barcode generation + print-on-scan infrastructure~~ ✅ RESOLVED
+- ~~WM-38: Carrier integration~~ ✅ RESOLVED
 
 **Pack Decision Request [LIVE — WM‑33 ✅ — Migration 0111]**  
 `pack_exception_threads` pattern retired. Replaced by `pack_decision_requests` table:  
@@ -486,8 +486,8 @@ SKU Gaps                  Push to packer(s)
 | WM‑32      | P1       | ✅ LIVE         | Receive Job — full inbound pipeline (PO → inspection → barcode → stow). Migrations 0097–0100. |
 | WM‑33      | P1       | ✅ LIVE         | Pack Decision Requests — replaces pack_exception_threads. Migration 0111. See wms_pack_decision_playbook.md |
 | WM-34      | P1       | ✅ RESOLVED June 3, 2026 — LSO-{8char} wms_barcode generated per order at batch release. Invoice print jobs created at pack claim. GET /orders/:orderId/invoice generates A4 PDF via pdf-lib + bwip-js (Code128). Blob URL opens PDF in pack session. httpScanResolve wired for invoice_scan type. Shipping address captured from Shopify GraphQL query. Prerequisite for WEB-PACK-02 met. |
-| WM‑38      | P1       | 📋 PLANNED      | Carrier integration — per-carrier shipping label format (DHL, UPS, Royal Mail etc), label generation on pack, tracking number ingestion, carrier tracking deep links in Outbound module. Prerequisite for WEB-PACK-02 and tracking column in orders/outbound view. |
-| WEB-PACK-02 | P1      | 📋 PLANNED      | Pack UI redesign — item-centric free-scan. Packer scans any item, system resolves to order+line item, shows variant image + order context + sibling item thumbnails for multi-item orders. Auto-print invoice+label on first scan. Invoice barcode scan confirms shipment. Batch auto-completes. Removes Brief, Summary, Order Complete screens. Blocked on WM-34 + WM-38. |
+| WM‑38      | P1       | ✅ RESOLVED June 3, 2026 — Adapter pattern (ICarrierProvider). Sendcloud implementation: request_label:true, merchant credentials encrypted at rest. shop_carrier_settings + order_shipment_tracking tables (migration 0113). include_return_label toggle on shop_wms_settings. shipConfirmation step 5.5 feeds tracking into Shopify writeback. PUT/GET/DELETE /carrier-settings + POST /orders/:orderId/generate-label endpoints. WEB-PACK-02 blocker cleared. |
+| WEB-PACK-02 | P1      | 📋 READY        | Pack UI redesign — item-centric free-scan. Packer scans any item, system resolves to order+line item, shows variant image + order context + sibling item thumbnails for multi-item orders. Auto-print invoice+label on first scan. Invoice barcode scan confirms shipment. Batch auto-completes. Removes Brief, Summary, Order Complete screens. Blockers WM-34 + WM-38 both cleared. |
 | WM‑35      | P2       | 📋 PLANNED      | Batch Management Settings UI — configurable release parameters                              |
 | WM‑36      | P2       | 📋 PLANNED      | Location suggestion engine — home location, proximity, empty bin                             |
 | WM‑37      | P2       | 📋 PLANNED      | Partial order re‑release — unshipped line items re‑queued                                    |

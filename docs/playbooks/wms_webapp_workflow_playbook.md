@@ -682,3 +682,58 @@ Empty screen + ScanInput always focused
 Barcode resolver must return order + line item context when a variant barcode is scanned within an active pack batch — not just the variant ID. The resolver already handles this partially (see `wms.controller.ts` barcode resolution endpoint).
 
 **`image_url` is available:** `variants.image_url` synced from Shopify (`shopifyProducts.core.ts`). Needs to be added to the `/batch/:id/orders` line items query.
+
+---
+
+## 15. Carrier Integration — WM-38 (June 3, 2026)
+
+### Architecture
+
+Adapter pattern — `ICarrierProvider` interface at `services/wms/carriers/ICarrierProvider.ts`. Adding a new carrier = new file implementing the interface + one line in `carrierLabel.service.ts` `PROVIDERS` map. Nothing else changes.
+
+### Sendcloud (implementation v1)
+
+- Merchant's own Sendcloud account — LaSyncro incurs zero label cost
+- Credentials encrypted at rest (AES-256-GCM) in `shop_carrier_settings`
+- Decrypt context: `wms.carrier.sendcloud`
+- API call: `POST https://panel.sendcloud.sc/api/v2/parcels` with `request_label: true` + `apply_shipping_rules: true`
+- Response: `tracking_number`, `tracking_url`, `label.label_printer` (PDF URL)
+
+### Data model
+
+| Table | Purpose |
+|---|---|
+| `shop_carrier_settings` | Per-shop, per-carrier encrypted credentials. PK: (shop_id, carrier_code). RLS enforced. |
+| `order_shipment_tracking` | One row per physical shipment. Supports partial shipments. Consumed by Outbound module + Shopify writeback. |
+
+### Label generation flow
+
+```
+POST /orders/:orderId/generate-label
+  → idempotency check (return existing if already generated)
+  → resolve shipping address from orders table
+  → carrierLabel.service → decrypt credentials → ICarrierProvider.generateLabel()
+  → persist to order_shipment_tracking
+  → return { trackingNumber, trackingUrl, labelUrl }
+```
+
+### Shopify tracking writeback
+
+`shipConfirmation.service.ts` step 5.5 reads `order_shipment_tracking` for the order and passes `trackingInfo` into `writeShopifyFulfillment`. Customers receive Shopify shipping notification with live carrier tracking link.
+
+### Endpoints
+
+| Method | Path | Auth | Purpose |
+|---|---|---|---|
+| `PUT` | `/api/v1/wms/carrier-settings` | `wms:batch:release` | Upsert carrier credentials |
+| `GET` | `/api/v1/wms/carrier-settings` | `wms:read` | List configured carriers (no raw keys) |
+| `DELETE` | `/api/v1/wms/carrier-settings/:carrierCode` | `wms:batch:release` | Remove carrier |
+| `POST` | `/api/v1/wms/orders/:orderId/generate-label` | `wms:pack:scan` | Generate + persist shipping label |
+
+### Settings toggle
+
+`shop_wms_settings.include_return_label` (boolean, default false) — controls return slip compositing onto WM-34 invoice PDF bottom half. Configurable via `PATCH /api/v1/wms/settings`.
+
+### Testing without charge
+
+Use Sendcloud's sandbox credentials + shipping method `"Unstamped letter"` (id: 8) — generates labels with no billing against merchant account.
