@@ -2,7 +2,7 @@
 
 **Location:** `docs/blueprints/CarrierIntegration.md`
 **Created:** June 3, 2026
-**Status:** WM-38 ✅ LIVE — WM-39 through WM-42 📋 PLANNED
+**Status:** WM-38 ✅ LIVE — WM-39 ✅ LIVE — WM-40 through WM-45 📋 PLANNED
 
 ---
 
@@ -95,11 +95,11 @@ LaSyncro already has or can capture:
 | Variant SKU | ✅ `variants` | Already live |
 | Unit cost (COGS) | ✅ `variants.unit_cost` | Already live |
 | Selling price | ✅ `order_line_items.unit_price` | Already live |
-| Shipping cost per parcel | 🔜 WM-39 | From Sendcloud API response at label generation |
+| Shipping cost per parcel | ✅ WM-39 | From Sendcloud API response at label generation |
 | Actual parcel weight | 🔜 WM-43 | Operator inputs at pack, or per-variant default |
 | Parcel dimensions | 🔜 WM-43 | Operator inputs at pack, or per-variant default |
 | Volumetric weight | 🔜 WM-43 | Computed: `(L×W×H) / DIM_factor` |
-| Carrier zone | 🔜 WM-39 | From Sendcloud API response |
+| Carrier zone | ✅ WM-39 | From Sendcloud API response |
 | Tracking events | 🔜 WM-40 | From Sendcloud webhooks |
 | Carrier transit time | 🔜 WM-41 | Aggregated from tracking events |
 | Return rate by SKU | 🔜 WM-41 | Aggregated from return tracking events |
@@ -404,7 +404,7 @@ The `include_return_label` toggle (WM-38) generates a static return slip. The fu
 | ID | Priority | Status | Description |
 |---|---|---|---|
 | WM-38 | P1 | ✅ RESOLVED June 3, 2026 | Adapter pattern (ICarrierProvider). Sendcloud implementation. shop_carrier_settings + order_shipment_tracking. include_return_label toggle. Tracking → Shopify writeback. 4 endpoints. Settings UI. |
-| WM-39 | P1 | 📋 PLANNED | Shipping cost ingestion — capture label price from Sendcloud response. Store on order_shipment_tracking. Feed into true margin computation. |
+| WM-39 | P1 | ✅ RESOLVED June 3, 2026 | Shipping cost ingestion — migration 0114. shipping_cost_excl_vat + currency + carrier_zone on order_shipment_tracking. carrier_shipping_cost + true_margin + true_margin_pct on order_margin_snapshot. Sendcloud parcel.price captured at label generation. computeOrderMargin extended — true_margin = gross_margin − carrier_shipping_cost. order_revenue_units immutability preserved. |
 | WM-40 | P1 | 📋 PLANNED | Carrier tracking webhooks — Sendcloud parcel status events. parcel_tracking_events table. Outbound module tracking column. Return detection → pre-create receive job. |
 | WM-41 | P2 | 📋 PLANNED | Carrier performance analytics — delivery rate, transit time, exception rate, return rate, cost per delivery. Carrier Performance tab in Warehouse Analytics. |
 | WM-42 | P2 | 📋 PLANNED | CPT pressure indicator — orders remaining × UPH × active packers → projected completion vs CPT. Alert on projected miss. |
