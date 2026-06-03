@@ -235,17 +235,29 @@ export default function WmsPage() {
 
   const handlePrintLabel = useCallback(async (orderId: string) => {
     /**
-     * PACKING SLIP (PP1-02)
-     * ---------------------
-     * Opens Shopify packing slip in a new tab.
-     * Operator prints the label from Shopify's print dialog.
-     *
-     * 409 = fulfillment not yet confirmed in Shopify — slip opens anyway
-     * via fallback to Shopify admin orders page for manual label access.
-     *
-     * TODO Sprint 7: replace with Shippo label generation for
-     * in-app thermal printer support.
+     * LABEL GENERATION (WM-38)
+     * ------------------------
+     * 1. Call POST /orders/:orderId/generate-label — idempotent,
+     *    returns existing tracking row if label already generated.
+     * 2. If labelUrl returned → open carrier-hosted PDF in new tab.
+     * 3. Fallback: if no carrier configured (500 / no labelUrl) →
+     *    fall back to Shopify packing slip so operator is never blocked.
      */
+    try {
+      const { data } = await axiosInstance.post(
+        `/api/v1/wms/orders/${orderId}/generate-label`,
+        {}
+      );
+      if (data?.labelUrl) {
+        window.open(data.labelUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    } catch {
+      // No carrier configured or label generation failed — fall through to packing slip
+      console.info('[WMS] Label generation unavailable — falling back to packing slip', { orderId });
+    }
+
+    // Fallback: Shopify packing slip
     try {
       const { data } = await axiosInstance.get(`/api/v1/wms/orders/${orderId}/packing-slip`);
       if (data?.packing_slip_url) {
@@ -253,12 +265,8 @@ export default function WmsPage() {
       }
     } catch (err) {
       const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 409) {
-        // Order not yet fulfilled in Shopify — fulfillment fires async.
-        // Operator should wait a moment and retry, or print from Shopify orders directly.
-        console.info('[WMS] Packing slip not yet available — fulfillment still processing', { orderId });
-      } else {
-        console.error('[WMS] Failed to fetch packing slip', { orderId, error: (err as Error)?.message });
+      if (status !== 409) {
+        console.error('[WMS] Packing slip fallback failed', { orderId, error: (err as Error)?.message });
       }
     }
   }, []);

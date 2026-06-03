@@ -39,6 +39,7 @@ export const httpGetFinancesIntelligence = async (req: Request, res: Response) =
           trx.raw('ROUND(SUM(oms.gross_margin)::numeric, 2) as total_margin'),
           trx.raw('ROUND(AVG(oms.margin_pct) * 100, 1) as avg_margin_pct'),
           trx.raw('COUNT(*) FILTER (WHERE oms.margin_pct < 0) as negative_margin_orders'),
+          trx.raw('ROUND(SUM(oms.carrier_shipping_cost)::numeric, 2) as total_shipping_cost'),
         )
         .first();
 
@@ -130,9 +131,12 @@ export const httpGetFinancesIntelligence = async (req: Request, res: Response) =
       },
       // Cross-domain: blocked revenue at margin
       blockedRevenue,
-      blockedMarginValue,  // gross profit trapped in blocked orders
+      blockedMarginValue,
       constrainedOrders: result.blockedRow?.constrained_orders
         ? Number(result.blockedRow.constrained_orders)
+        : null,
+      totalShippingCost: result.marginSummary?.total_shipping_cost != null
+        ? Number(result.marginSummary.total_shipping_cost)
         : null,
     });
 

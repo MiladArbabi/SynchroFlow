@@ -24,6 +24,8 @@ export type MarginSummary = {
   avg_margin_pct: number;
   min_margin_pct: number;
   max_margin_pct: number;
+  total_shipping_cost: number | null;
+  avg_true_margin_pct: number | null;
 };
 
 export type MarginOrder = {
@@ -32,6 +34,9 @@ export type MarginOrder = {
   estimated_cost: string;
   gross_margin: string;
   margin_pct: string;
+  carrier_shipping_cost: number | null;
+  true_margin: number | null;
+  true_margin_pct: number | null;
   fulfillment_status: string | null;
   evaluated_at: string;
 };
@@ -263,8 +268,14 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
             {/* ZONE 1 — STAT CARDS */}
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
               <StatBox label="Avg Gross Margin" value={`${summary.avg_margin_pct}%`} accent={summary.avg_margin_pct >= 40 ? 'positive' : summary.avg_margin_pct >= 20 ? 'warning' : 'negative'} />
+              {summary.avg_true_margin_pct != null && (
+                <StatBox label="Avg True Margin" value={`${summary.avg_true_margin_pct}%`} accent={summary.avg_true_margin_pct >= 40 ? 'positive' : summary.avg_true_margin_pct >= 20 ? 'warning' : 'negative'} />
+              )}
               <StatBox label="Total Margin"     value={fmt(summary.total_margin)}    accent="positive" />
               <StatBox label="Total Revenue"    value={fmt(summary.total_revenue)}   accent="neutral" />
+              {summary.total_shipping_cost != null && (
+                <StatBox label="Total Shipping"  value={fmt(summary.total_shipping_cost)} accent="neutral" />
+              )}
               <StatBox label="Total Cost"       value={fmt(summary.total_cost)}      accent="neutral" />
               <StatBox label="Orders Analysed"  value={String(summary.order_count)}  accent="neutral" />
             </Box>
@@ -403,14 +414,15 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
               {/* ORDER TABLE */}
               {viewMode === 'orders' && (
                 <>
-                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
+                  <Box sx={{ display: 'grid', bgcolor: 'background.paper', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1, borderBottom: '0.5px solid', borderColor: 'divider' }}>
                     {([
-                      { label: 'Order',    field: null },
-                      { label: 'Revenue',  field: 'gross_revenue' },
-                      { label: 'Cost',     field: 'estimated_cost' },
-                      { label: 'Margin',   field: 'gross_margin' },
-                      { label: 'Margin %', field: 'margin_pct' },
-                      { label: 'Status',   field: 'fulfillment_status' },
+                      { label: 'Order',         field: null },
+                      { label: 'Revenue',        field: 'gross_revenue' },
+                      { label: 'Cost',           field: 'estimated_cost' },
+                      { label: 'Shipping',       field: null },
+                      { label: 'Margin',         field: 'gross_margin' },
+                      { label: 'True Margin %',  field: null },
+                      { label: 'Status',         field: 'fulfillment_status' },
                     ] as { label: string; field: 'margin_pct' | 'gross_margin' | 'gross_revenue' | null }[]).map(({ label, field }) => (
                       <Box key={label} onClick={() => field && toggleOrderSort(field)}
                         sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default', '&:hover': { opacity: field ? 0.7 : 1 } }}>
@@ -427,12 +439,13 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
                     const marginPct = Number(order.margin_pct);
                     const marginColor = marginPct >= 60 ? theme.palette.success.main : marginPct >= 40 ? theme.palette.warning.main : theme.palette.error.main;
                     return (
-                      <Box key={order.order_id} sx={{ display: 'grid', bgcolor: 'background.default', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
+                      <Box key={order.order_id} sx={{ display: 'grid', bgcolor: 'background.default', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr 1fr', px: 2, py: 1.5, borderBottom: '0.5px solid', borderColor: 'divider', '&:hover': { bgcolor: 'action.hover' } }}>
                         <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{order.order_id.slice(0, 8).toUpperCase()}</Typography>
                         <Typography variant="body2">{fmt(Number(order.gross_revenue))}</Typography>
                         <Typography variant="body2">{fmt(Number(order.estimated_cost))}</Typography>
+                        <Typography variant="body2" color="text.secondary">{order.carrier_shipping_cost != null ? fmt(Number(order.carrier_shipping_cost)) : '—'}</Typography>
                         <Typography variant="body2">{fmt(Number(order.gross_margin))}</Typography>
-                        <Typography variant="body2" fontWeight={500} sx={{ color: marginColor }}>{marginPct}%</Typography>
+                        <Typography variant="body2" fontWeight={500} sx={{ color: order.true_margin_pct != null ? (Number(order.true_margin_pct) >= 40 ? theme.palette.success.main : Number(order.true_margin_pct) >= 20 ? theme.palette.warning.main : theme.palette.error.main) : 'text.secondary' }}>{order.true_margin_pct != null ? `${order.true_margin_pct}%` : '—'}</Typography>
                         <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'capitalize' }}>{order.fulfillment_status ?? '—'}</Typography>
                       </Box>
                     );

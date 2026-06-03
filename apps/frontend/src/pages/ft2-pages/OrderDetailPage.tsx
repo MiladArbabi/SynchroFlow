@@ -377,6 +377,46 @@ export default function OrderDetailPage() {
                   </>
                 )}
 
+                {/* Carrier tracking */}
+                {order.tracking?.tracking_number && (
+                  <>
+                    <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1.5 }}>
+                      Carrier Tracking
+                    </Typography>
+                    <Box sx={cardSx}>
+                      {[
+                        order.tracking.carrier_code && { label: 'Carrier', value: order.tracking.carrier_code },
+                        { label: 'Tracking number', value: order.tracking.tracking_number },
+                      ].filter((r): r is { label: string; value: string } => !!r).map((row) => (
+                        <Box key={row.label} sx={{ display: 'flex', justifyContent: 'space-between', px: 2, py: 1.25, borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' } }}>
+                          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{row.label}</Typography>
+                          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', fontFamily: row.label === 'Tracking number' ? 'monospace' : 'inherit' }}>{row.value}</Typography>
+                        </Box>
+                      ))}
+                      {order.tracking.tracking_url && (
+                        <Box sx={{ px: 2, py: 1.25 }}>
+                          <Box
+                            component="a"
+                            href={order.tracking.tracking_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            sx={{
+                              display: 'inline-flex', alignItems: 'center',
+                              px: 1.25, py: 0.5, borderRadius: '6px',
+                              fontSize: 11, fontWeight: 600,
+                              color: 'var(--accent)', border: '0.5px solid var(--accent)',
+                              textDecoration: 'none',
+                              '&:hover': { opacity: 0.75 },
+                            }}
+                          >
+                            Track shipment →
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  </>
+                )}
+
                 {/* Pack decision history */}
                 <PackDecisionHistory lasyncroOrderId={order.id} />
 

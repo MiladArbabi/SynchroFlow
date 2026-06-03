@@ -32,6 +32,12 @@ export interface OrderTimelineEvent {
   event_occurred_at: string;
 }
 
+export interface OrderTracking {
+  tracking_number: string | null;
+  tracking_url: string | null;
+  carrier_code: string | null;
+}
+
 export interface OrderDetail {
   id: string;
   externalOrderId: string | null;
@@ -42,6 +48,7 @@ export interface OrderDetail {
   lineItems: OrderLineItem[];
   fulfillment: OrderFulfillment | null;
   timeline: OrderTimelineEvent[];
+  tracking: OrderTracking | null;
 }
 
 export function useOrderDetail(orderId: string | null) {

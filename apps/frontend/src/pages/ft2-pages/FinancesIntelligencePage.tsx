@@ -238,6 +238,17 @@ export default function FinancesIntelligencePage() {
               />
             )}
 
+            {/* Carrier shipping spend */}
+            {d.totalShippingCost != null && d.totalShippingCost > 0 && (
+              <SignalRow
+                severity="warning"
+                icon={<TrendingDown size={16} />}
+                title={`${fmt(d.totalShippingCost)} spent on carrier labels`}
+                detail="Shipping cost deducted from gross margin. True margin shown in Margin tab."
+                cta="View True Margin"
+                onClick={() => navigate('/finances/margin')}
+              />
+            )}
             {/* Missing costs */}
             {missingCosts > 0 && (
               <SignalRow

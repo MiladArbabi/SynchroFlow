@@ -58,6 +58,8 @@ export const httpGetMargin = async (
           trx.raw('ROUND(AVG(oms.margin_pct) * 100, 1) as avg_margin_pct'),
           trx.raw('ROUND(MIN(oms.margin_pct) * 100, 1) as min_margin_pct'),
           trx.raw('ROUND(MAX(oms.margin_pct) * 100, 1) as max_margin_pct'),
+          trx.raw('ROUND(SUM(oms.carrier_shipping_cost), 2) as total_shipping_cost'),
+          trx.raw('ROUND(AVG(oms.true_margin_pct) * 100, 1) FILTER (WHERE oms.true_margin_pct IS NOT NULL) as avg_true_margin_pct'),
         )
         .first();
 
@@ -76,6 +78,9 @@ export const httpGetMargin = async (
           'oms.estimated_cost',
           'oms.gross_margin',
           trx.raw('ROUND(oms.margin_pct * 100, 1) as margin_pct'),
+          'oms.carrier_shipping_cost',
+          'oms.true_margin',
+          trx.raw('ROUND(oms.true_margin_pct * 100, 1) as true_margin_pct'),
           'oms.aggregate_version',
           'ofs.status as fulfillment_status',
           'oms.evaluated_at',
@@ -105,6 +110,12 @@ export const httpGetMargin = async (
         avg_margin_pct: Number(result.summary?.avg_margin_pct ?? 0),
         min_margin_pct: Number(result.summary?.min_margin_pct ?? 0),
         max_margin_pct: Number(result.summary?.max_margin_pct ?? 0),
+        total_shipping_cost: result.summary?.total_shipping_cost != null
+          ? Number(result.summary.total_shipping_cost)
+          : null,
+        avg_true_margin_pct: result.summary?.avg_true_margin_pct != null
+          ? Number(result.summary.avg_true_margin_pct)
+          : null,
       },
       orders: result.orders,
       pagination: { page, limit },

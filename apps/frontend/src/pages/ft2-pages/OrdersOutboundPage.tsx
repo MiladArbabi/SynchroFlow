@@ -19,6 +19,7 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
+import { useNavigate } from 'react-router-dom';
 
 // ─── TYPES ────────────────────────────────────────────
 
@@ -29,6 +30,9 @@ interface FulfilledOrder {
   order_created_at: string;
   fulfilled_at: string;
   hours_to_fulfil: string;
+  tracking_number: string | null;
+  tracking_url: string | null;
+  carrier_code: string | null;
 }
 
 interface FulfilledOrdersResponse {
@@ -90,12 +94,13 @@ const isThisWeek = (iso: string): boolean => {
 
 // ─── STAT CARD ────────────────────────────────────────
 
-function StatCard({ label, value, sub, icon: Icon, valueColor }: {
+function StatCard({ label, value, sub, icon: Icon, valueColor, onSubClick }: {
   label: string;
   value: string;
   sub?: string;
   icon: React.ElementType;
   valueColor?: string;
+  onSubClick?: () => void;
 }) {
   return (
     <Box sx={{
@@ -118,7 +123,15 @@ function StatCard({ label, value, sub, icon: Icon, valueColor }: {
         {value}
       </Typography>
       {sub && (
-        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+        <Typography
+          onClick={onSubClick}
+          sx={{
+            fontSize: 11,
+            color: onSubClick ? 'var(--accent)' : 'var(--ink-4)',
+            cursor: onSubClick ? 'pointer' : 'default',
+            '&:hover': onSubClick ? { opacity: 0.75 } : {},
+          }}
+        >
           {sub}
         </Typography>
       )}
@@ -130,6 +143,7 @@ function StatCard({ label, value, sub, icon: Icon, valueColor }: {
 
 export default function OrdersOutboundPage() {
   const theme = useTheme();
+  const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [sortField, setSortField] = useState<SortField>('fulfilled_at');
@@ -167,11 +181,12 @@ export default function OrdersOutboundPage() {
       ? allHours.reduce((s, h) => s + h, 0) / allHours.length
       : null;
 
-    return {
+   return {
       shippedThisWeek: thisWeek.length,
       revenueThisWeek,
       avgFulfilHours: avgHours,
       total: data?.total ?? 0,
+      trackedCount: thisWeek.filter(o => o.tracking_number).length,
     };
   }, [orders, data?.total]);
 
@@ -221,10 +236,11 @@ export default function OrdersOutboundPage() {
           />
           <StatCard
             label="Carrier tracking"
-            value="Coming soon"
-            sub="requires shipping integration"
+            value={isLoading ? '—' : pulse.trackedCount > 0 ? `${pulse.trackedCount} tracked` : 'Not configured'}
+            sub={pulse.trackedCount > 0 ? `of ${pulse.shippedThisWeek} shipped this week` : 'Connect a carrier in Settings →'}
             icon={TrendingUp}
-            valueColor="var(--ink-4)"
+            valueColor={pulse.trackedCount > 0 ? theme.palette.success.main : 'var(--ink-4)'}
+            onSubClick={pulse.trackedCount === 0 ? () => navigate('/settings/carriers') : undefined}
           />
         </Box>
 
@@ -367,18 +383,44 @@ export default function OrdersOutboundPage() {
                   </Typography>
                 </Box>
 
-                {/* Tracking — Phase 2 placeholder */}
-                <Box sx={{
-                  display: 'inline-flex', alignItems: 'center',
-                  px: 1, py: 0.25, borderRadius: '4px',
-                  bgcolor: 'var(--bg-2)',
-                  border: '0.5px solid var(--rule)',
-                  width: 'fit-content',
-                }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Not integrated
+                {/* Tracking */}
+                {order.tracking_number ? (
+                  order.tracking_url ? (
+                    <Box
+                      component="a"
+                      href={order.tracking_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      sx={{
+                        display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                        px: 1, py: 0.25, borderRadius: '4px',
+                        bgcolor: 'var(--accent-ghost)',
+                        border: '0.5px solid var(--accent-border)',
+                        width: 'fit-content', textDecoration: 'none',
+                        '&:hover': { opacity: 0.8 },
+                      }}
+                    >
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--accent)', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                        {order.tracking_number}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Box sx={{
+                      display: 'inline-flex', alignItems: 'center',
+                      px: 1, py: 0.25, borderRadius: '4px',
+                      bgcolor: 'var(--bg-2)', border: '0.5px solid var(--rule)',
+                      width: 'fit-content',
+                    }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-3)', fontFamily: 'monospace', letterSpacing: '0.04em' }}>
+                        {order.tracking_number}
+                      </Typography>
+                    </Box>
+                  )
+                ) : (
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                    —
                   </Typography>
-                </Box>
+                )}
               </Box>
             );
           })}

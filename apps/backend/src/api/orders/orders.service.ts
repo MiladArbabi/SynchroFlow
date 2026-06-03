@@ -127,6 +127,13 @@ export const getOrderDetailsById = async (
     )
     .first();
 
+  // Carrier tracking — most recent shipment for this order
+  const shipmentTracking = await db('order_shipment_tracking')
+    .where('lasyncro_order_id', lasyncroOrderId)
+    .orderBy('created_at', 'desc')
+    .select('tracking_number', 'tracking_url', 'carrier_code')
+    .first();
+
   // Timeline — append-only history, ascending chronological order
   const timeline = await db('order_fulfillment_history')
     .where('lasyncro_order_id', lasyncroOrderId)
@@ -147,5 +154,6 @@ export const getOrderDetailsById = async (
     lineItems,
     fulfillment: fulfillment ?? null,
     timeline,
+    tracking: shipmentTracking ?? null,
   };
 };

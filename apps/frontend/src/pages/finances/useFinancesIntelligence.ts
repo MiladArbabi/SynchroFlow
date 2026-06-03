@@ -23,6 +23,7 @@ export type FinancesIntelligenceData = {
   blockedRevenue: number | null;
   blockedMarginValue: number | null;
   constrainedOrders: number | null;
+  totalShippingCost: number | null;
 };
 
 export function useFinancesIntelligence() {

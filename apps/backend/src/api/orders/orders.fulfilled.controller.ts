@@ -60,6 +60,16 @@ export const httpGetFulfilledOrders = async (
           'eim.lasyncro_order_id',
           'o.lasyncro_order_id'
         )
+        .leftJoin(
+          trx('order_shipment_tracking')
+            .distinctOn('lasyncro_order_id')
+            .orderBy('lasyncro_order_id')
+            .orderBy('created_at', 'desc')
+            .select('lasyncro_order_id', 'tracking_number', 'tracking_url', 'carrier_code')
+            .as('ost'),
+          'ost.lasyncro_order_id',
+          'o.lasyncro_order_id'
+        )
         .where('ofs.status', 'fulfilled')
         .where('o.shop_id', shopId)
         .modify(qb => {
@@ -76,6 +86,9 @@ export const httpGetFulfilledOrders = async (
           'o.total_price',
           'o.order_created_at',
           'ofs.fulfilled_at',
+          'ost.tracking_number',
+          'ost.tracking_url',
+          'ost.carrier_code',
           db.raw(`
             ROUND(
               EXTRACT(EPOCH FROM (ofs.fulfilled_at - o.order_created_at)) / 3600.0,
