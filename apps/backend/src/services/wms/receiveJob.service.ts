@@ -6,6 +6,7 @@ import { fireStowTaskAlert, fireReceiveArrivedAlert } from './wmsAlerts.service.
 import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../suppliers/supplierRating.service.js';
 import { suggestStowLocation } from './locationSuggestion.service.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
+import { batchConfirmUnits } from './inventoryUnit.service.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -146,6 +147,24 @@ export async function inspectReceiveJobLine(
     });
 
   console.info('[RECEIVE_LINE_INSPECTED]', { receiveJobId, lasyncroVariantId, quantityAccepted, quantityRejected });
+
+  // WM-46 — generate LSU- unit barcodes for all accepted units
+  if (quantityAccepted > 0) {
+    const variantRow = await trx('variants')
+      .where({ lasyncro_variant_id: line.lasyncro_variant_id, shop_id: shopId })
+      .select('barcode')
+      .first();
+
+    await batchConfirmUnits(trx, {
+      shopId,
+      receiveJobLineId: line.receive_job_line_id,
+      lasyncroVariantId: line.lasyncro_variant_id,
+      quantity: quantityAccepted,
+      shopifyBarcode: variantRow?.barcode ?? null,
+      createdBy: inspectedBy,
+    });
+  }
+
   await writeAuditLog(trx, {
     shopId,
     operatorId: inspectedBy,
