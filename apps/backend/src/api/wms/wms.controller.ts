@@ -20,12 +20,13 @@ import { rebuildInventoryProjectionForVariants } from '../../services/inventory/
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
 import { generateInvoicePdf } from '../../services/wms/invoicePdf.service.js';
 import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
-
 import {
   raisePackDecisionRequest,
   getPackDecisionRequest,
   resolvePackDecisionRequest,
 } from '../../services/wms/packDecision.service.js';
+import { encrypt } from '../../security/encryption.service.js';
+import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -2116,10 +2117,11 @@ export const httpPatchWmsSettings = async (req: Request, res: Response) => {
     auto_release_enabled,
     auto_release_interval_minutes,
     idle_alert_threshold_minutes,
+    include_return_label,
   } = req.body;
-
   const updates: Record<string, unknown> = {};
   if (problem_bin_location !== undefined) updates.problem_bin_location = String(problem_bin_location).trim() || null;
+  if (include_return_label !== undefined) updates.include_return_label = Boolean(include_return_label);
   if (max_batch_line_items !== undefined) {
     const val = Number(max_batch_line_items);
     if (!Number.isInteger(val) || val < 1 || val > 500) return res.status(400).json({ error: 'max_batch_line_items must be 1–500' });
@@ -2653,5 +2655,184 @@ export const httpListPackDecisions = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[PACK_DECISIONS_LIST_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Failed to list pack decisions: ${message}` });
+  }
+};
+// ─────────────────────────────────────────
+// PUT /api/v1/wms/carrier-settings
+// ─────────────────────────────────────────
+// Upserts carrier API credentials for the shop.
+// public_key + private_key encrypted at rest before insert.
+// Replaces existing credentials on re-submission.
+export const httpUpsertCarrierSettings = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { carrier_code, public_key, private_key } = req.body;
+
+  if (!carrier_code || !public_key || !private_key) {
+    return res.status(400).json({ error: 'carrier_code, public_key, private_key required' });
+  }
+
+  const SUPPORTED = ['sendcloud'];
+  if (!SUPPORTED.includes(carrier_code)) {
+    return res.status(400).json({ error: `Unsupported carrier: ${carrier_code}. Supported: ${SUPPORTED.join(', ')}` });
+  }
+
+  try {
+    const encryptedPublic  = JSON.stringify(encrypt(String(public_key).trim()));
+    const encryptedPrivate = JSON.stringify(encrypt(String(private_key).trim()));
+
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx('shop_carrier_settings')
+        .insert({
+          shop_id:      shopId,
+          carrier_code,
+          public_key:   encryptedPublic,
+          private_key:  encryptedPrivate,
+          is_active:    true,
+          updated_at:   new Date(),
+        })
+        .onConflict(['shop_id', 'carrier_code'])
+        .merge(['public_key', 'private_key', 'is_active', 'updated_at']);
+    });
+
+    console.info('[CARRIER_SETTINGS_UPSERTED]', { shopId, carrier_code });
+    return res.status(200).json({ carrier_code, is_active: true });
+  } catch (err: unknown) {
+    console.error('[CARRIER_SETTINGS_UPSERT_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to save carrier settings: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/carrier-settings
+// ─────────────────────────────────────────
+// Returns configured carriers for the shop.
+// Raw keys are never returned — presence only.
+export const httpGetCarrierSettings = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const carriers = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_carrier_settings')
+        .where({ shop_id: shopId })
+        .select('carrier_code', 'is_active', 'created_at', 'updated_at');
+    });
+
+    return res.status(200).json({ carriers });
+  } catch (err: unknown) {
+    console.error('[CARRIER_SETTINGS_FETCH_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to fetch carrier settings: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// DELETE /api/v1/wms/carrier-settings/:carrierCode
+// ─────────────────────────────────────────
+// Removes a carrier configuration for the shop.
+export const httpDeleteCarrierSettings = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { carrierCode } = req.params;
+
+  try {
+    const deleted = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('shop_carrier_settings')
+        .where({ shop_id: shopId, carrier_code: carrierCode })
+        .delete();
+    });
+
+    if (!deleted) return res.status(404).json({ error: 'Carrier not found' });
+
+    console.info('[CARRIER_SETTINGS_DELETED]', { shopId, carrierCode });
+    return res.status(200).json({ deleted: true });
+  } catch (err: unknown) {
+    console.error('[CARRIER_SETTINGS_DELETE_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to delete carrier settings: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/orders/:orderId/generate-label
+// ─────────────────────────────────────────
+// Generates a shipping label for a packed order via the active carrier.
+// Idempotent — returns existing tracking row if label already generated.
+// Called by WEB-PACK-02 on first item scan per order, and available
+// as a manual trigger in WEB-PACK-01.
+export const httpGenerateShippingLabel = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { orderId } = req.params;
+  const { pick_batch_id } = req.body;
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Idempotency — return existing if already generated
+      const existing = await trx('order_shipment_tracking')
+        .where({ shop_id: shopId, lasyncro_order_id: orderId })
+        .orderBy('created_at', 'desc')
+        .first();
+
+      if (existing) {
+        return {
+          shipmentTrackingId: existing.id,
+          carrierCode:    existing.carrier_code,
+          trackingNumber: existing.tracking_number,
+          trackingUrl:    existing.tracking_url,
+          labelUrl:       existing.label_url,
+          alreadyExists:  true,
+        };
+      }
+
+      // Resolve order shipping address
+      const order = await trx('orders as o')
+        .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where({ 'o.lasyncro_order_id': orderId, 'o.shop_id': shopId })
+        .select(
+          'eim.external_order_id',
+          'o.shipping_name',
+          'o.shipping_address1',
+          'o.shipping_address2',
+          'o.shipping_city',
+          'o.shipping_zip',
+          'o.shipping_country_code',
+        )
+        .first();
+
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+
+      if (!order.shipping_name || !order.shipping_address1 || !order.shipping_city ||
+          !order.shipping_zip  || !order.shipping_country_code) {
+        throw new Error('[GENERATE_LABEL] Incomplete shipping address on order');
+      }
+
+      const labelResult = await generateAndPersistLabel(trx, {
+        shopId,
+        lasyncroOrderId: orderId,
+        pickBatchId:     pick_batch_id ?? null,
+        orderNumber:     String(order.external_order_id),
+        recipientName:   order.shipping_name,
+        address1:        order.shipping_address1,
+        address2:        order.shipping_address2 ?? null,
+        city:            order.shipping_city,
+        postalCode:      order.shipping_zip,
+        countryCode:     order.shipping_country_code,
+      });
+
+      return { ...labelResult, alreadyExists: false };
+    });
+
+    return res.status(200).json(result);
+  } catch (err: unknown) {
+    console.error('[GENERATE_LABEL_FAILED]', { shopId, orderId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to generate label: ${getErrorMessage(err)}` });
   }
 };

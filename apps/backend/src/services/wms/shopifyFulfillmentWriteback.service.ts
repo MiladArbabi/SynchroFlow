@@ -25,13 +25,21 @@ import { createShopifyGraphQLClient } from '../shopify/shopifyClient.service.js'
  * - Shopify fulfillmentCreateV2 is idempotent if fulfillmentOrder already fulfilled
  * - shopify_fulfillment_id update uses WHERE shopify_fulfillment_id IS NULL guard
  */
+export interface ShopifyTrackingInfo {
+  number: string;
+  url?: string;
+  company?: string;
+}
+
 export async function writeShopifyFulfillment(
   trx: Knex.Transaction,
   params: {
     lasyncroOrderId: string;
     shopId: number;
+    trackingInfo?: ShopifyTrackingInfo;
   }
 ): Promise<void> {
+
   const { lasyncroOrderId, shopId } = params;
 
   // 1. Resolve external_order_id
@@ -118,6 +126,13 @@ export async function writeShopifyFulfillment(
           lineItemsByFulfillmentOrder: openEdges.map((e: any) => ({
             fulfillmentOrderId: e.node.id,
           })),
+          ...(params.trackingInfo && {
+            trackingInfo: {
+              number:  params.trackingInfo.number,
+              url:     params.trackingInfo.url ?? null,
+              company: params.trackingInfo.company ?? null,
+            },
+          }),
         },
       },
     }

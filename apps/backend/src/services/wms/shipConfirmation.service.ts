@@ -109,10 +109,27 @@ export async function confirmShipment(
     trx
   );
 
+  // 5.5. Read tracking info from order_shipment_tracking (WM-38)
+  // Non-blocking — writeback proceeds with or without tracking.
+  let trackingInfo: import('./shopifyFulfillmentWriteback.service.js').ShopifyTrackingInfo | undefined;
+  const shipmentTracking = await trx('order_shipment_tracking')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .orderBy('created_at', 'desc')
+    .select('tracking_number', 'tracking_url', 'carrier_code')
+    .first();
+
+  if (shipmentTracking?.tracking_number) {
+    trackingInfo = {
+      number:  shipmentTracking.tracking_number,
+      url:     shipmentTracking.tracking_url ?? undefined,
+      company: shipmentTracking.carrier_code ?? undefined,
+    };
+  }
+
   // 6. Shopify fulfillment writeback (WM-20)
   // Non-fatal: internal state is already committed. Log and continue on failure.
   try {
-    await writeShopifyFulfillment(trx, { lasyncroOrderId, shopId });
+    await writeShopifyFulfillment(trx, { lasyncroOrderId, shopId, trackingInfo });
   } catch (err) {
     console.error('[SHIP_CONFIRMATION_WRITEBACK_FAILED]', {
       lasyncroOrderId,

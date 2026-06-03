@@ -656,7 +656,7 @@ The WEB-PACK-01 implementation above is a transitional, Playbook-compliant imple
 The intended production UX is fundamentally different and blocked on two prerequisites:
 
 **Prerequisites:**
-- WM-34: Invoice print infrastructure (barcode generation, print-on-scan, invoice barcode scan)
+- WM-34: ✅ RESOLVED June 3, 2026 — Invoice print infrastructure complete. See blueprint §WM-34.
 - WM-38: Carrier integration (per-carrier label format, tracking number ingestion)
 
 **Target flow (item-centric free-scan):**

@@ -89,10 +89,11 @@ const ALLOWED_CONTEXTS = [
   'sync.worker',
   'order-identity-guard',
   'wms.shipConfirmation.writeback',
-  'shopify.dev',        // dev-only (already guarded by NODE_ENV)
-  'shopify.billing',    // Shopify RecurringApplicationCharge API (MON-09)
-  'shopify-token-backfill', // Historical refund backfill — one-shot per shop
-  'shopify.webhook.registration', // Webhook topic registration on sync
+  'shopify.dev',
+  'shopify.billing',
+  'shopify-token-backfill',
+  'shopify.webhook.registration',
+  'wms.carrier.sendcloud',
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {

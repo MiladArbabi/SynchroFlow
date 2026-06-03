@@ -35,6 +35,10 @@ import {
   httpFindReplacementForTask,
   httpReportStowException,
   httpGetWmsSettings,
+  httpUpsertCarrierSettings,
+  httpGetCarrierSettings,
+  httpDeleteCarrierSettings,
+  httpGenerateShippingLabel,
   httpResolveProblemTask,
   httpPatchWmsSettings,
   httpSetOrderPriority,
@@ -506,6 +510,38 @@ router.get(
   requireTier('core'),
   requireAction('wms:batch:release'),
   httpListPackDecisions
+);
+router.put(
+  '/carrier-settings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:batch:release'),
+  httpUpsertCarrierSettings
+);
+router.get(
+  '/carrier-settings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetCarrierSettings
+);
+router.delete(
+  '/carrier-settings/:carrierCode',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:batch:release'),
+  httpDeleteCarrierSettings
+);
+router.post(
+  '/orders/:orderId/generate-label',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:pack:scan'),
+  httpGenerateShippingLabel
 );
 
 export default router;

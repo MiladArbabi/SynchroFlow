@@ -81,6 +81,18 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(0);
 
+    /**
+     * RETURN LABEL TOGGLE (WM-38)
+     * ---------------------------
+     * When true, a carrier return slip is composited onto the bottom
+     * half of the WM-34 A4 invoice PDF at pack time.
+     * Only meaningful when a carrier is configured in shop_carrier_settings.
+     * Shop owner configures via Settings > Warehouse.
+     */
+    table.boolean('include_return_label')
+      .notNullable()
+      .defaultTo(false);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
