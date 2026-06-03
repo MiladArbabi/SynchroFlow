@@ -55,18 +55,34 @@ export async function computeOrderMargin(
     return;
   }
 
-  const grossRevenue = Number(row.gross_revenue ?? 0);
+  const grossRevenue  = Number(row.gross_revenue ?? 0);
   const estimatedCost = Number(row.estimated_cost ?? 0);
-  const grossMargin = grossRevenue - estimatedCost;
-  /**
-   * margin_pct stored as decimal fraction (0-1), not percentage.
-   * DB constraint: margin_pct <= 1
-   * Example: 61.3% gross margin → stored as 0.613
-   */
-  const marginPct =
+  const grossMargin   = grossRevenue - estimatedCost;
+  const marginPct     =
     grossRevenue > 0
       ? Math.round((grossMargin / grossRevenue) * 10000) / 10000
       : 0;
+
+  // WM-39 — carrier shipping cost from order_shipment_tracking
+  // Most recent label row for this order (latest shipment wins).
+  // Nullable — orders without a generated label have null true_margin.
+  const trackingRow = await trx('order_shipment_tracking')
+    .where({ lasyncro_order_id: orderId })
+    .orderBy('created_at', 'desc')
+    .select('shipping_cost_excl_vat')
+    .first();
+
+  const carrierShippingCost = trackingRow?.shipping_cost_excl_vat != null
+    ? Number(trackingRow.shipping_cost_excl_vat)
+    : null;
+
+  const trueMargin = carrierShippingCost != null
+    ? grossMargin - carrierShippingCost
+    : null;
+
+  const trueMarginPct = trueMargin != null && grossRevenue > 0
+    ? Math.round((trueMargin / grossRevenue) * 10000) / 10000
+    : null;
 
   /**
    * UPSERT INTO order_margin_snapshot
@@ -76,24 +92,30 @@ export async function computeOrderMargin(
    */
   await trx('order_margin_snapshot')
     .insert({
-      lasyncro_order_id: orderId,
-      shop_id: shopId,
-      aggregate_version: aggregateVersion,
-      gross_revenue: grossRevenue,
-      estimated_cost: estimatedCost,
-      gross_margin: grossMargin,
-      margin_pct: marginPct,
-      evaluated_at: trx.fn.now(),
+      lasyncro_order_id:    orderId,
+      shop_id:              shopId,
+      aggregate_version:    aggregateVersion,
+      gross_revenue:        grossRevenue,
+      estimated_cost:       estimatedCost,
+      gross_margin:         grossMargin,
+      margin_pct:           marginPct,
+      carrier_shipping_cost: carrierShippingCost,
+      true_margin:          trueMargin,
+      true_margin_pct:      trueMarginPct,
+      evaluated_at:         trx.fn.now(),
     })
     .onConflict(['lasyncro_order_id'])
     .merge({
-      aggregate_version: aggregateVersion,
-      gross_revenue: grossRevenue,
-      estimated_cost: estimatedCost,
-      gross_margin: grossMargin,
-      margin_pct: marginPct,
-      evaluated_at: trx.fn.now(),
-      updated_at: trx.fn.now(),
+      aggregate_version:    aggregateVersion,
+      gross_revenue:        grossRevenue,
+      estimated_cost:       estimatedCost,
+      gross_margin:         grossMargin,
+      margin_pct:           marginPct,
+      carrier_shipping_cost: carrierShippingCost,
+      true_margin:          trueMargin,
+      true_margin_pct:      trueMarginPct,
+      evaluated_at:         trx.fn.now(),
+      updated_at:           trx.fn.now(),
     });
 
   debugLog('[MARGIN_COMPUTED]', {
@@ -102,6 +124,9 @@ export async function computeOrderMargin(
     estimatedCost,
     grossMargin,
     marginPct,
+    carrierShippingCost,
+    trueMargin,
+    trueMarginPct,
   });
 }
 

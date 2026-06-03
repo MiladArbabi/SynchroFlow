@@ -91,14 +91,17 @@ export async function generateAndPersistLabel(
   // 5. Persist to order_shipment_tracking
   const [row] = await trx('order_shipment_tracking')
     .insert({
-      shop_id:           shopId,
-      lasyncro_order_id: lasyncroOrderId,
-      pick_batch_id:     pickBatchId ?? null,
-      carrier_code:      result.carrierCode,
-      tracking_number:   result.trackingNumber,
-      tracking_url:      result.trackingUrl,
-      label_url:         result.labelUrl,
-      label_pdf:         result.labelPdf ?? null,
+      shop_id:                  shopId,
+      lasyncro_order_id:        lasyncroOrderId,
+      pick_batch_id:            pickBatchId ?? null,
+      carrier_code:             result.carrierCode,
+      tracking_number:          result.trackingNumber,
+      tracking_url:             result.trackingUrl,
+      label_url:                result.labelUrl,
+      label_pdf:                result.labelPdf ?? null,
+      shipping_cost_excl_vat:   result.shippingCostExclVat ?? null,
+      shipping_cost_currency:   result.shippingCostCurrency ?? null,
+      carrier_zone:             result.carrierZone ?? null,
     })
     .returning('id');
 

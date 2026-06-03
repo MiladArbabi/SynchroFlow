@@ -29,6 +29,9 @@ export interface GenerateLabelResult {
   trackingUrl: string | null;
   labelUrl: string | null;
   labelPdf: Buffer | null;
+  shippingCostExclVat: number | null;
+  shippingCostCurrency: string | null;
+  carrierZone: string | null;
 }
 
 export interface ICarrierProvider {

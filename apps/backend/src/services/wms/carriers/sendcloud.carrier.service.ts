@@ -81,14 +81,21 @@ export class SendcloudCarrierService implements ICarrierProvider {
       throw new Error('[SENDCLOUD] No parcel in response');
     }
 
-    const trackingNumber: string | null = parcel.tracking_number ?? null;
-    const trackingUrl: string | null    = parcel.tracking_url ?? null;
-    const labelUrl: string | null       = parcel.label?.label_printer ?? null;
+    const trackingNumber: string | null      = parcel.tracking_number ?? null;
+    const trackingUrl: string | null         = parcel.tracking_url ?? null;
+    const labelUrl: string | null            = parcel.label?.label_printer ?? null;
+    const shippingCostExclVat: number | null = parcel.price != null
+      ? Number(parcel.price)
+      : null;
+    const shippingCostCurrency: string | null = parcel.currency ?? null;
+    const carrierZone: string | null          = parcel.carrier?.name ?? parcel.contract?.name ?? null;
 
     console.info('[SENDCLOUD_LABEL_GENERATED]', {
       orderNumber,
       trackingNumber,
       hasLabelUrl: !!labelUrl,
+      shippingCostExclVat,
+      shippingCostCurrency,
     });
 
     return {
@@ -97,6 +104,9 @@ export class SendcloudCarrierService implements ICarrierProvider {
       trackingUrl,
       labelUrl,
       labelPdf: null,
+      shippingCostExclVat,
+      shippingCostCurrency,
+      carrierZone,
     };
   }
 }
