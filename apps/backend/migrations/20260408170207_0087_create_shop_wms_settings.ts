@@ -93,6 +93,22 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo(false);
 
+    /**
+     * PROGRESSIVE LABELLING (WM-46)
+     * --------------------------------
+     * When true, legacy EAN/UPC/Shopify barcodes are accepted at all
+     * scan surfaces alongside LSU- unit barcodes.
+     * Auto-disabled when unit label coverage reaches coverage_sunset_threshold.
+     * Default 100 = manual sunset only (never auto-disables unless configured lower).
+     */
+    table.boolean('legacy_barcode_fallback_enabled')
+      .notNullable()
+      .defaultTo(true);
+
+    table.integer('coverage_sunset_threshold')
+      .notNullable()
+      .defaultTo(100);
+
     table.timestamp('created_at', { useTz: true })
       .notNullable()
       .defaultTo(knex.fn.now());
