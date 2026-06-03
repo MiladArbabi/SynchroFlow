@@ -106,6 +106,7 @@ export type WmsModuleFT2Props = {
   }) => Promise<{ order_complete: boolean }>;
   onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
+  onPrintInvoice: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
 
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
@@ -463,6 +464,7 @@ function WmsModuleFT2Inner({
   onConfirmPackScan,
   onReportPackException,
   onPrintLabel,
+  onPrintInvoice,
   onPackComplete,
   onConfirmShipment,
   onRefresh,
@@ -587,6 +589,7 @@ function WmsModuleFT2Inner({
         onConfirmPackScan={(params) => onConfirmPackScan(activeSession.batchId, params)}
         onReportException={(params) => onReportPackException(activeSession.batchId, params)}
         onPrintLabel={onPrintLabel}
+        onPrintInvoice={onPrintInvoice}
         onConfirmShipment={(orderId, partial) => onConfirmShipment(activeSession.batchId, orderId, partial)}
         onPackComplete={() => onPackComplete(activeSession.batchId)}
         onRaiseDecision={(params) => onRaisePackDecision(activeSession.batchId, params)}

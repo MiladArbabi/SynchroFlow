@@ -35,6 +35,23 @@ export interface FT0CanonicalOrder {
 
   shippingLines: any[];
 
+  /**
+   * Shipping address (WM-34)
+   * ------------------------
+   * Full recipient address for invoice PDF generation.
+   * Null for digital/gift card orders.
+   */
+  shippingAddress?: {
+    name?: string | null;
+    address1?: string | null;
+    address2?: string | null;
+    city?: string | null;
+    zip?: string | null;
+    phone?: string | null;
+    provinceCode?: string | null;
+    countryCode?: string | null;
+  } | null;
+
   lineItems: {
     lineItemId: string;
     orderId: string;

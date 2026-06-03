@@ -18,6 +18,7 @@ import {
 } from '../../services/wms/wmsAlerts.service.js';
 import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
+import { generateInvoicePdf } from '../../services/wms/invoicePdf.service.js';
 import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
 
 import {
@@ -495,6 +496,34 @@ export const httpClaimPack = async (req: Request, res: Response) => {
           });
       }
 
+      // Insert invoice print jobs per order (WM-34)
+      // One pending job per order — updated to 'printed' when packer
+      // calls GET /orders/:orderId/invoice. Idempotent via onConflict ignore.
+      for (const order of batchOrders) {
+        const orderRow = await trx('orders')
+          .where({ lasyncro_order_id: order.lasyncro_order_id, shop_id: shopId })
+          .select('wms_barcode')
+          .first();
+
+        if (orderRow?.wms_barcode) {
+          await trx('barcode_print_jobs')
+            .insert({
+              shop_id: shopId,
+              lasyncro_order_id: order.lasyncro_order_id,
+              lasyncro_variant_id: null,
+              quantity: 1,
+              barcode_value: orderRow.wms_barcode,
+              label_type: 'invoice',
+              status: 'pending',
+              created_by: userId,
+            })
+            .onConflict(
+              db.raw('(shop_id, lasyncro_order_id) WHERE label_type = \'invoice\'')
+            )
+            .ignore();
+        }
+      }
+
       console.info('[WMS_PACK_CLAIMED]', { pick_batch_id: batchId, packed_by: userId, shopId });
     });
 
@@ -526,12 +555,13 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
       // Get all orders in batch with their external order id for invoice
       const batchOrders = await trx('pick_batch_orders as pbo')
         .join('orders as o', 'o.lasyncro_order_id', 'pbo.lasyncro_order_id')
-        .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
         .leftJoin('order_warehouse_status as ows', 'ows.lasyncro_order_id', 'o.lasyncro_order_id')
         .where('pbo.pick_batch_id', batchId)
         .select(
           'o.lasyncro_order_id',
-          'eoim.external_order_id',
+          'eim.external_order_id',
+          'o.wms_barcode',
           'o.total_price',
           'o.currency',
           'ows.status as warehouse_status',
@@ -1572,6 +1602,110 @@ export const httpGetPackingSlipUrl = async (req: Request, res: Response) => {
 };
 
 // ─────────────────────────────────────────
+// GET /api/v1/wms/orders/:orderId/invoice
+// ─────────────────────────────────────────
+/**
+ * Generates and streams an A4 invoice PDF for a pack order.
+ *
+ * - Fetches order + line items + shop details from DB
+ * - Generates PDF via pdf-lib + bwip-js (Code128 barcode)
+ * - Marks barcode_print_jobs row as printed
+ * - Idempotent — safe to call multiple times (reprint)
+ */
+export const httpGetOrderInvoice = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { orderId } = req.params;
+  if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Fetch order
+      const order = await trx('orders as o')
+        .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where({ 'o.lasyncro_order_id': orderId, 'o.shop_id': shopId })
+        .select(
+          'o.lasyncro_order_id',
+          'eim.external_order_id',
+          'o.wms_barcode',
+          'o.total_price',
+          'o.currency',
+          'o.order_created_at',
+          'o.shipping_name',
+          'o.shipping_address1',
+          'o.shipping_address2',
+          'o.shipping_city',
+          'o.shipping_zip',
+          'o.shipping_province',
+          'o.shipping_country_code',
+        )
+        .first();
+
+      if (!order) throw new Error('ORDER_NOT_FOUND');
+      if (!order.wms_barcode) throw new Error('ORDER_NO_WMS_BARCODE');
+
+      // Fetch line items with product info and image
+      const lineItems = await trx('order_line_items as oli')
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
+        .where({ 'oli.lasyncro_order_id': orderId })
+        .select(
+          trx.raw(`COALESCE(p.title, oli.title) as product_title`),
+          trx.raw(`oli.title as variant_title`),
+          'oli.quantity',
+          'oli.sku',
+          'v.image_url',
+          'oli.unit_price',
+        );
+
+      // Fetch shop info
+      const shop = await trx('shops as s')
+        .join('shopify_app_installations as sai', 'sai.shop_id', 's.id')
+        .where({ 's.id': shopId })
+        .select('s.name', 's.base_currency', 'sai.shop_domain')
+        .first();
+
+      if (!shop) throw new Error('SHOP_NOT_FOUND');
+
+      // Mark invoice print job as printed
+      await trx('barcode_print_jobs')
+        .where({
+          shop_id: shopId,
+          lasyncro_order_id: orderId,
+          label_type: 'invoice',
+        })
+        .update({ status: 'printed', printed_at: new Date() });
+
+      return { order, lineItems, shop };
+    });
+
+    const pdfBuffer = await generateInvoicePdf(result.order, result.lineItems, result.shop);
+
+    console.info('[WMS_INVOICE_GENERATED]', {
+      shopId,
+      orderId,
+      wmsBarcode: result.order.wms_barcode,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="invoice-${result.order.wms_barcode}.pdf"`
+    );
+    return res.send(pdfBuffer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message === 'ORDER_NOT_FOUND') return res.status(404).json({ error: 'Order not found' });
+    if (message === 'ORDER_NO_WMS_BARCODE') return res.status(409).json({ error: 'Order has no WMS barcode — batch not yet released' });
+    console.error('[WMS_INVOICE_FAILED]', { shopId, orderId, error: message });
+    return res.status(500).json({ error: `Failed to generate invoice: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
 // POST /api/v1/wms/location/resolve
 // ─────────────────────────────────────────
 export const httpResolveLocation = async (req: Request, res: Response) => {
@@ -1878,7 +2012,44 @@ export const httpScanResolve = async (req: Request, res: Response) => {
         };
       }
 
-      // ── 3. Try order external ID (invoice scan) ───────────────────────────
+      // ── 3. Try WMS barcode (LSO-XXXXXXXX invoice scan) ────────────────────
+      const wmsOrder = await trx('orders as o')
+        .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where({ 'o.shop_id': shopId, 'o.wms_barcode': scanned_value })
+        .select(
+          'o.lasyncro_order_id',
+          'eim.external_order_id',
+          'o.wms_barcode',
+          'o.total_price',
+          'o.currency',
+          'o.order_created_at',
+        )
+        .first();
+      if (wmsOrder) {
+        const lineItems = await trx('order_line_items as oli')
+          .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+          .where({ 'oli.lasyncro_order_id': wmsOrder.lasyncro_order_id })
+          .select('oli.title', 'oli.quantity', 'v.sku', 'oli.lasyncro_line_item_id');
+        const batch = await trx('pick_batch_orders as pbo')
+          .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          .where({ 'pbo.lasyncro_order_id': wmsOrder.lasyncro_order_id })
+          .whereNotIn('pb.status', ['pack_complete', 'cancelled'])
+          .select('pb.pick_batch_id', 'pb.status')
+          .first();
+        return {
+          type: 'invoice_scan',
+          wms_barcode: scanned_value,
+          lasyncro_order_id: wmsOrder.lasyncro_order_id,
+          external_order_id: wmsOrder.external_order_id,
+          total_price: wmsOrder.total_price,
+          currency: wmsOrder.currency,
+          order_created_at: wmsOrder.order_created_at,
+          line_items: lineItems,
+          active_batch: batch ?? null,
+        };
+      }
+
+      // ── 4. Try order external ID (Shopify order ID scan) ──────────────────
       const orderIdentity = await trx('external_order_identity_map')
         .where({ shop_id: shopId, external_order_id: scanned_value })
         .first();

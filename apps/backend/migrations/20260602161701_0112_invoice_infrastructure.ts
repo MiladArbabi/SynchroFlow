@@ -23,9 +23,12 @@ import type { Knex } from 'knex';
  */
 export async function up(knex: Knex): Promise<void> {
   // 1. Add 'invoice' to barcode_label_type enum
-  await knex.raw(`
-    ALTER TYPE barcode_label_type ADD VALUE IF NOT EXISTS 'invoice';
-  `);
+  // NOTE: ALTER TYPE ADD VALUE cannot run inside a transaction in PostgreSQL.
+  // Must use raw knex (not knex.transaction) so the enum value is committed
+  // before the partial index (step 5) references it.
+  await knex.raw(`ALTER TYPE barcode_label_type ADD VALUE IF NOT EXISTS 'invoice'`);
+  await knex.raw(`COMMIT`);
+  await knex.raw(`BEGIN`);
 
   // 2. Add wms_barcode to orders
   await knex.schema.alterTable('orders', (table) => {
@@ -51,9 +54,19 @@ export async function up(knex: Knex): Promise<void> {
 
     table.index(['lasyncro_order_id']);
   });
-}
 
+  // 5. Partial unique index — one invoice print job per order
+  //    NULL != NULL in PostgreSQL, so the existing unique constraint on
+  //    (shop_id, receive_job_id, lasyncro_variant_id) does not protect
+  //    invoice jobs where both columns are NULL.
+  await knex.raw(`
+    CREATE UNIQUE INDEX barcode_print_jobs_invoice_unique
+    ON barcode_print_jobs (shop_id, lasyncro_order_id)
+    WHERE label_type = 'invoice';
+  `);
+}
 export async function down(knex: Knex): Promise<void> {
+  await knex.raw(`DROP INDEX IF EXISTS barcode_print_jobs_invoice_unique;`);
   await knex.schema.alterTable('barcode_print_jobs', (table) => {
     table.dropIndex(['lasyncro_order_id']);
     table.dropColumn('lasyncro_order_id');

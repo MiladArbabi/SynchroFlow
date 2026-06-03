@@ -222,6 +222,17 @@ export default function WmsPage() {
     });
   }, []);
 
+  const handlePrintInvoice = useCallback(async (orderId: string) => {
+    const response = await axiosInstance.get(
+      `/api/v1/wms/orders/${orderId}/invoice`,
+      { responseType: 'blob' }
+    );
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const win = window.open(url, '_blank');
+    if (win) win.focus();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }, []);
+
   const handlePrintLabel = useCallback(async (orderId: string) => {
     /**
      * PACKING SLIP (PP1-02)
@@ -431,6 +442,7 @@ export default function WmsPage() {
       onConfirmPackScan={handleConfirmPackScan}
       onReportPackException={handleReportPackException}
       onPrintLabel={handlePrintLabel}
+      onPrintInvoice={handlePrintInvoice}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRaisePackDecision={handleRaisePackDecision}

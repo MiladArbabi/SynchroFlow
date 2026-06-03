@@ -164,6 +164,8 @@ export function mapShopifyOrderNodeToCanonical(
 
     // ── Optional / absent signals ───────────────────
     shippingLines: [],
+    // ── Shipping address (WM-34 — invoice PDF generation) ────────────
+    shippingAddress: node.shippingAddress ?? null,
     /**
      * CUSTOMER IDENTITY
      * -----------------------------------

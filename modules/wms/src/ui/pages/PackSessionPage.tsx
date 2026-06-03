@@ -51,6 +51,7 @@ export interface PackLineItem {
 export interface PackOrder {
   lasyncro_order_id: string;
   external_order_id: string;
+  wms_barcode: string | null;
   total_price: number;
   currency: string;
   warehouse_status: string;
@@ -76,6 +77,7 @@ export interface PackSessionPageProps {
     quantity_found: number;
   }) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
+  onPrintInvoice: (orderId: string) => Promise<void>;
   onPackComplete: () => Promise<void>;
   onConfirmShipment: (orderId: string, partial?: boolean) => Promise<void>;
   /**
@@ -112,6 +114,7 @@ export default function PackSessionPage({
   onConfirmPackScan,
   onReportException,
   onPrintLabel,
+  onPrintInvoice,
   onPackComplete,
   onConfirmShipment,
   onRaiseDecision,
@@ -494,6 +497,22 @@ export default function PackSessionPage({
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             {approvedPartial ? '' : ''}
           </Typography>
+          {currentOrder.wms_barcode && (
+            <Button
+              variant="outlined" fullWidth size="large"
+              startIcon={<Printer size={18} />}
+              onClick={() => {
+                onPrintInvoice(currentOrder.lasyncro_order_id).catch((err: unknown) => {
+                  setSubmitError((err as any)?.message ?? 'Invoice print failed.');
+                });
+              }}
+              sx={{ borderRadius: '6px', fontWeight: 600, mb: 1,
+                borderColor: 'var(--accent)', color: 'var(--accent)',
+                '&:hover': { opacity: 0.75 } }}
+            >
+              Print Invoice
+            </Button>
+          )}
           <Button
             variant="outlined" fullWidth size="large"
             startIcon={<Printer size={18} />}

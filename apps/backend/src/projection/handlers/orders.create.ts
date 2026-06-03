@@ -180,12 +180,27 @@ export async function handleOrdersCreate({
   });
 
   if (existingOrder) {
-    console.warn('[ORDER_DUPLICATE_DETECTED]', {
-      lasyncroOrderId,
-      externalOrderId,
-      eventId: domain_event_id,
-    });
-  }
+      console.warn('[ORDER_DUPLICATE_DETECTED]', {
+        lasyncroOrderId,
+        externalOrderId,
+        eventId: domain_event_id,
+      });
+      // Update shipping fields on re-projection — captures data
+      // added after initial sync (WM-34: invoice PDF generation).
+      await trx('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .update({
+          shipping_name: payload.shippingAddress?.name ?? payload.shipping_address?.name ?? null,
+          shipping_address1: payload.shippingAddress?.address1 ?? payload.shipping_address?.address1 ?? null,
+          shipping_address2: payload.shippingAddress?.address2 ?? payload.shipping_address?.address2 ?? null,
+          shipping_city: payload.shippingAddress?.city ?? payload.shipping_address?.city ?? null,
+          shipping_zip: payload.shippingAddress?.zip ?? payload.shipping_address?.zip ?? null,
+          shipping_phone: payload.shippingAddress?.phone ?? payload.shipping_address?.phone ?? null,
+          shipping_province: payload.shippingAddress?.provinceCode ?? payload.shipping_address?.province_code ?? null,
+          shipping_country_code: payload.shippingAddress?.countryCode ?? payload.shipping_address?.country_code ?? null,
+          updated_at: new Date(),
+        });
+    }
 
   if (!existingOrder) {
 
@@ -299,8 +314,21 @@ export async function handleOrdersCreate({
 
       created_at: canonicalEventTime,
       updated_at: canonicalEventTime,
+    })
+    .onConflict('lasyncro_order_id')
+    .merge({
+      // Update shipping address fields on re-projection — captures data
+      // added after initial sync (WM-34: invoice PDF generation).
+      shipping_name: payload.shippingAddress?.name ?? payload.shipping_address?.name ?? null,
+      shipping_address1: payload.shippingAddress?.address1 ?? payload.shipping_address?.address1 ?? null,
+      shipping_address2: payload.shippingAddress?.address2 ?? payload.shipping_address?.address2 ?? null,
+      shipping_city: payload.shippingAddress?.city ?? payload.shipping_address?.city ?? null,
+      shipping_zip: payload.shippingAddress?.zip ?? payload.shipping_address?.zip ?? null,
+      shipping_phone: payload.shippingAddress?.phone ?? payload.shipping_address?.phone ?? null,
+      shipping_province: payload.shippingAddress?.provinceCode ?? payload.shipping_address?.province_code ?? null,
+      shipping_country_code: payload.shippingAddress?.countryCode ?? payload.shipping_address?.country_code ?? null,
+      updated_at: canonicalEventTime,
     });
-
     debugLog('[ORDER_INSERTED]', { lasyncroOrderId });
 
     /**

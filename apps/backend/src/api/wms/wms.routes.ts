@@ -26,6 +26,7 @@ import {
   httpCreateStowTask,
   httpAssignStowLocation,
   httpGetPackingSlipUrl,
+  httpGetOrderInvoice,
   httpResolveLocation,
   httpGetOrderPool,
   httpScanResolve,
@@ -257,6 +258,15 @@ router.get(
   requireTier('core'),
   requireAction('wms:read'),
   httpGetPackingSlipUrl
+);
+
+router.get(
+  '/orders/:orderId/invoice',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetOrderInvoice
 );
 
 router.post(
