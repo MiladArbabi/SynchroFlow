@@ -737,3 +737,26 @@ POST /orders/:orderId/generate-label
 ### Testing without charge
 
 Use Sendcloud's sandbox credentials + shipping method `"Unstamped letter"` (id: 8) — generates labels with no billing against merchant account.
+
+---
+
+## 16. Pack Label Generation — WM-38 Native Integration (June 3, 2026)
+
+`handlePrintLabel` in `WmsPage.tsx` upgraded from Shopify packing slip to native carrier label generation.
+
+### Flow
+POST /api/v1/wms/orders/:orderId/generate-label
+→ idempotent — returns existing label if already generated
+→ labelUrl present → open carrier PDF in new tab ✅
+→ no labelUrl / error → fallback to Shopify packing slip
+→ 409 on packing slip → log and continue (fulfillment still processing)
+
+### Operator experience
+
+- Carrier configured: label PDF opens in new tab automatically at pack time
+- No carrier configured: Shopify packing slip opens (pre-WM-38 behaviour preserved)
+- Operator is never blocked — fallback always exists
+
+### Future (WEB-PACK-02)
+
+In the item-centric free-scan flow, label generation triggers on first item scan per order, not on manual CTA. The `POST /generate-label` endpoint is idempotent — calling it twice for the same order returns the existing tracking row without creating a duplicate label.

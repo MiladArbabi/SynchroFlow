@@ -436,3 +436,47 @@ Raw keys are encrypted via `encryption.service.ts` before insert. `decrypt()` is
 ### DIM factor configuration
 
 Standard: 5000 (metric, most carriers). Some carriers use 4000 (UPS, some DHL contracts). Store per-carrier in `shop_carrier_settings` when WM-43 ships. Default 5000 until then.
+---
+
+## 9. UI Surfaces — Carrier Integration Wiring (June 3, 2026)
+
+Five surfaces wired across the platform. All changes are additive — no existing data removed, all new fields nullable and gracefully degraded when no carrier is configured.
+
+### UI-CAR-01 — Orders → Outbound (`/orders/outbound`)
+
+**Backend:** `orders.fulfilled.controller.ts` — LEFT JOIN `order_shipment_tracking` (DISTINCT ON lasyncro_order_id, latest by created_at). Returns `tracking_number`, `tracking_url`, `carrier_code` per order.
+
+**Frontend:**
+- Tracking column: clickable accent pill (tracking_url present) → static monospace pill (number only) → `—` (no tracking)
+- Carrier Tracking stat card: `X tracked / of Y shipped this week` when active; `Not configured` + deep-link `→ /settings/carriers` when no carrier connected
+- Deep-link pattern: `onSubClick` prop on `StatCard` — navigates via `useNavigate`
+
+### UI-CAR-02 — Orders → Order Detail (`/orders/:orderId`)
+
+**Backend:** `orders.service.ts` — `getOrderDetailsById` LEFT JOINs `order_shipment_tracking`, returns `tracking` field (most recent shipment, nullable).
+
+**Frontend:** Carrier Tracking panel in right column, rendered only when `order.tracking?.tracking_number` exists. Shows carrier code, tracking number (monospace), and `Track shipment →` ghost pill CTA linking to `tracking_url`.
+
+### UI-CAR-03 — WMS → Pack Session
+
+**Frontend:** `WmsPage.tsx` `handlePrintLabel` replaced — now calls `POST /api/v1/wms/orders/:orderId/generate-label` (WM-38, idempotent). Opens `labelUrl` in new tab when carrier is configured. Falls back to Shopify packing slip when no carrier configured or label generation fails. Operator is never blocked.
+
+### UI-CAR-04 — Finances → Margin (`/finances/margin`)
+
+**Backend:** `finances.margin.controller.ts`:
+- Summary: `total_shipping_cost` (SUM carrier_shipping_cost), `avg_true_margin_pct` (AVG true_margin_pct, nulls excluded)
+- Per-order: `carrier_shipping_cost`, `true_margin`, `true_margin_pct`
+
+**Frontend:** `FinancesModuleFT2.tsx`:
+- Stat cards: `Avg True Margin` + `Total Shipping` rendered conditionally (only when data exists)
+- By Order table: `Shipping` column + `True Margin %` column added (7-column grid). Both show `—` when null.
+
+### UI-CAR-05 — Finances → Intelligence (`/finances`)
+
+**Backend:** `finances.intelligence.controller.ts` — `total_shipping_cost` aggregated from `order_margin_snapshot.carrier_shipping_cost`. Added to response as `totalShippingCost`.
+
+**Frontend:** `FinancesIntelligencePage.tsx` — new signal card: `£X spent on carrier labels` with `View True Margin →` deep-link. Rendered only when `totalShippingCost > 0`.
+
+### Deep-link convention
+
+All "not configured" states deep-link to the relevant settings tab rather than showing a dead end. Established pattern: `useNavigate` + `/settings/carriers`. Apply this to all future "requires setup" states across the platform.
