@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/ShopSettingsWarehousePage.tsx
 //
 // Settings → Warehouse tab
@@ -5,10 +6,10 @@
 // Floor Display
 // Future: batch size, auto-release, idle threshold, problem bin (WM-35)
 
-import { useState } from 'react';
-import { Box, Typography, TextField, Button, Skeleton, Tooltip } from '@mui/material';
+import { useState, useEffect } from 'react';
+import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag } from 'lucide-react';
+import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../contexts/ToastContext';
@@ -329,10 +330,342 @@ function UnitLabelCoverageSection() {
   );
 }
 
+type PrinterRole = 'unit_label' | 'invoice' | 'problem_label' | 'general';
+type ConnectionType = 'usb' | 'wifi' | 'bluetooth';
+
+const ROLE_LABELS: Record<PrinterRole, string> = {
+  unit_label:    'Unit labels (LSU-)',
+  invoice:       'Invoices (A4)',
+  problem_label: 'Problem bin labels',
+  general:       'General',
+};
+
+const ROLE_COLORS: Record<PrinterRole, string> = {
+  unit_label:    '#22C55E',
+  invoice:       'var(--accent)',
+  problem_label: '#EAB308',
+  general:       'var(--ink-3)',
+};
+
+const CONNECTION_ICONS: Record<ConnectionType, React.ReactNode> = {
+  usb:       <Usb size={12} />,
+  wifi:      <Wifi size={12} />,
+  bluetooth: <Bluetooth size={12} />,
+};
+
+type PrinterRow = {
+  printer_id: string;
+  name: string;
+  connection_type: ConnectionType;
+  address: string | null;
+  model: string | null;
+  role: PrinterRole;
+  os_printer_name: string | null;
+  is_default: boolean;
+  active: boolean;
+};
+
+type QzStatus = 'detecting' | 'connected' | 'not_found';
+
+function usePrinters() {
+  return useQuery<{ printers: PrinterRow[] }>({
+    queryKey: ['wms-printers'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/printers');
+      return data;
+    },
+  });
+}
+
+function PrintersSection() {
+  const pal     = useAppTheme();
+  const { show } = useToast();
+  const qc      = useQueryClient();
+  const { data, isLoading } = usePrinters();
+  const printers = data?.printers ?? [];
+
+  const [qzStatus,       setQzStatus]       = useState<QzStatus>('detecting');
+  const [detectedPrinters, setDetectedPrinters] = useState<string[]>([]);
+  const [showAdd,        setShowAdd]        = useState(false);
+  const [newName,        setNewName]        = useState('');
+  const [newRole,        setNewRole]        = useState<PrinterRole>('unit_label');
+  const [newConnection,  setNewConnection]  = useState<ConnectionType>('usb');
+  const [newAddress,     setNewAddress]     = useState('');
+  const [newOsName,      setNewOsName]      = useState('');
+  const [newIsDefault,   setNewIsDefault]   = useState(false);
+  const [adding,         setAdding]         = useState(false);
+
+  // Detect QZ Tray on mount
+  useEffect(() => {
+    const detect = async () => {
+      try {
+        const ws = new WebSocket('wss://localhost:8182');
+        ws.onopen = () => {
+          setQzStatus('connected');
+          // Request printer list from QZ Tray
+          ws.send(JSON.stringify({ call: 'printers.find' }));
+          ws.close();
+        };
+        ws.onerror = () => setQzStatus('not_found');
+        setTimeout(() => {
+          if (ws.readyState !== WebSocket.OPEN) setQzStatus('not_found');
+        }, 2000);
+      } catch {
+        setQzStatus('not_found');
+      }
+    };
+    void detect();
+  }, []);
+
+  const handleSetDefault = async (printerId: string, role: PrinterRole) => {
+    try {
+      await axiosInstance.patch(`/api/v1/wms/printers/${printerId}`, { is_default: true, role });
+      qc.invalidateQueries({ queryKey: ['wms-printers'] });
+      show('Default printer updated', 'success');
+    } catch {
+      show('Failed to update default', 'error');
+    }
+  };
+
+  const handleDelete = async (printerId: string) => {
+    if (!window.confirm('Remove this printer?')) return;
+    try {
+      await axiosInstance.delete(`/api/v1/wms/printers/${printerId}`);
+      qc.invalidateQueries({ queryKey: ['wms-printers'] });
+      show('Printer removed', 'success');
+    } catch {
+      show('Failed to remove printer', 'error');
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!newName || !newRole || !newConnection) return;
+    setAdding(true);
+    try {
+      await axiosInstance.post('/api/v1/wms/printers', {
+        name:            newName,
+        connection_type: newConnection,
+        address:         newAddress || null,
+        role:            newRole,
+        os_printer_name: newOsName || null,
+        is_default:      newIsDefault,
+      });
+      qc.invalidateQueries({ queryKey: ['wms-printers'] });
+      show('Printer registered', 'success');
+      setShowAdd(false);
+      setNewName(''); setNewRole('unit_label'); setNewConnection('usb');
+      setNewAddress(''); setNewOsName(''); setNewIsDefault(false);
+    } catch {
+      show('Failed to register printer', 'error');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  return (
+    <SettingsCard
+      icon={<Printer size={16} />}
+      title="Printers"
+      description="Register thermal and standard printers for automatic label routing. Requires QZ Tray on the warehouse workstation."
+    >
+      {/* QZ Tray status */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+          <Box sx={{
+            width: 7, height: 7, borderRadius: '50%',
+            bgcolor: qzStatus === 'connected' ? '#22C55E' : qzStatus === 'detecting' ? '#EAB308' : 'var(--ink-4)',
+          }} />
+          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+            {qzStatus === 'connected'  ? 'QZ Tray connected' :
+             qzStatus === 'detecting'  ? 'Detecting QZ Tray…' :
+             'QZ Tray not detected on this computer'}
+          </Typography>
+          {qzStatus === 'not_found' && (
+            <Box
+              component="a"
+              href="https://qz.io/download"
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                display: 'inline-flex', alignItems: 'center',
+                px: 1, py: 0.25, fontSize: 11, fontWeight: 500,
+                color: 'var(--accent)', border: '0.5px solid var(--accent-border)',
+                borderRadius: '6px', cursor: 'pointer', textDecoration: 'none',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              Download QZ Tray →
+            </Box>
+          )}
+        </Box>
+        <Box
+          onClick={() => setShowAdd(true)}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: 0.5,
+            cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.8 },
+          }}
+        >
+          <Plus size={13} strokeWidth={2} />
+          <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}>
+            Add printer
+          </Typography>
+        </Box>
+      </Box>
+
+      {/* Add printer form */}
+      {showAdd && (
+        <Box sx={{
+          mb: 2, p: 1.5, borderRadius: '6px',
+          bgcolor: 'var(--bg-2)', border: `0.5px solid ${pal.rule}`,
+          display: 'flex', flexDirection: 'column', gap: 1.25,
+        }}>
+          <TextField
+            size="small" label="Printer name" value={newName} fullWidth
+            onChange={(e) => setNewName(e.target.value)}
+            inputProps={{ style: { fontSize: 12 } }}
+            placeholder="e.g. Zebra ZD421 — Receiving dock"
+          />
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <FormControl size="small" sx={{ flex: 1 }}>
+              <InputLabel sx={{ fontSize: 12 }}>Role</InputLabel>
+              <Select
+                value={newRole} label="Role"
+                onChange={(e) => setNewRole(e.target.value as PrinterRole)}
+                sx={{ fontSize: 12 }}
+              >
+                {(Object.keys(ROLE_LABELS) as PrinterRole[]).map(r => (
+                  <MenuItem key={r} value={r} sx={{ fontSize: 12 }}>{ROLE_LABELS[r]}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ flex: 1 }}>
+              <InputLabel sx={{ fontSize: 12 }}>Connection</InputLabel>
+              <Select
+                value={newConnection} label="Connection"
+                onChange={(e) => setNewConnection(e.target.value as ConnectionType)}
+                sx={{ fontSize: 12 }}
+              >
+                <MenuItem value="usb" sx={{ fontSize: 12 }}>USB</MenuItem>
+                <MenuItem value="wifi" sx={{ fontSize: 12 }}>Wi-Fi / Network</MenuItem>
+                <MenuItem value="bluetooth" sx={{ fontSize: 12 }}>Bluetooth</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+          <TextField
+            size="small" label="OS printer name (QZ Tray)" value={newOsName} fullWidth
+            onChange={(e) => setNewOsName(e.target.value)}
+            inputProps={{ style: { fontSize: 12 } }}
+            placeholder="Exact name as shown in your OS printer list"
+          />
+          {(newConnection === 'wifi' || newConnection === 'bluetooth') && (
+            <TextField
+              size="small" label="IP address / BT MAC" value={newAddress} fullWidth
+              onChange={(e) => setNewAddress(e.target.value)}
+              inputProps={{ style: { fontSize: 12 } }}
+              placeholder={newConnection === 'wifi' ? '192.168.1.45' : '00:07:4D:4A:3B:2C'}
+            />
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'space-between' }}>
+            <Box
+              onClick={() => setNewIsDefault(!newIsDefault)}
+              sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                px: 1, py: 0.375, fontSize: 11, fontWeight: 500, cursor: 'pointer',
+                color: newIsDefault ? 'var(--accent)' : 'var(--ink-3)',
+                border: `0.5px solid ${newIsDefault ? 'var(--accent)' : pal.rule}`,
+                borderRadius: '6px', bgcolor: newIsDefault ? 'var(--accent-ghost)' : 'transparent',
+              }}
+            >
+              {newIsDefault && <CheckCircle size={11} />}
+              Set as default for {ROLE_LABELS[newRole]}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 0.75 }}>
+              <Button size="small" onClick={() => setShowAdd(false)} sx={{ fontSize: 11 }}>Cancel</Button>
+              <Button
+                size="small" variant="contained" disabled={!newName || adding}
+                onClick={() => void handleAdd()}
+                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, fontSize: 11 }}
+              >
+                {adding ? 'Adding…' : 'Add printer'}
+              </Button>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      {/* Printer list */}
+      {isLoading && <Skeleton height={48} sx={{ borderRadius: '6px' }} />}
+      {!isLoading && printers.length === 0 && !showAdd && (
+        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+          No printers registered yet. Add one to enable automatic label routing.
+        </Typography>
+      )}
+      {!isLoading && printers.length > 0 && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+          {printers.map(p => (
+            <Box key={p.printer_id} sx={{
+              display: 'flex', alignItems: 'center', gap: 1,
+              p: 1, borderRadius: '6px',
+              bgcolor: 'var(--bg-2)', border: `0.5px solid ${pal.rule}`,
+            }}>
+              <Box sx={{ color: ROLE_COLORS[p.role], flexShrink: 0 }}>
+                {CONNECTION_ICONS[p.connection_type]}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
+                  {p.name}
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                  {p.os_printer_name ?? p.address ?? '—'}
+                </Typography>
+              </Box>
+              <Chip
+                label={ROLE_LABELS[p.role]}
+                size="small"
+                sx={{
+                  fontSize: 10, height: 20, flexShrink: 0,
+                  bgcolor: `${ROLE_COLORS[p.role]}18`,
+                  color: ROLE_COLORS[p.role],
+                  border: `0.5px solid ${ROLE_COLORS[p.role]}40`,
+                }}
+              />
+              {p.is_default ? (
+                <Tooltip title="Default for this role">
+                  <Box sx={{ color: '#22C55E', flexShrink: 0 }}>
+                    <CheckCircle size={13} />
+                  </Box>
+                </Tooltip>
+              ) : (
+                <Tooltip title="Set as default">
+                  <Box
+                    onClick={() => void handleSetDefault(p.printer_id, p.role)}
+                    sx={{ cursor: 'pointer', color: 'var(--ink-4)', flexShrink: 0, '&:hover': { color: 'var(--accent)' } }}
+                  >
+                    <CheckCircle size={13} />
+                  </Box>
+                </Tooltip>
+              )}
+              <Tooltip title="Remove printer">
+                <Box
+                  onClick={() => void handleDelete(p.printer_id)}
+                  sx={{ cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0, '&:hover': { color: 'error.main' } }}
+                >
+                  <Trash2 size={13} strokeWidth={1.75} />
+                </Box>
+              </Tooltip>
+            </Box>
+          ))}
+        </Box>
+      )}
+    </SettingsCard>
+  );
+}
+
 export default function ShopSettingsWarehousePage() {
   return (
     <SettingsPageWrapper>
       <UnitLabelCoverageSection />
+      <PrintersSection />
       <FloorDisplaySection />
     </SettingsPageWrapper>
   );
