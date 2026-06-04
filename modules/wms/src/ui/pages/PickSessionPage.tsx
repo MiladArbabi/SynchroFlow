@@ -656,33 +656,12 @@ export default function PickSessionPage({
               <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'text.primary', lineHeight: 1.3 }} noWrap>
                 {currentItem.product_title}
               </Typography>
-              {variantPills.length > 0 && (
-                <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {variantPills.map(pill => (
-                    <Box
-                      key={pill}
-                      sx={{
-                        fontSize: 9, px: 0.75, py: 0.25,
-                        border: '0.5px solid', borderColor: 'divider',
-                        borderRadius: '3px', color: 'text.secondary', bgcolor: 'background.paper',
-                      }}
-                    >
-                      {pill}
-                    </Box>
-                  ))}
-                  <Box sx={{
-                    fontSize: 9, px: 0.75, py: 0.25,
-                    border: '0.5px solid', borderColor: 'divider',
-                    borderRadius: '3px', color: 'text.secondary', bgcolor: 'background.paper',
-                  }}>
-                    ×{currentItem.quantity}
+               {(currentItem.unit_ids ?? []).length > 0 && (
+                <Box sx={{ mt: 0.5, display: 'flex', justifyContent: 'center' }}>
+                  <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'var(--accent)', borderRadius: '3px', fontFamily: 'monospace', color: 'var(--accent)', bgcolor: 'background.paper' }}>
+                    {currentItem.unit_ids![0]}
                   </Box>
                 </Box>
-              )}
-              {currentItem.sku && (
-                <Typography sx={{ fontSize: 9, color: 'text.disabled', fontFamily: 'monospace', mt: 0.5 }}>
-                  {currentItem.sku}
-                </Typography>
               )}
             </Box>
 
@@ -723,61 +702,70 @@ export default function PickSessionPage({
 
       {/* PRODUCT INFO CARD — visible during product_scan + qty_confirm phases */}
       {(isProductPhase || isQtyPhase) && (
-        <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, p: 1.5, borderRadius: 2, display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-          {/* Image */}
-          {currentItem.image_url ? (
+        <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, borderRadius: 2, overflow: 'hidden' }}>
+          {/* Image — full-width banner when present */}
+          {currentItem.image_url && (
             <Box
               component="img"
               src={currentItem.image_url}
               alt={currentItem.product_title}
-              sx={{ width: 64, height: 64, borderRadius: 1.5, objectFit: 'cover', flexShrink: 0, border: '0.5px solid', borderColor: 'divider' }}
+              sx={{ width: '100%', maxHeight: 160, objectFit: 'cover', display: 'block', borderBottom: '0.5px solid', borderColor: 'divider' }}
             />
-          ) : (
-            <Box sx={{ width: 64, height: 64, borderRadius: 1.5, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Package size={24} color="var(--ink3, #9ca3af)" />
-            </Box>
           )}
-          {/* Details */}
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }} noWrap>
-              {currentItem.product_title}
-            </Typography>
-            {currentItem.variant_title && (
-              <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }} noWrap>
-                {currentItem.variant_title}
-              </Typography>
-            )}
-            {/* Location */}
-            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <MapPin size={11} color="var(--accent)" />
-              <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 500 }}>
-                {currentItem.location_code}
-              </Typography>
-            </Box>
-            {/* LSU- unit IDs */}
-            {(currentItem.unit_ids ?? []).length > 0 && (
-              <Box sx={{ mt: 0.75 }}>
-                <Typography sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.07em', mb: 0.5 }}>
-                  LSU- codes for this pick
-                </Typography>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                  {(currentItem.unit_ids ?? []).slice(0, 4).map((id) => (
-                    <Box key={id} sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', fontFamily: 'monospace', color: 'text.secondary', bgcolor: 'background.paper' }}>
-                      {id}
-                    </Box>
-                  ))}
-                  {(currentItem.unit_ids ?? []).length > 4 && (
-                    <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', color: 'text.disabled', bgcolor: 'background.paper' }}>
-                      +{(currentItem.unit_ids ?? []).length - 4} more
-                    </Box>
-                  )}
-                </Box>
+          <Box sx={{ p: 1.5, display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+            {/* Placeholder icon — only when no image */}
+            {!currentItem.image_url && (
+              <Box sx={{ width: 48, height: 48, borderRadius: 1.5, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Package size={22} color="var(--ink3, #9ca3af)" />
               </Box>
             )}
+            {/* Details */}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }} noWrap>
+                {currentItem.product_title}
+              </Typography>
+              {currentItem.variant_title && (
+                <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }} noWrap>
+                  {currentItem.variant_title}
+                </Typography>
+              )}
+              {/* Location */}
+              <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <MapPin size={11} color="var(--accent)" />
+                <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 500 }}>
+                  {currentItem.location_code}
+                </Typography>
+              </Box>
+              {/* LSU- unit IDs */}
+              {(currentItem.unit_ids ?? []).length > 0 && (
+                <Box sx={{ mt: 0.75 }}>
+                  <Typography sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.07em', mb: 0.5 }}>
+                    LSU- codes for this pick
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(currentItem.unit_ids ?? []).slice(0, 6).map((id) => (
+                      <Box key={id} sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', fontFamily: 'monospace', color: 'text.secondary', bgcolor: 'background.paper' }}>
+                        {id}
+                      </Box>
+                    ))}
+                    {(currentItem.unit_ids ?? []).length > 6 && (
+                      <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', color: 'text.disabled', bgcolor: 'background.paper' }}>
+                        +{(currentItem.unit_ids ?? []).length - 6} more
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
+              )}
+              {currentItem.sku && (
+                <Typography sx={{ fontSize: 9, color: 'text.disabled', fontFamily: 'monospace', mt: 0.75 }}>
+                  SKU: {currentItem.sku}
+                </Typography>
+              )}
+            </Box>
           </Box>
         </Paper>
       )}
-
+      
       {/* SCAN AREA */}
       <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
 
@@ -828,7 +816,7 @@ export default function PickSessionPage({
         )}
 
         {/* PRODUCT SCAN INPUT */}
-        {!isLocationPhase && (
+        {isProductPhase && (
           <Box sx={{ display: 'flex', gap: 1 }}>
             <TextField
               inputRef={productInputRef}

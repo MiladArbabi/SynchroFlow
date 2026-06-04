@@ -168,7 +168,7 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'oli.lasyncro_order_id',
           'oli.sku',
           trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
-          trx.raw(`oli.title as variant_title`),
+          'v.title as variant_title',
           'oli.quantity',
           'v.image_url',
           trx.raw(`
