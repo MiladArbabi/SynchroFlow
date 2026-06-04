@@ -1267,6 +1267,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     location_code,
     quantity_confirmed,
     scan_source, // optional: 'camera' | 'usb' | 'bt' | 'manual' — defaults to 'camera' in service
+    lasyncro_unit_id,
   } = req.body;
 
   if (
@@ -1293,7 +1294,11 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
         quantityConfirmed: quantity_confirmed,
         scannedBy: userId,
         shopId,
-        scanSource: scan_source, // forwarded from client; service defaults to 'camera'
+        scanSource: scan_source,
+        lasyncroUnitId:
+          typeof lasyncro_unit_id === 'string' && lasyncro_unit_id.startsWith('LSU-')
+            ? lasyncro_unit_id
+            : undefined,
       });
     });
 

@@ -65,6 +65,8 @@ export interface ConfirmScanParams {
   location_code: string;
   quantity_confirmed: number;
   scan_source?: 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';
+  /** WEB-PICK-UNIT-01: LSU- unit ID from resolver; undefined on legacy barcode path. */
+  lasyncro_unit_id?: string;
 }
 
 export interface ReportExceptionParams {
@@ -87,7 +89,7 @@ export interface PickSessionPageProps {
   pickBatchId: string;
   lineItems: LineItem[];
   onComplete: () => void;
-  onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
+  onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string; lasyncro_unit_id?: string } | null>;
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
   onReportException: (params: ReportExceptionParams) => Promise<void>;
   onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
@@ -161,9 +163,11 @@ export default function PickSessionPage({
   const theme = useTheme();
   const { onInputChange, detectSourceAndReset, reset: resetScanDetector } = useScanSourceDetector();
 
-  const locationInputRef = useRef<HTMLInputElement>(null);
-  const productInputRef  = useRef<HTMLInputElement>(null);
-  const qtyInputRef      = useRef<HTMLInputElement>(null);
+  const locationInputRef  = useRef<HTMLInputElement>(null);
+  const productInputRef   = useRef<HTMLInputElement>(null);
+  const qtyInputRef       = useRef<HTMLInputElement>(null);
+  // WEB-PICK-UNIT-01: carries LSU- unit ID from product_scan into qty_confirm path.
+  const resolvedUnitIdRef = useRef<string | undefined>(undefined);
 
   const [phase, setPhase]               = useState<SessionPhase>('brief');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -217,6 +221,7 @@ export default function PickSessionPage({
       setQtyInput('');
       setScanError(null);
       resetScanDetector();
+      resolvedUnitIdRef.current = undefined; // WEB-PICK-UNIT-01: clear between items
       setPhase('location_scan');
     }
   }, [currentIndex, lineItems.length, resetScanDetector]);
@@ -240,6 +245,7 @@ export default function PickSessionPage({
     try {
       const result = await onResolveBarcode(value.trim());
       if (result?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
+        resolvedUnitIdRef.current = result.lasyncro_unit_id;
         if (currentItem.quantity > 1) {
           setPhase('qty_confirm');
         } else {
@@ -249,6 +255,7 @@ export default function PickSessionPage({
             location_code:         currentItem.location_code,
             quantity_confirmed:    currentItem.quantity,
             scan_source:           detectSourceAndReset(),
+            lasyncro_unit_id:      result.lasyncro_unit_id,
           });
           setPickResults(prev => [...prev, { lineItem: currentItem, status: 'picked' }]);
           setTimeout(advanceOrSummary, 400);
@@ -283,6 +290,7 @@ export default function PickSessionPage({
       location_code:         currentItem.location_code,
       quantity_confirmed:    currentItem.quantity,
       scan_source:           detectSourceAndReset(),
+      lasyncro_unit_id:      resolvedUnitIdRef.current,
     })
       .then(() => {
         setPickResults(prev => [...prev, { lineItem: currentItem, status: 'picked' }]);

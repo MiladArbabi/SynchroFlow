@@ -34,19 +34,18 @@ const PICK_SCAN_NAMESPACE = 'a3f1c2e4-7b5d-4e8a-9c6f-2d0b1e3a5f7c'; // fixed con
 export interface PickScanInput {
   pickBatchId: string;
   lasyncroLineItemId: string;
-  lasyncroVariantId: string; // resolved via barcodeResolution.service.ts
+  lasyncroVariantId: string;
   locationCode: string;
   quantityConfirmed: number;
-  scannedBy: number; // user id
+  scannedBy: number;
   shopId: number;
   /**
-   * SCAN SOURCE (WMS-01)
-   * Physical input device that produced this scan.
-   * 'camera' = mobile app camera (default for WMS app picks)
-   * 'usb' | 'bt' = hardware scanner (future)
-   * 'manual' = operator manual entry
-   * Null-safe — defaults to 'camera' at service boundary if omitted.
+   * WEB-PICK-UNIT-01: LSU- unit ID resolved at product-scan time.
+   * Optional — undefined on legacy EAN/UPC/SKU path.
+   * When present, bulk-updates inventory_units stowed → picked for
+   * scanned unit + siblings from same receive_job_line_id up to qty.
    */
+  lasyncroUnitId?: string;
   scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
 }
 
@@ -68,6 +67,7 @@ export async function confirmPickScan(
     scannedBy,
     shopId,
     scanSource = 'camera', // default: app camera picks
+    lasyncroUnitId,
   } = input;
 
   // 1. Validate batch status and ownership
@@ -218,7 +218,7 @@ export async function confirmPickScan(
       updated_at: scannedAt,
     });
 
-  // 10. Transition inventory unit status → picked
+    // 10. Transition legacy inventory_unit_status → picked (pre-WM-46 compat)
   await trx('inventory_unit_status')
     .insert({
       shop_id: shopId,
@@ -236,12 +236,59 @@ export async function confirmPickScan(
       updated_at: scannedAt,
     });
 
-  console.info('[WAREHOUSE_STATUS_UPDATED]', {
-    lasyncro_line_item_id: lasyncroLineItemId,
-    lasyncro_variant_id: lasyncroVariantId,
-    status: 'picked',
-    shopId,
-  });
+  // 11. Bulk-update inventory_units → picked (WEB-PICK-UNIT-01)
+  // LSU- path only. Scanned unit updated first (guaranteed inclusion),
+  // then remaining qty-1 stowed siblings from same receive_job_line_id
+  // updated in one pass. current_location_code nulled — unit left the shelf.
+  if (lasyncroUnitId) {
+    const scannedUnit = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .select('receive_job_line_id')
+      .first();
+
+    if (scannedUnit?.receive_job_line_id) {
+      await trx('inventory_units')
+        .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+        .update({
+          status: 'picked',
+          current_location_code: null,
+          updated_at: scannedAt,
+        });
+
+      const remaining = quantityConfirmed - 1;
+      if (remaining > 0) {
+        const siblingIds = await trx('inventory_units')
+          .where({
+            shop_id: shopId,
+            lasyncro_variant_id: lasyncroVariantId,
+            receive_job_line_id: scannedUnit.receive_job_line_id,
+            status: 'stowed',
+          })
+          .whereNot({ lasyncro_unit_id: lasyncroUnitId })
+          .limit(remaining)
+          .pluck('lasyncro_unit_id');
+
+        if (siblingIds.length > 0) {
+          await trx('inventory_units')
+            .whereIn('lasyncro_unit_id', siblingIds)
+            .andWhere({ shop_id: shopId })
+            .update({
+              status: 'picked',
+              current_location_code: null,
+              updated_at: scannedAt,
+            });
+        }
+      }
+    }
+
+    console.info('[PICK_UNIT_BULK_UPDATED]', {
+      lasyncroUnitId,
+      lasyncroVariantId,
+      quantityConfirmed,
+      shopId,
+      pickBatchId,
+    });
+  }
 
   await writeAuditLog(trx, {
     shopId,
@@ -254,6 +301,7 @@ export async function confirmPickScan(
       lasyncro_variant_id: lasyncroVariantId,
       location_code: locationCode,
       quantity_confirmed: quantityConfirmed,
+      ...(lasyncroUnitId ? { lasyncro_unit_id: lasyncroUnitId } : {}),
     },
   });
 
