@@ -40,6 +40,22 @@ export async function up(knex: Knex): Promise<void> {
     END$$;
   `);
 
+  await knex.raw(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_type WHERE typname = 'printer_role'
+      ) THEN
+        CREATE TYPE printer_role AS ENUM (
+          'unit_label',
+          'invoice',
+          'problem_label',
+          'general'
+        );
+      END IF;
+    END$$;
+  `);
+
   await knex.schema.createTable('printers', (table) => {
     table
       .uuid('printer_id')
@@ -90,6 +106,31 @@ export async function up(knex: Knex): Promise<void> {
     table.string('model', 255).nullable();
 
     /**
+     * ROLE
+     * ----
+     * Determines which print jobs are routed to this printer.
+     * unit_label:    LSU- thermal labels generated at receive (WM-46/47)
+     * invoice:       A4 invoice PDFs generated at pack (WM-34)
+     * problem_label: PROB-BIN labels for problem center tasks
+     * general:       fallback for any unrouted job
+     * One default printer per role per shop — enforced at application layer.
+     */
+    table
+      .specificType('role', 'printer_role')
+      .notNullable()
+      .defaultTo('general');
+
+    /**
+     * OS PRINTER NAME
+     * ---------------
+     * Exact OS-registered name as returned by QZ Tray printer detection.
+     * Used by QZ Tray to route jobs to the correct physical device.
+     * e.g. "Zebra ZD421", "Brother QL-820NWB"
+     * Null for printers registered via direct IP (wifi/BT path).
+     */
+    table.string('os_printer_name', 255).nullable();
+
+    /**
      * DEFAULT PRINTER
      * ---------------
      * If true, pre-selected for new receive sessions.
@@ -129,6 +170,7 @@ export async function up(knex: Knex): Promise<void> {
 }
 
 export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists('printers');
+ await knex.schema.dropTableIfExists('printers');
+  await knex.raw(`DROP TYPE IF EXISTS printer_role;`);
   await knex.raw(`DROP TYPE IF EXISTS printer_connection_type;`);
 }

@@ -65,6 +65,13 @@ import {
   httpRotateDisplayToken,
   httpRevokeDisplayToken,
 } from './wms.analytics.controller.js';
+import { 
+  httpListPrinters, 
+  httpCreatePrinter, 
+  httpUpdatePrinter, 
+  httpDeletePrinter, 
+  httpGetDefaultPrinter 
+} from './printers.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -560,6 +567,51 @@ router.get(
   requireTier('core'),
   requireAction('wms:read'),
   httpGetUnitLabelCoverage
+);
+
+router.get(
+  '/printers', 
+  authenticateToken, 
+  requireFt2, 
+  requireTier('core'), 
+  requireAction('wms:read'), 
+  httpListPrinters
+);
+
+router.post(
+  '/printers', 
+  authenticateToken, 
+  requireFt2, 
+  requireTier('core'), 
+  requireAction('wms:settings:write'), 
+  httpCreatePrinter
+);
+
+router.patch(
+  '/printers/:printerId', 
+  authenticateToken, 
+  requireFt2, 
+  requireTier('core'), 
+  requireAction('wms:settings:write'), 
+  httpUpdatePrinter
+);
+
+router.delete(
+  '/printers/:printerId', 
+  authenticateToken, 
+  requireFt2, 
+  requireTier('core'), 
+  requireAction('wms:settings:write'), 
+  httpDeletePrinter
+);
+
+router.get(
+  '/printers/default/:role', 
+  authenticateToken, 
+  requireFt2, 
+  requireTier('core'), 
+  requireAction('wms:read'), 
+  httpGetDefaultPrinter
 );
 
 export default router;
