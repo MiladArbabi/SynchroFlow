@@ -381,8 +381,11 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/claim`);
   }, []);
 
-  const handleConfirmStow = useCallback(async (taskId: string) => {
-    await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/confirm`);
+  const handleConfirmStow = useCallback(async (taskId: string, quantityPlaced?: number, lasyncroUnitId?: string) => {
+    await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/confirm`, {
+      ...(quantityPlaced !== undefined && { quantity_placed: quantityPlaced }),
+      ...(lasyncroUnitId ? { lasyncro_unit_id: lasyncroUnitId } : {}),
+    });
   }, []);
 
   const handleFetchStowTasks = useCallback(async () => {
@@ -442,7 +445,6 @@ export default function WmsPage() {
 
   return (
     <>
-    // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
     <ModuleTabBar tabs={[
       { id: 'operations',    label: 'Operations',     path: '/wms'            },

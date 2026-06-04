@@ -74,6 +74,8 @@ export type WmsStowTask = {
   created_at: string;
   variant_title: string | null;
   sku: string | null;
+  image_url: string | null;       // WEB-STOW-UNIT-01: product image for item scan confirmation
+  unit_ids: string[] | null;      // WEB-STOW-UNIT-01: LSU- IDs for units assigned to this task
 };
 
 export type WmsModuleFT2Props = {
@@ -128,7 +130,7 @@ export type WmsModuleFT2Props = {
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
-  onConfirmStow?: (taskId: string) => Promise<void>;
+  onConfirmStow?: (taskId: string, quantityPlaced?: number, lasyncroUnitId?: string) => Promise<void>;
   // Full stow session callbacks
   onFetchStowTasks?: () => Promise<WmsStowTask[]>;
   onResolveLocation?: (scannedValue: string) => Promise<{ location_code: string } | null>;
@@ -630,7 +632,7 @@ function WmsModuleFT2Inner({
         onAssignLocation={(taskId, locationCode) => onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve()}
         onClaimTask={(taskId) => onClaimStowTask?.(taskId) ?? Promise.resolve()}
         onResolveBarcode={onResolveBarcode}
-        onConfirmStow={(taskId, qty) => onConfirmStow?.(taskId) ?? Promise.resolve()}
+        onConfirmStow={(taskId, qty, lasyncroUnitId) => onConfirmStow?.(taskId, qty, lasyncroUnitId) ?? Promise.resolve()}
         onReportException={(taskId, params) => onReportStowException?.(taskId, params) ?? Promise.resolve({})}
       />
     );

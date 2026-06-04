@@ -13,7 +13,7 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  * On stow confirmation:
  * 1. Validates task is claimed by operator
  * 2. Writes inbound_purchase movement to inventory_movements
- * 3. Upserts inventory_unit_status → stowed
+ * 3. Updates inventory_units → status=stowed, current_location_code (LSU- path only)
  * 4. Transitions stow_task → completed
  *
  * Idempotency:
@@ -44,7 +44,8 @@ export interface StowConfirmInput {
   stowTaskId: string;
   shopId: number;
   claimedBy: number;
-  quantityPlaced?: number; // partial stow support
+  quantityPlaced?: number;   // partial stow support
+  lasyncroUnitId?: string;   // WEB-STOW-UNIT-01: LSU- unit ID resolved at scan time; optional for legacy fallback path
 }
 
 export async function createStowTask(
@@ -134,7 +135,7 @@ export async function confirmStow(
   trx: Knex.Transaction,
   input: StowConfirmInput
 ): Promise<void> {
-  const { stowTaskId, shopId, claimedBy, quantityPlaced } = input;
+  const { stowTaskId, shopId, claimedBy, quantityPlaced, lasyncroUnitId } = input;
 
   // 1. Validate task
   const task = await trx('stow_tasks')
@@ -149,13 +150,22 @@ export async function confirmStow(
 
   const completedAt = new Date();
   const qty = quantityPlaced ?? task.quantity; // support partial stow
-  const rootLocation = `WH-${shopId}-ROOT`;
+  // WEB-STOW-UNIT-01: resolve source location from unit's current position when LSU- scanned;
+  // fall back to shop root for legacy (non-unit) stow path.
+  let sourceLocation = `WH-${shopId}-ROOT`;
+  if (lasyncroUnitId) {
+    const unitRow = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .select('current_location_code')
+      .first();
+    sourceLocation = unitRow?.current_location_code ?? `WH-${shopId}-ROOT`;
+  }
   // 2a. Decrement ROOT location
   await trx('inventory_truth')
     .where({
       shop_id: shopId,
       lasyncro_variant_id: task.lasyncro_variant_id,
-      location_code: rootLocation,
+      location_code: sourceLocation,
     })
     .update({
       on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [qty]),
@@ -189,28 +199,112 @@ export async function confirmStow(
   console.info('[STOW_LOCATION_TRANSFER]', {
     lasyncroVariantId: task.lasyncro_variant_id,
     quantity: task.quantity,
-    from: rootLocation,
+    from: sourceLocation,
     to: task.location_code,
     shopId,
   });
 
-  // 4. Upsert inventory_unit_status → stowed
-  await trx('inventory_unit_status')
-    .insert({
-      shop_id: shopId,
-      lasyncro_variant_id: task.lasyncro_variant_id,
-      location_code: task.location_code,
-      status: 'stowed',
-      status_updated_at: completedAt,
-      created_at: completedAt,
-      updated_at: completedAt,
-    })
-    .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
-    .merge({
-      status: 'stowed',
-      status_updated_at: completedAt,
-      updated_at: completedAt,
-    });
+  // 4. Bulk-update inventory_units → stowed (WEB-STOW-UNIT-01)
+  // LSU- path only. Scanned unit is updated first (guaranteed inclusion),
+  // then remaining qty-1 units from same variant+job line are updated in
+  // one pass. This supports box-stow: operator scans one LSU- from a box
+  // of identical units and confirms qty — all matching received units updated.
+  if (lasyncroUnitId) {
+    // 4a. Resolve receive_job_line_id from scanned unit
+    const scannedUnit = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .select('receive_job_line_id')
+      .first();
+
+    if (scannedUnit?.receive_job_line_id) {
+      // 4b. Always update the scanned unit first
+      await trx('inventory_units')
+        .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+        .update({
+          status: 'stowed',
+          current_location_code: task.location_code,
+          updated_at: completedAt,
+        });
+
+      // 4c. Bulk-update remaining qty-1 units from same job line
+      const remaining = qty - 1;
+      if (remaining > 0) {
+        const siblingIds = await trx('inventory_units')
+          .where({
+            shop_id: shopId,
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            receive_job_line_id: scannedUnit.receive_job_line_id,
+            status: 'received',
+          })
+          .whereNot({ lasyncro_unit_id: lasyncroUnitId })
+          .limit(remaining)
+          .pluck('lasyncro_unit_id');
+
+        if (siblingIds.length > 0) {
+          await trx('inventory_units')
+            .whereIn('lasyncro_unit_id', siblingIds)
+            .andWhere({ shop_id: shopId })
+            .update({
+              status: 'stowed',
+              current_location_code: task.location_code,
+              updated_at: completedAt,
+            });
+        }
+      }
+    }
+
+    // 4d. Soft capacity check — count all stowed units at this location
+    // If over max_capacity, create a Problem Center task for bin audit.
+    const location = await trx('warehouse_locations')
+      .where({ shop_id: shopId, location_code: task.location_code })
+      .select('max_capacity')
+      .first();
+
+    if (location?.max_capacity != null) {
+      const stowedCount = await trx('inventory_units')
+        .where({
+          shop_id: shopId,
+          current_location_code: task.location_code,
+          status: 'stowed',
+        })
+        .count('* as count')
+        .first();
+
+      const currentCount = Number(stowedCount?.count ?? 0);
+
+      if (currentCount > location.max_capacity) {
+        const seqResult = await trx.raw<{ rows: { prob_label_sequence: number; problem_bin_location: string }[] }>(
+          `UPDATE shop_wms_settings
+           SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
+           WHERE shop_id = ?
+           RETURNING prob_label_sequence, problem_bin_location`,
+          [shopId]
+        );
+        const seqRow = seqResult.rows[0];
+        const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
+
+        await trx('problem_center_tasks').insert({
+          shop_id: shopId,
+          status: 'open',
+          source: 'stow',
+          source_exception_id: stowTaskId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          quantity: currentCount,
+          exception_type: 'bin_over_capacity',
+          problem_bin_location: task.location_code,
+          notes: `${probLabel} — Bin ${task.location_code} has ${currentCount} units, max is ${location.max_capacity}. Audit required.`,
+        });
+
+        console.warn('[STOW_BIN_OVER_CAPACITY]', {
+          shopId,
+          locationCode: task.location_code,
+          currentCount,
+          maxCapacity: location.max_capacity,
+          probLabel,
+        });
+      }
+    }
+  }
 
   // 5. Complete stow task
   await trx('stow_tasks')

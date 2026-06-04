@@ -834,6 +834,19 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'st.created_at',
           'v.title as variant_title',
           'v.sku',
+          'v.image_url',
+          trx.raw(`
+            (SELECT array_agg(iu.lasyncro_unit_id ORDER BY iu.received_at)
+             FROM (
+               SELECT lasyncro_unit_id, received_at
+               FROM inventory_units
+               WHERE lasyncro_variant_id = st.lasyncro_variant_id
+               AND shop_id = st.shop_id
+               AND status = 'received'
+               LIMIT st.quantity
+             ) iu
+            ) as unit_ids
+          `),
         );
     });
 
@@ -961,7 +974,7 @@ export const httpClaimStowTask = async (req: Request, res: Response) => {
 // POST /api/v1/wms/stow-tasks/:taskId/confirm
 // ─────────────────────────────────────────
 export const httpConfirmStow = async (req: Request, res: Response) => {
-  const { quantity_placed } = req.body ?? {};
+  const { quantity_placed, lasyncro_unit_id } = req.body ?? {};
 
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
@@ -980,6 +993,9 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         claimedBy: userId,
         quantityPlaced: typeof quantity_placed === 'number' && quantity_placed > 0
           ? quantity_placed
+          : undefined,
+        lasyncroUnitId: typeof lasyncro_unit_id === 'string' && lasyncro_unit_id.startsWith('LSU-')
+          ? lasyncro_unit_id
           : undefined,
       });
       // Auto-resolve stow alert
