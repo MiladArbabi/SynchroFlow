@@ -39,6 +39,8 @@ import {
   httpGetCarrierSettings,
   httpDeleteCarrierSettings,
   httpGenerateShippingLabel,
+  httpGetUnitLabels,
+  httpGetUnitLabelCoverage,
   httpResolveProblemTask,
   httpPatchWmsSettings,
   httpSetOrderPriority,
@@ -542,6 +544,22 @@ router.post(
   requireTier('core'),
   requireAction('wms:pack:scan'),
   httpGenerateShippingLabel
+);
+router.get(
+  '/receive-job-lines/:lineId/unit-labels',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetUnitLabels
+);
+router.get(
+  '/coverage',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetUnitLabelCoverage
 );
 
 export default router;

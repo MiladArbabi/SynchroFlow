@@ -4,6 +4,8 @@ import db from '@lasyncro/backend-core/db.js';
 import { getErrorMessage } from '@lasyncro/backend-core';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
+import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
+import { computeCoverage } from '../../services/wms/inventoryUnit.service.js';
 import { confirmPickScan } from '../../services/wms/pickScan.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
@@ -2740,18 +2742,21 @@ export const httpDeleteCarrierSettings = async (req: Request, res: Response) => 
   const { carrierCode } = req.params;
 
   try {
-    const deleted = await db.transaction(async (trx) => {
+    await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return trx('shop_carrier_settings')
+      const existing = await trx('shop_carrier_settings')
+        .where({ shop_id: shopId, carrier_code: carrierCode })
+        .first();
+      if (!existing) throw new Error('CARRIER_NOT_FOUND');
+      await trx('shop_carrier_settings')
         .where({ shop_id: shopId, carrier_code: carrierCode })
         .delete();
     });
 
-    if (!deleted) return res.status(404).json({ error: 'Carrier not found' });
-
     console.info('[CARRIER_SETTINGS_DELETED]', { shopId, carrierCode });
     return res.status(200).json({ deleted: true });
   } catch (err: unknown) {
+    if (getErrorMessage(err) === 'CARRIER_NOT_FOUND') return res.status(404).json({ error: 'Carrier not found' });
     console.error('[CARRIER_SETTINGS_DELETE_FAILED]', { shopId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to delete carrier settings: ${getErrorMessage(err)}` });
   }
@@ -2816,7 +2821,7 @@ export const httpGenerateShippingLabel = async (req: Request, res: Response) => 
 
       const labelResult = await generateAndPersistLabel(trx, {
         shopId,
-        lasyncroOrderId: orderId,
+        lasyncroOrderId: String(orderId),
         pickBatchId:     pick_batch_id ?? null,
         orderNumber:     String(order.external_order_id),
         recipientName:   order.shipping_name,
@@ -2834,5 +2839,57 @@ export const httpGenerateShippingLabel = async (req: Request, res: Response) => 
   } catch (err: unknown) {
     console.error('[GENERATE_LABEL_FAILED]', { shopId, orderId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to generate label: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/receive-job-lines/:lineId/unit-labels
+// ─────────────────────────────────────────
+// Returns a thermal-format PDF (50×25mm per page) for all LSU- units
+// on a receive job line. Operator triggers after batch-confirm in receive session.
+export const httpGetUnitLabels = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const lineId = Array.isArray(req.params.lineId) ? req.params.lineId[0] : req.params.lineId;
+  if (!lineId) return res.status(400).json({ error: 'lineId required' });
+
+  try {
+    const pdfBytes = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return generateUnitLabelsForLine(trx, shopId, lineId);
+    });
+
+    if (!pdfBytes) {
+      return res.status(404).json({ error: 'No units found for this line — inspect the line first' });
+    }
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="unit-labels-${lineId.slice(0, 8)}.pdf"`);
+    return res.send(Buffer.from(pdfBytes));
+  } catch (err: unknown) {
+    console.error('[UNIT_LABELS_FAILED]', { shopId, lineId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to generate unit labels: ${getErrorMessage(err)}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// GET /api/v1/wms/coverage
+// ─────────────────────────────────────────
+// Returns unit label coverage stats for this shop.
+// Used by the WMS settings coverage metric strip.
+export const httpGetUnitLabelCoverage = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const coverage = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return computeCoverage(trx, shopId);
+    });
+    return res.status(200).json(coverage);
+  } catch (err: unknown) {
+    console.error('[UNIT_COVERAGE_FAILED]', { shopId, error: getErrorMessage(err) });
+    return res.status(500).json({ error: `Failed to compute coverage: ${getErrorMessage(err)}` });
   }
 };

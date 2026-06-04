@@ -87,6 +87,7 @@ export type WmsModuleFT2Props = {
   onInspectReceiveLine?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; quantity_accepted: number; quantity_rejected: number }) => Promise<void>;
   onReportReceiveException?: (jobId: string, params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }) => Promise<void>;
   onCloseReceiveJob?: (jobId: string, params: { actual_delivery_date?: string }) => Promise<void>;
+  onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
 
   onClaimBatch: (batchId: string) => Promise<void>;
   onFetchLineItems: (batchId: string) => Promise<LineItem[]>;
@@ -451,7 +452,8 @@ function WmsModuleFT2Inner({
   onInspectReceiveLine,
   onReportReceiveException,
   onCloseReceiveJob,
-  
+  onPrintUnitLabels,
+
   onClaimBatch,
   onFetchLineItems,
   onResolveBarcode,
@@ -612,6 +614,7 @@ function WmsModuleFT2Inner({
         onCloseJob={(params) => onCloseReceiveJob?.(activeSession.receiveJobId, params) ?? Promise.resolve()}
         onComplete={exitSession}
         onResolveBarcode={onResolveBarcode}
+        onPrintUnitLabels={onPrintUnitLabels}
       />
     );
   }

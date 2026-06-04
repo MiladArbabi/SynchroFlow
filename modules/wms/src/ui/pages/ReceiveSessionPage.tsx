@@ -79,6 +79,7 @@ export interface ReceiveSessionPageProps {
   onCloseJob: (params: { actual_delivery_date?: string }) => Promise<void>;
   onComplete: () => void;
   onResolveBarcode?: (scannedValue: string) => Promise<{ lasyncro_variant_id: string } | null>;
+  onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
 }
 
 type ExceptionType = 'defect' | 'packaging_damage' | 'wrong_item' | 'wrong_variant' | 'wrong_quantity' | 'barcode_mismatch' | 'other';
@@ -102,7 +103,9 @@ export default function ReceiveSessionPage({
   onCloseJob,
   onComplete,
   onResolveBarcode,
+  onPrintUnitLabels,
 }: ReceiveSessionPageProps) {
+
   const theme = useTheme();
 
   // ── Count mode state ───────────────────────────────────────────────────────
@@ -170,6 +173,23 @@ export default function ReceiveSessionPage({
     }
   }, [scanError, sessionPhase, inspectMode]);
 
+  const inspectAndPrint = useCallback(async (params: {
+    lasyncro_variant_id: string | null;
+    receive_job_line_id: string;
+    quantity_accepted: number;
+    quantity_rejected: number;
+  }) => {
+    await onInspectLine(params);
+    if (params.quantity_accepted > 0 && onPrintUnitLabels) {
+      try {
+        await onPrintUnitLabels(params.receive_job_line_id);
+      } catch {
+        // Print failure must never block the receive flow
+        console.warn('[RECEIVE] Unit label print failed — non-blocking', params.receive_job_line_id);
+      }
+    }
+  }, [onInspectLine, onPrintUnitLabels]);
+
   // ── Scan handler — free-scan: resolves barcode against all PO lines ────────
   const handleScan = useCallback(async (scannedValue: string) => {
     if (!onResolveBarcode || scanProcessing) return;
@@ -210,7 +230,7 @@ export default function ReceiveSessionPage({
         // Auto-confirm this line
         setScanProcessing(true);
         try {
-          await onInspectLine({
+          await inspectAndPrint({
             lasyncro_variant_id: matchedLine.lasyncro_variant_id,
             receive_job_line_id: matchedLine.receive_job_line_id,
             quantity_accepted: next,
@@ -310,7 +330,7 @@ export default function ReceiveSessionPage({
     setSubmitting(true);
     setSubmitError(null);
     try {
-      await onInspectLine({
+      await inspectAndPrint({
         lasyncro_variant_id: currentLine.lasyncro_variant_id,
         receive_job_line_id: currentLine.receive_job_line_id,
         quantity_accepted: accepted,
@@ -337,7 +357,7 @@ export default function ReceiveSessionPage({
   ) => {
     setShortfallSubmitting(true);
     try {
-      await onInspectLine({
+      await inspectAndPrint({
         lasyncro_variant_id: line.lasyncro_variant_id,
         receive_job_line_id: line.receive_job_line_id,
         quantity_accepted: acceptedQty,
@@ -418,7 +438,7 @@ export default function ReceiveSessionPage({
     setAccepted(shortfallModal.line.quantity_expected);
     setShortfallSubmitting(true);
     try {
-      await onInspectLine({
+      await inspectAndPrint({
         lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
         receive_job_line_id: shortfallModal.line.receive_job_line_id,
         quantity_accepted: shortfallModal.line.quantity_expected,

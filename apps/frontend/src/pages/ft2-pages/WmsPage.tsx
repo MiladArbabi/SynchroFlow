@@ -222,6 +222,17 @@ export default function WmsPage() {
     });
   }, []);
 
+  const handlePrintUnitLabels = useCallback(async (receiveJobLineId: string) => {
+    const response = await axiosInstance.get(
+      `/api/v1/wms/receive-job-lines/${receiveJobLineId}/unit-labels`,
+      { responseType: 'blob' }
+    );
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+    const win = window.open(url, '_blank');
+    if (win) win.focus();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }, []);
+
   const handlePrintInvoice = useCallback(async (orderId: string) => {
     const response = await axiosInstance.get(
       `/api/v1/wms/orders/${orderId}/invoice`,
@@ -451,6 +462,7 @@ export default function WmsPage() {
       onReportPackException={handleReportPackException}
       onPrintLabel={handlePrintLabel}
       onPrintInvoice={handlePrintInvoice}
+      onPrintUnitLabels={handlePrintUnitLabels}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}
       onRaisePackDecision={handleRaisePackDecision}

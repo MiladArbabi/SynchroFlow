@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Box, Typography, TextField, Button, Skeleton, Tooltip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Monitor, Copy, RotateCcw, Trash2, Plus } from 'lucide-react';
+import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../contexts/ToastContext';
@@ -255,9 +255,84 @@ function FloorDisplaySection() {
   );
 }
 
+function UnitLabelCoverageSection() {
+  const { data, isLoading } = useQuery<{
+    labelled_units: number;
+    total_active_units: number;
+    coverage_pct: number;
+  }>({
+    queryKey: ['unit-label-coverage'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/coverage');
+      return data;
+    },
+    refetchInterval: 60_000,
+  });
+
+  const pct     = data?.coverage_pct ?? 0;
+  const total   = data?.total_active_units ?? 0;
+  const labelled = data?.labelled_units ?? 0;
+
+  const barColor = pct === 100
+    ? '#22C55E'
+    : pct >= 50 ? 'var(--accent)' : '#EAB308';
+
+  return (
+    <SettingsCard
+      icon={<Tag size={16} />}
+      title="Unit Label Coverage"
+      description="Percentage of active inventory carrying LaSyncro LSU- barcodes. Climbs automatically as new stock is received."
+    >
+      {isLoading ? (
+        <Skeleton height={48} sx={{ borderRadius: '6px' }} />
+      ) : (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, mb: 1 }}>
+            <Typography sx={{ fontSize: 28, fontWeight: 600, color: barColor, lineHeight: 1 }}>
+              {pct}%
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              {labelled} of {total} active units labelled
+            </Typography>
+          </Box>
+
+          {/* Progress bar */}
+          <Box sx={{ height: 6, borderRadius: '3px', bgcolor: 'var(--rule)', overflow: 'hidden', mb: 1.5 }}>
+            <Box sx={{
+              height: '100%',
+              width: `${pct}%`,
+              bgcolor: barColor,
+              borderRadius: '3px',
+              transition: 'width 0.4s ease',
+            }} />
+          </Box>
+
+          {pct === 100 ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22C55E' }} />
+              <Typography sx={{ fontSize: 12, color: '#22C55E', fontWeight: 500 }}>
+                Full coverage — legacy barcode fallback can be disabled.
+              </Typography>
+            </Box>
+          ) : total === 0 ? (
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              No active inventory yet. Coverage will grow automatically as stock is received.
+            </Typography>
+          ) : (
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              Coverage grows automatically as new stock is received. Run a targeted stocktake to accelerate.
+            </Typography>
+          )}
+        </>
+      )}
+    </SettingsCard>
+  );
+}
+
 export default function ShopSettingsWarehousePage() {
   return (
     <SettingsPageWrapper>
+      <UnitLabelCoverageSection />
       <FloorDisplaySection />
     </SettingsPageWrapper>
   );
