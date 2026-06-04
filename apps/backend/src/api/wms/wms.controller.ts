@@ -119,6 +119,21 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           'oli.lasyncro_variant_id'
         )
         .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
+        .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+        .leftJoin(
+          trx.raw(`
+            (SELECT
+              lasyncro_variant_id,
+              array_agg(lasyncro_unit_id ORDER BY received_at) FILTER (WHERE status = 'stowed') AS unit_ids,
+              MAX(current_location_code) FILTER (WHERE status = 'stowed') AS unit_location_code
+             FROM inventory_units
+             WHERE shop_id = ?
+             GROUP BY lasyncro_variant_id
+            ) as iu
+          `, [shopId]),
+          'iu.lasyncro_variant_id',
+          'oli.lasyncro_variant_id'
+        )
         .leftJoin('pick_scan_log as psl', (join) => {
           join
             .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
@@ -155,7 +170,15 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
           trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
           trx.raw(`oli.title as variant_title`),
           'oli.quantity',
-          trx.raw(`COALESCE(it.location_code, ?) as location_code`, [`WH-${shopId}-ROOT`])
+          'v.image_url',
+          trx.raw(`
+            COALESCE(
+              iu.unit_location_code,
+              it.location_code,
+              ?
+            ) as location_code
+          `, [`WH-${shopId}-ROOT`]),
+          'iu.unit_ids',
         );
     });
 

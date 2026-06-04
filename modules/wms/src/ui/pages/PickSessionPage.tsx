@@ -54,9 +54,13 @@ export interface LineItem {
   lasyncro_order_id: string;
   sku: string | null;
   product_title: string;
-  variant_title: string | null; // e.g. "Blue / XL" — backend must return this field
+  variant_title: string | null;
   quantity: number;
   location_code: string;
+  /** WEB-PICK-UNIT-01: variant image from Shopify sync; null when not synced. */
+  image_url: string | null;
+  /** WEB-PICK-UNIT-01: stowed LSU- unit IDs for this variant; null on legacy path. */
+  unit_ids: string[] | null;
 }
 
 export interface ConfirmScanParams {
@@ -716,6 +720,63 @@ export default function PickSessionPage({
           )}
           </Box>
         </Paper>
+
+      {/* PRODUCT INFO CARD — visible during product_scan + qty_confirm phases */}
+      {(isProductPhase || isQtyPhase) && (
+        <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, p: 1.5, borderRadius: 2, display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+          {/* Image */}
+          {currentItem.image_url ? (
+            <Box
+              component="img"
+              src={currentItem.image_url}
+              alt={currentItem.product_title}
+              sx={{ width: 64, height: 64, borderRadius: 1.5, objectFit: 'cover', flexShrink: 0, border: '0.5px solid', borderColor: 'divider' }}
+            />
+          ) : (
+            <Box sx={{ width: 64, height: 64, borderRadius: 1.5, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Package size={24} color="var(--ink3, #9ca3af)" />
+            </Box>
+          )}
+          {/* Details */}
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.3 }} noWrap>
+              {currentItem.product_title}
+            </Typography>
+            {currentItem.variant_title && (
+              <Typography sx={{ fontSize: 11, color: 'text.secondary', mt: 0.25 }} noWrap>
+                {currentItem.variant_title}
+              </Typography>
+            )}
+            {/* Location */}
+            <Box sx={{ mt: 0.75, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <MapPin size={11} color="var(--accent)" />
+              <Typography sx={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 500 }}>
+                {currentItem.location_code}
+              </Typography>
+            </Box>
+            {/* LSU- unit IDs */}
+            {(currentItem.unit_ids ?? []).length > 0 && (
+              <Box sx={{ mt: 0.75 }}>
+                <Typography sx={{ fontSize: 9, color: 'text.disabled', textTransform: 'uppercase', letterSpacing: '0.07em', mb: 0.5 }}>
+                  LSU- codes for this pick
+                </Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {(currentItem.unit_ids ?? []).slice(0, 4).map((id) => (
+                    <Box key={id} sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', fontFamily: 'monospace', color: 'text.secondary', bgcolor: 'background.paper' }}>
+                      {id}
+                    </Box>
+                  ))}
+                  {(currentItem.unit_ids ?? []).length > 4 && (
+                    <Box sx={{ fontSize: 9, px: 0.75, py: 0.25, border: '0.5px solid', borderColor: 'divider', borderRadius: '3px', color: 'text.disabled', bgcolor: 'background.paper' }}>
+                      +{(currentItem.unit_ids ?? []).length - 4} more
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+            )}
+          </Box>
+        </Paper>
+      )}
 
       {/* SCAN AREA */}
       <Box sx={{ mx: 2, mt: 1.5, flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
