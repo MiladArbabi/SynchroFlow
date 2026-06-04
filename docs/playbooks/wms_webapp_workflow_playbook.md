@@ -31,9 +31,11 @@ Brief → Inspect → Summary → Done
 ## 2. Scan Input — Desktop vs Mobile
 
 ### The Rule
+
 **NEVER use `BarcodeScanSurface` (camera component) on the webapp.** It is mobile-only.
 
 ### Webapp scan input pattern — `ScanInput`
+
 All barcode/location/product scanning on the webapp uses a text `TextField` with these properties:
 
 ```tsx
@@ -126,6 +128,7 @@ type ExceptionType =
 - Accepts full expected quantity, files no exception
 
 ### Problem Center — always called on exception
+
 Every exception report MUST call two endpoints in sequence:
 
 1. `POST /api/v1/suppliers/receive-jobs/:jobId/exception` (or workflow equivalent)
@@ -149,6 +152,7 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 | Danger action (Cancel PO, Report Problem) | Outlined warning/error | Always secondary to primary |
 
 ### CTA label standards
+
 | Situation | Label |
 |-----------|-------|
 | Confirming one item in count mode | `Confirm Batch` |
@@ -164,6 +168,7 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 - **Exception modal:** disabled when no exception type selected OR qty field empty
 
 ### Progress indicators
+
 Every inspect phase MUST show:
 
 - Linear progress bar (top of screen) showing `currentIndex / total` as percentage
@@ -175,6 +180,7 @@ Every inspect phase MUST show:
 ## 5. Session Persistence — Refresh Recovery
 
 ### The rule
+
 Active sessions MUST survive page refresh. Operators work in warehouses with unreliable connectivity and accidental refreshes.
 
 ### Implementation pattern
@@ -219,6 +225,7 @@ Mid-scan progress (not yet confirmed to backend) cannot be restored. Show an inf
 > "Session resumed — fully confirmed items are restored. Any partial progress must be re-done."
 
 ### What survives refresh
+
 | State | Survives? | How |
 |-------|-----------|-----|
 | Fully confirmed lines (inspection_complete = true) | ✅ Yes | Restored from backend |
@@ -281,6 +288,7 @@ sx={{
 ```
 
 ### 409 handling on auto-confirm
+
 When a line reaches expected count and `onInspectLine` is called, a 409 means it was already confirmed in a prior session. Treat as success:
 
 ```tsx
@@ -293,6 +301,7 @@ try {
 ```
 
 ### Overcount dialog
+
 When scan count exceeds expected qty, pause and confirm:
 
 - "You've already scanned N of N expected. Add another?"
@@ -303,27 +312,48 @@ When scan count exceeds expected qty, pause and confirm:
 
 ## 8. Barcode Architecture
 
-### Resolution order (POST /api/v1/wms/barcode/resolve)
+### Barcode namespace reservation (WM-46)
 
-1. `external_product_identity_map.barcode` — manufacturer barcode (EAN/UPC from Shopify)
-2. `external_product_identity_map.external_sku` — SKU
-3. `barcode_print_jobs.barcode_value` — LaSyncro-generated barcode
+| Prefix | Namespace | Table | Notes |
+|--------|-----------|-------|-------|
+| `LSU-{8hex}` | Unit barcode | `inventory_units` | Generated at receive batch-confirm. Immutable. |
+| `LSO-{8hex}` | Order invoice | `orders.wms_barcode` | Generated at batch release (WM-34). |
+| Raw EAN/UPC/Shopify | Legacy variant | `external_product_identity_map` | Accepted while `legacy_barcode_fallback_enabled = true`. |
 
-### Barcode generation timing
+### Dual-namespace resolver (WM-46)
 
-- **During receive:** operator scans manufacturer barcodes (from Shopify sync)
-- **On receive close:** LaSyncro generates variant-level barcodes → `barcode_print_jobs`
-- **After receive:** operator prints and attaches LaSyncro labels before stowing
-- **Stow/Pick/Pack:** LaSyncro barcodes used
+`barcodeResolution.service.ts` routes by prefix before any lookup:
+
+1. `LSU-` prefix → unit barcode path → `inventory_units.lasyncro_unit_id`
+2. `LSO-` prefix → invoice barcode path (WM-34, existing logic unchanged)
+3. Known EAN/UPC/Shopify → legacy path, gated by `shop_wms_settings.legacy_barcode_fallback_enabled`
+4. Unknown → reject with clear error — never silent failure
+
+### Unit barcode generation (WM-46)
+
+- **At receive batch-confirm:** `batchConfirmUnits` creates one `inventory_units` row per accepted unit
+- **ID format:** `LSU-{SHA256(shop_id:receive_job_line_id:receive_sequence)[0:8]}` — deterministic, 12 chars, fits 50×25mm thermal label
+- **Class A (has EAN/UPC):** `shopify_barcode` stored alongside for reprint disambiguation
+- **Class B (no barcode):** anchored by receive_job_line_id + receive_sequence only
+- **Reprint:** retrieval not regeneration — same inputs always produce same ID
+
+### Progressive labelling + legacy sunset
+
+- `legacy_barcode_fallback_enabled` defaults `true` — new shops accept both namespaces
+- `coverage_sunset_threshold` defaults `100` — auto-disables legacy path at 100% coverage
+- `GET /wms/coverage` returns `labelled_units`, `total_active_units`, `coverage_pct`
+- Settings → Warehouse → Unit Label Coverage shows live metric
 
 ### Test store barcodes (dev only)
-| SKU | Barcode | Variant ID |
-|-----|---------|------------|
-| sku-hosted-1 | TEST-003 | 1c89aca4-... |
-| sku-managed-1 | TEST-004 | 7a0034b5-... |
 
-### Phase 2 — Per-unit tracking
-GitHub issue #998. Each physical unit gets a unique `unit_id` and barcode. Requires `inventory_units` table. See issue for full schema.
+| SKU | Shopify barcode | LSU- format |
+|-----|----------------|-------------|
+| sku-hosted-1 | TEST-003 | LSU-{8hex} per unit |
+| sku-managed-1 | — (Class B) | LSU-{8hex} per unit |
+
+### Full architecture reference
+
+See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data model, invariants, and implementation register.
 
 ---
 
@@ -492,6 +522,7 @@ grep -n "fontWeight={700}\|fontWeight: 700" modules/wms/src/ui/pages/StowSession
 ---
 
 ### Updated Stow Contract (§9 replacement)
+
 Brief → location_scan → product_scan → qty_confirm → summary → complete
 
 | Phase | Chip | Color | ScanInput hint | Step banner |
@@ -745,6 +776,7 @@ Use Sendcloud's sandbox credentials + shipping method `"Unstamped letter"` (id: 
 `handlePrintLabel` in `WmsPage.tsx` upgraded from Shopify packing slip to native carrier label generation.
 
 ### Flow
+
 POST /api/v1/wms/orders/:orderId/generate-label
 → idempotent — returns existing label if already generated
 → labelUrl present → open carrier PDF in new tab ✅
