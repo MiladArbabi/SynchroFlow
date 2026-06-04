@@ -24,6 +24,9 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { Box, Typography, TextField, Button, Alert } from '@mui/material';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { AlertTriangle } from 'lucide-react';
+import { printViaQz } from 'utils/qzPrint';
+import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
+import { hasQzPromptBeenDismissed, dismissQzPrompt } from 'utils/qzPrompt';
 
 /**
  * ProblemBinPrompt
@@ -119,6 +122,7 @@ export default function WmsPage() {
   const [pendingReceiveSession, setPendingReceiveSession] = useState<{
     receiveJobId: string; poId: string; supplierName: string; lines: import('@lasyncro/wms').ReceiveJobLine[];
   } | null>(null);
+  const [showQzPrompt, setShowQzPrompt] = useState(false);
 
   useEffect(() => {
     const receiveJobId = searchParams.get('receiveJobId');
@@ -222,27 +226,38 @@ export default function WmsPage() {
     });
   }, []);
 
+  const openBlobInTab = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (win) win.focus();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  }, []);
+
   const handlePrintUnitLabels = useCallback(async (receiveJobLineId: string) => {
     const response = await axiosInstance.get(
       `/api/v1/wms/receive-job-lines/${receiveJobLineId}/unit-labels`,
       { responseType: 'blob' }
     );
-    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    const win = window.open(url, '_blank');
-    if (win) win.focus();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }, []);
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const dispatched = await printViaQz(blob, 'unit_label', axiosInstance);
+    if (!dispatched) {
+      openBlobInTab(blob);
+      if (!hasQzPromptBeenDismissed()) setShowQzPrompt(true);
+    }
+  }, [openBlobInTab]);
 
   const handlePrintInvoice = useCallback(async (orderId: string) => {
     const response = await axiosInstance.get(
       `/api/v1/wms/orders/${orderId}/invoice`,
       { responseType: 'blob' }
     );
-    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
-    const win = window.open(url, '_blank');
-    if (win) win.focus();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  }, []);
+    const blob = new Blob([response.data], { type: 'application/pdf' });
+    const dispatched = await printViaQz(blob, 'invoice', axiosInstance);
+    if (!dispatched) {
+      openBlobInTab(blob);
+      if (!hasQzPromptBeenDismissed()) setShowQzPrompt(true);
+    }
+  }, [openBlobInTab]);
 
   const handlePrintLabel = useCallback(async (orderId: string) => {
     /**
@@ -426,6 +441,7 @@ export default function WmsPage() {
   };
 
   return (
+    <>
     // TIER GATE: wms.pick_batches requires 'core' (see usePlanEntitlement PLAN_FEATURES)
     <PlanGate feature="wms.pick_batches">
     <ModuleTabBar tabs={[
@@ -488,5 +504,14 @@ export default function WmsPage() {
       onReportStowException={handleReportStowException}
     />
    </PlanGate>
+   { showQzPrompt && (
+    <QzTrayOnboardingPrompt
+      onDismiss={() => {
+        dismissQzPrompt();
+        setShowQzPrompt(false);
+      }}
+    />
+   )}
+   </>
   );
 }
