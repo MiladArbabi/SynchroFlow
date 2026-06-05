@@ -86,7 +86,7 @@ export interface CreateProblemTaskParams {
   lasyncro_variant_id: string;
   quantity: number;
   exception_type: string;
-  source: 'pick';
+  source: 'pick' | 'pack';
 }
 
 export interface PickSessionPageProps {

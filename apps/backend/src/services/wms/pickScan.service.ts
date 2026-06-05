@@ -173,6 +173,7 @@ export async function confirmPickScan(
     pick_batch_id: pickBatchId,
     lasyncro_line_item_id: lasyncroLineItemId,
     lasyncro_variant_id: lasyncroVariantId,
+    lasyncro_unit_id: lasyncroUnitId ?? null,
     location_code: locationCode,
     quantity_confirmed: quantityConfirmed,
     status: 'confirmed',

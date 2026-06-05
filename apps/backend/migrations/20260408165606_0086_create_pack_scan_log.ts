@@ -60,6 +60,14 @@ export async function up(knex: Knex): Promise<void> {
       .uuid('lasyncro_variant_id')
       .notNullable();
 
+    /**
+     * lasyncro_unit_id — nullable; populated when packer scans an LSU- unit
+     * barcode (WEB-PACK-02). Null for legacy scans.
+     */
+    table
+      .string('lasyncro_unit_id', 20)
+      .nullable();
+
     table
       .integer('quantity_confirmed')
       .notNullable();

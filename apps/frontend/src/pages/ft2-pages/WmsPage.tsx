@@ -193,9 +193,13 @@ export default function WmsPage() {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pick-complete`);
   }, []);
 
-  // ── PACK CALLBACKS ──────────────────────────────────────
   const handleClaimPack = useCallback(async (batchId: string) => {
     await axiosInstance.post(`/api/v1/wms/batch/${batchId}/pack/claim`);
+  }, []);
+
+  const handlePackFreeScan = useCallback(async (scannedValue: string) => {
+    const { data } = await axiosInstance.post('/api/v1/wms/pack/free-scan', { scanned_value: scannedValue });
+    return data;
   }, []);
 
   const handleFetchPackOrders = useCallback(async (batchId: string): Promise<PackOrder[]> => {
@@ -480,6 +484,7 @@ export default function WmsPage() {
       onReportPackException={handleReportPackException}
       onPrintLabel={handlePrintLabel}
       onPrintInvoice={handlePrintInvoice}
+      onPackFreeScan={handlePackFreeScan}
       onPrintUnitLabels={handlePrintUnitLabels}
       onPackComplete={handlePackComplete}
       onConfirmShipment={handleConfirmShipment}

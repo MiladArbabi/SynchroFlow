@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, memo, useEffect } from 'react';
+import { useState, memo, useEffect, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -10,6 +10,7 @@ import {
   Chip,
   LinearProgress,
   useTheme,
+  TextField,
 } from '@mui/material';
 import { ScanBarcode, PackageCheck, Clock } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
@@ -101,6 +102,7 @@ export type WmsModuleFT2Props = {
 
   onClaimPack: (batchId: string) => Promise<void>;
   onFetchPackOrders: (batchId: string) => Promise<PackOrder[]>;
+  onPackFreeScan: (scannedValue: string) => Promise<PackFreeScanApiResponse>;
   onConfirmPackScan: (batchId: string, params: {
     lasyncro_order_id: string;
     lasyncro_line_item_id: string;
@@ -111,6 +113,7 @@ export type WmsModuleFT2Props = {
   onPrintLabel: (orderId: string) => Promise<void>;
   onPrintInvoice: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
+  /** WEB-PACK-02 — item-centric free-scan. Accepts LSU- or LSO- barcode. */
 
   onConfirmShipment: (batchId: string, orderId: string, partial?: boolean) => Promise<void>;
   onRaisePackDecision: (batchId: string, params: {
@@ -166,20 +169,135 @@ const STATUS_LABELS: Record<string, {
   cancelled:     { label: 'Cancelled',   color: 'error'   },
 };
 
+// ── Pack mode panel (WEB-PACK-02) ─────────────────────────────────────────────
+// Always-on free-scan surface. Accepts LSU- (unit) and LSO- (invoice) barcodes.
+// Pulsing NodeTrack-style dot signals listening state.
+// Sad path errors auto-dismiss after 3.5s.
+function PackModePanel({
+  onScan,
+  onSessionOpen,
+}: {
+  onScan: (value: string) => Promise<PackFreeScanApiResponse>;
+  onSessionOpen: (data: PackFreeScanResult) => void;
+}) {
+  const [value, setValue] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [shipped, setShipped] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleSubmit = async () => {
+    const val = value.trim();
+    if (!val || loading) return;
+    setValue('');
+    if (dismissTimer.current) clearTimeout(dismissTimer.current);
+    setError(null);
+    setShipped(null);
+    setLoading(true);
+    try {
+      const result = await onScan(val);
+      if ('error' in result) {
+        setError(result.message);
+        dismissTimer.current = setTimeout(() => setError(null), 3500);
+      } else if (result.type === 'unit_resolved') {
+        onSessionOpen(result);
+      } else if (result.type === 'shipped') {
+        setShipped(`Order #${result.external_order_id ?? ''} shipped`);
+        dismissTimer.current = setTimeout(() => {
+          setShipped(null);
+          inputRef.current?.focus();
+        }, 2500);
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } }; message?: string })
+        ?.response?.data?.message
+        ?? (err as Error)?.message
+        ?? 'Scan failed';
+      setError(msg);
+      dismissTimer.current = setTimeout(() => {
+        setError(null);
+        inputRef.current?.focus();
+      }, 3500);
+    } finally {
+      setLoading(false);
+      if (!error) setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  };
+
+  const hasError = !!error;
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
+      {/* Header row */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+        {/* Pulsing dot — same animation contract as NodeTrack */}
+        <Box sx={{
+          width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
+          bgcolor: hasError ? 'error.main' : 'var(--accent)',
+          ...(!hasError && !loading && {
+            '@keyframes packPulse': {
+              '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.6)' },
+              '70%':  { boxShadow: '0 0 0 8px rgba(255,107,43,0)' },
+              '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
+            },
+            animation: 'packPulse 1.3s ease-out infinite',
+          }),
+        }} />
+        <Typography sx={{
+          fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          color: hasError ? 'error.main' : 'var(--accent)',
+        }}>
+          Pack mode
+        </Typography>
+        <Chip
+          label={hasError ? 'Error' : loading ? 'Scanning…' : shipped ? 'Shipped' : 'Listening'}
+          size="small"
+          color={hasError ? 'error' : shipped ? 'success' : 'default'}
+          sx={{ ml: 'auto', height: 20, fontSize: 10 }}
+        />
+      </Box>
+
+      {/* Shipped confirmation */}
+      {shipped && (
+        <Alert severity="success" sx={{ mb: 1, borderRadius: 1.5, py: 0.5 }}>
+          {shipped}
+        </Alert>
+      )}
+
+      {/* Scan input */}
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+        <TextField
+          inputRef={inputRef}
+          fullWidth size="small"
+          placeholder="Scan LSU- or LSO- barcode"
+          value={value}
+          disabled={loading}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
+          autoComplete="off"
+          error={hasError}
+          helperText={error ?? 'Scanner auto-submits · manual entry: press Enter'}
+        />
+        {loading && <CircularProgress size={20} sx={{ mt: 1, flexShrink: 0 }} />}
+      </Box>
+    </Paper>
+  );
+}
+
 const BatchCard = memo(function BatchCard({
   batch,
   onClaim,
   onContinuePick,
-  onClaimPack,
-  onContinuePack,
   gridLocations,
   onFetchLineItems,
 }: {
   batch: WmsBatch;
   onClaim: (batchId: string) => void;
   onContinuePick: (batchId: string) => void;
-  onClaimPack: (batchId: string) => void;
-  onContinuePack: (batchId: string) => void;
   gridLocations?: WarehouseLocation[];
   onFetchLineItems?: (batchId: string) => Promise<{ location_code: string }[]>;
 }) {
@@ -345,29 +463,17 @@ const BatchCard = memo(function BatchCard({
       )}
 
       {batch.status === 'pick_complete' && (
-        <Button
-          variant="contained"
-          color="success"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
-          onClick={() => onClaimPack(batch.pick_batch_id)}
-        >
-          Claim & Start Packing
-        </Button>
+        <Typography variant="caption" color="success.main"
+          sx={{ display: 'block', textAlign: 'center', fontWeight: 600, pt: 0.5 }}>
+          Ready to pack — scan any LSU- barcode at pack station
+        </Typography>
       )}
 
       {batch.status === 'packing' && (
-        <Button
-          variant="outlined"
-          color="success"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
-          onClick={() => onContinuePack(batch.pick_batch_id)}
-        >
-          Continue Packing
-        </Button>
+        <Typography variant="caption" color="warning.main"
+          sx={{ display: 'block', textAlign: 'center', fontWeight: 600, pt: 0.5 }}>
+          Packing in progress — scan LSU- barcode to continue
+        </Typography>
       )}
     </Paper>
   );
@@ -437,9 +543,57 @@ const StowTaskCard = memo(function StowTaskCard({
   );
 });
 
+export interface PackFreeScanLineItem {
+  lasyncro_line_item_id: string;
+  lasyncro_variant_id: string;
+  product_title: string;
+  quantity: number;
+  image_url: string | null;
+  sku: string | null;
+  pack_scanned: boolean;
+}
+
+/** Shape of POST /wms/pack/free-scan LSU- happy-path response (WEB-PACK-02). */
+export interface PackFreeScanResult {
+  type: 'unit_resolved';
+  pick_batch_id: string;
+  lasyncro_unit_id: string;
+  lasyncro_order_id: string;
+  order_complete: boolean;
+  auto_claimed: boolean;
+  has_carrier_label: boolean;
+  variant: { variant_title: string; sku: string | null; image_url: string | null } | null;
+  order: {
+    lasyncro_order_id: string;
+    external_order_id: string;
+    wms_barcode: string | null;
+    total_price: number;
+    currency: string;
+    shipping_name: string | null;
+    shipping_address1: string | null;
+    shipping_city: string | null;
+    shipping_zip: string | null;
+    shipping_country_code: string | null;
+  } | null;
+  line_items: {
+    lasyncro_line_item_id: string;
+    lasyncro_variant_id: string;
+    product_title: string;
+    quantity: number;
+    image_url: string | null;
+    sku: string | null;
+    pack_scanned: boolean;
+  }[];
+}
+
+export type PackFreeScanApiResponse =
+  | PackFreeScanResult
+  | { type: 'shipped'; lasyncro_order_id: string; external_order_id: string; pick_batch_id: string; batch_complete: boolean }
+  | { error: string; message: string };
+
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
-  | { type: 'pack'; batchId: string; orders: PackOrder[] }
+  | { type: 'pack'; freeScanResult: PackFreeScanResult }
   | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
   | { type: 'stow'; taskId: string }
   | null;
@@ -465,6 +619,7 @@ function WmsModuleFT2Inner({
   onPickComplete,
   onClaimPack,
   onFetchPackOrders,
+  onPackFreeScan,
   onConfirmPackScan,
   onReportPackException,
   onPrintLabel,
@@ -491,7 +646,7 @@ function WmsModuleFT2Inner({
   pendingPackBatchId,
   onPackSessionEnter,
   onRaisePackDecision,
-  onPollPackDecision
+  onPollPackDecision,
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -519,12 +674,6 @@ function WmsModuleFT2Inner({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (pendingPackBatchId) {
-      enterPackSession(pendingPackBatchId, false).catch(() => {});
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const [loadingSession, setLoadingSession] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -545,18 +694,38 @@ function WmsModuleFT2Inner({
     }
   };
 
-  const enterPackSession = async (batchId: string, claim: boolean) => {
-    setLoadingSession(true);
-    setSessionError(null);
+  const [packScanLoading, setPackScanLoading] = useState(false);
+  const [packScanError, setPackScanError] = useState<string | null>(null);
+  const packInputRef = useRef<HTMLInputElement>(null);
+  const packErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-focus pack input whenever operations page becomes active
+  useEffect(() => {
+    if (!activeSession) setTimeout(() => packInputRef.current?.focus(), 100);
+  }, [activeSession]);
+
+  const handlePackFreeScan = async (scannedValue: string) => {
+    if (packScanLoading) return;
+    if (packErrorTimerRef.current) clearTimeout(packErrorTimerRef.current);
+    setPackScanLoading(true);
+    setPackScanError(null);
     try {
-      if (claim) await onClaimPack(batchId);
-      const orders = await onFetchPackOrders(batchId);
-      setActiveSession({ type: 'pack', batchId, orders });
-      onPackSessionEnter?.(batchId);
+      const result = await onPackFreeScan(scannedValue);
+      if ('error' in result) {
+        setPackScanError(result.message);
+        packErrorTimerRef.current = setTimeout(() => setPackScanError(null), 3500);
+        return;
+      }
+      if (result.type === 'unit_resolved') {
+        setActiveSession({ type: 'pack', freeScanResult: result });
+      }
     } catch (err: any) {
-      setSessionError(err?.message ?? 'Failed to start pack session.');
+      const msg: string = err?.response?.data?.message ?? err?.message ?? 'Scan failed — try again';
+      setPackScanError(msg);
+      packErrorTimerRef.current = setTimeout(() => setPackScanError(null), 3500);
     } finally {
-      setLoadingSession(false);
+      setPackScanLoading(false);
+      if (packInputRef.current) packInputRef.current.value = '';
     }
   };
 
@@ -582,23 +751,16 @@ function WmsModuleFT2Inner({
     );
   }
 
-  // Active pack session
+  // Active pack session (WEB-PACK-02 — item-centric free-scan)
   if (activeSession?.type === 'pack') {
     return (
       <PackSessionPage
-        pickBatchId={activeSession.batchId}
-        orders={activeSession.orders}
-        onComplete={exitSession}
-        onResolveBarcode={onResolveBarcode}
-        onConfirmPackScan={(params) => onConfirmPackScan(activeSession.batchId, params)}
-        onReportException={(params) => onReportPackException(activeSession.batchId, params)}
-        onPrintLabel={onPrintLabel}
+        initialFreeScanResult={activeSession.freeScanResult}
+        onPackFreeScan={onPackFreeScan}
         onPrintInvoice={onPrintInvoice}
-        onConfirmShipment={(orderId, partial) => onConfirmShipment(activeSession.batchId, orderId, partial)}
-        onPackComplete={() => onPackComplete(activeSession.batchId)}
-        onRaiseDecision={(params) => onRaisePackDecision(activeSession.batchId, params)}
-        onPollDecision={onPollPackDecision}
+        onPrintLabel={onPrintLabel}
         onCreateProblemTask={onCreateProblemTask}
+        onComplete={exitSession}
       />
     );
   }
@@ -668,6 +830,61 @@ function WmsModuleFT2Inner({
         </Alert>
       )}
 
+      {/* PACK MODE PANEL — always-on free-scan surface (WEB-PACK-02) */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <Box sx={{
+            width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            bgcolor: packScanError ? 'error.main' : 'var(--accent)',
+            color: '#fff',
+            transition: 'background-color 0.2s',
+            ...(!packScanError && !packScanLoading && {
+              '@keyframes packNodePulse': {
+                '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
+                '70%':  { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
+                '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
+              },
+              animation: 'packNodePulse 1.3s ease-out infinite',
+            }),
+          }}>
+            {packScanLoading
+              ? <CircularProgress size={16} sx={{ color: '#fff' }} />
+              : <ScanBarcode size={16} />}
+          </Box>
+          <Typography variant="body2" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+            Pack mode
+          </Typography>
+          <Chip
+            label={packScanLoading ? 'Resolving…' : packScanError ? 'Hold' : 'Listening'}
+            size="small"
+            color={packScanError ? 'error' : 'success'}
+            variant="outlined"
+            sx={{ ml: 'auto', fontSize: 10, height: 20 }}
+          />
+        </Box>
+        {packScanError && (
+          <Alert severity="error" sx={{ mb: 1.5, py: 0.5, fontSize: 13 }}>
+            {packScanError}
+          </Alert>
+        )}
+        <TextField
+          inputRef={packInputRef}
+          fullWidth size="small"
+          placeholder="Scan any LSU- barcode to begin packing"
+          disabled={packScanLoading}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              const val = packInputRef.current?.value.trim();
+              if (val) void handlePackFreeScan(val);
+            }
+          }}
+          autoComplete="off"
+          helperText="Scanner auto-submits · manual entry: press Enter"
+          sx={{ '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: 13 } }}
+        />
+      </Paper>
+
       {/* EMPTY STATE */}
       {!isLoading && !loadingSession && !isError && batches.length === 0 && (
         <Paper
@@ -693,8 +910,6 @@ function WmsModuleFT2Inner({
           batch={batch}
           onClaim={(id) => void enterPickSession(id, true)}
           onContinuePick={(id) => void enterPickSession(id, false)}
-          onClaimPack={(id) => void enterPackSession(id, true)}
-          onContinuePack={(id) => void enterPackSession(id, false)}
           gridLocations={gridLocations}
           onFetchLineItems={onFetchLineItems}
         />

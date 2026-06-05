@@ -30,6 +30,7 @@ export interface PackScanInput {
   lasyncroOrderId: string;
   lasyncroLineItemId: string;
   lasyncroVariantId: string;
+  lasyncroUnitId?: string; // LSU- unit barcode (WEB-PACK-02); null for legacy scans
   quantityConfirmed: number;
   scannedBy: number;
   shopId: number;
@@ -49,6 +50,7 @@ export async function confirmPackScan(
     lasyncroOrderId,
     lasyncroLineItemId,
     lasyncroVariantId,
+    lasyncroUnitId,
     quantityConfirmed,
     scannedBy,
     shopId,
@@ -106,6 +108,7 @@ export async function confirmPackScan(
     lasyncro_order_id: lasyncroOrderId,
     lasyncro_line_item_id: lasyncroLineItemId,
     lasyncro_variant_id: lasyncroVariantId,
+    lasyncro_unit_id: lasyncroUnitId ?? null,
     quantity_confirmed: quantityConfirmed,
     status: 'confirmed',
     scanned_by: scannedBy,
@@ -130,17 +133,18 @@ export async function confirmPackScan(
       updated_at: scannedAt,
     });
 
-  // 8. Transition inventory unit status → packed
-  await trx('inventory_unit_status')
-    .where({
-      shop_id: shopId,
-      lasyncro_variant_id: lasyncroVariantId,
-    })
-    .update({
-      status: 'packed',
-      status_updated_at: scannedAt,
-      updated_at: scannedAt,
-    });
+  // 8. Transition inventory_units → packed (WM-46 authoritative table).
+  // If a specific unit was scanned via LSU-, update it directly.
+  // Fallback: update all picked units for this variant in this shop.
+  if (lasyncroUnitId) {
+    await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .update({ status: 'packed', updated_at: scannedAt });
+  } else {
+    await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_variant_id: lasyncroVariantId, status: 'picked' })
+      .update({ status: 'packed', updated_at: scannedAt });
+  }
 
   // 9. Check if all line items for this order are now scanned at pack
   const totalLineItems = await trx('order_line_items')

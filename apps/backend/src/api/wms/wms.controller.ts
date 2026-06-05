@@ -679,6 +679,372 @@ export const httpConfirmPackScan = async (req: Request, res: Response) => {
   }
 };
 
+// POST /api/v1/wms/pack/free-scan
+// ─────────────────────────────────────────
+// WEB-PACK-02 — item-centric free-scan pack surface.
+//
+// Routes by barcode prefix:
+//   LSU- → resolve unit → auto-claim batch → confirm pack scan → return order context
+//   LSO- → verify all siblings confirmed → ship → auto-complete batch if last order
+//
+// Sad paths return { error, message } with appropriate HTTP status.
+// Auto-claim fires inline on the first LSU- scan for a pick_complete batch.
+export const httpPackFreeScan = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { scanned_value } = req.body;
+  if (!scanned_value || typeof scanned_value !== 'string') {
+    return res.status(400).json({ error: 'scanned_value required' });
+  }
+
+  // ── LSO- path — invoice barcode → ship confirmation ───────────────────────
+  if (scanned_value.startsWith('LSO-')) {
+    try {
+      const result = await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+        await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+        const order = await trx('orders as o')
+          .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where({ 'o.shop_id': shopId, 'o.wms_barcode': scanned_value })
+          .select('o.lasyncro_order_id', 'eim.external_order_id')
+          .first();
+
+        if (!order) return { error: 'invoice_not_found', message: 'Invoice barcode not recognised' };
+
+        const batchOrder = await trx('pick_batch_orders as pbo')
+          .join('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          .where({ 'pbo.lasyncro_order_id': order.lasyncro_order_id, 'pb.shop_id': shopId, 'pb.status': 'packing' })
+          .select('pb.pick_batch_id')
+          .first();
+
+        if (!batchOrder) {
+          return { error: 'batch_not_packing', message: 'No active packing batch found for this order' };
+        }
+
+        // All line items must be confirmed before shipping
+        const [totalRow, confirmedRow] = await Promise.all([
+          trx('order_line_items')
+            .where({ lasyncro_order_id: order.lasyncro_order_id })
+            .count<{ count: string }>('lasyncro_line_item_id as count')
+            .first(),
+          trx('pack_scan_log')
+            .where({ pick_batch_id: batchOrder.pick_batch_id, lasyncro_order_id: order.lasyncro_order_id, status: 'confirmed' })
+            .count<{ count: string }>('scan_id as count')
+            .first(),
+        ]);
+
+        const total = Number(totalRow?.count ?? 0);
+        const confirmed = Number(confirmedRow?.count ?? 0);
+
+        if (confirmed < total) {
+          return {
+            error: 'siblings_incomplete',
+            message: 'Not all items in this order have been scanned',
+            confirmed,
+            total,
+          };
+        }
+
+        await confirmShipment(trx, {
+          lasyncroOrderId: order.lasyncro_order_id,
+          shopId,
+          partialShipment: false,
+          shippedAt: new Date(),
+        });
+
+        // Auto-complete batch if all orders are now shipped
+        const unshippedCount = await trx('order_warehouse_status as ows')
+          .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'ows.lasyncro_order_id')
+          .where({ 'pbo.pick_batch_id': batchOrder.pick_batch_id })
+          .whereNotIn('ows.status', ['shipped', 'partially_shipped'])
+          .count<{ count: string }>('ows.lasyncro_order_id as count')
+          .first();
+
+        const batchComplete = Number(unshippedCount?.count ?? 0) === 0;
+
+        if (batchComplete) {
+          const now = new Date();
+          await trx('pick_batches')
+            .where({ pick_batch_id: batchOrder.pick_batch_id })
+            .update({ status: 'pack_complete', pack_completed_at: now, updated_at: now });
+
+          const billableOrders = await trx('pick_batch_orders as pbo')
+            .join('order_fulfillment_status as ofs', 'pbo.lasyncro_order_id', 'ofs.lasyncro_order_id')
+            .where({ 'pbo.pick_batch_id': batchOrder.pick_batch_id, 'pbo.shop_id': shopId })
+            .whereNot('ofs.status', 'cancelled')
+            .count<{ count: string }>('pbo.lasyncro_order_id as count')
+            .first();
+
+          const billableCount = parseInt(billableOrders?.count ?? '0', 10);
+
+          if (billableCount > 0) {
+            const updated = await trx('shop_usage_metrics')
+              .where({ shop_id: shopId })
+              .whereNull('period_ends_at')
+              .increment('shipped_orders', billableCount);
+
+            if (updated === 0) {
+              console.warn('[WMS_FREE_SCAN_BATCH_COMPLETE][USAGE] no open billing period', {
+                shopId,
+                batchId: batchOrder.pick_batch_id,
+                billableCount,
+              });
+            }
+          }
+
+          console.info('[WMS_FREE_SCAN_BATCH_AUTOCOMPLETE]', { pick_batch_id: batchOrder.pick_batch_id, shopId });
+        }
+
+        console.info('[WMS_FREE_SCAN_SHIPPED]', {
+          lasyncro_order_id: order.lasyncro_order_id,
+          pick_batch_id: batchOrder.pick_batch_id,
+          shopId,
+          userId,
+        });
+
+        return {
+          type: 'shipped',
+          lasyncro_order_id: order.lasyncro_order_id,
+          external_order_id: order.external_order_id,
+          pick_batch_id: batchOrder.pick_batch_id,
+          batch_complete: batchComplete,
+        };
+      });
+
+      if ('error' in result) {
+        const statusMap: Record<string, number> = {
+          invoice_not_found: 404,
+          batch_not_packing: 409,
+          siblings_incomplete: 409,
+        };
+        return res.status(statusMap[result.error as string] ?? 500).json(result);
+      }
+
+      return res.status(200).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[WMS_FREE_SCAN_LSO_FAILED]', { shopId, userId, scanned_value, error: message });
+      return res.status(500).json({ error: `Invoice scan failed: ${message}` });
+    }
+  }
+
+  // ── LSU- path — unit barcode → resolve + auto-claim + confirm pack scan ────
+  if (scanned_value.startsWith('LSU-')) {
+    try {
+      const result = await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+        // 1. Resolve unit
+        const unit = await trx('inventory_units')
+          .where({ shop_id: shopId, lasyncro_unit_id: scanned_value })
+          .select('lasyncro_unit_id', 'lasyncro_variant_id', 'status')
+          .first();
+
+        if (!unit) return { error: 'unit_not_found', message: 'Unit barcode not recognised' };
+        if (unit.status === 'packed' || unit.status === 'shipped') {
+          return { error: 'already_packed', message: `Unit is already ${unit.status}` };
+        }
+        if (unit.status !== 'picked') {
+          return { error: 'not_picked', message: `Unit cannot be packed — current status: ${unit.status}` };
+        }
+
+        // 2. Find confirmed pick record → lasyncro_line_item_id + pick_batch_id
+        const pickLog = await trx('pick_scan_log')
+          .where({ shop_id: shopId, lasyncro_unit_id: scanned_value, status: 'confirmed' })
+          .select('lasyncro_line_item_id', 'pick_batch_id')
+          .first();
+
+        if (!pickLog) {
+          return { error: 'no_pick_record', message: 'No confirmed pick record found for this unit' };
+        }
+
+        // 3. Verify batch is packable
+        const batch = await trx('pick_batches')
+          .where({ pick_batch_id: pickLog.pick_batch_id, shop_id: shopId })
+          .select('status', 'packed_by')
+          .first();
+
+        if (!batch) return { error: 'batch_not_found', message: 'Pick batch not found' };
+        if (!['pick_complete', 'packing'].includes(batch.status)) {
+          return { error: 'batch_not_ready', message: `Batch not ready for packing — status: ${batch.status}` };
+        }
+
+        // 4. Resolve lasyncro_order_id from line item
+        const lineItemRow = await trx('order_line_items')
+          .where({ lasyncro_line_item_id: pickLog.lasyncro_line_item_id })
+          .select('lasyncro_order_id')
+          .first();
+
+        if (!lineItemRow) return { error: 'line_item_not_found', message: 'Line item not found' };
+        const lasyncroOrderId: string = lineItemRow.lasyncro_order_id;
+
+        // 5. Auto-claim batch on first LSU- scan (batch was pick_complete)
+        const now = new Date();
+        const autoClaimed = batch.status === 'pick_complete';
+
+        if (autoClaimed) {
+          await trx('pick_batches')
+            .where({ pick_batch_id: pickLog.pick_batch_id })
+            .update({
+              status: 'packing',
+              packed_by: userId,
+              pack_claimed_at: now,
+              pack_last_activity_at: now,
+              updated_at: now,
+            });
+
+          const batchOrders = await trx('pick_batch_orders')
+            .where({ pick_batch_id: pickLog.pick_batch_id })
+            .select('lasyncro_order_id');
+
+          for (const o of batchOrders) {
+            await trx('order_warehouse_status')
+              .where({ lasyncro_order_id: o.lasyncro_order_id })
+              .update({ status: 'packing', status_updated_at: now, updated_at: now });
+
+            const orderRow = await trx('orders')
+              .where({ lasyncro_order_id: o.lasyncro_order_id, shop_id: shopId })
+              .select('wms_barcode')
+              .first();
+
+            if (orderRow?.wms_barcode) {
+              await trx('barcode_print_jobs')
+                .insert({
+                  shop_id: shopId,
+                  lasyncro_order_id: o.lasyncro_order_id,
+                  lasyncro_variant_id: null,
+                  quantity: 1,
+                  barcode_value: orderRow.wms_barcode,
+                  label_type: 'invoice',
+                  status: 'pending',
+                  created_by: userId,
+                })
+                .onConflict(db.raw(`(shop_id, lasyncro_order_id) WHERE label_type = 'invoice'`))
+                .ignore();
+            }
+          }
+
+          console.info('[WMS_FREE_SCAN_BATCH_AUTOCLAIMED]', {
+            pick_batch_id: pickLog.pick_batch_id,
+            userId,
+            shopId,
+          });
+        }
+
+        // 6. Confirm pack scan for this unit
+        const packScanResult = await confirmPackScan(trx, {
+          pickBatchId: pickLog.pick_batch_id,
+          lasyncroOrderId,
+          lasyncroLineItemId: pickLog.lasyncro_line_item_id,
+          lasyncroVariantId: unit.lasyncro_variant_id,
+          lasyncroUnitId: unit.lasyncro_unit_id,
+          quantityConfirmed: 1,
+          scannedBy: userId,
+          shopId,
+        });
+
+        // 7. Fetch variant + order + all line items with pack scan status
+        const [variant, order, lineItems, trackingRow] = await Promise.all([
+          trx('variants')
+            .where({ lasyncro_variant_id: unit.lasyncro_variant_id, shop_id: shopId })
+            .select('title as variant_title', 'sku', 'image_url')
+            .first(),
+
+          trx('orders as o')
+            .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+            .where({ 'o.lasyncro_order_id': lasyncroOrderId, 'o.shop_id': shopId })
+            .select(
+              'o.lasyncro_order_id',
+              'eim.external_order_id',
+              'o.wms_barcode',
+              'o.total_price',
+              'o.currency',
+              'o.shipping_name',
+              'o.shipping_address1',
+              'o.shipping_city',
+              'o.shipping_zip',
+              'o.shipping_country_code',
+            )
+            .first(),
+
+          trx('order_line_items as oli')
+            .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+            .leftJoin('pack_scan_log as psl', function () {
+              this.on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+                .andOn('psl.pick_batch_id', trx.raw('?', [pickLog.pick_batch_id]))
+                .andOnVal('psl.status', 'confirmed');
+            })
+            .where({ 'oli.lasyncro_order_id': lasyncroOrderId })
+            .select(
+              'oli.lasyncro_line_item_id',
+              'oli.lasyncro_variant_id',
+              'oli.title as product_title',
+              'oli.quantity',
+              'v.image_url',
+              'v.sku',
+              trx.raw(`(psl.scan_id IS NOT NULL) as pack_scanned`),
+            ),
+
+          trx('order_shipment_tracking')
+            .where({ lasyncro_order_id: lasyncroOrderId, shop_id: shopId })
+            .select('id')
+            .first(),
+        ]);
+
+        console.info('[WMS_FREE_SCAN_UNIT_CONFIRMED]', {
+          lasyncro_unit_id: unit.lasyncro_unit_id,
+          lasyncro_order_id: lasyncroOrderId,
+          pick_batch_id: pickLog.pick_batch_id,
+          order_complete: packScanResult.order_complete,
+          shopId,
+          userId,
+        });
+
+        return {
+          type: 'unit_resolved',
+          pick_batch_id: pickLog.pick_batch_id,
+          lasyncro_unit_id: unit.lasyncro_unit_id,
+          lasyncro_order_id: lasyncroOrderId,
+          order_complete: packScanResult.order_complete,
+          auto_claimed: autoClaimed,
+          has_carrier_label: !!trackingRow,
+          variant,
+          order,
+          line_items: lineItems,
+        };
+      });
+
+      if ('error' in result) {
+        const statusMap: Record<string, number> = {
+          unit_not_found: 404,
+          not_picked: 409,
+          already_packed: 409,
+          no_pick_record: 409,
+          batch_not_found: 404,
+          batch_not_ready: 409,
+          line_item_not_found: 500,
+        };
+        return res.status(statusMap[result.error as string] ?? 500).json(result);
+      }
+
+      return res.status(200).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[WMS_FREE_SCAN_LSU_FAILED]', { shopId, userId, scanned_value, error: message });
+      return res.status(500).json({ error: `Unit scan failed: ${message}` });
+    }
+  }
+
+  // ── Unknown prefix ─────────────────────────────────────────────────────────
+  return res.status(400).json({
+    error: 'unrecognised_barcode',
+    message: 'Barcode prefix not recognised. Expected LSU- or LSO-.',
+  });
+};
+
 // ─────────────────────────────────────────
 // POST /api/v1/wms/batch/:batchId/pack-complete
 // ─────────────────────────────────────────

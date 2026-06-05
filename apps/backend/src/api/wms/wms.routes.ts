@@ -48,6 +48,7 @@ import {
   httpGetPackDecision,
   httpResolvePackDecision,
   httpListPackDecisions,
+  httpPackFreeScan,
 } from './wms.controller.js';
 import {
   httpGetPickAnalytics,
@@ -169,6 +170,14 @@ router.post(
   requireTier('core'),
   requireAction('wms:pack:scan'),
   httpConfirmPackScan
+);
+router.post(
+  '/pack/free-scan',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:pack:scan'),
+  httpPackFreeScan
 );
 router.post(
   '/batch/:batchId/pack-complete',

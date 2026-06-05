@@ -681,38 +681,32 @@ Pick uses `?batchId=`. Pack uses `?packBatchId=`. Both can be active simultaneou
 **Exception dialog:** non-dismissible, blocking section (warning) above divider, non-blocking section (error/default) below divider
 **Session key:** `?packBatchId=` in URL, set by `onPackSessionEnter`, cleared by `onSessionExit`
 
-### WEB-PACK-02 — Target State (Planned)
+### WEB-PACK-02 — Item-centric Free-scan Pack Surface ✅ RESOLVED June 5, 2026
 
-The WEB-PACK-01 implementation above is a transitional, Playbook-compliant implementation.
-The intended production UX is fundamentally different and blocked on two prerequisites:
+**What shipped:**
 
-**Prerequisites:**
-- WM-34: ✅ RESOLVED June 3, 2026 — Invoice print infrastructure complete. See blueprint §WM-34.
-- WM-38: Carrier integration (per-carrier label format, tracking number ingestion)
+- `POST /wms/pack/free-scan` — universal pack scanner. Routes by prefix:
+  - `LSU-` → resolves unit → auto-claims batch (pick_complete → packing) on first scan → confirms pack scan → returns full order context (variant image, sibling line items with scan status, shipping address)
+  - `LSO-` → verifies all siblings confirmed → ships order → auto-completes batch if last order
+- Auto-print: invoice (A4) + carrier label fire on session open. Print failure non-blocking (warning banner, packer proceeds).
+- `lasyncro_unit_id` added to `pick_scan_log` + `pack_scan_log` migrations (nullable, populated on LSU- scans).
+- `packScan.service.ts` fixed: now updates authoritative `inventory_units` table (WM-46) instead of stale `inventory_unit_status`.
+- Operations page: always-on pack mode panel with NodeTrack pulse animation, sad path inline errors (auto-dismiss 3.5s).
+- `PackSessionPage` fully rewritten — item-centric, sibling thumbnails, LSO- confirm, Problem Center escape hatch, back-nav guard, LSO- mismatch rejection.
+- Batch auto-complete fires silently on last LSO- scan (no screen, no redirect).
 
-**Target flow (item-centric free-scan):**
-Empty screen + ScanInput always focused
-→ Packer scans any item barcode from the roller bin
-→ Barcode resolved to order + line item within active batch
-→ Screen: variant image (large) + product/variant/SKU + order number
-→ If multi-item order: thumbnail strip of sibling items below
-→ [WM-34] Invoice (A4) + shipping label auto-print on first item scan per order
-→ Packer scans remaining items for same order (same free-scan, any order)
-→ [WM-34] Packer scans invoice barcode → ship confirmed + Shopify writeback
-→ Green flash → screen clears → next scan
-→ Batch auto-completes when all items confirmed
+**Sad path rejection codes:**
 
-**Screens removed in WEB-PACK-02 (vs WEB-PACK-01):**
-- Brief screen
-- Order-by-order sequential flow
-- Order Complete intermediate screen
-- Summary screen
-- Manual "Ship & Next Order" CTA → replaced by invoice barcode scan
+- `unit_not_found` — LSU- not in inventory_units
+- `not_picked` — unit status ≠ picked
+- `already_packed` — unit already packed/shipped
+- `no_pick_record` — no confirmed pick_scan_log entry for this unit
+- `batch_not_ready` — batch status not pick_complete or packing
+- `siblings_incomplete` — LSO- scanned before all line items confirmed
+- `invoice_not_found` — LSO- not matched to any order
 
-**Key backend requirement:**
-Barcode resolver must return order + line item context when a variant barcode is scanned within an active pack batch — not just the variant ID. The resolver already handles this partially (see `wms.controller.ts` barcode resolution endpoint).
-
-**`image_url` is available:** `variants.image_url` synced from Shopify (`shopifyProducts.core.ts`). Needs to be added to the `/batch/:id/orders` line items query.
+**Screens removed vs WEB-PACK-01:**
+Brief, Summary, Order Complete, Manual Ship CTA.
 
 ---
 
@@ -788,7 +782,3 @@ POST /api/v1/wms/orders/:orderId/generate-label
 - Carrier configured: label PDF opens in new tab automatically at pack time
 - No carrier configured: Shopify packing slip opens (pre-WM-38 behaviour preserved)
 - Operator is never blocked — fallback always exists
-
-### Future (WEB-PACK-02)
-
-In the item-centric free-scan flow, label generation triggers on first item scan per order, not on manual CTA. The `POST /generate-label` endpoint is idempotent — calling it twice for the same order returns the existing tracking row without creating a duplicate label.

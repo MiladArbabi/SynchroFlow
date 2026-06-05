@@ -269,10 +269,10 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 
 ---
 
-### 2.5 PACK EXECUTION  [LIVE — WEB-PACK-01 ✅ | WEB-PACK-02 🚧 IN PROGRESS June 5, 2026]
+### 2.5 PACK EXECUTION  [LIVE — WEB-PACK-01 ✅ | WEB-PACK-02 ✅ RESOLVED June 5, 2026]
 
 ✅ Pack session implemented. Pack exceptions live. Pack decision request pattern shipped (WM‑33 ✅ — see wms_pack_decision_playbook.md).
-🚧 WEB-PACK-02 IN PROGRESS June 5, 2026 — Item-centric free-scan pack surface. All upstream blockers cleared: WM-34 ✅ WM-38 ✅ WM-46 ✅ WEB-RECEIVE-UNIT-01 ✅ WEB-STOW-UNIT-01 ✅ WEB-PICK-UNIT-01 ✅. Design spec: wms_webapp_workflow_playbook.md §WEB-PACK-02.
+✅ WEB-PACK-02 RESOLVED June 5, 2026 — Item-centric free-scan pack surface live. POST /wms/pack/free-scan routes LSU- (unit resolve + auto-claim + auto-print + pack scan confirm) and LSO- (ship confirm + batch auto-complete). Operations page pack mode panel always-on with NodeTrack pulse. PackSessionPage fully rewritten — no Brief, no Summary, no Order Complete screen. See wms_webapp_workflow_playbook.md §WEB-PACK-02.
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
@@ -284,14 +284,14 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 - **Blocking exceptions** (`item_missing`, `short_pick`): raises `PackDecisionRequest` → pack pauses → owner notified (push + alert) → owner approves/rejects → packer advances ✅
 - **Non-blocking exceptions** (`product_defect`, `packaging_defect`, `wrong_item`): problem bin → advance immediately ✅
 
-**Intended Pack Flow — item-centric free-scan [WEB-PACK-02 PLANNED]**
+**Production Pack Flow — item-centric free-scan [WEB-PACK-02 ✅ RESOLVED June 5, 2026]**
 
-Operational reality: picked items arrive at packing station in a roller bin in no particular order. Packer grabs whatever is on top and scans it. UI must be item-centric, not order-centric.
-Packer scans any item barcode (USB/BT scanner or manual)
-→ Barcode resolved → matched to order + line item within active batch
-→ Screen shows: variant image (large), product name, variant, SKU, order number
-→ If multi-item order: thumbnail strip of other items in same order shown below
-→ [WM-34] Auto-print invoice (A4) + shipping label on first item scan per order
+Operational reality: picked items arrive at packing station in a roller bin in no particular order. Packer grabs whatever is on top and scans it. UI is item-centric, not order-centric.
+Packer scans any LSU- unit barcode (USB/BT/MDE scanner or manual)
+→ POST /wms/pack/free-scan resolves unit → batch auto-claimed if first scan (pick_complete → packing)
+→ Screen shows: variant image, product name, variant, SKU, order number, customer, shipping address
+→ If multi-item order: sibling thumbnail strip with confirmed/pending indicators
+→ Invoice (A4) + shipping label auto-print on session open (non-blocking on printer failure)
 → Packer places item(s) in box, inserts invoice
 → [WM-34] Packer scans invoice barcode → ship confirmed + Shopify writeback
 → Green flash → screen clears → ready for next scan
