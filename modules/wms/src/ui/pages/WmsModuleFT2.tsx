@@ -12,7 +12,7 @@ import {
   useTheme,
   TextField,
 } from '@mui/material';
-import { ScanBarcode, PackageCheck, Clock } from 'lucide-react';
+import { ScanBarcode, PackageCheck, Clock, Package } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
@@ -75,6 +75,7 @@ export type WmsStowTask = {
   created_at: string;
   variant_title: string | null;
   sku: string | null;
+  product_title: string | null;
   image_url: string | null;       // WEB-STOW-UNIT-01: product image for item scan confirmation
   unit_ids: string[] | null;      // WEB-STOW-UNIT-01: LSU- IDs for units assigned to this task
 };
@@ -443,7 +444,7 @@ const BatchCard = memo(function BatchCard({
           variant="contained"
           fullWidth
           size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
+          sx={{ borderRadius: 2, fontWeight: 700, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={() => onClaim(batch.pick_batch_id)}
         >
           Claim & Start Picking
@@ -495,33 +496,39 @@ const StowTaskCard = memo(function StowTaskCard({
   onConfirm: (taskId: string) => void;
 }) {
   const theme = useTheme();
-  const label = task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase();
-  const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
 
+  const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2, borderColor: theme.palette.warning.light }}>
+    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2, borderColor: 'var(--accent-border)' }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Typography variant="body2" fontWeight={700}>{label}</Typography>
-        <Chip label="Stow pending" size="small" color="warning" />
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          {task.image_url ? (
+            <Box component="img" src={task.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} />
+          ) : (
+            <Box sx={{ width: 40, height: 40, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Package size={18} style={{ opacity: 0.4 }} />
+            </Box>
+          )}
+          <Box>
+            <Typography variant="body2" fontWeight={600}>
+              {task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase()}
+            </Typography>
+            {task.sku && <Typography variant="caption" color="text.secondary">{task.sku}</Typography>}
+          </Box>
+        </Box>
+        <Chip label="Stow pending" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />
       </Box>
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        <Typography variant="caption" color="text.secondary">
-          Qty: {task.quantity}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Location: {task.location_code ?? 'Unassigned'}
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Source: {triggerLabel}
-        </Typography>
+        <Typography variant="caption" color="text.secondary">Qty: {task.quantity}</Typography>
+        <Typography variant="caption" color="text.secondary">Location: {task.location_code ?? 'Unassigned'}</Typography>
+        <Typography variant="caption" color="text.secondary">Source: {triggerLabel}</Typography>
       </Box>
       {task.status === 'pending' && (
         <Button
-          variant="outlined"
-          color="warning"
+          variant="contained"
           fullWidth
           size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
+          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={() => onClaim(task.stow_task_id)}
         >
           Claim & Stow
@@ -530,14 +537,14 @@ const StowTaskCard = memo(function StowTaskCard({
       {task.status === 'in_progress' && (
         <Button
           variant="contained"
-          color="warning"
           fullWidth
           size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
+          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
           onClick={() => onConfirm(task.stow_task_id)}
         >
           Confirm Stowed
         </Button>
+      
       )}
     </Paper>
   );
@@ -836,7 +843,7 @@ function WmsModuleFT2Inner({
           <Box sx={{
             width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            bgcolor: packScanError ? 'error.main' : 'var(--accent)',
+            bgcolor: packScanError ? 'error.main' : 'var(--accent-)',
             color: '#fff',
             transition: 'background-color 0.2s',
             ...(!packScanError && !packScanLoading && {

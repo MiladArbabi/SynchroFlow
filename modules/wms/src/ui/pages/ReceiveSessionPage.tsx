@@ -20,7 +20,15 @@ import {
   TableRow,
   useTheme,
 } from '@mui/material';
-import { CheckCircle, AlertTriangle, PackageX, ScanBarcode, Hash, BarChart2 } from 'lucide-react';
+import { 
+  CheckCircle, 
+  AlertTriangle, 
+  PackageX, 
+  ScanBarcode, 
+  Hash, 
+  BarChart2, 
+  Package 
+} from 'lucide-react';
 
 /**
  * RECEIVE SESSION PAGE (FEAT-004)
@@ -56,6 +64,9 @@ export interface ReceiveJobLine {
   quantity_expected: number;
   inspection_complete?: boolean;
   quantity_accepted?: number;
+  image_url: string | null;
+  barcode: string | null;
+  product_title: string | null;
 }
 
 export interface ReceiveSessionPageProps {
@@ -516,14 +527,21 @@ export default function ReceiveSessionPage({
               {lines.map((line) => (
                 <TableRow key={line.receive_job_line_id}>
                   <TableCell sx={{ fontSize: 12 }}>
-                    <Typography variant="body2" fontWeight={500} noWrap>
-                      {line.variant_title && line.variant_title !== 'Default Title'
-                        ? line.variant_title
-                        : line.description ?? line.sku ?? '—'}
-                    </Typography>
-                    {line.sku && (
-                      <Typography variant="caption" color="text.secondary">{line.sku}</Typography>
-                    )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {line.image_url ? (
+                        <Box component="img" src={line.image_url} alt="" sx={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
+                      ) : (
+                        <Box sx={{ width: 36, height: 36, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Package size={16} style={{ opacity: 0.4 }} />
+                        </Box>
+                      )}
+                      <Box>
+                        <Typography variant="body2" fontWeight={600} noWrap>
+                          {line.product_title ?? line.variant_title ?? line.description ?? line.sku ?? '—'}
+                        </Typography>
+                        {line.sku && <Typography variant="caption" color="text.secondary">{line.sku}</Typography>}
+                      </Box>
+                    </Box>
                   </TableCell>
                   <TableCell align="right" sx={{ fontSize: 12 }}>{line.quantity_expected}</TableCell>
                 </TableRow>
@@ -722,31 +740,7 @@ export default function ReceiveSessionPage({
         <LinearProgress variant="determinate" value={progress} sx={{ borderRadius: 1, height: 5 }} />
       </Box>
 
-      {/* ZONE 1 — VARIANT IDENTITY */}
-      <Paper variant="outlined" sx={{ mx: 2, mt: 1, p: 2, borderRadius: 2, borderColor: theme.palette.primary.main, borderWidth: 2, flex: '0 0 auto' }}>
-        <Typography variant="overline" color="primary" sx={{ fontSize: 10, letterSpacing: 1.5 }}>
-          Inspect variant
-        </Typography>
-        <Typography variant="h6" fontWeight={700} sx={{ mt: 0.5 }} noWrap>
-          {currentLine?.variant_title || currentLine?.sku || currentLine?.description || currentLine?.lasyncro_variant_id?.slice(0, 8) || 'Unknown item'}
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 2, mt: 0.5, alignItems: 'center' }}>
-          {currentLine?.sku && (
-            <Typography variant="caption" color="text.secondary">SKU: {currentLine.sku}</Typography>
-          )}
-          <Chip
-            label={`Expected: ${currentLine?.quantity_expected}`}
-            size="small"
-            color="primary"
-            variant="outlined"
-          />
-          {remaining > 0 && (
-            <Chip label={`${remaining} remaining`} size="small" color="warning" variant="outlined" />
-          )}
-        </Box>
-      </Paper>
-
-      {/* ZONE 2 — SCAN MODE or COUNT MODE */}
+      {/* ZONE 1 — SCAN MODE or COUNT MODE */}
       <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, p: 2, borderRadius: 2, flex: '0 0 auto' }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
           <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
@@ -801,12 +795,20 @@ export default function ReceiveSessionPage({
                       transition: 'background-color 0.4s ease',
                     }}
                   >
+                    <Box sx={{ flexShrink: 0 }}>
+                      {line.image_url ? (
+                        <Box component="img" src={line.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5 }} />
+                      ) : (
+                        <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <Package size={14} style={{ opacity: 0.4 }} />
+                        </Box>
+                      )}
+                    </Box>
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="caption" noWrap color={isConfirmed ? 'success.main' : 'text.primary'} fontWeight={isConfirmed ? 600 : 400}>
-                        {line.variant_title && line.variant_title !== 'Default Title'
-                          ? line.variant_title
-                          : line.description ?? line.sku ?? '—'}
+                        {line.product_title ?? line.variant_title ?? line.description ?? '—'}
                       </Typography>
+                      {line.sku && <Typography variant="caption" display="block" color="text.secondary" noWrap>{line.sku}</Typography>}
                     </Box>
                     <Chip
                       label={`${count} / ${line.quantity_expected}`}

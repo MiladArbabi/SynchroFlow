@@ -388,6 +388,7 @@ function CreatePoDialog({
                     label="Product / SKU"
                     size="small"
                     fullWidth
+                    autoComplete="off"
                     value={variantSearch[item.key] ?? item.description}
                     error={(variantSearch[item.key]?.length ?? 0) > 0 && !item.lasyncro_variant_id && variantOptions.length === 0}
                     helperText={
@@ -512,6 +513,7 @@ function CreatePoDialog({
                   label="Qty *"
                   size="small"
                   type="number"
+                  autoComplete="off"
                   value={item.quantity_ordered}
                   onChange={(e) => updateLineItem(item.key, 'quantity_ordered', e.target.value)}
                   inputProps={{ min: 1 }}
@@ -523,6 +525,7 @@ function CreatePoDialog({
                   label="Unit cost"
                   size="small"
                   type="text"
+                  autoComplete="off"
                   inputMode="decimal"
                   value={item.unit_cost_cents}
                   onChange={(e) => {

@@ -432,14 +432,14 @@ export default function StowSessionPage({
                     )}
                     <Box sx={{ flex: 1, minWidth: 0 }}>
                       <Typography variant="body2" fontWeight={600} noWrap>
-                        {t.variant_title ?? t.sku ?? t.stow_task_id.slice(0, 8).toUpperCase()}
+                        {t.product_title ?? t.variant_title ?? t.sku ?? t.stow_task_id.slice(0, 8).toUpperCase()}
                       </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
                       <Chip label={`${t.quantity} units`} size="small" />
                       {t.location_code
                         ? <Chip label={t.location_code} size="small" color="success" />
-                        : <Chip label="No location" size="small" color="warning" />}
+                        : <Chip label="No location" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />}
                     </Box>
                   </Box>
                 </Paper>
@@ -501,7 +501,7 @@ export default function StowSessionPage({
             </Box>
           )}
           <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="body2" fontWeight={600} noWrap>{currentTask.variant_title ?? '—'}</Typography>
+            <Typography variant="body2" fontWeight={600} noWrap>{currentTask.product_title ?? currentTask.variant_title ?? '—'}</Typography>
             {currentTask.sku && (
               <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace', display: 'block' }}>
                 {currentTask.sku}
@@ -575,17 +575,17 @@ export default function StowSessionPage({
               <CheckCircle size={13} color={theme.palette.success.main} />
               <Typography variant="caption" color="success.main" fontWeight={600}>Item confirmed</Typography>
             </Box>
-            <Typography variant="body2" fontWeight={600} noWrap>{currentTask.variant_title ?? '—'}</Typography>
+            <Typography variant="body2" fontWeight={600} noWrap>{currentTask.product_title ?? currentTask.variant_title ?? '—'}</Typography>
             <Typography variant="caption" color="text.secondary">{remainingQty} units</Typography>
           </Box>
         </Paper>
 
         {/* Suggested location */}
         {currentTask.location_code && (
-          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: alpha(theme.palette.warning.main, 0.06), borderColor: 'warning.main' }}>
+          <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: 'var(--accent-ghost)', borderColor: 'var(--accent-border)'}}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <MapPin size={16} color={theme.palette.warning.main} />
-              <Typography variant="body2" fontWeight={600} color="warning.main">
+              <MapPin size={16} color='var(--accent)' />
+              <Typography variant="body2" fontWeight={600} sx={{ color: 'var(--accent)' }}>
                 Suggested bin: {currentTask.location_code}
               </Typography>
             </Box>
@@ -627,10 +627,19 @@ export default function StowSessionPage({
         </Paper>
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Product</Typography>
-          <Typography variant="body1" fontWeight={600}>{currentTask.variant_title ?? currentTask.sku ?? '—'}</Typography>
-          {currentTask.sku && (
-            <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{currentTask.sku}</Typography>
-          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+            {currentTask.image_url ? (
+              <Box component="img" src={currentTask.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} />
+            ) : (
+              <Box sx={{ width: 40, height: 40, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Package size={18} style={{ opacity: 0.4 }} />
+              </Box>
+            )}
+            <Box>
+              <Typography variant="body1" fontWeight={600}>{currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? '—'}</Typography>
+              {currentTask.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{currentTask.sku}</Typography>}
+            </Box>
+          </Box>
         </Paper>
 
         <Divider sx={{ mb: 2 }} />
@@ -722,8 +731,19 @@ export default function StowSessionPage({
         </Paper>
         <Paper variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Product</Typography>
-          <Typography variant="body1" fontWeight={600}>{currentTask.variant_title ?? currentTask.sku ?? '—'}</Typography>
-          {currentTask.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{currentTask.sku}</Typography>}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 0.5 }}>
+            {currentTask.image_url ? (
+              <Box component="img" src={currentTask.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} />
+            ) : (
+              <Box sx={{ width: 40, height: 40, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Package size={18} style={{ opacity: 0.4 }} />
+              </Box>
+            )}
+            <Box>
+              <Typography variant="body1" fontWeight={600}>{currentTask.product_title ?? currentTask.variant_title ?? currentTask.sku ?? '—'}</Typography>
+              {currentTask.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{currentTask.sku}</Typography>}
+            </Box>
+          </Box>
         </Paper>
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
           <Typography variant="caption" color="text.secondary" sx={{ textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>Units placing</Typography>

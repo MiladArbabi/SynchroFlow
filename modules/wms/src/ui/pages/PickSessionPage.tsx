@@ -703,19 +703,16 @@ export default function PickSessionPage({
       {/* PRODUCT INFO CARD — visible during product_scan + qty_confirm phases */}
       {(isProductPhase || isQtyPhase) && (
         <Paper variant="outlined" sx={{ mx: 2, mt: 1.5, borderRadius: 2, overflow: 'hidden' }}>
-          {/* Image — full-width banner when present */}
-          {currentItem.image_url && (
-            <Box
-              component="img"
-              src={currentItem.image_url}
-              alt={currentItem.product_title}
-              sx={{ width: '100%', maxHeight: 160, objectFit: 'cover', display: 'block', borderBottom: '0.5px solid', borderColor: 'divider' }}
-            />
-          )}
           <Box sx={{ p: 1.5, display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
-            {/* Placeholder icon — only when no image */}
-            {!currentItem.image_url && (
-              <Box sx={{ width: 48, height: 48, borderRadius: 1.5, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {currentItem.image_url ? (
+              <Box
+                component="img"
+                src={currentItem.image_url}
+                alt={currentItem.product_title}
+                sx={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }}
+              />
+            ) : (
+              <Box sx={{ width: 56, height: 56, borderRadius: 1, bgcolor: 'action.hover', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Package size={22} color="var(--ink3, #9ca3af)" />
               </Box>
             )}

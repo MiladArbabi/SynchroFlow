@@ -1207,6 +1207,7 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
 
       return trx('stow_tasks as st')
         .leftJoin('variants as v', 'v.lasyncro_variant_id', 'st.lasyncro_variant_id')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .where('st.shop_id', shopId)
         .whereIn('st.status', ['pending', 'in_progress'])
         .orderBy('st.created_at', 'asc')
@@ -1224,6 +1225,7 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'v.title as variant_title',
           'v.sku',
           'v.image_url',
+          'p.title as product_title',
           trx.raw(`
             (SELECT array_agg(iu.lasyncro_unit_id ORDER BY iu.received_at)
              FROM (
