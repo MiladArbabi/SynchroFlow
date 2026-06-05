@@ -254,7 +254,7 @@ function StatCard({ label, value, valueColor, cta, ctaHref }: {
   const navigate = useNavigate();
   return (
     <Box sx={{
-      bgcolor: 'var(--bg)',
+      bgcolor: 'var(--bg-3)',
       border: '0.5px solid var(--rule)',
       borderRadius: '8px',
       p: '12px 14px',
@@ -289,7 +289,7 @@ function MoneyCard({ label, value, valueColor }: {
 }) {
   return (
     <Box sx={{
-      bgcolor: 'var(--bg)',
+      bgcolor: 'var(--bg-3)',
       border: '0.5px solid var(--rule)',
       borderRadius: '8px',
       p: '12px 14px',

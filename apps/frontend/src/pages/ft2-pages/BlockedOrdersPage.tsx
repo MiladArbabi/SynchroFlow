@@ -224,10 +224,11 @@ export default function BlockedOrdersPage() {
                     display: 'grid',
                     gridTemplateColumns: '1fr 100px 80px 80px',
                     px: 2.5, py: 1,
+                    bgcolor: 'var(--bg-3)',
                     borderBottom: '1px solid var(--rule)',
                   }}>
                     {['ORDER', 'VALUE', 'AGE', 'ACTION'].map(col => (
-                      <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                      <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-2)' }}>
                         {col}
                       </Typography>
                     ))}

@@ -208,11 +208,13 @@ export async function httpGetPoLineItems(req: Request, res: Response) {
 
       return trx('purchase_order_line_items as li')
         .leftJoin('variants as v', 'li.lasyncro_variant_id', 'v.lasyncro_variant_id')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .where({ 'li.po_id': poId, 'li.shop_id': shopId })
         .orderBy('li.created_at', 'asc')
         .select(
           'li.id', 'li.lasyncro_variant_id', 'li.description',
-          'li.quantity_ordered', 'li.quantity_received', 'li.unit_cost_cents', 'v.sku'
+          'li.quantity_ordered', 'li.quantity_received', 'li.unit_cost_cents',
+          'v.sku', 'v.image_url', 'p.title as product_title'
         );
     });
 
@@ -442,16 +444,17 @@ export async function httpSearchVariants(req: Request, res: Response) {
   try {
     const variants = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      let query = trx('variants')
-        .where({ shop_id: shopId })
-        .whereNotNull('sku')
-        .whereNot('sku', '')
-        .select('lasyncro_variant_id', 'sku', 'title', 'unit_cost')
-        .orderBy('sku', 'asc')
+      let query = trx('variants as v')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .where({ 'v.shop_id': shopId })
+        .whereNotNull('v.sku')
+        .whereNot('v.sku', '')
+        .select('v.lasyncro_variant_id', 'v.sku', 'v.title', 'v.unit_cost', 'v.image_url', 'p.title as product_title')
+        .orderBy('v.sku', 'asc')
         .limit(30);
       if (q) {
         query = query.where(function () {
-          this.whereILike('sku', `%${q}%`).orWhereILike('title', `%${q}%`);
+          this.whereILike('v.sku', `%${q}%`).orWhereILike('v.title', `%${q}%`).orWhereILike('p.title', `%${q}%`);
         });
       }
       return query;

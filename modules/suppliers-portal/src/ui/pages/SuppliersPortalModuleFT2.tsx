@@ -1,5 +1,5 @@
 // modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
@@ -7,6 +7,7 @@ import {
   Typography,
   Alert,
   Chip,
+  useTheme,
   Divider,
   Accordion,
   AccordionSummary,
@@ -75,6 +76,8 @@ export type PoLineItem = {
   quantity_received: number;
   unit_cost_cents: number | null;
   sku: string | null;
+  image_url: string | null;
+  product_title: string | null;
 };
 
 export type Supplier = {
@@ -164,9 +167,17 @@ type LineItemDraft = {
   unit_cost_cents: string;
   lasyncro_variant_id?: string | null;
   sku?: string | null;
+  product_title?: string | null;
+  image_url?: string | null;
 };
-
-type VariantOption = { lasyncro_variant_id: string; sku: string | null; title: string | null; unit_cost: number | null };
+type VariantOption = { 
+  lasyncro_variant_id: string; 
+  sku: string | null; 
+  title: string | null; 
+  unit_cost: number | null; 
+  image_url: string | null; 
+  product_title: string | null
+ };
 
 function CreatePoDialog({
   open,
@@ -195,6 +206,13 @@ function CreatePoDialog({
   const [variantOptions, setVariantOptions] = useState<VariantOption[]>([]);
   const [variantSearch, setVariantSearch] = useState<Record<number, string>>({});
   const [focusedOptionIndex, setFocusedOptionIndex] = useState(-1);
+  // Ref for the dropdown container — used to auto-scroll focused option into view
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focusedOptionIndex < 0 || !dropdownRef.current) return;
+    const el = dropdownRef.current.children[focusedOptionIndex] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: 'nearest' });
+  }, [focusedOptionIndex]);
 
   let keyCounter = lineItems.length;
 
@@ -255,7 +273,7 @@ function CreatePoDialog({
         expected_delivery_date: expectedDate || undefined,
         notes: notes.trim() || undefined,
         line_items: lineItems.map((item) => ({
-          description: item.description.trim(),
+          description: (item.product_title ?? item.description).trim(),
           quantity_ordered: parseInt(item.quantity_ordered, 10),
           unit_cost_cents: item.unit_cost_cents
             ? Math.round(parseFloat(item.unit_cost_cents) * 100)
@@ -284,7 +302,7 @@ function CreatePoDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="sm">
+    <Dialog open={open} onClose={handleClose} fullWidth maxWidth="md">
       <DialogTitle>New Purchase Order</DialogTitle>
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
@@ -345,6 +363,27 @@ function CreatePoDialog({
             {lineItems.map((item, idx) => (
               <Box key={item.key} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'flex-start' }}>
                 <Box sx={{ flex: 3, position: 'relative' }}>
+                  {item.lasyncro_variant_id ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, border: '1px solid', borderColor: 'divider', borderRadius: 1, px: 1.5, height: 40, overflow: 'hidden' }}>
+                      {item.image_url ? (
+                        <Box component="img" src={item.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
+                      ) : (
+                        <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <Package size={14} style={{ opacity: 0.4 }} />
+                        </Box>
+                      )}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>{item.product_title ?? item.description}</Typography>
+                        {item.sku && <Typography variant="caption" color="text.secondary">{item.sku}</Typography>}
+                      </Box>
+                      <IconButton size="small" onClick={() => {
+                        setLineItems((prev) => prev.map((i) => i.key === item.key ? { ...i, lasyncro_variant_id: null, description: '', product_title: null, image_url: null, sku: null } : i));
+                        setVariantSearch((p) => ({ ...p, [item.key]: '' }));
+                      }} sx={{ flexShrink: 0 }}>
+                        <XCircle size={14} />
+                      </IconButton>
+                    </Box>
+                  ) : (<>
                   <TextField
                     label="Product / SKU"
                     size="small"
@@ -379,11 +418,16 @@ function CreatePoDialog({
                       } else if (e.key === 'Enter' && focusedOptionIndex >= 0) {
                         e.preventDefault();
                         const v = variantOptions[focusedOptionIndex];
-                        const label = v.sku ?? (v.title && v.title !== 'Default Title' ? v.title : '');
-                        updateLineItem(item.key, 'description', label);
-                        updateLineItem(item.key, 'lasyncro_variant_id', v.lasyncro_variant_id);
-                        if (v.unit_cost) updateLineItem(item.key, 'unit_cost_cents', String(v.unit_cost));
-                        setVariantSearch((p) => ({ ...p, [item.key]: label }));
+                        setLineItems((prev) => prev.map((i) => i.key === item.key ? {
+                          ...i,
+                          description: v.sku ?? v.title ?? '',
+                          lasyncro_variant_id: v.lasyncro_variant_id,
+                          sku: v.sku,
+                          product_title: v.product_title,
+                          image_url: v.image_url,
+                          unit_cost_cents: v.unit_cost ? String(v.unit_cost) : i.unit_cost_cents,
+                        } : i));
+                        setVariantSearch((p) => ({ ...p, [item.key]: '' }));
                         setVariantOptions([]);
                         setFocusedOptionIndex(-1);
                       } else if (e.key === 'Escape') {
@@ -397,6 +441,12 @@ function CreatePoDialog({
                         setVariantOptions([]);
                         setFocusedOptionIndex(-1);
                       }, 150);
+                    }}
+                    onFocus={async () => {
+                      if (!item.lasyncro_variant_id) {
+                        const results = await onSearchVariants(variantSearch[item.key] ?? '');
+                        setVariantOptions(results);
+                      }
                     }}
                     onChange={async (e) => {
                       setFocusedOptionIndex(-1);
@@ -412,8 +462,9 @@ function CreatePoDialog({
                       }
                     }}
                   />
-                  {variantOptions.length > 0 && (variantSearch[item.key]?.length ?? 0) > 0 && !item.lasyncro_variant_id && (
+                  {variantOptions.length > 0 && !item.lasyncro_variant_id && (
                     <Box
+                      ref={dropdownRef}
                       onMouseDown={(e) => e.preventDefault()}
                       sx={{
                         position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
@@ -421,33 +472,41 @@ function CreatePoDialog({
                         borderRadius: 1, boxShadow: 3, maxHeight: 200, overflowY: 'auto',
                       }}
                     >
-                      {variantOptions.map((v) => (
+                      {variantOptions.map((v, optIdx) => (
                         <Box
                           key={v.lasyncro_variant_id}
                           onMouseDown={(e) => e.preventDefault()}
-                          sx={{ px: 1.5, py: 1, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' } }}
+                          sx={{ px: 1.5, py: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1, bgcolor: focusedOptionIndex === optIdx ? 'action.selected' : 'transparent', '&:hover': { bgcolor: focusedOptionIndex === optIdx ? 'action.selected' : 'action.hover' } }}
                           onClick={() => {
-                            const label = v.sku && v.sku !== '—' ? v.sku : (v.title && v.title !== 'Default Title' ? v.title : '');
-                            updateLineItem(item.key, 'description', label);
-                            updateLineItem(item.key, 'lasyncro_variant_id', v.lasyncro_variant_id);
-                            if (v.unit_cost) updateLineItem(item.key, 'unit_cost_cents', String(v.unit_cost));
-                            setVariantSearch((p) => ({ ...p, [item.key]: label }));
+                            setLineItems((prev) => prev.map((i) => i.key === item.key ? {
+                              ...i,
+                              description: v.sku ?? v.title ?? '',
+                              lasyncro_variant_id: v.lasyncro_variant_id,
+                              sku: v.sku,
+                              product_title: v.product_title,
+                              image_url: v.image_url,
+                              unit_cost_cents: v.unit_cost ? String(v.unit_cost) : i.unit_cost_cents,
+                            } : i));
+                            setVariantSearch((p) => ({ ...p, [item.key]: '' }));
                             setVariantOptions([]);
                           }}
                         >
-                          {v.sku ? (
-                            <Typography variant="body2" fontWeight={600}>{v.sku}</Typography>
-                          ) : null}
-                          {v.title && v.title !== 'Default Title' && (
-                            <Typography variant="caption" color="text.secondary">{v.title}</Typography>
+                          {v.image_url ? (
+                            <Box component="img" src={v.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
+                          ) : (
+                            <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                              <Package size={14} style={{ opacity: 0.4 }} />
+                            </Box>
                           )}
-                          {!v.sku && (!v.title || v.title === 'Default Title') && (
-                            <Typography variant="body2" color="text.secondary" fontStyle="italic">Unknown variant</Typography>
-                          )}
+                          <Box>
+                            <Typography variant="body2" fontWeight={600} sx={{ lineHeight: 1.3 }}>{v.product_title ?? v.title ?? 'Unknown product'}</Typography>
+                            {v.sku && <Typography variant="caption" color="text.secondary">{v.sku}</Typography>}
+                          </Box>
                         </Box>
                       ))}
                     </Box>
                   )}
+                  </>)}
                 </Box>
                 <TextField
                   label="Qty *"
@@ -631,6 +690,98 @@ function ReceiveShipmentDialog({
   );
 }
 
+// ─────────────────────────────────────────────
+// PO PROGRESS TRACK
+// ─────────────────────────────────────────────
+type NodeState = 'pending' | 'active' | 'confirmed';
+
+function PoProgressTrack({ status }: { status: PurchaseOrderStatus }) {
+  const theme = useTheme();
+
+  const nodeState = (
+    activeStatuses: PurchaseOrderStatus[],
+    confirmedStatuses: PurchaseOrderStatus[],
+  ): NodeState => {
+    if (confirmedStatuses.includes(status)) return 'confirmed';
+    if (activeStatuses.includes(status)) return 'active';
+    return 'pending';
+  };
+
+  const nodes: { label: string; icon: React.ReactNode; state: NodeState }[] = [
+    {
+      label: 'Created',
+      icon: <Plus size={16} />,
+      state: 'confirmed',
+    },
+    {
+      label: 'On the Way',
+      icon: <Truck size={16} />,
+      state: nodeState(
+        ['ordered', 'confirmed', 'in_production'],
+        ['shipped', 'partially_received', 'received'],
+      ),
+    },
+    {
+      label: 'Arrived',
+      icon: <Package size={16} />,
+      state: nodeState(
+        ['shipped', 'partially_received'],
+        ['received'],
+      ),
+    },
+  ];
+
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 2 }}>
+      {nodes.map((node, i) => (
+        <Box key={i} sx={{ display: 'flex', alignItems: 'center', flex: i < nodes.length - 1 ? 1 : 'none' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: 72 }}>
+            <Box sx={{
+              width: 40, height: 40, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              bgcolor: node.state === 'confirmed'
+                ? theme.palette.success.main
+                : node.state === 'active'
+                  ? 'var(--accent)'
+                  : theme.palette.action.disabledBackground,
+              color: node.state === 'pending' ? theme.palette.text.disabled : '#fff',
+              ...(node.state === 'active' && {
+                '@keyframes poNodePulse': {
+                  '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
+                  '70%':  { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
+                  '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
+                },
+                animation: 'poNodePulse 1.3s ease-out infinite',
+              }),
+              transition: 'all 0.2s',
+            }}>
+              {node.state === 'confirmed' ? <CheckCircle size={18} /> : node.icon}
+            </Box>
+            <Typography variant="caption" sx={{
+              mt: 0.5, fontWeight: 600, fontSize: 10, textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: node.state === 'pending' ? 'text.disabled'
+                : node.state === 'active' ? 'var(--accent)'
+                  : 'success.main',
+            }}>
+              {node.state === 'confirmed' ? '✓ ' : ''}{node.label}
+            </Typography>
+          </Box>
+          {i < nodes.length - 1 && (
+            <Box sx={{
+              flex: 1, height: 2, mx: 0.5, mb: 3,
+              bgcolor: node.state === 'confirmed'
+                ? theme.palette.success.main
+                : theme.palette.divider,
+              transition: 'background-color 0.2s',
+            }} />
+          )}
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 function PoAccordion({
   po,
   onFetchLineItems,
@@ -735,7 +886,7 @@ function PoAccordion({
 
       <AccordionDetails sx={{ pt: 0 }}>
         <Divider sx={{ mb: 2 }} />
-
+        <PoProgressTrack status={po.status} />
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
         {loadingItems && <ModuleLoadingSkeleton rows={1} height={20} />}
@@ -745,8 +896,7 @@ function PoAccordion({
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Description</TableCell>
-                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
+                  <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Product</TableCell>
                   <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Ordered</TableCell>
                   <TableCell sx={{ fontWeight: 700, fontSize: 11 }} align="right">Received</TableCell>
                 </TableRow>
@@ -754,8 +904,21 @@ function PoAccordion({
               <TableBody>
                 {lineItems.map((item) => (
                   <TableRow key={item.id} hover>
-                    <TableCell sx={{ fontSize: 12 }}>{item.description}</TableCell>
-                    <TableCell sx={{ fontSize: 12, fontFamily: 'monospace' }}>{item.sku ?? '—'}</TableCell>
+                    <TableCell sx={{ fontSize: 12 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {item.image_url ? (
+                          <Box component="img" src={item.image_url} alt="" sx={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 0.5, flexShrink: 0 }} />
+                        ) : (
+                          <Box sx={{ width: 32, height: 32, borderRadius: 0.5, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <Package size={14} style={{ opacity: 0.4 }} />
+                          </Box>
+                        )}
+                        <Box>
+                          <Typography variant="body2" fontWeight={600}>{item.product_title ?? item.description}</Typography>
+                          {item.sku && <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{item.sku}</Typography>}
+                        </Box>
+                      </Box>
+                    </TableCell>
                     <TableCell align="right" sx={{ fontSize: 12 }}>{item.quantity_ordered}</TableCell>
                     <TableCell align="right" sx={{ fontSize: 12, fontWeight: item.quantity_received > 0 ? 700 : 400 }}>
                       {item.quantity_received}
