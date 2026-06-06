@@ -199,7 +199,7 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 - Operator claims stow task  
 - Screen shows product, quantity, suggested location  
 - Operator carries units to location, scans location barcode (WM‑28) or manually confirms  
-- **Confirm Stow** → `inventory_movements` (`inbound_purchase`) written  
+- **Confirm Stow** → two `inventory_movements` records written: `location_transfer` debit at `WH-{n}-ROOT` (stock leaves staging) and `location_transfer` credit at destination bin (stock arrives). `stow_tasks.inventory_movement_id` linked to credit movement. See `docs/blueprints/inventory_movement_audit_trail.md`.  
 - Stow alert auto‑resolves → `inventory_truth` projection updated  
 
 ---
@@ -386,6 +386,8 @@ See full contract: `docs/playbooks/wms_pack_decision_playbook.md`
 | `receive_exceptions`            | 0099      | ✅ LIVE       | FEAT‑004                                                           |
 | `barcode_print_jobs`            | 0100      | ✅ LIVE       | FEAT‑004                                                           |
 | `pack_decision_requests`        | 0111      | ✅ LIVE       | WM‑33 — replaced pack_exception_threads pattern                    |
+| `inventory_units`               | 0115      | ✅ LIVE       | Per-unit LSU- barcode records. WM-46. |
+| `inventory_movement_type` enum  | 0116      | ✅ LIVE       | Added `location_transfer` value + updated `inventory_movement_sign_check` constraint. Requires `transaction: false`. |
 | `variant_location_assignments`  | —         | 🔴 PLANNED    | WM‑36                                                              |
 
 ---
@@ -431,7 +433,9 @@ Stow Task Created → Location suggested → Push to operator
     ↓
 Operator claims stow → Carries to location → Scans bin → Confirms
     ↓
-inventory_movements (inbound_purchase) written
+RECEIVE CLOSE: inventory_movements (inbound_purchase, +qty, WH-ROOT) written
+    ↓
+STOW CONFIRM: inventory_movements (location_transfer −qty WH-ROOT, +qty bin) written
     ↓
 inventory_truth updated → Units available for pick
 

@@ -1,5 +1,6 @@
 // apps/backend/src/services/wms/stow.service.ts
 import { Knex } from 'knex';
+import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 
 /**
@@ -8,23 +9,27 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  * Handles stow task lifecycle:
  * - Create stow tasks (from order cancellation or inbound stock)
  * - Claim a stow task (operator takes ownership)
- * - Confirm stow completion (writes inbound_purchase movement)
+ * - Confirm stow completion (writes location_transfer movements)
  *
  * On stow confirmation:
  * 1. Validates task is claimed by operator
- * 2. Writes inbound_purchase movement to inventory_movements
- * 3. Updates inventory_units → status=stowed, current_location_code (LSU- path only)
- * 4. Transitions stow_task → completed
+ * 2. Writes TWO location_transfer movements to inventory_movements:
+ *    a. Debit  — negative delta at source location (WH-{shopId}-ROOT or unit's current_location_code)
+ *    b. Credit — positive delta at destination bin (task.location_code)
+ * 3. Links credit movement ID → stow_tasks.inventory_movement_id
+ * 4. Updates inventory_truth: decrement source, upsert destination
+ * 5. Updates inventory_units → status=stowed, current_location_code (LSU-path only)
+ * 6. Transitions stow_task → completed
  *
  * Idempotency:
- * - device_event_id = uuidv5(stow_task_id + 'stow') — deterministic
+ * - device_event_id = uuidv5(stow_task_id + ':device:debit|credit', STOW_NAMESPACE) — deterministic
  * - onConflict ignore prevents double-write on retry
  *
  * Caller must:
  * - Operate within a transaction
  * - Have SET LOCAL "app.current_tenant" active
  * - Have SET LOCAL "synchroflow.projection" = 'true' active
- *   (required by inventory_movements trigger)
+ *   (required by inventory_movements immutability trigger)
  */
 
 const STOW_NAMESPACE = 'b2e4f6a8-1c3d-4e5f-8a9b-0c1d2e3f4a5b'; // fixed constant
@@ -150,6 +155,7 @@ export async function confirmStow(
 
   const completedAt = new Date();
   const qty = quantityPlaced ?? task.quantity; // support partial stow
+
   // WEB-STOW-UNIT-01: resolve source location from unit's current position when LSU- scanned;
   // fall back to shop root for legacy (non-unit) stow path.
   let sourceLocation = `WH-${shopId}-ROOT`;
@@ -160,7 +166,8 @@ export async function confirmStow(
       .first();
     sourceLocation = unitRow?.current_location_code ?? `WH-${shopId}-ROOT`;
   }
-  // 2a. Decrement ROOT location
+
+  // 2a. Decrement source location in inventory_truth
   await trx('inventory_truth')
     .where({
       shop_id: shopId,
@@ -174,7 +181,8 @@ export async function confirmStow(
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });
-  // 2b. Upsert actual bin location
+
+  // 2b. Upsert destination bin in inventory_truth
   await trx('inventory_truth')
     .insert({
       shop_id: shopId,
@@ -198,10 +206,72 @@ export async function confirmStow(
 
   console.info('[STOW_LOCATION_TRANSFER]', {
     lasyncroVariantId: task.lasyncro_variant_id,
-    quantity: task.quantity,
+    quantity: qty,
     from: sourceLocation,
     to: task.location_code,
     shopId,
+  });
+
+  // 3. Write location_transfer movements — one debit at source, one credit at destination.
+  //    Both are deterministic via uuidv5 so retries are idempotent.
+  //    Caller must have SET LOCAL "synchroflow.projection" = 'true' active.
+  const debitMovementId = uuidv5(`${stowTaskId}:location_transfer:debit`, STOW_NAMESPACE);
+  const debitDeviceEventId = uuidv5(`${stowTaskId}:device:debit`, STOW_NAMESPACE);
+  const creditMovementId = uuidv5(`${stowTaskId}:location_transfer:credit`, STOW_NAMESPACE);
+  const creditDeviceEventId = uuidv5(`${stowTaskId}:device:credit`, STOW_NAMESPACE);
+
+  // 3a. Debit — stock leaves source location
+  await trx('inventory_movements')
+    .insert({
+      lasyncro_inventory_movement_id: debitMovementId,
+      lasyncro_variant_id: task.lasyncro_variant_id,
+      shop_id: shopId,
+      movement_type: 'location_transfer',
+      quantity_delta: -qty,
+      location_code: sourceLocation,
+      reference_type: 'stow_task',
+      reference_id: stowTaskId,
+      platform: 'wms',
+      occurred_at: completedAt,
+      device_event_id: debitDeviceEventId,
+      operator_id: claimedBy,
+      triggered_by: 'stow',
+    })
+    .onConflict(['device_event_id'])
+    .ignore();
+
+  // 3b. Credit — stock arrives at destination bin
+  await trx('inventory_movements')
+    .insert({
+      lasyncro_inventory_movement_id: creditMovementId,
+      lasyncro_variant_id: task.lasyncro_variant_id,
+      shop_id: shopId,
+      movement_type: 'location_transfer',
+      quantity_delta: qty,
+      location_code: task.location_code,
+      reference_type: 'stow_task',
+      reference_id: stowTaskId,
+      platform: 'wms',
+      occurred_at: completedAt,
+      device_event_id: creditDeviceEventId,
+      operator_id: claimedBy,
+      triggered_by: 'stow',
+    })
+    .onConflict(['device_event_id'])
+    .ignore();
+
+  // 3c. Link credit movement back to stow task for traceability
+  await trx('stow_tasks')
+    .where({ stow_task_id: stowTaskId })
+    .update({ inventory_movement_id: creditMovementId });
+
+  console.info('[STOW_MOVEMENTS_WRITTEN]', {
+    stowTaskId,
+    debitMovementId,
+    creditMovementId,
+    from: sourceLocation,
+    to: task.location_code,
+    qty,
   });
 
   // 4. Bulk-update inventory_units → stowed (WEB-STOW-UNIT-01)
@@ -253,7 +323,7 @@ export async function confirmStow(
       }
     }
 
-    // 4d. Soft capacity check — count all stowed units at this location
+    // 4d. Soft capacity check — count all stowed units at this location.
     // If over max_capacity, create a Problem Center task for bin audit.
     const location = await trx('warehouse_locations')
       .where({ shop_id: shopId, location_code: task.location_code })
@@ -332,6 +402,7 @@ export async function confirmStow(
       quantity: qty,
       quantity_remaining: task.quantity - qty,
       lasyncro_variant_id: task.lasyncro_variant_id,
+      inventory_movement_id: creditMovementId,
     },
   });
 }

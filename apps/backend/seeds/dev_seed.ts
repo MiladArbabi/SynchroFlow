@@ -592,6 +592,21 @@ export async function seed(knex: Knex): Promise<void> {
 
     console.log(`[DEV_SEED] Created ${productIds.length} products, ${variantIds.length} variants`);
 
+    // ── LEGACY BARCODE RESOLUTION (full_data variants — pick path) ──────────────
+    // Seeds external_product_identity_map so full_data variants resolve via
+    // legacy barcode/SKU path during pick scan (barcode = SKU string).
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
+    for (let idx = 0; idx < variantIds.length; idx++) {
+      const v = variantIds[idx];
+      await trx.raw(`
+        INSERT INTO external_product_identity_map
+          (id, lasyncro_variant_id, shop_id, platform, external_product_id, external_variant_id, external_sku, barcode)
+        VALUES (gen_random_uuid(), ?, ?, 'shopify', ?, ?, ?, ?)
+        ON CONFLICT DO NOTHING
+      `, [v.lasyncro_variant_id, shop.id, `fd-product-${idx}`, `fd-variant-${idx}`, v.sku, v.sku]);
+    }
+    console.log(`[DEV_SEED] Legacy barcodes seeded for ${variantIds.length} full_data variants`);
+
     // ── SUPPLIERS + PURCHASE ORDERS ──────────────────────────────────────────
     // Wool & Co — 2 POs (one shipped/receivable, one ordered/in-transit)
     // Linen House — 1 PO (shipped/receivable)
@@ -662,8 +677,6 @@ export async function seed(knex: Knex): Promise<void> {
     }
 
     console.log(`[DEV_SEED] Wool & Co + Linen House suppliers and POs seeded`);
-
-    // ── INVENTORY TRUTH ──────────────────────────────────────────────────────
 
     // ── INVENTORY TRUTH ──────────────────────────────────────────────────────
     // Assign variants to specific bins — enables spatial pick route and zone_distribution in pool

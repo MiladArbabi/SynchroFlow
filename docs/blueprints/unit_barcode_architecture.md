@@ -95,8 +95,8 @@ inventory_units (
   shopify_barcode            text nullable,
 
   -- Receive anchors — immutable after creation
-  receive_session_id         uuid NOT NULL,          -- always populated (PO or no-PO receives)
-  po_line_id                 uuid nullable,          -- null for no-PO receives
+receive_job_line_id        uuid NOT NULL REFERENCES receive_job_lines(receive_job_line_id),
+  -- Note: actual implementation uses receive_job_line_id, not receive_session_id + po_line_id
   receive_sequence           int NOT NULL,           -- position within PO line or session, IMMUTABLE
 
   -- Provenance
@@ -111,7 +111,7 @@ inventory_units (
   -- Lifecycle status
   status                     text NOT NULL DEFAULT 'received'
                              CHECK (status IN ('received', 'stowed', 'picked', 'packed', 'shipped', 'returned', 'lost')),
-  current_location_id        uuid nullable,
+  current_location_code      varchar(255) nullable,  -- references warehouse_locations.location_code
 
   -- Timestamps
   received_at                timestamptz NOT NULL DEFAULT NOW(),
@@ -261,9 +261,9 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 
 | ID | Priority | Status | Description |
 |---|---|---|---|
-| WM-46 | P1 | 📋 READY | Per-unit barcode backend — `inventory_units` table (migration), deterministic `LSU-` ID generation, batch-confirm sequence assignment, dual-namespace barcode resolver extension, reprint endpoint, `legacy_barcode_fallback_enabled` + `coverage_sunset_threshold` on `shop_wms_settings`, coverage computation query. |
-| WEB-RECEIVE-UNIT-01 | P1 | 📋 READY | Receive webapp — unit label generation at batch-confirm, thermal label print trigger, label reprint workflow (EAN/UPC path + bin-select path), Unit Label Coverage metric in WMS settings strip. Blocked on WM-46. |
-| WEB-STOW-UNIT-01 | P1 | 📋 PLANNED | Stow webapp — migrate scan surface to accept `LSU-` barcodes. Location confirmation via unit scan. Legacy fallback respected during transition. Blocked on WEB-RECEIVE-UNIT-01. |
+| WM-46 | P1 | ✅ RESOLVED June 4, 2026 | Per-unit barcode backend — `inventory_units` table (migration), deterministic `LSU-` ID generation, batch-confirm sequence assignment, dual-namespace barcode resolver extension, reprint endpoint, `legacy_barcode_fallback_enabled` + `coverage_sunset_threshold` on `shop_wms_settings`, coverage computation query. |
+| WEB-RECEIVE-UNIT-01 | P1 | ✅ RESOLVED June 4, 2026 | Receive webapp — unit label generation at batch-confirm, thermal label print trigger, label reprint workflow (EAN/UPC path + bin-select path), Unit Label Coverage metric in WMS settings strip. Blocked on WM-46. |
+| WEB-STOW-UNIT-01 | P1 | ✅ RESOLVED June 4, 2026 | Stow webapp — migrate scan surface to accept `LSU-` barcodes. Location confirmation via unit scan. Legacy fallback respected during transition. Blocked on WEB-RECEIVE-UNIT-01. |
 | WEB-PICK-UNIT-01 | P1 | ✅ RESOLVED June 4, 2026 — Pick scan surface migrated to LSU- barcodes. Bulk inventory_units update stowed→picked. current_location_code nulled on pick. Legacy fallback retained. WEB-PACK-02 unblocked. |
 | WEB-PACK-02 | P1 | 📋 PLANNED | Pack webapp redesign — item-centric free-scan. Resolver returns unit + order context on `LSU-` scan. Blocked on WEB-PICK-UNIT-01 (all upstream workflows must be on unit barcodes before pack free-scan is reliable). |
 | GH-998 | — | 📋 SUPERSEDED | Per-unit barcode tracking (inventory_units table) — original ticket. Superseded by WM-46. |
@@ -279,3 +279,17 @@ WM-28 is not a hard blocker for WEB-RECEIVE-UNIT-01 launch. The reprint flow fal
 4. The `LSU-` prefix is **reserved** — no other barcode namespace may use it.
 5. `legacy_barcode_fallback_enabled = false` is a **one-way gate** once crossed via auto-sunset. Manual re-enable requires owner/admin explicit confirmation.
 6. `reprint_count` is **always incremented** on reprint, never decremented.
+
+---
+
+## 12. Inventory Movement Backing
+
+Every LSU lifecycle status transition is backed by an `inventory_movements` ledger entry:
+
+| Transition | Movement type | Written by |
+|-----------|--------------|------------|
+| `received` (initial) | `inbound_purchase` | `receiveJob.service.ts` |
+| `received → stowed` | `location_transfer` (debit + credit pair) | `stow.service.ts` |
+| `stowed → picked` | `sale` | `pickScan.service.ts` |
+
+See full audit trail architecture: `docs/blueprints/inventory_movement_audit_trail.md`
