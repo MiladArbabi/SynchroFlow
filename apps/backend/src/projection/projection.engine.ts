@@ -374,16 +374,64 @@ export async function projectDomainEventCore({
           .first();
 
         if (!mapping?.lasyncro_order_id) {
+          /**
+           * DEFERRED REQUEUE — orders/paid ONLY
+           * ------------------------------------
+           * orders/paid legitimately arrives before orders/create due to
+           * Shopify webhook delivery jitter (milliseconds apart).
+           *
+           * Fix: re-insert at tail so orders/create processes first,
+           * writes identity map, then deferred paid resolves cleanly.
+           *
+           * Cap: MAX_DEFERS=3. Fatal on exhaustion.
+           * All other event types: fatal throw immediately (unchanged).
+           */
+          if (normalizedEventType === 'orders/paid') {
+            const deferCount = Number((domainEvent.event_payload as any)?._defer_count ?? 0);
+            const MAX_DEFERS = 3;
+
+            if (deferCount >= MAX_DEFERS) {
+              console.error('[ORDER_PAID_DEFER_EXHAUSTED]', {
+                eventId: domain_event_id,
+                externalId,
+                deferCount,
+              });
+              throw new Error(
+                `[ORDER_PAID_DEFER_EXHAUSTED] externalId=${externalId} attempts=${deferCount}`
+              );
+            }
+
+            await trx('domain_events').insert({
+              shop_id: domainEvent.shop_id,
+              event_type: 'orders/paid',
+              event_payload: {
+                ...(domainEvent.event_payload as object),
+                _defer_count: deferCount + 1,
+              },
+              event_time: domainEvent.event_time,
+              event_version: domainEvent.event_version,
+              external_event_id: `${String(domainEvent.external_event_id).replace(/:defer\d+$/, '')}:defer${deferCount + 1}`,
+            });
+
+            console.warn('[ORDER_PAID_DEFERRED_REQUEUED]', {
+              originalEventId: domain_event_id,
+              externalId,
+              deferCount: deferCount + 1,
+              reason: 'identity_not_yet_available',
+            });
+
+            return; // cursor advances normally in worker — no throw
+          }
+
           console.error('[ORDER_IDENTITY_RESOLUTION_FAILED_FATAL]', {
             eventId: domain_event_id,
+            eventType: normalizedEventType,
             externalId,
           });
-
           throw new Error(
             `[ORDER_IDENTITY_RESOLUTION_FAILED] externalId=${externalId}`
           );
         }
-
         projectionTargetOrderId = mapping.lasyncro_order_id;
       }
 

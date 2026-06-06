@@ -30,11 +30,23 @@ export async function processWebhookDispatchMessage(
     await WebhookRouter.dispatch(envelope);
 
     getQueueChannel(QUEUE_NAME).ack(msg as any);
-  } catch (err) {
-    // Fail-closed policy:
-    // - Log
-    // - ACK to avoid poison loops
-    console.error('[webhook-worker] failed job:', err);
+ } catch (err: any) {
+    /**
+     * ACKNOWLEDGED ON FAILURE (INTENTIONAL — NO DLQ CONFIGURED)
+     * ----------------------------------------------------------
+     * ACK is deliberate: without a dead-letter queue, NACK requeue=true
+     * causes infinite poison loops; NACK requeue=false silently drops.
+     *
+     * TODO: Add DLX topology in queue.ts (x-dead-letter-exchange) so
+     * failed jobs route to webhook.dispatch.dlq for replay/inspection.
+     *
+     * Until then: emit fatal signal for log-based alerting.
+     */
+    console.error('[WEBHOOK_DISPATCH_JOB_DROPPED]', {
+      error: err?.message,
+      queue: QUEUE_NAME,
+      action: 'acked_no_dlq',
+    });
     getQueueChannel(QUEUE_NAME).ack(msg as any);
   }
 }

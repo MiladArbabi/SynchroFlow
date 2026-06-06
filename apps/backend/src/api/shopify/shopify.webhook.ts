@@ -138,8 +138,20 @@ export async function shopifyWebhookHandler(
   res: Response
 ) {
   const envelope = ShopifyWebhookAdapter.toEnvelope(req);
-
-  await WebhookRouter.dispatch(envelope);
-
-  return res.status(200).json({ status: 'ok' });
+  try {
+    await WebhookRouter.dispatch(envelope);
+    return res.status(200).json({ status: 'ok' });
+  } catch (err: any) {
+    /**
+     * HANDLER FAILURE → 500 (CRITICAL)
+     * ---------------------------------
+     * Returning 500 signals Shopify to retry delivery.
+     * Never return 200 on handler failure — Shopify will
+     * not retry and the event is permanently lost.
+     */
+    console.error('[SHOPIFY_WEBHOOK_HANDLER_FAILED]', {
+      error: err?.message,
+    });
+    return res.status(500).json({ status: 'error' });
+  }
 }

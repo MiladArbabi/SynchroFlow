@@ -1,6 +1,7 @@
 // apps/backend/src/api/shopify/handlers/handleOrderPaid.ts
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
+import { buildExternalEventId } from '../../webhooks/buildExternalEventId.js';
 
 type ShopifyOrderPaidPayload = {
   id?: string | number;
@@ -118,22 +119,20 @@ export async function handleOrderPaid(
         event_time: new Date(eventTime),
         event_version: 1,
         /**
-         * EXTERNAL EVENT ID NORMALIZATION (CRITICAL)
-         * ------------------------------------------
-         * DB constraint: external_event_id must NOT contain gid://
+         * EXTERNAL EVENT ID — CANONICAL FORMAT (CRITICAL)
+         * ------------------------------------------------
+         * Must match handleOrderCreated.ts paid emission format:
+         * webhook:shopify:{UUID}:paid
          *
-         * Shopify sends GIDs → must normalize before persistence
-         * to prevent hard DB failures and ingestion loss.
+         * Mismatched formats defeat uniqueness constraint → duplicate
+         * orders/paid domain events → double aggregate_version increment.
          */
-        external_event_id: (() => {
-          let id = String(envelope.eventId);
-
-          if (id.startsWith('gid://')) {
-            id = id.split('/').pop()!;
-          }
-
-          return id;
-        })(),
+        external_event_id: buildExternalEventId({
+          source: 'webhook',
+          integration: 'shopify',
+          eventId: envelope.eventId,
+          suffix: 'paid',
+        }),
       })
       .returning('id');
 

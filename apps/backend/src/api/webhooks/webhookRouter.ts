@@ -316,13 +316,24 @@ export class WebhookRouter {
       );
 
     } catch (err: any) {
-      console.error('[WEBHOOK HANDLER ERROR]', err);
-      
+      console.error('[WEBHOOK_HANDLER_ERROR]', {
+        eventId: envelope.eventId,
+        eventType: normalizedEventType,
+        error: err?.message,
+      });
       await WebhookLedgerService.markFailed(
         envelope.eventId,
         err?.message ?? 'handler_error',
         shopId ?? undefined
       );
+      /**
+       * RETHROW (CRITICAL)
+       * ------------------
+       * Caller must receive the error so HTTP layer
+       * returns 500 → Shopify retries delivery.
+       * Swallowing here causes silent permanent ingestion loss.
+       */
+      throw err;
     }
   }
 
