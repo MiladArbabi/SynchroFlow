@@ -14,23 +14,57 @@ import { useEffect } from 'react'
 const POSTHOG_KEY = 'phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM'
 const POSTHOG_HOST = 'https://t.lasyncro.com' // proxied host — matches checklist page config
 
-if (typeof window !== 'undefined') {
+function shouldEnablePostHog() {
+  if (typeof window === 'undefined') return false
+
+  const { hostname, host } = window.location
+
+  // Keep local/dev sessions out of production analytics.
+  // Pageviews are measured globally below, so never initialise PostHog again in route files.
+  return (
+    hostname !== 'localhost' &&
+    hostname !== '127.0.0.1' &&
+    !host.includes('localhost')
+  )
+}
+
+function getPageviewContext(pathname: string) {
+  if (pathname === '/blog') return { section: 'blog', page_type: 'blog_index' }
+  if (pathname.startsWith('/blog/')) return { section: 'blog', page_type: 'blog_article' }
+  if (pathname === '/compare') return { section: 'compare', page_type: 'compare_index' }
+  if (pathname.startsWith('/compare/')) return { section: 'compare', page_type: 'compare_article' }
+  if (pathname === '/glossary') return { section: 'glossary', page_type: 'glossary_index' }
+  if (pathname.startsWith('/glossary/')) return { section: 'glossary', page_type: 'glossary_entry' }
+  if (pathname === '/') return { section: 'home', page_type: 'home' }
+
+  return { section: 'marketing', page_type: 'static_page' }
+}
+
+if (shouldEnablePostHog()) {
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST,
     ui_host: 'https://app.posthog.com',
     autocapture: true,
-    capture_pageview: false, // manual below — prevents double-fire with Next.js router
+    capture_pageview: false, // Manual route-aware capture below prevents duplicate Next.js pageviews.
     capture_pageleave: true,
   })
 }
 
-/** Fires a $pageview event on every client-side route change */
+/** Fires one enriched $pageview event on every client-side route change. */
 function PageViewTracker() {
   const pathname = usePathname()
   const ph = usePostHog()
+
   useEffect(() => {
-    ph?.capture('$pageview', { $current_url: window.location.href })
+    if (!shouldEnablePostHog()) return
+
+    ph?.capture('$pageview', {
+      $current_url: window.location.href,
+      pathname,
+      ...getPageviewContext(pathname),
+    })
   }, [pathname, ph])
+
   return null
 }
 

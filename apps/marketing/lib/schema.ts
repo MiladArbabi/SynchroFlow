@@ -32,12 +32,14 @@ export function generateArticleSchema({
   url,
   datePublished,
   dateModified,
+  image,
 }: {
   title: string
   description: string
   url: string
   datePublished: string
   dateModified: string
+  image?: string
 }) {
   return {
     '@context': 'https://schema.org',
@@ -47,8 +49,9 @@ export function generateArticleSchema({
     url,
     datePublished,
     dateModified,
-    author: { '@id': 'https://lasyncro.com/#organization' },
-    publisher: { '@id': 'https://lasyncro.com/#organization' },
+    ...(image ? { image } : {}),
+    author: { '@id': 'https://www.lasyncro.com/#organization', },
+    publisher: { '@id': 'https://www.lasyncro.com/#organization', },
   }
 }
 
@@ -76,7 +79,7 @@ export function generateSoftwareSchema({
       lowPrice: '0',
       highPrice: '349',
     },
-    publisher: { '@id': 'https://lasyncro.com/#organization' },
+    publisher: { '@id': 'https://www.lasyncro.com/#organization', },
   }
 }
 

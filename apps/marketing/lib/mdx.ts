@@ -17,6 +17,11 @@ export interface Frontmatter {
   lastReviewed: string
   author: string
   titleAccent?: string
+  // Site-relative public asset paths used for article body, OG/Twitter, and Article schema.
+  // Example: "shopify-warehouse-workflow.png"
+  image?: string
+  ogImage?: string
+  imageAlt?: string
   tags: string[]
   primaryKeyword: string
   secondaryKeywords: string[]

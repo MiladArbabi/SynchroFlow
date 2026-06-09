@@ -17,10 +17,10 @@ const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 const privacyPageSchema = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  '@id': 'https://lasyncro.com/privacy',
-  url: 'https://lasyncro.com/privacy',
+  '@id': 'https://www.lasyncro.com/privacy',
+  url: 'https://www.lasyncro.com/privacy',
   name: 'Privacy Policy — LaSyncro',
-  publisher: { '@id': 'https://lasyncro.com/#organization' },
+  publisher: { '@id': 'https://www.lasyncro.com/#organization', },
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -66,7 +66,7 @@ export default function PrivacyPage() {
       <div style={{ ...W, padding: '56px 5vw 80px', maxWidth: '780px', margin: '0 auto' }}>
 
         <Section title="Who we are">
-          <p>LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse. We are operated by LaSyncro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). Our website is <a href="https://lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>lasyncro.com</a> and we can be reached at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>.</p>
+          <p>LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse. We are operated by LaSyncro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). Our website is <a href="https://www.lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>lasyncro.com</a> and we can be reached at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>.</p>
         </Section>
 
         <Section title="What data we collect">

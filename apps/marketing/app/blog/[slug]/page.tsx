@@ -95,6 +95,11 @@ export async function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
   const { frontmatter } = getContentBySlug('blog', slug)
+  const fallbackImage = 'https://www.lasyncro.com/og_image_lightmode.png'
+  const articleImagePath = frontmatter.ogImage ?? frontmatter.image
+  const articleImage = articleImagePath ? `https://www.lasyncro.com/${articleImagePath}` : fallbackImage
+  const articleImageAlt = frontmatter.imageAlt ?? 'LaSyncro — Operational intelligence for Shopify merchants'
+
   return {
     // Keyword-first format: primary keyword leads, brand appended — maximises CTR on non-branded queries
     title: `${frontmatter.title} — LaSyncro`,
@@ -107,10 +112,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       type: 'article',
       images: [
         {
-          url: 'https://www.lasyncro.com/og_image_lightmode.png',
+          url: articleImage,
           width: 1200,
           height: 630,
-          alt: 'LaSyncro — Operational intelligence for Shopify merchants',
+          alt: articleImageAlt,
         },
       ],
     },
@@ -118,7 +123,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       card: 'summary_large_image',
       title: frontmatter.title,
       description: frontmatter.description,
-      images: ['https://www.lasyncro.com/og_image_lightmode.png'],
+      images: [articleImage],
     },
   }
 }
@@ -137,6 +142,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
         url,
         datePublished: frontmatter.date,
         dateModified: frontmatter.lastReviewed,
+        image: frontmatter.ogImage || frontmatter.image ? `https://www.lasyncro.com/${frontmatter.ogImage ?? frontmatter.image}` : undefined,
       })} />
       <Schema data={generateFAQSchema(frontmatter.faq)} />
       <Schema data={generateBreadcrumbSchema([

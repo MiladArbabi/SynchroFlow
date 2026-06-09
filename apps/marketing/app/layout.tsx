@@ -22,7 +22,7 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
-  '@id': 'https://lasyncro.com/#organization',
+  '@id': 'https://www.lasyncro.com/#organization',
   name: 'LaSyncro',
   url: 'https://www.lasyncro.com',
   logo: 'https://www.lasyncro.com/logo-light.png',
@@ -80,7 +80,7 @@ function Nav() {
       WebkitBackdropFilter: 'blur(14px)',
       borderBottom: '1px solid rgba(255,255,255,0.08)',
     }}>
-      <a href="https://lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
+      <a href="https://www.lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
         {/* Logo switches based on color scheme — logo-dark for light bg, logo-light for dark bg */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -103,7 +103,7 @@ function Nav() {
         <Link href="/pricing" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pricing</Link>
         <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
         <a
-          href="https://lasyncro.com/#waitlist"
+          href="https://www.lasyncro.com/#waitlist"
           className="nav-cta"
           style={{
             display: 'inline-flex', alignItems: 'center',
@@ -137,7 +137,7 @@ function Footer() {
     }}>
       <span style={{ color: '#6B7280' }}>© 2026 LaSyncro. All rights reserved.</span>
       <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-        <a href="https://lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Home</a>
+        <a href="https://www.lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Home</a>
         <Link href="/blog" style={{ color: '#6B7280', textDecoration: 'none' }}>Blog</Link>
         <Link href="/compare" style={{ color: '#6B7280', textDecoration: 'none' }}>Compare</Link>
         <Link href="/pricing" style={{ color: '#6B7280', textDecoration: 'none' }}>Pricing</Link>

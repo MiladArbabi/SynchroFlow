@@ -26,14 +26,14 @@ Shopify merchants doing £500K–£10M+ revenue, operating from their own wareho
 - All plans include 14-day Growth trial. No credit card required.
 
 ## Key pages
-https://lasyncro.com/
-https://lasyncro.com/about
-https://lasyncro.com/blog
-https://lasyncro.com/compare
-https://lasyncro.com/features/po-receiving
-https://lasyncro.com/features/traceability
-https://lasyncro.com/features/workforce-management
-https://lasyncro.com/features/morning-brief
+https://www.lasyncro.com/
+https://www.lasyncro.com/about
+https://www.lasyncro.com/blog
+https://www.lasyncro.com/compare
+https://www.lasyncro.com/features/po-receiving
+https://www.lasyncro.com/features/traceability
+https://www.lasyncro.com/features/workforce-management
+https://www.lasyncro.com/features/morning-brief
 
 ## Topics covered
 - Shopify inventory management for small warehouse teams

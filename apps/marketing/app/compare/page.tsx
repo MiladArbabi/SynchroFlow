@@ -126,7 +126,7 @@ export default function CompareIndex() {
         <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0, maxWidth: 480 }}>
           Don&apos;t see your current tool? Every comparison is operator-honest — we&apos;ll tell you when a competitor is a better fit.
         </p>
-        <a href="https://lasyncro.com/#waitlist" style={{
+        <a href="https://www.lasyncro.com/#waitlist" style={{
           display: 'inline-flex', alignItems: 'center', gap: 8,
           padding: '12px 24px', background: '#FF6B2B', color: '#fff',
           fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,

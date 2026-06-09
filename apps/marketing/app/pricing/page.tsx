@@ -12,10 +12,10 @@ const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 const pricingSchema = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  '@id': 'https://lasyncro.com/pricing',
-  url: 'https://lasyncro.com/pricing',
+  '@id': 'https://www.lasyncro.com/pricing',
+  url: 'https://www.lasyncro.com/pricing',
   name: 'Pricing — LaSyncro',
-  publisher: { '@id': 'https://lasyncro.com/#organization' },
+  publisher: { '@id': 'https://www.lasyncro.com/#organization', },
 }
 
 const plans = [

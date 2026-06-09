@@ -15,7 +15,7 @@ const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 const termsPageSchema = {
   '@context': 'https://schema.org',
   '@type': 'WebPage',
-  '@id': 'https://lasyncro.com/terms',
+  '@id': 'https://www.lasyncro.com/terms',
   name: 'Terms of Service — LaSyncro',
   url: 'https://www.lasyncro.com/terms',
 }

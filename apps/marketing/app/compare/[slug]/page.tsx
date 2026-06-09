@@ -102,7 +102,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     openGraph: {
       title: frontmatter.title,
       description: frontmatter.description,
-      url: `https://www.lasyncro.com/blog/${slug}`,
+      url: `https://www.lasyncro.com/compare/${slug}`,
       type: 'website',
       images: [
         {

@@ -17,17 +17,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const glossaryItems  = getAllContent('glossary')
 
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: BASE_URL,                    lastModified: new Date('2026-05-01'), priority: 1.0, changeFrequency: 'weekly'  },
-    { url: `${BASE_URL}/about`,         lastModified: new Date('2026-05-01'), priority: 0.8, changeFrequency: 'monthly' },
-    { url: `${BASE_URL}/blog`,          lastModified: new Date(),             priority: 0.9, changeFrequency: 'daily'   },
-    { url: `${BASE_URL}/compare`,       lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
-    { url: `${BASE_URL}/checklist`,     lastModified: new Date('2026-05-01'), priority: 0.7, changeFrequency: 'monthly' },
-    { url: `${BASE_URL}/privacy`,       lastModified: new Date('2026-05-17'), priority: 0.3, changeFrequency: 'yearly'  },
-    { url: `${BASE_URL}/pricing`,         lastModified: new Date('2026-05-21'), priority: 0.8, changeFrequency: 'monthly'  },
-    { url: `${BASE_URL}/faq`,             lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly'  },
-    { url: `${BASE_URL}/getting-started`, lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly'  },
-    { url: `${BASE_URL}/glossary`, lastModified: new Date(), priority: 0.8, changeFrequency: 'weekly' },
-  ]
+  { url: BASE_URL,                      lastModified: new Date('2026-05-01'), priority: 1.0, changeFrequency: 'weekly'  },
+  { url: `${BASE_URL}/about`,           lastModified: new Date('2026-05-01'), priority: 0.8, changeFrequency: 'monthly' },
+  { url: `${BASE_URL}/blog`,            lastModified: new Date(),             priority: 0.9, changeFrequency: 'daily'   },
+  { url: `${BASE_URL}/compare`,         lastModified: new Date(),     priority: 0.8, changeFrequency: 'weekly'  },
+  { url: `${BASE_URL}/privacy`,         lastModified: new Date('2026-05-17'), priority: 0.3, changeFrequency: 'yearly'  },
+  { url: `${BASE_URL}/terms`,           lastModified: new Date('2026-05-17'), priority: 0.3, changeFrequency: 'yearly'  },
+  { url: `${BASE_URL}/pricing`,         lastModified: new Date('2026-05-21'), priority: 0.8, changeFrequency: 'monthly' },
+  { url: `${BASE_URL}/faq`,             lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
+  { url: `${BASE_URL}/getting-started`, lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
+  { url: `${BASE_URL}/glossary`,        lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
+]
 
   const dynamicRoutes: MetadataRoute.Sitemap = [
     // Blog — use lastReviewed so Google sees accurate freshness signals

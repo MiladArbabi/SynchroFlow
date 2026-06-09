@@ -24,9 +24,9 @@ export const metadata: Metadata = {
 const organizationSchema = {
   '@context': 'https://schema.org',
   '@type': 'Organization',
-  '@id': 'https://lasyncro.com/#organization',
+  '@id': 'https://www.lasyncro.com/#organization',
   name: 'LaSyncro',
-  url: 'https://lasyncro.com',
+  url: 'https://www.lasyncro.com',
   email: 'contact@lasyncro.com',
   foundingDate: '2026',
   description: 'LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse.',
@@ -35,10 +35,10 @@ const organizationSchema = {
 const aboutPageSchema = {
   '@context': 'https://schema.org',
   '@type': 'AboutPage',
-  '@id': 'https://lasyncro.com/about',
-  url: 'https://lasyncro.com/about',
+  '@id': 'https://www.lasyncro.com/about',
+  url: 'https://www.lasyncro.com/about',
   name: 'About LaSyncro',
-  publisher: { '@id': 'https://lasyncro.com/#organization' },
+  publisher: { '@id': 'https://www.lasyncro.com/#organization', },
 }
 
 function ArrowRight({ size = 16 }: { size?: number }) {
@@ -130,7 +130,7 @@ export default function AboutPage() {
       {/* ── CTA ───────────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '0 5vw 80px' }}>
         <div style={{ borderTop: '1px solid #E8E6E0', paddingTop: 48, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-          <a href="https://lasyncro.com/#waitlist" style={{
+          <a href="https://www.lasyncro.com/#waitlist" style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             padding: '12px 24px', background: '#FF6B2B', color: '#fff',
             fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,

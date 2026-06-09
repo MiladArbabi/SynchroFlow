@@ -37,4 +37,4 @@ Allow: /
 User-agent: FacebookBot
 Allow: /
 
-Sitemap: https://lasyncro.com/sitemap.xml
+Sitemap: https://www.lasyncro.com/sitemap.xml
