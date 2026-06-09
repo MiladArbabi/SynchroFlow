@@ -10,6 +10,7 @@ import Schema from '@/components/seo/Schema'
 import ArticleLayout from '@/components/article/ArticleLayout'
 import QuickAnswer from '@/components/article/QuickAnswer'
 import ArticleImage from '@/components/article/ArticleImage'
+import ArticleAnimation from '@/components/article/ArticleAnimation'
 import HeroVisual from '@/components/article/HeroVisual'
 import ProductVisual from '@/components/article/ProductVisual'
 import NumberedH3 from '@/components/article/NumberedH3'
@@ -20,7 +21,7 @@ import remarkGfm from 'remark-gfm'
 // MDX components available inside .mdx files
 // MDX components — h2/h3 explicitly mapped to prevent browser default bold rendering
 const components = {
-  QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual,
+  QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ArticleAnimation, ProductVisual,
   // Styled table components — renders MDX pipe tables with brand design system
   table: ({ children }: { children: React.ReactNode }) => (
     <div style={{ overflowX: 'auto', margin: '32px 0' }}>
