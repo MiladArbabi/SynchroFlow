@@ -1,7 +1,7 @@
 // components/article/ArticleImage.tsx
 // Inline article image with styled placeholder grid pattern when src is absent.
 // Standard: every article should have up to 3 ArticleImage slots.
-// Images served from https://www.lasyncro.com/ (landing page static assets).
+// Images are served root-relative from the active Next.js app public directory.
 
 interface ArticleImageProps {
   src?: string
@@ -12,7 +12,7 @@ interface ArticleImageProps {
 }
 
 export default function ArticleImage({ src, alt, caption, priority = false, badge }: ArticleImageProps) {
-  const fullSrc = src ? `https://www.lasyncro.com/${src}` : null
+    const fullSrc = src ? `/${src.replace(/^\/+/, '')}` : null
 
   return (
     <figure className="reveal" style={{ margin: '36px -40px' }}>
