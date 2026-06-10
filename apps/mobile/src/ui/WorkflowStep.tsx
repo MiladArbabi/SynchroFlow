@@ -263,6 +263,12 @@ export function WorkflowStep({
             placeholderTextColor={colors.ink4}
             autoCapitalize="none"
             autoCorrect={false}
+            // HID/BT scanner passthrough — field must hold focus while screen
+            // is active so a paired scanner injects directly without a tap.
+            // onBlur immediately refocuses; camera modal and exception sheet
+            // will steal focus temporarily (expected) but restore on close.
+            autoFocus
+            onBlur={() => inputRef.current?.focus()}
           />
         </View>
 

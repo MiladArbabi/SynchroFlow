@@ -11,3 +11,5 @@ export { WorkflowStep } from './WorkflowStep';
 export type { WorkflowStepContext, WorkflowStepItem, ExceptionType } from './WorkflowStep';
 export { BarcodeScannerView } from './BarcodeScannerView';
 export type { BarcodeScannerViewProps, BarcodeScanEvent } from './BarcodeScannerView';
+export { ScanDock, type ScanDockProps, type ScanMethod } from './ScanDock';
+export { SessionShell, useSession, type SessionShellProps, type SessionContextValue } from './SessionShell';

@@ -13,7 +13,7 @@
 //   - Auto-dismissing inline error banner (no blocking Alert)
 //   - Manual entry fallback (bottom sheet)
 //   - Vibration feedback (success / error patterns)
-//   - 2-second scan cooldown to prevent double-processing
+//   - Per-value 1500ms debounce to suppress duplicate reads (consecutive different values pass through immediately)
 //   - Camera permission handling
 //
 // CHANGE CONTROL: Any modification to this component affects ALL scanning
@@ -43,16 +43,26 @@ export type BarcodeScannerViewProps = {
   hint?: string;
   /** Optional overlay rendered above the camera (e.g. HUD, progress bar) */
   overlay?: React.ReactNode;
+  /** Hide built-in manual entry (ScanDock provides its own persistent path) */
+  hideManualEntry?: boolean;
 };
 
 const VIBRATION_SUCCESS = [0, 80];
 const VIBRATION_ERROR = [0, 100, 80, 100];
-const COOLDOWN_MS = 2000;
+// Per-value debounce — same barcode within this window is a duplicate read.
+// Different values pass through immediately (consecutive LSU- unit scans).
+const DEBOUNCE_MS = 1500;
 const ERROR_DISMISS_MS = 2000;
 
-export function BarcodeScannerView({ onScan, hint = 'Scan product barcode', overlay }: BarcodeScannerViewProps) {
+export function BarcodeScannerView({ 
+  onScan, 
+  hint = 'Scan product barcode', 
+  overlay, 
+  hideManualEntry = false 
+}: BarcodeScannerViewProps) {
   const [permission, requestPermission] = useCameraPermissions();
-  const [cooldown, setCooldown] = useState(false);
+  // Tracks last decoded value + timestamp for per-value duplicate suppression.
+  const lastScanRef = useRef<{ value: string; ts: number } | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [detectedBounds, setDetectedBounds] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [manualMode, setManualMode] = useState(false);
@@ -81,9 +91,10 @@ export function BarcodeScannerView({ onScan, hint = 'Scan product barcode', over
       boundsTimer.current = setTimeout(() => setDetectedBounds(null), 1000);
     }
 
-    if (cooldown) return;
-    setCooldown(true);
-    setTimeout(() => setCooldown(false), COOLDOWN_MS);
+    const now = Date.now();
+    const last = lastScanRef.current;
+    if (last && last.value === event.data && now - last.ts < DEBOUNCE_MS) return;
+    lastScanRef.current = { value: event.data, ts: now };
 
     const error = await onScan(event);
     if (error) {
@@ -91,7 +102,7 @@ export function BarcodeScannerView({ onScan, hint = 'Scan product barcode', over
     } else {
       Vibration.vibrate(VIBRATION_SUCCESS);
     }
-  }, [cooldown, onScan, showError]);
+  }, [onScan, showError]);
 
   const handleManualSubmit = useCallback(() => {
     if (!manualValue.trim()) return;
@@ -165,7 +176,7 @@ export function BarcodeScannerView({ onScan, hint = 'Scan product barcode', over
       {overlay}
 
       {/* Manual entry */}
-      {manualMode ? (
+      {hideManualEntry ? null : manualMode ? (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'position' : 'height'}
           keyboardVerticalOffset={0}

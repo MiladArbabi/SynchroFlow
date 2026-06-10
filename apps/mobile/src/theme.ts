@@ -40,12 +40,29 @@ export const colors = {
   error:   '#ef4444',
   info:    '#60A5FA',
 
+  // Design-system canonical semantic (WMS Mobile Design System, June 2026)
+  // Use these for all warehouse UI components — distinct from Tailwind defaults above
+  ok:   '#4CAF7A',  // --ok  — warehouse success green
+  bad:  '#E5544B',  // --bad — warehouse error red
+  warn: '#E5A33C',  // --warn — warehouse amber
+
   // ── Semantic ghost backgrounds (semantic color + 0.12 alpha) ─────────────
   successGhost:  'rgba(34,197,94,0.12)',
   warningGhost:  'rgba(245,158,11,0.12)',
   errorGhost:    'rgba(239,68,68,0.12)',
   infoGhost:     'rgba(96,165,250,0.12)',
   purpleGhost:   'rgba(167,139,250,0.12)',
+
+  // Design-system soft fills (paired with ok/bad/warn above)
+  okSoft:   'rgba(76,175,122,0.12)',   // --ok-soft
+  badSoft:  'rgba(229,84,75,0.12)',    // --bad-soft
+  warnSoft: 'rgba(229,163,60,0.12)',   // --warn-soft
+  queued:   'rgba(90,95,110,0.10)',    // --queued — pending-in-queue node surface
+
+  // Subtlety aliases (removes ?? fallbacks in NodeTrack / ScanDock)
+  accentSubtle:  'rgba(255,107,43,0.12)',  // = accentGhost
+  successSubtle: 'rgba(34,197,94,0.12)',   // = successGhost
+  errorSubtle:   'rgba(239,68,68,0.12)',   // = errorGhost
 
   // ── Semantic borders ──────────────────────────────────────────────────────
   successBorder: 'rgba(34,197,94,0.3)',
