@@ -3,7 +3,7 @@ title: "Does Shopify Have Built-In Warehouse Management?"
 titleAccent: "What it does (and doesn't) do."
 description: "Shopify tracks inventory — but it doesn't manage your warehouse. Here's where Shopify's built-in tools end, what a WMS actually does, and how to bridge the gap without a six-figure implementation."
 date: "2026-05-11"
-lastReviewed: "2026-05-11"
+lastReviewed: "2026-06-10"
 author: "LaSyncro"
 tags: ["shopify", "warehouse", "wms", "operations"]
 primaryKeyword: "shopify warehouse management"
@@ -180,6 +180,28 @@ When evaluating a WMS for a Shopify warehouse under 500 SKUs, use this checklist
   title="Pick, pack, receive, stow, supplier ratings, and demand intelligence — in one platform connected to Shopify in real time"
   caption="One platform for every warehouse operation — connected to Shopify in real time."
 />
+
+## How a WMS integrates with Shopify
+
+The integration method matters more than most feature lists admit, because it determines whether your inventory is accurate in real time or on a delay.
+
+### OAuth connection, not CSV exports
+
+A modern Shopify WMS integration connects through Shopify's OAuth flow — you approve the connection from your Shopify admin, and the WMS receives scoped API access to products, inventory, orders, and locations. Setup takes minutes. The alternatives — CSV exports, scheduled syncs, or middleware connectors — introduce the exact lag that causes drift and overselling.
+
+### Webhooks for real-time order flow
+
+When an order is placed, Shopify fires a webhook the WMS receives within seconds. That order enters the warehouse workflow immediately — block check, orders pool, pick queue — without polling delays. The same applies in reverse: when a warehouse scan changes stock, the WMS writes the new level back through the inventory API instantly.
+
+### A single inventory writer
+
+The most common integration failure is multiple apps holding inventory write permissions simultaneously. Two systems writing stock levels on different schedules will overwrite each other, and the resulting drift looks random and is painful to trace. The rule: one system owns inventory writes — everything else reads.
+
+### What Shopify Plus changes
+
+Shopify Plus raises API rate limits and adds features like multiple expansion stores, but the integration architecture is identical. A WMS built correctly for standard Shopify works on Plus without modification — claims of special "Plus integration" usually describe higher rate-limit headroom, not different capability.
+
+If an integration requires a developer, an implementation consultant, or a multi-week onboarding plan, that is a signal the tool was built for enterprise operations — not for a small warehouse team that needs to be operational today.
 
 ## Warehouse management needs by industry
 
