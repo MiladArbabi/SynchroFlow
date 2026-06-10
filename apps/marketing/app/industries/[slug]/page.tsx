@@ -66,7 +66,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params
-  const { frontmatter } = getContentBySlug('features', slug)
+  const { frontmatter } = getContentBySlug('industries', slug)
   return {
     title: `${frontmatter.title} — LaSyncro`,
     description: frontmatter.description,
@@ -82,7 +82,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 
 export default async function FeaturePage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const { frontmatter, content } = getContentBySlug('features', slug)
+  const { frontmatter, content } = getContentBySlug('industries', slug)
   const url = `https://www.lasyncro.com/industries/${slug}`
 
   return (
