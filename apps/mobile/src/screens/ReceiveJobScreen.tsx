@@ -1,15 +1,14 @@
 // apps/mobile/src/screens/ReceiveJobScreen.tsx
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
   Alert, ScrollView, TouchableOpacity, TextInput, Modal,
   KeyboardAvoidingView, Platform,
-  Vibration,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
-import { Screen, Card, Button, Badge, Row, Divider, AppHeader } from '../ui';
+import { Screen, Card, Button, Badge, Row, Divider, AppHeader, SessionShell, useSession } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 import { Ionicons } from '@expo/vector-icons';
@@ -59,10 +58,9 @@ const EXCEPTION_TYPES = [
   { type: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
 ] as const;
 
-export default function ReceiveJobScreen() {
+function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').TaskStackParamList['ReceiveJob']['task'] }) {
   const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
-  const route = useRoute<TaskStackScreenProps<'ReceiveJob'>['route']>();
-  const { task } = route.params;
+  const { newEventId } = useSession();
 
   const [job, setJob] = useState<ReceiveJob | null>(null);
   const [lines, setLines] = useState<ReceiveJobLine[]>([]);
@@ -185,6 +183,7 @@ export default function ReceiveJobScreen() {
           exception_type: exceptionType,
           quantity_affected: shortfall,
           notes: `${shortfall} unit${shortfall > 1 ? 's' : ''} unaccounted during receive`,
+          device_event_id: newEventId(),
         });
         const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
           lasyncro_variant_id: line.lasyncro_variant_id,
@@ -200,6 +199,7 @@ export default function ReceiveJobScreen() {
         lasyncro_variant_id: line.lasyncro_variant_id,
         quantity_accepted: accepted,
         quantity_rejected: shortfall,
+        device_event_id: newEventId(),
       });
 
       // Update local state
@@ -249,6 +249,7 @@ export default function ReceiveJobScreen() {
         exception_type: selectedExceptionType,
         quantity_affected: qty,
         notes: `${qty} unit${qty > 1 ? 's' : ''} unaccounted during receive`,
+        device_event_id: newEventId(),
       });
 
       const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
@@ -448,7 +449,7 @@ export default function ReceiveJobScreen() {
           <Text style={styles.completeIcon}>✓</Text>
           <Text style={styles.completeTitle}>Receive complete</Text>
           <Text style={styles.completeSub}>
-            Barcodes printed for accepted items.{'\n'}
+            Unit labels (LSU-) generated for all accepted items.{'\n'}
             {totalExceptions > 0
               ? `${totalExceptions} item${totalExceptions > 1 ? 's' : ''} sent to Problem Center.\n`
               : ''}
@@ -996,3 +997,18 @@ const styles = StyleSheet.create({
   briefLineName: { color: colors.ink, fontSize: font.size.sm, fontWeight: font.weight.medium },
   briefLineMeta: { color: colors.ink3, fontSize: font.size.xs },
 });
+
+// ─── Outer wrapper — provides SessionShell (MOB-RECEIVE-01) ─────────────────
+export default function ReceiveJobScreen() {
+  const route = useRoute<TaskStackScreenProps<'ReceiveJob'>['route']>();
+  const { task } = route.params;
+  return (
+    <SessionShell
+      sessionKey={`receive:${task.id}`}
+      initialPhase="brief"
+      activePhases={['inspect', 'scan', 'summary']}
+    >
+      <ReceiveJobScreenInner task={task} />
+    </SessionShell>
+  );
+}

@@ -1,5 +1,19 @@
 // apps/mobile/src/screens/StowScreen.tsx
-import { useEffect, useState, useCallback } from 'react';
+//
+// MOB-STOW-01 — re-composed onto §10.7 shell
+// -------------------------------------------
+// FIXES:
+//   MOB-STW-01 + MOB-STW-08  lasyncro_unit_id captured + threaded to /confirm & /exception
+//   MOB-STW-02               device_event_id on /claim, /confirm, /exception
+//   MOB-STW-03               bin_over_capacity response handled (advisory + PC task)
+//   MOB-STW-04               ProblemSheet replaces silent scan-phase exceptions;
+//                            shortfall modal gains Problem Center POST
+//   MOB-STW-07               WorkflowStep removed; ScanDock + NodeTrack in scan phases
+// STRUCTURAL (via SessionShell):
+//   MOB-STW-05               back guard on location_scan / product_scan / qty_confirm
+//   MOB-STW-06               AsyncStorage persistence + resume
+
+import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, StyleSheet, ActivityIndicator,
   Alert, ScrollView, TouchableOpacity, TextInput,
@@ -8,10 +22,19 @@ import {
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { TaskStackScreenProps, TaskStackParamList } from '../navigation/types';
-import { Screen, Card, Button, Badge, Row, Divider, AppHeader, WorkflowStep } from '../ui';
+import {
+  Screen, Card, Button, Badge, Row, Divider, AppHeader,
+  SessionShell, useSession,
+  ScanDock,
+  NodeTrack,
+  ProblemSheet,
+} from '../ui';
+import type { TrackNode, ExceptionItem } from '../ui';
 import { colors, font, spacing, radius } from '../theme';
 import { apiClient } from '@lasyncro/mobile-core';
 import { Ionicons } from '@expo/vector-icons';
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type StowTask = {
   stow_task_id: string;
@@ -26,39 +49,71 @@ type StowTask = {
 
 type ScreenPhase = 'summary' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'complete';
 
-const STOW_EXCEPTIONS = [
-  { type: 'item_missing', label: 'Item missing', icon: 'search-outline' },
-  { type: 'product_defect', label: 'Damaged', icon: 'hammer-outline' },
-  { type: 'packaging_defect', label: 'Packaging', icon: 'cube-outline' },
+// Phases where SessionShell back guard is active (MOB-STW-05)
+const ACTIVE_PHASES: readonly ScreenPhase[] = [
+  'location_scan', 'product_scan', 'qty_confirm',
 ];
 
+const STOW_EXCEPTIONS: ExceptionItem[] = [
+  { type: 'item_missing',     label: 'Item missing', icon: 'search-outline'  },
+  { type: 'product_defect',   label: 'Damaged',      icon: 'hammer-outline'  },
+  { type: 'packaging_defect', label: 'Packaging',    icon: 'cube-outline'    },
+];
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+
 export default function StowScreen() {
-  const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
   const route = useRoute<TaskStackScreenProps<'Stow'>['route']>();
   const { task } = route.params;
+  return (
+    <SessionShell
+      sessionKey={`stow:${task.id}`}
+      initialPhase="summary"
+      activePhases={ACTIVE_PHASES}
+    >
+      <StowScreenInner task={task} />
+    </SessionShell>
+  );
+}
 
-  const [screenPhase, setScreenPhase] = useState<ScreenPhase>('summary');
-  const [tasks, setTasks] = useState<StowTask[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [loading, setLoading] = useState(true);
+// ─── Inner ────────────────────────────────────────────────────────────────────
+
+function StowScreenInner({ task }: { task: { id: string } }) {
+  const navigation = useNavigation<NativeStackNavigationProp<TaskStackParamList>>();
+  const { phase, phaseData, setPhase, newEventId, clearSession, isRestoring } =
+    useSession();
+
+  // ── Persisted phase data (restored from AsyncStorage on remount) ──────────
+  const confirmedLocation = (phaseData.confirmedLocation as string | null) ?? null;
+  const currentIndex      = (phaseData.currentIndex      as number)        ?? 0;
+  const remainingQty      = (phaseData.remainingQty      as number)        ?? 0;
+  const resolvedUnitId    = (phaseData.resolvedUnitId    as string | null) ?? null; // MOB-STW-01/08
+
+  // ── Transient state ───────────────────────────────────────────────────────
+  const [tasks,      setTasks]     = useState<StowTask[]>([]);
+  const [loading,    setLoading]   = useState(true);
+  const [error,      setError]     = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmedLocation, setConfirmedLocation] = useState<string | null>(null);
 
-  // Partial stow tracking
-  const [remainingQty, setRemainingQty] = useState(0);
-  const [qtyInput, setQtyInput] = useState('');
+  // ProblemSheet — scan-phase exceptions
+  const [problemSheetVisible, setProblemSheetVisible] = useState(false);
+  const pendingExQtyRef = useRef<number>(0); // qty reported; read in onClose
 
-  const currentTask = tasks[currentIndex] ?? null;
-
+  // Shortfall modal — qty_confirm phase
   const [shortfallModal, setShortfallModal] = useState<{
     qty: number;
     shortfall: number;
     reportedExceptions: Array<{ type: string; qty: number; probLabel: string }>;
   } | null>(null);
   const [selectedExType, setSelectedExType] = useState('');
-  const [exQtyInput, setExQtyInput] = useState('');
+  const [exQtyInput,     setExQtyInput]     = useState('');
 
+  // Qty confirm input
+  const [qtyInput, setQtyInput] = useState('');
+
+  const currentTask = tasks[currentIndex] ?? null;
+
+  // ── Load ──────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -67,17 +122,8 @@ export default function StowScreen() {
         (t: StowTask) => t.status === 'pending' || t.status === 'in_progress'
       );
       const tapped = all.find((t: StowTask) => t.stow_task_id === task.id);
-      const rest = all.filter((t: StowTask) => t.stow_task_id !== task.id);
-      const ordered = tapped ? [tapped, ...rest] : all;
-      setTasks(ordered);
-      if (ordered.length > 0) {
-        setRemainingQty(ordered[0].quantity);
-        // Resume in-progress task at correct step
-        if (ordered[0].status === 'in_progress' && ordered[0].location_code) {
-          setConfirmedLocation(ordered[0].location_code);
-          setScreenPhase('product_scan');
-        }
-      }
+      const rest   = all.filter((t: StowTask) => t.stow_task_id !== task.id);
+      setTasks(tapped ? [tapped, ...rest] : all);
     } catch {
       setError('Failed to load stow tasks.');
     } finally {
@@ -87,128 +133,165 @@ export default function StowScreen() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // ── Location scan confirmed ───────────────────────────────────────────────
-  const handleLocationScan = useCallback(async (scannedValue: string) => {
-    if (!currentTask) return;
-
-    const { data } = await apiClient.post('/api/v1/wms/location/resolve', {
-      scanned_value: scannedValue,
-    });
-
-    if (!data?.location_code) {
-      throw Object.assign(new Error('Location not found.'), {
-        response: { data: { error: 'Location not recognised. Try scanning the bin barcode.' } },
+  // ── Advance to next task or complete ─────────────────────────────────────
+  const advanceToNext = useCallback(async (nextIdx: number, taskList: StowTask[]) => {
+    if (nextIdx >= taskList.length) {
+      await clearSession();
+      await setPhase('complete', {});
+    } else {
+      await setPhase('location_scan', {
+        confirmedLocation: null,
+        currentIndex:      nextIdx,
+        remainingQty:      taskList[nextIdx].quantity,
+        resolvedUnitId:    null,
       });
     }
+  }, [clearSession, setPhase]);
 
-    if (!currentTask.location_code) {
-      await apiClient.patch(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/location`, {
-        location_code: data.location_code,
-      });
-    } else if (data.location_code !== currentTask.location_code) {
-      throw Object.assign(new Error('Wrong location.'), {
-        response: { data: { error: `Wrong location. Expected: ${currentTask.location_code}` } },
-      });
-    }
+  // ── Location scan resolve ─────────────────────────────────────────────────
+  const handleLocationResolve = useCallback(
+    async (raw: string): Promise<string | void> => {
+      if (!currentTask) return 'No active task.';
+      try {
+        const { data } = await apiClient.post('/api/v1/wms/location/resolve', {
+          scanned_value: raw,
+        });
+        if (!data?.location_code)
+          return 'Location not recognised. Try scanning the bin barcode.';
+        if (
+          currentTask.location_code &&
+          data.location_code !== currentTask.location_code
+        )
+          return `Wrong location. Expected: ${currentTask.location_code}`;
 
-    setTasks(prev => prev.map((t, i) =>
-      i === currentIndex ? { ...t, location_code: data.location_code, status: 'in_progress' } : t
-    ));
+        const eventId = newEventId(); // MOB-STW-02
+        if (!currentTask.location_code) {
+          await apiClient.patch(
+            `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/location`,
+            { location_code: data.location_code }
+          );
+        }
+        try {
+          await apiClient.post(
+            `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/claim`,
+            { device_event_id: eventId } // MOB-STW-02
+          );
+        } catch (err: unknown) {
+          const msg =
+            (err as { response?: { data?: { error?: string } } })
+              ?.response?.data?.error ?? '';
+          if (!msg.includes('already') && !msg.includes('in_progress'))
+            return 'Failed to claim task. Try again.';
+        }
+        setTasks(prev =>
+          prev.map((t, i) =>
+            i === currentIndex
+              ? { ...t, location_code: data.location_code, status: 'in_progress' }
+              : t
+          )
+        );
+        await setPhase('product_scan', {
+          confirmedLocation: data.location_code,
+          currentIndex,
+          remainingQty,
+          resolvedUnitId: null,
+        });
+      } catch {
+        return 'Location scan failed. Try again.';
+      }
+    },
+    [currentTask, currentIndex, remainingQty, newEventId, setPhase]
+  );
 
-    try {
-      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/claim`);
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? '';
-      // Already claimed by this operator — treat as success
-      if (!msg.includes('already') && !msg.includes('in_progress')) throw err;
-    }
-    setConfirmedLocation(data.location_code);
-    setScreenPhase('product_scan');
-  }, [currentTask, currentIndex]);
+  // ── Product scan resolve ──────────────────────────────────────────────────
+  const handleProductResolve = useCallback(
+    async (raw: string): Promise<string | void> => {
+      if (!currentTask) return 'No active task.';
+      try {
+        const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
+          scanned_value: raw,
+        });
+        if (!resolved?.lasyncro_variant_id)
+          return 'Barcode not recognised. Try scanning again.';
+        if (resolved.lasyncro_variant_id !== currentTask.lasyncro_variant_id)
+          return 'Wrong product — does not match this stow task.';
 
-  // ── Product scan confirmed ────────────────────────────────────────────────
-  const handleProductScan = useCallback(async (scannedValue: string) => {
-    if (!currentTask) return;
+        await setPhase('qty_confirm', {
+          confirmedLocation,
+          currentIndex,
+          remainingQty,
+          resolvedUnitId: resolved.lasyncro_unit_id ?? null, // MOB-STW-01/08
+        });
+      } catch {
+        return 'Product scan failed. Try again.';
+      }
+    },
+    [currentTask, confirmedLocation, currentIndex, remainingQty, setPhase]
+  );
 
-    const { data: resolved } = await apiClient.post('/api/v1/wms/barcode/resolve', {
-      scanned_value: scannedValue,
-    });
-
-    if (!resolved?.lasyncro_variant_id) {
-      throw Object.assign(new Error('Barcode not recognised.'), {
-        response: { data: { error: 'Barcode not recognised. Try scanning again.' } },
-      });
-    }
-
-    if (resolved.lasyncro_variant_id !== currentTask.lasyncro_variant_id) {
-      throw Object.assign(new Error('Wrong product.'), {
-        response: { data: { error: 'Wrong product — does not match this stow task.' } },
-      });
-    }
-
-    // Move to qty confirmation
-    setQtyInput('');
-    setScreenPhase('qty_confirm');
-  }, [currentTask]);
-
-  // ── Submit Handler Helper ───────────────────────────────────────────────────────────
-  const submitStow = useCallback(async (qty: number, exceptionsFiled = false) => {
-    if (!currentTask) return;
-    setSubmitting(true);
-    try {
-      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/confirm`, {
-        quantity_placed: qty,
-      });
-      const newRemaining = remainingQty - qty;
-      // Only loop back for partial stow if no exceptions were filed for the shortfall.
-      // If exceptions cover the gap, advance to next task.
-      if (newRemaining > 0 && !exceptionsFiled) {
-        setRemainingQty(newRemaining);
-        setConfirmedLocation(null);
-        setQtyInput('');
-        setShortfallModal(null);
-        setScreenPhase('location_scan');
-      } else {
-        const nextIndex = currentIndex + 1;
-        if (nextIndex >= tasks.length) {
-          setScreenPhase('complete');
+  // ── Submit stow ───────────────────────────────────────────────────────────
+  const submitStow = useCallback(
+    async (qty: number, exceptionsFiled = false) => {
+      if (!currentTask) return;
+      setSubmitting(true);
+      try {
+        const eventId = newEventId(); // MOB-STW-02
+        const { data: confirmData } = await apiClient.post(
+          `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/confirm`,
+          {
+            quantity_placed:  qty,
+            lasyncro_unit_id: resolvedUnitId, // MOB-STW-01
+            device_event_id:  eventId,        // MOB-STW-02
+          }
+        );
+        // bin_over_capacity advisory (MOB-STW-03)
+        if (confirmData?.bin_over_capacity) {
+          Alert.alert(
+            'Bin over capacity',
+            'This bin is now over its capacity limit. A supervisor task has been created.'
+          );
+          void apiClient
+            .post('/api/v1/wms/problem-center', {
+              source:              'stow',
+              issue_type:          'bin_over_capacity',
+              stow_task_id:        currentTask.stow_task_id,
+              lasyncro_variant_id: currentTask.lasyncro_variant_id,
+            })
+            .catch(() => {/* non-fatal */});
+        }
+        const newRemaining = remainingQty - qty;
+        if (newRemaining > 0 && !exceptionsFiled) {
+          await setPhase('location_scan', {
+            confirmedLocation: null,
+            currentIndex,
+            remainingQty:   newRemaining,
+            resolvedUnitId: null,
+          });
         } else {
-          setCurrentIndex(nextIndex);
-          setRemainingQty(tasks[nextIndex].quantity);
-          setConfirmedLocation(null);
-          setQtyInput('');
-          setShortfallModal(null);
-          setScreenPhase('location_scan');
+          await advanceToNext(currentIndex + 1, tasks);
         }
-      }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Stow confirm failed.';
-      if (msg.includes('not in progress') || msg.includes('completed')) {
-        // Already confirmed — advance
-        const nextIndex = currentIndex + 1;
-        if (nextIndex >= tasks.length) setScreenPhase('complete');
-        else {
-          setCurrentIndex(nextIndex);
-          setRemainingQty(tasks[nextIndex].quantity);
-          setConfirmedLocation(null);
-          setQtyInput('');
-          setShortfallModal(null);
-          setScreenPhase('location_scan');
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })
+            ?.response?.data?.error ?? 'Stow confirm failed.';
+        if (msg.includes('not in progress') || msg.includes('completed')) {
+          await advanceToNext(currentIndex + 1, tasks);
+        } else {
+          Alert.alert('Error', msg);
         }
-      } else {
-        Alert.alert('Error', msg);
+      } finally {
+        setSubmitting(false);
       }
-    } finally {
-      setSubmitting(false);
-    }
-  }, [currentTask, remainingQty, currentIndex, tasks]);
+    },
+    [
+      currentTask, resolvedUnitId, remainingQty, currentIndex,
+      tasks, newEventId, setPhase, advanceToNext,
+    ]
+  );
 
-  // ── Qty confirm ───────────────────────────────────────────────────────────
+  // ── Qty confirm handler ───────────────────────────────────────────────────
   const handleQtyConfirm = useCallback(async () => {
     if (!currentTask) return;
-
     const qty = parseInt(qtyInput, 10);
     if (isNaN(qty) || qty <= 0) {
       Alert.alert('Invalid', 'Enter how many units you are placing here.');
@@ -218,83 +301,64 @@ export default function StowScreen() {
       Alert.alert('Too many', `Only ${remainingQty} units remaining to stow.`);
       return;
     }
-
     const shortfall = remainingQty - qty;
-
     if (shortfall > 0) {
-      // Show shortfall modal — same pattern as receive
       setShortfallModal({ qty, shortfall, reportedExceptions: [] });
       setSelectedExType('');
       setExQtyInput(String(shortfall));
       return;
     }
-
     await submitStow(qty);
-  }, [currentTask, qtyInput, remainingQty]);
+  }, [currentTask, qtyInput, remainingQty, submitStow]);
 
-  // ── Exception handler ─────────────────────────────────────────────────────
-  const handleException = useCallback(async (exceptionType: string, quantity: number = 1) => {
-    if (!currentTask) return;
-    try {
-      await apiClient.post(`/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/exception`, {
-        exception_type: exceptionType,
-        quantity,
-        notes: 'Reported during stow',
-      });
-
-      const newRemaining = remainingQty - quantity;
-      if (newRemaining <= 0) {
-        const nextIndex = currentIndex + 1;
-        if (nextIndex >= tasks.length) {
-          setScreenPhase('complete');
-        } else {
-          setCurrentIndex(nextIndex);
-          setRemainingQty(tasks[nextIndex].quantity);
-          setConfirmedLocation(null);
-          setScreenPhase('location_scan');
-        }
-      } else {
-        setRemainingQty(newRemaining);
-      }
-    } catch {
-      Alert.alert('Error', 'Failed to report exception.');
-    }
-  }, [currentTask, remainingQty, currentIndex, tasks]);
-
-
-  // ----------------- shortfall exception confirm handler ---------------------------//
+  // ── Shortfall exception confirm (custom modal) ────────────────────────────
   const handleShortfallConfirm = useCallback(async () => {
     if (!shortfallModal || !currentTask || !selectedExType) return;
-
     const exQty = parseInt(exQtyInput, 10);
     if (isNaN(exQty) || exQty <= 0 || exQty > shortfallModal.shortfall) {
       Alert.alert('Invalid', `Enter between 1 and ${shortfallModal.shortfall}.`);
       return;
     }
-
     setSubmitting(true);
     try {
+      const eventId = newEventId(); // MOB-STW-02
       const { data: probData } = await apiClient.post(
         `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/exception`,
-        { exception_type: selectedExType, quantity: exQty, notes: 'Reported during stow qty confirm' }
+        {
+          exception_type:   selectedExType,
+          quantity:         exQty,
+          lasyncro_unit_id: resolvedUnitId, // MOB-STW-01
+          device_event_id:  eventId,        // MOB-STW-02
+          notes:            'Reported during stow qty confirm',
+        }
       );
+      // Problem Center POST (MOB-STW-04)
+      void apiClient
+        .post('/api/v1/wms/problem-center', {
+          source:              'stow',
+          source_exception_id: probData?.exception_id,
+          lasyncro_variant_id: currentTask.lasyncro_variant_id,
+        })
+        .catch(() => {/* non-fatal */});
 
-      const newReported = [
-        ...shortfallModal.reportedExceptions,
-        { type: selectedExType, qty: exQty, probLabel: probData.prob_label ?? 'PROB-?' },
-      ];
-      // Tip operator to place item in problem bin
       if (selectedExType !== 'item_missing') {
         Alert.alert(
           '⚠ Place in Problem Bin',
-          `Label ${probData.prob_label ?? 'PROB-?'} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
-          [{ text: 'Got it', style: 'default' }]
+          `Label ${probData.prob_label ?? 'PROB-?'} — place in ${
+            probData.problem_bin ?? 'the PROBLEM BIN'
+          } before continuing.`,
+          [{ text: 'Got it' }]
         );
       }
       const newShortfall = shortfallModal.shortfall - exQty;
-
+      const newReported  = [
+        ...shortfallModal.reportedExceptions,
+        { type: selectedExType, qty: exQty, probLabel: probData.prob_label ?? 'PROB-?' },
+      ];
       if (newShortfall > 0) {
-        setShortfallModal(prev => prev ? { ...prev, shortfall: newShortfall, reportedExceptions: newReported } : null);
+        setShortfallModal(prev =>
+          prev ? { ...prev, shortfall: newShortfall, reportedExceptions: newReported } : null
+        );
         setSelectedExType('');
         setExQtyInput('');
       } else {
@@ -302,22 +366,115 @@ export default function StowScreen() {
         await submitStow(shortfallModal.qty, true);
       }
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })
-        ?.response?.data?.error ?? 'Failed to report exception.';
+      const msg =
+        (err as { response?: { data?: { error?: string } } })
+          ?.response?.data?.error ?? 'Failed to report exception.';
       Alert.alert('Error', msg);
     } finally {
       setSubmitting(false);
     }
-  }, [shortfallModal, currentTask, selectedExType, exQtyInput, submitStow]);
+  }, [
+    shortfallModal, currentTask, selectedExType, exQtyInput,
+    resolvedUnitId, newEventId, submitStow,
+  ]);
+
+  // ── Scan-phase exception via ProblemSheet (MOB-STW-04) ───────────────────
+  const handleScanExceptionReport = useCallback(
+    async (type: string, qty: number): Promise<string | void> => {
+      if (!currentTask) return 'No active task.';
+      try {
+        const eventId = newEventId(); // MOB-STW-02
+        const { data: probData } = await apiClient.post(
+          `/api/v1/wms/stow-tasks/${currentTask.stow_task_id}/exception`,
+          {
+            exception_type:   type,
+            quantity:         qty,
+            lasyncro_unit_id: resolvedUnitId, // MOB-STW-01
+            device_event_id:  eventId,        // MOB-STW-02
+            notes:            'Reported during stow',
+          }
+        );
+        // Problem Center POST (MOB-STW-04)
+        void apiClient
+          .post('/api/v1/wms/problem-center', {
+            source:              'stow',
+            source_exception_id: probData?.exception_id,
+            lasyncro_variant_id: currentTask.lasyncro_variant_id,
+          })
+          .catch(() => {/* non-fatal */});
+        pendingExQtyRef.current = qty;
+      } catch (err: unknown) {
+        const msg =
+          (err as { response?: { data?: { error?: string } } })
+            ?.response?.data?.error ?? 'Failed to report exception.';
+        return msg;
+      }
+    },
+    [currentTask, resolvedUnitId, newEventId]
+  );
+
+  // Called when ProblemSheet closes — advance state based on reported qty
+  const handleScanProblemClose = useCallback(async () => {
+    const qty = pendingExQtyRef.current;
+    pendingExQtyRef.current = 0;
+    setProblemSheetVisible(false);
+    if (qty <= 0) return; // closed without reporting
+    const newRemaining = remainingQty - qty;
+    if (newRemaining <= 0) {
+      await advanceToNext(currentIndex + 1, tasks);
+    } else {
+      await setPhase('location_scan', {
+        confirmedLocation: null,
+        currentIndex,
+        remainingQty:   newRemaining,
+        resolvedUnitId: null,
+      });
+    }
+  }, [remainingQty, currentIndex, tasks, setPhase, advanceToNext]);
+
+  // ── NodeTrack nodes ───────────────────────────────────────────────────────
+  const trackNodes: TrackNode[] = [
+    {
+      id:       'location',
+      label:    (phase === 'product_scan' || phase === 'qty_confirm')
+                  ? (confirmedLocation ?? '—')
+                  : (currentTask?.location_code ?? 'Location'),
+      sublabel: 'Bin barcode',
+      state:    phase === 'location_scan'                              ? 'active'
+              : (phase === 'product_scan' || phase === 'qty_confirm') ? 'done'
+              : 'pending',
+    },
+    {
+      id:       'product',
+      label:    currentTask?.variant_title ?? currentTask?.sku ?? 'Product',
+      sublabel: 'Product barcode',
+      state:    phase === 'product_scan' ? 'active'
+              : phase === 'qty_confirm'  ? 'done'
+              : 'pending',
+    },
+  ];
+
+  // ── Loading / restoring guard ─────────────────────────────────────────────
+  if (isRestoring || (loading && phase !== 'summary' && phase !== 'complete')) {
+    return (
+      <Screen>
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      </Screen>
+    );
+  }
 
   // ── SUMMARY ───────────────────────────────────────────────────────────────
-  if (screenPhase === 'summary') {
+  if (phase === 'summary') {
     return (
       <Screen>
         <AppHeader showLogo />
         <Divider />
         {loading ? (
-          <View style={styles.center}><ActivityIndicator color={colors.accent} /></View>
+          <View style={styles.center}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
         ) : error ? (
           <View style={styles.center}>
             <Text style={styles.errorText}>{error}</Text>
@@ -372,7 +529,12 @@ export default function StowScreen() {
             <View style={styles.footer}>
               <Button
                 label="Start stowing"
-                onPress={() => setScreenPhase('location_scan')}
+                onPress={() => void setPhase('location_scan', {
+                  confirmedLocation: null,
+                  currentIndex:      0,
+                  remainingQty:      tasks[0]?.quantity ?? 0,
+                  resolvedUnitId:    null,
+                })}
                 variant="primary"
               />
             </View>
@@ -383,7 +545,7 @@ export default function StowScreen() {
   }
 
   // ── COMPLETE ──────────────────────────────────────────────────────────────
-  if (screenPhase === 'complete') {
+  if (phase === 'complete') {
     return (
       <Screen>
         <AppHeader showLogo />
@@ -405,91 +567,113 @@ export default function StowScreen() {
   if (!currentTask) return null;
 
   // ── LOCATION SCAN ─────────────────────────────────────────────────────────
-  if (screenPhase === 'location_scan') {
+  if (phase === 'location_scan') {
     return (
       <Screen>
         <AppHeader
           title={`Stow · ${currentIndex + 1}/${tasks.length}`}
-          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
+          rightAction={{ icon: 'close-outline', onPress: () => void setPhase('summary', {}) }}
         />
-        <WorkflowStep
-          scanType="location"
-          context={{
-            label: 'Stowing',
-            value: currentTask.variant_title ?? currentTask.sku ?? '—',
-            sublabel: `${remainingQty} of ${currentTask.quantity} units remaining`,
-          }}
-          item={{
-            title: 'Scan the bin barcode',
-            sku: 'Point camera at location barcode or type location code',
-            quantity: remainingQty,
-            currentIndex: currentIndex + 1,
-            totalCount: tasks.length,
-          }}
+        <NodeTrack nodes={trackNodes} />
+        <View style={{ flex: 1 }}>
+          <View style={styles.contextBlock}>
+            <Text style={styles.contextLabel}>Stowing</Text>
+            <Text style={styles.contextValue} numberOfLines={2}>
+              {currentTask.variant_title ?? currentTask.sku ?? '—'}
+            </Text>
+            <Text style={styles.contextSub}>
+              {remainingQty} of {currentTask.quantity} units remaining
+            </Text>
+          </View>
+        </View>
+        <ScanDock
+          hint="Point camera at bin barcode or type location code"
+          onResolve={handleLocationResolve}
+        />
+        <TouchableOpacity
+          style={styles.reportProblemRow}
+          onPress={() => setProblemSheetVisible(true)}
+        >
+          <Ionicons name="warning-outline" size={16} color={colors.ink3} />
+          <Text style={styles.reportProblemText}>Report problem</Text>
+        </TouchableOpacity>
+        <ProblemSheet
+          visible={problemSheetVisible}
+          onClose={() => void handleScanProblemClose()}
           exceptions={STOW_EXCEPTIONS}
-          onConfirm={handleLocationScan}
-          onException={handleException}
-          confirmLabel="Confirm location"
-          isSubmitting={submitting}
+          onReport={handleScanExceptionReport}
+          lasyncroVariantId={currentTask.lasyncro_variant_id}
+          source="stow"
+          defaultQty={1}
         />
       </Screen>
     );
   }
 
   // ── PRODUCT SCAN ──────────────────────────────────────────────────────────
-  if (screenPhase === 'product_scan') {
+  if (phase === 'product_scan') {
     return (
       <Screen>
         <AppHeader
           title={`Stow · ${currentIndex + 1}/${tasks.length}`}
-          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
+          rightAction={{ icon: 'close-outline', onPress: () => void setPhase('summary', {}) }}
         />
-        <WorkflowStep
-          scanType="product"
-          context={{
-            label: 'Location confirmed',
-            value: confirmedLocation ?? currentTask.location_code ?? '—',
-            sublabel: 'Now scan the product barcode',
-          }}
-          item={{
-            title: currentTask.variant_title ?? currentTask.sku ?? '—',
-            sku: currentTask.sku,
-            quantity: remainingQty,
-            currentIndex: currentIndex + 1,
-            totalCount: tasks.length,
-          }}
+        <NodeTrack nodes={trackNodes} />
+        <View style={{ flex: 1 }}>
+          <View style={styles.contextBlock}>
+            <Text style={styles.contextLabel}>Product</Text>
+            <Text style={styles.contextValue} numberOfLines={2}>
+              {currentTask.variant_title ?? currentTask.sku ?? '—'}
+            </Text>
+            {currentTask.sku && (
+              <Text style={styles.contextSub}>{currentTask.sku}</Text>
+            )}
+            <Text style={styles.contextSub}>{remainingQty} units</Text>
+          </View>
+        </View>
+        <ScanDock
+          hint="Point camera at product barcode"
+          onResolve={handleProductResolve}
+        />
+        <TouchableOpacity
+          style={styles.reportProblemRow}
+          onPress={() => setProblemSheetVisible(true)}
+        >
+          <Ionicons name="warning-outline" size={16} color={colors.ink3} />
+          <Text style={styles.reportProblemText}>Report problem</Text>
+        </TouchableOpacity>
+        <ProblemSheet
+          visible={problemSheetVisible}
+          onClose={() => void handleScanProblemClose()}
           exceptions={STOW_EXCEPTIONS}
-          onConfirm={handleProductScan}
-          onException={handleException}
-          confirmLabel="Confirm product"
-          isSubmitting={submitting}
+          onReport={handleScanExceptionReport}
+          lasyncroVariantId={currentTask.lasyncro_variant_id}
+          source="stow"
+          defaultQty={1}
         />
       </Screen>
     );
   }
 
- // ── QTY CONFIRM ───────────────────────────────────────────────────────────
-  if (screenPhase === 'qty_confirm') {
+  // ── QTY CONFIRM ───────────────────────────────────────────────────────────
+  if (phase === 'qty_confirm') {
     return (
       <Screen>
         <AppHeader
           title={`Stow · ${currentIndex + 1}/${tasks.length}`}
-          rightAction={{ icon: 'close-outline', onPress: () => setScreenPhase('summary') }}
+          rightAction={{ icon: 'close-outline', onPress: () => void setPhase('summary', {}) }}
         />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={0}
         >
-          {/* Step banner */}
           <View style={[styles.stepBanner, { borderLeftColor: colors.success }]}>
             <Ionicons name="checkmark-circle-outline" size={20} color={colors.success} />
             <Text style={[styles.stepBannerText, { color: colors.success }]}>
               CONFIRM QUANTITY
             </Text>
           </View>
-
-          {/* Context */}
           <View style={styles.qtySection}>
             <Text style={styles.qtySectionLabel}>Location</Text>
             <Text style={styles.qtySectionValue}>{confirmedLocation}</Text>
@@ -505,8 +689,6 @@ export default function StowScreen() {
             )}
           </View>
           <Divider />
-
-          {/* Qty input */}
           <View style={styles.qtyInputSection}>
             <Text style={styles.qtyQuestion}>
               How many units are you placing here?
@@ -530,8 +712,6 @@ export default function StowScreen() {
               </Text>
             )}
           </View>
-
-          {/* Buttons inline — not absolute, moves with keyboard */}
           <View style={styles.qtyActions}>
             <Button
               label={submitting ? 'Confirming…' : 'Confirm stow'}
@@ -540,7 +720,12 @@ export default function StowScreen() {
             />
             <Button
               label="Back to product scan"
-              onPress={() => setScreenPhase('product_scan')}
+              onPress={() => void setPhase('product_scan', {
+                confirmedLocation,
+                currentIndex,
+                remainingQty,
+                resolvedUnitId: null,
+              })}
               variant="ghost"
               style={{ marginTop: spacing.sm }}
             />
@@ -559,15 +744,14 @@ export default function StowScreen() {
             activeOpacity={1}
             onPress={() => setShortfallModal(null)}
           />
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'position' : 'height'}
-          >
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'position' : 'height'}>
             <View style={styles.modalSheet}>
               <View style={styles.sheetHandle} />
               {shortfallModal && (
                 <>
                   <Text style={styles.modalTitle}>
-                    {shortfallModal.shortfall} unit{shortfallModal.shortfall > 1 ? 's' : ''} unaccounted
+                    {shortfallModal.shortfall} unit
+                    {shortfallModal.shortfall > 1 ? 's' : ''} unaccounted
                   </Text>
                   <Text style={styles.modalSubtitle}>
                     {shortfallModal.reportedExceptions.length > 0
@@ -575,8 +759,6 @@ export default function StowScreen() {
                       : `You placed ${shortfallModal.qty} of ${remainingQty}. What happened to the rest?`
                     }
                   </Text>
-
-                  {/* Already reported */}
                   {shortfallModal.reportedExceptions.map((ex, i) => (
                     <View key={i} style={styles.reportedEx}>
                       <Text style={styles.reportedExText}>
@@ -584,8 +766,6 @@ export default function StowScreen() {
                       </Text>
                     </View>
                   ))}
-
-                  {/* Exception type grid */}
                   <View style={styles.exceptionGrid}>
                     {STOW_EXCEPTIONS.map(({ type, label, icon }) => (
                       <TouchableOpacity
@@ -610,8 +790,6 @@ export default function StowScreen() {
                       </TouchableOpacity>
                     ))}
                   </View>
-
-                  {/* Qty */}
                   <View style={styles.exQtyRow}>
                     <Text style={styles.exQtyLabel}>
                       How many? (max {shortfallModal.shortfall})
@@ -626,9 +804,11 @@ export default function StowScreen() {
                       maxLength={3}
                     />
                   </View>
-
                   <TouchableOpacity
-                    style={[styles.modalConfirm, (!selectedExType || submitting) && styles.modalConfirmDisabled]}
+                    style={[
+                      styles.modalConfirm,
+                      (!selectedExType || submitting) && styles.modalConfirmDisabled,
+                    ]}
                     onPress={() => void handleShortfallConfirm()}
                     disabled={!selectedExType || submitting}
                   >
@@ -636,10 +816,12 @@ export default function StowScreen() {
                       {submitting ? 'Processing…' : 'Report & continue'}
                     </Text>
                   </TouchableOpacity>
-
                   <TouchableOpacity
                     style={styles.miscountBtn}
-                    onPress={() => { setShortfallModal(null); void submitStow(remainingQty); }}
+                    onPress={() => {
+                      setShortfallModal(null);
+                      void submitStow(remainingQty);
+                    }}
                     disabled={submitting}
                   >
                     <Ionicons name="refresh-outline" size={16} color={colors.ink3} />
@@ -659,35 +841,55 @@ export default function StowScreen() {
   return null;
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  summaryRow: { justifyContent: 'space-around', paddingVertical: spacing.md },
-  summaryItem: { alignItems: 'center', gap: spacing.xs },
+  // Summary
+  summaryRow:   { justifyContent: 'space-around', paddingVertical: spacing.md },
+  summaryItem:  { alignItems: 'center', gap: spacing.xs },
   summaryValue: { color: colors.accent, fontSize: font.size.lg, fontWeight: font.weight.bold },
   summaryLabel: { color: colors.ink3, fontSize: font.size.xs },
-  list: { padding: spacing.md, paddingBottom: 120, gap: spacing.sm },
-  taskCard: { gap: spacing.xs },
-  taskTitle: { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
-  taskMeta: { color: colors.ink3, fontSize: font.size.sm },
+  list:         { padding: spacing.md, paddingBottom: 120, gap: spacing.sm },
+  taskCard:     { gap: spacing.xs },
+  taskTitle:    { color: colors.ink, fontSize: font.size.md, fontWeight: font.weight.semibold },
+  taskMeta:     { color: colors.ink3, fontSize: font.size.sm },
   footer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     padding: spacing.lg, paddingBottom: spacing.xl,
     backgroundColor: colors.bg, borderTopWidth: 1, borderTopColor: colors.rule,
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
-  errorText: { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
-  emptyText: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center' },
-  backLink: { marginTop: spacing.lg, padding: spacing.md },
+  // Shared
+  center:       { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  errorText:    { color: colors.error, fontSize: font.size.sm, textAlign: 'center' },
+  emptyText:    { color: colors.ink3, fontSize: font.size.md, textAlign: 'center' },
+  backLink:     { marginTop: spacing.lg, padding: spacing.md },
   backLinkText: { color: colors.ink3, fontSize: font.size.sm },
-  completeIcon: { fontSize: 64, color: colors.success, marginBottom: spacing.md },
-  completeTitle: { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
-  completeSub: { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
-  completeBtn: {
+  // Complete
+  completeIcon:    { fontSize: 64, color: colors.success, marginBottom: spacing.md },
+  completeTitle:   { color: colors.ink, fontSize: font.size.xl, fontWeight: font.weight.bold, marginBottom: spacing.xs },
+  completeSub:     { color: colors.ink3, fontSize: font.size.md, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  completeBtn:     {
     backgroundColor: colors.accent, borderRadius: 12,
     paddingHorizontal: spacing.xl, paddingVertical: spacing.md,
     width: '100%', alignItems: 'center',
   },
   completeBtnText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
-  // Step banner
+  // Scan phases — context block
+  contextBlock: { padding: spacing.lg, gap: spacing.xs },
+  contextLabel: {
+    color: colors.ink3, fontSize: font.size.xs,
+    fontWeight: font.weight.semibold, textTransform: 'uppercase', letterSpacing: 0.8,
+  },
+  contextValue: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  contextSub:   { color: colors.ink3, fontSize: font.size.sm },
+  // Scan phases — Report Problem
+  reportProblemRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.xs, paddingVertical: spacing.md,
+    borderTopWidth: 1, borderTopColor: colors.rule,
+  },
+  reportProblemText: { color: colors.ink3, fontSize: font.size.sm },
+  // Qty confirm — step banner
   stepBanner: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
@@ -697,17 +899,17 @@ const styles = StyleSheet.create({
     fontSize: font.size.sm, fontWeight: font.weight.bold,
     letterSpacing: 1, textTransform: 'uppercase',
   },
-  // Qty confirm
-  qtySection: { padding: spacing.lg, gap: spacing.xs },
+  // Qty confirm — fields
+  qtySection:      { padding: spacing.lg, gap: spacing.xs },
   qtySectionLabel: {
     color: colors.ink3, fontSize: font.size.xs,
     fontWeight: font.weight.semibold, textTransform: 'uppercase', letterSpacing: 0.8,
   },
   qtySectionValue: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
-  qtySectionSub: { color: colors.ink3, fontSize: font.size.sm },
+  qtySectionSub:   { color: colors.ink3, fontSize: font.size.sm },
   qtyInputSection: { padding: spacing.lg, gap: spacing.md },
-  qtyQuestion: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
-  qtyRow: { alignItems: 'center', gap: spacing.md },
+  qtyQuestion:     { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
+  qtyRow:          { alignItems: 'center', gap: spacing.md },
   qtyInput: {
     flex: 1, backgroundColor: colors.bg3, borderRadius: radius.sm,
     borderWidth: 1, borderColor: colors.rule2,
@@ -716,15 +918,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   qtyRemaining: { color: colors.ink3, fontSize: font.size.md },
-  partialNote: { color: colors.info, fontSize: font.size.sm },
+  partialNote:  { color: colors.info, fontSize: font.size.sm },
   qtyActions: {
-    padding: spacing.lg,
-    paddingBottom: spacing.xl,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    backgroundColor: colors.bg,
-    marginTop: 'auto',
+    padding: spacing.lg, paddingBottom: spacing.xl,
+    borderTopWidth: 1, borderTopColor: colors.rule,
+    backgroundColor: colors.bg, marginTop: 'auto',
   },
+  // Shortfall modal
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
   modalSheet: {
     backgroundColor: colors.bg2, borderTopLeftRadius: radius.xl,
@@ -735,24 +935,24 @@ const styles = StyleSheet.create({
     width: 40, height: 4, backgroundColor: colors.ink4,
     borderRadius: 2, alignSelf: 'center', marginBottom: spacing.xs,
   },
-  modalTitle: { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
+  modalTitle:    { color: colors.ink, fontSize: font.size.lg, fontWeight: font.weight.bold },
   modalSubtitle: { color: colors.ink3, fontSize: font.size.sm, lineHeight: 18 },
   reportedEx: {
     backgroundColor: colors.successGhost, borderRadius: radius.sm,
     padding: spacing.sm, borderWidth: 1, borderColor: colors.successBorder,
   },
-  reportedExText: { color: colors.success, fontSize: font.size.sm },
-  exceptionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  reportedExText:     { color: colors.success, fontSize: font.size.sm },
+  exceptionGrid:      { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   exceptionGridItem: {
     width: '30%', alignItems: 'center', justifyContent: 'center',
     paddingVertical: spacing.md, borderRadius: radius.md,
     backgroundColor: colors.bg3, borderWidth: 1, borderColor: colors.rule,
     gap: spacing.xs,
   },
-  exceptionGridItemSelected: { borderColor: colors.accent, backgroundColor: colors.accentGhost },
-  exceptionGridLabel: { color: colors.ink3, fontSize: font.size.xs, textAlign: 'center' },
+  exceptionGridItemSelected:  { borderColor: colors.accent, backgroundColor: colors.accentGhost },
+  exceptionGridLabel:         { color: colors.ink3, fontSize: font.size.xs, textAlign: 'center' },
   exceptionGridLabelSelected: { color: colors.accent, fontWeight: font.weight.semibold },
-  exQtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  exQtyRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   exQtyLabel: { color: colors.ink3, fontSize: font.size.sm, fontWeight: font.weight.medium },
   exQtyInput: {
     backgroundColor: colors.bg3, borderRadius: radius.sm,
@@ -766,7 +966,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md, alignItems: 'center',
   },
   modalConfirmDisabled: { backgroundColor: colors.bg3 },
-  modalConfirmText: { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
+  modalConfirmText:     { color: colors.bg, fontSize: font.size.md, fontWeight: font.weight.bold },
   miscountBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.xs, paddingVertical: spacing.md,

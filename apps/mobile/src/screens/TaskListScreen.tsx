@@ -61,21 +61,8 @@ async function fetchTasks(userId?: number, roles?: string[]): Promise<Task[]> {
       }
     }
 
-    // Pack phase
-    if (batch.status === 'pick_complete' || batch.status === 'packing' || batch.status === 'pack_complete') {
-      if (!isOperator || !assignedPacker || assignedPacker === userId) {
-        tasks.push({
-          id: batch.pick_batch_id,
-          type: 'pack',
-          title: batch.status === 'pack_complete' ? 'Pack complete ✓' :
-                 batch.status === 'packing' ? 'Continue packing' : 'Pack batch',
-          subtitle: batch.status === 'pack_complete'
-            ? `${batch.total_units} units shipped`
-            : `${batch.total_units} units · ${batch.units_picked} picked`,
-          assigned: !!assignedPacker,
-        });
-      }
-    }
+    // Pack phase — descoped from mobile (MOB-PACK-01).
+    // Pack tasks are handled exclusively on the web station (WEB-PACK-02).
   }
 
   // ── Stow tasks — grouped into single session ──────────────────────────────
@@ -227,9 +214,7 @@ export default function TaskListScreen() {
                 ? navigation.navigate('ReceiveJob', { task: item })
                 : item.type === 'stow'
                 ? navigation.navigate('Stow', { task: item })
-                : item.type === 'pack'
-                ? navigation.navigate('Pack', { task: item })
-                : navigation.navigate('Scan', { task: item })
+                : null
             }
           />
         )}

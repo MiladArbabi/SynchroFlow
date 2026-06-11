@@ -149,10 +149,10 @@ Warehouses have dead zones. This contract is mandatory for Pick first, then Stow
 |---|---|---|---|---|
 | MOB-AUDIT-00 | All | Audit existing mobile screens (ReceiveJobScreen, StowScreen, PickBriefScreen/ScanScreen, PackScreen) against this playbook; produce issue register | P1 | 📋 NEXT |
 | MOB-RECEIVE-01 | Receive | Bring receive to §7.1 parity | P1 | 📋 PLANNED |
-| MOB-STOW-01 | Stow | Bring stow to §7.2 parity | P1 | 📋 PLANNED |
-| MOB-PICK-01 | Pick | Bring pick to §7.3 parity + offline layer (§5) | P1 | 📋 PLANNED |
+| MOB-STOW-01 | Stow | Bring stow to §7.2 parity | P1 | ✅ DONE |
+| MOB-PICK-01 | Pick | Bring pick to §7.3 parity + offline layer (§5)| P1 | ✅ DONE |
 | MOB-PACK-01 | Pack | §7.4 — pending DECISION-3 | P2 | 📋 PLANNED |
-| MOB-PUSH-01 | Cross | Verify/complete push trigger coverage + deep links (§4) | P1 | 📋 PLANNED |
+| MOB-PUSH-01 | Cross | Verify/complete push trigger coverage + deep links (§4) | P1 | ✅ DONE |
 
 Following the established pattern — heredoc to run locally, review, amend before ratifying. Note this **appends** to the existing playbook; it does not overwrite. Two open points are marked **[DECISION]** inline for the workshop pass.
 
@@ -292,11 +292,11 @@ Screens COMPOSE these; screens never reimplement their concerns. No API calls in
 
 | ID | Workflow | Description | Priority | Status |
 |---|---|---|---|---|
-| MOB-UX-01 | Foundation | Build `ScanDock`, `SessionShell`, `NodeTrack`, `ProblemSheet`; deprecate `WorkflowStep`; absorbs MOB-AUD-01→10 | P1 | 📋 NEXT |
-| MOB-HOME-01 | Foundation | Tab scaffold (4 roots + reserved slot), Task Inbox feed, `TaskCard`, `ResumeBanner`; remove PackScreen from nav + routing | P1 | 📋 PLANNED |
-| MOB-RECEIVE-01 | Receive | Re-scoped: re-compose onto §10.7 shell + MOB-RCV-01/-02/-03 | P1 | 📋 PLANNED |
-| MOB-STOW-01 | Stow | Re-scoped: re-compose + MOB-STW-01/-02/-03 | P1 | 📋 PLANNED |
-| MOB-PICK-01 | Pick | Re-scoped: re-compose + MOB-PCK-01→13 remainder + offline layer (§5, DECISION-F) | P1 | 📋 PLANNED |
-| MOB-PUSH-01 | Cross | Push trigger coverage + deep links into Briefs | P1 | 📋 PLANNED |
+| MOB-UX-01 | Foundation | Build `ScanDock`, `SessionShell`, `NodeTrack`, `ProblemSheet`; deprecate `WorkflowStep`; absorbs MOB-AUD-01→10 | P1 | ✅ DONE |
+| MOB-HOME-01 | Foundation | Tab scaffold (4 roots + reserved slot), Task Inbox feed, `TaskCard`, `ResumeBanner`; remove PackScreen from nav + routing | P1 | ✅ DONE |
+| MOB-RECEIVE-01 | Receive | Re-scoped: re-compose onto §10.7 shell + MOB-RCV-01/-02/-03 | P1 | ✅ DONE |
+| MOB-STOW-01 | Stow | Re-composed onto §10.7 shell; fixes MOB-STW-01→08 (unit_id threading, device_event_id, bin_over_capacity, ProblemSheet, WorkflowStep removed) | P1 | ✅ DONE |
+| MOB-PICK-01 | Pick | Re-composed onto §10.7 shell; fixes MOB-PCK-01→14 (unit_id, device_event_id, server-side location resolve, ProblemSheet, WorkflowStep removed, Summary phase, two-file merge); offline layer via offlineQueue (@lasyncro/mobile-core, DECISION-F) | P1 | ✅ DONE |
+| MOB-PUSH-01 | Cross | expo-notifications installed; token registration (usePushRegistration); foreground toast (§4 non-blocking); tap deep link → PickBrief/ReceiveJob/Stow from background + cold start; navigationRef wired | P1 | ✅ DONE |
 | MOB-SCAN-01 | Cross | Global free-scan tab: resolver-driven contextual actions | P2 | 📋 PLANNED |
 | MOB-PACK-01 | Pack | ❌ NOT BUILDING — folded into MOB-HOME-01 as nav/routing removal | — | ❌ DESCOPED |
