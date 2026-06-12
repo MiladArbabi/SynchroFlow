@@ -340,6 +340,23 @@ Webapp (`WmsPage.tsx` handlers) vs Mobile (`ReceiveJobScreen`, `StowScreen`, `Pi
 
 ---
 
-### Shopify Writeback Platform Coverage (Phase 2 — next)
+### Shopify Writeback Platform Coverage (Phase 2 — ✅ COMPLETE)
 
-All six XPLAT issues resolved. Next audit: trace every Shopify API call in the backend and verify which platform actions trigger each, idempotency key coverage, and whether both platforms produce consistent Shopify state for inventory, fulfillment, and order status.
+#### Shopify Write Map
+
+| Shopify Mutation | Trigger | Endpoint | Platform | Idempotency |
+|---|---|---|---|---|
+| `fulfillmentCreateV2` | Packer scans LSO- invoice barcode | `POST /wms/pack/free-scan` | **Webapp only** (WEB-PACK-02) | ✅ Shopify native idempotency + `shopify_fulfillment_id IS NULL` guard |
+| `fulfillmentCreateV2` | Manual ship confirmation | `POST /wms/batch/:id/ship` | **Both platforms** | ✅ `order_warehouse_status` must be `packed` — rejects if already `shipped` |
+| `inventoryAdjustQuantities` | Stow confirm | `POST /stow-tasks/:id/confirm` | **Both platforms** | ✅ Delta-based mutation + `stow_task.status = in_progress` guard — rejects re-confirm; non-fatal failure |
+
+#### Platform Coverage Notes
+
+- **Fulfillment creation** — only triggered from webapp (pack free-scan) or explicit ship confirmation. Mobile has no pack surface (MOB-PACK-01 descoped). Both platforms can trigger ship confirmation via `POST /wms/batch/:id/ship`. ✅ consistent.
+- **Inventory sync** — triggered by stow confirm on both platforms. Both now thread `lasyncro_unit_id` (MOB-SMOKE-04 fixed). Failure is non-fatal and logged — `inventory_truth` remains source of truth. ✅ consistent.
+- **No double-write risk** — all three write paths have status-based guards enforced server-side. Shopify `fulfillmentCreateV2` is natively idempotent for already-fulfilled orders. Inventory delta mutation is safe under concurrency.
+- **No mobile-only Shopify writes** — mobile never writes to Shopify directly. All Shopify mutations go through the backend service layer regardless of which platform triggered the action.
+
+#### Outstanding Observation
+
+Pack workflow (LSU- scan → pack confirm → LSO- scan → ship → Shopify fulfillment) is **webapp-only** by design (WEB-PACK-02, MOB-PACK-01 descoped). If a shop uses mobile for pick and webapp for pack, the handoff relies on `order_warehouse_status` advancing from `picked` → `packing` → `packed` correctly. The `picked` → `packing` transition is triggered by `POST /wms/batch/:id/pack/claim` (webapp pack claim). This transition was not audited in the mobile smoke test — worth verifying if any mobile action is expected to interact with the pack claim endpoint.
