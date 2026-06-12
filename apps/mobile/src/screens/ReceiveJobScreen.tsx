@@ -177,7 +177,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
 
       // Single exception path (direct confirm with one type)
       if (shortfall > 0 && exceptionType && !preReportedExceptions) {
-        await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+        const { data: exData } = await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
           lasyncro_variant_id: line.lasyncro_variant_id,
           receive_job_line_id: line.receive_job_line_id,
           exception_type: exceptionType,
@@ -186,10 +186,11 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
           device_event_id: newEventId(),
         });
         const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
-          lasyncro_variant_id: line.lasyncro_variant_id,
-          quantity: shortfall,
-          exception_type: exceptionType,
-          source: 'receive',
+          lasyncro_variant_id:  line.lasyncro_variant_id,
+          quantity:             shortfall,
+          exception_type:       exceptionType,
+          source:               'receive',
+          source_exception_id:  exData?.receive_exception_id ?? undefined,
         });
         exceptions = [{ exception_type: exceptionType, quantity: shortfall, prob_label: probData.prob_label }];
       }
@@ -243,7 +244,7 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
     setSubmitting(true);
     try {
       // Report this exception
-      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
+      const { data: exData } = await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/exception`, {
         lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
         receive_job_line_id: shortfallModal.line.receive_job_line_id,
         exception_type: selectedExceptionType,
@@ -253,21 +254,21 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
       });
 
       const { data: probData } = await apiClient.post('/api/v1/wms/problem-center', {
-        lasyncro_variant_id: shortfallModal.line.lasyncro_variant_id,
-        quantity: qty,
-        exception_type: selectedExceptionType,
-        source: 'receive',
+        lasyncro_variant_id:  shortfallModal.line.lasyncro_variant_id,
+        quantity:             qty,
+        exception_type:       selectedExceptionType,
+        source:               'receive',
+        source_exception_id:  exData?.receive_exception_id ?? undefined,
       });
 
       const probLabel = probData.prob_label ?? 'PROB-?';
-      // Tip operator to place item in problem bin (not for missing items)
-      if (selectedExceptionType !== 'item_missing') {
-        Alert.alert(
-          '⚠ Place in Problem Bin',
-          `Label ${probLabel} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
-          [{ text: 'Got it', style: 'default' }]
-        );
-      }
+      // All receive exception types involve a physical item — always route to prob bin
+      Alert.alert(
+        '⚠ Place in Problem Bin',
+        `Label ${probLabel} — place the item in ${probData.problem_bin ?? 'the PROBLEM BIN'} before continuing.`,
+        [{ text: 'Got it', style: 'default' }]
+      );
+      
       const newException: ExceptionEntry = {
         exception_type: selectedExceptionType,
         quantity: qty,
@@ -324,7 +325,9 @@ function ReceiveJobScreenInner({ task }: { task: import('../navigation/types').T
   const handleClose = useCallback(async () => {
     setSubmitting(true);
     try {
-      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/close`, {});
+      await apiClient.post(`/api/v1/suppliers/receive-jobs/${task.id}/close`, {
+        actual_delivery_date: new Date().toISOString().split('T')[0], // YYYY-MM-DD — defaults to today; adjustable from webapp
+      });
       setScreenPhase('closed');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })

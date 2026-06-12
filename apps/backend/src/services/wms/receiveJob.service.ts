@@ -35,7 +35,8 @@ export interface CreateReceiveJobInput {
 /**
  * Creates a receive job from a shipped PO.
  * Populates receive_job_lines from purchase_order_line_items.
- * Called by PATCH /suppliers/purchase-orders/:poId/status on → shipped.
+ * Called explicitly via POST /suppliers/purchase-orders/:poId/receive-jobs after PO is advanced to shipped.
+ * NOT auto-called by the status transition — owner/admin must trigger receive job creation manually.
  */
 export async function createReceiveJob(
   trx: Knex.Transaction,
@@ -163,6 +164,18 @@ export async function inspectReceiveJobLine(
       shopifyBarcode: variantRow?.barcode ?? null,
       createdBy: inspectedBy,
     });
+  }
+
+  // Auto-advance job status when all lines are inspection_complete
+  const allLines = await trx('receive_job_lines')
+    .where({ receive_job_id: receiveJobId, shop_id: shopId })
+    .select('inspection_complete');
+  const allInspected = allLines.every((l: any) => l.inspection_complete);
+  if (allInspected) {
+    await trx('receive_jobs')
+      .where({ receive_job_id: receiveJobId })
+      .update({ status: 'inspection', updated_at: new Date() });
+    console.info('[RECEIVE_JOB_ALL_LINES_INSPECTED]', { receiveJobId });
   }
 
   await writeAuditLog(trx, {

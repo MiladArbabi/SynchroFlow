@@ -24,6 +24,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   View, Text, FlatList, StyleSheet, ActivityIndicator,
   Alert, TouchableOpacity, ScrollView,
+  AppState,
 } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -108,7 +109,16 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
   useEffect(() => {
     const unsub = offlineQueue.subscribe((count) => setQueuedCount(count));
     void offlineQueue.flush();
-    return unsub;
+
+    // Flush on app foreground — covers connectivity restore without NetInfo dependency
+    const appStateSub = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') void offlineQueue.flush();
+    });
+
+    return () => {
+      unsub();
+      appStateSub.remove();
+    };
   }, []);
 
   // ── Load line items — always fresh (MOB-PCK-02) ───────────────────────────
@@ -194,7 +204,7 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
 
   // ── Product scan resolve ──────────────────────────────────────────────────
   const handleProductResolve = useCallback(
-    async (raw: string): Promise<string | void> => {
+    async (raw: string, method?: string): Promise<string | void> => {
       if (!currentItem) return 'No active item.';
       setSubmitting(true);
       try {
@@ -212,10 +222,11 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
             pick_batch_id:          task.id,
             lasyncro_line_item_id:  currentItem.lasyncro_line_item_id,
             lasyncro_variant_id:    resolved.lasyncro_variant_id,
-            lasyncro_unit_id:       resolved.lasyncro_unit_id ?? null, // MOB-PCK-01/06
+            lasyncro_unit_id:       resolved.lasyncro_unit_id ?? null,
             location_code:          currentItem.location_code,
             quantity_confirmed:     currentItem.quantity,
-            device_event_id:        eventId,                           // MOB-PCK-07
+            device_event_id:        eventId,
+            scan_source:            method ?? 'camera',
           },
         });
         if (submitError) return submitError; // HTTP validation error

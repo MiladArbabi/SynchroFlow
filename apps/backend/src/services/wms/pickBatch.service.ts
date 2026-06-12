@@ -47,6 +47,15 @@ export async function releaseBatch(
    * precede non-flagged orders in greedy fill even without explicit selection.
    */
   priorityOrderIds?: string[],
+  /**
+   * EXCLUSIVE SELECTION MODE (MOB-SMOKE-06b)
+   * -----------------------------------------
+   * When true and priorityOrderIds provided, skip greedy fill entirely.
+   * Only the explicitly selected orders are batched — no pool fill.
+   * Invalid IDs (not in pool) are silently skipped.
+   * If no valid IDs remain after validation, returns null.
+   */
+  exclusive?: boolean,
 ): Promise<ReleaseBatchResult | null> {
   // 1. Load WMS settings for this shop
   const settings = await trx('shop_wms_settings')
@@ -101,13 +110,17 @@ export async function releaseBatch(
   let runningLineItems = 0;
   let runningUnits = 0;
 
-  for (const orderId of candidateIds) {
+  // Exclusive mode — only batch the explicitly selected orders, no greedy fill
+  const idsToProcess = (exclusive && validPriorityIds.length > 0)
+    ? validPriorityIds
+    : candidateIds;
+
+  for (const orderId of idsToProcess) {
     const lineItems = await trx('order_line_items')
       .where({ lasyncro_order_id: orderId })
       .select('lasyncro_line_item_id', 'quantity');
     const orderLineCount = lineItems.length;
     const orderUnitCount = lineItems.reduce((sum, li) => sum + Number(li.quantity), 0);
-
     if (runningLineItems + orderLineCount > maxLineItems) {
       // Starvation guard: if nothing selected yet, include oversized order anyway
       if (selectedOrderIds.length === 0) {
@@ -121,7 +134,6 @@ export async function releaseBatch(
     runningLineItems += orderLineCount;
     runningUnits += orderUnitCount;
   }
-
   if (selectedOrderIds.length === 0) {
     console.info('[PICK_BATCH_SERVICE] No orders fit within ceiling', { shopId, maxLineItems });
     return null;

@@ -214,7 +214,7 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
   try {
-    const { assigned_operator_id, assigned_packer_id, priority_order_ids } = req.body ?? {};
+    const { assigned_operator_id, assigned_packer_id, priority_order_ids, exclusive } = req.body ?? {};
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       return releaseBatch(
@@ -225,6 +225,7 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
         assigned_operator_id ?? null,
         assigned_packer_id ?? null,
         Array.isArray(priority_order_ids) ? priority_order_ids : undefined,
+        exclusive === true,
       );
     });
 
@@ -430,6 +431,22 @@ export const httpCompletePick = async (req: Request, res: Response) => {
           status: 'pick_complete',
           pick_completed_at: now,
           updated_at: now,
+        });
+
+      // Advance order_warehouse_status → picked for all orders in this batch
+      await trx('order_warehouse_status')
+        .whereIn(
+          'lasyncro_order_id',
+          trx('pick_batch_orders')
+            .where({ pick_batch_id: batchId })
+            .select('lasyncro_order_id')
+        )
+        .where({ shop_id: shopId, status: 'picking' })
+        .update({
+          status:             'picked',
+          picked_at:          now,
+          status_updated_at:  now,
+          updated_at:         now,
         });
 
       // Alert supervisors — batch ready for packer

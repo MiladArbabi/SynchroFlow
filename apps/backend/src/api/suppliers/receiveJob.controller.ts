@@ -319,10 +319,13 @@ export async function httpReportReceiveException(req: Request, res: Response) {
   }
 
   try {
+    let receiveExceptionId: string | null = null;
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
+      const { randomUUID } = await import('crypto');
+      receiveExceptionId = randomUUID();
       await trx('receive_exceptions').insert({
+        receive_exception_id: receiveExceptionId,
         shop_id: shopId,
         receive_job_id: jobId,
         receive_job_line_id,
@@ -333,7 +336,6 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         raised_by: req.user!.userId,
         raised_at: new Date(),
       });
-
       await fireReceiveExceptionAlert(trx, {
         shopId,
         receiveJobId: jobId,
@@ -341,9 +343,8 @@ export async function httpReportReceiveException(req: Request, res: Response) {
         exceptionType: exception_type,
       });
     });
-
     console.info('[RECEIVE_EXCEPTION_REPORTED]', { shopId, jobId, exception_type, lasyncro_variant_id });
-    return res.status(201).json({ success: true });
+    return res.status(201).json({ success: true, receive_exception_id: receiveExceptionId });
   } catch (err: any) {
     console.error('[RECEIVE_EXCEPTION_FAILED]', { shopId, jobId, error: err.message });
     return res.status(500).json({ error: `Failed to report exception: ${err.message}` });

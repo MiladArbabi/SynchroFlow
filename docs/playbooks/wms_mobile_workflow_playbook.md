@@ -175,7 +175,7 @@ cat >> docs/playbooks/wms_mobile_workflow_playbook.md << 'EOF'
 |---|---|---|
 | DECISION-A | App identity | Operator-only. Owner intelligence stays on webapp. IA reserves one future tab slot ("Today") — no owner features built now. |
 | DECISION-B | Home model | Prioritized task feed (vertical card stack). No board/Kanban metaphor. |
-| DECISION-C | Global Scan tab | In IA from day one; built LAST (after MOB-PICK-01). `ScannerScreen` stub remains hidden until MOB-SCAN-01. |
+| DECISION-C | Global Scan tab | In IA from day one; built LAST (after MOB-PICK-01). `ScannerScreen` live — MOB-SCAN-01 ✅ DONE. |
 | DECISION-D | Session pattern | Workflow sessions are full-screen modal stacks pushed ABOVE the tab navigator. Tab bar is not visible during an active session. |
 
 ## 10.2 Design Principles (auditable)
@@ -192,7 +192,7 @@ cat >> docs/playbooks/wms_mobile_workflow_playbook.md << 'EOF'
 [Tab Navigator — bottom bar, 4 roots]
   Home      — Task Inbox feed (§10.5.1) — push deep-link default landing
   Problems  — Problem Center: reported-by-me + assigned-to-me
-  Scan      — global free-scan (HIDDEN until MOB-SCAN-01)
+  Scan      — global free-scan (MOB-SCAN-01 ✅ DONE)
   Me        — availability calendar, shift status, settings, sign-out
 
 [Reserved slot] — "Today" owner tab. NOT built. IA + nav code must
@@ -298,5 +298,5 @@ Screens COMPOSE these; screens never reimplement their concerns. No API calls in
 | MOB-STOW-01 | Stow | Re-composed onto §10.7 shell; fixes MOB-STW-01→08 (unit_id threading, device_event_id, bin_over_capacity, ProblemSheet, WorkflowStep removed) | P1 | ✅ DONE |
 | MOB-PICK-01 | Pick | Re-composed onto §10.7 shell; fixes MOB-PCK-01→14 (unit_id, device_event_id, server-side location resolve, ProblemSheet, WorkflowStep removed, Summary phase, two-file merge); offline layer via offlineQueue (@lasyncro/mobile-core, DECISION-F) | P1 | ✅ DONE |
 | MOB-PUSH-01 | Cross | expo-notifications installed; token registration (usePushRegistration); foreground toast (§4 non-blocking); tap deep link → PickBrief/ReceiveJob/Stow from background + cold start; navigationRef wired | P1 | ✅ DONE |
-| MOB-SCAN-01 | Cross | Global free-scan tab: resolver-driven contextual actions | P2 | 📋 PLANNED |
+| MOB-SCAN-01 | Cross | Global free-scan tab: resolver-driven contextual actions; ScanDock replaces BarcodeScannerView (HID passthrough); product/location/order result cards via /wms/scan/resolve | P2 | ✅ DONE |
 | MOB-PACK-01 | Pack | ❌ NOT BUILDING — folded into MOB-HOME-01 as nav/routing removal | — | ❌ DESCOPED |

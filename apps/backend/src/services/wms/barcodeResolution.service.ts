@@ -82,54 +82,86 @@ export async function resolveBarcode(
     .select('lasyncro_variant_id')
     .first();
 
+  // ── Legacy resolution — shared unit lookup helper ─────────────────────────
+  // After resolving to a variant via any legacy path, attempt to find the next
+  // available inventory unit to thread through to stow/pick confirm endpoints.
+  // Priority: received (stow path) → stowed (pick path).
+  // Returns null fields if no unit available — caller handles gracefully.
+  const pickLegacyUnit = async (variantId: string) => {
+    const unit = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+      .whereIn('status', ['received', 'stowed'])
+      .orderByRaw(`CASE status WHEN 'received' THEN 0 WHEN 'stowed' THEN 1 END`)
+      .orderBy('receive_sequence', 'asc')
+      .select('lasyncro_unit_id', 'status', 'current_location_code')
+      .first();
+    return unit ?? null;
+  };
+
+  // 3a. Barcode — primary physical scan resolution
   if (byBarcode?.lasyncro_variant_id) {
+    const unit = await pickLegacyUnit(byBarcode.lasyncro_variant_id);
     console.info('[BARCODE_RESOLUTION]', {
       method: 'barcode',
       shopId,
       scannedValue,
       lasyncro_variant_id: byBarcode.lasyncro_variant_id,
+      lasyncro_unit_id: unit?.lasyncro_unit_id ?? null,
     });
     return {
-      lasyncro_variant_id: byBarcode.lasyncro_variant_id,
-      resolution_method: 'barcode',
+      lasyncro_variant_id:   byBarcode.lasyncro_variant_id,
+      resolution_method:     'barcode',
+      lasyncro_unit_id:      unit?.lasyncro_unit_id      ?? undefined,
+      unit_status:           unit?.status                ?? undefined,
+      current_location_code: unit?.current_location_code ?? undefined,
     };
   }
 
-  // 2. SKU — fallback
+  // 3b. SKU — fallback
   const bySku = await trx('external_product_identity_map')
     .where({ shop_id: shopId, external_sku: scannedValue })
     .select('lasyncro_variant_id')
     .first();
 
   if (bySku?.lasyncro_variant_id) {
+    const unit = await pickLegacyUnit(bySku.lasyncro_variant_id);
     console.info('[BARCODE_RESOLUTION]', {
       method: 'sku',
       shopId,
       scannedValue,
       lasyncro_variant_id: bySku.lasyncro_variant_id,
+      lasyncro_unit_id: unit?.lasyncro_unit_id ?? null,
     });
     return {
-      lasyncro_variant_id: bySku.lasyncro_variant_id,
-      resolution_method: 'sku',
+      lasyncro_variant_id:   bySku.lasyncro_variant_id,
+      resolution_method:     'sku',
+      lasyncro_unit_id:      unit?.lasyncro_unit_id      ?? undefined,
+      unit_status:           unit?.status                ?? undefined,
+      current_location_code: unit?.current_location_code ?? undefined,
     };
   }
 
-  // 3. External variant ID — last resort
+  // 3c. External variant ID — last resort
   const byVariantId = await trx('external_product_identity_map')
     .where({ shop_id: shopId, external_variant_id: scannedValue })
     .select('lasyncro_variant_id')
     .first();
 
   if (byVariantId?.lasyncro_variant_id) {
+    const unit = await pickLegacyUnit(byVariantId.lasyncro_variant_id);
     console.info('[BARCODE_RESOLUTION]', {
       method: 'external_variant_id',
       shopId,
       scannedValue,
       lasyncro_variant_id: byVariantId.lasyncro_variant_id,
+      lasyncro_unit_id: unit?.lasyncro_unit_id ?? null,
     });
     return {
-      lasyncro_variant_id: byVariantId.lasyncro_variant_id,
-      resolution_method: 'external_variant_id',
+      lasyncro_variant_id:   byVariantId.lasyncro_variant_id,
+      resolution_method:     'external_variant_id',
+      lasyncro_unit_id:      unit?.lasyncro_unit_id      ?? undefined,
+      unit_status:           unit?.status                ?? undefined,
+      current_location_code: unit?.current_location_code ?? undefined,
     };
   }
 

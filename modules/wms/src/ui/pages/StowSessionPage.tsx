@@ -57,6 +57,7 @@ export interface StowSessionPageProps {
     exception_type: string;
     quantity: number;
     notes?: string;
+    lasyncro_unit_id?: string;
   }) => Promise<StowExceptionResult>;
 }
 
@@ -329,7 +330,10 @@ export default function StowSessionPage({
     setExSubmitting(true);
     try {
       const result = await onReportException(currentTask.stow_task_id, {
-        exception_type: exType, quantity: exQty, notes: 'Reported during stow qty confirm',
+        exception_type:   exType,
+        quantity:         exQty,
+        notes:            'Reported during stow qty confirm',
+        lasyncro_unit_id: scannedUnitId ?? undefined,
       });
       const newReported = [
         ...shortfallDialog.reported,

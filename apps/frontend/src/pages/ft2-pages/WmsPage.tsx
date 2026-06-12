@@ -359,17 +359,16 @@ export default function WmsPage() {
 
   const handleReportReceiveException = useCallback(async (
     jobId: string,
-    params: { lasyncro_variant_id: string; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }
+    params: { lasyncro_variant_id: string | null; receive_job_line_id: string; exception_type: string; quantity_affected: number; notes?: string }
   ) => {
-    // 1. Record exception against the receive job line
-    await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
-    // 2. Create Problem Center task + PROB label — mirrors mobile ReceiveJobScreen behaviour
+    const { data } = await axiosInstance.post(`/api/v1/suppliers/receive-jobs/${jobId}/exception`, params);
     if (params.lasyncro_variant_id) {
       await axiosInstance.post('/api/v1/wms/problem-center', {
-        lasyncro_variant_id: params.lasyncro_variant_id,
-        quantity: params.quantity_affected,
-        exception_type: params.exception_type,
-        source: 'receive',
+        lasyncro_variant_id:  params.lasyncro_variant_id,
+        quantity:             params.quantity_affected,
+        exception_type:       params.exception_type,
+        source:               'receive',
+        source_exception_id:  data?.receive_exception_id ?? undefined,
       });
     }
   }, []);
@@ -416,8 +415,10 @@ export default function WmsPage() {
 
   const handleReportStowException = useCallback(async (
     taskId: string,
-    params: { exception_type: string; quantity: number; notes?: string }
+    params: { exception_type: string; quantity: number; notes?: string; lasyncro_unit_id?: string }
   ) => {
+    // Stow exception endpoint handles PC task creation server-side.
+    // We only need to pass lasyncro_unit_id through for unit lifecycle tracking (XPLAT-02).
     const { data } = await axiosInstance.post(
       `/api/v1/wms/stow-tasks/${taskId}/exception`,
       params
