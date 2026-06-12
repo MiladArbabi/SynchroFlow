@@ -3,7 +3,7 @@
 // apps/frontend/src/contexts/AuthContext.tsx
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
-import { getToken, setToken, clearToken } from 'utils/authStore';
+import { getToken, setToken, clearToken, setOnTokenRefreshed } from 'utils/authStore';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -107,50 +107,57 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
+  const setAccessToken = useCallback((token: string | null) => {
+    setAuthState(prev => ({ ...prev, accessToken: token }));
+    if (token) {
+      setToken(token);
+    } else {
+      clearToken();
+    }
+    console.info('[AUTH] setAccessToken():', Boolean(token));
+  }, []);
 
+  /**
+   * SILENT REFRESH BRIDGE
+   * ──────────────────────
+   * Wires axiosConfig's notifyTokenRefreshed() into React state.
+   * Called by the Axios interceptor after every successful silent refresh
+   * so AuthContext.accessToken stays in sync with authStore + the
+   * Authorization header — without a full re-login or page reload.
+   *
+   * Mounted once; the callback ref in authStore is replaced on each
+   * mount (safe — only one AuthProvider exists in the tree).
+   */
+  React.useEffect(() => {
+    setOnTokenRefreshed((newToken: string) => {
+      console.info('[AUTH] Silent refresh → React state synced');
+      setAccessToken(newToken);
+    });
+  }, [setAccessToken]);
 
   const login = useCallback((user: PublicUser, accessToken: string) => {
-  setAuthState({
-    isLoggedIn: true,
-    isLoading: false,
-    user,
-    accessToken,
-  });
+    setAuthState({
+      isLoggedIn: true,
+      isLoading: false,
+      user,
+      accessToken,
+    });
+    setToken(accessToken);
+    localStorage.setItem('user', JSON.stringify(user));
+    console.info('[AUTH] login(): token stored via authStore');
+  }, []);
 
-  // 🔑 SINGLE TOKEN AUTHORITY
-  setToken(accessToken);
-
-  // User stays in localStorage (non-sensitive)
-  localStorage.setItem('user', JSON.stringify(user));
-
-  console.info('[AUTH] login(): token stored via authStore');
-}, []);
-
-const logout = useCallback(() => {
-  setAuthState({
-    isLoggedIn: false,
-    isLoading: false,
-    user: null,
-    accessToken: null,
-  });
-
-  clearToken(); // 🔥 single source cleanup
-  localStorage.removeItem('user');
-
-  console.info('[AUTH] logout(): token cleared via authStore');
-}, []);
-
-const setAccessToken = useCallback((token: string | null) => {
-  setAuthState(prev => ({ ...prev, accessToken: token }));
-
-  if (token) {
-    setToken(token);
-  } else {
+  const logout = useCallback(() => {
+    setAuthState({
+      isLoggedIn: false,
+      isLoading: false,
+      user: null,
+      accessToken: null,
+    });
     clearToken();
-  }
-
-  console.info('[AUTH] setAccessToken():', Boolean(token));
-}, []);
+    localStorage.removeItem('user');
+    console.info('[AUTH] logout(): token cleared via authStore');
+  }, []);
 
   const value = {
     ...authState,

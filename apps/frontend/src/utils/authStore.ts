@@ -25,3 +25,23 @@ export const clearToken = (): void => {
   inMemoryAccessToken = null;
   localStorage.removeItem('accessToken');
 };
+
+/**
+ * SILENT REFRESH BRIDGE
+ * ─────────────────────
+ * axiosConfig.ts (non-React) calls notifyTokenRefreshed() after a successful
+ * silent refresh. AuthContext wires its setAccessToken() here on mount via
+ * setOnTokenRefreshed(), keeping React state in sync with authStore.
+ *
+ * Without this, React state shows the old (expired) token even though
+ * authStore and the Authorization header have been updated.
+ */
+let _onTokenRefreshed: ((token: string) => void) | null = null;
+
+export const setOnTokenRefreshed = (cb: (token: string) => void): void => {
+  _onTokenRefreshed = cb;
+};
+
+export const notifyTokenRefreshed = (token: string): void => {
+  _onTokenRefreshed?.(token);
+};

@@ -33,6 +33,23 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   if (!isLoggedIn || !accessToken) {
+    /**
+     * RETURN-TO GUARD
+     * ───────────────
+     * Persists the intended destination before redirecting to /login.
+     * AuthLogin.tsx reads sessionStorage.returnTo post-login and
+     * navigates there instead of the default /overview.
+     *
+     * Covers: bookmarks, direct URLs, cross-tab navigation, and any
+     * route the user was mid-workflow on when their session expired.
+     *
+     * Mirrors the same logic in hardLogout() in axiosConfig.ts —
+     * both paths into /login must save returnTo consistently.
+     */
+    const intended = location.pathname + location.search;
+    if (intended !== '/login') {
+      sessionStorage.setItem('returnTo', intended);
+    }
     return <Navigate to="/login" replace />;
   }
 

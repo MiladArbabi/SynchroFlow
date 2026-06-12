@@ -17,7 +17,13 @@ export default function AuthGuard({ children }) {
 
   useEffect(() => {
     if (!isLoggedIn) {
-      navigate('login', { replace: true });
+      /**
+       * ABSOLUTE PATH (critical)
+       * ─────────────────────────
+       * Must be '/login' not 'login' — relative navigation would produce
+       * /some/nested/login instead of the root /login route.
+       */
+      navigate('/login', { replace: true });
     }
   }, [isLoggedIn, navigate]);
 

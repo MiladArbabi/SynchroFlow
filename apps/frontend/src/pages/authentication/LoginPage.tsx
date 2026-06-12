@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/pages/authentication/LoginPage.tsx
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import React, { useEffect, useState } from 'react'; // <-- Import React
 import { Theme } from '@mui/material/styles';
 
@@ -20,6 +20,7 @@ import AuthWrapper1 from './AuthWrapper1';
 import AuthCardWrapper from './AuthCardWrapper'; 
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { AuthLogo } from './AuthLogo';
+import { useAuth } from 'contexts/AuthContext';
 
 // import { APP_AUTH } from 'config';
 
@@ -39,8 +40,29 @@ interface AuthLoginProps {
 // ================================|| AUTH3 - LOGIN ||================================ //
 
 export default function Login() {
-  // AUTH-017: wire real auth state — redirects already-logged-in users away from /login
-  const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md')); // <-- Add Theme type
+  const { isLoggedIn } = useAuth();
+  const navigate = useNavigate();
+
+  /**
+   * AUTH-017: LOGGED-IN REDIRECT
+   * ─────────────────────────────
+   * If a user navigates to /login while already authenticated
+   * (back button, stale bookmark, direct URL), send them to /overview
+   * instead of showing the login form.
+   *
+   * Must run before any render to avoid flashing the login UI.
+   * sessionStorage.returnTo takes precedence — if they were redirected
+   * here from a protected route, honour that destination.
+   */
+  React.useEffect(() => {
+    if (isLoggedIn) {
+      const returnTo = sessionStorage.getItem('returnTo');
+      sessionStorage.removeItem('returnTo');
+      navigate(returnTo && returnTo !== '/login' ? returnTo : '/overview', { replace: true });
+    }
+  }, [isLoggedIn, navigate]);
+
+  const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
   const [AuthLoginComponent, setAuthLoginComponent] = useState<React.ComponentType<AuthLoginProps> | null>(null);
   
   const [searchParams] = useSearchParams();

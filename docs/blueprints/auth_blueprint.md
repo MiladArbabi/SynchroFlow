@@ -126,15 +126,45 @@ Frontend
 - Expires: **15 minutes** (900s)
 - Payload: `user_id`, `shop_id`, `shop_roles`, `tier`, `scopes`, `session_id`, `token_version`
 - Stored: in-memory (`authStore.ts`) + localStorage fallback
+- On expiry: silently refreshed by Axios interceptor — user is never interrupted
 
 ### Refresh token
 
 - JWT signed with `JWT_REFRESH_SECRET`
 - Expires: **7 days**
-- Stored: HttpOnly cookie (`refreshToken`)
+- Stored: HttpOnly cookie (`refreshToken`) — never accessible to JS
 - DB record: `refresh_tokens` table with `token_hash`, `session_id`, `token_version`, `revoked_at`
 - Rotation: old token revoked on each refresh, new token issued
 - Security: IP drift + UA drift logged (audit events), replay detection via `revoked_at`
+- Sliding window: every refresh resets the 7-day clock — active users stay logged in indefinitely
+
+### Silent refresh flow
+
+Access token expires (15m)
+
+→ Axios response interceptor catches 401
+
+→ Single-flight silentRefresh() called (concurrent 401s queue, not fan-out)
+
+→ POST /api/v1/auth/refresh_token (sends HttpOnly cookie automatically)
+
+→ Success: new accessToken returned
+
+→ authStore.setToken() + axios default header updated
+
+→ notifyTokenRefreshed() → AuthContext.setAccessToken() (React state synced)
+
+→ Original request retried with new token
+
+→ Failure (revoked/expired cookie): hardLogout() → /login
+
+Key files:
+
+- `apps/frontend/src/api/axiosConfig.ts` — interceptor + silentRefresh()
+- `apps/frontend/src/utils/authStore.ts` — token store + refresh notification bridge
+- `apps/frontend/src/contexts/AuthContext.tsx` — wires bridge via setOnTokenRefreshed()
+- `apps/backend/src/api/auth/auth.controller.ts` — refreshToken handler
+- `apps/backend/src/api/auth/auth.routes.ts` — POST /api/v1/auth/refresh_token
 
 ### Token issuance — SINGLE AUTHORITY
 
@@ -345,8 +375,10 @@ AuthPageChrome.tsx
 | #979 | Self-serve account deletion + Shopify store disconnection — open |
 | #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
 | #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
-| AUTH-007 deferred | Email verification is non-blocking — users can access app unverified. Future: gate certain actions behind `email_verified_at IS NOT NULL` |
-| Google OAuth | Backend only supports Shopify. Google OAuth shown as disabled. Needs backend implementation. |
+| AUTH-017 | ✅ Logged-in users redirected away from /login → returnTo or /overview |
+| Silent refresh | ✅ Axios interceptor silently refreshes expired access tokens — no forced logout during active workflows |
+| returnTo guard | ✅ ProtectedRoute saves intended destination before redirect; AuthLogin + hardLogout both honour it |
+| AuthGuard `/login` | ✅ Fixed relative `navigate('login')` → absolute `navigate('/login')` |
 
 ## Completed since initial audit
 
