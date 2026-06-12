@@ -70,6 +70,8 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;ali
 .nav-logo{display:flex;align-items:center;text-decoration:none;}
 .nav-cta{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:var(--accent);color:#fff;font-size:13px;font-weight:500;font-family:var(--sans);border-radius:6px;text-decoration:none;transition:background 0.15s;}
 .nav-cta:hover{background:var(--accent-hover);}
+.nav-login{display:inline-flex;align-items:center;gap:6px;padding:8px 18px;background:transparent;color:var(--ink-2);font-size:13px;font-weight:500;font-family:var(--sans);border-radius:6px;border:1px solid var(--rule);text-decoration:none;transition:border-color 0.15s,color 0.15s;}
+.nav-login:hover{border-color:var(--ink-3);color:var(--ink);}
 
 /* HERO */
 .hero{min-height:100svh;display:grid;place-items:center;padding:120px 5vw 80px;position:relative;overflow:hidden;background:var(--bg);}
@@ -345,18 +347,6 @@ nav{position:fixed;top:0;left:0;right:0;z-index:100;height:60px;display:flex;ali
 .tier-card.featured .tier-name{color:var(--accent-hover);}
 .tier-spots{font-family:var(--serif);font-size:20px;color:#fff;letter-spacing:-0.01em;margin-bottom:4px;}
 .tier-perk{font-size:11px;color:rgba(255,255,255,0.62);font-weight:300;line-height:1.5;}
-.wl-form{display:flex;flex-direction:column;gap:9px;}
-.wl-form input{width:100%;padding:13px 16px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.10);border-radius:8px;color:#fff;font-size:15px;font-family:var(--sans);outline:none;transition:border-color 0.15s;}
-.wl-form input::placeholder{color:rgba(255,255,255,0.30);}
-.wl-form input:focus{border-color:rgba(255,107,43,0.55);}
-.wl-form button{width:100%;padding:15px;background:var(--accent);color:#fff;font-size:15px;font-weight:500;font-family:var(--sans);border:none;border-radius:8px;cursor:pointer;transition:background 0.15s,transform 0.15s;}
-.wl-form button:hover{background:var(--accent-hover);transform:translateY(-1px);}
-#wl-success{display:none;background:rgba(255,107,43,0.10);border:1px solid rgba(255,107,43,0.28);border-radius:8px;padding:22px;color:var(--accent-hover);font-size:15px;line-height:1.6;}
-.wl-progress{margin-top:18px;}
-.wl-progress-labels{display:flex;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.55);margin-bottom:7px;}
-.wl-track{height:3px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;}
-.wl-fill{height:100%;background:var(--accent);border-radius:2px;width:0%;transition:width 1.2s cubic-bezier(.16,1,.3,1);}
-.wl-fine{margin-top:12px;font-size:12px;color:rgba(255,255,255,0.48);}
 
 /* FOOTER CTA */
 .footer-cta{background:var(--bg-2);padding:72px 5vw;border-top:1px solid var(--rule);text-align:center;}
@@ -764,17 +754,29 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     <a href="/pricing" style="font-size:13px;color:var(--ink-2);text-decoration:none;font-family:var(--sans);">Pricing</a>
     <a href="/about" style="font-size:13px;color:var(--ink-2);text-decoration:none;font-family:var(--sans);">About</a>
   </div>
-  <a href="#waitlist" class="nav-cta"
-  onclick="
-    if (typeof gtag === 'function') {
-      gtag('event', 'cta_click', { location: 'header' });
-    }
-    if (typeof posthog !== 'undefined') {
-      posthog.capture('clicked_waitlist', { location: 'header' });
-    }
-  ">
-  Get early access
-</a>
+  <div style="display:flex;gap:10px;align-items:center;">
+    <a href="https://app.lasyncro.com/login?utm_source=marketing_site&utm_medium=nav&utm_content=login"
+      class="nav-login"
+      onclick="
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('nav_login_clicked', { location: 'header' });
+        }
+      ">
+      Log in
+    </a>
+    <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=nav&utm_content=start_free"
+      class="nav-cta"
+      onclick="
+        if (typeof gtag === 'function') {
+          gtag('event', 'cta_click', { location: 'header', target: 'register' });
+        }
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('nav_signup_clicked', { location: 'header' });
+        }
+      ">
+      Start free
+    </a>
+  </div>
 </nav>
 
 <!-- HERO -->
@@ -826,8 +828,16 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 <div class="hero-actions-row">
 
   <div class="hero-actions">
-    <a href="#waitlist" class="btn-primary"
-      onclick="event.preventDefault(); handleWaitlistCTA('hero')">
+    <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=hero&utm_content=start_free"
+      class="btn-primary"
+      onclick="
+        if (typeof gtag === 'function') {
+          gtag('event', 'cta_click', { location: 'hero', target: 'register' });
+        }
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('hero_signup_clicked', { location: 'hero' });
+        }
+      ">
       Start free — 14-day Growth trial included
     </a>
   </div>
@@ -1226,42 +1236,36 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   </div>
 </section> -->
 
-<!-- WAITLIST -->
-<section id="waitlist" class="waitlist-section reveal">
+<section id="get-started" class="waitlist-section reveal">
   <div class="waitlist-inner">
     <h2 class="waitlist-h2">Start free.<br><em>See your operation clearly.</em></h2>
     <p class="waitlist-sub">Connect Shopify in 60 seconds. Most merchants see their first stock-out risk within 4 minutes of syncing.</p>
-    <div class="tier-row">
-      <div class="tier-card">
-        <div class="tier-name">Early access</div>
-        <div class="tier-spots">500 spots</div>
-        <div class="tier-perk">30-day free trial · price locked for life</div>
-      </div>
-      <div class="tier-card featured">
-        <div class="tier-name">Beta testers</div>
-        <div class="tier-spots">50 spots</div>
-        <div class="tier-perk">Early access before launch · weekly calls with the founder</div>
-      </div>
-      <div class="tier-card">
-        <div class="tier-name">Founding store</div>
-        <div class="tier-spots">10 spots</div>
-        <div class="tier-perk">First access · direct line to the founder</div>
-      </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:32px;">
+      <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=waitlist_section&utm_content=start_free"
+        class="btn-primary"
+        style="font-size:16px;padding:16px 36px;"
+        onclick="
+          if (typeof gtag === 'function') {
+            gtag('event', 'cta_click', { location: 'waitlist_section', target: 'register' });
+          }
+          if (typeof posthog !== 'undefined') {
+            posthog.capture('section_signup_clicked', { location: 'waitlist_section' });
+          }
+        ">
+        Start free — 14-day Growth trial included
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="https://app.lasyncro.com/login?utm_source=marketing_site&utm_medium=waitlist_section&utm_content=login"
+        style="font-size:13px;color:rgba(255,255,255,0.55);text-decoration:none;font-family:var(--sans);"
+        onclick="
+          if (typeof posthog !== 'undefined') {
+            posthog.capture('section_login_clicked', { location: 'waitlist_section' });
+          }
+        ">
+        Already have an account? Log in →
+      </a>
     </div>
-    <form class="wl-form" id="wl-form" onsubmit="handleSubmit(event)">
-      <input type="email" required placeholder="Your email address" id="wl-email" autocomplete="email"/>
-      <input type="text" required placeholder="Your store URL (e.g. yourstore.myshopify.com)" id="wl-store"/>
-      <button type="submit">Reserve my spot</button>
-    </form>
-    <div id="wl-success" role="alert">
-      You're on the list. Check your inbox — your free operations checklist is on its way.<br>
-      <span style="font-size:13px;opacity:.6;margin-top:6px;display:block">Share your link to move up the queue.</span>
-    </div>
-    <div class="wl-progress" id="wl-progress">
-      <div class="wl-progress-labels"><span>24 store owners joined</span><span>50 early access spots</span></div>
-      <div class="wl-track"><div class="wl-fill" id="wl-fill"></div></div>
-    </div>
-    <p class="wl-fine">No spam. No credit card required. Unsubscribe anytime.</p>
+    <p class="wl-fine">No credit card required. Free plan available. Cancel anytime.</p>
   </div>
 </section>
 
@@ -1270,8 +1274,16 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
   <div class="footer-cta-inner">
     <h2 class="footer-cta-h2">Your spreadsheets won’t fix your operation.</h2>
     <p class="footer-cta-sub">Start free. Connect Shopify in 60 seconds. Finally see what’s really happening across your business.</p>
-    <a href="#waitlist" class="btn-primary"
-      onclick="event.preventDefault(); handleWaitlistCTA('footer_cta')">
+    <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=footer_cta&utm_content=start_free"
+      class="btn-primary"
+      onclick="
+        if (typeof gtag === 'function') {
+          gtag('event', 'cta_click', { location: 'footer_cta', target: 'register' });
+        }
+        if (typeof posthog !== 'undefined') {
+          posthog.capture('footer_signup_clicked', { location: 'footer_cta' });
+        }
+      ">
       Start free — 14-day Growth trial included
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </a>
@@ -1298,120 +1310,6 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
 
 <script>
 
-/* handleWaitlistCTA — fires analytics and focuses email input after scroll settles.
-   Called by all #waitlist CTA anchors. location = GA/PostHog event label. */
-function handleWaitlistCTA(location) {
-  if (typeof gtag === 'function') {
-    gtag('event', 'cta_click', { location: location, target: 'waitlist' });
-  }
-  if (typeof posthog !== 'undefined') {
-    posthog.capture('clicked_waitlist', { location: location });
-  }
-  // Prevent native instant anchor jump — manually scroll so we control timing.
-  var target = document.getElementById('waitlist');
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    // Focus email input after smooth scroll completes (~700ms).
-    setTimeout(function() {
-      var el = document.getElementById('wl-email');
-      if (el) el.focus();
-    }, 700);
-  }
-}
-
-function handleSubmit(e) {
-  e.preventDefault();
-
-  var emailEl = document.getElementById('wl-email');
-  var storeEl = document.getElementById('wl-store');
-
-  var email = emailEl.value.trim();
-  var store = storeEl.value.trim();
-
-  if (typeof gtag === 'function') {
-    gtag('event', 'waitlist_form_submit_attempt', {
-      form_name: 'waitlist'
-    });
-  }
-
-  // Basic validation
-  if (!email || !store) {
-    if (typeof gtag === 'function') {
-      gtag('event', 'form_error', {
-        field: 'missing_fields'
-      });
-    }
-    alert('Please fill in both fields.');
-    return;
-  }
-
-  var emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  if (!emailValid) {
-    if (typeof gtag === 'function') {
-      gtag('event', 'form_error', {
-        field: 'email',
-        error_type: 'invalid_format'
-      });
-    }
-    alert('Enter a valid email address.');
-    return;
-  }
-
-  if (!store.includes('.')) {
-    if (typeof gtag === 'function') {
-      gtag('event', 'form_error', {
-        field: 'store',
-        error_type: 'invalid_format'
-      });
-    }
-    alert('Enter a valid store URL.');
-    return;
-  }
-
-  // GA (no PII)
-  if (typeof gtag === 'function') {
-    gtag('event', 'waitlist_form_submit_success', {
-      form_name: 'waitlist',
-      source: 'landing_page'
-    });
-  }
-
-  // Disable submit button to prevent double-submission while request is in flight
-  var submitBtn = document.querySelector('#wl-form button[type="submit"]');
-  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Sending…'; }
-  fetch('/api/waitlist', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email, store: store })
-  })
-  .then(function(r) {
-    if (!r.ok) throw new Error('API responded ' + r.status);
-    // PostHog capture fires only after server confirms — prevents inflated conversion counts
-    if (typeof posthog !== 'undefined') {
-      posthog.capture('waitlist_signup', { email: email, store: store });
-    }
-    // Only show success once the server has confirmed receipt
-    document.getElementById('wl-form').style.display = 'none';
-    document.getElementById('wl-progress').style.display = 'none';
-    document.getElementById('wl-success').style.display = 'block';
-    if (typeof gtag === 'function') {
-      gtag('event', 'waitlist_api_success', { form_name: 'waitlist' });
-    }
-  })
-  .catch(function(err) {
-    // API failed — re-enable form so user can retry, surface visible error
-    console.error('Waitlist fetch error:', err);
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Reserve my spot — it\'s free'; }
-    alert('Something went wrong — please try again or email us at contact@lasyncro.com.');
-    if (typeof gtag === 'function') {
-      gtag('event', 'waitlist_api_error', { error: err.message });
-    }
-  });
-}
-
-window.addEventListener('load', function() {
-  setTimeout(function() { document.getElementById('wl-fill').style.width = '82%'; }, 600);
-});
 var obs = new IntersectionObserver(function(entries) {
   entries.forEach(function(e) { if (e.isIntersecting) { e.target.classList.add('in'); obs.unobserve(e.target); } });
 }, { threshold: 0.07 });
