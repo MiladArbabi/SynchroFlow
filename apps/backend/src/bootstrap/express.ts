@@ -2,6 +2,8 @@
 import express, { Express } from 'express';
 import cookieParser from 'cookie-parser';
 import db from '@lasyncro/backend-core/db.js';
+import path from 'path';
+import fs from 'fs';
 
 import layoutRoutes from '../api/layouts/layout.routes.js';
 import orderRoutes from '../api/orders/orders.routes.js';
@@ -143,11 +145,45 @@ export function createApp(): Express {
   );
 
   // basic endpoints preserved
-  app.get('/', (_req, res) => res.send('SynchroFlow API is running!'));
-  app.get('/health', (_req, res) => res.status(200).send({ status: 'ok' }));
+app.get('/health', (_req, res) => res.status(200).send({ status: 'ok' }));
 
-  // Public waitlist signup — no auth, called from landing page via marketing proxy
-  app.use('/api/v1/waitlist', waitlistRoutes);
+// Public waitlist signup — no auth, called from landing page via marketing proxy
+app.use('/api/v1/waitlist', waitlistRoutes);
 
-  return app;
+/**
+ * FRONTEND SPA SERVING
+ * --------------------
+ * In production, Fly serves both the API and the React frontend from this
+ * Express app. API routes must be registered before this block.
+ *
+ * This allows deep links such as:
+ *   /login
+ *   /register
+ *   /overview
+ *
+ * to return the React index.html instead of Express 404.
+ */
+if (process.env.NODE_ENV === 'production') {
+  const frontendDistPath = path.resolve(process.cwd(), 'apps/frontend/dist');
+  const frontendIndexPath = path.join(frontendDistPath, 'index.html');
+
+  if (fs.existsSync(frontendIndexPath)) {
+    app.use(express.static(frontendDistPath));
+
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api/')) return next();
+      res.sendFile(frontendIndexPath);
+    });
+  } else {
+    console.warn('[frontend] dist/index.html not found:', frontendIndexPath);
+
+    app.get('/', (_req, res) => {
+      res.send('SynchroFlow API is running!');
+    });
+  }
+} else {
+  app.get('/', (_req, res) => res.send('laSyncro API is running!'));
+}
+
+return app;
 }

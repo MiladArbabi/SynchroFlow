@@ -1,11 +1,15 @@
 node_modules
 .git
 .claude
-apps/frontend
+
+# Do not ship unrelated apps to Fly
 apps/marketing
 apps/mobile
 apps/integration-service
+
+# Keep frontend source in Docker build so app.lasyncro.com can serve it
+apps/frontend/node_modules
+
 *.md
 .env*
-apps/backend/src
 apps/backend/node_modules
