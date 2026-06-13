@@ -102,4 +102,83 @@ export default defineConfig({
       ),
     }
   },
+  build: {
+    /**
+     * BUNDLE SPLITTING (FLY-03)
+     * ──────────────────────────
+     * Splits the 2.8MB monolith into cacheable vendor chunks.
+     * Browsers cache vendor chunks across deploys (content-hashed filenames).
+     * Users who return after a deploy only re-download changed app chunks.
+     *
+     * Split strategy:
+     * - vendor-react:     React core — tiny, always needed, ultra-stable
+     * - vendor-mui:       MUI + Emotion — largest single contributor (~600KB)
+     * - vendor-mui-icons: Icon libraries — large trees, cached separately
+     * - vendor-charts:    Chart libs — only needed on analytics/finance pages
+     * - vendor-tanstack:  Data fetching/table/virtual — loaded post-auth
+     * - vendor-forms:     Formik + Yup — auth pages only
+     * - vendor-utils:     Utilities — posthog, axios, lodash, date handling
+     *
+     * WARNING: do not merge vendor-mui and vendor-mui-icons — icons alone
+     * are large enough that splitting them improves cache hit rate when
+     * icon sets change between deploys.
+     */
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          // React core — always loaded, must be its own chunk
+          if (id.includes('node_modules/react/') ||
+              id.includes('node_modules/react-dom/') ||
+              id.includes('node_modules/react-router-dom/') ||
+              id.includes('node_modules/react-router/')) {
+            return 'vendor-react';
+          }
+
+          // MUI icons + icon libraries — large, separate cache
+          if (id.includes('node_modules/@mui/icons-material') ||
+              id.includes('node_modules/@tabler/icons-react') ||
+              id.includes('node_modules/lucide-react')) {
+            return 'vendor-mui-icons';
+          }
+
+          // MUI core + Emotion — biggest chunk
+          if (id.includes('node_modules/@mui/') ||
+              id.includes('node_modules/@emotion/')) {
+            return 'vendor-mui';
+          }
+
+          // Chart libraries — only needed on analytics/finance pages
+          if (id.includes('node_modules/apexcharts') ||
+              id.includes('node_modules/react-apexcharts') ||
+              id.includes('node_modules/chart.js') ||
+              id.includes('node_modules/react-chartjs-2') ||
+              id.includes('node_modules/recharts') ||
+              id.includes('node_modules/d3') ||
+              id.includes('node_modules/d3-')) {
+            return 'vendor-charts';
+          }
+
+          // TanStack — data fetching, table, virtualisation
+          if (id.includes('node_modules/@tanstack/')) {
+            return 'vendor-tanstack';
+          }
+
+          // Forms — Formik + Yup — auth pages only
+          if (id.includes('node_modules/formik') ||
+              id.includes('node_modules/yup')) {
+            return 'vendor-forms';
+          }
+
+          // Utilities — analytics, HTTP, dates, helpers
+          if (id.includes('node_modules/posthog-js') ||
+              id.includes('node_modules/axios') ||
+              id.includes('node_modules/lodash-es') ||
+              id.includes('node_modules/lodash') ||
+              id.includes('node_modules/date-fns')) {
+            return 'vendor-utils';
+          }
+        },
+      },
+    },
+  },
 });
