@@ -8,6 +8,7 @@ import { getAllSlugs, getContentBySlug } from '@/lib/mdx'
 import { generateArticleSchema, generateFAQSchema, generateBreadcrumbSchema } from '@/lib/schema'
 import Schema from '@/components/seo/Schema'
 import ArticleLayout from '@/components/article/ArticleLayout'
+import CompareArticleTracker from '@/components/compare/CompareArticleTracker'
 import QuickAnswer from '@/components/article/QuickAnswer'
 import ArticleImage from '@/components/article/ArticleImage'
 import HeroVisual from '@/components/article/HeroVisual'
@@ -142,6 +143,7 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
         { name: 'Compare', url: 'https://www.lasyncro.com/compare' },
         { name: frontmatter.title, url },
       ])} />
+      <CompareArticleTracker competitor={slug} />
     <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content?.split(/\s+/).length ?? 0}>
       <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
       </ArticleLayout>

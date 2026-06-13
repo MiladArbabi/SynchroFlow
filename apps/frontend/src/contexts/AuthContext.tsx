@@ -60,6 +60,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const payload = JSON.parse(atob(tokenFromUrl.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
         decodedUser = {
           shop_id: payload.shop_id ?? null,
+          plan: payload.plan ?? null,
+          trial_ends_at: payload.trial_ends_at ?? null,
+          created_at: payload.created_at ?? null,
           userId: payload.user_id ?? null,
           role: payload.shop_roles?.[0] ?? 'owner',
           email: payload.email ?? null,
@@ -105,7 +108,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
          * PostHog identity until they explicitly log in again.
          */
         if (parsedUser?.id) {
-          identifyUser(parsedUser.id, parsedUser.shop_id);
+          identifyUser(parsedUser.id, parsedUser.shop_id, {
+            plan: parsedUser.plan,
+            trial_ends_at: parsedUser.trial_ends_at,
+            created_at: parsedUser.created_at,
+          });
           if (parsedUser.shop_id) groupByShop(parsedUser.shop_id);
         }
       } else {

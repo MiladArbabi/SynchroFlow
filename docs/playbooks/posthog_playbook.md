@@ -1,118 +1,221 @@
 # LaSyncro — PostHog Analytics Playbook
 
-**Last updated:** June 2026  
-**Status:** Live on both `www.lasyncro.com` and `app.lasyncro.com`  
-**Owner:** Engineering / Growth  
+**Last updated:** June 2026 (PostHog Sprint 1)
+**Status:** Live on `www.lasyncro.com`, `app.lasyncro.com`, and `apps/marketing`
+**Owner:** Engineering / Growth
 **Location in repo:** `docs/playbooks/posthog_playbook.md`
 
 ---
 
 ## 1. Architecture Overview
 
-LaSyncro runs a single PostHog project across two subdomains:
+LaSyncro runs a single PostHog project across three surfaces:
 
 ```
-www.lasyncro.com   → PostHog snippet (vanilla JS, in <head>)
-app.lasyncro.com   → PostHog npm package (posthog-js@^1.283.x, React)
+packages/landing-page   → PostHog snippet (vanilla JS, in <head>)
+apps/marketing          → posthog-js/react via PostHogProvider.tsx (Next.js)
+apps/frontend           → posthog-js npm via PostHogProvider (React SPA)
 ```
 
-Both point to the **same project key** and the **same API host** (`https://t.lasyncro.com`), enabling cross-subdomain identity stitching for the full `www → register → dashboard` funnel.
+All three point to the **same project key** and the **same API host** (`https://t.lasyncro.com`), enabling cross-subdomain identity stitching for the full `www → register → dashboard` funnel.
 
 ### Reverse proxy
-All PostHog traffic is routed through `https://t.lasyncro.com` — a reverse proxy in front of `https://app.posthog.com`. This prevents ad blockers from blocking analytics and keeps event volume clean. The `ui_host` is still `https://app.posthog.com` so the PostHog dashboard works correctly.
+All PostHog traffic is routed through `https://t.lasyncro.com`. This prevents ad blockers from blocking analytics. The `ui_host` remains `https://app.posthog.com`.
 
 ### Project key
 ```
 phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM
 ```
-Stored as `VITE_PUBLIC_POSTHOG_KEY` in `apps/frontend/.env`. The landing page uses it inline in the snippet.
+Stored as `VITE_PUBLIC_POSTHOG_KEY` in `apps/frontend/.env`.
 
 ---
 
 ## 2. Cross-Domain Identity (Critical)
 
-### The problem
-Without cross-domain config, PostHog scopes its identity cookie to the specific subdomain. A user visiting `www.lasyncro.com` gets `distinct_id = anon_abc`. When they click "Start free" and land on `app.lasyncro.com`, PostHog assigns a new `distinct_id = anon_xyz`. The entire `www → register → signup` funnel is invisible — every signup looks like direct organic traffic.
-
-### The fix — three options that must be identical on both sides
+### The fix — three options identical across all three surfaces
 
 ```js
-cookie_domain: '.lasyncro.com',       // cookie readable by all subdomains
-cross_subdomain_cookie: true,          // explicitly enables cross-subdomain sharing
-persistence: 'localStorage+cookie',   // localStorage for SPA speed, cookie for cross-subdomain handoff
+cookie_domain: '.lasyncro.com',
+cross_subdomain_cookie: true,
+persistence: 'localStorage+cookie',
 ```
 
-**INVARIANT:** These three options must be **identical** in both:
-- `packages/landing-page/index.html` (PostHog snippet `posthog.init()`)
-- `apps/frontend/src/main.tsx` (PostHog npm `posthog.init()`)
+**INVARIANT:** These three options must be identical in:
+- `packages/landing-page/index.html` — PostHog snippet `posthog.init()`
+- `apps/marketing/components/PostHogProvider.tsx` — Next.js app init
+- `apps/frontend/src/main.tsx` — React SPA init
 
-Any drift between the two breaks funnel attribution silently. Check both files if funnel attribution looks broken.
-
-### TypeScript note
-`cookie_domain` and `cross_subdomain_cookie` are valid PostHog v1 runtime options but are absent from the TypeScript type definitions in `posthog-js@1.373.4`. They are applied via a spread cast in `main.tsx`:
-
-```tsx
-...({
-  cookie_domain: '.lasyncro.com',
-  cross_subdomain_cookie: true,
-  persistence: 'localStorage+cookie',
-} as unknown as object),
-```
-
-Do not remove this — it is intentional and required.
+Any drift between surfaces breaks funnel attribution silently.
 
 ---
 
 ## 3. Initialization
 
-### Landing page (`www.lasyncro.com`)
-Location: `packages/landing-page/index.html` — inline snippet in `<head>`.
+### Landing page (`packages/landing-page/index.html`)
+Vanilla JS snippet in `<head>`. Localhost guard active.
 
 ```js
 posthog.init('phc_kVdrQ...', {
   api_host: 'https://t.lasyncro.com',
   ui_host: 'https://app.posthog.com',
-  autocapture: true,          // enabled on marketing page — broad click/form capture
-  capture_pageview: true,     // enabled — single-page, one view per visit
+  autocapture: true,
+  capture_pageview: true,
   cookie_domain: '.lasyncro.com',
   cross_subdomain_cookie: true,
   persistence: 'localStorage+cookie',
 });
 ```
 
-Localhost guard: PostHog is disabled on `localhost` and `127.0.0.1` to prevent dev traffic pollution.
+### Marketing app (`apps/marketing/components/PostHogProvider.tsx`)
+Next.js, `posthog-js/react`. Route-aware pageview tracker built in via `PageViewTracker` component using `usePathname()`. Localhost guard active.
 
-### App (`app.lasyncro.com`)
-Location: `apps/frontend/src/main.tsx` — npm package, single source of truth.
+```ts
+posthog.init(POSTHOG_KEY, {
+  api_host: 'https://t.lasyncro.com',
+  ui_host: 'https://app.posthog.com',
+  autocapture: true,
+  capture_pageview: false,       // manual via PageViewTracker
+  capture_pageleave: true,
+  cookie_domain: '.lasyncro.com',
+  cross_subdomain_cookie: true,
+  persistence: 'localStorage+cookie',
+})
+```
+
+`getPageviewContext()` enriches every `$pageview` with `section` and `page_type`:
+```
+/           → { section: 'home',    page_type: 'home' }
+/pricing    → { section: 'pricing', page_type: 'pricing' }
+/about      → { section: 'about',   page_type: 'about' }
+/blog       → { section: 'blog',    page_type: 'blog_index' }
+/blog/*     → { section: 'blog',    page_type: 'blog_article' }
+/compare    → { section: 'compare', page_type: 'compare_index' }
+/compare/*  → { section: 'compare', page_type: 'compare_article' }
+/glossary   → { section: 'glossary', page_type: 'glossary_index' }
+/glossary/* → { section: 'glossary', page_type: 'glossary_entry' }
+```
+
+### App (`apps/frontend/src/main.tsx`)
+npm package, React SPA.
 
 ```tsx
 posthog.init(posthogKey, {
-  api_host: posthogHost,      // https://t.lasyncro.com via VITE_PUBLIC_POSTHOG_HOST
-  capture_pageview: false,    // disabled — SPA manages its own pageviews manually
-  capture_exceptions: true,   // error tracking enabled
-  autocapture: false,         // disabled — explicit events only, no noise
+  api_host: posthogHost,           // https://t.lasyncro.com
+  capture_pageview: false,         // PostHogPageView.tsx handles this
+  capture_exceptions: true,
+  autocapture: false,              // explicit events only
   cookie_domain: '.lasyncro.com',
   cross_subdomain_cookie: true,
   persistence: 'localStorage+cookie',
 });
 ```
 
-Key differences from landing page: `autocapture: false` (explicit events only), `capture_pageview: false` (React Router controls this).
-
-### Environment variables (app)
-```
-VITE_PUBLIC_POSTHOG_KEY=phc_kVdrQ...        # in apps/frontend/.env
-VITE_PUBLIC_POSTHOG_HOST=https://t.lasyncro.com  # in apps/frontend/.env
-```
-
-Both are build-time injected via Vite. They are not runtime secrets — the key is intentionally public.
+`PostHogPageView.tsx` is mounted inside `BrowserRouter` and fires `$pageview` on every React Router navigation.
 
 ---
 
-## 4. Event Architecture
+## 4. Naming Conventions
 
-### Analytics layer
-All events in the app flow through a single adapter — never call `posthog.capture()` directly in product code.
+Two naming conventions are in use. **Never mix them.**
+
+| Surface | Convention | Examples |
+|---|---|---|
+| `packages/landing-page` | `underscore` | `hero_signup_clicked`, `pricing_plan_cta_clicked` |
+| `apps/marketing` | `underscore` | `compare_page_viewed`, `blog_article_completed` |
+| `apps/frontend` | `dot.notation` | `auth.login.success`, `module.visited` |
+| Backend (posthog-node) | `underscore` | `trial_started`, `paywall_hit` |
+
+---
+
+## 5. Event Register
+
+### 5a. Landing page events (`packages/landing-page`) — vanilla JS, inline onclick
+
+| Event | Props | Notes |
+|---|---|---|
+| `nav_login_clicked` | `location: 'header'` | Nav — Log in |
+| `nav_signup_clicked` | `location: 'header'` | Nav — Start free |
+| `hero_signup_clicked` | `location: 'hero'` | Hero CTA |
+| `section_signup_clicked` | `location: 'cta_section'` | Mid-page CTA section |
+| `section_login_clicked` | `location: 'cta_section'` | Mid-page login link |
+| `footer_signup_clicked` | `location: 'footer_cta'` | Footer CTA |
+
+### 5b. Marketing app events (`apps/marketing`) — via PostHog React hooks
+
+| Event | Props | Component | Notes |
+|---|---|---|---|
+| `pricing_plan_cta_clicked` | `plan`, `cta_label` | `PricingPlanCTA.tsx` | Fires on every plan CTA click |
+| `compare_page_viewed` | `competitor` | `CompareArticleTracker.tsx` | Fires on mount of each compare article |
+| `compare_cta_clicked` | `location`, `cta_label` | `CompareCTA.tsx` | Bottom CTA on compare index |
+| `blog_article_viewed` | `article_slug`, `category`, `estimated_read_min` | `BlogArticleTracker.tsx` | Fires on mount |
+| `blog_article_completed` | `article_slug`, `scroll_depth_pct` | `BlogArticleTracker.tsx` | Fires at 80% scroll via IntersectionObserver |
+| `blog_cta_clicked` | `variant`, `cta_label`, `location` | `ArticleCTA.tsx` | Inline and full CTA variants |
+| `about_cta_clicked` | `cta_label` | `AboutCTAs.tsx` | get_early_access \| read_blog |
+
+**Deferred:**
+- `pricing_toggle_changed` — annual/monthly toggle not yet built
+- `newsletter_submitted` — email collection sprint pending
+
+### 5c. App events (`apps/frontend`) — dot.notation, via `useUiEvents()` adapter
+
+#### Auth
+| Event | Props | Call site |
+|---|---|---|
+| `auth.signup.success` | `user_id`, `shop_id` | `AuthRegister.tsx` |
+| `auth.signup.failed` | — | `AuthRegister.tsx` |
+| `auth.login.success` | `user_id`, `shop_id`, `tier` | `AuthLogin.tsx` |
+| `auth.login.failed` | — | `AuthLogin.tsx` |
+
+#### Integration (Shopify OAuth)
+| Event | Props | Call site |
+|---|---|---|
+| `integration.connect.started` | — | OAuth entry |
+| `integration.connect.redirected` | — | Before OAuth redirect — measures pre-OAuth drop-off |
+| `integration.connect.failed` | — | OAuth failure |
+| `integration.connect.back` | — | User pressed back |
+| `integration.connect.cancelled` | — | User cancelled |
+| `integration.platform.selected` | — | Platform selection |
+
+#### Upgrade prompts
+| Event | Props | Notes |
+|---|---|---|
+| `upgrade_prompt.shown` | `tier`, `feature` | |
+| `upgrade_prompt.dismissed` | — | |
+| `upgrade_prompt.clicked` | `tier`, `feature` | |
+
+#### Product adoption
+| Event | Props | Call site |
+|---|---|---|
+| `module.visited` | `module` (overview\|inventory\|fulfillment\|finances\|suppliers\|warehouse) | `ModuleContentHost.tsx` |
+| `feature.paywall_hit` | `feature`, `current_plan`, `required_tier` | `PaywallSurface.tsx` |
+| `team.invite_sent` | `invite_count`, `workspace_operator_total` | `MembersPage.tsx` |
+
+**Deferred — needs dedicated sprint:**
+- `onboarding.step_completed` / `onboarding.completed` — FT1 checklist is outdated, needs full onboarding sprint
+- `aha_modal.viewed` — fires when aha moment modal appears post-OAuth sync
+- `aha_modal.unlocked` — fires when user clicks "Unlock Insights →"
+- `ft2.activated` — fires when user lands on FT2 overview for first time
+- `inventory.first_viewed` — aha moment definition needed
+- `scan.first_completed` — needs full WMS/LSU/LSO workflow workshop
+
+### 5d. Backend events (`posthog-node` in `utils/analytics.ts`) — PH-03 ✅
+
+| Event | Trigger |
+|---|---|
+| `trial_started` | Trial begins |
+| `trial_expired` | Trial ends without conversion |
+| `trial_reminder_sent` | Reminder email dispatched |
+| `paywall_hit` | Entitlement middleware blocks feature |
+| `subscription_activated` | First paid subscription |
+| `subscription_upgraded` | Plan upgrade |
+| `subscription_cancelled` | Cancellation |
+| `payment_failed` | Stripe webhook |
+
+---
+
+## 6. Event Architecture (App)
+
+All app events flow through a single adapter — **never call `posthog.capture()` directly.**
 
 ```
 Product code
@@ -121,73 +224,85 @@ Product code
   → posthog.capture(event, { ...payload, source: 'frontend_app', ts: Date.now() })
 ```
 
-This architecture prevents vendor lock-in — swap PostHog for any other provider by editing `adapter.ts` only.
-
-### Event naming convention
-All events use dot-notation namespaced by domain:
-
-```
-auth.login.success
-auth.login.failed
-auth.signup.success
-auth.signup.failed
-integration.connect.started
-integration.connect.redirected
-integration.connect.failed
-upgrade_prompt.shown
-upgrade_prompt.clicked
-```
-
-Landing page events use underscore convention (vanilla JS, no adapter):
-```
-nav_login_clicked
-nav_signup_clicked
-hero_signup_clicked
-section_signup_clicked
-footer_signup_clicked
-```
-
 ### Adding a new event
-1. Add the event name to `UiEventName` union type in `useUiEvents.ts`
+1. Add the event name to `UiEventName` union in `useUiEvents.ts`
 2. Call `emit('your.event.name', { prop: value })` in the component
-3. Never call `posthog.capture()` directly — always go through `emit()`
+3. Never call `posthog.capture()` directly
 
 ---
 
-## 5. Identity Model
+## 7. Identity Model
 
 ### Unit of revenue = shop, not user
-PostHog `identify()` is called with `user_id` at login/signup. Group analytics must be configured by `shop_id` — your MRR, churn, and conversion metrics are per-shop, not per-human.
 
 ```ts
-// At login (in AuthLogin.tsx)
-posthog.identify(user.id.toString(), {
-  email: user.email,          // PII — only include if PostHog project has EU data residency or consent
-  shop_id: user.shop_id,
+// identifyUser() — adapter.ts
+posthog.identify(userId.toString(), {
+  shop_id: shopId ?? null,
+  plan: meta?.plan ?? null,
+  trial_ends_at: meta?.trial_ends_at ?? null,
+  created_at: meta?.created_at ?? null,
 });
 
-// Group the session by shop
-posthog.group('shop', shop_id.toString(), {
-  name: shop.name,
-  plan: shop.tier,
-});
+// groupByShop() — adapter.ts
+posthog.group('shop', shopId.toString());
 ```
 
-Note: `posthog.identify()` is currently called via the `auth.login.success` event. Full `identify()` + `group()` calls are a pending improvement (see Section 8).
+Called at three sites:
+- `AuthContext.tsx` — session hydration (JWT decode)
+- `AuthLogin.tsx` — after successful login
+- `AuthRegister.tsx` — after successful registration
+
+`plan`, `trial_ends_at`, and `created_at` come from JWT claims (enriched on backend).
 
 ### Distinct ID flow
 ```
-www.lasyncro.com visit      → anon distinct_id set in .lasyncro.com cookie
-Click "Start free"          → app.lasyncro.com reads same cookie → same distinct_id
-auth.signup.success fires   → posthog.identify(user_id) → anon_id aliased to user_id
-All future events           → attributed to user_id
+www.lasyncro.com visit        → anon distinct_id set in .lasyncro.com cookie
+apps/marketing page visit     → same cookie → same distinct_id
+Click "Start free"            → app.lasyncro.com reads same cookie → same distinct_id
+auth.signup.success fires     → posthog.identify(user_id) → anon_id aliased to user_id
+All future events             → attributed to user_id
 ```
-
-This is the correct flow. If you see two separate anonymous users for one signup journey, the cross-domain cookie config has drifted.
 
 ---
 
-## 6. UTM Attribution
+## 8. FT1 → FT2 Flow (Aha Moment)
+
+The activation funnel visible in the app:
+
+```
+1. User enters Shopify store domain → clicks "Connect Shopify →"
+   → integration.connect.started
+   → integration.connect.redirected (before OAuth redirect)
+
+2. OAuth completes → 5-step sync runs:
+   Step 1: Connecting to Shopify (auth + permissions)
+   Step 2: Reading catalogue (products + variants → inventory ledger)
+   Step 3: Mapping orders (order history + fulfilment records)
+   Step 4: Calculating margin per order (risk scoring + restock projection)
+   Step 5: Building Morning Brief (operational intelligence layer)
+
+3. Aha modal appears at /overview:
+   "LaSyncro found this in your store" — shows real store data:
+   variants tracked, avg days of stock, top mover
+   → aha_modal.viewed [PENDING]
+
+4. User clicks "Unlock Insights →"
+   → aha_modal.unlocked [PENDING]
+   → FT1 → FT2 promotion triggered
+
+5. User lands on FT2 overview — The Brief, live issues, revenue at risk
+   → ft2.activated [PENDING]
+```
+
+**FT1 definition:** OAuth connected, sync complete, readiness = false. User is in holding state seeing the aha modal.
+**FT2 definition:** User has clicked "Unlock Insights" — readiness = true. Full product visible.
+
+The aha modal events (`aha_modal.viewed`, `aha_modal.unlocked`, `ft2.activated`) are the highest-value events in the entire funnel. They close the loop between acquisition and activation. **Instrument in the onboarding sprint.**
+
+---
+
+## 9. UTM Attribution
 
 All CTAs on `www.lasyncro.com` include UTM parameters:
 
@@ -196,110 +311,82 @@ All CTAs on `www.lasyncro.com` include UTM parameters:
 | Nav — Log in | `marketing_site` | `nav` | `login` |
 | Nav — Start free | `marketing_site` | `nav` | `start_free` |
 | Hero | `marketing_site` | `hero` | `start_free` |
-| Waitlist section | `marketing_site` | `waitlist_section` | `start_free` / `login` |
+| CTA section — Start free | `marketing_site` | `cta_section` | `start_free` |
+| CTA section — Log in | `marketing_site` | `cta_section` | `login` |
 | Footer CTA | `marketing_site` | `footer_cta` | `start_free` |
 
-PostHog automatically captures UTM parameters from the URL on `app.lasyncro.com` and attaches them to all subsequent events in the session. No manual instrumentation needed for UTM capture — it is built into PostHog's pageview and session logic.
-
-For this to work: `capture_pageview` must fire on the first load of `app.lasyncro.com`. Currently `capture_pageview: false` in `main.tsx` — a manual `posthog.capture('$pageview')` must be fired after React Router mounts. This is a pending improvement (see Section 8).
+PostHog captures UTM params automatically from the URL on `$pageview`. `PostHogPageView.tsx` fires on every route change in the SPA — UTM capture is active.
 
 ---
 
-## 7. Key Funnels to Monitor
+## 10. Key Funnels
 
 ### Acquisition funnel
 ```
-marketing_site visit
-  → nav_signup_clicked / hero_signup_clicked / section_signup_clicked / footer_signup_clicked
+www.lasyncro.com or apps/marketing visit ($pageview)
+  → nav_signup_clicked / hero_signup_clicked / section_signup_clicked
+     / pricing_plan_cta_clicked / compare_cta_clicked / blog_cta_clicked
   → app.lasyncro.com/register loaded
   → auth.signup.success
   → integration.connect.started
-  → integration.connect.redirected (Shopify OAuth)
-  → first_sync_completed (backend event)
-  → overview first viewed
+  → integration.connect.redirected
+  → [5-step sync]
+  → aha_modal.viewed     [PENDING]
+  → aha_modal.unlocked   [PENDING]
+  → ft2.activated        [PENDING]
 ```
 
 ### Trial conversion funnel
 ```
-trial_started (day 0)
-  → paywall_hit (which feature, which tier)
+trial_started (day 0)                    [backend]
+  → feature.paywall_hit (which feature)  [frontend]
+  → paywall_hit                          [backend]
   → upgrade_prompt.shown
   → upgrade_prompt.clicked
-  → subscription_created
+  → subscription_activated               [backend]
 ```
 
-### WMS activation funnel
+### Module adoption funnel
 ```
-pick_session_started
-  → first barcode scanned
-  → first order shipped
-  → wms daily active (7-day retention)
+ft2.activated
+  → module.visited (which modules, in what order)
+  → team.invite_sent (stickiness — team expansion)
 ```
 
 ---
 
-## 8. Pending Improvements
+## 11. Pending Improvements
 
 | ID | Priority | Description |
 |---|---|---|
-| PH-01 | P1 | ✅ Done | `identifyUser()` + `groupByShop()` called at login, signup, and session hydration — Jun 2026 |
-| PH-02 | P1 | ✅ Done | `PostHogPageView.tsx` component fires `$pageview` on every React Router navigation — Jun 2026 |
-| PH-03 | P2 | ✅ Done | `posthog-node` singleton in `utils/analytics.ts` — fires `trial_started`, `trial_expired`, `trial_reminder_sent`, `paywall_hit`, `subscription_activated`, `subscription_upgraded`, `subscription_cancelled`, `payment_failed` from backend — Jun 2026 |
-| PH-04 | P2 | PostHog group analytics config — enable `shop` group type in PostHog dashboard and wire `posthog.group()` calls |
-| PH-05 | P2 | Pageview tracking in SPA — wire React Router `useLocation` to fire `$pageview` on every route change |
-| PH-06 | P3 | Session recording config — enable for `/register` and `/login` flows to diagnose drop-off |
-| PH-07 | P3 | Feature flags — use PostHog feature flags for A/B testing pricing copy, CTA wording |
-| PH-08 | P3 | `auth.login.success` event should include `shop_id` and `tier` in payload |
-| Jun 2026 | No server-side monetization events (PH-03) | `posthog-node` singleton + `captureEvent()` wired into auth, trial worker, entitlement middleware, and all Stripe webhook handlers |
+| PH-04 | P2 | Enable `shop` group type in PostHog dashboard — group analytics config |
+| PH-06 | P3 | Session recording for `/register` and `/login` flows |
+| PH-07 | P3 | Feature flags — A/B testing pricing copy, CTA wording |
+| PH-09 | P1 | `aha_modal.viewed` + `aha_modal.unlocked` + `ft2.activated` — onboarding sprint |
+| PH-10 | P1 | Full onboarding sprint — redefine FT1 checklist, wire `onboarding.step_completed` / `onboarding.completed` |
+| PH-11 | P2 | `inventory.first_viewed` — define aha moment (which page/state = "sees inventory for first time") |
+| PH-12 | P2 | `scan.first_completed` — WMS/LSU/LSO workflow workshop needed before instrumentation |
+| PH-13 | P2 | `newsletter_submitted` — email collection sprint (ArticleCTA email input, API route, Resend) |
+| PH-14 | P3 | `pricing_toggle_changed` — instrument once annual/monthly toggle is built |
+| PH-15 | P3 | `groupByShop()` — pass shop properties (name, plan, created_at) to PostHog group call |
 
 ---
 
-## 9. Dev Environment
+## 12. Dev Environment
 
-PostHog is **disabled** on localhost on the landing page:
-```js
-if (window.location.hostname !== 'localhost' && ...) {
-  posthog.init(...)
-}
-```
+PostHog is **disabled on localhost** on the landing page and marketing app. In the app, PostHog initialises everywhere but `import.meta.env.DEV` enables `__FUNNEL_TRACE__`:
 
-In the app, PostHog initializes everywhere but `import.meta.env.DEV` enables `__FUNNEL_TRACE__` — a window-level array that logs every event for local debugging:
 ```js
 window.__FUNNEL_TRACE__  // inspect in browser console during dev
 ```
 
----
-
-## 10. Pitfalls
-
-**1. Different API hosts on www vs app breaks session stitching**
-Both must use `https://t.lasyncro.com`. If `app.posthog.com` is used on either side, events go through different ingestion paths and PostHog cannot stitch sessions. This was the state before June 2026 — fixed by aligning `VITE_PUBLIC_POSTHOG_HOST`.
-
-**2. Missing cross-domain options creates phantom users**
-Every signup will appear as a new anonymous user with no `www` attribution. The fix (cookie_domain + cross_subdomain_cookie + persistence) must be present on both sides. Check both files if funnel looks broken.
-
-**3. `capture_pageview: false` means UTM params need manual capture**
-PostHog attaches UTM params to the session when it captures a pageview. With `capture_pageview: false` in the app, the UTM params from the CTA link (`?utm_source=marketing_site&...`) are in the URL but may not be captured. Fix: fire `posthog.capture('$pageview')` in the React Router effect (PH-02).
-
-**4. Calling `posthog.capture()` directly bypasses the adapter**
-All events must go through `useUiEvents().emit()` → `adapter.sendEvent()`. Direct calls break the funnel trace, bypass the guard, and make vendor migration harder.
-
-**5. Never use `email` as a PostHog identify property without consent**
-PostHog stores identify properties. If GDPR applies (EU merchants), either get explicit consent before identifying with email, or omit email from identify calls entirely and use only `user_id` and `shop_id`.
-
----
-
-## 11. Quick Reference
-
+Quick reference:
 ```ts
-// Emit an event (correct way)
+// Emit an event (correct way — app only)
 const { emit } = useUiEvents();
-emit('upgrade_prompt.shown', { tier: 'core', feature: 'cash_flow' });
+emit('module.visited', { module: 'inventory' });
 
-// Check funnel trace in browser console (dev only)
-window.__FUNNEL_TRACE__
-
-// Verify PostHog is initialized
+// Verify PostHog is initialised
 window.posthog?.get_distinct_id()
 
 // Check cross-domain cookie is set
@@ -308,12 +395,31 @@ document.cookie  // look for ph_ prefixed cookie with domain=.lasyncro.com
 
 ---
 
-## 12. Completed Issues Log
+## 13. Pitfalls
 
-| Date | Issue | Fix |
+1. **Different API hosts breaks session stitching** — all three surfaces must use `https://t.lasyncro.com`
+2. **Missing cross-domain options creates phantom users** — `cookie_domain` + `cross_subdomain_cookie` + `persistence` must be present on all three surfaces
+3. **Calling `posthog.capture()` directly in the app bypasses the adapter** — always use `useUiEvents().emit()`
+4. **`useEffect` dependency arrays must include `emit`** — TypeScript / ESLint will warn; always follow the suggestion
+5. **Marketing app components that call PostHog must be `'use client'`** — server components cannot use hooks
+6. **Never use `email` as a PostHog identify property without consent** — GDPR applies to EU merchants; use `user_id` and `shop_id` only unless explicit consent obtained
+
+---
+
+## 14. Completed Issues Log
+
+| Date | Issue / Task | Resolution |
 |---|---|---|
-| Jun 2026 | `www` and `app` using different API hosts — session stitching broken | Aligned both to `https://t.lasyncro.com` |
+| Jun 2026 | `www` and `app` using different API hosts | Aligned both to `https://t.lasyncro.com` |
 | Jun 2026 | No cross-domain cookie config — signup funnel attribution broken | Added `cookie_domain`, `cross_subdomain_cookie`, `persistence` to both inits |
 | Jun 2026 | `cookie_domain` missing from PostHog TS types | Cast via `as unknown as object` in `main.tsx` |
-| Jun 2026 | No identity calls at login/signup/hydration (PH-01) | `identifyUser()` + `groupByShop()` in `adapter.ts`, called from `AuthLogin`, `AuthRegister`, `AuthContext` |
-| Jun 2026 | No pageview tracking in SPA (PH-02) | `PostHogPageView.tsx` mounted inside `BrowserRouter` — fires on every route change |
+| Jun 2026 | `identifyUser()` thin — only `shop_id` passed | Enriched with `plan`, `trial_ends_at`, `created_at` from JWT claims across all three call sites |
+| Jun 2026 | `auth.login.success` missing `tier` in payload (PH-08) | Added `tier: user.plan` to event payload in `AuthLogin.tsx` |
+| Jun 2026 | `apps/marketing` PostHogProvider missing cross-domain options | Added all three cross-domain options — `apps/marketing` was silently creating phantom users |
+| Jun 2026 | Zero events on marketing pages (`/pricing`, `/compare/*`, `/blog/*`, `/about`) | Instrumented all pages — `PricingPlanCTA`, `CompareArticleTracker`, `CompareCTA`, `BlogArticleTracker`, `ArticleCTA`, `AboutCTAs` |
+| Jun 2026 | `WaitlistCTA.tsx` deprecated — stale `#waitlist` href | Deleted; replaced with `ArticleCTA.tsx` in `ArticleLayout.tsx` |
+| Jun 2026 | `#waitlist` href and `waitlist_section` UTM refs throughout landing page and marketing app | All replaced with `https://app.lasyncro.com` and `cta_section` |
+| Jun 2026 | No app-side adoption events | Added `module.visited` (`ModuleContentHost.tsx`), `feature.paywall_hit` (`PaywallSurface.tsx`), `team.invite_sent` (`MembersPage.tsx`) |
+| Jun 2026 | PH-05 listed as pending despite PH-02 being done | PH-05 closed — `PostHogPageView.tsx` confirmed mounted in router, covers the same requirement |
+| Jun 2026 | Section 5 note contradicting PH-01 ✅ status | Note was stale — PH-01 confirmed done via grep; Section 5 updated |
+| Jun 2026 | posthog-node backend events (PH-03) | `trial_started`, `trial_expired`, `trial_reminder_sent`, `paywall_hit`, `subscription_activated`, `subscription_upgraded`, `subscription_cancelled`, `payment_failed` — all live |

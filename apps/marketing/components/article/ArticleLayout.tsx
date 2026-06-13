@@ -5,7 +5,7 @@
 import { Frontmatter } from '@/lib/mdx'
 import FAQ from './FAQ'
 import InternalLinks from './InternalLinks'
-import WaitlistCTA from './WaitlistCTA'
+import ArticleCTA from './ArticleCTA'
 import Link from 'next/link'
 
 interface ArticleLayoutProps {
@@ -115,7 +115,7 @@ export default function ArticleLayout({
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
         <article style={{ marginTop: '12px',padding: '12px 0 32px' }}>
           {children}
-          <WaitlistCTA variant="inline" text={frontmatter.cta_text} />
+          <ArticleCTA variant="inline" text={frontmatter.cta_text} />
         </article>
       </div>
 
@@ -131,7 +131,7 @@ export default function ArticleLayout({
 
       {/* End CTA */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw 32px' }}>
-        <WaitlistCTA variant="full" />
+        <ArticleCTA variant="full" />
       </div>
 
       {/* Related */}

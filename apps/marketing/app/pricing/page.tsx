@@ -1,5 +1,6 @@
 import { Metadata } from 'next'
 import Schema from '@/components/seo/Schema'
+import PricingPlanCTA from '@/components/pricing/PricingPlanCTA'
 
 export const metadata: Metadata = {
   title: 'Pricing — LaSyncro',
@@ -31,7 +32,7 @@ const plans = [
   },
   {
     tier: 'Core',
-    price: '£79',
+    price: '79',
     period: '/mo',
     desc: 'Structured workflows for your first warehouse hire — without the full intelligence layer.',
     features: ['Everything in Starter', 'Unlimited orders', 'PO receiving', 'Supplier tracking', 'Up to 3 warehouse locations', 'Priority support'],
@@ -116,17 +117,7 @@ export default function PricingPage() {
                   </li>
                 ))}
               </ul>
-              <a href="https://app.lasyncro.com" style={{
-                display: 'block', textAlign: 'center',
-                fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 500,
-                color: plan.featured ? '#fff' : '#FF6B2B',
-                background: plan.featured ? '#FF6B2B' : 'transparent',
-                border: `1px solid ${plan.featured ? '#FF6B2B' : '#FFD4BC'}`,
-                borderRadius: 8, padding: '10px 0', textDecoration: 'none',
-                letterSpacing: '0.02em',
-              }}>
-                {plan.cta}
-              </a>
+              <PricingPlanCTA plan={plan.tier} cta={plan.cta} featured={plan.featured} />
             </div>
           ))}
         </div>

@@ -5,7 +5,7 @@
 
 import { Metadata } from 'next'
 import Schema from '@/components/seo/Schema'
-import Link from 'next/link'
+import AboutCTAs from '@/components/about/AboutCTAs'
 import ArticleImage from '@/components/article/ArticleImage'
 
 export const metadata: Metadata = {
@@ -130,23 +130,7 @@ export default function AboutPage() {
       {/* ── CTA ───────────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '0 5vw 80px' }}>
         <div style={{ borderTop: '1px solid #E8E6E0', paddingTop: 48, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-          <a href="https://www.lasyncro.com/#waitlist" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '12px 24px', background: '#FF6B2B', color: '#fff',
-            fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
-            borderRadius: 6,
-          }}>
-            Get early access
-            <ArrowRight size={14} />
-          </a>
-          <Link href="/blog" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
-            color: '#0F0E0D', paddingBottom: 4, borderBottom: '1px solid #0F0E0D',
-          }}>
-            Read the operator&apos;s library
-            <ArrowRight size={14} />
-          </Link>
+          <AboutCTAs />
         </div>
       </section>
     </>

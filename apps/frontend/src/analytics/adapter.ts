@@ -41,15 +41,22 @@ if ((window as any).__ANALYTICS_ADAPTER_LOADED__) {
  *   - Revenue, churn, and funnel metrics are per-shop, not per-human.
  *   - Must be called alongside identifyUser() — never one without the other.
  */
-export function identifyUser(userId: number, shopId?: number): void {
+export function identifyUser(
+  userId: number,
+  shopId?: number,
+  meta?: { plan?: string; trial_ends_at?: string; created_at?: string }
+): void {
   if (!posthog || typeof posthog.identify !== 'function') {
     console.warn('[analytics:adapter] posthog.identify not ready');
     return;
   }
   posthog.identify(userId.toString(), {
     shop_id: shopId ?? null,
+    plan: meta?.plan ?? null,
+    trial_ends_at: meta?.trial_ends_at ?? null,
+    created_at: meta?.created_at ?? null,
   });
-  console.info('[analytics:adapter:identify]', { userId, shopId });
+  console.info('[analytics:adapter:identify]', { userId, shopId, meta });
 }
 
 export function groupByShop(shopId: number): void {

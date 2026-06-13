@@ -32,7 +32,19 @@ export type UiEventName =
   // Conversion events (UX-09)
   | 'upgrade_prompt.shown'
   | 'upgrade_prompt.dismissed'
-  | 'upgrade_prompt.clicked';
+  | 'upgrade_prompt.clicked'
+  // Module adoption
+  | 'module.visited'
+  // Onboarding
+  | 'onboarding.step_completed'
+  | 'onboarding.completed'
+  // Aha moments
+  | 'inventory.first_viewed'
+  | 'scan.first_completed'
+  // Paywalls (frontend complement to backend paywall_hit)
+  | 'feature.paywall_hit'
+  // Team
+  | 'team.invite_sent';
 
 export type UiEventPayload = Record<string, unknown>;
 

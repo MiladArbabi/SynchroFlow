@@ -1,13 +1,26 @@
 //apps/frontend/src/lifecycle/PaywallSurface.tsx
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Box, Typography, Button, Paper, Stack } from '@mui/material';
+import { useUiEvents } from '../analytics/useUiEvents';
+import { useEntitlements } from '../contexts/EntitlementsContext';
 
 interface PaywallSurfaceProps {
   moduleId: string;
+  requiredTier?: string;
   onUpgrade?: () => void;
 }
 
-export function PaywallSurface({ moduleId, onUpgrade }: PaywallSurfaceProps) {
+export function PaywallSurface({ moduleId, onUpgrade, requiredTier }: PaywallSurfaceProps) {
+
+  const { emit } = useUiEvents();
+  const { tier } = useEntitlements();
+  useEffect(() => {
+    emit('feature.paywall_hit', {
+      feature: moduleId,
+      current_plan: tier ?? null,
+      required_tier: requiredTier ?? null,
+    });
+  }, [emit, moduleId, requiredTier, tier]);
 
   return (
     <Box

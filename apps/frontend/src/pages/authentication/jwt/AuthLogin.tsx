@@ -151,6 +151,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
             emit('auth.login.success', {
               user_id: user.id,
               shop_id: user.shop_id ?? null,
+              tier: user.plan ?? null,
             });
 
             /**
@@ -160,7 +161,11 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
              * groupByShop() must follow — shop is the unit of revenue.
              * Called here (not in adapter) so it fires after auth state is set.
              */
-            identifyUser(user.id, user.shop_id);
+            identifyUser(user.id, user.shop_id, {
+              plan: user.plan,
+              trial_ends_at: user.trial_ends_at,
+              created_at: user.created_at,
+            });
             if (user.shop_id) groupByShop(user.shop_id);
 
             console.info('[AUTH][LOGIN_SUCCESS]', {

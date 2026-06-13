@@ -5,8 +5,10 @@
 //apps/frontend/src/lifecycle/ModuleContentHost.tsx
 import React from 'react';
 
+import { useEffect } from 'react';
 import { UIModulePhase } from './types';
 import { Ft1OnboardingGate } from './Ft1OnboardingGate';
+import { useUiEvents } from '../analytics/useUiEvents';
 
 /**
  * ModuleContentHost
@@ -54,6 +56,11 @@ export function ModuleContentHost({
       `[Lifecycle Violation] Advanced content attempted to mount for module "${moduleId}" outside FT2_READY. Current phase: ${phase}`
     );
   }
+
+  const { emit } = useUiEvents();
+  useEffect(() => {
+    emit('module.visited', { module: moduleId });
+  }, [emit, moduleId]);
 
   return (
     <>

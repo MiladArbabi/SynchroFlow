@@ -8,6 +8,7 @@ import { getAllSlugs, getContentBySlug } from '@/lib/mdx'
 import { generateArticleSchema, generateFAQSchema, generateBreadcrumbSchema } from '@/lib/schema'
 import Schema from '@/components/seo/Schema'
 import ArticleLayout from '@/components/article/ArticleLayout'
+import BlogArticleTracker from '@/components/blog/BlogArticleTracker'
 import QuickAnswer from '@/components/article/QuickAnswer'
 import ArticleImage from '@/components/article/ArticleImage'
 import ArticleAnimation from '@/components/article/ArticleAnimation'
@@ -154,6 +155,11 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
 
       <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content?.split(/\s+/).length ?? 0}>
         <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
+        <BlogArticleTracker
+          slug={slug}
+          category={frontmatter.tags?.[0] ?? 'general'}
+          estimatedReadMin={Math.max(1, Math.ceil((content?.split(/\s+/).length ?? 0) / 200))}
+        />
       </ArticleLayout>
     </>
   )

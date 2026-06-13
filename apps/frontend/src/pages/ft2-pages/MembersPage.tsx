@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import { UserPlus } from 'lucide-react';
 import { useMembers, useUpdateMemberRole, useCreateMember, type MemberRole } from '../members/useMembers';
+import { useUiEvents } from '../../analytics/useUiEvents';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { LinearProgress } from '@mui/material';
@@ -70,6 +71,7 @@ export default function MembersPage() {
 
   const navigate = useNavigate();
   const members = data?.members ?? [];
+  const { emit } = useUiEvents();
   const { tier } = useEntitlements();
   const rawSeatLimit = TIER_SEAT_LIMIT[tier as Tier] ?? 1;
   const seatLimit = rawSeatLimit === Infinity ? null : rawSeatLimit;
@@ -111,6 +113,10 @@ export default function MembersPage() {
       {
         onSuccess: (data) => {
           setSuccessEmail(data.email);
+          emit('team.invite_sent', {
+            invite_count: 1,
+            workspace_operator_total: members.length + 1,
+          });
         },
         onError: (err: Error & { response?: { data?: { error?: string } } }) => {
           const msg = err?.response?.data?.error;

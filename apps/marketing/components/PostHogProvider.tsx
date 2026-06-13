@@ -35,6 +35,8 @@ function getPageviewContext(pathname: string) {
   if (pathname.startsWith('/compare/')) return { section: 'compare', page_type: 'compare_article' }
   if (pathname === '/glossary') return { section: 'glossary', page_type: 'glossary_index' }
   if (pathname.startsWith('/glossary/')) return { section: 'glossary', page_type: 'glossary_entry' }
+  if (pathname === '/pricing') return { section: 'pricing', page_type: 'pricing' }
+  if (pathname === '/about') return { section: 'about', page_type: 'about' }
   if (pathname === '/') return { section: 'home', page_type: 'home' }
 
   return { section: 'marketing', page_type: 'static_page' }
@@ -42,12 +44,15 @@ function getPageviewContext(pathname: string) {
 
 if (shouldEnablePostHog()) {
   posthog.init(POSTHOG_KEY, {
-    api_host: POSTHOG_HOST,
-    ui_host: 'https://app.posthog.com',
-    autocapture: true,
-    capture_pageview: false, // Manual route-aware capture below prevents duplicate Next.js pageviews.
-    capture_pageleave: true,
-  })
+  api_host: POSTHOG_HOST,
+  ui_host: 'https://app.posthog.com',
+  autocapture: true,
+  capture_pageview: false,
+  capture_pageleave: true,
+  cookie_domain: '.lasyncro.com',
+  cross_subdomain_cookie: true,
+  persistence: 'localStorage+cookie',
+} as Parameters<typeof posthog.init>[1])
 }
 
 /** Fires one enriched $pageview event on every client-side route change. */

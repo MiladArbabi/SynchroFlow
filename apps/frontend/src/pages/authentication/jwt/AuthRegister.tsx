@@ -172,7 +172,11 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
                * to the signup conversion event.
                * groupByShop() must follow — shop is the unit of revenue.
                */
-              identifyUser(newUser.id, newUser.shop_id);
+              identifyUser(newUser.id, newUser.shop_id, {
+                plan: newUser.plan,
+                trial_ends_at: newUser.trial_ends_at,
+                created_at: newUser.created_at,
+              });
               if (newUser.shop_id) groupByShop(newUser.shop_id);
             }
  

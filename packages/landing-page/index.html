@@ -1254,25 +1254,25 @@ footer{background:#080A0F;padding:28px 5vw;border-top:1px solid rgba(255,255,255
     <h2 class="waitlist-h2">Start free.<br><em>See your operation clearly.</em></h2>
     <p class="waitlist-sub">Connect Shopify in 60 seconds. Most merchants see their first stock-out risk within 4 minutes of syncing.</p>
     <div style="display:flex;flex-direction:column;align-items:center;gap:14px;margin-top:32px;">
-      <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=waitlist_section&utm_content=start_free"
+      <a href="https://app.lasyncro.com/register?utm_source=marketing_site&utm_medium=cta_section&utm_content=start_free"
         class="btn-primary"
         style="font-size:16px;padding:16px 36px;"
         onclick="
           if (typeof gtag === 'function') {
-            gtag('event', 'cta_click', { location: 'waitlist_section', target: 'register' });
+            gtag('event', 'cta_click', { location: 'cta_section', target: 'register' });
           }
           if (typeof posthog !== 'undefined') {
-            posthog.capture('section_signup_clicked', { location: 'waitlist_section' });
+            posthog.capture('section_signup_clicked', { location: 'cta_section' });
           }
         ">
         Start free — 14-day Growth trial included
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </a>
-      <a href="https://app.lasyncro.com/login?utm_source=marketing_site&utm_medium=waitlist_section&utm_content=login"
+      <a href="https://app.lasyncro.com/login?utm_source=marketing_site&utm_medium=cta_section&utm_content=login"
         style="font-size:13px;color:rgba(255,255,255,0.55);text-decoration:none;font-family:var(--sans);"
         onclick="
           if (typeof posthog !== 'undefined') {
-            posthog.capture('section_login_clicked', { location: 'waitlist_section' });
+            posthog.capture('section_login_clicked', { location: 'cta_section' });
           }
         ">
         Already have an account? Log in →
