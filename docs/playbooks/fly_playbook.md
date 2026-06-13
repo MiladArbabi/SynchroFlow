@@ -299,6 +299,7 @@ The refresh token is stored in an HttpOnly cookie set by the backend. For this t
 | Jun 2026 | Migration lock from failed deploy | Unlocked via `psql` proxy | DB |
 | Jun 2026 | Health check added | `GET /health` every 30s | `fly.toml` |
 | Jun 2026 | `JWT_REFRESH_SECRET` missing | Set via `fly secrets set` | Fly secrets |
+| Jun 2026 | 2.8MB monolith bundle (FLY-03) | Vite `manualChunks` vendor splitting + `React.lazy()` on all 25 app pages | `vite.config.ts`, `LifecycleRouteHost.tsx` |
 
 ---
 
@@ -308,7 +309,7 @@ The refresh token is stored in an HttpOnly cookie set by the backend. For this t
 |---|---|---|---|
 | FLY-01 | P1 | ✅ Done | Rotate production DB credentials — rotated June 2026 via `ALTER USER` + Fly secrets update |
 | FLY-02 | P1 | ✅ Done | `SHOPIFY_WEBHOOK_SECRET` added to Fly secrets June 2026 |
-| FLY-03 | P2 | 🟡 Ongoing | Frontend 2.2MB bundle — implement Vite code splitting |
+| FLY-03 | P2 | ✅ Done | Vite `manualChunks` + `React.lazy()` route splitting — 2.8MB monolith → distributed chunks, initial load ~500KB — Jun 2026 |
 | FLY-04 | P2 | 🟡 Ongoing | Fix frontend `tsc -b` errors to unblock full `npm run build` |
 | FLY-05 | P3 | 🔵 Future | Lazy Shopify initialization — app currently fails to boot if Shopify secrets missing |
 | FLY-06 | P3 | 🔵 Future | PostHog cross-domain tracking between `www` and `app` subdomains |
