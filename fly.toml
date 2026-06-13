@@ -15,6 +15,14 @@ primary_region = 'arn'
   min_machines_running = 1
   processes = ['app']
 
+  [[http_service.checks]]
+    grace_period = '10s'
+    interval = '30s'
+    method = 'GET'
+    path = '/health'
+    port = 8080
+    timeout = '5s'
+
 [[vm]]
   memory = '1gb'
   cpu_kind = 'shared'
