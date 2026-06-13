@@ -7,6 +7,7 @@ import { axiosInstance } from 'api/axiosConfig';
 
 // -- ANALYTICS 
 import { useUiEvents } from '../../../analytics/useUiEvents';
+import { identifyUser, groupByShop } from '../../../analytics/adapter';
 
 // -- AUTH
 import OAuthButtons from '../OAuthButtons';
@@ -156,11 +157,23 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             // --- ANALYTICS: signup success (NO PII) ---
             // AUTH-019: backend returns { user: publicUser } — not flat { id }
             if (response.data.user?.id) {
-              const newUserId = response.data.user.id.toString();
-
+              const newUser = response.data.user;
               emit('auth.signup.success', {
-                user_id: newUserId
+                user_id: newUser.id,
+                shop_id: newUser.shop_id ?? null,
               });
+
+              /**
+               * POSTHOG IDENTITY (PH-01)
+               * ─────────────────────────
+               * New user — link anonymous www session to freshly created account.
+               * This is the most critical identity call in the funnel:
+               * it connects the marketing attribution (utm_source, CTA clicked)
+               * to the signup conversion event.
+               * groupByShop() must follow — shop is the unit of revenue.
+               */
+              identifyUser(newUser.id, newUser.shop_id);
+              if (newUser.shop_id) groupByShop(newUser.shop_id);
             }
  
            // AUTH-006: auto-login after registration — backend now returns accessToken.

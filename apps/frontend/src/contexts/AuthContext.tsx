@@ -4,6 +4,7 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
 import { getToken, setToken, clearToken, setOnTokenRefreshed } from 'utils/authStore';
+import { identifyUser, groupByShop } from '../analytics/adapter';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -86,13 +87,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const storedUser = localStorage.getItem('user');
       
       if (storedToken && storedUser) {
-        /* console.log("AuthContext: Found stored session. Re-hydrating state."); */
+        const parsedUser = JSON.parse(storedUser);
         setAuthState({
           isLoggedIn: true,
           isLoading: false,
-          user: JSON.parse(storedUser), // Parse the user JSON string
+          user: parsedUser,
           accessToken: storedToken,
         });
+
+        /**
+         * SESSION HYDRATION IDENTITY (PH-01)
+         * ────────────────────────────────────
+         * Returning user — re-identify on every page load so PostHog
+         * maintains the link between the authenticated user and the
+         * current anonymous session cookie.
+         * Without this, a returning user who reloads the app loses
+         * PostHog identity until they explicitly log in again.
+         */
+        if (parsedUser?.id) {
+          identifyUser(parsedUser.id, parsedUser.shop_id);
+          if (parsedUser.shop_id) groupByShop(parsedUser.shop_id);
+        }
       } else {
         /* console.log("AuthContext: No stored session found."); */
         // No session, just finish loading

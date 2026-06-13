@@ -8,6 +8,7 @@ import { clearToken } from 'utils/authStore';
 
 // -- ANALYTICS
 import { useUiEvents } from '../../../analytics/useUiEvents';
+import { identifyUser, groupByShop } from '../../../analytics/adapter';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -145,10 +146,22 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
 
             // --- [START POSTHOG ANALYTICS] ---
             const user = response.data.user;
+
             // --- ANALYTICS: login success (NO PII) ---
             emit('auth.login.success', {
-              user_id: user.id
+              user_id: user.id,
+              shop_id: user.shop_id ?? null,
             });
+
+            /**
+             * POSTHOG IDENTITY (PH-01)
+             * ─────────────────────────
+             * Link the anonymous www session to this authenticated user.
+             * groupByShop() must follow — shop is the unit of revenue.
+             * Called here (not in adapter) so it fires after auth state is set.
+             */
+            identifyUser(user.id, user.shop_id);
+            if (user.shop_id) groupByShop(user.shop_id);
 
             console.info('[AUTH][LOGIN_SUCCESS]', {
               userId: response.data.user.id,

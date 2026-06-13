@@ -26,6 +26,41 @@ if ((window as any).__ANALYTICS_ADAPTER_LOADED__) {
   console.info('[analytics:adapter] MODULE LOADED');
 }
 
+/**
+ * IDENTITY FUNCTIONS
+ * ──────────────────
+ * Called at login, signup, and session hydration.
+ * These are NOT events — they set the user identity for all subsequent events.
+ *
+ * identifyUser(): links PostHog anonymous ID to the real user_id.
+ *   - Must be called once per session after auth resolves.
+ *   - Links www.lasyncro.com anonymous session to the authenticated user.
+ *   - No PII in properties — email deliberately omitted (GDPR consideration).
+ *
+ * groupByShop(): sets the shop group so all events are attributed to the shop.
+ *   - Revenue, churn, and funnel metrics are per-shop, not per-human.
+ *   - Must be called alongside identifyUser() — never one without the other.
+ */
+export function identifyUser(userId: number, shopId?: number): void {
+  if (!posthog || typeof posthog.identify !== 'function') {
+    console.warn('[analytics:adapter] posthog.identify not ready');
+    return;
+  }
+  posthog.identify(userId.toString(), {
+    shop_id: shopId ?? null,
+  });
+  console.info('[analytics:adapter:identify]', { userId, shopId });
+}
+
+export function groupByShop(shopId: number): void {
+  if (!posthog || typeof posthog.group !== 'function') {
+    console.warn('[analytics:adapter] posthog.group not ready');
+    return;
+  }
+  posthog.group('shop', shopId.toString());
+  console.info('[analytics:adapter:group]', { shopId });
+}
+
 export function sendEvent(event: string, payload: Record<string, unknown>) {
 
   // --- HARD VISIBILITY ---

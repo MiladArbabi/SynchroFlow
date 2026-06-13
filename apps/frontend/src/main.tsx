@@ -43,6 +43,7 @@ import { RouteLogger } from './debug/RouteLogger';
 // --- [POSTHOG INITIALIZATION - SINGLE SOURCE OF TRUTH] ---
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
+import { PostHogPageView } from './analytics/PostHogPageView';
 
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
 const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com';
@@ -104,7 +105,6 @@ if (!posthogKey) {
   });
 }
 
-// --- Create React Query Client ---
 const container = document.getElementById("root");
 
 /**
@@ -160,6 +160,8 @@ root.render(
             <UserProvider>
             {/* 5. React Router */}
             <BrowserRouter>
+              {/* PH-02: fires $pageview on every route change — must be inside BrowserRouter */}
+              <PostHogPageView />
              <RouteLogger />
               {/* 6. IntlProvider (Localization) */}
               <IntlProvider
