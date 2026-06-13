@@ -242,8 +242,8 @@ pick_session_started
 
 | ID | Priority | Description |
 |---|---|---|
-| PH-01 | P1 | Add `posthog.identify()` + `posthog.group('shop', shop_id)` at login and signup — currently only `auth.login.success` event fires |
-| PH-02 | P1 | Manual `posthog.capture('$pageview')` on React Router navigation — currently `capture_pageview: false` means UTM params from landing page CTAs may not attach to app session |
+| PH-01 | P1 | ✅ Done | `identifyUser()` + `groupByShop()` called at login, signup, and session hydration — Jun 2026 |
+| PH-02 | P1 | ✅ Done | `PostHogPageView.tsx` component fires `$pageview` on every React Router navigation — Jun 2026 |
 | PH-03 | P2 | Server-side events for monetization: `trial_started`, `paywall_hit`, `subscription_created`, `overage_incurred` — fire from backend on state change, not UI |
 | PH-04 | P2 | PostHog group analytics config — enable `shop` group type in PostHog dashboard and wire `posthog.group()` calls |
 | PH-05 | P2 | Pageview tracking in SPA — wire React Router `useLocation` to fire `$pageview` on every route change |
@@ -314,3 +314,5 @@ document.cookie  // look for ph_ prefixed cookie with domain=.lasyncro.com
 | Jun 2026 | `www` and `app` using different API hosts — session stitching broken | Aligned both to `https://t.lasyncro.com` |
 | Jun 2026 | No cross-domain cookie config — signup funnel attribution broken | Added `cookie_domain`, `cross_subdomain_cookie`, `persistence` to both inits |
 | Jun 2026 | `cookie_domain` missing from PostHog TS types | Cast via `as unknown as object` in `main.tsx` |
+| Jun 2026 | No identity calls at login/signup/hydration (PH-01) | `identifyUser()` + `groupByShop()` in `adapter.ts`, called from `AuthLogin`, `AuthRegister`, `AuthContext` |
+| Jun 2026 | No pageview tracking in SPA (PH-02) | `PostHogPageView.tsx` mounted inside `BrowserRouter` — fires on every route change |
