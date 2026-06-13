@@ -244,12 +244,13 @@ pick_session_started
 |---|---|---|
 | PH-01 | P1 | ✅ Done | `identifyUser()` + `groupByShop()` called at login, signup, and session hydration — Jun 2026 |
 | PH-02 | P1 | ✅ Done | `PostHogPageView.tsx` component fires `$pageview` on every React Router navigation — Jun 2026 |
-| PH-03 | P2 | Server-side events for monetization: `trial_started`, `paywall_hit`, `subscription_created`, `overage_incurred` — fire from backend on state change, not UI |
+| PH-03 | P2 | ✅ Done | `posthog-node` singleton in `utils/analytics.ts` — fires `trial_started`, `trial_expired`, `trial_reminder_sent`, `paywall_hit`, `subscription_activated`, `subscription_upgraded`, `subscription_cancelled`, `payment_failed` from backend — Jun 2026 |
 | PH-04 | P2 | PostHog group analytics config — enable `shop` group type in PostHog dashboard and wire `posthog.group()` calls |
 | PH-05 | P2 | Pageview tracking in SPA — wire React Router `useLocation` to fire `$pageview` on every route change |
 | PH-06 | P3 | Session recording config — enable for `/register` and `/login` flows to diagnose drop-off |
 | PH-07 | P3 | Feature flags — use PostHog feature flags for A/B testing pricing copy, CTA wording |
 | PH-08 | P3 | `auth.login.success` event should include `shop_id` and `tier` in payload |
+| Jun 2026 | No server-side monetization events (PH-03) | `posthog-node` singleton + `captureEvent()` wired into auth, trial worker, entitlement middleware, and all Stripe webhook handlers |
 
 ---
 

@@ -64,6 +64,8 @@ All secrets set via `fly secrets set KEY=VALUE --app synchroflow`.
 | `RESEND_API_KEY` | Transactional email delivery | From Resend dashboard |
 | `REDIS_URL` | Upstash Redis connection | From Upstash dashboard |
 | `HOST` | Bind address | Must be `0.0.0.0` |
+| `POSTHOG_API_KEY` | Backend PostHog event capture | Same key as frontend — `phc_kVdrQ...` |
+| `POSTHOG_HOST` | PostHog ingestion host | `https://t.lasyncro.com` (reverse proxy) |
 
 ### Critical: PGUSER + PGPASSWORD are not redundant
 `DATABASE_URL` alone is not enough. The `projection-db-worker` connects using individual `PG*` env vars, not `DATABASE_URL`. If `PGPASSWORD` is missing, the worker crashes with `password authentication failed for user "synchroflow"` 2 seconds after boot — causing the process to exit, Fly to restart it, and after 10 restarts the machine stops entirely. This was the root cause of the machine-keeps-stopping issue in June 2026.
