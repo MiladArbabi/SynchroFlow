@@ -306,8 +306,8 @@ The refresh token is stored in an HttpOnly cookie set by the backend. For this t
 
 | ID | Priority | Status | Description |
 |---|---|---|---|
-| FLY-01 | P1 | 🔴 Open | Rotate production DB credentials — exposed in chat June 2026 |
-| FLY-02 | P1 | 🔴 Open | Add `SHOPIFY_WEBHOOK_SECRET` to Fly secrets |
+| FLY-01 | P1 | ✅ Done | Rotate production DB credentials — rotated June 2026 via `ALTER USER` + Fly secrets update |
+| FLY-02 | P1 | ✅ Done | `SHOPIFY_WEBHOOK_SECRET` added to Fly secrets June 2026 |
 | FLY-03 | P2 | 🟡 Ongoing | Frontend 2.2MB bundle — implement Vite code splitting |
 | FLY-04 | P2 | 🟡 Ongoing | Fix frontend `tsc -b` errors to unblock full `npm run build` |
 | FLY-05 | P3 | 🔵 Future | Lazy Shopify initialization — app currently fails to boot if Shopify secrets missing |
