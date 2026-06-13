@@ -58,9 +58,39 @@ if (!posthogKey) {
 
   posthog.init(posthogKey, {
     api_host: posthogHost,
-    capture_pageview: false, // handled manually later (SPA control)
+    capture_pageview: false,   // handled manually — SPA controls its own pageviews
     capture_exceptions: true,
-    autocapture: false, // prevent noisy garbage events
+    autocapture: false,        // explicit events only — prevents noisy garbage
+
+    /**
+     * CROSS-DOMAIN IDENTITY (CRITICAL)
+     * ─────────────────────────────────
+     * www.lasyncro.com and app.lasyncro.com share the same PostHog project.
+     * Without these three options, PostHog scopes the identity cookie to each
+     * specific subdomain, creating two anonymous users for every signup journey.
+     *
+     * cookie_domain: '.lasyncro.com'   — cookie readable by all subdomains
+     * cross_subdomain_cookie: true     — explicitly enables cross-subdomain sharing
+     * persistence: 'localStorage+cookie' — localStorage for SPA speed,
+     *                                      cookie for cross-subdomain handoff
+     *
+     * INVARIANT: these three options must be identical on www and app.
+     * Any drift breaks funnel attribution silently.
+     */
+    /**
+     * CROSS-DOMAIN IDENTITY (CRITICAL)
+     * ─────────────────────────────────
+     * cookie_domain and cross_subdomain_cookie are valid PostHog v1 runtime
+     * config options but are missing from the TypeScript type definitions in
+     * posthog-js@1.373.4. Cast via unknown to bypass the stale type check.
+     * Do NOT remove — these are required for www ↔ app identity stitching.
+     * INVARIANT: must match identical options in packages/landing-page/index.html
+     */
+    ...({
+      cookie_domain: '.lasyncro.com',
+      cross_subdomain_cookie: true,
+      persistence: 'localStorage+cookie',
+    } as unknown as object),
   });
 
   // --- [DEBUG EXPOSURE - REMOVE IN PROD IF NEEDED] ---
@@ -89,21 +119,6 @@ if (container) {
 
 if (!container) throw new Error("Failed to find the root element");
 const root = createRoot(container);
-
-/* // --- [START POSTHOG OPTIONS] ---
-const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY; */
-
-const options = {
-  /* api_host: import.meta.env.VITE_PUBLIC_POSTHOG_HOST, */
-  capture_exceptions: true, // This enables capturing exceptions using Error Tracking
-  debug: import.meta.env.MODE === 'development',
-  capture_pageview: true, // Automatically captures page views
-  /* loaded: (posthog: any) => {
-    if (!posthogKey) {
-      console.warn("PostHog API key is not set. Analytics are disabled.");
-    }
-  }, */
-};
 
 // --- BASIC INTL CONFIG ---
 const messages = {}; // No translations yet

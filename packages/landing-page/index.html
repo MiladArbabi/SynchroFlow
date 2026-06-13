@@ -36,7 +36,20 @@
         api_host: 'https://t.lasyncro.com',
         ui_host: 'https://app.posthog.com',
         autocapture: true,
-        capture_pageview: true
+        capture_pageview: true,
+        /*
+         * CROSS-DOMAIN IDENTITY (CRITICAL)
+         * ─────────────────────────────────
+         * Shares PostHog identity cookie across www.lasyncro.com and
+         * app.lasyncro.com so the www → register → signup funnel is
+         * attributed correctly as a single user journey.
+         *
+         * INVARIANT: must be identical to options in apps/frontend/src/main.tsx.
+         * Any drift between www and app breaks funnel attribution silently.
+         */
+        cookie_domain: '.lasyncro.com',
+        cross_subdomain_cookie: true,
+        persistence: 'localStorage+cookie'
       });
     } else {
       console.log('PostHog disabled on localhost (dev environment)');
