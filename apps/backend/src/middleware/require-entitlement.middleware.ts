@@ -21,6 +21,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
+import { captureEvent } from '../utils/analytics.js';
 
 /**
  * Tier hierarchy index — higher index = higher tier.
@@ -45,6 +46,27 @@ export function requireTier(minimumTier: Tier) {
     const currentTier = TIERS.includes(rawTier as Tier) ? (rawTier as Tier) : 'starter';
 
     if (TIER_ORDER[currentTier] < TIER_ORDER[minimumTier]) {
+      /**
+       * PH-03: paywall_hit — fires every time a shop hits a tier gate.
+       * This is the most valuable monetization signal — tells us exactly
+       * which features merchants want but can't access on their current tier.
+       * High paywall_hit count on a feature = strong upgrade motivation.
+       * Fire-and-forget — never delay the 403 response.
+       */
+      const shopId = req.user?.shopId;
+      if (shopId) {
+        captureEvent({
+          shopId,
+          event: 'paywall_hit',
+          properties: {
+            required_tier: minimumTier,
+            current_tier: currentTier,
+            path: req.path,
+            method: req.method,
+          },
+        });
+      }
+
       return res.status(403).json({
         error: 'TIER_INSUFFICIENT',
         required: minimumTier,

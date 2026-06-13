@@ -9,6 +9,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../webhooks/types.js';
+import { captureEvent } from '../../../utils/analytics.js';
 
 export async function handlePaymentFailed(envelope: WebhookEnvelope): Promise<void> {
   const shopId = envelope.shopId;
@@ -31,4 +32,15 @@ export async function handlePaymentFailed(envelope: WebhookEnvelope): Promise<vo
   }
 
   console.log('[billing][payment_failed] complete', { shopId, eventId: envelope.eventId });
+
+  /**
+   * PH-03: payment_failed — fires when Stripe reports a failed invoice.
+   * Dunning is handled by Stripe; this event is for PostHog cohort analysis.
+   * Pair with subscription_cancelled to measure recovery rate.
+   */
+  captureEvent({
+    shopId,
+    event: 'payment_failed',
+    properties: {},
+  });
 }

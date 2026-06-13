@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import path from 'path';
 import { runSchemaGuard } from './utils/schemaGuard.js';
 import { initRedisClient, closeRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
+import { flushAnalytics } from './utils/analytics.js';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -38,6 +39,7 @@ async function start() {
 
 async function shutdown(sig?: string) {
   console.log('[server] shutdown triggered', sig || '');
+  try { await flushAnalytics(); } catch (e) { /* non-fatal — flush remaining PostHog events */ }
   try { await closeRedisClient(); } catch (e) { /* ignore */ }
   try { await closeSpecterStore(); } catch (e) { /* ignore */ }
   try { await closeQueue(); } catch (e) { /* ignore */ }

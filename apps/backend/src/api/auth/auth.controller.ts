@@ -12,6 +12,7 @@ import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { User } from '../../types.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../../services/email/email.service.js';
+import { captureEvent } from '../../utils/analytics.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -133,6 +134,20 @@ export const registerUser = async (req: Request, res: Response) => {
     console.log('[auth][register] Growth trial assigned', {
       shopId: newShop.id,
       trialEndsAt,
+    });
+
+    /**
+     * PH-03: trial_started — fires once per shop at registration.
+     * Fire-and-forget outside transaction — never block registration.
+     * Called after transaction commits so shopId is guaranteed to exist.
+     */
+    captureEvent({
+      shopId: newShop.id,
+      event: 'trial_started',
+      properties: {
+        tier: 'growth',
+        trial_ends_at: trialEndsAt.toISOString(),
+      },
     });
 
     // AUTH-006: return shopId so we can issue tokens without a second DB lookup

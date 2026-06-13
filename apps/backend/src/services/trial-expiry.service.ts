@@ -20,6 +20,7 @@ import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementRevocationService } from './entitlement-revocation.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { sendTrialExpiryEmail, sendTrialReminderEmail } from './email/email.service.js';
+import { captureEvent } from '../utils/analytics.js';
 
 /**
  * Downgrade a single shop from Growth trial to Starter.
@@ -71,7 +72,19 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
     await EntitlementsService.applyFromCommercialGrant(trx, starterRows);
   });
 
-  console.log('[trial-expiry] shop downgraded to starter', { shopId });
+console.log('[trial-expiry] shop downgraded to starter', { shopId });
+
+  /**
+   * PH-03: trial_expired — fires after successful downgrade.
+   * Fire-and-forget — never block the expiry cycle.
+   */
+  captureEvent({
+    shopId,
+    event: 'trial_expired',
+    properties: {
+      downgraded_to: 'starter',
+    },
+  });
 
   // 4. Send expiry email — non-fatal
   try {
@@ -118,6 +131,18 @@ async function sendTrialReminders(): Promise<void> {
             trialEndsAt: row.trial_ends_at,
           });
           console.log('[trial-expiry] reminder sent', { shopId: row.shop_id, daysLeft });
+
+          /**
+           * PH-03: trial_reminder_sent — fires per shop per reminder window.
+           * Tells PostHog which shops received reminders vs converted.
+           */
+          captureEvent({
+            shopId: row.shop_id,
+            event: 'trial_reminder_sent',
+            properties: {
+              days_left: daysLeft,
+            },
+          });
         }
       } catch (err) {
         console.error('[trial-expiry] reminder email failed (non-fatal)', { shopId: row.shop_id, daysLeft, err });

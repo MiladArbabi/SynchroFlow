@@ -15,6 +15,7 @@ import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { getTierConfig, isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { captureEvent } from '../../../utils/analytics.js';
 
 export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promise<void> {
   const sub = envelope.rawPayload as any;
@@ -98,4 +99,22 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
   });
 
   console.log('[billing][subscription_upsert] complete', { shopId, tier, status, eventId: envelope.eventId });
+
+  /**
+   * PH-03: subscription_activated or subscription_upgraded.
+   * Fires after Stripe confirms a paid subscription is live.
+   * 'created' = new paid subscription, 'updated' = tier change or renewal.
+   */
+  const stripeEventType = envelope.eventType;
+  captureEvent({
+    shopId,
+    event: stripeEventType === 'customer.subscription.created'
+      ? 'subscription_activated'
+      : 'subscription_upgraded',
+    properties: {
+      tier,
+      status,
+      billing_interval: billingInterval,
+    },
+  });
 }

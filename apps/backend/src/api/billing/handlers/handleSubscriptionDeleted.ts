@@ -9,6 +9,7 @@
 
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../webhooks/types.js';
+import { captureEvent } from '../../../utils/analytics.js';
 
 export async function handleSubscriptionDeleted(envelope: WebhookEnvelope): Promise<void> {
   const sub = envelope.rawPayload as any;
@@ -36,4 +37,17 @@ export async function handleSubscriptionDeleted(envelope: WebhookEnvelope): Prom
   }
 
   console.log('[billing][subscription_deleted] complete', { shopId, canceledAt, eventId: envelope.eventId });
+
+  /**
+   * PH-03: subscription_cancelled — fires when Stripe confirms cancellation.
+   * Critical churn signal — pair with paywall_hit and trial_expired
+   * in PostHog to understand full churn journey.
+   */
+  captureEvent({
+    shopId,
+    event: 'subscription_cancelled',
+    properties: {
+      canceled_at: canceledAt.toISOString(),
+    },
+  });
 }
