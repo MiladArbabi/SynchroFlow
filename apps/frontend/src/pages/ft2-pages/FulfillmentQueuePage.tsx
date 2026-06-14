@@ -13,6 +13,7 @@
 // Actions: POST /api/v1/wms/batch/release (Merge batches)
 import { useState } from 'react';
 import { Box, Typography, useTheme, CircularProgress } from '@mui/material';
+import { PlanGate } from '../../components/PlanGate';
 import { alpha } from '@mui/material/styles';
 import { ChevronRight, ChevronDown, Package } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -306,15 +307,17 @@ export default function FulfillmentQueuePage() {
             }}>
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>View manifests</Typography>
             </Box>
-            <Box sx={{
-              px: 2, py: 1,
-              bgcolor: 'var(--accent)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              '&:hover': { opacity: 0.9 },
-            }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>Merge batches</Typography>
-            </Box>
+            <PlanGate feature="wms.pick_batches" mode="locked">
+              <Box sx={{
+                px: 2, py: 1,
+                bgcolor: 'var(--accent)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.9 },
+              }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>Merge batches</Typography>
+              </Box>
+            </PlanGate>
           </Box>
         </Box>
 
@@ -362,20 +365,22 @@ export default function FulfillmentQueuePage() {
               <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>
                 No active batches — release a batch from the order pool to get started.
               </Typography>
-              <Box
-                component="a"
-                href="/orders/pool"
-                sx={{
-                  display: 'inline-flex', alignItems: 'center', gap: 0.75,
-                  px: 2, py: 1, borderRadius: '8px',
-                  bgcolor: 'var(--accent)', color: '#fff',
-                  fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                  '&:hover': { opacity: 0.9 },
-                  transition: 'opacity 0.15s',
-                }}
-              >
-                Go to Release Queue →
-              </Box>
+              <PlanGate feature="wms.pick_batches" mode="locked">
+                <Box
+                  component="a"
+                  href="/orders/pool"
+                  sx={{
+                    display: 'inline-flex', alignItems: 'center', gap: 0.75,
+                    px: 2, py: 1, borderRadius: '8px',
+                    bgcolor: 'var(--accent)', color: '#fff',
+                    fontSize: 13, fontWeight: 600, textDecoration: 'none',
+                    '&:hover': { opacity: 0.9 },
+                    transition: 'opacity 0.15s',
+                  }}
+                >
+                  Go to Release Queue →
+                </Box>
+              </PlanGate>
             </Box>
           )}
 

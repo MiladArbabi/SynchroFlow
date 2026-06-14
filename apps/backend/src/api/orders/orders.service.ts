@@ -1,5 +1,7 @@
 // apps/backend/src/api/orders/orders.service.ts
 import db from "@lasyncro/backend-core/db.js";
+import { tierDataWindowSince } from "@lasyncro/backend-core/utils/tierDataWindow.js";
+import type { Tier } from "@lasyncro/backend-core/config/tiers.js";
 
 interface OrderList {
   id: string; // lasyncro_order_id
@@ -18,9 +20,9 @@ interface OrderList {
  * Service layer must never hardcode tenant identity.
  * shopId must always be injected by the controller layer.
  */
-export const getAllOrders = async (shopId: number): Promise<OrderList[]> => {
-
-  const orders = await db('orders')
+export const getAllOrders = async (shopId: number, tier: Tier = 'starter'): Promise<OrderList[]> => {
+  const since = tierDataWindowSince(tier);
+  const query = db('orders')
     .select(
       'lasyncro_order_id as id',
       'total_price as total',
@@ -31,7 +33,11 @@ export const getAllOrders = async (shopId: number): Promise<OrderList[]> => {
     .where('shop_id', shopId)
     .orderBy('order_created_at', 'desc');
 
-  return orders;
+  if (since) {
+    query.where('order_created_at', '>=', since);
+  }
+
+  return query;
 };
 
 /**

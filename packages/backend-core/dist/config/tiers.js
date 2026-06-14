@@ -35,7 +35,8 @@ const STARTER_MODULES = [
 ];
 const CORE_MODULES = [
     ...STARTER_MODULES,
-    'wms-lite', // WMS pick/pack/stow (MON-03)
+    'wms', // WMS pick/pack/stow — receive, pick, pack, stow, LSU/LSO labels
+    'barcodes', // LSU/LSO operational labels + warehouse location barcodes
     'returns',
     'products',
     'problem-center', // Product-side problem center — surfaces issues from WMS receive/pick/pack
@@ -50,9 +51,7 @@ const GROWTH_MODULES = [
 ];
 const SCALE_MODULES = [
     ...GROWTH_MODULES,
-    'floor-planning',
-    'barcodes',
-    'wms', // WMS Advanced (supersedes wms-lite)
+    'floor-planning', // Warehouse floor plan builder + location barcode generation
 ];
 // --- Cumulative flag sets ---
 const STARTER_FLAGS = [];
@@ -62,6 +61,8 @@ const GROWTH_FLAGS = [
     'orders.advanced_filters',
     'customers.segmentation',
     'specter.full_capture',
+    'returns.analysis', // Returns correlation + supplier trend analysis
+    'problem-center.analytics', // Cross-module problem intelligence + trend reporting
 ];
 const SCALE_FLAGS = [...GROWTH_FLAGS];
 export const TIER_CONFIG = {

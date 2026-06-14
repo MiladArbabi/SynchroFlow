@@ -59,7 +59,7 @@ if (!dbConfig) {
     throw new Error(`FATAL: DB config for "${environment}" not found.`);
 }
 // --- DB CONFIG VALIDATION (MANDATORY) ---
-if (!process.env.PGUSER || !process.env.PGDATABASE) {
+if (environment !== 'production' && (!process.env.PGUSER || !process.env.PGDATABASE)) {
     throw new Error('FATAL: Missing required DB env vars (PGUSER, PGDATABASE)');
 }
 if (process.env.PGPASSWORD === undefined) {

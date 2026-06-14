@@ -1,6 +1,7 @@
 // apps/backend/src/api/orders/orders.controller.ts
 import { Request, Response } from 'express';
 import * as ordersService from './orders.service.js';
+import { isValidTier } from '@lasyncro/backend-core/config/tiers.js';
 
 /**
  * @route   GET /api/v1/orders
@@ -24,7 +25,9 @@ export const httpGetAllOrders = async (req: Request, res: Response) => {
       });
     }
 
-    const orders = await ordersService.getAllOrders(shopId);
+    const rawTier = req.user?.tier ?? 'starter';
+    const tier = isValidTier(rawTier) ? rawTier : 'starter';
+    const orders = await ordersService.getAllOrders(shopId, tier);
     res.status(200).json(orders);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
