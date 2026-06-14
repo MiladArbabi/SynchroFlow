@@ -144,6 +144,17 @@ Auth middleware
 requireTier(minTier) middleware
   └── compares req.user.tier against tier order
   └── returns 402 if below minimum
+
+WMS Pack-Complete → httpPackComplete
+  └── increments shop_usage_metrics.shipped_orders (inside transaction)
+  └── after transaction commits → reportShippedOrderOverage(shopId, billableCount)
+      └── reads shop_subscriptions.tier + stripe_customer_id
+      └── reads shop_usage_metrics.shipped_orders (current period total)
+      └── calculates units newly crossing above shippedOrderCap
+      └── stripe.billing.meterEvents.create({ event_name: 'overage', value: overageUnits })
+      └── non-fatal — billing failure never blocks fulfillment
+      └── skips if no stripe_customer_id (trial/starter shops)
+      └── skips if Scale tier (shippedOrderCap = Infinity)
 ```
 
 ---
