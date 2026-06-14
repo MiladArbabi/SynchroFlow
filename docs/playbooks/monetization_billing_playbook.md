@@ -12,14 +12,22 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 
 | Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
 |---|---|---|---|---|
-| Starter | Free | 1 | 50 | 0 (no WMS) |
-| Core | $79 | 2 | 2,000 | 200 |
-| Growth | $179 | 5 | 10,000 | 1,000 |
+| Starter | Free | 1 seat (owner only) | 50 | 0 (no WMS) |
+| Core | $79 | 2 non-owner seats | 2,000 | 200 |
+| Growth | $179 | 5 non-owner seats | 10,000 | 1,000 |
 | Scale | $349 | Unlimited | Unlimited | Unlimited |
 
+- Seat count excludes the shop owner — limits apply to operators/admins only
 - Annual billing = 20% discount (varies slightly per currency — see Stripe actuals)
 - Extra seats purchasable above base limit: Core $15/seat/mo, Growth $12/seat/mo
 - Shipped order overage: $0.08/unit (Core + Growth only), billed via Stripe Meter
+
+**Module access by tier:**
+
+- Starter: overview, orders, fulfillment queue, alerts, Shopify integration
+- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns, products, problem center
+- Growth+: cash flow, demand forecasting, customer LTV, Specter, Echo Hub
+- Scale+: floor planning
 
 **Rule:** Never hardcode tier logic anywhere. Always import from `tiers.ts`.
 
