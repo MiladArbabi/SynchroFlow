@@ -92,6 +92,8 @@ const GROWTH_FLAGS = [
   'orders.advanced_filters',
   'customers.segmentation',
   'specter.full_capture',
+  'returns.analysis',           // Returns correlation + supplier trend analysis
+  'problem-center.analytics',   // Cross-module problem intelligence + trend reporting
 ] as const;
 const SCALE_FLAGS = [...GROWTH_FLAGS] as const;
 

@@ -63,6 +63,7 @@ const PLAN_FEATURES = {
   // Returns
   // 'returns.lot_attribution': 'growth', // PHASE 2 — batch-level return attribution via lot tracking (A-014)
 
+  'problem-center.analytics':  'growth', // Cross-module problem intelligence + trend reporting
   // Alerts
   'alerts.inbox':              'core',
   'alerts.rules':              'growth',

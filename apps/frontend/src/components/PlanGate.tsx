@@ -46,6 +46,7 @@ const FEATURE_LABELS: Partial<Record<PlanFeature, string>> = {
   'wms.pack':                  'WMS Pack',
   'wms.stow':                  'WMS Stow',
   'wms.problem_center':        'WMS Problem Center',
+  'problem-center.analytics':  'Problem Center Analytics',
   'alerts.inbox':              'Alerts',
   'specter.full_capture':      'Full Analytics',
 };

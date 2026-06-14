@@ -13,6 +13,7 @@
 // - No cross-module imports
 
 import { useMemo } from 'react';
+import { PlanGate } from '../../components/PlanGate';
 import {
   Box, Typography, CircularProgress, Alert, useTheme,
 } from '@mui/material';
@@ -104,6 +105,7 @@ export default function ReturnsSuppliersPage() {
   );
 
   return (
+    <PlanGate feature="returns.analysis" mode="teased">
     <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', p: '24px 40px' }}>
 
       {/* Header */}
@@ -322,5 +324,6 @@ export default function ReturnsSuppliersPage() {
         </Box>
       )}
     </Box>
+    </PlanGate>
   );
 }

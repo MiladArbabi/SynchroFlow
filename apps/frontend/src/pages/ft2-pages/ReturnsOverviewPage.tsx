@@ -21,6 +21,7 @@ import { useColorScheme } from '@mui/material/styles';
 import { RotateCcw, TrendingDown, Package } from 'lucide-react';
 import { useReturns, type ReturnsByVariant } from '../finances/useReturns';
 import { useReturnsCorrelation } from '../returns/useReturnsCorrelation';
+import { PlanGate } from '../../components/PlanGate';
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 
@@ -224,6 +225,7 @@ export default function ReturnsOverviewPage() {
           )}
 
           {/* ZONE 3 — SUPPLIER BATCH CORRELATION */}
+          <PlanGate feature="returns.analysis" mode="teased">
           {hasCorrelation && (
             <Box sx={{ mt: 3 }}>
               <Typography sx={{ fontSize: 11, fontWeight: 700, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1.5 }}>
@@ -306,6 +308,7 @@ export default function ReturnsOverviewPage() {
               )}
             </Box>
           )}
+          </PlanGate>
         </>
       )}
     </Box>

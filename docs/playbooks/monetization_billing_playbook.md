@@ -25,8 +25,8 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 **Module access by tier:**
 
 - Starter: overview, orders, fulfillment queue, alerts, Shopify integration
-- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns, products, problem center
-- Growth+: cash flow, demand forecasting, customer LTV, Specter, Echo Hub
+- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns processing, products, problem center (operational exceptions)
+- Growth+: cash flow, demand forecasting, customer LTV, Specter, returns analysis (supplier correlation), problem center analytics
 - Scale+: floor planning
 
 **Rule:** Never hardcode tier logic anywhere. Always import from `tiers.ts`.
