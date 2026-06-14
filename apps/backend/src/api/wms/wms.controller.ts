@@ -11,6 +11,7 @@ import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
 import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
+import { reportShippedOrderOverage } from '../billing/stripe.meter.service.js';
 import {
   firePickExceptionAlert,
   fireStowTaskAlert,
@@ -1074,6 +1075,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
   const batchId = String(req.params.batchId);
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
+  let billableCount = 0;
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -1108,7 +1110,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
         .count<[{ count: string }]>('pbo.lasyncro_order_id as count')
         .first();
 
-      const billableCount = parseInt(billableOrders?.count ?? '0', 10);
+      billableCount = parseInt(billableOrders?.count ?? '0', 10);
 
       if (billableCount > 0) {
         // Increment shipped_orders on the open billing period for this shop.
@@ -1137,6 +1139,11 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       await fireBatchReadyToShipAlert(trx, { shopId, batchId, isActive: true });
       console.info('[WMS_PACK_COMPLETED]', { pick_batch_id: batchId, packed_by: userId, shopId });
     });
+
+    // Report overage to Stripe after transaction commits — non-fatal
+    if (billableCount > 0) {
+      await reportShippedOrderOverage(shopId, billableCount);
+    }
 
     return res.status(200).json({ pick_batch_id: batchId, status: 'pack_complete' });
   } catch (error) {
