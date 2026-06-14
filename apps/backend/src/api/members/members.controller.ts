@@ -164,6 +164,7 @@ export const createMember = async (req: Request, res: Response) => {
     const activeSeatCount = await db('shop_memberships')
       .where({ shop_id: shopId })
       .whereNull('revoked_at')
+      .whereNot('role', 'owner')
       .count('id as count')
       .first();
 

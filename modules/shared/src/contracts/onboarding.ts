@@ -13,7 +13,7 @@ export type ModuleId =
   | 'finances'
   | 'specter'
   | 'sku-os'
-  | 'wms-lite'
+  | 'wms'
   | 'problem-center'
   | 'suppliers-portal'   // PO management, supplier ratings, ETA tracking
   | 'floor-planning';    // Warehouse floor layout + barcode management

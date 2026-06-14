@@ -11,7 +11,7 @@
 
 export const FT2_PAID_MODULES = [
   'specter',
-  'wms-lite',
+  'wms',
   'echo-hub',
 ] as const;
 

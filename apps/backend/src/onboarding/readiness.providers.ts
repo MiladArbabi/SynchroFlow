@@ -210,14 +210,13 @@ export const returnNexusOnboardingSignalProvider: OnboardingSignalProvider = {
   }
 };
 
-// --- WMS Lite provider: basic operations readiness ---
-export const wmsLiteOnboardingSignalProvider: OnboardingSignalProvider = {
-  moduleId: 'wms-lite',
-
+// --- WMS provider: basic operations readiness ---
+export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
+  moduleId: 'wms',
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
     // Stubbed: FT0 does not yet expose WMS flows.
     return [
-      { name: 'wmsLite.enabled', value: false }
+      { name: 'wms.enabled', value: false }
     ];
   }
 };
@@ -247,6 +246,6 @@ export const onboardingSignalProviders: OnboardingSignalProvider[] = [
   specterOnboardingSignalProvider,
   financesOnboardingSignalProvider,
   returnNexusOnboardingSignalProvider,
-  wmsLiteOnboardingSignalProvider,
+  wmsOnboardingSignalProvider,
   problemCenterOnboardingSignalProvider
 ];

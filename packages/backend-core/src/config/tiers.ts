@@ -65,12 +65,12 @@ const STARTER_MODULES = [
 
 const CORE_MODULES = [
   ...STARTER_MODULES,
-  'wms-lite',           // WMS pick/pack/stow (MON-03)
+  'wms',                // WMS pick/pack/stow — receive, pick, pack, stow, LSU/LSO labels
+  'barcodes',           // LSU/LSO operational labels + warehouse location barcodes
   'returns',
   'products',
   'problem-center',     // Product-side problem center — surfaces issues from WMS receive/pick/pack
 ] as const;
-
 const GROWTH_MODULES = [
   ...CORE_MODULES,
   'customers',
@@ -79,12 +79,9 @@ const GROWTH_MODULES = [
   'specter',            // Full Specter (supersedes specter_sdk_free)
   'echo-hub',
 ] as const;
-
 const SCALE_MODULES = [
   ...GROWTH_MODULES,
-  'floor-planning',
-  'barcodes',
-  'wms',                // WMS Advanced (supersedes wms-lite)
+  'floor-planning',     // Warehouse floor plan builder + location barcode generation
 ] as const;
 
 // --- Cumulative flag sets ---

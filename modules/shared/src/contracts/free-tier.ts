@@ -107,12 +107,12 @@ export const MODULE_FREE_TIER_POLICIES: Record<ModuleId, ModuleFreeTierPolicy> =
   },
 
   // WMS Lite – 1 PO/month
-  'wms-lite': {
+  'wms': {
     enabled: true,
     maxUnits: 1,
     metric: 'pos',
     softWarningThreshold: 1.0,
-    upgradeRoute: '/upgrade/wms-lite',
+    upgradeRoute: '/upgrade/wms',
     lockedMessage:
       'You have reached the Free tier limit for WMS Lite. Upgrade to automate your full operations.',
     resetPeriod: 'monthly'
