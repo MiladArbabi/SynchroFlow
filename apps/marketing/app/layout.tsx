@@ -7,6 +7,7 @@ import { Plus_Jakarta_Sans } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
+import { Suspense } from 'react'
 import PostHogProvider from '@/components/PostHogProvider'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -59,10 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${plusJakartaSans.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <PostHogProvider>
-          <Schema data={organizationSchema} />
-          <Nav />
-          <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
-          <Footer />
+          <Suspense fallback={null}>
+            <Schema data={organizationSchema} />
+              <Nav />
+            <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
+            <Footer />
+          </Suspense>
         </PostHogProvider>
       </body>
     </html>
