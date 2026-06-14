@@ -155,6 +155,12 @@ WMS Pack-Complete → httpPackComplete
       └── non-fatal — billing failure never blocks fulfillment
       └── skips if no stripe_customer_id (trial/starter shops)
       └── skips if Scale tier (shippedOrderCap = Infinity)
+
+Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
+  └── resolves shopId from envelope + reads current tier from shop_subscriptions
+  └── idempotent: skips if open period already starts at invoice.period_start
+  └── closes current open period (period_ends_at = period_start)
+  └── inserts new open period (zeroed counters, tier snapshot, period_starts_at)
 ```
 
 ---
