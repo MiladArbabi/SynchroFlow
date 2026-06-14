@@ -106,6 +106,17 @@ export const registerUser = async (req: Request, res: Response) => {
         trial_ends_at: trialEndsAt,
       });
 
+    // Open billing period for usage tracking (MON-05)
+    // Must exist before first order ingestion — cap enforcement and shipped order
+    // overage both read from the open period row.
+    await trx('shop_usage_metrics')
+      .insert({
+        shop_id: newShop.id,
+        tier_at_period_start: 'growth',
+        period_starts_at: new Date(),
+        period_ends_at: null,
+      });
+
     await trx('shop_operational_settings')
     .insert({
       shop_id: newShop.id,

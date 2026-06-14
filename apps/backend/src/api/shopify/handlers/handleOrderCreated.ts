@@ -114,17 +114,12 @@ export async function handleOrderCreated(
   const { monthlyOrderCap } = getTierConfig(currentTier);
 
   if (isFinite(monthlyOrderCap)) {
-    const startOfMonth = new Date();
-    startOfMonth.setUTCDate(1);
-    startOfMonth.setUTCHours(0, 0, 0, 0);
+    const usageRow = await db('shop_usage_metrics')
+      .where({ shop_id: shopId })
+      .whereNull('period_ends_at')
+      .first('ingested_orders');
 
-    const countRow = await db('domain_events')
-      .where({ shop_id: shopId, event_type: 'orders/create' })
-      .where('event_time', '>=', startOfMonth)
-      .count('id as count')
-      .first();
-
-    const monthlyCount = Number(countRow?.count ?? 0);
+    const monthlyCount = Number(usageRow?.ingested_orders ?? 0);
 
     if (monthlyCount >= monthlyOrderCap) {
       console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestion blocked', {
@@ -196,6 +191,17 @@ export async function handleOrderCreated(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+
+    // Increment ingested_orders on open billing period (MON-05)
+    // Non-fatal — cap enforcement reads this value, not domain_events count.
+    const usageUpdated = await db('shop_usage_metrics')
+      .where({ shop_id: shopId })
+      .whereNull('period_ends_at')
+      .increment('ingested_orders', 1);
+
+    if (!usageUpdated) {
+      console.warn('[ORDER_INGEST][USAGE] no open billing period — ingested_orders not incremented', { shopId });
+    }
 
    /**
    * PAYMENT STATE NORMALIZATION
