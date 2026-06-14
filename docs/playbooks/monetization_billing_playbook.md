@@ -24,10 +24,17 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 
 **Module access by tier:**
 
-- Starter: overview, orders, fulfillment queue, alerts, Shopify integration
-- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns processing, products, problem center (operational exceptions)
-- Growth+: cash flow, demand forecasting, customer LTV, Specter, returns analysis (supplier correlation), problem center analytics
-- Scale+: floor planning
+- Starter: overview, orders (view only, 90-day window), fulfillment queue (view only — WMS actions locked), alerts, Shopify integration
+- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns processing, products, problem center (operational exceptions), 12-month order history
+- Growth+: cash flow, demand forecasting, customer LTV, Specter, returns analysis (supplier correlation), problem center analytics, unlimited order history
+- Scale+: floor planning, unlimited everything
+
+**Order history data window:**
+
+- Enforced at query layer in `orders.service.ts` via `tierDataWindowSince()` utility
+- Starter: 90 days · Core: 365 days · Growth+: unlimited
+- Source: `packages/backend-core/src/utils/tierDataWindow.ts`
+- FT2 snapshot layer (pre-computed) — data window enforcement pending (separate ticket)
 
 **Rule:** Never hardcode tier logic anywhere. Always import from `tiers.ts`.
 
