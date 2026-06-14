@@ -191,7 +191,21 @@ requireTier(minTier) middleware
 
 ---
 
-## 9. Currency — Frontend (in progress)
+## 9. Order Cap Enforcement (MON-05)
+
+`apps/backend/src/api/shopify/handlers/handleOrderCreated.ts`
+
+- Open billing period created at shop registration in `shop_usage_metrics`
+- Cap check reads `shop_usage_metrics.ingested_orders` from open period row
+- Hard block at cap: ingestion returns early, order dropped
+- Warn at 80% of cap via `[ORDER_CAP_APPROACHING]` console signal
+- `ingested_orders` incremented after successful `domain_events` insert
+- Falls back to `starter` cap (50) if no subscription row exists
+- Scale tier: `monthlyOrderCap = Infinity` — cap check skipped entirely
+
+---
+
+## 10. Currency — Frontend (complete)
 
 ### Distinction
 
@@ -213,7 +227,7 @@ requireTier(minTier) middleware
 
 ---
 
-## 10. MON Issue Register — Final Status
+## 11. MON Issue Register — Final Status
 
 | Issue | Description | Status |
 |---|---|---|
@@ -221,7 +235,7 @@ requireTier(minTier) middleware
 | MON-02 | `shop_subscriptions` table | ✅ Done |
 | MON-03 | JWT tier claim + entitlements engine | ✅ Done |
 | MON-04 | Seat limit enforcement | ✅ Done |
-| MON-05 | Order cap enforcement | ⚠️ Table exists, enforcement logic TBC |
+| MON-05 | Order cap enforcement | ✅ Done |
 | MON-06 | Module gating (backend + frontend) | ✅ Done |
 | MON-07 | 14-day Growth trial on registration | ✅ Done |
 | MON-08 | Annual billing | ✅ Stripe prices exist, UI TBC |
@@ -231,7 +245,7 @@ requireTier(minTier) middleware
 
 ---
 
-## 11. Adding a New Tier or Currency
+## 12. Adding a New Tier or Currency
 
 ### New currency
 
