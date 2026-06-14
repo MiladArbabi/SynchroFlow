@@ -10,5 +10,8 @@
 // Consumers MUST:
 // - Treat this as authoritative
 // - Never mutate or derive new meaning
-export {};
-//# sourceMappingURL=EntitlementSnapshot.js.map
+export interface EntitlementSnapshot {
+  shopId: number | null;
+  modules: Set<string>;
+  flags: Set<string>;
+}

@@ -15,45 +15,48 @@ import {
 } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { CheckCircle, Zap, ArrowRight, ExternalLink } from 'lucide-react';
-import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { axiosInstance } from '../../api/axiosConfig';
 import { TIER_MONTHLY_ORDER_CAP, TIER_SHIPPED_ORDER_CAP, type Tier } from '../../config/tiers';
+import { PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency } from '../../config/pricingDisplay';
+import { useEntitlements } from '../../contexts/EntitlementsContext';
 
 // ─────────────────────────────────────────────
 // TIER CONFIG (mirrors tiers.ts — display only)
 // ─────────────────────────────────────────────
-const TIERS = [
-  {
-    id: 'core',
-    label: 'Core',
-    monthlyPrice: 79,
-    annualPrice: 63, // 79 * 0.8 rounded
-    seats: '2 seats',
-    orders: '2,000 orders/mo',
-    highlight: false,
-    features: ['WMS Lite', 'Returns', 'Products', 'Problem Center', '200 shipped orders/mo'],
-  },
-  {
-    id: 'growth',
-    label: 'Growth',
-    monthlyPrice: 179,
-    annualPrice: 143, // 179 * 0.8 rounded
-    seats: '5 seats',
-    orders: '10,000 orders/mo',
-    highlight: true,
-    features: ['Cash Flow', 'Customer LTV', 'Demand Forecasting', 'Specter', '1,000 shipped orders/mo'],
-  },
-  {
-    id: 'scale',
-    label: 'Scale',
-    monthlyPrice: 349,
-    annualPrice: 279, // 349 * 0.8 rounded
-    seats: 'Unlimited seats',
-    orders: 'Unlimited orders',
-    highlight: false,
-    features: ['Floor Planning', 'Barcodes', 'WMS Advanced', 'Unlimited shipped orders'],
-  },
-];
+function buildTiers(currency: BillingCurrency) {
+  return [
+    {
+      id: 'core' as const,
+      label: 'Core',
+      monthlyPrice: PEGGED_DISPLAY_PRICES.core[currency].monthly,
+      annualPrice: PEGGED_DISPLAY_PRICES.core[currency].annual / 12,
+      seats: '2 seats',
+      orders: '2,000 orders/mo',
+      highlight: false,
+      features: ['WMS Lite', 'Returns', 'Products', 'Problem Center', '200 shipped orders/mo'],
+    },
+    {
+      id: 'growth' as const,
+      label: 'Growth',
+      monthlyPrice: PEGGED_DISPLAY_PRICES.growth[currency].monthly,
+      annualPrice: PEGGED_DISPLAY_PRICES.growth[currency].annual / 12,
+      seats: '5 seats',
+      orders: '10,000 orders/mo',
+      highlight: true,
+      features: ['Cash Flow', 'Customer LTV', 'Demand Forecasting', 'Specter', '1,000 shipped orders/mo'],
+    },
+    {
+      id: 'scale' as const,
+      label: 'Scale',
+      monthlyPrice: PEGGED_DISPLAY_PRICES.scale[currency].monthly,
+      annualPrice: PEGGED_DISPLAY_PRICES.scale[currency].annual / 12,
+      seats: 'Unlimited seats',
+      orders: 'Unlimited orders',
+      highlight: false,
+      features: ['Floor Planning', 'Barcodes', 'WMS Advanced', 'Unlimited shipped orders'],
+    },
+  ];
+}
 
 interface SubscriptionData {
   tier: string;
@@ -109,15 +112,17 @@ function TierCard({
   onUpgrade,
   upgrading,
 }: {
-  tier: typeof TIERS[0];
+  tier: ReturnType<typeof buildTiers>[number];
   isCurrent: boolean;
   interval: 'monthly' | 'annual';
   onUpgrade: (tierId: string) => void;
   upgrading: string | null;
 }) {
   const theme = useTheme();
+  const { billingCurrency } = useEntitlements();
+  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
   const price = interval === 'annual' ? tier.annualPrice : tier.monthlyPrice;
-  const annualSavings = (tier.monthlyPrice - tier.annualPrice) * 12;
+  const savings = annualSavings(tier.id, currency);
 
   return (
     <Box sx={{
@@ -164,14 +169,13 @@ function TierCard({
 
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, mb: 0.5 }}>
         <Typography sx={{ fontSize: 24, fontWeight: 700, color: 'text.primary' }}>
-          ${price}
+          {formatDisplayPrice(price, currency)}
         </Typography>
         <Typography sx={{ fontSize: 12, color: 'text.secondary' }}>/mo</Typography>
       </Box>
-
       {interval === 'annual' && (
         <Typography sx={{ fontSize: 11, color: 'success.main', fontWeight: 600, mb: 1 }}>
-          Save ${annualSavings}/year
+          Save {formatDisplayPrice(savings, currency)}/year
         </Typography>
       )}
 
@@ -210,7 +214,7 @@ function TierCard({
 // ─────────────────────────────────────────────
 const BillingSettings: React.FC = () => {
   const theme = useTheme();
-  const { tier: currentTier, trialEndsAt } = useEntitlements();
+  const { tier: currentTier, trialEndsAt, billingCurrency } = useEntitlements();
   const [usage, setUsage] = useState<UsageData | null>(null);
   const [sub, setSub] = useState<SubscriptionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,7 +266,9 @@ const BillingSettings: React.FC = () => {
   );
 
   const isOnTrial = sub?.status === 'trialing';
-  const annualSavingsGrowth = (179 - 143) * 12; // $432
+  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
+  const TIERS = buildTiers(currency);
+  const annualSavingsGrowth = annualSavings('growth', currency);
 
   return (
     <Box>

@@ -14,6 +14,8 @@ import {
   Chip, useTheme, alpha,
 } from '@mui/material';
 import { ArrowRight, Zap } from 'lucide-react';
+import { useEntitlements } from '../contexts/EntitlementsContext';
+import { PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency } from '../config/pricingDisplay';
 
 const DISMISSED_KEY = 'post_trial_interstitial_dismissed';
 
@@ -47,7 +49,8 @@ interface PostTrialInterstitialProps {
 export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
   const theme = useTheme();
   const [open, setOpen] = useState(() => show && !isDismissed());
-
+  const { billingCurrency } = useEntitlements();
+  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
   if (!show || !open) return null;
 
   const handleDismiss = () => {
@@ -127,10 +130,10 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
               bgcolor: theme.palette.primary.main,
             }}
           >
-            Restore Growth — $179/mo
+            Restore Growth — {formatDisplayPrice(PEGGED_DISPLAY_PRICES.growth[currency].monthly, currency)}/mo
           </Button>
           <Typography sx={{ fontSize: 11, color: 'text.secondary', mb: 1 }}>
-            Or save $430/year with annual billing
+            Or save {formatDisplayPrice(annualSavings('growth', currency), currency)}/year with annual billing
           </Typography>
           <Button
             variant="text"

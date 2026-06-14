@@ -54,7 +54,7 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
     // Null if shop has an active paid subscription or no subscription row.
     const subscription = await db('shop_subscriptions')
       .where({ shop_id: entitlements.shopId })
-      .first('trial_ends_at', 'status');
+      .first('trial_ends_at', 'status', 'billing_currency');
 
     const trialEndsAt =
       subscription?.status === 'trialing' && subscription?.trial_ends_at
@@ -69,6 +69,7 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
       trialEndsAt,
       displayCurrency: shopContext?.displayCurrency ?? 'USD',
       locale: shopContext?.locale ?? 'en-US',
+      billingCurrency: subscription?.billing_currency ?? 'USD',
     });
   } catch (error) {
     console.error('Error fetching entitlements:', error);

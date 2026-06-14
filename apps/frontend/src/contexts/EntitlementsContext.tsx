@@ -32,7 +32,7 @@ import React, {
 import { axiosInstance } from 'api/axiosConfig';
 import { useAuth } from './AuthContext';
 import { Tier, isValidTier } from '../config/tiers';
-import { EntitlementSnapshot } from '@lasyncro/shared/activation';
+import type { EntitlementSnapshot } from '../runtime/EntitlementSnapshot';
 
 // --- Backend payload shape ---
 interface EntitlementsResponse {
@@ -50,6 +50,8 @@ interface EntitlementsResponse {
   /** CURRENCY LAYER 2 — user display preference from shop_memberships */
   displayCurrency: string;
   locale: string;
+  /** CURRENCY LAYER 3 — billing currency from shop_subscriptions. Set once at registration. */
+  billingCurrency: string;
 }
 
 // --- Context shape exposed to UI ---
@@ -69,6 +71,7 @@ interface EntitlementsContextValue {
 
   displayCurrency: string;
   locale: string;
+  billingCurrency: string;
   isLoading: boolean;
   hasResolved: boolean;
   error: string | null;
@@ -99,6 +102,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
   const [locale, setLocale] = useState<string>('en-US');
+  const [billingCurrency, setBillingCurrency] = useState<string>('USD');
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
@@ -109,6 +113,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     tier: Tier;
     displayCurrency: string;
     locale: string;
+    billingCurrency: string;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -203,9 +208,9 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setTrialEndsAt(payload.trialEndsAt ?? null);
         setDisplayCurrency(payload.displayCurrency ?? 'USD');
         setLocale(payload.locale ?? 'en-US');
+        setBillingCurrency(payload.billingCurrency ?? 'USD');
         setError(null);
         setHasResolved(true);
-
         // --- Persist last known good snapshot ---
         lastGoodSnapshotRef.current = {
           shopId: nextShopId,
@@ -214,6 +219,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           tier: nextTier,
           displayCurrency: payload.displayCurrency ?? 'USD',
           locale: payload.locale ?? 'en-US',
+          billingCurrency: payload.billingCurrency ?? 'USD',
         };
 
         if (import.meta.env.DEV) {
@@ -293,7 +299,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
 
     displayCurrency,
     locale,
-    
+    billingCurrency,
     isLoading,
     hasResolved,
     error,

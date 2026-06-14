@@ -22,6 +22,8 @@
 
 import React, { useEffect } from 'react';
 import { sendEvent } from '../analytics/adapter';
+import { useEntitlements } from '../contexts/EntitlementsContext';
+import { PEGGED_DISPLAY_PRICES, formatDisplayPrice, type BillingCurrency } from '../config/pricingDisplay';
 import {
   Box,
   Button,
@@ -40,11 +42,11 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 // ─────────────────────────────────────────────
 // Tier display metadata (must stay in sync with tiers.ts)
 // ─────────────────────────────────────────────
-const TIER_DISPLAY: Record<string, { label: string; price: string }> = {
-  starter: { label: 'Starter', price: 'Free' },
-  core:    { label: 'Core',    price: '$79/mo' },
-  growth:  { label: 'Growth',  price: '$179/mo' },
-  scale:   { label: 'Scale',   price: '$349/mo' },
+const TIER_LABELS: Record<string, string> = {
+  starter: 'Starter',
+  core:    'Core',
+  growth:  'Growth',
+  scale:   'Scale',
 };
 
 const BILLING_URL = '/settings/billing';
@@ -80,7 +82,13 @@ function UpgradeCTAContent({
   onClose?: () => void;
 }) {
   const theme = useTheme();
-  const tier = TIER_DISPLAY[requiredTier] ?? TIER_DISPLAY.growth;
+  const { billingCurrency } = useEntitlements();
+  const currency = (billingCurrency ?? 'USD') as BillingCurrency;
+  const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
+  const tierPrice = requiredTier !== 'starter' && requiredTier in PEGGED_DISPLAY_PRICES
+    ? `${formatDisplayPrice(PEGGED_DISPLAY_PRICES[requiredTier as keyof typeof PEGGED_DISPLAY_PRICES][currency].monthly, currency)}/mo`
+    : 'Free';
+  const tier = { label: tierLabel, price: tierPrice };
 
   // Track impression on mount
   useEffect(() => {
