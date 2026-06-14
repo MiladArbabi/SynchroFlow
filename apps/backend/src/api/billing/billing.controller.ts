@@ -24,27 +24,14 @@
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import db from '@lasyncro/backend-core/db.js';
-import { isValidTier, Tier, TIER_CONFIG } from '@lasyncro/backend-core/config/tiers.js';
+import { isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { getStripePriceId, PEGGED_DISPLAY_PRICES, BillingCurrency } from '@lasyncro/backend-core/config/pricing.config.js';
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[billing] STRIPE_SECRET_KEY not set');
   return new Stripe(key, { apiVersion: '2026-04-22.dahlia' });
-}
-
-/**
- * Stripe Price ID map.
- * Read from env vars — allows different prices per environment.
- * Format: STRIPE_PRICE_<TIER>_<INTERVAL>
- */
-function getPriceId(tier: Tier, interval: 'monthly' | 'annual'): string {
-  const key = `STRIPE_PRICE_${tier.toUpperCase()}_${interval.toUpperCase()}`;
-  const priceId = process.env[key];
-  if (!priceId) {
-    throw new Error(`[billing] Missing env var: ${key}`);
-  }
-  return priceId;
-}
+};
 
 /**
  * POST /api/v1/billing/checkout
@@ -68,15 +55,15 @@ export async function createCheckoutSession(req: Request, res: Response) {
 
   try {
     const stripe = getStripe();
-    const priceId = getPriceId(tier as Tier, interval);
     const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
-    const tierConfig = TIER_CONFIG[tier as Tier];
 
     // Retrieve or create Stripe customer
     const subRow = await db('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('stripe_customer_id');
+      .first('stripe_customer_id', 'billing_currency');
 
+    const billingCurrency = (subRow?.billing_currency ?? 'USD') as BillingCurrency;
+    const priceId = getStripePriceId(tier as Exclude<Tier, 'starter'>, billingCurrency, interval);
     let customerId: string | undefined = subRow?.stripe_customer_id ?? undefined;
 
     if (!customerId) {
@@ -88,9 +75,9 @@ export async function createCheckoutSession(req: Request, res: Response) {
       customerId = customer.id;
     }
 
-    // Annual savings callout for Growth tier
+    const monthlyMinor = PEGGED_DISPLAY_PRICES[tier as Tier][billingCurrency].monthly;
     const annualSavings = interval === 'annual'
-      ? Math.round((tierConfig.monthlyPriceCents * 12 * 0.2) / 100)
+      ? Math.round((monthlyMinor * 12 * 0.2) / 100)
       : null;
 
     const session = await stripe.checkout.sessions.create({
@@ -105,7 +92,7 @@ export async function createCheckoutSession(req: Request, res: Response) {
         },
         // Annual savings callout shown in Stripe checkout
         ...(annualSavings && interval === 'annual'
-          ? { description: `Save $${annualSavings}/year vs monthly` }
+          ? { description: `Save ${annualSavings} ${billingCurrency}/year vs monthly` }
           : {}),
       },
       success_url: `${frontendUrl}/settings/billing?success=1&tier=${tier}`,

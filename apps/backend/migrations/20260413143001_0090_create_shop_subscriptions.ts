@@ -52,6 +52,14 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .defaultTo('monthly'); // 'monthly' | 'annual'
 
+    // --- Billing currency (multi-currency, MON-currency) ---
+    // Set once at registration via Accept-Language detection. Never changed.
+    // Must match BillingCurrency in pricing.config.ts: 'GBP' | 'USD' | 'EUR'
+    table
+      .string('billing_currency', 3)
+      .notNullable()
+      .defaultTo('USD');
+
     // --- Stripe identifiers ---
     // Null until shop completes Stripe checkout
     table.string('stripe_customer_id').nullable();
@@ -155,6 +163,13 @@ export async function up(knex: Knex): Promise<void> {
     ALTER TABLE shop_subscriptions
     ADD CONSTRAINT shop_subscriptions_extra_seats_nonnegative
     CHECK (extra_seats >= 0);
+  `);
+
+  // --- Billing currency constraint ---
+  await knex.raw(`
+    ALTER TABLE shop_subscriptions
+    ADD CONSTRAINT shop_subscriptions_billing_currency_valid
+    CHECK (billing_currency IN ('GBP', 'USD', 'EUR'));
   `);
 }
 

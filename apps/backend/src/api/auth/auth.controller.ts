@@ -8,6 +8,7 @@ import { issueAuthTokens } from './token.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { TIERS, getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { ResolvedShopContext, requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { detectBillingCurrency } from '@lasyncro/backend-core/config/pricing.config.js';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { User } from '../../types.js';
@@ -100,6 +101,7 @@ export const registerUser = async (req: Request, res: Response) => {
         shop_id: newShop.id,
         tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
         billing_interval: 'monthly',
+        billing_currency: detectBillingCurrency(req.headers['accept-language']),
         status: 'trialing',
         trial_ends_at: trialEndsAt,
       });

@@ -31,16 +31,7 @@ import { decrypt } from '../../security/encryption.service.js';
 import { isValidTier, Tier, TIER_CONFIG } from '@lasyncro/backend-core/config/tiers.js';
 import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
-
-// ─────────────────────────────────────────────
-// Shopify tier pricing (monthly USD)
-// Must stay in sync with TIER_CONFIG in tiers.ts
-// ─────────────────────────────────────────────
-const SHOPIFY_TIER_PRICE: Record<string, { monthly: number; annual: number; name: string }> = {
-  core:   { monthly: 79,  annual: 63.20, name: 'LaSyncro Core' },
-  growth: { monthly: 179, annual: 143.20, name: 'LaSyncro Growth' },
-  scale:  { monthly: 349, annual: 279.20, name: 'LaSyncro Scale' },
-};
+import { PEGGED_DISPLAY_PRICES } from '@lasyncro/backend-core/config/pricing.config.js';
 
 /**
  * Resolve shop's Shopify access token for API calls.
@@ -79,22 +70,21 @@ export async function createShopifyCharge(req: Request, res: Response) {
     return res.status(400).json({ error: 'INVALID_INTERVAL', allowed: ['monthly', 'annual'] });
   }
 
-  const pricing = SHOPIFY_TIER_PRICE[tier];
-  if (!pricing) {
+  const tierPrices = PEGGED_DISPLAY_PRICES[tier as Tier]?.['USD'];
+  if (!tierPrices) {
     return res.status(400).json({ error: 'TIER_PRICING_NOT_FOUND' });
   }
-
   try {
     const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
     const apiUrl = process.env.API_URL ?? 'http://localhost:3000';
-    const price = interval === 'annual' ? pricing.annual : pricing.monthly;
+    // Shopify App Store always bills in USD — currency-agnostic path
+    const price = (interval === 'annual' ? tierPrices.annual : tierPrices.monthly) / 100;
     const billingOn = interval === 'annual' ? 365 : 30;
-
     const response = await axios.post(
       `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
       {
         recurring_application_charge: {
-          name: `${pricing.name} (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
+          name: `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
           price,
           return_url: `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`,
           trial_days: 0,
