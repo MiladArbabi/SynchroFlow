@@ -4,6 +4,7 @@ dotenv.config();
 import { createApp } from './bootstrap/express.js';
 import { initSpecterStore, closeSpecterStore } from './bootstrap/specter-store.js';
 import { initQueue, closeQueue } from './bootstrap/queue.js';
+import { declareTopology } from './queue.topology.js';
 import { startWorkers } from './bootstrap/workers.js';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -29,7 +30,7 @@ async function start() {
   await runSchemaGuard();
   // infrastructure SECOND
   await initQueue();
-
+  await declareTopology();
   await startWorkers();
 
   server = app.listen(port, HOST, () => {

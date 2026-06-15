@@ -15,18 +15,11 @@
 // Reads from EntitlementsContext — zero additional network calls.
 
 import React, { useMemo } from 'react';
-import { Box, Typography, Tooltip } from '@mui/material';
-import { useColorScheme } from '@mui/material/styles';
+import { Box, Typography, Tooltip, useTheme } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import { useNavigate } from 'react-router-dom';
 import { useEntitlements } from 'contexts/EntitlementsContext';
-import { ThemeMode } from 'config';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
-
-function useTrialTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === ThemeMode.DARK;
-  return { isDark };
-}
 
 function getDaysRemaining(trialEndsAt: string): number {
   const now = Date.now();
@@ -42,16 +35,9 @@ function getUrgency(days: number): Urgency {
   return 'neutral';
 }
 
-const URGENCY_STYLES: Record<Urgency, { bg: string; border: string; color: string; darkBg: string; darkBorder: string; darkColor: string }> = {
-  neutral:  { bg: 'rgba(255,107,43,0.08)', border: 'rgba(255,107,43,0.2)',  color: '#FF6B2B', darkBg: 'rgba(255,107,43,0.12)', darkBorder: 'rgba(255,107,43,0.3)',  darkColor: '#FF8C5A' },
-  warning:  { bg: 'rgba(245,158,11,0.10)', border: 'rgba(245,158,11,0.3)',  color: '#B45309', darkBg: 'rgba(245,158,11,0.15)', darkBorder: 'rgba(245,158,11,0.4)',  darkColor: '#F59E0B' },
-  critical: { bg: 'rgba(239,68,68,0.10)',  border: 'rgba(239,68,68,0.3)',   color: '#B91C1C', darkBg: 'rgba(239,68,68,0.15)',  darkBorder: 'rgba(239,68,68,0.4)',   darkColor: '#EF4444' },
-};
-
 export const TrialCountdownChip: React.FC = () => {
+  const theme = useTheme();
   const { tier, trialEndsAt } = useEntitlements();
-  console.log('[TrialChip]', { tier, trialEndsAt });
-  const { isDark } = useTrialTheme();
   const navigate = useNavigate();
 
   const daysRemaining = useMemo(
@@ -64,10 +50,14 @@ export const TrialCountdownChip: React.FC = () => {
   if (phase !== 'FT2_READY' || tier !== 'growth' || daysRemaining === null) return null;
 
   const urgency = getUrgency(daysRemaining);
-  const styles = URGENCY_STYLES[urgency];
-  const bg     = isDark ? styles.darkBg     : styles.bg;
-  const border = isDark ? styles.darkBorder  : styles.border;
-  const color  = isDark ? styles.darkColor   : styles.color;
+  const paletteColor = {
+    neutral:  theme.palette.primary.main,
+    warning:  theme.palette.warning.main,
+    critical: theme.palette.error.main,
+  }[urgency];
+  const bg     = alpha(paletteColor, urgency === 'neutral' ? 0.08 : 0.10);
+  const border = alpha(paletteColor, urgency === 'neutral' ? 0.20 : 0.30);
+  const color  = paletteColor;
 
   const label = daysRemaining === 0
     ? 'Trial ended'
@@ -82,7 +72,7 @@ export const TrialCountdownChip: React.FC = () => {
   return (
     <Tooltip title={tooltip} placement="bottom">
       <Box
-        onClick={() => navigate('/settings/billing')}
+        onClick={() => navigate('/account/settings?tab=billing')}
         sx={{
           display:        'inline-flex',
           alignItems:     'center',

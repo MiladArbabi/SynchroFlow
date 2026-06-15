@@ -74,7 +74,7 @@ export const PlanGate: React.FC<PlanGateProps> = ({
   return (
     <UpgradePrompt
       requiredTier={requiredTier}
-      mode={mode === 'teased' ? 'overlay' : 'overlay'}
+      mode={mode === 'teased' ? 'teased' : 'locked'}
       featureName={featureName}
     >
       {mode === 'teased' ? children : undefined}

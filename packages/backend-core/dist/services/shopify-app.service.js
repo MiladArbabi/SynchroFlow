@@ -140,8 +140,32 @@ export class ShopifyAppService {
         if (!secret) {
             throw new Error('ENCRYPTION_KEY is not set in environment.');
         }
+        // STEP 1: Try new AES-256-GCM format (JSON payload)
+        try {
+            const parsed = JSON.parse(encryptedToken);
+            const { ciphertext, iv, auth_tag } = parsed;
+            if (ciphertext && iv && auth_tag) {
+                const crypto = require('crypto');
+                const key = crypto.createHash('sha256').update(secret).digest();
+                const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
+                decipher.setAuthTag(Buffer.from(auth_tag, 'base64'));
+                const decrypted = Buffer.concat([
+                    decipher.update(Buffer.from(ciphertext, 'base64')),
+                    decipher.final(),
+                ]);
+                return decrypted.toString('utf8');
+            }
+        }
+        catch {
+            // not GCM format — fall through to legacy
+        }
+        // STEP 2: Legacy CryptoJS fallback
         const bytes = CryptoJS.AES.decrypt(encryptedToken, secret);
-        return bytes.toString(CryptoJS.enc.Utf8);
+        const result = bytes.toString(CryptoJS.enc.Utf8);
+        if (!result || result.trim().length === 0) {
+            throw new Error('Decryption failed (unknown format or wrong key)');
+        }
+        return result;
     }
     /**
    * Get decrypted access token by shop_id

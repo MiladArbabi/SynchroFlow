@@ -4,23 +4,19 @@
 // --------------------------------
 // Shown during active trial period.
 // Dismissible per session — re-appears on next session.
-// CTA navigates to /settings/billing (account settings tab 5).
+// CTA navigates to /account/settings?tab=billing.
 //
-// Design rules (mirrors SystemHealthBanner pattern):
-// - Theme-aware — MUI semantic tokens only
-// - Calm urgency — not alarming, action-oriented
-// - Never blocks interaction
-// - Auto-hides when not on trial
+// 3-state escalation: calm (≥4 days) → amber (2-3 days) → red (0-1 days)
 
 import { useState } from 'react';
-import { Box, Typography, Button, IconButton, useTheme, alpha } from '@mui/material';
-import { Zap, X } from 'lucide-react';
+import { Box, Typography, useTheme, alpha } from '@mui/material';
+import { Clock, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const DISMISS_KEY = 'trial_banner_dismissed_date';
 
 function getTodayKey(): string {
-  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  return new Date().toISOString().split('T')[0];
 }
 
 function isDismissedToday(): boolean {
@@ -48,111 +44,172 @@ export function TrialCountdownBanner({ trialEndsAt }: TrialCountdownBannerProps)
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(() => isDismissedToday());
 
-  // Not on trial — render nothing
-  if (!trialEndsAt) return null;
+  if (!trialEndsAt || dismissed) return null;
 
   const daysLeft = Math.max(0, Math.ceil(
     (new Date(trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
   ));
 
-  // Trial expired — nothing to show
+  // Trial already expired
   if (daysLeft === 0 && new Date(trialEndsAt) < new Date()) return null;
 
-  // Dismissed today
-  if (dismissed) return null;
+  const state = daysLeft <= 1 ? 'red' : daysLeft <= 3 ? 'amber' : 'calm';
 
-  const isUrgent = daysLeft <= 3;
+  const tokens = {
+    calm: {
+      bg: alpha(theme.palette.primary.main, 0.07),
+      border: alpha(theme.palette.primary.main, 0.22),
+      iconColor: theme.palette.primary.main,
+      strongColor: theme.palette.primary.main,
+      ctaBg: theme.palette.background.paper,
+      ctaBorder: alpha(theme.palette.primary.main, 0.30),
+      ctaColor: theme.palette.primary.main,
+    },
+    amber: {
+      bg: alpha(theme.palette.warning.main, 0.12),
+      border: alpha(theme.palette.warning.main, 0.30),
+      iconColor: theme.palette.warning.main,
+      strongColor: theme.palette.warning.main,
+      ctaBg: theme.palette.background.paper,
+      ctaBorder: alpha(theme.palette.warning.main, 0.40),
+      ctaColor: theme.palette.warning.main,
+    },
+    red: {
+      bg: alpha(theme.palette.error.main, 0.08),
+      border: alpha(theme.palette.error.main, 0.25),
+      iconColor: theme.palette.error.main,
+      strongColor: theme.palette.text.primary,
+      ctaBg: theme.palette.error.main,
+      ctaBorder: theme.palette.error.main,
+      ctaColor: '#FFF',
+    },
+  }[state];
 
-  const bg = isUrgent
-    ? alpha(theme.palette.error.main, 0.1)
-    : alpha(theme.palette.warning.main, 0.08);
-
-  const borderColor = isUrgent
-    ? alpha(theme.palette.error.main, 0.25)
-    : alpha(theme.palette.warning.main, 0.25);
-
-  const accentColor = isUrgent
-    ? theme.palette.error.main
-    : theme.palette.warning.main;
-
-  const message = daysLeft === 0
-    ? 'Your Growth trial expires today'
-    : daysLeft === 1
-    ? '1 day left in your Growth trial'
-    : `${daysLeft} days left in your Growth trial`;
+  const dayWord = daysLeft === 1 ? 'day' : 'days';
+  const lead = daysLeft === 0
+    ? 'Trial ends today'
+    : `${daysLeft} ${dayWord} left`;
+  const rest = state === 'calm'
+    ? 'on your Growth trial — add payment to keep your momentum.'
+    : state === 'amber'
+    ? 'on your Growth trial — forecasting, cash flow & LTV switch off soon.'
+    : daysLeft === 0
+    ? '— add payment now to keep access.'
+    : 'on your Growth trial.';
 
   const handleDismiss = () => {
     dismissToday();
     setDismissed(true);
   };
 
-  const handleUpgrade = () => {
-    // Navigate to account settings, billing tab (index 5)
+  const handleAddPayment = () => {
     navigate('/account/settings?tab=billing');
   };
 
   return (
     <Box
       sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 2,
-        px: 2.5,
-        py: 1,
-        background: bg,
-        borderBottom: `1px solid ${borderColor}`,
+        px: '16px',
+        py: '11px',
+        background: tokens.bg,
+        borderBottom: `1px solid ${tokens.border}`,
         flexShrink: 0,
       }}
     >
-      {/* Left: icon + message */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-        <Zap size={14} color={accentColor} style={{ flexShrink: 0 }} />
-        <Typography
+      {/* Main row: icon · text · [desktop CTA] · dismiss */}
+      <Box sx={{ display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, gap: '14px' }}>
+        <Clock
+          size={18}
+          color={tokens.iconColor}
+          strokeWidth={1.8}
+          style={{ flexShrink: 0, marginTop: 1 }}
+        />
+
+        {/* Text */}
+        <Box sx={{ flex: 1, fontSize: 13.5, lineHeight: 1.4 }}>
+          <Box component="span" sx={{ fontWeight: 600, color: tokens.strongColor }}>
+            {lead}
+          </Box>
+          <Box
+            component="span"
+            sx={{ fontWeight: 300, color: 'text.secondary', display: { xs: 'none', sm: 'inline' } }}
+          >
+            {' '}{rest}
+          </Box>
+          {/* Mobile: shorter trailing text */}
+          <Box
+            component="span"
+            sx={{ fontWeight: 300, color: 'text.secondary', display: { xs: 'inline', sm: 'none' } }}
+          >
+            {state === 'red'
+              ? (daysLeft === 0 ? '' : ' on your Growth trial.')
+              : ' on your Growth trial.'}
+          </Box>
+        </Box>
+
+        {/* Desktop CTA */}
+        <Box
+          onClick={handleAddPayment}
           sx={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: accentColor,
+            display: { xs: 'none', sm: 'flex' },
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: 34,
+            px: '16px',
+            background: tokens.ctaBg,
+            color: tokens.ctaColor,
+            border: `1px solid ${tokens.ctaBorder}`,
+            borderRadius: '7px',
+            fontSize: 12.5,
+            fontWeight: 600,
+            cursor: 'pointer',
             whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            flexShrink: 0,
+            '&:hover': { opacity: 0.85 },
           }}
         >
-          {message}
-        </Typography>
-        <Typography sx={{ fontSize: 12, color: 'text.secondary', display: { xs: 'none', sm: 'block' } }}>
-          — unlock Cash Flow, LTV, Demand & Specter permanently.
-        </Typography>
+          Add payment
+        </Box>
+
+        {/* Dismiss */}
+        <Box
+          onClick={handleDismiss}
+          sx={{
+            width: 26,
+            height: 26,
+            borderRadius: '6px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+            color: 'text.secondary',
+            '&:hover': { background: 'rgba(0,0,0,0.05)' },
+          }}
+        >
+          <X size={14} strokeWidth={1.8} />
+        </Box>
       </Box>
 
-      {/* Right: CTA + dismiss */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
-        <Button
-          size="small"
-          variant="contained"
-          onClick={handleUpgrade}
-          sx={{
-            fontSize: 11,
-            fontWeight: 700,
-            py: 0.5,
-            px: 1.5,
-            minWidth: 0,
-            borderRadius: '6px',
-            bgcolor: accentColor,
-            color: '#fff',
-            '&:hover': { bgcolor: accentColor, opacity: 0.9 },
-          }}
-        >
-          Upgrade now
-        </Button>
-        <IconButton
-          size="small"
-          onClick={handleDismiss}
-          sx={{ color: 'text.secondary', p: 0.5 }}
-          aria-label="Dismiss trial banner"
-        >
-          <X size={14} />
-        </IconButton>
+      {/* Mobile CTA — full width below */}
+      <Box
+        onClick={handleAddPayment}
+        sx={{
+          display: { xs: 'flex', sm: 'none' },
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: 40,
+          mt: '11px',
+          background: tokens.ctaBg,
+          color: tokens.ctaColor,
+          border: `1px solid ${tokens.ctaBorder}`,
+          borderRadius: '7px',
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: 'pointer',
+        }}
+      >
+        Add payment method
       </Box>
     </Box>
   );
