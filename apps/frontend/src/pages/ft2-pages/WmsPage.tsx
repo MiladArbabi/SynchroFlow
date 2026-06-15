@@ -21,8 +21,7 @@ import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useSearchParams } from 'react-router-dom';
 import PlanGate from '../../components/PlanGate';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
-import { Box, Typography, TextField, Button, Alert } from '@mui/material';
-import { useAppTheme } from '../../hooks/useAppTheme';
+import { Box, Typography, TextField } from '@mui/material';
 import { AlertTriangle } from 'lucide-react';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
@@ -42,20 +41,19 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
   binError: string | null;
   onSave: () => void;
 }) {
-  const pal = useAppTheme();
   return (
     <Box sx={{
       mx: 3, mt: 2, mb: 0,
-      border: `0.5px solid var(--accent-border)`,
-      borderRadius: '10px', bgcolor: 'var(--accent-ghost)',
+      border: '1px solid var(--accent-border)',
+      borderRadius: '12px', bgcolor: 'var(--accent-ghost)',
       p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap',
     }}>
       <AlertTriangle size={16} color="var(--accent)" style={{ flexShrink: 0 }} />
       <Box sx={{ flex: 1, minWidth: 200 }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.ink }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
           Problem bin not configured
         </Typography>
-        <Typography sx={{ fontSize: 12, color: pal.ink3 }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
           Set a physical bin code so operators know where to route exception items.
         </Typography>
       </Box>
@@ -65,19 +63,32 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
           value={binInput}
           onChange={(e) => setBinInput(e.target.value.toUpperCase())}
           placeholder="e.g. PROB-BIN-A"
-          sx={{ width: 160, '& input': { fontSize: 13, fontFamily: 'monospace' } }}
+          sx={{ width: 160, '& input': { fontSize: 13 } }}
           onKeyDown={(e) => e.key === 'Enter' && onSave()}
         />
-        <Button
-          variant="contained" size="small"
+        <Box
+          component="button"
           disabled={!binInput.trim() || binSaving}
           onClick={onSave}
-          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent-hover)' }, fontSize: 12, fontWeight: 500 }}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            px: 1.5, py: 0.75, borderRadius: '8px',
+            bgcolor: 'var(--accent)', color: '#10151E',
+            border: 'none', cursor: 'pointer',
+            fontSize: 12, fontWeight: 600,
+            '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },
+            '&:hover:not(:disabled)': { opacity: 0.88 },
+            transition: 'opacity 0.1s',
+          }}
         >
           {binSaving ? 'Saving…' : 'Save'}
-        </Button>
+        </Box>
       </Box>
-      {binError && <Alert severity="error" sx={{ width: '100%', py: 0, fontSize: 12 }}>{binError}</Alert>}
+      {binError && (
+        <Box sx={{ width: '100%', px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: 'rgba(229,72,77,0.08)', border: '1px solid rgba(229,72,77,0.3)' }}>
+          <Typography sx={{ fontSize: 12, color: '#E5484D' }}>{binError}</Typography>
+        </Box>
+      )}
     </Box>
   );
 }

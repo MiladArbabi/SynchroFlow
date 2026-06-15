@@ -1,13 +1,12 @@
 // apps/frontend/src/pages/ft2-pages/ReleaseQueuePage.tsx
+//
+// RELEASE QUEUE — 2-column: pool table + sticky wave builder panel
+// Design: Orders / Release tab
+//
+// RULES: No alpha(). No fontFamily overrides. No hardcoded hex except severity tokens.
 import { useState, useCallback, useMemo } from 'react';
-import {
-  Box, Typography, Checkbox, Button, CircularProgress,
-  Alert, Chip, Dialog, DialogTitle, DialogContent,
-  DialogActions, MenuItem, Select, FormControl, LinearProgress,
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import { useTheme } from '@mui/material/styles';
-import { Flag, Package, Clock, Zap } from 'lucide-react';
+import { Box, Typography, Checkbox, CircularProgress } from '@mui/material';
+import { Flag, Clock } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
@@ -77,11 +76,13 @@ const ageLabel = (iso: string): string => {
   return `${Math.round(hours / 24)}d`;
 };
 
-const fmt$ = (price: string, currency: string): string =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(price));
+const ageHoursFrom = (iso: string): number =>
+  Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000);
+
+const fmt$ = (price: number, currency: string): string =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(price);
 
 export default function ReleaseQueuePage() {
-  const theme = useTheme();
   const { data, isLoading, isError } = useOrderPool();
   const setPriority = useSetPriority();
   const releaseBatch = useReleaseBatch();
@@ -89,34 +90,47 @@ export default function ReleaseQueuePage() {
   const operators = operatorsData?.operators ?? [];
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [releaseOpen, setReleaseOpen] = useState(false);
   const [operatorId, setOperatorId] = useState<string>('');
   const [releaseSuccess, setReleaseSuccess] = useState<{ batchId: string; orderCount: number } | null>(null);
 
   const orders = useMemo(() => data?.orders ?? [], [data]);
   const maxLineItems = data?.max_batch_line_items ?? 108;
 
-  const selectedLineItems = orders
-    .filter(o => selected.has(o.lasyncro_order_id))
-    .reduce((sum, o) => sum + o.line_item_count, 0);
+  // Batch builder: show selected subset, else full pool
+  const selectedOrders = orders.filter(o => selected.has(o.lasyncro_order_id));
+  const useSubset = selected.size > 0;
 
-  const ceilingPct = Math.min(100, Math.round((selectedLineItems / maxLineItems) * 100));
+  const waveOrders      = useSubset ? selected.size        : orders.length;
+  const waveValue       = useSubset
+    ? selectedOrders.reduce((s, o) => s + Number(o.total_price), 0)
+    : orders.reduce((s, o) => s + Number(o.total_price), 0);
+  const waveLineItems   = useSubset
+    ? selectedOrders.reduce((s, o) => s + o.line_item_count, 0)
+    : orders.reduce((s, o) => s + o.line_item_count, 0);
+  const waveUnits       = useSubset
+    ? selectedOrders.reduce((s, o) => s + o.unit_count, 0)
+    : orders.reduce((s, o) => s + o.unit_count, 0);
+  const allZones = (src: PoolOrder[]) =>
+    [...new Set(src.flatMap(o => Array.isArray(o.zone_distribution) ? o.zone_distribution : []))].join(' · ') || '—';
+  const waveZones = useSubset ? allZones(selectedOrders) : allZones(orders);
+
+  const ceilingPct = Math.min(100, Math.round((waveLineItems / maxLineItems) * 100));
 
   const toggleSelect = useCallback((id: string) => {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(id)) { next.delete(id); } else { next.add(id); }
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   }, []);
 
   const toggleSelectAll = useCallback(() => {
-    if (selected.size === orders.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(orders.map(o => o.lasyncro_order_id)));
-    }
-  }, [selected, orders]);
+    setSelected(prev =>
+      prev.size === orders.length && orders.length > 0
+        ? new Set()
+        : new Set(orders.map(o => o.lasyncro_order_id))
+    );
+  }, [orders]);
 
   const handleRelease = async () => {
     try {
@@ -124,10 +138,10 @@ export default function ReleaseQueuePage() {
         priority_order_ids: selected.size > 0 ? [...selected] : undefined,
         assigned_operator_id: operatorId ? Number(operatorId) : undefined,
       });
-      setReleaseOpen(false);
       setSelected(new Set());
+      setOperatorId('');
       setReleaseSuccess({ batchId: result.pick_batch_id, orderCount: result.order_count });
-      setTimeout(() => setReleaseSuccess(null), 5000);
+      setTimeout(() => setReleaseSuccess(null), 6000);
     } catch {
       // error shown via releaseBatch.isError
     }
@@ -141,251 +155,261 @@ export default function ReleaseQueuePage() {
 
         {/* HEADER */}
         <Box sx={{ mb: 3 }}>
-          <Box sx={{ mb: 0.5 }}>
-            <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-              Release queue
-            </Typography>
-          </Box>
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
+            Release queue
+          </Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
             {isLoading ? '—' : `${data?.eligible_order_count ?? 0} orders ready to batch · ceiling ${maxLineItems} line items`}
           </Typography>
         </Box>
 
         {/* SUCCESS BANNER */}
         {releaseSuccess && (
-          <Alert severity="success" sx={{ mb: 3 }}>
-            Batch released — {releaseSuccess.orderCount} orders · operators notified. See batch {releaseSuccess.batchId} in Fulfillment.
-          </Alert>
-          //TODO: deep-link fulfillment on the banner, so when batch is released, user can click and go the released job.
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.375, mb: 2, bgcolor: 'rgba(76,175,122,0.07)', border: '1px solid rgba(76,175,122,0.2)', borderRadius: '12px' }}>
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
+              <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{releaseSuccess.orderCount} orders released</Box>
+              {' · '}
+              <Box component="a" href="/fulfillment" sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                Batch {releaseSuccess.batchId.slice(0, 8).toUpperCase()} in Fulfillment →
+              </Box>
+            </Typography>
+          </Box>
         )}
 
-        {isError && <Alert severity="error" sx={{ mb: 3 }}>Failed to load order pool.</Alert>}
+        {isError && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.25, mb: 3, bgcolor: 'rgba(229,72,77,0.07)', border: '1px solid rgba(229,72,77,0.2)', borderRadius: '10px' }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink)' }}>Failed to load order pool.</Typography>
+          </Box>
+        )}
 
-        {/* SELECTION TOOLBAR */}
-        {selected.size > 0 && (
-          <Box sx={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            px: 2, py: 1.5, mb: 2,
-            bgcolor: alpha(theme.palette.primary.main, 0.06),
-            border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-            borderRadius: '10px',
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                {selected.size} order{selected.size !== 1 ? 's' : ''} selected
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 160 }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={ceilingPct}
-                  sx={{ flex: 1, height: 6, borderRadius: 3 }}
-                  color={ceilingPct > 90 ? 'error' : 'primary'}
-                />
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-                  {selectedLineItems}/{maxLineItems} lines
+        {/* 2-COLUMN LAYOUT */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 2.5, alignItems: 'start' }}>
+
+          {/* LEFT — POOL TABLE */}
+          <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+
+            {/* Table header */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: '36px 40px 1fr 80px 72px 72px 90px 90px', gap: '10px', alignItems: 'center', px: 2, py: 1.25, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
+              <Checkbox
+                size="small" sx={{ p: 0 }}
+                checked={selected.size === orders.length && orders.length > 0}
+                indeterminate={selected.size > 0 && selected.size < orders.length}
+                onChange={toggleSelectAll}
+              />
+              <Box /> {/* flag col */}
+              {['Order', 'Value', 'Lines', 'Units', 'Age', 'Zones'].map((col) => (
+                <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  {col}
+                </Typography>
+              ))}
+            </Box>
+
+            {isLoading && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+                <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
+              </Box>
+            )}
+
+            {!isLoading && orders.length === 0 && (
+              <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  No orders in pool — all orders are either batched or blocked.
                 </Typography>
               </Box>
-            </Box>
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<Zap size={14} />}
-              onClick={() => setReleaseOpen(true)}
-              sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 }, borderRadius: '6px', fontWeight: 600 }}
-            >
-              Release batch
-            </Button>
-          </Box>
-        )}
+            )}
 
-        {/* ORDER TABLE */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+            {orders.map(order => {
+              const isSelected = selected.has(order.lasyncro_order_id);
+              const zones = Array.isArray(order.zone_distribution) ? order.zone_distribution : [];
+              const hours = ageHoursFrom(order.order_created_at);
+              const ageColor = hours > 48 ? '#E5484D' : 'var(--ink-3)';
 
-          {/* Table header */}
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: '36px 40px 1fr 80px 80px 80px 100px 80px',
-            px: 2, py: 1.25,
-            bgcolor: 'var(--bg-2)',
-            borderBottom: '1px solid var(--rule)',
-          }}>
-            <Checkbox
-              size="small" sx={{ p: 0 }}
-              checked={selected.size === orders.length && orders.length > 0}
-              indeterminate={selected.size > 0 && selected.size < orders.length}
-              onChange={toggleSelectAll}
-            />
-            {['', 'ORDER', 'VALUE', 'LINES', 'UNITS', 'AGE', 'ZONES'].map((col, i) => (
-              <Typography key={i} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', display: 'flex', alignItems: 'center' }}>
-                {col}
-              </Typography>
-            ))}
-          </Box>
-
-          {isLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
-
-          {!isLoading && orders.length === 0 && (
-            <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
-              <Package size={32} style={{ opacity: 0.2, marginBottom: 8 }} />
-              <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>
-                No orders in pool — all orders are either batched or blocked.
-              </Typography>
-            </Box>
-          )}
-
-          {orders.map((order) => {
-            const isSelected = selected.has(order.lasyncro_order_id);
-            const zones = Array.isArray(order.zone_distribution)
-              ? order.zone_distribution
-              : [];
-            const age = ageLabel(order.order_created_at);
-            const ageHours = Math.round((Date.now() - new Date(order.order_created_at).getTime()) / 3_600_000);
-
-            return (
-              <Box
-                key={order.lasyncro_order_id}
-                onClick={() => toggleSelect(order.lasyncro_order_id)}
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: '36px 40px 1fr 80px 80px 80px 100px 80px',
-                  alignItems: 'center',
-                  px: 2, py: 1.5,
-                  borderBottom: '1px solid var(--rule)',
-                  cursor: 'pointer',
-                  bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.04) : 'transparent',
-                  '&:hover': { bgcolor: isSelected ? alpha(theme.palette.primary.main, 0.06) : 'var(--bg-2)' },
-                  '&:last-child': { borderBottom: 'none' },
-                }}
-              >
-
-                <Checkbox size="small" sx={{ p: 0 }} checked={isSelected} onChange={(e) => { e.stopPropagation(); toggleSelect(order.lasyncro_order_id); }} onClick={e => e.stopPropagation()} />
-
-                {/* Priority flag */}
-                <Box onClick={e => { e.stopPropagation(); setPriority.mutate({ orderId: order.lasyncro_order_id, flagged: !order.is_priority_flagged }); }}>
-                  <Flag
-                    size={14}
-                    color={order.is_priority_flagged ? theme.palette.error.main : 'var(--ink-4)'}
-                    fill={order.is_priority_flagged ? theme.palette.error.main : 'none'}
-                    style={{ cursor: 'pointer', display: 'block' }}
+              return (
+                <Box
+                  key={order.lasyncro_order_id}
+                  onClick={() => toggleSelect(order.lasyncro_order_id)}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '36px 40px 1fr 80px 72px 72px 90px 90px',
+                    gap: '10px',
+                    alignItems: 'center',
+                    px: 2, py: 1.375,
+                    borderTop: '1px solid var(--rule)',
+                    cursor: 'pointer',
+                    bgcolor: isSelected ? 'rgba(255,107,43,0.06)' : 'transparent',
+                    '&:hover': { bgcolor: isSelected ? 'rgba(255,107,43,0.09)' : 'var(--bg-2)' },
+                  }}
+                >
+                  <Checkbox
+                    size="small" sx={{ p: 0 }}
+                    checked={isSelected}
+                    onChange={(e) => { e.stopPropagation(); toggleSelect(order.lasyncro_order_id); }}
+                    onClick={e => e.stopPropagation()}
                   />
-                </Box>
 
-                {/* Order ID */}
-                <Box>
-                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
-                    {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                  {/* Priority flag */}
+                  <Box
+                    onClick={e => {
+                      e.stopPropagation();
+                      setPriority.mutate({ orderId: order.lasyncro_order_id, flagged: !order.is_priority_flagged });
+                    }}
+                    sx={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+                  >
+                    <Flag
+                      size={13}
+                      color={order.is_priority_flagged ? '#E5484D' : 'var(--ink-4)'}
+                      fill={order.is_priority_flagged ? '#E5484D' : 'none'}
+                    />
+                  </Box>
+
+                  {/* Order ID */}
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                    </Typography>
+                    {order.is_priority_flagged && (
+                      <Typography sx={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: '#E5484D', mt: 0.125 }}>Priority</Typography>
+                    )}
+                  </Box>
+
+                  {/* Value */}
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                    {fmt$(Number(order.total_price), order.currency)}
                   </Typography>
-                  {order.is_priority_flagged && (
-                    <Typography sx={{ fontSize: 10, color: theme.palette.error.main, fontWeight: 600 }}>PRIORITY</Typography>
-                  )}
-                </Box>
 
-                {/* Value */}
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
-                  {fmt$(order.total_price, order.currency)}
-                </Typography>
+                  {/* Lines */}
+                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                    {order.line_item_count}
+                  </Typography>
 
-                {/* Lines */}
-                <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                  {order.line_item_count}
-                </Typography>
+                  {/* Units */}
+                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                    {order.unit_count}
+                  </Typography>
 
-                {/* Units */}
-                <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                  {order.unit_count}
-                </Typography>
+                  {/* Age */}
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, width: 'fit-content' }}>
+                    <Clock size={11} color={ageColor} />
+                    <Typography sx={{ fontSize: 12, fontWeight: 600, color: ageColor }}>
+                      {ageLabel(order.order_created_at)}
+                    </Typography>
+                  </Box>
 
-                {/* Age */}
-                <Box sx={{
-                  display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                  px: 1, py: 0.25, borderRadius: '4px', width: 'fit-content',
-                  bgcolor: ageHours > 48 ? alpha(theme.palette.error.main, 0.08) : 'transparent',
-                }}>
-                  <Clock size={11} color={ageHours > 48 ? theme.palette.error.main : 'var(--ink-4)'} />
-                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: ageHours > 48 ? theme.palette.error.main : 'var(--ink-3)' }}>
-                    {age}
+                  {/* Zones */}
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {zones.length === 0 ? '—' : zones.join(' · ')}
                   </Typography>
                 </Box>
+              );
+            })}
+          </Box>
 
-                {/* Zones */}
-                <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                  {zones.length === 0
-                    ? <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>—</Typography>
-                    : zones.map(z => (
-                        <Chip key={z} label={z} size="small" sx={{ fontSize: 9, height: 18, fontWeight: 600 }} />
-                      ))
-                  }
-                </Box>
+          {/* RIGHT — BATCH BUILDER */}
+          <Box sx={{ position: 'sticky', top: '20px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px' }}>
+
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 2 }}>
+              Next batch
+            </Typography>
+
+            <Typography sx={{ fontSize: 38, fontWeight: 700, color: 'var(--ink)', lineHeight: 1, letterSpacing: '-0.02em' }}>
+              {waveOrders} order{waveOrders !== 1 ? 's' : ''}
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.625, mb: 0.25 }}>
+              {waveValue > 0 ? fmt$(waveValue, 'USD') : '—'}
+              {waveZones !== '—' && ` · zones ${waveZones}`}
+            </Typography>
+
+            {selected.size > 0 && (
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mt: 0.375 }}>
+                {selected.size} handpicked · unselected orders fill ceiling automatically
+              </Typography>
+            )}
+
+            {/* Stats */}
+            <Box sx={{ mt: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Line items</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveLineItems}</Typography>
               </Box>
-            );
-          })}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Units to pick</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveUnits}</Typography>
+              </Box>
+            </Box>
+
+            {/* Floor capacity bar */}
+            <Box sx={{ mt: 2.5 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  Floor capacity
+                </Typography>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, color: ceilingPct > 90 ? '#E5484D' : 'var(--ink-4)' }}>
+                  {ceilingPct}%
+                </Typography>
+              </Box>
+              <Box sx={{ height: 6, borderRadius: '3px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
+                <Box sx={{ height: '100%', width: `${ceilingPct}%`, bgcolor: ceilingPct > 90 ? '#E5484D' : '#4CAF7A', borderRadius: '3px', transition: 'width 0.3s ease' }} />
+              </Box>
+              <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.75 }}>
+                {waveLineItems} of {maxLineItems} line item ceiling
+              </Typography>
+            </Box>
+
+            {/* Operator selector */}
+            <Box
+              component="select"
+              value={operatorId}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setOperatorId(e.target.value)}
+              sx={{
+                width: '100%', mt: 2.5,
+                bgcolor: 'var(--bg)', border: '1px solid var(--rule)',
+                borderRadius: '8px', px: 1.5, py: 1.125,
+                fontSize: 12.5, color: operatorId ? 'var(--ink)' : 'var(--ink-4)',
+                cursor: 'pointer', outline: 'none', fontFamily: 'inherit',
+                appearance: 'none', display: 'block',
+                '&:focus': { borderColor: 'var(--rule-2)' },
+              }}
+            >
+              <option value="">Dispatch to all operators</option>
+              {operators.map(op => (
+                <option key={op.user_id} value={String(op.user_id)}>
+                  {op.first_name} {op.last_name}{op.role === 'owner' ? ' (you)' : ` · ${op.role}`}
+                </option>
+              ))}
+            </Box>
+
+            {releaseBatch.isError && (
+              <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: '#E5484D', mt: 1.25 }}>
+                Release failed — please retry.
+              </Typography>
+            )}
+
+            {/* CTA */}
+            <Box
+              component="button"
+              onClick={handleRelease}
+              disabled={releaseBatch.isPending || orders.length === 0}
+              sx={{
+                width: '100%', fontSize: 13, fontWeight: 600,
+                color: orders.length > 0 ? '#10151E' : 'var(--ink-4)',
+                bgcolor: orders.length > 0 ? 'var(--accent)' : 'var(--bg-2)',
+                border: 'none', borderRadius: '8px', py: 1.375,
+                textAlign: 'center', cursor: releaseBatch.isPending ? 'not-allowed' : 'pointer',
+                mt: 2.5, fontFamily: 'inherit',
+                '&:hover': { opacity: orders.length > 0 && !releaseBatch.isPending ? 0.88 : 1 },
+                '&:disabled': { opacity: 0.6, cursor: 'not-allowed' },
+              }}
+            >
+              {releaseBatch.isPending ? 'Releasing…' : 'Release wave to floor'}
+            </Box>
+
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', textAlign: 'center', mt: 1.5 }}>
+              Pickers see it on their mobile instantly
+            </Typography>
+          </Box>
         </Box>
       </Box>
-
-      {/* RELEASE DIALOG */}
-      <Dialog open={releaseOpen} onClose={() => setReleaseOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontSize: 15, fontWeight: 700 }}>
-          Release batch
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-              {selected.size > 0
-                ? `${selected.size} selected order${selected.size !== 1 ? 's' : ''} will be prioritised. Remaining ceiling filled automatically.`
-                : 'Orders will be selected automatically — oldest first, priority-flagged first.'}
-            </Typography>
-            <Box sx={{ px: 2, py: 1.5, bgcolor: 'var(--bg-2)', borderRadius: 1, border: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mb: 0.5 }}>LINE ITEM CEILING</Typography>
-              <LinearProgress variant="determinate" value={ceilingPct} sx={{ height: 6, borderRadius: 3, mb: 0.5 }} />
-              <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                {selectedLineItems} of {maxLineItems} line items selected
-              </Typography>
-            </Box>
-            <FormControl size="small" fullWidth>
-              <Select
-                value={operatorId}
-                onChange={e => setOperatorId(e.target.value)}
-                label="Assign operator (optional)"
-                displayEmpty
-                renderValue={(val) => val === ''
-                  ? <em style={{ color: 'var(--ink-3)' }}>Dispatch to all</em>
-                  : (() => {
-                      const op = operators.find(o => String(o.user_id) === val);
-                      return op ? `${op.first_name} ${op.last_name}${op.role === 'owner' ? ' (you)' : ''}` : val;
-                    })()
-                }
-              >
-                <MenuItem value=""><em>Dispatch to all</em></MenuItem>
-                {operators.map(op => (
-                  <MenuItem key={op.user_id} value={String(op.user_id)}>
-                    {op.first_name} {op.last_name}
-                    {op.role === 'owner' ? ' (you)' : ` · ${op.role}`}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {releaseBatch.isError && (
-              <Alert severity="error" sx={{ py: 0.5 }}>Release failed. Please retry.</Alert>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button size="small" onClick={() => setReleaseOpen(false)}>Cancel</Button>
-          <Button
-            size="small"
-            variant="contained"
-            onClick={handleRelease}
-            disabled={releaseBatch.isPending}
-            startIcon={<Zap size={14} />}
-          >
-            {releaseBatch.isPending ? 'Releasing…' : 'Release'}
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

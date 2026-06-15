@@ -21,6 +21,7 @@ import FormHelperText from '@mui/material/FormHelperText';
 import AuthWrapper1 from './AuthWrapper1';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { AuthLogo } from './AuthLogo';
+import Tooltip from '@mui/material/Tooltip';
 
 // Data access scopes shown to user — matches target A3 "What we'll read"
 const SCOPES = [
@@ -71,9 +72,7 @@ export default function ConnectStorePage() {
 
         {/* Nav bar — logo + status pill */}
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
-          <Link to="/" aria-label="LaSyncro home">
-            <AuthLogo />
-          </Link>
+          <Link to="/" aria-label="LaSyncro home"></Link>
           <SystemStatusPill />
         </Box>
 
@@ -143,9 +142,70 @@ export default function ConnectStorePage() {
 
             {/* Store input */}
             <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500, display: 'block', mb: 0.75 }}>
-                Your Shopify store
-              </Typography>
+              <Stack direction="row" alignItems="center" spacing={0.75} sx={{ mb: 0.75 }}>
+                <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500 }}>
+                  Your Shopify store
+                </Typography>
+
+                <Tooltip
+                  arrow
+                  placement="right"
+                  title={
+                    <Box sx={{ border: '1px solid var(--rule)', maxWidth: 280 }}>
+                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 700, mb: 0.75 }}>
+                        Where do I find this?
+                      </Typography>
+
+                      <Typography sx={{ fontSize: '0.78rem', lineHeight: 1.5, mb: 1 }}>
+                        After you log in to Shopify Admin, your store name is in your URL:
+                      </Typography>
+
+                      <Box
+                        component="code"
+                        sx={{
+                          display: 'block',
+                          fontSize: '0.72rem',
+                          lineHeight: 1.5,
+                          color: '#fff',
+                          bgcolor: 'rgba(255,255,255,0.08)',
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          borderRadius: 1,
+                          px: 1,
+                          py: 0.75,
+                          wordBreak: 'break-all',
+                        }}
+                      >
+                        https://admin.shopify.com/store/<strong>YOUR_STORE_NAME</strong>
+                      </Box>
+                    </Box>
+                  }
+                >
+                  <Box
+                    component="button"
+                    type="button"
+                    aria-label="Where to find your Shopify store name"
+                    sx={{
+                      width: 17,
+                      height: 17,
+                      borderRadius: '50%',
+                      border: '1px solid var(--rule-2)',
+                      bgcolor: 'transparent',
+                      color: 'var(--ink-3)',
+                      fontSize: '0.7rem',
+                      fontWeight: 700,
+                      cursor: 'help',
+                      p: 0,
+                      lineHeight: 1,
+                      '&:hover': {
+                        color: 'var(--accent)',
+                        borderColor: 'var(--accent)',
+                      },
+                    }}
+                  >
+                    ?
+                  </Box>
+                </Tooltip>
+              </Stack>
               <OutlinedInput
                 fullWidth
                 placeholder="your-store"
@@ -181,18 +241,6 @@ export default function ConnectStorePage() {
                 {isLoading ? 'Connecting...' : 'Connect Shopify →'}
               </Button>
             </Stack>
-
-            {/* Skip */}
-            <Box sx={{ textAlign: 'center', mt: 2 }}>
-              <Typography
-                component={Link}
-                to="/"
-                variant="caption"
-                sx={{ color: 'var(--ink-4)', textDecoration: 'underline', '&:hover': { color: 'var(--ink-3)' } }}
-              >
-                Prefer to do this later? Skip — connect after first login
-              </Typography>
-            </Box>
 
           </Box>
         </Box>

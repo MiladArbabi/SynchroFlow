@@ -13,8 +13,7 @@ export default function ReturnsFT2Page() {
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <Box sx={{
         bgcolor: 'var(--bg)',
-        borderBottom: '0.5px solid var(--rule)',
-        borderLeft: '3px solid var(--accent)',
+        borderBottom: '1px solid var(--rule)',
       }}>
         <ModuleTabBar tabs={RETURNS_SUB_TABS} />
       </Box>

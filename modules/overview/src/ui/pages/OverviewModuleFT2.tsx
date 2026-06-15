@@ -1,15 +1,23 @@
 // modules/overview/src/ui/pages/OverviewModuleFT2.tsx
-import { Box, Typography, Skeleton, Chip } from '@mui/material';
-import { useTheme, alpha } from '@mui/material/styles';
-import { RefreshCw } from 'lucide-react';
+//
+// OVERVIEW — "A: Triage-first" layout from the LaSyncro design file.
+//
+// LAYOUT:
+//   HEADER (greeting · date · summary · page actions)
+//   ────────────────────────────────────────────────────────────
+//   BODY  [  Needs a decision (flex-1)  |  TODAY'S FLOW (280px)  ]
+//
+// RULES: No alpha(). No useTheme(). No fontFamily overrides. No 0.5px borders.
+//        CSS vars for adaptive colors; direct hex only for severity tokens.
+//        Severity palette: #E5484D critical · #D9A23B watch · #4CAF7A on-track.
+
+import { useState } from 'react';
+import { Box, Typography, Skeleton } from '@mui/material';
+import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
-/**
- * OverviewModuleFT2DataProps
- * -------------------------
- * DATA-ONLY FT2 contract.
- * No fetching. No mapping. No hooks.
- */
+// ─── TYPES ────────────────────────────────────────────────────
+
 export interface OverviewModuleFT2DataProps {
   trust: {
     dataFreshness: 'fresh' | 'stale' | 'unknown' | null;
@@ -23,10 +31,7 @@ export interface OverviewModuleFT2DataProps {
     customersObserved: number | null;
   };
   snapshot: {
-    orders: {
-      revenueTotal: number | null;
-      currency: string | null;
-    } | null;
+    orders: { revenueTotal: number | null; currency: string | null } | null;
     products: null;
     customers: null;
   };
@@ -35,13 +40,6 @@ export interface OverviewModuleFT2DataProps {
     operationalEconomic?: 'aligned' | 'divergent' | 'unknown';
     engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
   } | null;
-  /**
-   * PULSE ZONE (B-05)
-   * -----------------
-   * Five key operational numbers surfaced on arrival.
-   * Sourced from orders_operational_control_snapshot.
-   * Null = snapshot not yet available.
-   */
   pulse: {
     shipToday: number | null;
     blockedOrders: number | null;
@@ -49,20 +47,15 @@ export interface OverviewModuleFT2DataProps {
     aging24h: number | null;
     aging48h: number | null;
     aging72hPlus: number | null;
+    /** Orders currently being picked or packed */
+    pickingNow?: number | null;
+    /** Orders shipped so far today */
+    shippedToday?: number | null;
+    /** Revenue collected today */
+    shippedRevenue?: number | null;
   } | null;
-  /**
-   * MORNING BRIEF (OVR-01)
-   * ----------------------
-   * Pre-computed ranked signals for owner/admin.
-   * Null = trust not eligible or brief not yet computed.
-   * Undefined = not fetched yet (loading state).
-   */
-
-  /** Display name for the greeting — first_name from JWT. Falls back to "there" if absent. */
   userName?: string | null;
-  /** Shop display currency ISO code — e.g. 'GBP', 'USD'. Used to format revenue impact on signals. */
   currency?: string;
-
   morningBrief?: {
     signals: {
       id: string;
@@ -72,6 +65,12 @@ export interface OverviewModuleFT2DataProps {
       module: string;
       deepLink: string;
       revenueImpact: number | null;
+      /** Short age/recency label — e.g. "14d oldest", "6 orders". Server-provided. */
+      ageLabel?: string | null;
+      /** Specific CTA label — e.g. "Review queue", "Reorder". Falls back to module default. */
+      actionLabel?: string | null;
+      /** Expandable sub-items (SKUs, orders, etc.) */
+      tags?: string[];
     }[];
     hasUrgentIssues: boolean;
     generatedAt: string;
@@ -90,42 +89,37 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
 
-// ─────────────────────────────────────────────
-// SIGNAL TONE — maps priority to semantic palette keys
-// Uses MUI theme colors — no hardcoded hex
-// ─────────────────────────────────────────────
-type SignalToneKey = 'urgent' | 'warning' | 'info' | 'success';
+// ─── CONSTANTS ────────────────────────────────────────────────
 
-function getSignalTone(priority: number): SignalToneKey {
-  if (priority <= 2) return 'urgent';
-  if (priority <= 4) return 'warning';
-  return 'info';
+// Baked severity palette — no alpha() needed
+const SEV = {
+  critical: {
+    color:  '#E5484D',
+    bgBand: 'rgba(229,72,77,0.06)',
+    badge:  'rgba(229,72,77,0.12)',
+    band:   'CRITICAL — ACT TODAY',
+  },
+  watch: {
+    color:  '#D9A23B',
+    bgBand: 'rgba(217,162,59,0.06)',
+    badge:  'rgba(217,162,59,0.12)',
+    band:   'WATCH',
+  },
+  ontrack: {
+    color:  '#4CAF7A',
+    bgBand: 'rgba(76,175,122,0.05)',
+    badge:  'rgba(76,175,122,0.10)',
+    band:   'EVERYTHING ELSE',
+  },
+} as const;
+type SevKey = keyof typeof SEV;
+
+function sevKey(priority: number): SevKey {
+  if (priority <= 2) return 'critical';
+  if (priority <= 4) return 'watch';
+  return 'ontrack';
 }
 
-// ─────────────────────────────────────────────
-// THEME HOOK — uses LaSyncro design tokens directly
-// Mirrors useSyncTheme pattern from SyncAnimationPage
-// ─────────────────────────────────────────────
-function useOverviewTheme() {
-  const theme = useTheme();
-  // Use LaSyncro design tokens — consistent with all other modules.
-  // These CSS vars are defined in themes/index.tsx per color scheme.
-  return {
-    cardBg:      'var(--surface)',
-    pageBg:      'var(--bg)',
-    border:      'var(--rule)',
-    divider:     'var(--rule)',
-    textPrimary: 'var(--ink)',
-    textSecond:  'var(--ink-3)',
-    tileBg:      'var(--bg-2)',
-    footerBg:    'var(--bg-2)',
-    shadow:      theme.palette.mode === 'dark'
-      ? '0 1px 3px rgba(0,0,0,0.4)'
-      : '0 1px 3px rgba(0,0,0,0.06)',
-  };
-}
-
-// Human-readable module labels for signal cards
 const MODULE_LABELS: Record<string, string> = {
   'order-nexus':      'Orders',
   'cashflow':         'Cash Flow',
@@ -140,316 +134,23 @@ const MODULE_LABELS: Record<string, string> = {
   'returns':          'Returns',
 };
 
-function moduleLabel(module: string): string {
-  return MODULE_LABELS[module] ?? module;
+const DEFAULT_ACTIONS: Record<string, string> = {
+  'order-nexus':      'Review queue',
+  'wms':              'Review floor',
+  'demand':           'Reorder',
+  'suppliers-portal': 'View supplier',
+  'returns':          'Review returns',
+  'finances':         'View finances',
+  'cashflow':         'View cashflow',
+};
+
+function moduleLabel(m: string): string { return MODULE_LABELS[m] ?? m; }
+function actionLabel(signal: Signal): string {
+  return signal.actionLabel ?? DEFAULT_ACTIONS[signal.module] ?? 'Review ›';
 }
-
-function SignalCard({
-  signal,
-  onNavigate,
-  currency,
-}: {
-  signal: Signal;
-  onNavigate?: (deepLink: string) => void;
-  currency?: string;
-}) {
-  const theme = useTheme();
-  const pal = useOverviewTheme();
-  const toneKey = getSignalTone(signal.priority);
-
-  const toneMap = {
-    urgent: {
-      bg:     alpha(theme.palette.error.main, 0.1),
-      border: theme.palette.error.main,
-      title:  theme.palette.error.main,
-      sub:    theme.palette.error.main,
-    },
-    warning: {
-      bg:     alpha(theme.palette.warning.main, 0.1),
-      border: theme.palette.warning.main,
-      title:  theme.palette.warning.main,
-      sub:    theme.palette.warning.main,
-    },
-    info: {
-      bg:     alpha(theme.palette.primary.main, 0.08),
-      border: theme.palette.primary.main,
-      title:  theme.palette.primary.main,
-      sub:    theme.palette.primary.main,
-    },
-    success: {
-      bg:     alpha(theme.palette.success.main, 0.08),
-      border: theme.palette.success.main,
-      title:  theme.palette.success.main,
-      sub:    theme.palette.success.main,
-    },
-  };
-
-  const tone = toneMap[toneKey];
-
-  return (
-    <Box
-      sx={{
-        background: tone.bg,
-        borderLeft: `3px solid ${tone.border}`,
-        borderTopRightRadius: '8px',
-        borderBottomRightRadius: '8px',
-        p: '0.75rem 0.9rem',
-        mb: '6px',
-        '&:last-child': { mb: 0 },
-      }}
-    >
-      <Typography sx={{ fontSize: 13, fontWeight: 500, color: tone.title, lineHeight: 1.4, mb: '3px' }}>
-        {signal.title}
-      </Typography>
-      <Typography sx={{ fontSize: 11, color: tone.sub, lineHeight: 1.5 }}>
-        {signal.detail}
-      </Typography>
-      {signal.revenueImpact != null && !/[$£€¥]/.test(signal.detail) && (
-        <Typography sx={{ fontSize: 11, color: theme.palette.error.main, mt: '2px' }}>
-          {new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Math.round(signal.revenueImpact))} at risk
-        </Typography>
-      )}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: '6px', flexWrap: 'wrap' }}>
-        {onNavigate && (
-          <Box
-            component="button"
-            onClick={() => onNavigate(signal.deepLink)}
-            sx={{
-              fontSize: 10,
-              fontWeight: 500,
-              px: '8px',
-              py: '3px',
-              borderRadius: '4px',
-              background: tone.border,
-              color: '#fff',
-              border: 'none',
-              cursor: 'pointer',
-              lineHeight: 1.6,
-            }}
-          >
-            View in {moduleLabel(signal.module)} →
-          </Box>
-        )}
-        <Chip
-          label={moduleLabel(signal.module)}
-          size="small"
-          sx={{ fontSize: 9, height: 18, opacity: 0.6 }}
-        />
-      </Box>
-    </Box>
-  );
+function fmtCurrency(n: number, currency = 'GBP'): string {
+  return new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Math.round(n));
 }
-
-// ─────────────────────────────────────────────
-// METRIC TILE
-// ─────────────────────────────────────────────
-function MetricTile({
-  value,
-  label,
-  tone = 'neutral',
-  onClick,
-  navLabel,
-  currency,
-}: {
-  value: number | null;
-  label: string;
-  tone?: 'critical' | 'warning' | 'neutral';
-  onClick?: () => void;
-  navLabel?: string;
-  /** When provided, value is formatted as currency */
-  currency?: string;
-}) {
-  const theme = useTheme();
-
-  const pal = useOverviewTheme();
-  const tileColor =
-    tone === 'critical' ? theme.palette.error.main :
-    tone === 'warning'  ? theme.palette.warning.main :
-    pal.textPrimary;
-
-  return (
-    <Box
-      sx={{
-        background: theme.palette.mode === 'dark'
-          ? 'rgba(255,255,255,0.04)'
-          : 'rgba(0,0,0,0.04)',
-        borderRadius: '6px',
-        p: '0.6rem 0.75rem',
-        minWidth: 0,
-        display: 'flex',
-        flexDirection: 'column',
-      }}
-    >
-      <Typography sx={{ fontSize: 16, fontWeight: 500, color: tileColor, lineHeight: 1.2 }}>
-        {value != null
-          ? currency
-            ? new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value)
-            : value.toLocaleString()
-          : '—'}
-      </Typography>
-      <Typography sx={{ fontSize: 10, color: 'text.secondary', mt: '1px', lineHeight: 1.3, flex: 1 }}>
-        {label}
-      </Typography>
-      {onClick && navLabel && (
-        <Box
-          component="button"
-          onClick={onClick}
-          sx={{
-            alignSelf: 'flex-end',
-            mt: '6px',
-            fontSize: 10,
-            fontWeight: 500,
-            color: theme.palette.primary.main,
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            p: 0,
-            lineHeight: 1,
-            '&:hover': { opacity: 0.7 },
-          }}
-        >
-          {navLabel} →
-        </Box>
-      )}
-    </Box>
-  );
-}
-
-// ─────────────────────────────────────────────
-// AGING BAND
-// ─────────────────────────────────────────────
-function AgingBand({
-  label,
-  value,
-  tone,
-  onClick,
-}: {
-  label: string;
-  value: number | null;
-  tone: 'critical' | 'warning' | 'neutral';
-  onClick?: () => void;
-}) {
-  const theme = useTheme();
-  const hasValue = value != null && value > 0;
-
-  const bg =
-    tone === 'critical' && hasValue ? alpha(theme.palette.error.main, 0.1) :
-    tone === 'warning' && hasValue  ? alpha(theme.palette.warning.main, 0.1) :
-    theme.palette.mode === 'dark'   ? alpha('#ffffff', 0.05) :
-    alpha(theme.palette.primary.main, 0.04);
-
-  const color =
-    tone === 'critical' && hasValue ? theme.palette.error.main :
-    tone === 'warning' && hasValue  ? theme.palette.warning.main :
-    theme.palette.text.secondary;
-
-  const borderColor =
-    tone === 'critical' && hasValue ? alpha(theme.palette.error.main, 0.4) :
-    tone === 'warning' && hasValue  ? alpha(theme.palette.warning.main, 0.4) :
-    theme.palette.divider;
-
-  return (
-    <Box
-      onClick={hasValue && onClick ? onClick : undefined}
-      sx={{
-        px: '10px', py: '5px',
-        borderRadius: '6px',
-        fontSize: 12,
-        fontWeight: hasValue ? 500 : 400,
-        cursor: hasValue && onClick ? 'pointer' : 'default',
-        background: bg,
-        color,
-        border: `0.5px solid ${borderColor}`,
-        transition: 'opacity 0.15s',
-        '&:hover': hasValue && onClick ? { opacity: 0.8 } : {},
-      }}
-    >
-      {value ?? 0} {label}
-    </Box>
-  );
-}
-
-// ─────────────────────────────────────────────
-// BRIEF ROW — single row in The Brief table
-// Severity | Issue (title + sub) | £ at risk | Age | Snooze | Action
-// ─────────────────────────────────────────────
-function BriefRow({
-  signal,
-  onNavigate,
-  currency,
-}: {
-  signal: Signal;
-  onNavigate?: (deepLink: string) => void;
-  currency?: string;
-}) {
-  const theme = useTheme();
-  const pal = useOverviewTheme();
-  const isCritical = signal.priority <= 2;
-  const isAttention = signal.priority === 3 || signal.priority === 4;
-
-  const badgeBg = isCritical
-    ? alpha(theme.palette.error.main, 0.12)
-    : isAttention
-    ? alpha(theme.palette.warning.main, 0.12)
-    : alpha(theme.palette.success.main, 0.12);
-
-  const badgeColor = isCritical
-    ? theme.palette.error.main
-    : isAttention
-    ? theme.palette.warning.main
-    : theme.palette.success.main;
-
-  const badgeLabel = isCritical ? 'Critical' : isAttention ? 'Attention' : 'On Track';
-
-  return (
-    <Box sx={{
-      display: 'grid',
-      gridTemplateColumns: '110px 1fr 80px 48px 80px 96px',
-      px: '1.25rem',
-      py: '10px',
-      borderBottom: `0.5px solid ${pal.divider}`,
-      alignItems: 'center',
-      '&:last-child': { borderBottom: 'none' },
-    }}>
-      {/* Severity badge */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: '5px', px: '6px', py: '3px', borderRadius: '4px', background: badgeBg, width: 'fit-content' }}>
-        <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: badgeColor, flexShrink: 0 }} />
-        <Typography sx={{ fontSize: 11, fontWeight: 500, color: badgeColor }}>{badgeLabel}</Typography>
-      </Box>
-      {/* Issue */}
-      <Box sx={{ pl: '8px' }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, mb: '2px' }}>{signal.title}</Typography>
-        <Typography sx={{ fontSize: 11, color: pal.textSecond }}>{moduleLabel(signal.module)} · {signal.detail}</Typography>
-      </Box>
-      {/* £ at risk */}
-      <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary }}>
-        {signal.revenueImpact != null
-          ? new Intl.NumberFormat('en', { style: 'currency', currency: currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(signal.revenueImpact))
-          : '—'}
-      </Typography>
-      {/* Age — not yet in signal contract, placeholder */}
-      <Typography sx={{ fontSize: 12, color: pal.textSecond }}>—</Typography>
-      {/* Snooze */}
-      <Box
-        component="button"
-        sx={{ fontSize: 11, color: pal.textSecond, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', p: 0, '&:hover': { color: pal.textPrimary } }}
-      >
-        Snooze
-      </Box>
-      {/* Action */}
-      {onNavigate && (
-        <Box
-          component="button"
-          onClick={() => onNavigate(signal.deepLink)}
-          sx={{ fontSize: 12, fontWeight: 500, px: '10px', py: '5px', borderRadius: '6px', background: 'var(--accent)', color: theme.palette.common.white, border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-        >
-          {signal.priority <= 2 ? 'Review ›' : 'Open ›'}
-        </Box>
-      )}
-    </Box>
-  );
-}
-
 function timeOfDay(): string {
   const h = new Date().getHours();
   if (h < 12) return 'morning';
@@ -457,266 +158,462 @@ function timeOfDay(): string {
   return 'evening';
 }
 
-// ─────────────────────────────────────────────
-// MAIN EXPORT
-// ─────────────────────────────────────────────
-function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
-  const theme = useTheme();
-  const pal = useOverviewTheme();
-  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief, onResolveAll } = props;
+// ─── TRIAGE ROW ───────────────────────────────────────────────
 
-  const isLoading = morningBrief === undefined;
+function TriageRow({
+  signal,
+  isCritical,
+  onNavigate,
+  currency,
+}: {
+  signal: Signal;
+  isCritical: boolean;
+  onNavigate?: (deepLink: string) => void;
+  currency: string;
+}) {
+  const sev = SEV[sevKey(signal.priority)];
+  const [expanded, setExpanded] = useState(false);
+  const hasTags = (signal.tags?.length ?? 0) > 0;
+
+  return (
+    <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'var(--bg-2)' }, transition: 'background 0.1s' }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+
+        {/* LEFT: badge + content */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mb: '4px' }}>
+            <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', px: '5px', py: '2px', borderRadius: '4px', bgcolor: sev.badge, flexShrink: 0 }}>
+              <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: sev.color }} />
+              <Typography sx={{ fontSize: 10, fontWeight: 600, color: sev.color, lineHeight: 1 }}>
+                {sev === SEV.critical ? 'Critical' : sev === SEV.watch ? 'Watch' : 'On track'}
+              </Typography>
+            </Box>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.35, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {signal.title}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.45, pl: '0px' }}>
+            {moduleLabel(signal.module)} · {signal.detail}
+          </Typography>
+          {hasTags && (
+            <Box sx={{ mt: '6px' }}>
+              <Box
+                component="button"
+                onClick={() => setExpanded(v => !v)}
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.8 } }}
+              >
+                {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                {expanded ? 'Hide' : `Show ${signal.tags!.length}`} {signal.tags!.length === 1 ? 'item' : 'items'}
+              </Box>
+              {expanded && (
+                <Box sx={{ mt: '6px', display: 'flex', flexDirection: 'column', gap: '3px', pl: '2px' }}>
+                  {signal.tags!.map(tag => (
+                    <Typography key={tag} sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                      · {tag}
+                    </Typography>
+                  ))}
+                </Box>
+              )}
+            </Box>
+          )}
+        </Box>
+
+        {/* CENTER: revenue + age */}
+        {(signal.revenueImpact != null || signal.ageLabel) && (
+          <Box sx={{ flexShrink: 0, textAlign: 'right', minWidth: 80 }}>
+            {signal.revenueImpact != null && (
+              <Typography sx={{ fontSize: 14, fontWeight: 700, color: isCritical ? '#E5484D' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+                {fmtCurrency(signal.revenueImpact, currency)}
+              </Typography>
+            )}
+            {signal.ageLabel && (
+              <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
+                {signal.ageLabel}
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {/* RIGHT: CTA */}
+        {onNavigate && (
+          <Box
+            component="button"
+            onClick={() => onNavigate(signal.deepLink)}
+            sx={{
+              flexShrink: 0,
+              fontSize: 12, fontWeight: 600,
+              px: '12px', py: '6px', borderRadius: '8px',
+              ...(isCritical
+                ? { bgcolor: 'var(--accent)', color: '#10151E', border: 'none' }
+                : { bgcolor: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)' }),
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.88 },
+              transition: 'opacity 0.1s',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {actionLabel(signal)}
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+// ─── GROUP BAND ───────────────────────────────────────────────
+
+function GroupBand({ sevK, count }: { sevK: SevKey; count: number }) {
+  const sev = SEV[sevK];
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: sev.bgBand, borderBottom: '1px solid var(--rule)' }}>
+      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: sev.color, flexShrink: 0 }} />
+      <Typography sx={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: sev.color }}>
+        {sev.band}
+      </Typography>
+      <Typography sx={{ ml: 'auto', fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+        {count} item{count !== 1 ? 's' : ''}
+      </Typography>
+    </Box>
+  );
+}
+
+// ─── TODAY'S FLOW SIDEBAR ─────────────────────────────────────
+
+function FlowSidebar({
+  pulse,
+  currency,
+  onNavigate,
+}: {
+  pulse: OverviewModuleFT2DataProps['pulse'];
+  currency: string;
+  onNavigate?: (path: string) => void;
+}) {
+  const ready    = pulse?.shipToday    ?? 0;
+  const picking  = pulse?.pickingNow   ?? 0;
+  const blocked  = pulse?.blockedOrders ?? 0;
+  const breached = pulse?.aging72hPlus ?? 0;
+  const total    = ready + picking + blocked + breached;
+
+  const rows: { label: string; value: number | null; color?: string; path?: string }[] = [
+    { label: 'Ready to ship',    value: pulse?.shipToday    ?? null,                       path: '/orders?filter=ready' },
+    { label: 'Picking & packing', value: pulse?.pickingNow  ?? null,                       },
+    { label: 'Blocked',          value: pulse?.blockedOrders ?? null, color: '#D9A23B',    path: '/orders?filter=blocked' },
+    { label: 'Breached 72h+',    value: pulse?.aging72hPlus ?? null,  color: '#E5484D',   path: '/orders?aging=72h' },
+  ];
+
+  return (
+    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, width: 272, display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)' }}>
+        <Typography sx={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--ink-4)' }}>
+          Today's Flow
+        </Typography>
+      </Box>
+
+      {/* KPI rows */}
+      <Box sx={{ px: '1.25rem', py: '0.5rem' }}>
+        {rows.map(row => (
+          <Box
+            key={row.label}
+            onClick={row.path && onNavigate ? () => onNavigate(row.path!) : undefined}
+            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: '7px', cursor: row.path && onNavigate ? 'pointer' : 'default', '&:hover': row.path && onNavigate ? { opacity: 0.8 } : {} }}
+          >
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+              {row.label}
+            </Typography>
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: row.color ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {row.value ?? '—'}
+            </Typography>
+          </Box>
+        ))}
+      </Box>
+
+      {/* Progress bar */}
+      {total > 0 && (
+        <Box sx={{ px: '1.25rem', pb: '0.75rem' }}>
+          <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', bgcolor: 'var(--bg-3)', mb: '8px' }}>
+            {ready   > 0 && <Box sx={{ flex: ready,   bgcolor: '#4CAF7A', minWidth: '2px' }} />}
+            {picking > 0 && <Box sx={{ flex: picking,  bgcolor: '#FF6B2B', minWidth: '2px' }} />}
+            {blocked > 0 && <Box sx={{ flex: blocked,  bgcolor: '#D9A23B', minWidth: '2px' }} />}
+            {breached > 0 && <Box sx={{ flex: breached, bgcolor: '#E5484D', minWidth: '2px' }} />}
+          </Box>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+            {[
+              { label: 'Ready',    n: ready,   color: '#4CAF7A' },
+              { label: 'Picking',  n: picking,  color: '#FF6B2B' },
+              { label: 'Blocked',  n: blocked,  color: '#D9A23B' },
+              { label: 'Breached', n: breached, color: '#E5484D' },
+            ].filter(l => l.n > 0).map(l => (
+              <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
+                <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>
+                  {l.label} {l.n}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* Shipped today */}
+      {(pulse?.shippedToday != null || pulse?.shippedRevenue != null) && (
+        <Box sx={{ px: '1.25rem', py: '0.75rem', borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)', mt: 'auto' }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+            {pulse.shippedToday != null && (
+              <>Shipped today <Box component="span" sx={{ fontWeight: 700, color: 'var(--ink)' }}>{pulse.shippedToday}</Box></>
+            )}
+            {pulse.shippedRevenue != null && pulse.shippedToday != null && ' · '}
+            {pulse.shippedRevenue != null && (
+              <>Collected <Box component="span" sx={{ fontWeight: 700, color: 'var(--ink)' }}>{fmtCurrency(pulse.shippedRevenue, currency)}</Box></>
+            )}
+          </Typography>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────
+
+function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
+  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief } = props;
+
+  const isLoading    = morningBrief === undefined;
   const isTrustGated = morningBrief === null;
-  const signals = morningBrief?.signals ?? [];
-  const hasUrgent = morningBrief?.hasUrgentIssues ?? false;
-  const greeting = morningBrief?.greeting ?? null;
-  const summaryLine = morningBrief?.summaryLine ?? null;
-  const generatedAt = morningBrief?.generatedAt ?? null;
+  const signals      = morningBrief?.signals ?? [];
+  const greeting     = morningBrief?.greeting ?? null;
+  const summaryLine  = morningBrief?.summaryLine ?? null;
+  const generatedAt  = morningBrief?.generatedAt ?? null;
   const trustWarning = morningBrief?.trustWarning ?? false;
+  const currency     = props.currency ?? 'GBP';
+
+  const criticalSignals = signals.filter(s => s.priority <= 2);
+  const watchSignals    = signals.filter(s => s.priority === 3 || s.priority === 4);
+  const onTrackSignals  = signals.filter(s => s.priority === 5);
 
   const generatedTime = generatedAt
     ? new Date(generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
-  // Theme-aware surface colors using MUI palette
-  const cardBg = pal.cardBg;
-  const sectionBorder = pal.border;
-  const footerBg = pal.footerBg;
-
-  // LaSyncro brand green for date header — consistent with spec, not semantic
   const brandGreen = '#1D9E75';
 
-  return (
-    <Box sx={{ p: { xs: 2, md: '32px 40px' }, display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      {/* ── HEADER — sits directly on page bg, no card container ── */}
-      <Box>
-        <Box sx={{ pb: '0.5rem' }}>
-          {/* DATE + PAGE ACTIONS row */}
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '5px' }}>
-            <Typography sx={{
-              fontSize: 10, fontWeight: 500,
-              color: brandGreen,
-              textTransform: 'uppercase',
-              letterSpacing: '0.08em',
-            }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-              {' · '}
-              <Box component="span" sx={{ color: brandGreen }}>{isLoading ? 'SYNCING…' : 'LIVE'}</Box>
-            </Typography>
-            {/* PAGE ACTIONS — Export brief + Resolve all */}
-            {!isLoading && !isTrustGated && (
-              <Box sx={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0 }}>
-                {onExportBrief && (
-                  <Box
-                    component="button"
-                    onClick={onExportBrief}
-                    sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '6px', border: `0.5px solid ${sectionBorder}`, background: 'transparent', color: pal.textPrimary, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
-                    Export brief
-                  </Box>
-                )}
-                {onResolveAll && (
-                  <Box
-                    component="button"
-                    onClick={onResolveAll}
-                    sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '6px', border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', '&:hover': { opacity: 0.85 } }}
-                  >
-                    Resolve all →
-                  </Box>
-                )}
-              </Box>
-            )}
-          </Box>
+  const greetingText = props.userName
+    ? `Good ${timeOfDay()}, ${props.userName}.`
+    : (greeting ?? `Good ${timeOfDay()}.`);
 
-          {isLoading ? (
-            <>
-              <Skeleton width="55%" height={28} sx={{ mb: '3px' }} />
-              <Skeleton width="75%" height={18} />
-            </>
-          ) : isTrustGated ? (
-            <>
-              <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'text.primary', mb: '3px', lineHeight: 1.3 }}>
-                Setting things up
-              </Typography>
-              <Typography sx={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.6 }}>
-                Your morning brief will appear here once your first Shopify sync completes. This usually takes a few minutes.
-              </Typography>
-            </>
-          ) : (
-            <>
-              <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'text.primary', mb: '3px', lineHeight: 1.15 }}>
-                {props.userName ? `Good ${timeOfDay()}, ${props.userName}.` : (greeting ?? 'Good afternoon.')}
-              </Typography>
-              <Typography sx={{ fontSize: 13, color: 'text.secondary', lineHeight: 1.6 }}>
-                {pulse?.blockedOrders
-                  ? `${signals.length} issue${signals.length !== 1 ? 's' : ''} need a decision today${pulse.blockedRevenue ? ` — ${new Intl.NumberFormat('en', { style: 'currency', currency: props.currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(Number(pulse.blockedRevenue)))} of revenue at stake` : ''}.`
-                  : (summaryLine ?? 'All operations are on track.')}
-              </Typography>
-            </>
+  const subText = (() => {
+    if (isLoading) return null;
+    if (isTrustGated) return 'Your morning brief will appear here once your first sync completes.';
+    const urgent = criticalSignals.length + watchSignals.length;
+    if (!urgent) return summaryLine ?? 'All operations are on track.';
+    const atStake = pulse?.blockedRevenue
+      ? ` · ${fmtCurrency(Number(pulse.blockedRevenue), currency)} at stake`
+      : '';
+    return `${urgent} decision${urgent !== 1 ? 's' : ''} need you${atStake} — everything else is on track.`;
+  })();
+
+  return (
+    <Box sx={{ p: { xs: 2, md: '28px 32px' }, display: 'flex', flexDirection: 'column', gap: '20px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
+
+      {/* ── HEADER ── */}
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '10px', flexWrap: 'wrap', gap: 1 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 500, color: brandGreen, textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 2 }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            {' · '}
+            {isLoading ? 'Syncing…' : 'Live'}
+          </Typography>
+          {!isLoading && !isTrustGated && onExportBrief && (
+            <Box
+              component="button"
+              onClick={onExportBrief}
+              sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '8px', border: '1px solid var(--rule)', bgcolor: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--ink)', borderColor: 'var(--ink-3)' }, transition: 'all 0.1s' }}
+            >
+              Export brief
+            </Box>
           )}
         </Box>
 
-        {/* ── STAT CARDS — 4 cards: Revenue at Risk · Orders Blocked · Ready to Ship · SLA Breached ── */}
-        {!isLoading && !isTrustGated && (
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
-              {/* Revenue at Risk — danger color */}
-              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Revenue at risk</Typography>
-                <Typography sx={{ fontSize: 28, fontWeight: 500, color: theme.palette.error.main, lineHeight: 1 }}>
-                  {pulse?.blockedRevenue != null
-                    ? new Intl.NumberFormat('en', { style: 'currency', currency: props.currency ?? 'GBP', maximumFractionDigits: 0 }).format(Math.round(Number(pulse.blockedRevenue)))
-                    : '—'}
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
-                  {pulse?.blockedOrders ? `across ${pulse.blockedOrders} blocked orders` : 'no blocked orders'}
-                </Typography>
-              </Box>
-              {/* Orders Blocked */}
-              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?filter=blocked') : undefined}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Orders blocked</Typography>
-                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
-                  {pulse?.blockedOrders ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
-                  {pulse?.blockedOrders ? 'need a decision to ship' : 'queue is clear'}
-                </Typography>
-              </Box>
-              {/* Ready to Ship */}
-              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?filter=ready') : undefined}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>Ready to ship</Typography>
-                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
-                  {pulse?.shipToday ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>
-                  {pulse?.shipToday ? 'ready for pick & pack' : 'nothing queued yet'}
-                </Typography>
-              </Box>
-              {/* SLA Breached */}
-              <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', p: '14px 16px', cursor: onNavigate ? 'pointer' : 'default' }} onClick={onNavigate ? () => onNavigate('/orders?aging=72h') : undefined}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: pal.textSecond, mb: '8px' }}>SLA breached</Typography>
-                <Typography sx={{ fontSize: 28, fontWeight: 500, color: pal.textPrimary, lineHeight: 1 }}>
-                  {pulse?.aging72hPlus ?? '—'}<Box component="span" sx={{ fontSize: 14, fontWeight: 400, ml: '4px' }}>orders</Box>
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '6px' }}>72h+ past promised ship</Typography>
-              </Box>
-            </Box>
-          )}
+        {isLoading ? (
+          <>
+            <Skeleton width="52%" height={38} sx={{ mb: '8px' }} />
+            <Skeleton width="72%" height={18} />
+          </>
+        ) : isTrustGated ? (
+          <>
+            <Typography sx={{ fontSize: 22, fontWeight: 700, color: 'var(--ink)', mb: '8px', lineHeight: 1.2, letterSpacing: '-0.01em' }}>
+              Setting things up
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+              {subText}
+            </Typography>
+          </>
+        ) : (
+          <>
+            <Typography sx={{ fontSize: 32, fontWeight: 700, color: 'var(--ink)', mb: '8px', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+              {greetingText}
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+              {subText}
+            </Typography>
+          </>
+        )}
+      </Box>
 
-        {/* ── THE BRIEF — severity-grouped table ── */}
-        {!isLoading && !isTrustGated && (
-          <Box sx={{ background: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden', mt: '16px' }}>
-            {/* Table header */}
-            <Box sx={{ px: '1.25rem', pt: '1.1rem', pb: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderBottom: '0.5px solid var(--rule)' }}>
+      {/* ── BODY: two-column ── */}
+      {!isLoading && (
+        <Box sx={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+
+          {/* LEFT: Needs a decision */}
+          <Box sx={{ flex: 1, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', overflow: 'hidden' }}>
+            {/* Card header */}
+            <Box sx={{ px: '1.25rem', py: '0.9rem', borderBottom: '1px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 600, color: pal.textPrimary }}>The Brief</Typography>
-                <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: '2px' }}>Ranked by commercial consequence</Typography>
+                <Typography sx={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', lineHeight: 1 }}>
+                  {isTrustGated ? 'Getting ready' : 'Needs a decision'}
+                </Typography>
+                {!isTrustGated && (
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '3px' }}>
+                    Ranked by commercial consequence
+                  </Typography>
+                )}
               </Box>
-              <Typography sx={{ fontSize: 11, color: pal.textSecond }}>{generatedTime ? `Updated ${generatedTime}` : 'Updating...'}</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  {generatedTime ? `Updated ${generatedTime}` : 'Updating…'}
+                </Typography>
+                {onRefreshBrief && (
+                  <Box
+                    component="button"
+                    onClick={onRefreshBrief}
+                    sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
+                  >
+                    <RefreshCw size={11} />
+                  </Box>
+                )}
+              </Box>
             </Box>
 
-            {/* Column headers */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '110px 1fr 80px 48px 80px 96px', px: '1.25rem', py: '8px', borderTop: '0.5px solid var(--rule)', borderBottom: '0.5px solid var(--rule)', background: 'var(--bg-3)' }}>
-              {['Severity', 'Issue', '£ at risk', 'Age', '', 'Action'].map(col => (
-                <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.07em', color: pal.textSecond }}>{col}</Typography>
-              ))}
-            </Box>
+            {/* Trust-gated state */}
+            {isTrustGated && (
+              <Box sx={{ px: '1.25rem', py: '2rem', textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                  Waiting for your first data sync. This usually takes a few minutes.
+                </Typography>
+              </Box>
+            )}
 
-            {signals.length === 0 ? (
+            {/* No signals */}
+            {!isTrustGated && signals.length === 0 && (
               <Box sx={{ px: '1.25rem', py: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
-                <Typography sx={{ fontSize: 13, color: pal.textSecond }}>No urgent issues — all operations on track</Typography>
+                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
+                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                  All operations are on track — no decisions required
+                </Typography>
               </Box>
-            ) : (
+            )}
+
+            {/* CRITICAL group */}
+            {criticalSignals.length > 0 && (
               <>
-                {/* CRITICAL group */}
-                {signals.filter(s => s.priority <= 2).length > 0 && (
-                  <>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.error.main, 0.18) : alpha(theme.palette.error.main, 0.06) }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.error.main }} />
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.error.main }}>Critical — Act today</Typography>
-                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority <= 2).length} items</Typography>
-                    </Box>
-                    {signals.filter(s => s.priority <= 2).map(signal => (
-                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
-                    ))}
-                  </>
-                )}
-                {/* ATTENTION group */}
-                {signals.filter(s => s.priority === 3 || s.priority === 4).length > 0 && (
-                  <>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.warning.main, 0.18) : alpha(theme.palette.warning.main, 0.06) }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.warning.main }} />
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.warning.main }}>Attention — Review this week</Typography>
-                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority === 3 || s.priority === 4).length} items</Typography>
-                    </Box>
-                    {signals.filter(s => s.priority === 3 || s.priority === 4).map(signal => (
-                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
-                    ))}
-                  </>
-                )}
-                {/* ON TRACK group */}
-                {signals.filter(s => s.priority === 5).length > 0 && (
-                  <>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: theme.palette.mode === 'dark' ? alpha(theme.palette.success.main, 0.18) : alpha(theme.palette.success.main, 0.06) }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: theme.palette.success.main }} />
-                      <Typography sx={{ fontSize: 10, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em', color: theme.palette.success.main }}>On track — No action needed</Typography>
-                      <Typography sx={{ ml: 'auto', fontSize: 11, color: pal.textSecond }}>{signals.filter(s => s.priority === 5).length} items</Typography>
-                    </Box>
-                    {signals.filter(s => s.priority === 5).map(signal => (
-                      <BriefRow key={signal.id} signal={signal} onNavigate={onNavigate} currency={props.currency} />
-                    ))}
-                  </>
-                )}
+                <GroupBand sevK="critical" count={criticalSignals.length} />
+                {criticalSignals.map(s => (
+                  <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                ))}
               </>
             )}
-          {/* ── FOOTER — inside The Brief card, always visible when brief is shown ── */}
-          <Box sx={{
-            p: '0.75rem 1.25rem',
-            background: 'var(--bg-2)',
-            borderTop: '0.5px solid var(--rule)',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}>
-            <Typography sx={{ fontSize: 11, color: 'text.secondary' }}>
-              {trustWarning && (
-                <Box component="span" sx={{ color: 'warning.main', mr: 1 }}>
-                  Data may be stale ·
-                </Box>
-              )}
-              {isTrustGated ? 'Waiting for data sync' : generatedTime ? `Updated at ${generatedTime}` : 'Updating...'}
-            </Typography>
-            {onRefreshBrief && (
-              <Box
-                component="button"
-                onClick={onRefreshBrief}
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px',
-                  fontSize: 11,
-                  fontWeight: 500,
-                  color: theme.palette.primary.main,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  p: 0,
-                  '&:hover': { opacity: 0.75 },
-                }}
-              >
-                <RefreshCw size={11} />
-                Refresh
-              </Box>
+
+            {/* WATCH group */}
+            {watchSignals.length > 0 && (
+              <>
+                <GroupBand sevK="watch" count={watchSignals.length} />
+                {watchSignals.map(s => (
+                  <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                ))}
+              </>
             )}
+
+            {/* EVERYTHING ELSE — on-track signals collapsed */}
+            {onTrackSignals.length > 0 && (
+              <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
+            )}
+
+            {/* Footer */}
+            <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '1px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {trustWarning && (
+                <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
+                  Data may be stale ·
+                </Typography>
+              )}
+              <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
+              </Typography>
+            </Box>
           </Box>
-          </Box>
-        )}
-        
+
+          {/* RIGHT: TODAY'S FLOW */}
+          <FlowSidebar pulse={pulse} currency={currency} onNavigate={onNavigate} />
         </Box>
+      )}
+
+      {/* Loading state for body */}
+      {isLoading && (
+        <Box sx={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <Box sx={{ flex: 1, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {[1, 2, 3].map(i => <Skeleton key={i} height={56} sx={{ borderRadius: '8px' }} />)}
+          </Box>
+          <Box sx={{ width: 272, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+            {[1, 2, 3, 4].map(i => <Skeleton key={i} height={24} sx={{ borderRadius: '4px' }} />)}
+          </Box>
+        </Box>
+      )}
+
     </Box>
   );
 }
 
+// ─── EVERYTHING ELSE (collapsible on-track section) ───────────
+
+function EverythingElse({
+  signals,
+  onNavigate,
+  currency,
+}: {
+  signals: Signal[];
+  onNavigate?: (path: string) => void;
+  currency: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Box
+        onClick={() => setOpen(v => !v)}
+        sx={{ display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: SEV.ontrack.bgBand, borderBottom: open ? '1px solid var(--rule)' : 'none', cursor: 'pointer', '&:hover': { opacity: 0.85 }, transition: 'opacity 0.1s' }}
+      >
+        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
+        <Typography sx={{ fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#4CAF7A' }}>
+          Everything else
+        </Typography>
+        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', ml: '4px' }}>
+          {signals.length} on track
+        </Typography>
+        <Box sx={{ ml: 'auto' }}>
+          {open ? <ChevronUp size={13} color="var(--ink-4)" /> : <ChevronDown size={13} color="var(--ink-4)" />}
+        </Box>
+      </Box>
+      {open && signals.map(s => (
+        <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+      ))}
+    </>
+  );
+}
+
+// ─── EXPORT ───────────────────────────────────────────────────
+
 export default function OverviewModuleFT2(props: OverviewModuleFT2Props) {
-  return <ModuleErrorBoundary moduleName="overview"><OverviewModuleFT2Inner {...props} /></ModuleErrorBoundary>;
+  return (
+    <ModuleErrorBoundary moduleName="overview">
+      <OverviewModuleFT2Inner {...props} />
+    </ModuleErrorBoundary>
+  );
 }

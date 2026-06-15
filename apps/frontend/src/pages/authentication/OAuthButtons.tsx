@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/authentication/OAuthButtons.tsx
 //
 // AUTH-001/002: OAuth entry point buttons — Shopify + Google
@@ -50,13 +51,17 @@ export default function OAuthButtons({ mode, onShopifyRegister }: OAuthButtonsPr
 
   const handleShopify = () => {
     if (mode === 'login') {
-      // AUTH-001: Shopify OAuth requires token — redirect to register (onboarding entry point)
-      navigate('/register');
-    } else {
-      // AUTH-002: post-register connect handled by parent via ConnectStoreModal
-      onShopifyRegister?.();
+      navigate('/register?intent=connect-shopify');
+      return;
     }
+
+    onShopifyRegister?.();
   };
+
+  const shopifyLabel =
+    mode === 'login'
+      ? 'Sign in or connect Shopify'
+      : 'Create account, then connect Shopify';
 
   const buttonSx = {
     flex: 1,
@@ -76,24 +81,13 @@ export default function OAuthButtons({ mode, onShopifyRegister }: OAuthButtonsPr
 
   return (
     <Stack spacing={1.5} width="100%">
-      {/* AUTH-001/002: 2-column OAuth buttons — matches target A1/A2 */}
       <Stack direction="row" spacing={1.5}>
         <Button onClick={handleShopify} sx={{ ...buttonSx, flex: 1 }} variant="outlined">
           <ShopifyIcon />
-          Continue with Shopify
+          {shopifyLabel}
         </Button>
-
-        <Tooltip title="Google sign-in coming soon" placement="top" arrow>
-          <span style={{ flex: 1 }}>
-            <Button disabled sx={{ ...buttonSx, width: '100%', opacity: 0.45 }} variant="outlined">
-              <GoogleIcon />
-              Continue with Google
-            </Button>
-          </span>
-        </Tooltip>
       </Stack>
 
-      {/* Divider */}
       <Stack direction="row" alignItems="center" spacing={1.5} sx={{ py: 0.5 }}>
         <Divider sx={{ flex: 1, borderColor: 'var(--rule)' }} />
         <Typography variant="caption" sx={{ color: 'var(--ink-4)', whiteSpace: 'nowrap', letterSpacing: '0.06em' }}>

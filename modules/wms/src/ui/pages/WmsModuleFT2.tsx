@@ -2,17 +2,12 @@
 import { useState, memo, useEffect, useRef } from 'react';
 import {
   Box,
-  Paper,
   Typography,
   CircularProgress,
   Alert,
-  Button,
-  Chip,
-  LinearProgress,
-  useTheme,
   TextField,
 } from '@mui/material';
-import { ScanBarcode, PackageCheck, Clock, Package } from 'lucide-react';
+import { ScanBarcode, Package } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
@@ -170,124 +165,6 @@ const STATUS_LABELS: Record<string, {
   cancelled:     { label: 'Cancelled',   color: 'error'   },
 };
 
-// ── Pack mode panel (WEB-PACK-02) ─────────────────────────────────────────────
-// Always-on free-scan surface. Accepts LSU- (unit) and LSO- (invoice) barcodes.
-// Pulsing NodeTrack-style dot signals listening state.
-// Sad path errors auto-dismiss after 3.5s.
-function PackModePanel({
-  onScan,
-  onSessionOpen,
-}: {
-  onScan: (value: string) => Promise<PackFreeScanApiResponse>;
-  onSessionOpen: (data: PackFreeScanResult) => void;
-}) {
-  const [value, setValue] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [shipped, setShipped] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-
-  const handleSubmit = async () => {
-    const val = value.trim();
-    if (!val || loading) return;
-    setValue('');
-    if (dismissTimer.current) clearTimeout(dismissTimer.current);
-    setError(null);
-    setShipped(null);
-    setLoading(true);
-    try {
-      const result = await onScan(val);
-      if ('error' in result) {
-        setError(result.message);
-        dismissTimer.current = setTimeout(() => setError(null), 3500);
-      } else if (result.type === 'unit_resolved') {
-        onSessionOpen(result);
-      } else if (result.type === 'shipped') {
-        setShipped(`Order #${result.external_order_id ?? ''} shipped`);
-        dismissTimer.current = setTimeout(() => {
-          setShipped(null);
-          inputRef.current?.focus();
-        }, 2500);
-      }
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } }; message?: string })
-        ?.response?.data?.message
-        ?? (err as Error)?.message
-        ?? 'Scan failed';
-      setError(msg);
-      dismissTimer.current = setTimeout(() => {
-        setError(null);
-        inputRef.current?.focus();
-      }, 3500);
-    } finally {
-      setLoading(false);
-      if (!error) setTimeout(() => inputRef.current?.focus(), 50);
-    }
-  };
-
-  const hasError = !!error;
-
-  return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-      {/* Header row */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-        {/* Pulsing dot — same animation contract as NodeTrack */}
-        <Box sx={{
-          width: 10, height: 10, borderRadius: '50%', flexShrink: 0,
-          bgcolor: hasError ? 'error.main' : 'var(--accent)',
-          ...(!hasError && !loading && {
-            '@keyframes packPulse': {
-              '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.6)' },
-              '70%':  { boxShadow: '0 0 0 8px rgba(255,107,43,0)' },
-              '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
-            },
-            animation: 'packPulse 1.3s ease-out infinite',
-          }),
-        }} />
-        <Typography sx={{
-          fontSize: 10, fontWeight: 600, textTransform: 'uppercase',
-          letterSpacing: '0.06em',
-          color: hasError ? 'error.main' : 'var(--accent)',
-        }}>
-          Pack mode
-        </Typography>
-        <Chip
-          label={hasError ? 'Error' : loading ? 'Scanning…' : shipped ? 'Shipped' : 'Listening'}
-          size="small"
-          color={hasError ? 'error' : shipped ? 'success' : 'default'}
-          sx={{ ml: 'auto', height: 20, fontSize: 10 }}
-        />
-      </Box>
-
-      {/* Shipped confirmation */}
-      {shipped && (
-        <Alert severity="success" sx={{ mb: 1, borderRadius: 1.5, py: 0.5 }}>
-          {shipped}
-        </Alert>
-      )}
-
-      {/* Scan input */}
-      <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-        <TextField
-          inputRef={inputRef}
-          fullWidth size="small"
-          placeholder="Scan LSU- or LSO- barcode"
-          value={value}
-          disabled={loading}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter') void handleSubmit(); }}
-          autoComplete="off"
-          error={hasError}
-          helperText={error ?? 'Scanner auto-submits · manual entry: press Enter'}
-        />
-        {loading && <CircularProgress size={20} sx={{ mt: 1, flexShrink: 0 }} />}
-      </Box>
-    </Paper>
-  );
-}
 
 const BatchCard = memo(function BatchCard({
   batch,
@@ -302,9 +179,7 @@ const BatchCard = memo(function BatchCard({
   gridLocations?: WarehouseLocation[];
   onFetchLineItems?: (batchId: string) => Promise<{ location_code: string }[]>;
 }) {
-  const theme = useTheme();
-  const status = STATUS_LABELS[batch.status] ?? { label: batch.status, color: 'default' as const };
-  const releasedAt = new Date(batch.released_at).toLocaleTimeString();
+  const releasedAt = new Date(batch.released_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const [mapOpen, setMapOpen] = useState(false);
   const [pickLocations, setPickLocations] = useState<string[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
@@ -331,71 +206,65 @@ const BatchCard = memo(function BatchCard({
     ? Math.round((batch.units_packed / batch.total_units) * 100)
     : 0;
 
+  const isPending      = batch.status === 'pending';
+  const isPicking      = batch.status === 'picking';
+  const isPickComplete = batch.status === 'pick_complete';
+  const isPacking      = batch.status === 'packing';
+
+  const ctaLabel = isPending ? 'Claim & pick →'
+    : isPicking      ? 'Continue picking →'
+    : isPickComplete ? 'Ready to pack →'
+    : isPacking      ? 'Continue packing →'
+    : null;
+
+  const handleCta = () => {
+    if (isPending) onClaim(batch.pick_batch_id);
+    else if (isPicking) onContinuePick(batch.pick_batch_id);
+  };
+
   return (
-    <Paper elevation={3} sx={{
-      p: 2.5, mb: 2, borderRadius: 2,
+    <Box sx={{
+      bgcolor: 'var(--surface)',
       border: '1px solid var(--rule)',
-      background: 'var(--surface)',
-      boxShadow: theme.palette.mode === 'dark'
-        ? '0 4px 16px rgba(0,0,0,0.45)'
-        : '0 4px 16px rgba(0,0,0,0.10)',
+      borderRadius: '14px',
+      p: '18px 20px',
+      mb: 1.5,
     }}>
 
-      {/* BATCH HEADER */}
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-        <Typography
-          variant="body2"
-          fontWeight={700}
-          sx={{ fontFamily: 'monospace', color: 'var(--ink)' }}
-        >
+      {/* HEADER */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2 }}>
+        <Typography sx={{
+          fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+          fontSize: 14.5, fontWeight: 500, color: 'var(--ink)',
+          letterSpacing: '0.03em',
+        }}>
           {batch.pick_batch_id.slice(0, 8).toUpperCase()}
         </Typography>
-        <Chip label={status.label} color={status.color} size="small" />
+        <Box sx={{ flex: 1 }} />
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+          {batch.total_line_items} lines · {batch.total_units} units · {releasedAt}
+        </Typography>
       </Box>
 
-      {/* BATCH STATS */}
-      <Box sx={{ display: 'flex', gap: 3, mb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <PackageCheck size={14} color={theme.palette.text.secondary} />
-          <Typography variant="caption" color="text.secondary">
-            {batch.total_line_items} lines
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <ScanBarcode size={14} color={theme.palette.text.secondary} />
-          <Typography variant="caption" color="text.secondary">
-            {batch.units_picked}/{batch.total_units} picked
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Clock size={14} color={theme.palette.text.secondary} />
-          <Typography variant="caption" color="text.secondary">
-            {releasedAt}
-          </Typography>
-        </Box>
-      </Box>
-
-      {/* MAP TOGGLE */}
+      {/* PICK MAP */}
       {gridLocations && gridLocations.length > 0 && (
         <Box
           onClick={handleToggleMap}
           sx={{
             display: 'inline-flex', alignItems: 'center', gap: 0.75,
-            px: 1.25, py: 0.5, mb: 1.5,
+            px: 1.25, py: 0.5, mb: 1.75,
             fontSize: 11, fontWeight: 500, color: 'var(--accent)',
             border: '0.5px solid var(--accent)', borderRadius: '6px',
-            cursor: 'pointer', width: 'fit-content',
+            cursor: 'pointer',
             '&:hover': { opacity: 0.75 },
           }}
         >
-          {mapLoading ? <CircularProgress size={11} /> : null}
+          {mapLoading ? <CircularProgress size={11} sx={{ mr: 0.5 }} /> : null}
           {mapOpen ? 'Hide map' : 'Show pick map'}
         </Box>
       )}
-
-      {/* PICK MAP — mini grid with pick path */}
       {mapOpen && gridLocations && (
-        <Box sx={{ mb: 2, border: '1px solid var(--rule)', borderRadius: 1, p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }}>
+        <Box sx={{ mb: 2, border: '1px solid var(--rule)', borderRadius: '8px', p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }}>
           <WarehouseGrid
             locations={gridLocations}
             highlightedBins={pickLocations}
@@ -411,72 +280,59 @@ const BatchCard = memo(function BatchCard({
         </Box>
       )}
 
-      {/* PICK PROGRESS */}
-      {batch.status === 'picking' && (
-        <Box sx={{ mb: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">Pick progress</Typography>
-            <Typography variant="caption" color="text.secondary">{pickProgress}%</Typography>
+      {/* DUAL PROGRESS BARS */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2.75, mb: 2 }}>
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Picking</Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {batch.units_picked}/{batch.total_units}
+            </Typography>
           </Box>
-          <LinearProgress variant="determinate" value={pickProgress} sx={{ borderRadius: 1, height: 6 }} />
-        </Box>
-      )}
-
-      {/* PACK PROGRESS */}
-      {batch.status === 'packing' && (
-        <Box sx={{ mb: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-            <Typography variant="caption" color="text.secondary">Pack progress</Typography>
-            <Typography variant="caption" color="text.secondary">{packProgress}%</Typography>
+          <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
+            <Box sx={{ width: `${pickProgress}%`, height: '100%', bgcolor: 'var(--ok, #4CAF7A)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
           </Box>
-          <LinearProgress
-            variant="determinate"
-            value={packProgress}
-            color="success"
-            sx={{ borderRadius: 1, height: 6 }}
-          />
         </Box>
-      )}
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
+            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Packing</Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
+              {batch.units_packed}/{batch.total_units}
+            </Typography>
+          </Box>
+          <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }}>
+            <Box sx={{ width: `${packProgress}%`, height: '100%', bgcolor: 'var(--accent)', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+          </Box>
+        </Box>
+      </Box>
 
-      {/* ACTIONS */}
-      {batch.status === 'pending' && (
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: 2, fontWeight: 700, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-          onClick={() => onClaim(batch.pick_batch_id)}
-        >
-          Claim & Start Picking
-        </Button>
-      )}
-
-      {batch.status === 'picking' && (
-        <Button
-          variant="outlined"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: 2, fontWeight: 700 }}
-          onClick={() => onContinuePick(batch.pick_batch_id)}
-        >
-          Continue Picking
-        </Button>
-      )}
-
-      {batch.status === 'pick_complete' && (
-        <Typography variant="caption" color="success.main"
-          sx={{ display: 'block', textAlign: 'center', fontWeight: 600, pt: 0.5 }}>
-          Ready to pack — scan any LSU- barcode at pack station
+      {/* FOOTER */}
+      <Box sx={{ display: 'flex', alignItems: 'center', pt: 1.75, borderTop: '1px solid var(--rule)' }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+          {isPicking ? 'Picking in progress' : isPickComplete ? 'Picking done · awaiting pack scan' : isPacking ? 'Packing in progress' : 'Available'}
         </Typography>
-      )}
-
-      {batch.status === 'packing' && (
-        <Typography variant="caption" color="warning.main"
-          sx={{ display: 'block', textAlign: 'center', fontWeight: 600, pt: 0.5 }}>
-          Packing in progress — scan LSU- barcode to continue
-        </Typography>
-      )}
-    </Paper>
+        <Box sx={{ flex: 1 }} />
+        {ctaLabel && (
+          <Box
+            component="button"
+            onClick={handleCta}
+            disabled={isPickComplete}
+            sx={{
+              fontSize: 12, fontWeight: 600,
+              color: isPickComplete ? 'var(--ink-3)' : '#10151E',
+              bgcolor: isPickComplete ? 'var(--rule)' : 'var(--accent)',
+              border: 'none', borderRadius: '8px',
+              px: 2.25, py: 1,
+              cursor: isPickComplete ? 'default' : 'pointer',
+              '&:hover:not(:disabled)': { opacity: 0.88 },
+              transition: 'opacity 0.15s ease',
+            }}
+          >
+            {ctaLabel}
+          </Box>
+        )}
+      </Box>
+    </Box>
   );
 });
 
@@ -495,58 +351,62 @@ const StowTaskCard = memo(function StowTaskCard({
   onClaim: (taskId: string) => void;
   onConfirm: (taskId: string) => void;
 }) {
-  const theme = useTheme();
-
   const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
+  const isPending = task.status === 'pending';
+
   return (
-    <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 2, borderColor: 'var(--accent-border)' }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          {task.image_url ? (
-            <Box component="img" src={task.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} />
-          ) : (
-            <Box sx={{ width: 40, height: 40, borderRadius: 1, bgcolor: 'action.hover', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Package size={18} style={{ opacity: 0.4 }} />
-            </Box>
-          )}
-          <Box>
-            <Typography variant="body2" fontWeight={600}>
-              {task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase()}
-            </Typography>
-            {task.sku && <Typography variant="caption" color="text.secondary">{task.sku}</Typography>}
+    <Box sx={{
+      bgcolor: 'var(--surface)',
+      border: '1px solid var(--accent-border)',
+      borderRadius: '14px',
+      p: '18px 20px',
+      mb: 1.5,
+    }}>
+      {/* HEADER */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }}>
+        {task.image_url ? (
+          <Box component="img" src={task.image_url} alt="" sx={{ width: 40, height: 40, objectFit: 'cover', borderRadius: '8px', flexShrink: 0 }} />
+        ) : (
+          <Box sx={{ width: 40, height: 40, borderRadius: '8px', bgcolor: 'var(--accent-ghost)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Package size={18} color="var(--accent)" />
           </Box>
+        )}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase()}
+          </Typography>
+          {task.sku && (
+            <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>{task.sku}</Typography>
+          )}
         </Box>
-        <Chip label="Stow pending" size="small" sx={{ bgcolor: 'var(--accent-ghost)', color: 'var(--accent)', border: '0.5px solid var(--accent-border)', fontWeight: 600, fontSize: 11 }} />
+        <Box sx={{ px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>Stow pending</Typography>
+        </Box>
       </Box>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        <Typography variant="caption" color="text.secondary">Qty: {task.quantity}</Typography>
-        <Typography variant="caption" color="text.secondary">Location: {task.location_code ?? 'Unassigned'}</Typography>
-        <Typography variant="caption" color="text.secondary">Source: {triggerLabel}</Typography>
+
+      {/* METADATA */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Qty: {task.quantity}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Location: {task.location_code ?? 'Unassigned'}</Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>Source: {triggerLabel}</Typography>
       </Box>
-      {task.status === 'pending' && (
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-          onClick={() => onClaim(task.stow_task_id)}
-        >
-          Claim & Stow
-        </Button>
-      )}
-      {task.status === 'in_progress' && (
-        <Button
-          variant="contained"
-          fullWidth
-          size="large"
-          sx={{ borderRadius: '6px', fontWeight: 600, bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
-          onClick={() => onConfirm(task.stow_task_id)}
-        >
-          Confirm Stowed
-        </Button>
-      
-      )}
-    </Paper>
+
+      {/* CTA */}
+      <Box
+        component="button"
+        onClick={() => isPending ? onClaim(task.stow_task_id) : onConfirm(task.stow_task_id)}
+        sx={{
+          width: '100%', fontSize: 12, fontWeight: 600,
+          color: '#10151E', bgcolor: 'var(--accent)',
+          border: 'none', borderRadius: '8px',
+          py: 1.25, cursor: 'pointer',
+          '&:hover': { opacity: 0.88 },
+          transition: 'opacity 0.15s ease',
+        }}
+      >
+        {isPending ? 'Claim & stow →' : 'Confirm stowed →'}
+      </Box>
+    </Box>
   );
 });
 
@@ -808,19 +668,39 @@ function WmsModuleFT2Inner({
   }
 
   return (
-    <Box sx={{ p: 2, maxWidth: 600, mx: 'auto' }}>
+    <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
 
       {/* PAGE HEADER */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }}>
+        <Box>
+          <Typography sx={{
+            fontFamily: '"Instrument Serif", Georgia, serif',
+            fontSize: 30, fontWeight: 400, letterSpacing: '-0.01em',
+            color: 'var(--ink)', lineHeight: 1.1,
+          }}>
             Warehouse
           </Typography>
-          <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
+          <Typography sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }}>
+            Pick and pack active batches.
+          </Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Pick and pack active batches.
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
+          <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
+          {isOnline && (
+            <Box sx={{
+              display: 'flex', alignItems: 'center', gap: 0.875,
+              border: '1px solid rgba(76,175,122,0.3)',
+              borderRadius: '100px', px: 1.375, py: 0.625,
+            }}>
+              <Box sx={{
+                width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A',
+                '@keyframes wmsOnlinePulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
+                animation: 'wmsOnlinePulse 2.4s ease-in-out infinite',
+              }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#4CAF7A' }}>Online</Typography>
+            </Box>
+          )}
+        </Box>
       </Box>
 
       {/* LOADING */}
@@ -832,82 +712,115 @@ function WmsModuleFT2Inner({
 
       {/* ERROR */}
       {(isError || sessionError) && (
-        <Alert severity="error" sx={{ mb: 3 }}>
+        <Alert severity="error" sx={{ mb: 3, borderRadius: '10px' }}>
           {sessionError ?? 'Failed to load warehouse data. Please refresh.'}
         </Alert>
       )}
 
       {/* PACK MODE PANEL — always-on free-scan surface (WEB-PACK-02) */}
-      <Paper variant="outlined" sx={{ p: 2, mb: 3, borderRadius: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+      <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px 22px', mb: 2.75 }}>
+
+        {/* Header row */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.625, mb: 2 }}>
           <Box sx={{
-            width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+            width: 40, height: 40, borderRadius: '10px',
+            bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            bgcolor: packScanError ? 'error.main' : 'var(--accent-)',
-            color: '#fff',
-            transition: 'background-color 0.2s',
-            ...(!packScanError && !packScanLoading && {
-              '@keyframes packNodePulse': {
-                '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
-                '70%':  { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
-                '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
-              },
-              animation: 'packNodePulse 1.3s ease-out infinite',
-            }),
+            flexShrink: 0,
           }}>
             {packScanLoading
-              ? <CircularProgress size={16} sx={{ color: '#fff' }} />
-              : <ScanBarcode size={16} />}
+              ? <CircularProgress size={18} sx={{ color: 'var(--accent)' }} />
+              : <ScanBarcode size={20} color={packScanError ? '#E5484D' : 'var(--accent)'} />}
           </Box>
-          <Typography variant="body2" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-            Pack mode
-          </Typography>
-          <Chip
-            label={packScanLoading ? 'Resolving…' : packScanError ? 'Hold' : 'Listening'}
-            size="small"
-            color={packScanError ? 'error' : 'success'}
-            variant="outlined"
-            sx={{ ml: 'auto', fontSize: 10, height: 20 }}
-          />
+          <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Pack mode</Typography>
+          <Box sx={{ flex: 1 }} />
+          {/* Status pill */}
+          <Box sx={{
+            display: 'flex', alignItems: 'center', gap: 0.75,
+            border: `1px solid ${packScanError ? 'rgba(229,72,77,0.35)' : 'rgba(76,175,122,0.3)'}`,
+            borderRadius: '100px', px: 1.375, py: 0.5,
+          }}>
+            <Box sx={{
+              width: 5, height: 5, borderRadius: '50%',
+              bgcolor: packScanError ? '#E5484D' : '#4CAF7A',
+              ...(!packScanError && !packScanLoading && {
+                '@keyframes wmsListenPulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
+                animation: 'wmsListenPulse 1.6s ease-in-out infinite',
+              }),
+            }} />
+            <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: packScanError ? '#E5484D' : '#4CAF7A' }}>
+              {packScanLoading ? 'Resolving…' : packScanError ? 'Hold' : 'Listening'}
+            </Typography>
+          </Box>
         </Box>
+
+        {/* Error alert */}
         {packScanError && (
-          <Alert severity="error" sx={{ mb: 1.5, py: 0.5, fontSize: 13 }}>
+          <Alert severity="error" sx={{ mb: 1.5, py: 0.5, fontSize: 13, borderRadius: '8px' }}>
             {packScanError}
           </Alert>
         )}
-        <TextField
-          inputRef={packInputRef}
-          fullWidth size="small"
-          placeholder="Scan any LSU- barcode to begin packing"
-          disabled={packScanLoading}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const val = packInputRef.current?.value.trim();
-              if (val) void handlePackFreeScan(val);
-            }
-          }}
-          autoComplete="off"
-          helperText="Scanner auto-submits · manual entry: press Enter"
-          sx={{ '& .MuiInputBase-input': { fontFamily: 'monospace', fontSize: 13 } }}
-        />
-      </Paper>
+
+        {/* Scan input */}
+        <Box sx={{
+          bgcolor: 'var(--bg)',
+          border: '1.5px solid',
+          borderColor: packScanError ? 'error.main' : 'rgba(255,107,43,0.45)',
+          borderRadius: '10px',
+          px: 2.25, py: 1.875, mb: 1.25,
+        }}>
+          <TextField
+            inputRef={packInputRef}
+            fullWidth
+            variant="standard"
+            placeholder="Scan any LSU- barcode to begin packing"
+            disabled={packScanLoading}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const val = packInputRef.current?.value.trim();
+                if (val) void handlePackFreeScan(val);
+              }
+            }}
+            autoComplete="off"
+            InputProps={{ disableUnderline: true }}
+            sx={{
+              '& .MuiInputBase-input': {
+                fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                fontSize: 15, color: 'var(--ink-3)',
+                '&::placeholder': { color: 'var(--ink-4)' },
+              },
+            }}
+          />
+        </Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+          Scanner auto-submits · manual entry: press Enter
+        </Typography>
+      </Box>
+
+      {/* ACTIVE BATCHES SECTION */}
+      {!isLoading && !loadingSession && batches.length > 0 && (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+            Active batches
+          </Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+            {batches.length} in progress
+          </Typography>
+        </Box>
+      )}
 
       {/* EMPTY STATE */}
       {!isLoading && !loadingSession && !isError && batches.length === 0 && (
-        <Paper
-          variant="outlined"
-          sx={{
-            textAlign: 'center',
-            py: 8,
-            borderRadius: 2,
-            borderStyle: 'dashed',
-          }}
-        >
-          <ScanBarcode size={40} style={{ opacity: 0.3 }} />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            No active batches. Waiting for release.
+        <Box sx={{
+          textAlign: 'center', py: 8,
+          bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
+          borderRadius: '14px',
+        }}>
+          <ScanBarcode size={36} color="var(--ink-4)" />
+          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }}>
+            No active batches — waiting for release.
           </Typography>
-        </Paper>
+        </Box>
       )}
 
       {/* BATCH LIST */}
@@ -925,9 +838,14 @@ function WmsModuleFT2Inner({
       {/* STOW TASKS */}
       {!isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (
         <Box sx={{ mt: batches.length > 0 ? 3 : 0 }}>
-          <Typography variant="overline" color="warning.main" sx={{ mb: 1.5, display: 'block' }}>
-            Stow tasks — {(stowTasks ?? []).length} pending
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+            <Typography sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+              Stow tasks
+            </Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+              {(stowTasks ?? []).length} pending
+            </Typography>
+          </Box>
           {(stowTasks ?? []).map((task) => (
             <StowTaskCard
               key={task.stow_task_id}

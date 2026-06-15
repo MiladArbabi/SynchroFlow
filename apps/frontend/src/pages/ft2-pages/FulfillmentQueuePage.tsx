@@ -1,28 +1,18 @@
 // apps/frontend/src/pages/ft2-pages/FulfillmentQueuePage.tsx
 //
-// FULFILLMENT QUEUE — FT2 OPERATOR SURFACE
-// -----------------------------------------
-// Target design: handover §2.4 + inspo screenshot
+// FULFILLMENT QUEUE — batch cards with dual progress bars
+// Design: Orders / Fulfillment tab — each batch is a rich card (not a table row)
 //
-// Sections:
-//   Header     — serif + italic accent + batch summary subline
-//   Filter bar — Status · Priority · Assignee · Created · Delivery
-//   Batch list — expandable rows with pick + pack progress bars
-//
-// Data: GET /api/v1/wms/batches + GET /api/v1/wms/batch/:id/line-items
-// Actions: POST /api/v1/wms/batch/release (Merge batches)
+// RULES: No alpha(). No useTheme(). No fontFamily overrides. Picking=#FF6B2B, Packing=#5F6B85.
 import { useState } from 'react';
-import { Box, Typography, useTheme, CircularProgress } from '@mui/material';
+import { Box, Typography, CircularProgress } from '@mui/material';
 import { PlanGate } from '../../components/PlanGate';
-import { alpha } from '@mui/material/styles';
 import { ChevronRight, ChevronDown, Package } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { usePickBatches, usePickBatchLineItems } from '../wms/usePickBatches';
 import type { PickBatch, PickBatchLineItem } from '../wms/usePickBatches';
 
-
-// Batch sequential display number — derived from released_at sort order
 const batchDisplayId = (batch: PickBatch): string =>
   `#${batch.pick_batch_id.slice(0, 8).toUpperCase()}`;
 
@@ -34,17 +24,24 @@ const formatTime = (iso: string | null): string => {
 const pct = (n: number, total: number): number =>
   total === 0 ? 0 : Math.min(100, Math.round((n / total) * 100));
 
-// ─── PROGRESS BAR ─────────────────────────────────────────────────────────────
+// ─── FILTER CHIP ──────────────────────────────────────────────────────────────
 
-function ProgressBar({ value, total, color }: { value: number; total: number; color: string }) {
-  const p = pct(value, total);
+function FilterChip({ label, value, active }: { label: string; value: string; active?: boolean }) {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'var(--bg-3)', overflow: 'hidden' }}>
-        <Box sx={{ height: '100%', width: `${p}%`, bgcolor: color, borderRadius: 3, transition: 'width 0.3s ease' }} />
-      </Box>
-      <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', minWidth: 28, textAlign: 'right' }}>
-        {value}/{total}
+    <Box sx={{
+      display: 'inline-flex', alignItems: 'center', gap: 0.625,
+      px: 1.375, py: 0.625,
+      borderRadius: '100px',
+      bgcolor: active ? 'var(--accent-ghost)' : 'transparent',
+      border: `1px solid ${active ? 'var(--accent-border)' : 'var(--rule)'}`,
+      cursor: 'pointer',
+      '&:hover': { borderColor: active ? 'var(--accent)' : 'var(--rule-2)' },
+    }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.10em' }}>
+        {label}
+      </Typography>
+      <Typography sx={{ fontSize: 12, fontWeight: 600, color: active ? 'var(--accent)' : 'var(--ink)' }}>
+        {value}
       </Typography>
     </Box>
   );
@@ -63,12 +60,10 @@ function LineItemRow({ item }: { item: PickBatchLineItem }) {
       '&:last-child': { borderBottom: 'none' },
       '&:hover': { bgcolor: 'var(--bg-2)' },
     }}>
-      {/* Qty */}
       <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>
         {item.quantity}/{item.quantity}
       </Typography>
 
-      {/* Item name */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Package size={14} color="var(--ink-4)" />
         <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
@@ -76,26 +71,16 @@ function LineItemRow({ item }: { item: PickBatchLineItem }) {
         </Typography>
       </Box>
 
-      {/* Variant · SKU */}
-      <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
         {item.sku ?? 'No SKU'}
       </Typography>
 
-      {/* Location */}
-      <Box sx={{
-        display: 'inline-flex', alignItems: 'center',
-        px: 1, py: 0.25,
-        bgcolor: 'var(--bg-3)',
-        border: '1px solid var(--rule)',
-        borderRadius: '4px',
-        width: 'fit-content',
-      }}>
-        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+      <Box sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.25, bgcolor: 'var(--bg-3)', border: '1px solid var(--rule)', borderRadius: '4px', width: 'fit-content' }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)' }}>
           {item.location_code}
         </Typography>
       </Box>
 
-      {/* Picked fraction */}
       <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', textAlign: 'right' }}>
         {item.quantity}/{item.quantity}
       </Typography>
@@ -103,26 +88,16 @@ function LineItemRow({ item }: { item: PickBatchLineItem }) {
   );
 }
 
-// ─── EXPANDED BATCH PANEL ─────────────────────────────────────────────────────
+// ─── EXPANDED LINE ITEMS PANEL ────────────────────────────────────────────────
 
 function BatchLineItemsPanel({ batchId }: { batchId: string }) {
   const { data, isLoading } = usePickBatchLineItems(batchId);
-  const theme = useTheme();
 
   return (
-    <Box sx={{
-      borderTop: '1px solid var(--rule)',
-      bgcolor: theme.palette.mode === 'dark' ? 'var(--bg)' : 'var(--bg-2)',
-    }}>
-      {/* Column headers */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: '48px 1fr 160px 100px 80px',
-        px: 3, py: 1,
-        borderBottom: '1px solid var(--rule)',
-      }}>
-        {['QTY', 'ITEM', 'VARIANT · SKU', 'LOCATION', 'PICKED'].map((col) => (
-          <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+    <Box sx={{ borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: '48px 1fr 160px 100px 80px', px: 3, py: 1, borderBottom: '1px solid var(--rule)' }}>
+        {['QTY', 'Item', 'Variant · SKU', 'Location', 'Picked'].map((col) => (
+          <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
             {col}
           </Typography>
         ))}
@@ -130,7 +105,7 @@ function BatchLineItemsPanel({ batchId }: { batchId: string }) {
 
       {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}>
-          <CircularProgress size={20} />
+          <CircularProgress size={20} sx={{ color: 'var(--accent)' }} />
         </Box>
       )}
 
@@ -139,7 +114,7 @@ function BatchLineItemsPanel({ batchId }: { batchId: string }) {
       ))}
 
       {!isLoading && data?.line_items.length === 0 && (
-        <Typography sx={{ fontSize: 13, color: 'var(--ink-4)', px: 3, py: 2 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', px: 3, py: 2 }}>
           All items picked — no remaining line items.
         </Typography>
       )}
@@ -147,118 +122,113 @@ function BatchLineItemsPanel({ batchId }: { batchId: string }) {
   );
 }
 
-// ─── BATCH ROW ────────────────────────────────────────────────────────────────
+// ─── BATCH CARD ───────────────────────────────────────────────────────────────
 
-function BatchRow({ batch }: { batch: PickBatch }) {
-  const theme = useTheme();
+function BatchCard({ batch }: { batch: PickBatch }) {
   const [expanded, setExpanded] = useState(false);
+  const pickPct = pct(batch.units_picked, batch.total_units);
+  const packPct = pct(batch.units_packed, batch.total_units);
 
-  const pickPct  = pct(batch.units_picked, batch.total_units);
-  const packPct  = pct(batch.units_packed, batch.total_units);
+  const initials = batch.picker_name
+    ? batch.picker_name.split(' ').map(n => n[0]).slice(0, 2).join('')
+    : '?';
 
-  const pickColor  = pickPct === 100 ? theme.palette.success.main : theme.palette.warning.main;
-  const packColor  = packPct === 100 ? theme.palette.success.main : 'var(--ink-4)';
+  const isComplete =
+    batch.units_picked === batch.total_units && batch.units_packed === batch.total_units;
+
+  const statusText = isComplete
+    ? 'All items picked and packed — ready to ship'
+    : batch.units_picked < batch.total_units
+    ? 'Picking in progress — packing starts when picks complete'
+    : 'Packing in progress';
 
   return (
-    <Box sx={{ borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' } }}>
-      {/* BATCH ROW */}
-      <Box sx={{
-        display: 'grid',
-        gridTemplateColumns: '32px 100px 140px 80px 90px 120px 1fr 1fr 120px',
-        alignItems: 'center',
-        px: 2, py: 1.5,
-        cursor: 'pointer',
-        '&:hover': { bgcolor: 'var(--bg-2)' },
-        bgcolor: expanded
-          ? theme.palette.mode === 'dark'
-            ? alpha(theme.palette.warning.main, 0.06)
-            : alpha(theme.palette.warning.main, 0.03)
-          : 'transparent',
-      }}
-        onClick={() => setExpanded(prev => !prev)}
-      >
-        {/* Expand chevron */}
-        <Box sx={{ color: 'var(--ink-4)', display: 'flex' }}>
-          {expanded
-            ? <ChevronDown size={14} />
-            : <ChevronRight size={14} />}
+    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden', mb: 2 }}>
+      <Box sx={{ p: '20px 22px' }}>
+
+        {/* Card header */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 2.25 }}>
+          <Typography sx={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)', letterSpacing: '-0.01em' }}>
+            {batchDisplayId(batch)}
+          </Typography>
+          <Box sx={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--ink-4)', bgcolor: 'var(--bg-2)', px: 1.125, py: 0.375, borderRadius: '100px', border: '1px solid var(--rule)' }}>
+            Standard
+          </Box>
+          <Box sx={{ flex: 1 }} />
+          <Box
+            onClick={() => setExpanded(p => !p)}
+            sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', color: 'var(--ink-4)', '&:hover': { color: 'var(--ink-2)' } }}
+          >
+            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'inherit' }}>
+              {expanded ? 'Hide items' : 'Show items'}
+            </Typography>
+          </Box>
         </Box>
 
-        {/* Batch ID */}
-        <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)', fontFamily: 'monospace' }}>
-          {batchDisplayId(batch)}
-        </Typography>
+        {/* Meta row */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 2.5, flexWrap: 'wrap' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ width: 26, height: 26, borderRadius: '50%', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 700, color: 'var(--ink-2)' }}>{initials}</Typography>
+            </Box>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: batch.picker_name ? 'var(--ink-2)' : 'var(--ink-4)' }}>
+              {batch.picker_name ?? 'Unassigned'}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875 }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Created</Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink-2)' }}>{formatTime(batch.released_at)}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.875 }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Units</Typography>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink-2)' }}>{batch.total_units}</Typography>
+          </Box>
+        </Box>
 
-        {/* Assignee */}
-        <Typography sx={{ fontSize: 12, color: batch.picker_name ? 'var(--ink)' : 'var(--ink-4)' }}>
-          {batch.picker_name ?? 'Unassigned'}
-        </Typography>
+        {/* Dual progress bars */}
+        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Picking</Typography>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>
+                {batch.units_picked}/{batch.total_units}
+              </Typography>
+            </Box>
+            <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
+              <Box sx={{ width: `${pickPct}%`, height: '100%', bgcolor: '#FF6B2B', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+            </Box>
+          </Box>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }}>Packing</Typography>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>
+                {batch.units_packed}/{batch.total_units}
+              </Typography>
+            </Box>
+            <Box sx={{ height: 7, borderRadius: '4px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
+              <Box sx={{ width: `${packPct}%`, height: '100%', bgcolor: '#5F6B85', borderRadius: '4px', transition: 'width 0.3s ease' }} />
+            </Box>
+          </Box>
+        </Box>
 
-        {/* Tote — not in schema yet, placeholder */}
-        <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>—</Typography>
-
-        {/* Created */}
-        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-          {formatTime(batch.released_at)}
-        </Typography>
-
-        {/* Deliver by — not in schema yet */}
-        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>—</Typography>
-
-        {/* Pick progress */}
-        <ProgressBar value={batch.units_picked} total={batch.total_units} color={pickColor} />
-
-        {/* Pack progress */}
-        <ProgressBar value={batch.units_packed} total={batch.total_units} color={packColor} />
-
-        {/* Action */}
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Typography
+        {/* Card footer */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 2.5, pt: 2, borderTop: '1px solid var(--rule)' }}>
+          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)', flex: 1 }}>
+            {statusText}
+          </Typography>
+          <Box
             component="a"
             href={`/wms/batch/${batch.pick_batch_id}`}
-            onClick={(e) => e.stopPropagation()}
-            sx={{
-              fontSize: 12, fontWeight: 600,
-              color: 'var(--accent)',
-              bgcolor: alpha(theme.palette.warning.main, 0.1),
-              border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
-              borderRadius: '6px',
-              px: 1.5, py: 0.5,
-              textDecoration: 'none',
-              '&:hover': { bgcolor: alpha(theme.palette.warning.main, 0.18) },
-            }}
+            sx={{ fontSize: 12.5, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', borderRadius: '8px', px: 2.5, py: 1.125, cursor: 'pointer', textDecoration: 'none', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Continue →
-          </Typography>
+          </Box>
         </Box>
       </Box>
 
-      {/* EXPANDED LINE ITEMS */}
+      {/* Expandable line items */}
       {expanded && <BatchLineItemsPanel batchId={batch.pick_batch_id} />}
-    </Box>
-  );
-}
-
-// ─── FILTER CHIP ──────────────────────────────────────────────────────────────
-
-function FilterChip({ label, value, active }: { label: string; value: string; active?: boolean }) {
-  const theme = useTheme();
-  return (
-    <Box sx={{
-      display: 'inline-flex', alignItems: 'center', gap: 0.5,
-      px: 1.5, py: 0.75,
-      borderRadius: '6px',
-      bgcolor: active ? alpha(theme.palette.warning.main, 0.1) : 'var(--surface)',
-      border: `1px solid ${active ? alpha(theme.palette.warning.main, 0.4) : 'var(--rule)'}`,
-      cursor: 'pointer',
-      '&:hover': { borderColor: 'var(--accent)' },
-    }}>
-      <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: 11, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--ink)' }}>
-        {value}
-      </Typography>
     </Box>
   );
 }
@@ -269,10 +239,9 @@ export default function FulfillmentQueuePage() {
   const { data, isLoading } = usePickBatches();
   const batches = data?.batches ?? [];
 
-  // Summary counts for subline
-  const openCount   = batches.length;
-  const readyCount  = batches.filter(b => b.status === 'pending').length;
+  const openCount    = batches.length;
   const pickingCount = batches.filter(b => b.status === 'picking').length;
+  const readyCount   = batches.filter(b => b.status === 'pending').length;
 
   return (
     <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%' }}>
@@ -280,116 +249,69 @@ export default function FulfillmentQueuePage() {
 
       <Box sx={{ p: '32px 40px' }}>
 
-        {/* ── HEADER ─────────────────────────────────────────────────────── */}
+        {/* HEADER */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
           <Box>
-            <Box sx={{ mb: 0.5 }}>
-              
-              <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-                Fulfillment queue
-              </Typography>
-            </Box>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+            <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
+              Fulfillment queue
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
               {openCount} batch{openCount !== 1 ? 'es' : ''} open
               {readyCount > 0 && ` · ${readyCount} ready to pick`}
               {pickingCount > 0 && ` · ${pickingCount} in progress`}
             </Typography>
           </Box>
 
-          {/* Page actions */}
           <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
-            <Box sx={{
-              px: 2, py: 1,
-              border: '1px solid var(--rule)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              '&:hover': { borderColor: 'var(--ink-3)' },
-            }}>
+            <Box sx={{ px: 2, py: 1, border: '1px solid var(--rule)', borderRadius: '8px', cursor: 'pointer', '&:hover': { borderColor: 'var(--rule-2)' } }}>
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>View manifests</Typography>
             </Box>
             <PlanGate feature="wms.pick_batches" mode="locked">
-              <Box sx={{
-                px: 2, py: 1,
-                bgcolor: 'var(--accent)',
-                borderRadius: '8px',
-                cursor: 'pointer',
-                '&:hover': { opacity: 0.9 },
-              }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>Merge batches</Typography>
+              <Box sx={{ px: 2, py: 1, bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', '&:hover': { opacity: 0.9 } }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#10151E' }}>Merge batches</Typography>
               </Box>
             </PlanGate>
           </Box>
         </Box>
 
-        {/* ── FILTER BAR ─────────────────────────────────────────────────── */}
+        {/* FILTER BAR */}
         <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap' }}>
-          <FilterChip label="STATUS" value="Any" />
-          <FilterChip label="PRIORITY" value="Any" />
-          <FilterChip label="ASSIGNEE" value="Anyone" />
-          <FilterChip label="CREATED" value="Last 7d" active />
-          <FilterChip label="DELIVERY" value="Today" />
+          <FilterChip label="Status" value="Any" />
+          <FilterChip label="Priority" value="Any" />
+          <FilterChip label="Assignee" value="Anyone" />
+          <FilterChip label="Created" value="Last 7d" active />
+          <FilterChip label="Delivery" value="Today" />
         </Box>
 
-        {/* ── BATCH TABLE ────────────────────────────────────────────────── */}
-        <Box sx={{
-          bgcolor: 'var(--surface)',
-          border: '1px solid var(--rule)',
-          borderRadius: '10px',
-          overflow: 'hidden',
-        }}>
-          {/* Table header */}
-          <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: '32px 100px 140px 80px 90px 120px 1fr 1fr 120px',
-            px: 2, py: 1.25,
-            bgcolor: 'var(--bg-2)',
-            borderBottom: '1px solid var(--rule)',
-          }}>
-            {['', 'BATCH ID', 'ASSIGNEE', 'TOTE', 'CREATED', 'DELIVER BY', 'PICK PROGRESS', 'PACK PROGRESS', 'ACTION'].map((col) => (
-              <Typography key={col} sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                {col}
-              </Typography>
-            ))}
+        {/* LOADING */}
+        {isLoading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+            <CircularProgress size={24} sx={{ color: 'var(--accent)' }} />
           </Box>
+        )}
 
-          {/* Loading */}
-          {isLoading && (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
+        {/* EMPTY */}
+        {!isLoading && batches.length === 0 && (
+          <Box sx={{ py: 8, textAlign: 'center', border: '1px solid var(--rule)', borderRadius: '14px', bgcolor: 'var(--surface)' }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mb: 2 }}>
+              No active batches — release a batch from the order pool to get started.
+            </Typography>
+            <PlanGate feature="wms.pick_batches" mode="locked">
+              <Box
+                component="a"
+                href="/orders/pool"
+                sx={{ display: 'inline-flex', alignItems: 'center', px: 2, py: 1, borderRadius: '8px', bgcolor: 'var(--accent)', color: '#10151E', fontSize: 13, fontWeight: 600, textDecoration: 'none', '&:hover': { opacity: 0.9 } }}
+              >
+                Go to Release Queue →
+              </Box>
+            </PlanGate>
+          </Box>
+        )}
 
-          {/* Empty */}
-          {!isLoading && batches.length === 0 && (
-            <Box sx={{ px: 3, py: 6, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-              <Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>
-                No active batches — release a batch from the order pool to get started.
-              </Typography>
-              <PlanGate feature="wms.pick_batches" mode="locked">
-                <Box
-                  component="a"
-                  href="/orders/pool"
-                  sx={{
-                    display: 'inline-flex', alignItems: 'center', gap: 0.75,
-                    px: 2, py: 1, borderRadius: '8px',
-                    bgcolor: 'var(--accent)', color: '#fff',
-                    fontSize: 13, fontWeight: 600, textDecoration: 'none',
-                    '&:hover': { opacity: 0.9 },
-                    transition: 'opacity 0.15s',
-                  }}
-                >
-                  Go to Release Queue →
-                </Box>
-              </PlanGate>
-            </Box>
-          )}
-
-          {/* Batch rows */}
-          {batches.map((batch) => (
-            <BatchRow key={batch.pick_batch_id} batch={batch} />
-          ))}
-        </Box>
-
+        {/* BATCH CARDS */}
+        {batches.map(batch => (
+          <BatchCard key={batch.pick_batch_id} batch={batch} />
+        ))}
       </Box>
     </Box>
   );
