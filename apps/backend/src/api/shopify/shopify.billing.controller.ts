@@ -195,6 +195,90 @@ export async function handleShopifyCallback(req: Request, res: Response) {
     console.error('[shopify-billing] callback failed', { shopId, err: err.message });
     return res.redirect(`${frontendUrl}/settings/billing?error=ACTIVATION_FAILED`);
   }
+};
+
+/**
+ * POST /api/v1/shopify-billing/change-plan
+ *
+ * Allows merchants to upgrade or downgrade their Shopify billing plan
+ * without reinstalling the app. Cancels the existing active charge and
+ * creates a new RecurringApplicationCharge for the new tier/interval.
+ *
+ * Body: { tier: 'core' | 'growth' | 'scale', interval: 'monthly' | 'annual' }
+ */
+export async function changeShopifyPlan(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+  const { tier, interval = 'monthly' } = req.body;
+
+  if (!isValidTier(tier) || tier === 'starter') {
+    return res.status(400).json({ error: 'INVALID_TIER', allowed: ['core', 'growth', 'scale'] });
+  }
+
+  if (interval !== 'monthly' && interval !== 'annual') {
+    return res.status(400).json({ error: 'INVALID_INTERVAL', allowed: ['monthly', 'annual'] });
+  }
+
+  const tierPrices = PEGGED_DISPLAY_PRICES[tier as Tier]?.['USD'];
+  if (!tierPrices) {
+    return res.status(400).json({ error: 'TIER_PRICING_NOT_FOUND' });
+  }
+
+  try {
+    const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
+    const apiUrl = process.env.API_URL ?? 'http://localhost:3000';
+
+    // Cancel all existing active recurring charges before creating a new one
+    const existingCharges = await axios.get(
+      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
+      { headers: { 'X-Shopify-Access-Token': accessToken } }
+    );
+
+    const activeCharges = (existingCharges.data?.recurring_application_charges ?? []).filter(
+      (c: any) => c.status === 'active'
+    );
+
+    for (const charge of activeCharges) {
+      await axios.delete(
+        `https://${shopDomain}/admin/api/2024-01/recurring_application_charges/${charge.id}.json`,
+        { headers: { 'X-Shopify-Access-Token': accessToken } }
+      );
+      console.log('[shopify-billing] cancelled existing charge', { shopId, chargeId: charge.id });
+    }
+
+    // Create new charge for the requested tier/interval
+    const price = (interval === 'annual' ? tierPrices.annual : tierPrices.monthly) / 100;
+    const response = await axios.post(
+      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
+      {
+        recurring_application_charge: {
+          name: `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
+          price,
+          return_url: `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`,
+          trial_days: 0,
+          ...(interval === 'annual' ? { billing_on: 365 } : {}),
+          test: process.env.NODE_ENV !== 'production',
+        },
+      },
+      {
+        headers: {
+          'X-Shopify-Access-Token': accessToken,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    const charge = response.data?.recurring_application_charge;
+    if (!charge?.confirmation_url) {
+      throw new Error('SHOPIFY_CHARGE_CREATION_FAILED');
+    }
+
+    console.log('[shopify-billing] plan change charge created', { shopId, tier, interval, chargeId: charge.id });
+
+    return res.json({ confirmationUrl: charge.confirmation_url, chargeId: charge.id });
+  } catch (err: any) {
+    console.error('[shopify-billing] changeShopifyPlan failed', { shopId, err: err.message });
+    return res.status(500).json({ error: 'PLAN_CHANGE_FAILED' });
+  }
 }
 
 /**

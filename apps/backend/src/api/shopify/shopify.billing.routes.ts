@@ -11,6 +11,7 @@ import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middle
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   createShopifyCharge,
+  changeShopifyPlan,
   handleShopifyCallback,
   getShopifySubscription,
 } from './shopify.billing.controller.js';
@@ -25,5 +26,8 @@ router.post('/checkout', authenticateToken, requireAction('shopify-billing:write
 
 // GET  /api/v1/shopify-billing/callback — no JWT auth (browser redirect from Shopify)
 router.get('/callback', handleShopifyCallback);
+
+// POST /api/v1/shopify-billing/change-plan
+router.post('/change-plan', authenticateToken, requireAction('shopify-billing:write'), changeShopifyPlan);
 
 export default router;
