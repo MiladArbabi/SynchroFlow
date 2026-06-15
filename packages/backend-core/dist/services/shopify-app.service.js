@@ -1,5 +1,6 @@
 import db from '../db.js';
 import axios from 'axios';
+import crypto from 'crypto';
 import CryptoJS from 'crypto-js';
 export class ShopifyAppService {
     /**
@@ -145,7 +146,6 @@ export class ShopifyAppService {
             const parsed = JSON.parse(encryptedToken);
             const { ciphertext, iv, auth_tag } = parsed;
             if (ciphertext && iv && auth_tag) {
-                const crypto = require('crypto');
                 const key = crypto.createHash('sha256').update(secret).digest();
                 const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
                 decipher.setAuthTag(Buffer.from(auth_tag, 'base64'));
