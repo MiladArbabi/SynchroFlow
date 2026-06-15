@@ -52,6 +52,12 @@ router.post('/', async (req: Request, res: Response) => {
     case 'products/update':
       return shopifyWebhookHandler(req, res);
 
+    // Mandatory compliance webhooks (GDPR / privacy law)
+    case 'customers/data_request':
+    case 'customers/redact':
+    case 'shop/redact':
+      return res.status(200).json({ status: 'received' });
+
     default:
       return res.status(200).json({ status: 'ignored' });
   }

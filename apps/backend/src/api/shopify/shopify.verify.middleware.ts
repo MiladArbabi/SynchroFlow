@@ -49,5 +49,5 @@ export function verifyShopifySignature(
     return next();
   }
 
-  return res.status(400).json({ error: 'Invalid webhook signature' });
+  return res.status(401).json({ error: 'Invalid webhook signature' });
 }
