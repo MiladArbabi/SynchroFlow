@@ -103,7 +103,7 @@ function Nav() {
         <Link href="/pricing" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pricing</Link>
         <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
         <a
-          href="https://www.lasyncro.com/#waitlist"
+          href="https://app.lasyncro.com/register"
           className="nav-cta"
           style={{
             display: 'inline-flex', alignItems: 'center',
