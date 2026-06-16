@@ -425,11 +425,10 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
           </Typography>
           {!isLoading && !isTrustGated && onExportBrief && (
             <Box
-              component="button"
               onClick={onExportBrief}
-              sx={{ fontSize: 12, fontWeight: 500, px: '12px', py: '6px', borderRadius: '8px', border: '1px solid var(--rule)', bgcolor: 'transparent', color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { color: 'var(--ink)', borderColor: 'var(--ink-3)' }, transition: 'all 0.1s' }}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
-              Export brief
+              Export brief →
             </Box>
           )}
         </Box>
