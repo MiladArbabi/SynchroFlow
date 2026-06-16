@@ -112,7 +112,7 @@ function StatusChip({
       fontSize: '10px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
       color: main,
       background: alpha(main, 0.1),
-      border: `1px solid ${alpha(main, 0.28)}`,
+      border: '0.5px solid var(--rule)',
       borderRadius: '100px', px: 1.25, py: 0.5,
     }}>
       {dot && <Box sx={{ width: 6, height: 6, borderRadius: '50%', background: main, flexShrink: 0 }} />}
@@ -152,7 +152,7 @@ function UsageMeter({
           </Box>
         </Typography>
       </Box>
-      <Box sx={{ height: 8, borderRadius: '100px', background: theme.palette.action.hover, overflow: 'hidden' }}>
+      <Box sx={{ height: 8, borderRadius: '100px', background: 'var(--bg)', overflow: 'hidden' }}>
         {!infinite && (
           <Box sx={{
             height: '100%', width: `${pct}%`,
@@ -187,7 +187,7 @@ function AnnualSavingsCallout({
     <Box sx={{
       display: 'flex', alignItems: 'center', gap: 1.5, mt: 3, px: 2, py: 1.75,
       background: alpha(theme.palette.primary.main, 0.08),
-      border: `1px solid ${alpha(theme.palette.primary.main, 0.25)}`,
+      border: '0.5px solid var(--rule)',
       borderRadius: '10px',
     }}>
       {/* Dollar-sign icon (inline SVG — no extra dep) */}
@@ -242,7 +242,7 @@ function RecommendedUpgrade({
   const isFeatured = tierId === 'growth';
 
   return (
-    <Box sx={{ px: 3, py: 3, background: theme.palette.background.default }}>
+    <Box sx={{ px: 3, py: 3, background: 'var(--bg)' }}>
       <Typography sx={{
         fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase',
         color: 'text.secondary', mb: 1.5,
@@ -251,8 +251,8 @@ function RecommendedUpgrade({
       </Typography>
 
       <Box sx={{
-        background: theme.palette.background.paper,
-        border: `1px solid ${theme.palette.divider}`,
+        background: 'var(--surface)',
+        border: '0.5px solid var(--rule)',
         borderRadius: '12px', p: 2.25,
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
@@ -262,7 +262,7 @@ function RecommendedUpgrade({
               fontSize: '9px', fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase',
               color: 'primary.main',
               background: alpha(theme.palette.primary.main, 0.08),
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.25)}`,
+              border: '0.5px solid var(--rule)',
               borderRadius: '100px', px: 1, py: 0.375, whiteSpace: 'nowrap',
             }}>
               Most popular
@@ -305,8 +305,8 @@ function RecommendedUpgrade({
           endIcon={upgrading === tierId ? <CircularProgress size={12} color="inherit" /> : undefined}
           sx={{
             height: 40, borderRadius: '8px', fontWeight: 600, fontSize: 13,
-            bgcolor: 'primary.main', color: '#fff',
-            '&:hover': { bgcolor: 'primary.light' },
+            bgcolor: 'var(--accent)', color: theme.palette.common.white,
+            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
           }}
         >
           {upgrading === tierId ? 'Redirecting…' : `Upgrade to ${tierLabel}`}
@@ -354,13 +354,12 @@ function TierCard({
     ? annualSavings(tierId as Exclude<Tier, 'starter'>, currency)
     : null;
 
-  const cardBg     = isFeatured ? alpha(theme.palette.primary.main, 0.06) : theme.palette.background.paper;
-  const cardBorder = isFeatured ? alpha(theme.palette.primary.main, 0.3)  : theme.palette.divider;
+  const cardBg     = isFeatured ? alpha(theme.palette.primary.main, 0.06) : 'var(--surface)';
 
   return (
     <Box sx={{
       position: 'relative', display: 'flex', flexDirection: 'column',
-      background: cardBg, border: `1px solid ${cardBorder}`,
+      background: cardBg, border: '0.5px solid var(--rule)',
       borderRadius: '12px', p: '22px 20px', flex: 1, minWidth: 0,
     }}>
       {/* "Most popular" badge */}
@@ -368,7 +367,7 @@ function TierCard({
         <Box sx={{
           position: 'absolute', top: -10, left: 20,
           fontSize: '10px', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase',
-          color: '#fff', background: theme.palette.primary.main,
+          color: theme.palette.common.white, background: 'var(--accent)',
           px: 1.25, py: 0.5, borderRadius: '100px', whiteSpace: 'nowrap',
         }}>
           Most popular
@@ -421,7 +420,7 @@ function TierCard({
         {isCurrent ? (
           <Box sx={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.875, height: 40,
-            border: `1px solid ${alpha(theme.palette.success.main, 0.3)}`,
+            border: '0.5px solid var(--rule)',
             background: alpha(theme.palette.success.main, 0.08),
             borderRadius: '8px',
           }}>
@@ -439,8 +438,8 @@ function TierCard({
             sx={{
               height: 40, borderRadius: '8px', fontWeight: 600, fontSize: 13,
               ...(isFeatured
-                ? { bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.light' } }
-                : { borderColor: theme.palette.divider, color: 'text.primary', '&:hover': { borderColor: 'text.disabled' } }),
+                ? { bgcolor: 'var(--accent)', color: theme.palette.common.white, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }
+                : { borderColor: 'var(--rule)', color: 'text.primary', '&:hover': { borderColor: 'text.disabled' } }),
             }}
           >
             {upgrading === tierId ? 'Redirecting…' : `Upgrade to ${tierLabel}`}
@@ -449,7 +448,7 @@ function TierCard({
       </Box>
 
       {/* Feature list */}
-      <Box sx={{ borderTop: `1px solid ${theme.palette.divider}`, mt: 2.25, pt: 1.875, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+      <Box sx={{ borderTop: `1px solid ${'var(--rule)'}`, mt: 2.25, pt: 1.875, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
         {(PLAN_FEATURES[tierId] ?? []).map((f) => (
           <Box key={f} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
             <Box
@@ -501,12 +500,12 @@ function PlanHeader({
   const daysLeft = isTrialing && sub.trial_ends_at ? daysUntil(sub.trial_ends_at) : 0;
 
   return (
-    <Box sx={{ border: `1px solid ${theme.palette.divider}`, borderRadius: '16px', overflow: 'hidden' }}>
+    <Box sx={{ border: '0.5px solid var(--rule)', borderRadius: '16px', overflow: 'hidden' }}>
       {/* Plan name row */}
       <Box sx={{
         display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
         gap: 2.5, px: 3.5, py: 3,
-        borderBottom: (isTrialing || isPastDue) ? `1px solid ${theme.palette.divider}` : 'none',
+        borderBottom: (isTrialing || isPastDue) ? `1px solid ${'var(--rule)'}` : 'none',
       }}>
         <Box>
           <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'text.secondary' }}>
@@ -555,7 +554,7 @@ function PlanHeader({
           <Box sx={{
             p: '14px 16px',
             background: alpha(theme.palette.warning.main, 0.08),
-            border: `1px solid ${alpha(theme.palette.warning.main, 0.28)}`,
+            border: '0.5px solid var(--rule)',
             borderRadius: '10px',
           }}>
             <Typography sx={{
@@ -571,7 +570,7 @@ function PlanHeader({
               variant="contained" size="small" onClick={onPortal} disabled={openingPortal}
               sx={{
                 mt: 1.5, height: 34, borderRadius: '8px', fontWeight: 600, fontSize: 12,
-                bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.light' },
+                bgcolor: 'var(--accent)', color: theme.palette.common.white, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
               }}
             >
               Add payment method
@@ -586,7 +585,7 @@ function PlanHeader({
           <Box sx={{
             display: 'flex', alignItems: 'flex-start', gap: 1, p: '14px 16px',
             background: alpha(theme.palette.error.main, 0.08),
-            border: `1px solid ${alpha(theme.palette.error.main, 0.28)}`,
+            border: '0.5px solid var(--rule)',
             borderRadius: '10px',
           }}>
             {/* Warning triangle SVG */}
@@ -606,7 +605,7 @@ function PlanHeader({
                 variant="contained" size="small" onClick={onPortal} disabled={openingPortal}
                 sx={{
                   mt: 1.5, height: 34, borderRadius: '8px', fontWeight: 600, fontSize: 12,
-                  bgcolor: 'error.main', color: '#fff', '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.9) },
+                  bgcolor: 'error.main', color: theme.palette.common.white, '&:hover': { bgcolor: alpha(theme.palette.error.main, 0.9) },
                 }}
               >
                 Update payment
@@ -626,14 +625,13 @@ function PlanHeader({
 function BillingToggle({
   value, onChange,
 }: { value: 'monthly' | 'annual'; onChange: (v: 'monthly' | 'annual') => void }) {
-  const theme = useTheme();
   return (
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
       <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'text.primary' }}>Billing</Typography>
       <Box sx={{
         display: 'flex',
-        background: theme.palette.action.hover,
-        border: `1px solid ${theme.palette.divider}`,
+        background: 'var(--bg)',
+        border: '0.5px solid var(--rule)',
         borderRadius: '10px', p: '3px',
       }}>
         {(['monthly', 'annual'] as const).map((iv) => (
@@ -644,7 +642,7 @@ function BillingToggle({
               px: 2, py: 0.875, borderRadius: '7px', cursor: 'pointer',
               fontSize: 12.5, fontWeight: 600,
               color: value === iv ? 'text.primary' : 'text.secondary',
-              background: value === iv ? theme.palette.background.paper : 'transparent',
+              background: value === iv ? 'var(--surface)' : 'transparent',
               transition: 'all 0.12s',
             }}
           >
@@ -666,7 +664,6 @@ function BillingToggle({
 // ─────────────────────────────────────────────
 
 const BillingSettings: React.FC = () => {
-  const theme = useTheme();
   const { tier: currentTier, billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
 
@@ -711,9 +708,16 @@ const BillingSettings: React.FC = () => {
     try {
       const { data } = await axiosInstance.post('/api/v1/billing/portal');
       if (data.url) window.location.href = data.url;
-    } catch {
-      setError('Failed to open billing portal.');
-      setOpPortal(false);
+    } catch (err) {
+      // NO_STRIPE_CUSTOMER = trial user, no payment added yet — direct to checkout
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (code === 'NO_STRIPE_CUSTOMER') {
+        setOpPortal(false);
+        setError('No billing account yet — add a payment method first.');
+      } else {
+        setError('Failed to open billing portal.');
+        setOpPortal(false);
+      }
     }
   };
 
@@ -761,13 +765,13 @@ const BillingSettings: React.FC = () => {
       {/* Two-column: usage meters + recommended upgrade */}
       {usage && (
         <Box sx={{
-          border: `1px solid ${theme.palette.divider}`,
+          border: '0.5px solid var(--rule)',
           borderRadius: '16px', overflow: 'hidden',
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: '1.55fr 1fr' },
         }}>
           {/* Left: usage */}
-          <Box sx={{ px: 3.5, py: 3, borderRight: { md: `1px solid ${theme.palette.divider}` }, borderBottom: { xs: `1px solid ${theme.palette.divider}`, md: 'none' } }}>
+          <Box sx={{ px: 3.5, py: 3, borderRight: { md: `1px solid ${'var(--rule)'}` }, borderBottom: { xs: `1px solid ${'var(--rule)'}`, md: 'none' } }}>
             <Box sx={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 2.5 }}>
               <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'text.primary' }}>
                 Usage this period
