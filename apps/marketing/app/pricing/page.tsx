@@ -104,7 +104,7 @@ export default function PricingPage() {
       <Schema data={pricingSchema} />
 
       {/* Header */}
-      <header style={{ ...W, padding: '96px 5vw 64px' }}>
+      <header style={{ ...W, padding: '88px 5vw 48px' }}>
         <div
           style={{
             display: 'inline-flex',
@@ -171,10 +171,73 @@ export default function PricingPage() {
             maxWidth: 760,
           }}
         >
-          Annual billing saves 20%. Every paid plan includes a 14-day Growth trial. No credit card required.
-          Switch or cancel anytime.
+          Every paid plan includes a 14-day Growth trial. No credit card required. Switch or cancel anytime.
         </p>
       </header>
+
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 16,
+          marginBottom: 22,
+          flexWrap: 'wrap',
+        }}
+      >
+        <div
+          style={{
+            fontFamily: FONT,
+            fontSize: 13,
+            fontWeight: 600,
+            color: '#6B7280',
+            lineHeight: 1.5,
+          }}
+        >
+          Prices shown in USD. Annual billing saves 20%.
+        </div>
+
+        <div
+          aria-label="Billing period"
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            background: '#F3F2EF',
+            border: '1px solid #E8E6E0',
+            borderRadius: 14,
+            padding: 4,
+          }}
+        >
+          <span
+            style={{
+              fontFamily: FONT,
+              fontSize: 13,
+              fontWeight: 750,
+              color: '#0F0E0D',
+              background: '#FFFFFF',
+              border: '1px solid #E8E6E0',
+              borderRadius: 10,
+              padding: '8px 16px',
+              boxShadow: '0 4px 14px rgba(15, 14, 13, 0.04)',
+            }}
+          >
+            Monthly
+          </span>
+
+          <span
+            style={{
+              fontFamily: FONT,
+              fontSize: 13,
+              fontWeight: 650,
+              color: '#6B7280',
+              padding: '8px 16px',
+            }}
+          >
+            Annual
+          </span>
+        </div>
+      </div>
 
       {/* Pricing grid */}
       <div style={{ ...W, padding: '0 5vw 80px' }}>

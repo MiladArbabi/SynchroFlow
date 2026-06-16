@@ -81,7 +81,7 @@ function FeaturedVisual({ frontmatter }: { frontmatter: Frontmatter }) {
         justifyContent: 'center', padding: '36px 40px', gap: 18,
       }}>
         <span style={{
-          fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11,
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11,
           fontWeight: 500, letterSpacing: '0.12em',
           textTransform: 'uppercase' as const, color: '#FF6B2B',
         }}>
@@ -97,7 +97,7 @@ function FeaturedVisual({ frontmatter }: { frontmatter: Frontmatter }) {
         <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
           {bullets.map(kw => (
             <li key={kw} style={{
-              fontFamily: "'DM Sans', system-ui, sans-serif",
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
               fontSize: 13, fontWeight: 300, lineHeight: 1.4,
               color: '#3A3835', display: 'flex', alignItems: 'center', gap: 8,
             }}>
@@ -175,7 +175,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
       {/* ── Page header ───────────────────────────────────────────── */}
       <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
           <EyebrowDot />
           The operator&apos;s library
         </div>
@@ -183,7 +183,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           Operational intelligence for merchants who{' '}
           <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>run their own warehouse.</em>
         </h1>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: '#3A3835', maxWidth: 560, margin: 0 }}>
+        <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: '#3A3835', maxWidth: 560, margin: 0 }}>
           Guides, post-mortems, and field notes for Shopify operators stuck between
           spreadsheets and enterprise systems they don&apos;t need.
         </p>
@@ -195,7 +195,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           {['all', ...categories].map(cat => (
             <button key={cat} className="filter-tab" onClick={() => setActiveCategory(cat)} style={{
               padding: '8px 14px',
-              fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
               color: activeCategory === cat ? '#FF6B2B' : '#6B7280',
               borderRadius: 100, border: activeCategory === cat ? '1px solid #FFDCCA' : '1px solid transparent',
               background: activeCategory === cat ? '#FFF0E8' : 'transparent', cursor: 'pointer',
@@ -204,7 +204,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
             </button>
           ))}
         </div>
-        <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
             {allArticles.length}
           </span>
@@ -223,12 +223,12 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
               <span style={{
                 padding: '5px 12px', background: '#FFFFFF',
                 border: '1px solid #FFDCCA', borderRadius: 100,
-                fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
+                fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
                 letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B',
               }}>
                 Featured · This week
               </span>
-              <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
+              <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
                 {formatDate(featured.frontmatter.date)} · {Math.ceil((featured.content?.split(' ').length ?? 0) / 200)} min read
               </span>
             </div>
@@ -242,12 +242,12 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                 ) : featured.frontmatter.title}
               </a>
             </h2>
-            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.65, color: '#3A3835', margin: 0 }}>
+            <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.65, color: '#3A3835', margin: 0 }}>
               {featured.frontmatter.description}
             </p>
             <a href={`/blog/${featured.slug}`} className="read-link" style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
-              fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+              fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
               color: '#0F0E0D', paddingBottom: 4, borderBottom: '1px solid #0F0E0D',
               alignSelf: 'flex-start',
             }}>
@@ -263,7 +263,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
         <h3 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 28, fontWeight: 400, lineHeight: 1.15, letterSpacing: '-0.02em', color: '#0F0E0D', margin: 0 }}>
           Latest <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>posts</em>
         </h3>
-        <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
+        <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280' }}>
           Sorted by published date
         </span>
       </div>
@@ -284,7 +284,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                 padding: hoveredSlug === article.slug ? '28px 16px' : '28px 4px',
                 margin: hoveredSlug === article.slug ? '0 -16px' : '0',
               }}>
-              <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
+              <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
                 {formatDate(article.frontmatter.date)}
               </span>
               <div className="post-row-grid" style={{ minWidth: 0 }}>
@@ -296,12 +296,12 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                 }}>
                   {article.frontmatter.title}
                 </h4>
-                <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 460 }}>
+                <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 460 }}>
                   {article.frontmatter.description}
                 </p>
               </div>
               <span style={{
-                fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
+                fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500,
                 letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#6B7280',
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
@@ -321,7 +321,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
       <section style={{ ...W, padding: '80px 5vw', borderTop: '1px solid #E8E6E0', marginTop: 64 }}>
         <div className="topics-title-row" style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 32, alignItems: 'start', marginBottom: 32 }}>
           <div>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 12, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 12, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
               <EyebrowDot />
               Browse
             </div>
@@ -329,7 +329,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
               By <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>topic.</em>
             </h3>
           </div>
-          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0 }}>
+          <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0 }}>
             Every guide is grouped by the operational job it&apos;s helping you do — not by SEO keyword.
             Pick the part of your warehouse that&apos;s leaking time.
           </p>
@@ -344,13 +344,13 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
               background: '#FFFFFF', padding: '22px 24px',
               display: 'flex', flexDirection: 'column', gap: 6,
             }}>
-              <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: '#0F0E0D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500, lineHeight: 1.3, color: '#0F0E0D', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>{tagLabel(cat)}</span>
                 <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, color: '#FF6B2B', fontStyle: 'italic' }}>
                   {String(count).padStart(2, '0')}
                 </span>
               </div>
-              <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0 }}>
+              <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0 }}>
                 {TOPIC_DESCRIPTIONS[cat] ?? `Guides covering ${tagLabel(cat).toLowerCase()} for Shopify merchants.`}
               </p>
             </div>
@@ -376,7 +376,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           opacity: 0.8, pointerEvents: 'none',
         }} />
         <div style={{ position: 'relative', margin: 12 }}>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12 }}>
             <EyebrowDot />
             Weekly · For operators
           </div>
@@ -384,7 +384,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
             The Morning Brief,{' '}
             <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>in your inbox.</em>
           </h3>
-          <p style={{ margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14.5, fontWeight: 300, lineHeight: 1.6, color: 'rgba(240,238,232,0.7)', maxWidth: 400 }}>
+          <p style={{ margin: 0, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14.5, fontWeight: 300, lineHeight: 1.6, color: 'rgba(240,238,232,0.7)', maxWidth: 400 }}>
             One short letter a week. Operational patterns we keep seeing across the merchants we
             work with — and the fixes that actually held.
           </p>
@@ -418,7 +418,7 @@ function NewsletterForm() {
 
   if (status === 'success') {
     return (
-      <div style={{ color: 'rgba(240,238,232,0.9)', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, padding: '10px 0' }}>
+      <div style={{ color: 'rgba(240,238,232,0.9)', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, padding: '10px 0' }}>
         ✓ You&apos;re subscribed. First issue lands next Monday.
       </div>
     )
@@ -439,14 +439,14 @@ function NewsletterForm() {
         style={{
           flex: 1, minWidth: 0, background: 'transparent', border: 'none',
           color: '#F0EEE8', padding: '10px 14px',
-          fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300,
+          fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300,
           outline: 'none', opacity: status === 'loading' ? 0.6 : 1,
         }}
       />
       <button type="submit" disabled={status === 'loading'} style={{
         display: 'inline-flex', alignItems: 'center', gap: 8,
         padding: '10px 18px', background: '#FF6B2B', color: '#fff',
-        fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
+        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 500,
         borderRadius: 6, border: 'none', cursor: status === 'loading' ? 'wait' : 'pointer',
         opacity: status === 'loading' ? 0.7 : 1,
       }}>
@@ -454,7 +454,7 @@ function NewsletterForm() {
         {status !== 'loading' && <ArrowRight size={14} />}
       </button>
       {status === 'error' && (
-        <p style={{ position: 'absolute', bottom: '-24px', left: 0, margin: 0, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 12, color: '#FF6B2B' }}>
+        <p style={{ position: 'absolute', bottom: '-24px', left: 0, margin: 0, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 12, color: '#FF6B2B' }}>
           Something went wrong — please try again.
         </p>
       )}
