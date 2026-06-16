@@ -175,6 +175,9 @@ export default function PricingPage() {
         </p>
       </header>
 
+
+      {/* Pricing grid */}
+      <div style={{ ...W, padding: '0 5vw 80px' }}>
       <div
         style={{
           display: 'flex',
@@ -239,8 +242,6 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* Pricing grid */}
-      <div style={{ ...W, padding: '0 5vw 80px' }}>
         <div
           style={{
             display: 'grid',
