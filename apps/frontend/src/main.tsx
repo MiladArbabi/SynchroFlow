@@ -8,9 +8,7 @@ import App from './App.tsx';
 // --- OUR CONTEXTS ---
 import { UserProvider } from './contexts/UserContext.tsx';
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-
-// --- TanStack Query Imports ---
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+import { lazy, Suspense } from 'react';
 
 // --- BERRY THEME IMPORTS ---
 import { ConfigProvider } from './contexts/ConfigContext.tsx';
@@ -47,6 +45,14 @@ import { PostHogPageView } from './analytics/PostHogPageView';
 
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
 const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com';
+
+const ReactQueryDevtools = import.meta.env.DEV
+  ? lazy(() =>
+      import('@tanstack/react-query-devtools').then((mod) => ({
+        default: mod.ReactQueryDevtools,
+      }))
+    )
+  : null;
 
 // HARD GUARD: prevent silent failure
 if (!posthogKey) {
@@ -182,8 +188,11 @@ root.render(
             </BrowserRouter>
            </UserProvider>
           
-          {/* React Query DevTools */}
-          <ReactQueryDevtools initialIsOpen={false} />
+          {ReactQueryDevtools ? (
+            <Suspense fallback={null}>
+              <ReactQueryDevtools initialIsOpen={false} />
+            </Suspense>
+          ) : null}
         </QueryClientProvider>
       </ConfigProvider>
     </PostHogProvider>
