@@ -474,13 +474,14 @@ function TierCard({
 // ─────────────────────────────────────────────
 
 function PlanHeader({
-  sub, currentTier, currency, onPortal, openingPortal,
+  sub, currentTier, currency, onPortal, openingPortal, onUpgrade,
 }: {
   sub: SubscriptionData;
   currentTier: string;
   currency: BillingCurrency;
   onPortal: () => void;
   openingPortal: boolean;
+  onUpgrade: (tierId: string) => void;
 }) {
   const theme = useTheme();
   const tierLabel   = currentTier.charAt(0).toUpperCase() + currentTier.slice(1);
@@ -567,7 +568,7 @@ function PlanHeader({
               on your {tierLabel} trial. Add a payment method to keep forecasting, cash flow and LTV.
             </Typography>
             <Button
-              variant="contained" size="small" onClick={onPortal} disabled={openingPortal}
+              variant="contained" size="small" onClick={() => onUpgrade(currentTier)} disabled={openingPortal}
               sx={{
                 mt: 1.5, height: 34, borderRadius: '8px', fontWeight: 600, fontSize: 12,
                 bgcolor: 'var(--accent)', color: theme.palette.common.white, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
@@ -759,6 +760,7 @@ const BillingSettings: React.FC = () => {
           currency={currency}
           onPortal={handlePortal}
           openingPortal={openingPortal}
+          onUpgrade={handleUpgrade}
         />
       )}
 
