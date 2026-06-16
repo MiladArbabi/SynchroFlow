@@ -57,7 +57,7 @@ export default function CompareIndex() {
 
       {/* ── Page header ───────────────────────────────────────────── */}
       <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
           Operator-honest comparisons
         </div>
@@ -75,7 +75,7 @@ export default function CompareIndex() {
         <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280' }}>
           All comparisons
         </span>
-        <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
             {pages.length}
           </span>
@@ -85,7 +85,7 @@ export default function CompareIndex() {
 
       {/* ── Compare list ──────────────────────────────────────────── */}
       {pages.length === 0 && (
-        <p style={{ ...W, padding: '24px 5vw', color: '#9CA3AF', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14 }}>
+        <p style={{ ...W, padding: '24px 5vw', color: '#9CA3AF', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14 }}>
           Comparison pages coming soon.
         </p>
       )}
@@ -106,11 +106,11 @@ export default function CompareIndex() {
                 <h2 className="compare-title" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 6px' }}>
                   {page.frontmatter.title}
                 </h2>
-                <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 560 }}>
+                <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 560 }}>
                   {page.frontmatter.description}
                 </p>
               </div>
-              <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
+              <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
                 {formatDate(page.frontmatter.date)}
               </span>
               <span className="compare-arrow compare-arrow-col" style={{ color: '#9CA3AF', alignSelf: 'center' }}>
@@ -124,7 +124,7 @@ export default function CompareIndex() {
 
       {/* ── Bottom CTA ────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '80px 5vw 64px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 20 }}>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0, maxWidth: 480 }}>
+        <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0, maxWidth: 480 }}>
           Don&apos;t see your current tool? Every comparison is operator-honest — we&apos;ll tell you when a competitor is a better fit.
         </p>
         <CompareCTA />
