@@ -22,6 +22,7 @@ import ShopSettingsCarriersPage     from './ShopSettingsCarriersPage';
 import ShopSettingsWarehousePage    from './ShopSettingsWarehousePage';
 import ShopSettingsFinancePage      from './ShopSettingsFinancePage';
 import BillingSettings              from '../account-settings/BillingSettings';
+import ShopSettingsReportsPage      from './ShopSettingsReportsPage';
 import { PlaceholderTab }           from './ShopSettingsShared';
 
 const SETTINGS_TABS = [
@@ -33,6 +34,7 @@ const SETTINGS_TABS = [
   { id: 'notifications', label: 'Notifications',  path: '/settings/notifications' },
   { id: 'integrations',  label: 'Integrations',   path: '/settings/integrations'  },
   { id: 'billing',       label: 'Billing',        path: '/settings/billing'       },
+  { id: 'reports',       label: 'Reports',        path: '/settings/reports'       },
 ];
 
 export default function ShopSettingsPage() {
@@ -74,6 +76,8 @@ export default function ShopSettingsPage() {
         } />
         {/* Billing — plan, usage meters, upgrade/downgrade (UX-02) */}
         <Route path="/billing" element={<BillingSettings />} />
+        {/* Reports Hub — export templates + history (GH #1014 Sprint 2) */}
+        <Route path="/reports" element={<ShopSettingsReportsPage />} />
       </Routes>
     </Box>
   );
