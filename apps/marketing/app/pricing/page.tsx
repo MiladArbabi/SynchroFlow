@@ -175,17 +175,6 @@ export default function PricingPage() {
         </p>
       </header>
 
-      {/* Pricing grid */}
-      <div style={{ ...W, padding: '0 5vw 80px' }}>
-        <div
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-            gap: 14,
-            alignItems: 'stretch',
-          }}
-        >
-
       <div
         style={{
           display: 'flex',
@@ -250,6 +239,16 @@ export default function PricingPage() {
         </div>
       </div>
 
+      {/* Pricing grid */}
+      <div style={{ ...W, padding: '0 5vw 80px' }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: 14,
+            alignItems: 'stretch',
+          }}
+        >
           {plans.map((plan) => (
             <div
               key={plan.tier}
