@@ -14,9 +14,12 @@ import { useEntitlements } from '../contexts/EntitlementsContext';
 import { TIER_MONTHLY_ORDER_CAP, type Tier } from '../config/tiers';
 import { axiosInstance } from '../api/axiosConfig';
 
+// Field names must match GET /api/v1/billing/usage response exactly.
+// API returns: ingested_orders, shipped_orders, tier, period_starts_at
+// No cycle_end is returned — banner omits reset date when unavailable.
 interface UsageSummary {
-  ingested_count: number;
-  cycle_end?: string;
+  ingested_orders: number;
+  period_starts_at?: string;
 }
 
 const NEXT_TIER: Partial<Record<Tier, Tier>> = {
@@ -58,7 +61,7 @@ export function OrderCapBanner() {
   const ordersCap = TIER_MONTHLY_ORDER_CAP[tier as Tier];
   if (ordersCap === Infinity) return null;
 
-  const ordersUsed = usage.ingested_count;
+  const ordersUsed = usage.ingested_orders;
   const pct = ordersUsed / ordersCap;
   if (pct < 0.8) return null;
 
@@ -147,7 +150,7 @@ export function OrderCapBanner() {
 
         <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'text.secondary', mt: '2px' }}>
           {isBlocked
-            ? `New orders are paused until your cycle resets on ${formatResetDate(usage.cycle_end)}, or upgrade now to keep ingesting.`
+            ? `New orders are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)}, or upgrade now to keep ingesting.`
             : nextTier
             ? `Upgrade to ${capitalize(nextTier)} for ${nextTierCap(tier as Tier)} orders/mo and avoid an interruption when you hit the cap.`
             : 'Upgrade your plan to increase your monthly order limit.'}
