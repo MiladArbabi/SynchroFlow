@@ -42,7 +42,7 @@ const plans = [
   },
   {
     tier: 'Growth',
-    price: '£179',
+    price: '$179',
     period: '/mo',
     desc: 'Where intelligence unlocks. Where the product pays for itself.',
     features: ['Everything in Core', 'Demand intelligence', 'Supplier scorecards', 'Stock risk alerts', 'Unlimited locations', 'Barcode generation', 'Slack notifications'],
@@ -52,9 +52,9 @@ const plans = [
   },
   {
     tier: 'Scale',
-    price: '£349',
+    price: '$349',
     period: '/mo',
-    desc: 'Serious volume, no limits. For merchants doing £5M+ who need enterprise-grade reliability.',
+    desc: 'Serious volume, no limits. For merchants doing $5M+ who need enterprise-grade reliability.',
     features: ['Everything in Growth', 'Floor planning', 'Multi-warehouse routing', 'Advanced RLS controls', 'Dedicated onboarding', 'SLA guarantee'],
     featured: false,
     badge: null,
@@ -125,7 +125,7 @@ export default function PricingPage() {
         {/* Footer note */}
         <div style={{ textAlign: 'center', marginTop: 48, padding: '32px 0', borderTop: '1px solid #E8E6E0' }}>
           <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 18, fontStyle: 'italic', color: '#6B7280', margin: '0 0 12px' }}>
-            At £179/month, LaSyncro costs less per day than a single unplanned stockout.
+            At $179/month, LaSyncro costs less per day than a single unplanned stockout.
           </p>
           <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 300, color: '#9CA3AF', margin: 0 }}>
             Questions? <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none' }}>contact@lasyncro.com</a>

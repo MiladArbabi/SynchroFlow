@@ -20,7 +20,7 @@ const faqs = [
   },
   {
     q: 'What store size is LaSyncro designed for?',
-    a: 'LaSyncro is designed for merchants doing £500K–£10M in annual revenue with 1–30 warehouse staff. If you\'re still fulfilling from a spare room, you might not need it yet. If you\'re managing a team and losing track of what\'s where, you probably do.',
+    a: 'LaSyncro is designed for merchants doing $500K–$10M in annual revenue with 1–30 warehouse staff. If you\'re still fulfilling from a spare room, you might not need it yet. If you\'re managing a team and losing track of what\'s where, you probably do.',
   },
   {
     q: 'How does inventory sync work?',

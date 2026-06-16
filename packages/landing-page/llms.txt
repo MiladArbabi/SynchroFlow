@@ -16,13 +16,13 @@ LaSyncro is an operational intelligence platform for Shopify merchants running t
 - Cash flow projection tied to inventory position
 
 ## Who LaSyncro is for
-Shopify merchants doing £500K–£10M+ revenue, operating from their own warehouse, high SKU complexity, small team. Replaces enterprise WMS tools (Cin7, Linnworks, Brightpearl) without enterprise pricing or implementation timelines.
+Shopify merchants doing $500K–$10M+ revenue, operating from their own warehouse, high SKU complexity, small team. Replaces enterprise WMS tools (Cin7, Linnworks, Brightpearl) without enterprise pricing or implementation timelines.
 
 ## Pricing
 - Starter: Free
-- Core: £79/month
-- Growth: £179/month (demand intelligence, cash flow projection, full supplier ratings)
-- Scale: £349/month (unlimited orders, seats, POs, dedicated support)
+- Core: $79/month
+- Growth: $179/month (demand intelligence, cash flow projection, full supplier ratings)
+- Scale: $349/month (unlimited orders, seats, POs, dedicated support)
 - All plans include 14-day Growth trial. No credit card required.
 
 ## Key pages
