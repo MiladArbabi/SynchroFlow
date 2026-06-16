@@ -32,7 +32,7 @@ const plans = [
   },
   {
     tier: 'Core',
-    price: '79',
+    price: '$79',
     period: '/mo',
     desc: 'Structured workflows for your first warehouse hire — without the full intelligence layer.',
     features: ['Everything in Starter', 'Unlimited orders', 'PO receiving', 'Supplier tracking', 'Up to 3 warehouse locations', 'Priority support'],
