@@ -100,6 +100,9 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'members:write':            ['owner'],           // owner-only: role assignment
   'members:remove':           ['owner'],           // owner-only: seat removal
 
+  // ── EXPORTS ────────────────────────────────────────────────
+  'exports:read':             ['owner', 'admin'],
+
   // ── BILLING ────────────────────────────────────────────────
   'billing:read':             ['owner', 'admin'],
   'billing:write':            ['owner'],           // owner-only: plan changes

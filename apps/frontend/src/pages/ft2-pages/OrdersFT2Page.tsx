@@ -29,6 +29,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { OrderCapBanner } from '../../components/OrderCapBanner';
 import { axiosInstance } from 'api/axiosConfig';
+import { Box } from '@mui/system';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -91,6 +92,25 @@ export default function OrdersFT2Page() {
     <>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <OrderCapBanner />
+      {/* Export toolbar — matches module horizontal padding */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', px: '40px', pt: '16px' }}>
+        <Box
+          onClick={async () => {
+            try {
+              const res = await axiosInstance.post('/api/v1/exports/orders', {}, { responseType: 'blob' });
+              const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `lasyncro-orders-${new Date().toISOString().split('T')[0]}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } catch { console.error('[Orders] export failed'); }
+          }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+        >
+          Export →
+        </Box>
+      </Box>
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}

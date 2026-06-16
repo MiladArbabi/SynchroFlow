@@ -98,15 +98,34 @@ export default function BlockedOrdersPage() {
       <Box sx={{ p: '32px 40px' }}>
 
         {/* HEADER */}
-        <Box sx={{ mb: 3 }}>
-          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
-            Blocked orders
-          </Typography>
-          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-            {isLoading
-              ? '—'
-              : `${orders.length} orders blocked · ${fmt$(String(totalRevenue))} held · sorted oldest first`}
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
+          <Box>
+            <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
+              Blocked orders
+            </Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+              {isLoading
+                ? '—'
+                : `${orders.length} orders blocked · ${fmt$(String(totalRevenue))} held · sorted oldest first`}
+            </Typography>
+          </Box>
+          {/* Export blocked orders — Core+ (GH #1014) */}
+          <Box
+            onClick={async () => {
+              try {
+                const res = await axiosInstance.post('/api/v1/exports/orders', { filters: { status: ['blocked'] } }, { responseType: 'blob' });
+                const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `lasyncro-blocked-orders-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+              } catch { console.error('[BlockedOrders] export failed'); }
+            }}
+            sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: '6px', '&:hover': { opacity: 0.75 } }}
+          >
+            Export →
+          </Box>
         </Box>
 
         {isError && (

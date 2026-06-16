@@ -61,5 +61,7 @@ router.use('/v1/specter', specterRouter);
  * GET /api/v1/system/health
  */
 router.use('/v1/system', systemRoutes);
-
+// Export engine — CSV + PDF streaming (GH #1014 Sprint 1)
+import exportsRoutes from '../api/exports/exports.routes.js';
+router.use('/v1/exports', exportsRoutes);
 export default router;

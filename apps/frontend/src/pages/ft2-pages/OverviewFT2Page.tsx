@@ -9,6 +9,7 @@ import { OverviewModuleFT2 } from '@lasyncro/overview';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { axiosInstance } from 'api/axiosConfig';
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
@@ -57,9 +58,18 @@ export default function OverviewPageFT2() {
         currency={displayCurrency}
         onNavigate={(deepLink) => navigate(deepLink)}
         onRefreshBrief={() => setForceRefresh(f => !f)}
-        onExportBrief={() => {
-          // TODO: implement brief export (PDF/CSV) — stub for now
-          console.info('[OVERVIEW] Export brief triggered');
+        onExportBrief={async () => {
+          try {
+            const res = await axiosInstance.post('/api/v1/exports/brief', {}, { responseType: 'blob' });
+            const url = URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `lasyncro-brief-${new Date().toISOString().split('T')[0]}.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+          } catch {
+            console.error('[OVERVIEW] Export brief failed');
+          }
         }}
         onResolveAll={() => navigate('/orders?filter=blocked')}
       />
