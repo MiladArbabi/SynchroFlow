@@ -72,13 +72,13 @@ export function PostTrialInterstitial({ show }: PostTrialInterstitialProps) {
   const handleUpgradeGrowth = () => {
     setDismissed();
     setOpen(false);
-    window.location.href = '/account/settings?tab=billing';
+    window.location.href = '/settings/billing';
   };
 
   const handleUpgradeScale = () => {
     setDismissed();
     setOpen(false);
-    window.location.href = '/account/settings?tab=billing';
+    window.location.href = '/settings/billing';
   };
 
   return (

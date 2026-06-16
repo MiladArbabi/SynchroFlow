@@ -4,12 +4,12 @@
 // --------------------------------
 // Shown during active trial period.
 // Dismissible per session — re-appears on next session.
-// CTA navigates to /account/settings?tab=billing.
+// CTA navigates to /settings/billing (FT2 ShopSettingsPage).
 //
 // 3-state escalation: calm (≥4 days) → amber (2-3 days) → red (0-1 days)
 
 import { useState } from 'react';
-import { Box, Typography, useTheme, alpha } from '@mui/material';
+import { Box, useTheme, alpha } from '@mui/material';
 import { Clock, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
@@ -103,7 +103,7 @@ export function TrialCountdownBanner({ trialEndsAt }: TrialCountdownBannerProps)
   };
 
   const handleAddPayment = () => {
-    navigate('/account/settings?tab=billing');
+    navigate('/settings/billing');
   };
 
   return (

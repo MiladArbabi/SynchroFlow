@@ -21,6 +21,7 @@ import ShopSettingsGeneralPage      from './ShopSettingsGeneralPage';
 import ShopSettingsCarriersPage     from './ShopSettingsCarriersPage';
 import ShopSettingsWarehousePage    from './ShopSettingsWarehousePage';
 import ShopSettingsFinancePage      from './ShopSettingsFinancePage';
+import BillingSettings              from '../account-settings/BillingSettings';
 import { PlaceholderTab }           from './ShopSettingsShared';
 
 const SETTINGS_TABS = [
@@ -31,6 +32,7 @@ const SETTINGS_TABS = [
   { id: 'localization',  label: 'Localization',   path: '/settings/localization'  },
   { id: 'notifications', label: 'Notifications',  path: '/settings/notifications' },
   { id: 'integrations',  label: 'Integrations',   path: '/settings/integrations'  },
+  { id: 'billing',       label: 'Billing',        path: '/settings/billing'       },
 ];
 
 export default function ShopSettingsPage() {
@@ -70,6 +72,8 @@ export default function ShopSettingsPage() {
             description="Third-party connections (accounting, ERP, and more) — coming soon."
           />
         } />
+        {/* Billing — plan, usage meters, upgrade/downgrade (UX-02) */}
+        <Route path="/billing" element={<BillingSettings />} />
       </Routes>
     </Box>
   );

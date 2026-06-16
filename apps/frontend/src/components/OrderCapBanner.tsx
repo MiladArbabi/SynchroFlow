@@ -92,7 +92,7 @@ export function OrderCapBanner() {
         pillColor:  '',
       };
 
-  const handleUpgrade = () => navigate('/account/settings?tab=billing');
+  const handleUpgrade = () => navigate('/settings/billing');
 
   return (
     <Box sx={{

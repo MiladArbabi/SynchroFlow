@@ -72,7 +72,7 @@ export const TrialCountdownChip: React.FC = () => {
   return (
     <Tooltip title={tooltip} placement="bottom">
       <Box
-        onClick={() => navigate('/account/settings?tab=billing')}
+        onClick={() => navigate('/settings/billing')}
         sx={{
           display:        'inline-flex',
           alignItems:     'center',
