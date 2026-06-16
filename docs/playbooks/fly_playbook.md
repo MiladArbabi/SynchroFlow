@@ -215,7 +215,7 @@ With `auto_stop_machines = 'stop'` or `'suspend'`, Fly stops machines during tra
 `GET /health` returns `{ status: 'ok' }` with HTTP 200. Configured in `fly.toml`:
 ```toml
 [[http_service.checks]]
-  grace_period = '10s'
+  grace_period = '30s'
   interval = '30s'
   method = 'GET'
   path = '/health'

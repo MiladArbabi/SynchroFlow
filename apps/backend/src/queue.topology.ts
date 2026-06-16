@@ -40,7 +40,8 @@ const TOPOLOGY = [
       durable: true,
       arguments: {
         'x-dead-letter-exchange': 'events.dlx',
-        'x-dead-letter-routing-key': 'events.dead',
+        'x-dead-letter-routing-key': 'dead',
+        'x-single-active-consumer': true,
       },
     },
   },
@@ -81,7 +82,7 @@ const TOPOLOGY = [
   // ── Execution pipeline (with DLX) ───────────────────────────────
   {
     type: 'exchange' as const,
-    name: 'execution.jobs.v1.dlx',
+    name: 'execution.dlx',
     kind: 'direct',
     options: { durable: true },
   },
@@ -91,14 +92,22 @@ const TOPOLOGY = [
     options: {
       durable: true,
       arguments: {
-        'x-dead-letter-exchange': 'execution.jobs.v1.dlx',
+        'x-dead-letter-exchange': 'execution.dlx',
+        'x-dead-letter-routing-key': 'execution.jobs.v1.dlq',
       },
     },
   },
   {
     type: 'queue' as const,
     name: 'execution.jobs.v1.dlq',
-    options: { durable: true },
+    options: {
+      durable: true,
+      arguments: {
+        'x-message-ttl': 5000,
+        'x-dead-letter-exchange': '',
+        'x-dead-letter-routing-key': 'execution.jobs.v1',
+      },
+    },
   },
 
   // ── Fulfillment reconciliation ───────────────────────────────────

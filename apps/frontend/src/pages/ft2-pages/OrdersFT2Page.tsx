@@ -27,6 +27,7 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
+import { OrderCapBanner } from '../../components/OrderCapBanner';
 import { axiosInstance } from 'api/axiosConfig';
 
 const __DEV__ = import.meta.env.DEV;
@@ -89,6 +90,7 @@ export default function OrdersFT2Page() {
   return (
     <>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
+      <OrderCapBanner />
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}

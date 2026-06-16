@@ -10,6 +10,7 @@ import { PlanGate } from '../../components/PlanGate';
 import { ChevronRight, ChevronDown, Package } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
+import { OrderCapBanner } from '../../components/OrderCapBanner';
 import { usePickBatches, usePickBatchLineItems } from '../wms/usePickBatches';
 import type { PickBatch, PickBatchLineItem } from '../wms/usePickBatches';
 
@@ -248,6 +249,7 @@ export default function FulfillmentQueuePage() {
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
 
       <Box sx={{ p: '32px 40px' }}>
+        <OrderCapBanner />
 
         {/* HEADER */}
         <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>

@@ -34,17 +34,26 @@ const channels = new Map<string, ChannelWrapper>();
 
 export async function initQueue(): Promise<void> {
   if (connection) return;
-
   connection = amqp.connect([RABBITMQ_URL], {
     heartbeatIntervalInSeconds: HEARTBEAT,
     reconnectTimeInSeconds: RECONNECT,
   });
-
-  // Guard logging to avoid "Cannot log after tests are done"
-  connection.on('connect', () => {
-    if (process.env.NODE_ENV !== 'test') {
-      console.log('[api/queue.ts] Connected to RabbitMQ');
-    }
+  // Wait for the actual AMQP connection before returning
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error('[QUEUE] RabbitMQ connection timeout after 15s'));
+    }, 25000);
+    connection!.once('connect', () => {
+      clearTimeout(timeout);
+      if (process.env.NODE_ENV !== 'test') {
+        console.log('[api/queue.ts] Connected to RabbitMQ');
+      }
+      resolve();
+    });
+    connection!.once('connectFailed', ({ err }: { err: Error }) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
   connection.on('disconnect', (e: { err: Error }) => {
     if (process.env.NODE_ENV !== 'test') {

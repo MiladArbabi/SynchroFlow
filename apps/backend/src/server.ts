@@ -32,7 +32,6 @@ async function start() {
   await initQueue();
   await declareTopology();
   await startWorkers();
-
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);
   });
