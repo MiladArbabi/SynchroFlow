@@ -85,15 +85,7 @@ function PublicAppShell() {
   );
 }
 
-function LifecycleGuardedApp({
-  isConnectModalOpen,
-  onCloseConnectModal,
-  onActivation,
-}: {
-  isConnectModalOpen: boolean;
-  onCloseConnectModal: () => void;
-  onActivation: (actionId: string) => void;
-}) {
+function LifecycleGuardedApp() {
   const { isBooting, phase } = useShopLifecycle();
 
   /**
@@ -114,11 +106,8 @@ function LifecycleGuardedApp({
   }
 
   return (
-    <AppLayout
-      isConnectModalOpen={isConnectModalOpen}
-      onCloseConnectModal={onCloseConnectModal}
-    >
-      <ShopLifecycleGate onActivation={onActivation}>
+    <AppLayout>
+      <ShopLifecycleGate>
         <>
           <EntitlementBoundary>
             <LifecycleRouteHost />
@@ -135,22 +124,17 @@ function LifecycleGuardedApp({
 ───────────────────────────── */
 function AuthenticatedAppShell() {
   const { isLoading, isLoggedIn } = useAuth();
-  const [isConnectModalOpen, setIsConnectModalOpen] = React.useState(false);
-
   /**
    * CRITICAL: FIRST-PAINT BLOCK (must be before any return)
    */
   const [hasMounted, setHasMounted] = React.useState(false);
-
   React.useEffect(() => {
     setHasMounted(true);
   }, []);
-
   /**
    * BLOCK 1: auth not ready
    */
   if (isLoading || !isLoggedIn) return null;
-
   /**
    * BLOCK 2: prevent first paint before effects run
    */
@@ -158,13 +142,6 @@ function AuthenticatedAppShell() {
     console.warn('[APP_SHELL_PREVENT_FIRST_PAINT]');
     return null;
   }
-
-  const handleActivation = (actionId: string) => {
-    if (actionId === 'connect-store') {
-      setIsConnectModalOpen(true);
-    }
-  };
-
   return (
     <QueryClientProvider client={queryClient}>
       <RuntimeRoutesProvider>
@@ -177,11 +154,7 @@ function AuthenticatedAppShell() {
                   <IntlErrorBoundary>
                     <LifecycleProvider>
                       <ShopLifecycleShell>
-                        <LifecycleGuardedApp
-                          isConnectModalOpen={isConnectModalOpen}
-                          onCloseConnectModal={() => setIsConnectModalOpen(false)}
-                          onActivation={handleActivation}
-                        />
+                        <LifecycleGuardedApp />
                       </ShopLifecycleShell>
                     </LifecycleProvider>
                   </IntlErrorBoundary>

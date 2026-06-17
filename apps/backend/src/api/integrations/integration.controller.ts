@@ -15,9 +15,10 @@
 // apps/backend/src/api/integrations/integration.controller.ts
 import { Request, Response } from 'express';
 import crypto from 'crypto';
+import bcrypt from 'bcrypt';
 import { encrypt } from '../../security/encryption.service.js';
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemDb } from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
 import { issueAuthTokens } from '../../api/auth/token.service.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
@@ -25,6 +26,7 @@ import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuth
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
+import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
@@ -120,7 +122,6 @@ export const initiateOAuth = async (req: Request, res: Response) => {
       'write_fulfillments',
       'read_merchant_managed_fulfillment_orders',
       'write_merchant_managed_fulfillment_orders',
-      'read_script_tags',
     ].join(',');
 
     authorizationUrl =
@@ -201,9 +202,10 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
   // --- STEP 2.2.1: DB-backed OAuth state validation (NO token exchange yet) ---
   let oauthContext: {
-    userId: number;
-    shopDomain: string | null;
-  };
+      userId: number;
+      shopDomain: string | null;
+      installSource: 'app_store' | 'reconnect' | null;
+    };
 
   try {
     oauthContext = await db.transaction(async trx => {
@@ -245,6 +247,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       return {
         userId: row.user_id,
         shopDomain: row.shop_domain,
+        installSource: (row.install_source ?? null) as 'app_store' | 'reconnect' | null,
       };
     });
   } catch (err: any) {
@@ -276,6 +279,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
   let shopifyAccessToken: string;
   let shopBaseCurrency = 'USD'; // set from Shopify shop.json at OAuth time, fallback to USD
+  let shopRealName: string | null = null;
+  let shopContactEmail: string | null = null;
 
   // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
   try {
@@ -290,16 +295,22 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
       shopifyAccessToken = tokenResponse.data?.access_token;
 
-      // Fetch store currency from Shopify Admin API
-      // Used to set shops.base_currency — conversion is display-only, never stored
+      // Fetch store currency + identity via GraphQL Admin API (single round-trip)
+      // currencyCode → sets shops.base_currency (display-only, never stored converted)
+      // name/contactEmail → used post-commit to backfill ghost shop/user identity
+      // (App Store installs only); never blocks OAuth completion if this fails.
       try {
-        const shopInfoRes = await axios.get(
-          `https://${oauthContext.shopDomain}/admin/api/2024-01/shop.json`,
-          { headers: { 'X-Shopify-Access-Token': shopifyAccessToken } }
+        const shopInfoRes = await axios.post(
+          `https://${oauthContext.shopDomain}/admin/api/2024-01/graphql.json`,
+          { query: '{ shop { currencyCode name contactEmail } }' },
+          { headers: { 'X-Shopify-Access-Token': shopifyAccessToken, 'Content-Type': 'application/json' } }
         );
-        shopBaseCurrency = shopInfoRes.data?.shop?.currency ?? 'USD';
+        const shopGraphData = shopInfoRes.data?.data?.shop;
+        shopBaseCurrency = shopGraphData?.currencyCode ?? 'USD';
+        shopRealName = shopGraphData?.name ?? null;
+        shopContactEmail = shopGraphData?.contactEmail ?? null;
       } catch (err) {
-        console.warn('[OAuth] Failed to fetch shop currency — defaulting to USD', err);
+        console.warn('[OAuth] Failed to fetch shop currency/identity — defaulting to USD', err);
       }
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
@@ -347,7 +358,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_domain: oauthContext.shopDomain,
           access_token: encryptedToken,
           scopes: 
-          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,write_script_tags',
+          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
           installed_at: new Date(),
         })
          .onConflict(['shop_domain'])
@@ -364,6 +375,33 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
     // --- Post-commit side effects ---
     await EntitlementsService.grantDefaultFreeTierForShop(result.shopId);
+    /**
+     * GHOST IDENTITY BACKFILL (App Store installs only)
+     * ----------------------------------------------------
+     * Replaces the placeholder @lasyncro.internal email/empty name with
+     * real Shopify-provided data, fetched defensively above. Only touches
+     * users whose email still matches the ghost pattern — never overwrites
+     * a real direct-signup user's data on a reconnect through this same
+     * callback. Failure here is non-fatal; OAuth has already succeeded.
+     */
+    try {
+      const currentUser = await db('users')
+        .where({ id: oauthContext.userId })
+        .first('email');
+      const isGhostEmail = currentUser?.email?.startsWith('shopify-install+') && currentUser.email.endsWith('@lasyncro.internal');
+      if (isGhostEmail && shopContactEmail) {
+        await db('users')
+          .where({ id: oauthContext.userId })
+          .update({ email: shopContactEmail, updated_at: new Date() });
+      }
+      if (isGhostEmail && shopRealName) {
+        await db('shops')
+          .where({ id: result.shopId })
+          .update({ name: shopRealName });
+      }
+    } catch (err) {
+      console.warn('[OAuth] Ghost identity backfill failed (non-fatal)', { shopId: result.shopId, err });
+    }
 
     /**
      * SYNC JOB ENQUEUE (REQUIRED)
@@ -493,14 +531,288 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
+    // App Store installs: stamp billing_provider on subscription (covers reinstalls)
+    if (oauthContext.installSource === 'app_store') {
+      await db('shop_subscriptions')
+        .where({ shop_id: result.shopId })
+        .update({ billing_provider: 'shopify', updated_at: new Date() });
+    }
+
+    const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
     return res.redirect(
-       `${process.env.FRONTEND_URL}/?connect=success&token=${userJwt}`
+      `${process.env.FRONTEND_URL}/?connect=${connectParam}&token=${userJwt}`
     );
   } catch (err) {
     console.error('[OAuth] Integration persistence failed', err);
     return res.status(500).json({ error: 'Failed to finalize integration' });
   }
 }
+
+/**
+ * GET /api/v1/integrations/shopify/install
+ *
+ * Unauthenticated App Store install entry point.
+ * Shopify hits this URL (set as App URL in Partner Dashboard) when a merchant
+ * installs from the App Store listing.
+ *
+ * Flow:
+ *   1. Validate Shopify HMAC + timestamp (replay protection)
+ *   2. Resolve or create shop + owner user
+ *      - Reinstall: find existing owner via shopify_app_installations
+ *      - New install: create ghost shop + user via systemDb (billing_provider: 'shopify')
+ *   3. Seed integration_oauth_states with install_source: 'app_store'
+ *   4. Redirect directly to Shopify OAuth (no frontend step)
+ *
+ * HARD RULES:
+ *   - No auth middleware on this route
+ *   - HMAC validation is mandatory — reject any unsigned request
+ *   - Ghost user email is @lasyncro.internal and is password-login-disabled
+ *   - billing_provider: 'shopify' is stamped at birth on new installs
+ */
+export const handleShopifyInstall = async (req: Request, res: Response) => {
+  const query = req.query as Record<string, string>;
+  const { shop, hmac, timestamp } = query;
+
+  if (!shop || !hmac || !timestamp) {
+    return res.status(400).send('Missing required install parameters');
+  }
+
+  const secret = process.env.SHOPIFY_API_SECRET;
+  if (!secret) {
+    console.error('[shopify-install] SHOPIFY_API_SECRET not set');
+    return res.status(500).send('Server configuration error');
+  }
+
+  // HMAC validation — exclude hmac param, sort remaining, digest with app secret
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(query)) {
+    if (k !== 'hmac') params[k] = v;
+  }
+  const message = Object.keys(params)
+    .sort()
+    .map(k => `${k}=${params[k]}`)
+    .join('&');
+
+  const expectedHmac = crypto
+    .createHmac('sha256', secret)
+    .update(message)
+    .digest('hex');
+
+  let hmacValid = false;
+  try {
+    hmacValid = crypto.timingSafeEqual(
+      Buffer.from(hmac),
+      Buffer.from(expectedHmac)
+    );
+  } catch {
+    hmacValid = false;
+  }
+
+  if (!hmacValid) {
+    audit({ level: 'SECURITY', event: 'shopify_install_hmac_invalid', metadata: { shop } });
+    return res.status(401).send('Invalid request signature');
+  }
+
+  // Replay protection — 5-minute timestamp window
+  const ts = parseInt(timestamp, 10);
+  if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > 300) {
+    return res.status(401).send('Request timestamp expired');
+  }
+
+  const shopDomain = normalizeShopDomain(shop);
+  let userId: number;
+
+  try {
+    // Check for any existing installation (reinstall case — with or without uninstalled_at)
+    const existing = await db('shopify_app_installations')
+      .where({ shop_domain: shopDomain })
+      .first('shop_id');
+
+    if (existing) {
+      // Reinstall — reuse existing owner, re-stamp billing_provider
+      const membership = await db('shop_memberships')
+        .where({ shop_id: existing.shop_id, role: 'owner' })
+        .first('user_id');
+
+      if (!membership) {
+        console.error('[shopify-install] No owner found for reinstall', { shopDomain, shopId: existing.shop_id });
+        return res.status(500).send('Installation error');
+      }
+
+      userId = membership.user_id;
+
+      console.info('[shopify-install] Reinstall detected', {
+        shopDomain,
+        shopId: existing.shop_id,
+        userId,
+      });
+    } else {
+      // New install — create ghost shop + user atomically via systemDb (bypasses RLS)
+      const result = await systemDb.transaction(async (trx) => {
+        const [newShop] = await trx('shops')
+          .insert({ name: shopDomain })
+          .returning('*');
+
+        await trx('warehouse_locations').insert({
+          shop_id: newShop.id,
+          location_code: `WH-${newShop.id}-ROOT`,
+          type: 'warehouse',
+          parent_location_code: null,
+          active: true,
+        });
+
+        // Ghost user — password-login-disabled via random irreversible hash
+        const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
+        const ghostPasswordHash = await bcrypt.hash(
+          crypto.randomBytes(32).toString('hex'),
+          10
+        );
+
+        const [ghostUser] = await trx('users')
+          .insert({
+            shop_id: newShop.id,
+            email: ghostEmail,
+            password_hash: ghostPasswordHash,
+            first_name: '',
+            last_name: '',
+            entry_channel: 'shopify_app_store',
+          })
+          .returning('*');
+
+        await trx('shop_memberships').insert({
+          shop_id: newShop.id,
+          user_id: ghostUser.id,
+          role: 'owner',
+        });
+
+        const { LifecycleProjectionService } = await import(
+          '../../services/lifecycle-projection.service.js'
+        );
+        await LifecycleProjectionService.projectForMembership(
+          { shopId: newShop.id, userId: ghostUser.id },
+          trx
+        );
+
+        const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+
+        // billing_provider: 'shopify' stamped at birth — never routes to Stripe
+        await trx('shop_subscriptions').insert({
+          shop_id: newShop.id,
+          tier: 'growth',
+          billing_interval: 'monthly',
+          billing_currency: 'USD',
+          billing_provider: 'shopify',
+          status: 'trialing',
+          trial_ends_at: trialEndsAt,
+        });
+
+        await trx('shop_usage_metrics').insert({
+          shop_id: newShop.id,
+          tier_at_period_start: 'growth',
+          period_starts_at: new Date(),
+          period_ends_at: null,
+        });
+
+        await trx('shop_operational_settings')
+          .insert({
+            shop_id: newShop.id,
+            fulfillment_sla_hours: 24,
+            monthly_overhead_amount: 0,
+            starting_cash_balance: 0,
+          })
+          .onConflict('shop_id')
+          .ignore();
+
+        const growthConfig = getTierConfig('growth');
+        const moduleRows = growthConfig.modules.map((moduleKey) => ({
+          shop_id: newShop.id,
+          module_key: moduleKey,
+          flag_key: null as string | null,
+          source: 'trial:growth',
+        }));
+        const flagRows = growthConfig.flags.map((flagKey) => ({
+          shop_id: newShop.id,
+          module_key: flagKey.split('.')[0],
+          flag_key: flagKey,
+          source: 'trial:growth',
+        }));
+        await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+
+        console.info('[shopify-install] Ghost shop + user created', {
+          shopId: newShop.id,
+          userId: ghostUser.id,
+          shopDomain,
+        });
+
+        return { userId: ghostUser.id };
+      });
+
+      userId = result.userId;
+    }
+  } catch (err) {
+    console.error('[shopify-install] Failed to resolve/create user', { shopDomain, err });
+    return res.status(500).send('Installation error — please try again');
+  }
+
+  // Seed OAuth state with install_source: 'app_store'
+  const state = crypto.randomBytes(16).toString('hex');
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+  try {
+    await db('integration_oauth_states')
+      .where('expires_at', '<', new Date())
+      .andWhere({ user_id: userId, platform: 'shopify' })
+      .delete();
+
+    await db('integration_oauth_states').insert({
+      user_id: userId,
+      platform: 'shopify',
+      state,
+      shop_domain: shopDomain,
+      install_source: 'app_store',
+      expires_at: expiresAt,
+    });
+  } catch (err) {
+    console.error('[shopify-install] Failed to seed OAuth state', { shopDomain, userId, err });
+    return res.status(500).send('Installation error — please try again');
+  }
+
+  // Redirect directly to Shopify OAuth — no frontend step for App Store installs
+  const shopifyApiKey = process.env.SHOPIFY_API_KEY;
+  if (!shopifyApiKey) {
+    return res.status(500).send('Server configuration error');
+  }
+
+  const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/shopify`;
+  const scopes = [
+    'read_products',
+    'read_orders',
+    'read_refunds',
+    'read_customers',
+    'read_inventory',
+    'read_payouts',
+    'read_fulfillments',
+    'write_fulfillments',
+    'read_merchant_managed_fulfillment_orders',
+    'write_merchant_managed_fulfillment_orders',
+  ].join(',');
+
+  const authorizationUrl =
+    `https://${shopDomain}/admin/oauth/authorize` +
+    `?client_id=${shopifyApiKey}` +
+    `&scope=${encodeURIComponent(scopes)}` +
+    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+    `&state=${state}`;
+
+  audit({
+    level: 'INFO',
+    event: 'shopify_install_initiated',
+    userId,
+    metadata: { shopDomain, install_source: 'app_store' },
+  });
+
+  return res.redirect(authorizationUrl);
+};
 
 /**
  * Endpoint for the "Pizza Tracker"

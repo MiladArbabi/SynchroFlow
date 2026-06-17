@@ -200,6 +200,10 @@ export class UserStateService {
         user: {
           id: userId,
           email: null,
+          first_name: null,
+          last_name: null,
+          entry_channel: null,
+          profile_prompt_dismissed_at: null,
           preferred_mode: null,
           detected_mode: 'survival',
           onboarding_tier: 'BASIC_ACCESS',
@@ -227,6 +231,10 @@ export class UserStateService {
       user: {
         id: user.id,
         email: user.email,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        entry_channel: user.entry_channel,
+        profile_prompt_dismissed_at: user.profile_prompt_dismissed_at,
         preferred_mode: user.preferred_mode,
         detected_mode: detectedMode,
         onboarding_tier: onboardingTier,
@@ -250,6 +258,28 @@ export class UserStateService {
         preferred_mode: mode,
         updated_at: db.fn.now(),
       });
+  }
+
+  /**
+   * Update user's first/last name and/or dismiss the skippable profile
+   * prompt (App Store ghost users). Always stamps profile_prompt_dismissed_at
+   * on call — both "save" and "skip" actions are terminal; the prompt
+   * never reappears once acted on.
+   */
+  static async updateProfile(
+    userId: number,
+    fields: { firstName?: string; lastName?: string }
+  ) {
+    const update: Record<string, unknown> = {
+      profile_prompt_dismissed_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    };
+    if (fields.firstName !== undefined) update.first_name = fields.firstName;
+    if (fields.lastName !== undefined) update.last_name = fields.lastName;
+
+    await db<User>('users')
+      .where({ id: userId })
+      .update(update);
   }
 
 

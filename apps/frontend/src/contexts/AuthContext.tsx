@@ -43,9 +43,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // 🔐 OAUTH HANDOFF (URL → AUTH STATE)
     const params = new URLSearchParams(window.location.search);
     const tokenFromUrl = params.get('token');
-    const connectSuccess = params.get('connect');
-
-    if (connectSuccess === 'success' && tokenFromUrl) {
+    const connectParam = params.get('connect');
+    
+    // 'success' = direct/reconnect OAuth completion
+    // 'app_store' = Shopify App Store install completion (handleShopifyInstall flow)
+    if ((connectParam === 'success' || connectParam === 'app_store') && tokenFromUrl) {
       console.info('[AUTH][OAUTH_HANDOFF] token detected in URL');
 
       // Store token immediately

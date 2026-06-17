@@ -58,6 +58,7 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
         shop_id: shopId,
         tier,
         billing_interval: billingInterval,
+        billing_provider: 'stripe',
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
         status,
@@ -77,6 +78,8 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
         'current_period_start',
         'current_period_end',
         'updated_at',
+        // billing_provider intentionally excluded — Stripe webhook must never
+        // overwrite a 'shopify' provider stamp set at App Store install.
       ]);
 
     // 2. Re-seed entitlements from tier constants

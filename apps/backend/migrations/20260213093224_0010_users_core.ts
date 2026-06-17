@@ -60,6 +60,16 @@ export async function up(knex: Knex): Promise<void> {
     table.string('entry_channel').defaultTo('unknown');
 
     /**
+     * SKIPPABLE PROFILE COMPLETION (App Store ghost users)
+     * ------------------------------------------------------
+     * Null = prompt not yet shown/acted on.
+     * Timestamp = user either saved real name or explicitly skipped.
+     * Set via PATCH /api/v1/users/me/profile. Gated on
+     * entry_channel = 'shopify_app_store' in the frontend.
+     */
+    table.timestamp('profile_prompt_dismissed_at', { useTz: true }).nullable();
+
+    /**
      * EMAIL VERIFICATION (AUTH-007)
      * ------------------------------
      * email_verified_at      — null = unverified, timestamp = verified

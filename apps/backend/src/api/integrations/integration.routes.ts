@@ -2,7 +2,8 @@
 import { Router } from 'express';
 import { 
   initiateOAuth, 
-  handleOAuthCallback, 
+  handleOAuthCallback,
+  handleShopifyInstall,
   getSyncStatus, 
   preFlightCheck, 
   triggerManualSync, 
@@ -12,6 +13,9 @@ import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middle
 import { triggerManualInitialSync } from './manualSync.controller.js';
 
 const router = Router();
+
+// Wires GET /api/v1/integrations/shopify/install (unauthenticated — App Store entry point)
+router.get('/shopify/install', handleShopifyInstall);
 
 // Wires GET /api/v1/integrations/oauth/initiate
 router.get('/oauth/initiate', authenticateToken, initiateOAuth);

@@ -9,7 +9,6 @@ import { useIntegration } from 'contexts/integration';
 
 type Props = {
   children: React.ReactNode;
-  onActivation: (actionId: string) => void;
 };
 
 export function ShopLifecycleGate({ children }: Props) {

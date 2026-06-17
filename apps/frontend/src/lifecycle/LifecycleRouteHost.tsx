@@ -124,7 +124,12 @@ export function LifecycleRouteHost() {
     // but connect=success signals we're in the sync window.
     // Show SyncAnimationPage immediately rather than flashing WelcomePage.
     const params = new URLSearchParams(location.search);
-    if (params.get('connect') === 'success') {
+    const connectParam = params.get('connect');
+    // 'success' = direct/reconnect OAuth completion
+    // 'app_store' = Shopify App Store install completion (handleShopifyInstall flow)
+    // Both mean OAuth just finished — show sync animation, never the manual
+    // shop-domain entry screen (Shopify prohibits this for App Store installs).
+    if (connectParam === 'success' || connectParam === 'app_store') {
       return <SyncAnimationPage />;
     }
     if (location.pathname !== '/') {

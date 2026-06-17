@@ -60,7 +60,11 @@ export async function createCheckoutSession(req: Request, res: Response) {
     // Retrieve or create Stripe customer
     const subRow = await db('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('stripe_customer_id', 'billing_currency');
+      .first('stripe_customer_id', 'billing_currency', 'billing_provider');
+
+    if (subRow?.billing_provider === 'shopify') {
+      return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
+    }
 
     const billingCurrency = (subRow?.billing_currency ?? 'USD') as BillingCurrency;
     const priceId = getStripePriceId(tier as Exclude<Tier, 'starter'>, billingCurrency, interval);
@@ -125,7 +129,11 @@ export async function createPortalSession(req: Request, res: Response) {
   try {
     const subRow = await db('shop_subscriptions')
       .where({ shop_id: shopId })
-      .first('stripe_customer_id');
+      .first('stripe_customer_id', 'billing_provider');
+
+    if (subRow?.billing_provider === 'shopify') {
+      return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
+    }
 
     if (!subRow?.stripe_customer_id) {
       return res.status(404).json({ error: 'NO_STRIPE_CUSTOMER' });

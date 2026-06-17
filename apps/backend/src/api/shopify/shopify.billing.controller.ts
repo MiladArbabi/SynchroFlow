@@ -57,8 +57,10 @@ async function resolveShopifyAccessToken(shopId: number): Promise<{ accessToken:
  * Returns confirmationUrl — shop owner must visit to approve.
  *
  * Body: { tier: 'core' | 'growth' | 'scale', interval: 'monthly' | 'annual' }
+ * 
+ * RETIRED
  */
-export async function createShopifyCharge(req: Request, res: Response) {
+/* export async function createShopifyCharge(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
   const { tier, interval = 'monthly' } = req.body;
 
@@ -79,19 +81,36 @@ export async function createShopifyCharge(req: Request, res: Response) {
     const apiUrl = process.env.API_URL ?? 'http://localhost:3000';
     // Shopify App Store always bills in USD — currency-agnostic path
     const price = (interval === 'annual' ? tierPrices.annual : tierPrices.monthly) / 100;
-    const billingOn = interval === 'annual' ? 365 : 30;
+    const planName = `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`;
+    const returnUrl = `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`;
+    const pricingInterval = interval === 'annual' ? 'ANNUAL' : 'EVERY_30_DAYS';
+    const isTest = process.env.NODE_ENV !== 'production';
+
     const response = await axios.post(
-      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
+      `https://${shopDomain}/admin/api/2024-01/graphql.json`,
       {
-        recurring_application_charge: {
-          name: `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
-          price,
-          return_url: `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`,
-          trial_days: 0,
-          // Annual: bill every 365 days
-          ...(interval === 'annual' ? { billing_on: billingOn } : {}),
-          test: process.env.NODE_ENV !== 'production',
-        },
+        query: `
+          mutation {
+            appSubscriptionCreate(
+              name: ${JSON.stringify(planName)}
+              returnUrl: ${JSON.stringify(returnUrl)}
+              trialDays: 0
+              test: ${isTest}
+              lineItems: [{
+                plan: {
+                  appRecurringPricingDetails: {
+                    price: { amount: "${price.toFixed(2)}", currencyCode: USD }
+                    interval: ${pricingInterval}
+                  }
+                }
+              }]
+            ) {
+              appSubscription { id }
+              confirmationUrl
+              userErrors { field message }
+            }
+          }
+        `,
       },
       {
         headers: {
@@ -101,19 +120,27 @@ export async function createShopifyCharge(req: Request, res: Response) {
       }
     );
 
-    const charge = response.data?.recurring_application_charge;
-    if (!charge?.confirmation_url) {
+    const result = response.data?.data?.appSubscriptionCreate;
+    const userErrors = result?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      console.error('[shopify-billing] appSubscriptionCreate userErrors', { shopId, userErrors });
       throw new Error('SHOPIFY_CHARGE_CREATION_FAILED');
     }
 
-    console.log('[shopify-billing] charge created', { shopId, tier, interval, chargeId: charge.id });
+    const confirmationUrl = result?.confirmationUrl;
+    const chargeId = result?.appSubscription?.id;
+    if (!confirmationUrl) {
+      throw new Error('SHOPIFY_CHARGE_CREATION_FAILED');
+    }
 
-    return res.json({ confirmationUrl: charge.confirmation_url, chargeId: charge.id });
+    console.log('[shopify-billing] charge created', { shopId, tier, interval, chargeId });
+
+    return res.json({ confirmationUrl, chargeId });
   } catch (err: any) {
     console.error('[shopify-billing] createShopifyCharge failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'SHOPIFY_CHARGE_FAILED' });
   }
-}
+} */
 
 /**
  * GET /api/v1/shopify-billing/callback
@@ -135,12 +162,7 @@ export async function handleShopifyCallback(req: Request, res: Response) {
   try {
     const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
 
-    // Activate the charge
-    await axios.post(
-      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges/${charge_id}/activate.json`,
-      {},
-      { headers: { 'X-Shopify-Access-Token': accessToken } }
-    );
+    // GraphQL AppSubscription auto-activates after merchant approval — no activate call needed
 
     const tierConfig = getTierConfig(tier as Tier);
     const now = new Date();
@@ -205,8 +227,10 @@ export async function handleShopifyCallback(req: Request, res: Response) {
  * creates a new RecurringApplicationCharge for the new tier/interval.
  *
  * Body: { tier: 'core' | 'growth' | 'scale', interval: 'monthly' | 'annual' }
+ * 
+ * RETIRED
  */
-export async function changeShopifyPlan(req: Request, res: Response) {
+/* export async function changeShopifyPlan(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
   const { tier, interval = 'monthly' } = req.body;
 
@@ -227,37 +251,39 @@ export async function changeShopifyPlan(req: Request, res: Response) {
     const { accessToken, shopDomain } = await resolveShopifyAccessToken(shopId);
     const apiUrl = process.env.API_URL ?? 'http://localhost:3000';
 
-    // Cancel all existing active recurring charges before creating a new one
-    const existingCharges = await axios.get(
-      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
-      { headers: { 'X-Shopify-Access-Token': accessToken } }
-    );
-
-    const activeCharges = (existingCharges.data?.recurring_application_charges ?? []).filter(
-      (c: any) => c.status === 'active'
-    );
-
-    for (const charge of activeCharges) {
-      await axios.delete(
-        `https://${shopDomain}/admin/api/2024-01/recurring_application_charges/${charge.id}.json`,
-        { headers: { 'X-Shopify-Access-Token': accessToken } }
-      );
-      console.log('[shopify-billing] cancelled existing charge', { shopId, chargeId: charge.id });
-    }
-
-    // Create new charge for the requested tier/interval
+    // replacementBehavior: APPLY_IMMEDIATELY cancels existing subscription atomically — no manual GET/DELETE loop needed
     const price = (interval === 'annual' ? tierPrices.annual : tierPrices.monthly) / 100;
+    const planName = `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`;
+    const returnUrl = `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`;
+    const pricingInterval = interval === 'annual' ? 'ANNUAL' : 'EVERY_30_DAYS';
+    const isTest = process.env.NODE_ENV !== 'production';
+
     const response = await axios.post(
-      `https://${shopDomain}/admin/api/2024-01/recurring_application_charges.json`,
+      `https://${shopDomain}/admin/api/2024-01/graphql.json`,
       {
-        recurring_application_charge: {
-          name: `LaSyncro ${(tier as string).charAt(0).toUpperCase() + (tier as string).slice(1)} (${interval === 'annual' ? 'Annual' : 'Monthly'})`,
-          price,
-          return_url: `${apiUrl}/api/v1/shopify-billing/callback?shopId=${shopId}&tier=${tier}&interval=${interval}`,
-          trial_days: 0,
-          ...(interval === 'annual' ? { billing_on: 365 } : {}),
-          test: process.env.NODE_ENV !== 'production',
-        },
+        query: `
+          mutation {
+            appSubscriptionCreate(
+              name: ${JSON.stringify(planName)}
+              returnUrl: ${JSON.stringify(returnUrl)}
+              trialDays: 0
+              test: ${isTest}
+              replacementBehavior: APPLY_IMMEDIATELY
+              lineItems: [{
+                plan: {
+                  appRecurringPricingDetails: {
+                    price: { amount: "${price.toFixed(2)}", currencyCode: USD }
+                    interval: ${pricingInterval}
+                  }
+                }
+              }]
+            ) {
+              appSubscription { id }
+              confirmationUrl
+              userErrors { field message }
+            }
+          }
+        `,
       },
       {
         headers: {
@@ -267,19 +293,27 @@ export async function changeShopifyPlan(req: Request, res: Response) {
       }
     );
 
-    const charge = response.data?.recurring_application_charge;
-    if (!charge?.confirmation_url) {
+    const result = response.data?.data?.appSubscriptionCreate;
+    const userErrors = result?.userErrors ?? [];
+    if (userErrors.length > 0) {
+      console.error('[shopify-billing] plan change userErrors', { shopId, userErrors });
       throw new Error('SHOPIFY_CHARGE_CREATION_FAILED');
     }
 
-    console.log('[shopify-billing] plan change charge created', { shopId, tier, interval, chargeId: charge.id });
+    const confirmationUrl = result?.confirmationUrl;
+    const chargeId = result?.appSubscription?.id;
+    if (!confirmationUrl) {
+      throw new Error('SHOPIFY_CHARGE_CREATION_FAILED');
+    }
 
-    return res.json({ confirmationUrl: charge.confirmation_url, chargeId: charge.id });
+    console.log('[shopify-billing] plan change charge created', { shopId, tier, interval, chargeId });
+
+    return res.json({ confirmationUrl, chargeId });
   } catch (err: any) {
     console.error('[shopify-billing] changeShopifyPlan failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'PLAN_CHANGE_FAILED' });
   }
-}
+} */
 
 /**
  * GET /api/v1/shopify-billing/subscription

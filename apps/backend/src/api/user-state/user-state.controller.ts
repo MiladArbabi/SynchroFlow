@@ -74,6 +74,29 @@ export const getUserState = async (req: Request, res: Response) => {
   }
 };
 
+export const updateUserProfile = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { firstName, lastName } = req.body as {
+      firstName?: string;
+      lastName?: string;
+    };
+
+    await UserStateService.updateProfile(userId, { firstName, lastName });
+
+    const userState = await UserStateService.getUserState(userId);
+    return res.status(200).json(userState);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    return res.status(500).json({ error: 'Failed to update user profile' });
+  }
+};
+
 export const updateUserMode = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;

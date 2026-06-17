@@ -23,7 +23,8 @@ export async function up(knex: Knex): Promise<void> {
 
     // Hard expiration for the OAuth attempt
     table.timestamp('expires_at', { useTz: true }).notNullable();
-
+    // Install source — 'app_store' for Shopify App Store installs, null for reconnects
+    table.string('install_source', 20).nullable();
     // Auditability
     table.timestamp('created_at', { useTz: true }).defaultTo(knex.fn.now());
 
@@ -32,6 +33,12 @@ export async function up(knex: Knex): Promise<void> {
     table.index(['user_id', 'platform']);
     table.index(['expires_at']);
   });
+
+  await knex.raw(`
+    ALTER TABLE integration_oauth_states
+    ADD CONSTRAINT integration_oauth_states_install_source_valid
+    CHECK (install_source IN ('app_store', 'reconnect') OR install_source IS NULL);
+  `);
 
   // --- RLS: Enforce tenant isolation (via users) ---
   // No shop_id column → enforce via users relation

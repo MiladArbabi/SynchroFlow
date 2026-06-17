@@ -10,6 +10,7 @@ import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { axiosInstance } from 'api/axiosConfig';
+import { ProfileCompletionBanner } from '../overview/ProfileCompletionBanner';
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
@@ -41,6 +42,7 @@ export default function OverviewPageFT2() {
 
   return (
     <>
+      <ProfileCompletionBanner />
       <OverviewModuleFT2
         {...overviewProps}
 

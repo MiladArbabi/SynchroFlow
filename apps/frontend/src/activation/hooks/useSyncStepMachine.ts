@@ -20,9 +20,9 @@ const UX_TIMINGS = {
 // Minimum display time per phase — controls pacing of the sync animation
 const PHASE_MIN_DURATION: Partial<Record<SyncPhase, number>> = {
   CONNECTING:         2500,
-  IMPORTING_PRODUCTS: 1800,
-  IMPORTING_ORDERS:   8000,   // longest — most events happen here
-  PROCESSING:         5000,   // calculating margin — feels substantial
+  IMPORTING_PRODUCTS: 2100,
+  IMPORTING_ORDERS:   10000,   // longest — most events happen here
+  PROCESSING:         7500,   // calculating margin — feels substantial
   FINALIZING:         3000,
 };
 

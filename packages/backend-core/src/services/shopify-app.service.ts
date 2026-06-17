@@ -2,7 +2,6 @@ import db from '../db.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import CryptoJS from 'crypto-js';
-import type { SpecterSDKConfig } from './specter-sdk.service.js';
 
 export interface ShopifyAppInstallation {
   id?: number;
@@ -81,26 +80,38 @@ export class ShopifyAppService {
         return;
       }
 
-      const webhookUrl = `https://${shopDomain}/admin/api/2024-01/webhooks.json`;
-      const webhookData = {
-        webhook: {
-          topic: 'app/uninstalled',
-          address: `${baseUrl}/api/v1/shopify/webhooks`,
-          format: 'json'
+      const response = await axios.post(
+        `https://${shopDomain}/admin/api/2024-01/graphql.json`,
+        {
+          query: `
+            mutation {
+              webhookSubscriptionCreate(
+                topic: APP_UNINSTALLED
+                webhookSubscription: {
+                  callbackUrl: "${baseUrl}/api/v1/shopify/webhooks"
+                  format: JSON
+                }
+              ) {
+                webhookSubscription { id }
+                userErrors { field message }
+              }
+            }
+          `,
+        },
+        {
+          headers: {
+            'X-Shopify-Access-Token': accessToken,
+            'Content-Type': 'application/json',
+          },
         }
-      };
-
-      const response = await axios.post(webhookUrl, webhookData, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log(
-        '✅ Registered app uninstall webhook:',
-        JSON.stringify(response.data, null, 2)
       );
+
+      const userErrors = response.data?.data?.webhookSubscriptionCreate?.userErrors ?? [];
+      if (userErrors.length > 0) {
+        console.warn('[ShopifyAppService] app/uninstalled webhook userErrors', userErrors);
+      } else {
+        console.log('✅ Registered app/uninstalled webhook via GraphQL');
+      }
     } catch (error: any) {
       const details = error?.response?.data || error?.message || error;
       console.error(
@@ -114,14 +125,20 @@ export class ShopifyAppService {
   }
 
   /**
-   * Enhanced post-installation with Specter module awareness
+   * Post-installation hooks.
+   *
+   * RETIRED (June 2026): Specter SDK injection removed — Specter is fully
+   * deprecated. It used the legacy ScriptTag REST API (script_tags.json),
+   * which Shopify restricts to vintage themes and explicitly disallows for
+   * App Store apps (theme app extensions are the required replacement).
+   * Since Specter itself is being redesigned as a GA/PostHog integration
+   * module rather than an injected storefront script, there is no
+   * replacement script-tag call needed here.
    */
   static async completePostInstallation(
     shopDomain: string,
     shopId: number,
-    moduleTier: 'free' | 'growth' | 'operations' = 'free'
   ): Promise<void> {
-    await this.installSpecterSDK(shopDomain, shopId, moduleTier);
     await this.registerAppUninstallWebhook(shopDomain);
     await this.registerRefundsCreateWebhook(shopDomain);
 
@@ -143,34 +160,32 @@ export class ShopifyAppService {
   }
 
   /**
-   * Verify installation by checking if script tag is present
+   * RETIRED (June 2026): Specter fully deprecated; this checked for the
+   * legacy ScriptTag REST install marker, which Shopify restricts to
+   * vintage themes and disallows for App Store apps. No callers remain.
    */
-  static async verifyInstallation(shopDomain: string): Promise<boolean> {
+  /* static async verifyInstallation(shopDomain: string): Promise<boolean> {
     try {
-
       const accessToken = await this.getDecryptedAccessToken(shopDomain);
-
       if (!accessToken) {
-        console.warn('[ShopifyAppService] Cannot verify installation — missing access token', {
+        console.warn('[ShopifyAppService] Cannot verify installation —missing access token', {
           shopDomain,
         });
         return false;
       }
-
       const scriptTagsUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
       const response = await axios.get(scriptTagsUrl, {
         headers: {
           'X-Shopify-Access-Token': accessToken
         }
       });
-
       const scriptTags = response.data.script_tags;
       return scriptTags.some((tag: any) => tag.src.includes('specter-sdk-v1.js'));
     } catch (error) {
       console.error('Failed to verify installation:', error);
       return false;
     }
-  }
+  } */
 
   /**
    * Encrypt access token
@@ -263,143 +278,18 @@ export class ShopifyAppService {
     }
     return this.decryptToken(installation.access_token);
   };
-
+  
   /**
-   * Generate Specter SDK configuration based on module tier
+   * RETIRED (June 2026): generateSpecterConfig, createSpecterScript, and
+   * installSpecterSDK are fully removed. Specter is deprecated — it
+   * injected a storefront script via the legacy ScriptTag REST API
+   * (script_tags.json), which Shopify restricts to vintage themes and
+   * explicitly disallows for App Store apps (theme app extensions are
+   * the required replacement). Specter's customer-analytics surface is
+   * being redesigned as a Google Analytics / PostHog integration module
+   * instead — no storefront script injection involved, so no GraphQL
+   * or theme-app-extension replacement is needed here. No callers remain.
    */
-  static async generateSpecterConfig(moduleTier: 'free' | 'specter' | 'growth' | 'operations'): Promise<SpecterSDKConfig> {
-    const baseConfig = {
-      shopId: '', // Will be set when creating the script
-      moduleTier,
-      features: {
-        sessionTracking: true, // Always track sessions
-        basicNudges: moduleTier !== 'free',
-        exitIntent: moduleTier !== 'free', 
-        surgicalDiscounts: moduleTier === 'growth' || moduleTier === 'operations'
-      }
-    };
-
-    return baseConfig;
-  };
-
-  /**
-   * Create Specter SDK script with configuration
-   */
-  static async createSpecterScript(shopId: string, moduleTier: 'free' | 'specter' | 'growth' | 'operations'): Promise<string> {
-    const config = await this.generateSpecterConfig(moduleTier);
-    config.shopId = shopId;
-
-    // Create the SDK initialization script
-    const script = `
-    // LaSyncro Specter SDK v1.0
-    (function() {
-      window.SpecterSDKConfig = ${JSON.stringify(config)};
-      
-      // Initialize SDK
-      if (typeof window.SpecterSDK === 'undefined') {
-        window.SpecterSDK = new (function() {
-          this.config = window.SpecterSDKConfig;
-          this.session = null;
-          
-          this.init = function() {
-            console.log('Specter SDK initialized for shop:', this.config.shopId);
-            this.trackSession();
-            
-            if (this.config.features.exitIntent) {
-              this.setupExitIntent();
-            }
-          };
-          
-          this.trackSession = function() {
-            this.session = {
-              id: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-              timestamp: new Date(),
-              intentScore: this.calculateIntentScore()
-            };
-            
-            // Send session data to LaSyncro (simplified)
-            if (navigator.sendBeacon) {
-              navigator.sendBeacon('/lasyncro/specter/session', JSON.stringify(this.session));
-            }
-          };
-          
-          this.calculateIntentScore = function() {
-            // Simplified intent scoring
-            return Math.min((Math.random() * 0.3) + 0.2 + 0.5, 1.0);
-          };
-          
-          this.setupExitIntent = function() {
-            document.addEventListener('mouseleave', function(e) {
-              if (e.clientY < 0) {
-                window.SpecterSDK.showExitIntentNudge();
-              }
-            });
-          };
-          
-          this.showExitIntentNudge = function() {
-            // Simplified nudge display
-            if (this.session && this.session.intentScore > 0.7) {
-              console.log('Showing exit intent nudge for high-intent visitor');
-              // In production, this would show a modal or banner
-            }
-          };
-        })();
-        
-        window.SpecterSDK.init();
-      }
-    })();
-        `.trim();
-
-    return script;
-  };
-
-  /**
-   * Install Specter SDK with module-tier awareness
-   */
-  static async installSpecterSDK(
-    shopDomain: string, 
-    shopId: number, 
-    moduleTier: 'free' | 'specter' | 'growth' | 'operations' = 'free'): Promise<void> {
-    try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain);
-
-      if (!accessToken) {
-        console.warn('[ShopifyAppService] Missing access token; skipping Specter SDK install', {
-          shopDomain,
-          shopId,
-        });
-        return;
-      }
-
-      const scriptTagUrl = `https://${shopDomain}/admin/api/2024-01/script_tags.json`;
-      
-      // For free tier, we inject a basic analytics-only version
-      // For paid tiers, we inject the full Specter SDK
-      const scriptSrc = moduleTier === 'free' 
-        ? 'https://cdn.lasyncro.com/specter-analytics-v1.js'
-        : 'https://cdn.lasyncro.com/specter-sdk-v1.js';
-
-      const scriptTagData = {
-        script_tag: {
-          event: 'onload',
-          src: scriptSrc,
-          display_scope: 'online_store'
-        }
-      };
-
-      await axios.post(scriptTagUrl, scriptTagData, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      console.log(`✅ Specter SDK (${moduleTier} tier) installed for ${shopDomain}`);
-    } catch (error) {
-/*       console.error('[ShopifyAppService] Specter SDK install failed (non-fatal):', error);
- */      return;
-    }
-  }
 
   /**
    * @deprecated
@@ -430,16 +320,23 @@ export class ShopifyAppService {
         process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;
       if (!baseUrl || !baseUrl.startsWith('https://')) return;
 
-      const webhookUrl = `https://${shopDomain}/admin/api/2024-01/webhooks.json`;
-
-      await axios.post(
-        webhookUrl,
+      const refundRes = await axios.post(
+        `https://${shopDomain}/admin/api/2024-01/graphql.json`,
         {
-          webhook: {
-            topic: 'refunds/create',
-            address: `${baseUrl}/api/v1/shopify/webhooks`,
-            format: 'json',
-          },
+          query: `
+            mutation {
+              webhookSubscriptionCreate(
+                topic: REFUNDS_CREATE
+                webhookSubscription: {
+                  callbackUrl: "${baseUrl}/api/v1/shopify/webhooks"
+                  format: JSON
+                }
+              ) {
+                webhookSubscription { id }
+                userErrors { field message }
+              }
+            }
+          `,
         },
         {
           headers: {
@@ -449,7 +346,12 @@ export class ShopifyAppService {
         },
       );
 
-      console.log('✅ Registered refunds/create webhook');
+      const refundErrors = refundRes.data?.data?.webhookSubscriptionCreate?.userErrors ?? [];
+      if (refundErrors.length > 0) {
+        console.warn('[ShopifyAppService] refunds/create webhook userErrors', refundErrors);
+      } else {
+        console.log('✅ Registered refunds/create webhook via GraphQL');
+      }
     } catch (error: any) {
       console.error(
         '[ShopifyAppService] Failed to register refunds webhook:',

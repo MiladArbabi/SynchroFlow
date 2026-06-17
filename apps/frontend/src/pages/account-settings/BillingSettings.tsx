@@ -698,8 +698,13 @@ const BillingSettings: React.FC = () => {
         tier: tierId, interval: billingInterval,
       });
       if (data.url) window.location.href = data.url;
-    } catch {
-      setError('Failed to start checkout. Please try again.');
+    } catch (err) {
+      const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      if (code === 'APP_STORE_MERCHANT') {
+        setError("Paid plans aren't available yet for stores installed via the Shopify App Store — you'll keep full access on the Starter plan in the meantime.");
+      } else {
+        setError('Failed to start checkout. Please try again.');
+      }
       setUpgrading(null);
     }
   };
@@ -711,10 +716,14 @@ const BillingSettings: React.FC = () => {
       if (data.url) window.location.href = data.url;
     } catch (err) {
       // NO_STRIPE_CUSTOMER = trial user, no payment added yet — direct to checkout
+      // APP_STORE_MERCHANT = no Shopify-side paid plans exist yet (Starter is free fallback)
       const code = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       if (code === 'NO_STRIPE_CUSTOMER') {
         setOpPortal(false);
         setError('No billing account yet — add a payment method first.');
+      } else if (code === 'APP_STORE_MERCHANT') {
+        setOpPortal(false);
+        setError("Paid plans aren't available yet for stores installed via the Shopify App Store — you'll keep full access on the Starter plan in the meantime.");
       } else {
         setError('Failed to open billing portal.');
         setOpPortal(false);

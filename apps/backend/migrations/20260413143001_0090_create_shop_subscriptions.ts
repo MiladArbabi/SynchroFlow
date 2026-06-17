@@ -61,9 +61,22 @@ export async function up(knex: Knex): Promise<void> {
       .defaultTo('USD');
 
     // --- Stripe identifiers ---
+    // --- Stripe identifiers ---
     // Null until shop completes Stripe checkout
     table.string('stripe_customer_id').nullable();
     table.string('stripe_subscription_id').nullable();
+
+    // --- Billing provider ---
+    // 'stripe'  → direct/referral install — billed via Stripe
+    // 'shopify' → App Store install — billed via Shopify Billing API
+    // DEFAULT 'stripe' so all direct signups require no explicit write.
+    // HARD RULE: billing.controller.ts must gate on this before any
+    // Stripe checkout or portal session. App Store merchants manage
+    // billing inside Shopify Admin only.
+    table
+      .string('billing_provider', 10)
+      .notNullable()
+      .defaultTo('stripe');
 
     // --- Subscription status ---
     // Mirrors Stripe: 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid'
@@ -170,6 +183,13 @@ export async function up(knex: Knex): Promise<void> {
     ALTER TABLE shop_subscriptions
     ADD CONSTRAINT shop_subscriptions_billing_currency_valid
     CHECK (billing_currency IN ('GBP', 'USD', 'EUR'));
+  `);
+
+  // --- Billing provider constraint ---
+  await knex.raw(`
+    ALTER TABLE shop_subscriptions
+    ADD CONSTRAINT shop_subscriptions_billing_provider_valid
+    CHECK (billing_provider IN ('stripe', 'shopify'));
   `);
 }
 

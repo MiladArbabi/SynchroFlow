@@ -55,30 +55,69 @@ export async function registerShopifyWebhooks(
     throw new Error('[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing');
   }
 
+  // GraphQL WebhookSubscriptionTopic enum uses TOPIC_LIKE_THIS — map from REST-style topic strings
+  const GRAPHQL_TOPIC_MAP: Record<string, string> = {
+    'orders/create': 'ORDERS_CREATE',
+    'orders/paid': 'ORDERS_PAID',
+    'orders/fulfilled': 'ORDERS_FULFILLED',
+    'fulfillments/create': 'FULFILLMENTS_CREATE',
+    'fulfillments/update': 'FULFILLMENTS_UPDATE',
+    'refunds/create': 'REFUNDS_CREATE',
+    'inventory_levels/update': 'INVENTORY_LEVELS_UPDATE',
+    'inventory_items/update': 'INVENTORY_ITEMS_UPDATE',
+    'products/create': 'PRODUCTS_CREATE',
+    'products/update': 'PRODUCTS_UPDATE',
+    'app/uninstalled': 'APP_UNINSTALLED',
+  };
+
+  const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/shopify/webhooks`;
+
   for (const topic of topics) {
-    const res = await fetch(`https://${shopDomain}/admin/api/2024-01/webhooks.json`, {
+    const graphqlTopic = GRAPHQL_TOPIC_MAP[topic];
+    if (!graphqlTopic) {
+      console.error('[SHOPIFY_WEBHOOK_REGISTRATION_FAILED]', { topic, reason: 'NO_GRAPHQL_TOPIC_MAPPING' });
+      continue;
+    }
+
+    const res = await fetch(`https://${shopDomain}/admin/api/2024-01/graphql.json`, {
       method: 'POST',
       headers: {
         'X-Shopify-Access-Token': accessToken,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        webhook: {
-          topic,
-          address: `${process.env.APP_BASE_URL}/api/v1/shopify/webhooks`,
-          format: 'json',
-        },
+        query: `
+          mutation {
+            webhookSubscriptionCreate(
+              topic: ${graphqlTopic}
+              webhookSubscription: {
+                callbackUrl: "${callbackUrl}"
+                format: JSON
+              }
+            ) {
+              webhookSubscription { id }
+              userErrors { field message }
+            }
+          }
+        `,
       }),
     });
 
-    if (res.ok) {
-      console.info('[SHOPIFY_WEBHOOK_REGISTERED]', { topic });
-    } else if (res.status === 422) {
-      // Already registered — not an error
-      console.info('[SHOPIFY_WEBHOOK_ALREADY_REGISTERED]', { topic, status: res.status });
-    } else {
+    if (!res.ok) {
       const body = await res.text();
       console.error('[SHOPIFY_WEBHOOK_REGISTRATION_FAILED]', { topic, status: res.status, body });
+      continue;
+    }
+
+    const json: any = await res.json();
+    const userErrors = json?.data?.webhookSubscriptionCreate?.userErrors ?? [];
+
+    if (userErrors.length === 0) {
+      console.info('[SHOPIFY_WEBHOOK_REGISTERED]', { topic });
+    } else if (userErrors.some((e: any) => /already|taken/i.test(e.message))) {
+      console.info('[SHOPIFY_WEBHOOK_ALREADY_REGISTERED]', { topic, userErrors });
+    } else {
+      console.error('[SHOPIFY_WEBHOOK_REGISTRATION_FAILED]', { topic, userErrors });
     }
   }
 }

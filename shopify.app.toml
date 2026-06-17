@@ -14,4 +14,4 @@ api_version = "2026-01"
   uri = "https://app.lasyncro.com/api/v1/shopify/webhooks"
 
 [access_scopes]
-scopes = "read_customers,read_fulfillments,write_fulfillments,write_inventory,read_inventory,write_inventory_shipments,read_inventory_shipments,write_inventory_transfers,read_inventory_transfers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_orders,read_products,read_script_tags,write_script_tags"
+scopes = "read_customers,read_fulfillments,write_fulfillments,write_inventory,read_inventory,write_inventory_shipments,read_inventory_shipments,write_inventory_transfers,read_inventory_transfers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_orders,read_products"

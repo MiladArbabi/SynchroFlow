@@ -8,8 +8,6 @@ import routes from "routes";
 import { useShopLifecycle } from "lifecycle/ShopLifecycleContext";
 
 import { ToastProvider } from "contexts/ToastContext";
-import { ConnectStoreModal } from "components/ConnectStoreModal";
-
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useSystemHealth } from 'hooks/useSystemHealth';
 import { SystemHealthBanner } from 'components/SystemHealthBanner';
@@ -21,8 +19,6 @@ import { ChevronLeft } from "lucide-react";
 
 interface AppLayoutProps {
   children?: ReactNode;
-  isConnectModalOpen: boolean;
-  onCloseConnectModal: () => void;
 }
 
 type SidenavState = 'EXPANDED' | 'COMPACT';
@@ -242,11 +238,6 @@ const AppLayout = (props: AppLayoutProps) => {
           </Box>
         </Box>
       </Box>
-
-      <ConnectStoreModal
-        isOpen={props.isConnectModalOpen}
-        onClose={props.onCloseConnectModal}
-      />
     </ToastProvider>
   );
 };

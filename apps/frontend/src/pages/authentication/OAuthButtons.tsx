@@ -1,13 +1,13 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/authentication/OAuthButtons.tsx
 //
-// AUTH-001/002: OAuth entry point buttons — Shopify + Google
+// AUTH-001/002: email/password entry divider.
 //
-// ARCHITECTURE NOTE:
-// - Shopify OAuth initiate (/api/v1/integrations/oauth/initiate) requires auth token.
-// - Therefore "Continue with Shopify" on SIGN-IN redirects to /register (onboarding flow).
-// - On SIGN-UP, Shopify connect happens post-registration via ConnectStoreModal.
-// - Google OAuth backend not implemented — shown as "Coming soon".
+// COMPLIANCE NOTE (Shopify 2.3.1):
+// Shopify CTA removed — App Store install is the only path that connects
+// a store while the listing is unpublished. See ConnectStorePage.tsx and
+// WelcomePage.tsx for the interim "install from App Store" messaging.
+// Restore once VITE_SHOPIFY_APP_STORE_URL points at the approved listing.
 //
 import React from 'react';
 import Button from '@mui/material/Button';
@@ -16,11 +16,9 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import Tooltip from '@mui/material/Tooltip';
 import Box from '@mui/material/Box';
-import { useNavigate } from 'react-router-dom';
 
 interface OAuthButtonsProps {
   mode: 'login' | 'register';
-  onShopifyRegister?: () => void; // register mode: open ConnectStoreModal after register
 }
 
 // Shopify bag icon (inline SVG — no external dep)
@@ -46,52 +44,13 @@ function GoogleIcon() {
   );
 }
 
-export default function OAuthButtons({ mode, onShopifyRegister }: OAuthButtonsProps) {
-  const navigate = useNavigate();
-
-  const handleShopify = () => {
-    if (mode === 'login') {
-      navigate('/register?intent=connect-shopify');
-      return;
-    }
-
-    onShopifyRegister?.();
-  };
-
-  const shopifyLabel =
-    mode === 'login'
-      ? 'Sign in or connect Shopify'
-      : 'Create account, then connect Shopify';
-
-  const buttonSx = {
-    flex: 1,
-    py: 1.25,
-    border: '1px solid var(--rule-2)',
-    bgcolor: 'var(--bg-2)',
-    color: 'var(--ink)',
-    borderRadius: 1.5,
-    fontWeight: 500,
-    fontSize: '0.875rem',
-    textTransform: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 1,
-    '&:hover': { bgcolor: 'var(--bg-3)', borderColor: 'var(--rule-2)' },
-  } as const;
-
+export default function OAuthButtons({ mode }: OAuthButtonsProps) {
   return (
     <Stack spacing={1.5} width="100%">
-      <Stack direction="row" spacing={1.5}>
-        <Button onClick={handleShopify} sx={{ ...buttonSx, flex: 1 }} variant="outlined">
-          <ShopifyIcon />
-          {shopifyLabel}
-        </Button>
-      </Stack>
-
       <Stack direction="row" alignItems="center" spacing={1.5} sx={{ py: 0.5 }}>
         <Divider sx={{ flex: 1, borderColor: 'var(--rule)' }} />
         <Typography variant="caption" sx={{ color: 'var(--ink-4)', whiteSpace: 'nowrap', letterSpacing: '0.06em' }}>
-          {mode === 'login' ? 'OR SIGN IN WITH EMAIL' : 'OR USE EMAIL'}
+          {mode === 'login' ? 'SIGN IN WITH EMAIL' : 'SIGN UP WITH EMAIL'}
         </Typography>
         <Divider sx={{ flex: 1, borderColor: 'var(--rule)' }} />
       </Stack>

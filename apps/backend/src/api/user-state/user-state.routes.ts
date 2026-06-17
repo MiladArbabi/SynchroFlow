@@ -3,6 +3,7 @@ import {
   getUserState,
   getOnboardingProgress,
   updateUserMode,
+  updateUserProfile,
   getUserProductCosts,
   updateUserProductCosts,
   updateUserState,
@@ -17,5 +18,6 @@ router.put('/mode', authenticateToken, updateUserMode);
 router.get('/product-costs', authenticateToken, getUserProductCosts);
 router.post('/product-costs', authenticateToken, updateUserProductCosts);
 router.patch('/state', authenticateToken, updateUserState);
+router.patch('/profile', authenticateToken, updateUserProfile);
 
 export default router;

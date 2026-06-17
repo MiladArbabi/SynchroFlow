@@ -33,6 +33,9 @@ export interface User {
   // Password reset fields
   password_reset_token?: string | null;
   password_reset_expires_at?: Date | null;
+  // Entry channel + skippable profile prompt (App Store ghost users)
+  entry_channel?: string | null;
+  profile_prompt_dismissed_at?: Date | null;
 }
 
 export interface UserMilestone {

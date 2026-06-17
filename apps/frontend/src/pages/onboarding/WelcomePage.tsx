@@ -1,5 +1,4 @@
 // apps/frontend/src/pages/onboarding/WelcomePage.tsx
-import { useState } from 'react';
 import {
   Box,
   Container,
@@ -9,7 +8,7 @@ import {
   useTheme,
 } from '@mui/material';
 import { BarChart3, PackageCheck, DollarSign } from 'lucide-react';
-import { ConnectStoreModal } from 'components/ConnectStoreModal';
+import { SHOPIFY_APP_STORE_URL } from 'lib/appStoreUrl';
 
 /**
  * WELCOME PAGE — FT_MINUS_ONE
@@ -20,7 +19,8 @@ import { ConnectStoreModal } from 'components/ConnectStoreModal';
  * - One page. One CTA. No module language.
  * - User vocabulary only — no system/technical terms.
  * - Trust signals below the fold — anxiety reduction.
- * - ConnectStoreModal handles the full Shopify OAuth flow.
+ * - COMPLIANCE (Shopify 2.3.1): CTA points to the App Store listing once
+ *   approved; no manual store-domain entry. See lib/appStoreUrl.ts.
  *
  * Replaces per-module activation configs for FT_MINUS_ONE phase.
  * Per-module activation surfaces are preserved for FT1 (locked modules).
@@ -45,8 +45,8 @@ const VALUE_PROPS = [
 ];
 
 const TRUST_SIGNALS = [
-  'Read-only access',
-  'No store changes',
+  'You control every write',
+  'Full audit trail',
   'No customer data stored',
   'Encrypted end-to-end',
   'Disconnect anytime',
@@ -54,7 +54,6 @@ const TRUST_SIGNALS = [
 
 export default function WelcomePage() {
   const theme = useTheme();
-  const [modalOpen, setModalOpen] = useState(false);
 
   return (
     <Box
@@ -136,20 +135,33 @@ export default function WelcomePage() {
 
           {/* ── CTA ──────────────────────────────────────────── */}
           <Stack spacing={1.5} alignItems="center" width="100%">
-            <Button
-              variant="contained"
-              size="large"
-              fullWidth
-              onClick={() => setModalOpen(true)}
-              sx={{
-                fontWeight: 800,
-                fontSize: '1rem',
-                py: 1.5,
-                borderRadius: 2,
-              }}
-            >
-              Connect your Shopify store
-            </Button>
+            <Typography variant="body2" color="text.secondary" textAlign="center">
+              LaSyncro is being reviewed for the Shopify App Store. Once approved, you'll be able to install it directly from there.
+            </Typography>
+
+            {SHOPIFY_APP_STORE_URL ? (
+              <Button
+                component="a"
+                href={SHOPIFY_APP_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="contained"
+                size="large"
+                fullWidth
+                sx={{
+                  fontWeight: 800,
+                  fontSize: '1rem',
+                  py: 1.5,
+                  borderRadius: 2,
+                }}
+              >
+                Install LaSyncro from the Shopify App Store →
+              </Button>
+            ) : (
+              <Typography variant="body2" color="text.disabled" fontStyle="italic">
+                Install LaSyncro from the Shopify App Store (link goes live on approval)
+              </Typography>
+            )}
 
             {/* TRUST SIGNALS */}
             <Stack
@@ -172,12 +184,6 @@ export default function WelcomePage() {
 
         </Stack>
       </Container>
-
-      {/* SHOPIFY OAUTH MODAL */}
-      <ConnectStoreModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-      />
     </Box>
   );
 }
