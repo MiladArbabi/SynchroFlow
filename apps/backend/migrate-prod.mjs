@@ -10,9 +10,6 @@ const db = knex({
   },
 });
 
-// Drop all tables and start fresh
-await db.raw('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
-
 db.migrate.latest()
   .then(([batch, log]) => {
     console.log('Migrations complete', { batch, log });

@@ -91,6 +91,12 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
   onOrderSelect?: (orderId: string) => void;
   onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
 
+  /**
+   * Module-level export CTA.
+   * Handler is owned by the app shell because export API/auth concerns live outside order-nexus.
+   */
+  onExport?: () => void | Promise<void>;
+
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
     topBlockingType?: string | null;
@@ -154,7 +160,7 @@ const STAGE_COLORS: Record<string, string> = {
 
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const navigate = useNavigate();
-  const { operationalControl, revenue, operatorSummary, currency } = props;
+  const { operationalControl, revenue, operatorSummary, currency, onExport } = props
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -232,12 +238,17 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
-          <Box sx={{ px: 1.5, py: 0.625, borderRadius: '8px', border: '1px solid var(--rule)', bgcolor: 'var(--surface)', cursor: 'pointer', fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', '&:hover': { borderColor: 'var(--rule-2)' } }}>
-            Export
-          </Box>
+          {onExport && (
+            <Box
+              onClick={onExport}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+            >
+              Export →
+            </Box>
+          )}
           <Box
             onClick={() => navigate('/orders/blocked')}
-            sx={{ px: 1.5, py: 0.625, borderRadius: '8px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#10151E', '&:hover': { opacity: 0.88 } }}
+            sx={{ px: 1.5, py: 0.625, borderRadius: '8px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color:'#10151E', '&:hover': { opacity: 0.88 } }}
           >
             Resolve all →
           </Box>
@@ -340,12 +351,13 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                       {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
                     </Typography>
                   </Box>
+                  {/* Tier 2 navigation CTA — keep aligned with modules UX playbook ghost pill anatomy. */}
                   <Box
                     component="button"
                     onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
-                    sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-2)', bgcolor: 'transparent', border: '1px solid var(--rule)', borderRadius: '8px', py: 0.875, textAlign: 'center', cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                   >
-                    View order
+                    View order →
                   </Box>
                 </Box>
               ))}
@@ -407,9 +419,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             </Typography>
           </Box>
 
+          {/* Tier 2 navigation CTA — keep aligned with modules UX playbook ghost pill anatomy. */}
           <Box
             onClick={() => navigate('/orders')}
-            sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.5, py: 0.875, border: '1px solid var(--rule)', borderRadius: '8px', fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
           >
             View all orders →
           </Box>

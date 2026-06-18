@@ -39,6 +39,7 @@ import currencyRoutes from '../api/currency/currency.routes.js';
 import permissionsRoutes from '../api/settings/permissions.routes.js';
 import operatorsRoutes from '../api/operators/operators.routes.js';
 import shopifyBillingRoutes from '../api/shopify/shopify.billing.routes.js';
+import exportsRoutes from '../api/exports/exports.routes.js';
 
 import { getMyEntitlements } from '../api/entitlements/entitlements.controller.js';
 import { httpRefundBackfill } from '../api/integrations/refundBackfill.controller.js';
@@ -126,6 +127,7 @@ export function createApp(): Express {
   app.post('/api/v1/integrations/refund-backfill', authenticateToken, httpRefundBackfill);
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/shopify-billing', shopifyBillingRoutes);
+  app.use('/api/v1/exports', exportsRoutes);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

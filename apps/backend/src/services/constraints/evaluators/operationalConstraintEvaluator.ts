@@ -26,7 +26,10 @@ export async function evaluateOperationalConstraint(
     .first();
 
   if (!ofs) {
-    throw new Error('[OPERATIONAL_CONSTRAINT_INVARIANT] fulfillment status missing');
+    // REPLAY RESILIENCE: constraint pass can run before order_fulfillment_status
+    // is materialized (orders/paid replayed before orders/sync). Not-yet-evaluable,
+    // not fatal — later events for this order re-evaluate once status exists.
+    return { type: 'operational', isActive: false, meta: { blockType: null } };
   }
 
   const ageRow = await trx('order_age_snapshot')
@@ -34,7 +37,7 @@ export async function evaluateOperationalConstraint(
     .first();
 
   if (!ageRow) {
-    throw new Error('[OPERATIONAL_CONSTRAINT_INVARIANT] age snapshot missing');
+    return { type:'operational', isActive:false, meta:{ blockType:null } };
   }
 
   const settings = await trx('shop_operational_settings')

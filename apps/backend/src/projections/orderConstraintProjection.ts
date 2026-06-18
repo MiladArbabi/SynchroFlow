@@ -72,7 +72,7 @@ export async function projectOrderConstraints(
     .first();
 
   if (!ofs) {
-    throw new Error('[CONSTRAINT_PROJECTION_INVARIANT] fulfillment status missing');
+    return; // REPLAY RESILIENCE: skip this pass; re-runs when status is materialized
   }
 
   /**

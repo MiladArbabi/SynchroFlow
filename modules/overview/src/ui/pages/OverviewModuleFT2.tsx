@@ -409,7 +409,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     const atStake = pulse?.blockedRevenue
       ? ` · ${fmtCurrency(Number(pulse.blockedRevenue), currency)} at stake`
       : '';
-    return `${urgent} decision${urgent !== 1 ? 's' : ''} need you${atStake} — everything else is on track.`;
+    return `${urgent} decision${urgent !== 1 ? 's' : ''} pending ${atStake} — everything else is on track.`;
   })();
 
   return (

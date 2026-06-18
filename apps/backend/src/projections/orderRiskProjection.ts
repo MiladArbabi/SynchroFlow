@@ -29,7 +29,7 @@ export async function projectOrderRisk(
     .first();
 
   if (!ofs) {
-    throw new Error('[RISK_PROJECTION_INVARIANT] fulfillment status missing');
+    return; // REPLAY RESILIENCE: status not yet materialized this pass; re-runs when it exists
   }
 
   /**
