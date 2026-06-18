@@ -256,3 +256,47 @@ Fly.io experienced a Macaroon auth outage on June 15, 2026 (15:03–16:xx UTC) a
 - Dashboard logins
 
 Running apps remained healthy during the outage. If auth fails, check `status.flyio.net` before debugging further.
+
+### DB OOM → cascade crash (June 18, 2026 incident)
+
+**Symptom:** App machine crash-loops on `Knex: Timeout acquiring a connection. The pool is probably full`, hits `max restart count of 10`. Proxy floods `could not find a good candidate within 40 attempts at load balancing`.
+
+**Root cause:** `synchroflow-db` was provisioned at 256MB. Under sync load (OAuth + projection writes), Postgres gets OOM-killed (`Out of memory: Killed process ... (postgres)` / `terminated by signal 9`), enters recovery, drops connections. Each crash rolls back in-flight transactions, burning `domain_events` sequence IDs → creates projection gaps (see below) that then FATAL-halt the app worker on next boot.
+
+**Fix:** Bump DB memory:
+\`\`\`bash
+fly machine update <db-machine-id> --vm-memory 1024 --app synchroflow-db
+\`\`\`
+256MB is insufficient for production. 1GB minimum.
+
+**Diagnosing OOM:**
+\`\`\`bash
+fly logs --app synchroflow-db --no-tail | grep -iE "out of memory|signal 9|recovery mode"
+\`\`\`
+
+### Projection gap FATAL halt (recovery procedure)
+
+**Symptom:** App boots, then exits code 1 with `[PROJECTION_GAP_FATAL] missing events X..Y`. Health check never passes.
+
+**Root cause:** `projection.db.worker.ts` HALTS on multi-ID gaps in `domain_events`. Gaps form when transactions roll back (Postgres SERIAL sequences don't roll back — IDs are burned permanently). Common after a DB crash/OOM.
+
+**Recovery:** Advance the cursor past the gap. The FATAL log prints the exact recovery SQL. Set cursor to (next_real_event_id − 1):
+\`\`\`bash
+# Inspect the gap
+PGPASSWORD=<pw> psql -h localhost -p 5433 -U synchroflow -d synchroflow -c \
+  "SELECT last_processed_event_id FROM projection_cursors WHERE projection_name='orders_projection'; SELECT min(id),max(id),count(*) FROM domain_events;"
+
+# Advance cursor to skip the gap (worker auto-resumes, no restart needed)
+PGPASSWORD=<pw> psql -h localhost -p 5433 -U synchroflow -d synchroflow -c \
+  "UPDATE projection_cursors SET last_processed_event_id = <last_burned_id> WHERE projection_name='orders_projection';"
+\`\`\`
+> Tracked for permanent fix (auto-skip bounded gaps): GitHub issue #1015.
+
+### DB proxy / port note
+postgres-flex runs PG on **5433** internally (haproxy fronts 5432). `[DB_IDENTITY] port: 5433` in app logs is NORMAL, not a misconfiguration. To connect locally: `fly proxy 5433:5432 --app synchroflow-db` then psql to `localhost:5433`.
+
+### Rate-limit deadlock on machine restart
+If the app machine is `stopped` and the proxy auto-restart loop floods `machines API returned an error: "rate limit exceeded"`, it won't self-recover. Break it manually:
+\`\`\`bash
+fly machine start <app-machine-id> --app synchroflow
+\`\`\`

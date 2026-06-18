@@ -320,7 +320,7 @@ const AhaMomentPage: React.FC = () => {
                 </Box>
 
                 {/* Divider + revenue — only when revenueImpact present */}
-                {signal.revenueImpact && (
+                {Boolean(signal.revenueImpact) && (
                   <>
                   <Box sx={{ borderTop: `1px solid ${pal.border}`, mb: 3.5 }} />
                   <Box sx={{

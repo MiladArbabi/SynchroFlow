@@ -16,7 +16,6 @@
 //   6 — Velocity fallback  (always available — healthy operation)
 //
 // RULES:
-// - Read-only
 // - Shop-scoped via JWT
 // - Never writes to DB
 // - All signals derived from existing snapshots — no heavy computation

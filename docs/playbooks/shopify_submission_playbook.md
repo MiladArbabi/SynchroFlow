@@ -28,12 +28,14 @@ LaSyncro is a monorepo with three distinct production surfaces:
 ## Shopify Partner Dashboard Configuration
 
 ### App URLs (dev dashboard → Versions)
+
 - **App URL:** `https://app.lasyncro.com`
 - **Redirect URLs:** `https://app.lasyncro.com/api/v1/integrations/oauth/callback/shopify`
 
 > ⚠️ Never leave these pointing at `localhost` or ngrok URLs. The automated checks will fail with "host is invalid."
 
 ### Compliance Webhooks
+
 Registered via `shopify.app.toml` (CLI-managed):
 
 ```toml
@@ -52,21 +54,26 @@ Deploy config changes with: `shopify app deploy --config shopify.app.toml`
 ## Automated Checks — Resolution Log
 
 ### ✅ Immediately authenticates after install
+
 No changes required. Passed from the start once URLs were corrected.
 
 ### ✅ Immediately redirects to app UI after authentication
+
 **Root cause:** App URL was set to `http://localhost:3000` in the dev dashboard.  
 **Fix:** Updated App URL to `https://app.lasyncro.com`.
 
 ### ✅ Uses a valid TLS certificate
+
 **Root cause:** `lasyncro.com` returned a 308 redirect to `www.lasyncro.com`. Shopify's checker saw no valid host.  
 **Fix:** App URL changed to `https://app.lasyncro.com` (backend on Fly, not Vercel).
 
 ### ✅ Provides mandatory compliance webhooks
+
 **Root cause:** No `shopify.app.toml` existed; webhooks were never registered.  
 **Fix:** Created `shopify.app.toml` with compliance topics; deployed via Shopify CLI.
 
 ### ✅ Verifies webhooks with HMAC signatures
+
 **Root causes (two bugs):**
 1. `verifyShopifySignature` returned HTTP `400` on bad HMAC — Shopify requires `401`.
 2. Compliance webhook handler fell through to `default` case returning `200 ignored`.
@@ -135,12 +142,15 @@ Files changed:
 ## Fly.io Deployment Notes
 
 ### Health Check Grace Period
+
 Increased from `10s` to `30s` in `fly.toml` to accommodate RabbitMQ connection time.
 
 ### Topology Must Be Idempotent
+
 `declareTopology()` is safe to call on reconnect — all queue/exchange assertions use passive-compatible options. On a fresh CloudAMQP instance, all queues are created automatically on first boot.
 
 ### Checking Secrets Match
+
 ```bash
 fly ssh console --app synchroflow -C "printenv ENCRYPTION_KEY" | wc -c
 grep "ENCRYPTION_KEY" .env | awk -F= '{print $2}' | wc -c
@@ -148,11 +158,13 @@ grep "ENCRYPTION_KEY" .env | awk -F= '{print $2}' | wc -c
 ```
 
 ### Verifying RabbitMQ Connection
+
 ```bash
 fly logs --app synchroflow | grep "Connected to RabbitMQ\|TOPOLOGY\|All queues"
 ```
 
 ### Full Boot Sequence (healthy)
+
 ```
 [api/queue.ts] Connected to RabbitMQ
 [TOPOLOGY] Exchange declared: events.dlx
@@ -203,3 +215,39 @@ http://localhost:3000/api/v1/integrations/oauth/callback/shopify
 - Webhook "address already taken" errors on re-install — non-fatal, webhooks already registered
 - `[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing` — resolved by setting `APP_BASE_URL` secret
 - `[INGESTION_STALLED]` watchdog fires after sync on stores with stable order counts — false positive, harmless
+
+## Reviewer Test Account Setup
+
+App Store reviews don't require a published listing — reviewers install via OAuth directly. But because Scenario B was gated for 2.3.1 compliance (no manual store-domain entry; see below), the manual connect UI is removed. The reviewer therefore needs a **pre-connected account**, not a self-serve flow.
+
+### Account
+
+- **Email:** `contact@lasyncro.com` (inbox-accessible for email verification)
+- Registered via normal UI signup → email verified.
+- Login is NOT gated on `email_verified_at` (verified in auth.controller.ts).
+
+### Connecting the store (manual, dev-side)
+
+The frontend connect UI is gated, but the backend endpoint `GET /api/v1/integrations/oauth/initiate` is live. With a logged-in bearer token:
+\`\`\`bash
+curl -G "https://app.lasyncro.com/api/v1/integrations/oauth/initiate" \
+  --data-urlencode "platform=shopify" \
+  --data-urlencode "shop=development-store-15820042357" \
+  -H "Authorization: Bearer <TOKEN>"
+\`\`\`
+Open the returned `authorizationUrl`, approve consent. This is developer-side provisioning, not the merchant-facing manual-entry pattern 2.3.1 prohibits.
+
+### Upgrading to Scale tier (for full-feature review)
+
+App Store installs hardcode `growth` tier. To grant Scale, update subscription + seed entitlements (mirrors handleShopifyCallback):
+\`\`\`sql
+UPDATE shop_subscriptions SET tier='scale', status='active', trial_ends_at=NULL, updated_at=NOW() WHERE shop_id=<id>;
+-- + INSERT scale modules/flags into shop_module_entitlements (see tiers.ts SCALE_MODULES/SCALE_FLAGS)
+\`\`\`
+Then log out/in to refresh the JWT `tier` claim.
+> Entitlements lack a unique constraint — produces source-duplicated rows. Harmless. GitHub issue #1016.
+
+### Partner Dashboard "App testing information"
+
+- Test account: `contact@lasyncro.com` + password
+- Testing instructions: log in → lands directly on connected FT2 dashboard (no store-connect step, by design)
