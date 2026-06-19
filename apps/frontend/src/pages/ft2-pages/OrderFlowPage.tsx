@@ -30,9 +30,12 @@ import {
   type PoolOrder,
   type SkippedReleaseOrder,
 } from '../wms/useOrderPool';
-import { usePickBatches } from '../wms/usePickBatches';
+import { usePickBatches, usePickBatchLineItems } from '../wms/usePickBatches';
 import { useWmsOperators } from '../wms/useWmsOperators';
 import { useLiveCapacity } from '../wms/useWmsAnalytics';
+import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 const fmt$ = (value: number): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
@@ -228,6 +231,19 @@ export default function OrderFlowPage() {
   const blockedOrders = useMemo(() => constrainedQuery.data?.data ?? [], [constrainedQuery.data]);
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
+
+  const floorPlanningQuery = useFloorPlanning();
+  const zones: WarehouseZone[] = floorPlanningQuery.data?.zones ?? [];
+
+  const activeBatch = useMemo(
+    () => batches.find(b => b.status === 'picking' || b.status === 'packing') ?? null,
+    [batches],
+  );
+  const activeBatchLineItems = usePickBatchLineItems(activeBatch?.pick_batch_id ?? null);
+  const activeZoneCodes = useMemo(
+    () => new Set((activeBatchLineItems.data?.line_items ?? []).map(li => li.location_code)),
+    [activeBatchLineItems.data],
+  );
 
   const cptMatrix = useMemo(() => {
     const empty = () => ({ blocked: 0, pool: 0, picking: 0, packing: 0, valueAtRisk: 0 });
@@ -546,6 +562,37 @@ const handleRelease = async () => {
               <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 1.5 }}>
                 Bucketed by order age against today's cutoff · per-order ship-by lands later
               </Typography>
+            </Box>
+            <Box
+              sx={{
+                border: '1px solid var(--rule)',
+                borderRadius: '12px',
+                p: 2,
+                mb: 3,
+              }}
+            >
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                  Floor
+                </Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                  {activeBatch
+                    ? `picking ${activeBatch.units_picked}/${activeBatch.total_units} · zones lit`
+                    : 'no active batch'}
+                </Typography>
+              </Box>
+              {zones.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4, color: 'var(--ink-3)', fontSize: 13 }}>
+                  No warehouse layout yet — build it in Floor Planning
+                </Box>
+              ) : (
+                <Box sx={{ height: 320, position: 'relative' }}>
+                  <IsometricCanvas
+                    zones={zones}
+                    filteredCodes={activeZoneCodes.size > 0 ? activeZoneCodes : undefined}
+                  />
+                </Box>
+              )}
             </Box>
             <Box
               sx={{

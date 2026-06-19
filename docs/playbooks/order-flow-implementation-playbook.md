@@ -466,6 +466,37 @@ Cadence: batches 10s on this page (per-call override); blocked/pool via existing
 
 Deferred: iso twin (ISSUE-4, phase 2); per-carrier CPT columns + promised_ship_by writer (GitHub #1017).
 
+### 5.9 Isometric floor twin (v1)
+
+File: apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx
+
+Model: one authored map, many stories. The warehouse map is built once in
+Floor Planning (Setup/Canvas) and stored in warehouse_locations. Every surface
+renders the SAME IsometricCanvas; only the overlaid data/story changes. Order
+Flow narrates the order-fulfillment story on it.
+
+Zone source:
+- useFloorPlanning() → data.zones (WarehouseZone[]), from GET /api/v1/floor-planning/layout
+  (controller returns { zones, product_barcodes }). Canonical map — same hook the
+  Floor Planning Setup surface uses. NOT useWarehouseGrid (that returns { locations }).
+
+Batch → zone (ISSUE-4, resolved frontend-only):
+- Batches carry no zone column. Derived client-side: usePickBatchLineItems(batchId)
+  → line_items[].location_code → Set → passed as IsometricCanvas filteredCodes to
+  light active-pick zones. No backend change.
+
+v1 scope:
+- Single focused batch only: first batch with status picking|packing. filteredCodes
+  lit from its line items. filteredCodes omitted (undefined) when none → full floor shown.
+- Canvas from @lasyncro/shared/ui, token-sourced (--zone-*).
+- Guards: zones.length === 0 → "build it in Floor Planning"; no active batch → label only.
+
+Deferred:
+- ISSUE-4d — light ALL active batches at once (usePickBatchLineItems is single-batchId;
+  hooks can't loop). Needs aggregate useActiveBatchZones hook. v1+.
+- Shared CPT-urgency tint on zones (match matrix palette) — needs new canvas overlay prop.
+- Matrix-cell ↔ zone click-sync — extends cross-linking to the iso.
+
 ---
 
 ## 6. Backend release logic
