@@ -445,6 +445,27 @@ Exclusive selected-release behavior protected.
 Backend now has a response channel for skipped selected orders.
 ```
 
+### 5.8 CPT risk matrix + cross-linking (v1)
+
+File: apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx
+
+Shipped:
+
+- bucketByCpt(createdAtIso, hoursToCpt) → 'overdue' | 'today' | 'ahead' (file-local, not exported — react-refresh).
+- cptMatrix useMemo: pool + blocked grouped into { overdue, today, ahead } × { blocked, pool, picking, packing, valueAtRisk }.
+- CPT cutoff from useLiveCapacity (60s), cpt_local/hours_to_cpt.
+- Matrix JSX: stage rows × bucket columns, danger ring on overdue·blocked, $ at risk footer, theme tokens only.
+- Cross-linking: cptFilter state; click a blocked/pool cell → visibleBlocked/visiblePool filter to that cell; active-cell ring; clear chip in header. Release/selection still read unfiltered poolOrders.
+
+Data caveats:
+
+- x-axis buckets on order_created_at (ISSUE-10: promised_ship_by defined but unwritten/all-NULL).
+- picking/packing parked in 'today' (no per-batch deadline until ISSUE-4).
+
+Cadence: batches 10s on this page (per-call override); blocked/pool via existing hooks.
+
+Deferred: iso twin (ISSUE-4, phase 2); per-carrier CPT columns + promised_ship_by writer (GitHub #1017).
+
 ---
 
 ## 6. Backend release logic

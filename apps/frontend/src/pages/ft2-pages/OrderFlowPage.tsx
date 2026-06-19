@@ -262,6 +262,46 @@ export default function OrderFlowPage() {
     return cols;
   }, [blockedOrders, poolOrders, batches, liveCapacityQuery.data]);
 
+  const matrixEmpty = useMemo(
+    () =>
+      (['overdue', 'today', 'ahead'] as const).every(col =>
+        (['blocked', 'pool', 'picking', 'packing'] as const).every(stage => cptMatrix[col][stage] === 0),
+      ),
+    [cptMatrix],
+  );
+
+  const [cptFilter, setCptFilter] = useState<{ bucket: CptBucket; stage: 'blocked' | 'pool' } | null>(null);
+
+  const blockedBucket = useCallback(
+    (o: { age_since_creation_seconds: number | null; is_shipping_sla_breached: boolean | null }): CptBucket => {
+      if (o.is_shipping_sla_breached) return 'overdue';
+      const createdIso = new Date(Date.now() - (o.age_since_creation_seconds ?? 0) * 1000).toISOString();
+      return bucketByCpt(createdIso, liveCapacityQuery.data?.hours_to_cpt ?? null);
+    },
+    [liveCapacityQuery.data],
+  );
+
+  const poolBucket = useCallback(
+    (o: PoolOrder): CptBucket => bucketByCpt(o.order_created_at, liveCapacityQuery.data?.hours_to_cpt ?? null),
+    [liveCapacityQuery.data],
+  );
+
+  const visibleBlocked = useMemo(
+    () =>
+      cptFilter?.stage === 'blocked'
+        ? blockedOrders.filter(o => blockedBucket(o) === cptFilter.bucket)
+        : blockedOrders,
+    [blockedOrders, cptFilter, blockedBucket],
+  );
+
+  const visiblePool = useMemo(
+    () =>
+      cptFilter?.stage === 'pool'
+        ? poolOrders.filter(o => poolBucket(o) === cptFilter.bucket)
+        : poolOrders,
+    [poolOrders, cptFilter, poolBucket],
+  );
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [operatorId, setOperatorId] = useState<string>('');
   const [releaseSuccess, setReleaseSuccess] = useState<{
@@ -368,8 +408,31 @@ const handleRelease = async () => {
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
               {isLoading
                 ? 'Loading live order flow…'
-                : `${blockedCount} blocked · ${fmt$(heldRevenue)} held · ${readyCount} ready to release · ${activeBatchCount} batch${activeBatchCount !== 1 ? 'es' : ''} active`}
+                : `${blockedCount} blocked · ${fmt$(heldRevenue)} held· ${readyCount} ready to release · ${activeBatchCount} batch${activeBatchCount !== 1 ? 'es' : ''} active`}
             </Typography>
+            {cptFilter && (
+              <Box
+                onClick={() => setCptFilter(null)}
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 0.75,
+                  mt: 1,
+                  px: 1.25,
+                  py: 0.5,
+                  bgcolor: 'var(--accent-ghost)',
+                  border: '1px solid var(--accent-border)',
+                  borderRadius: '999px',
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  color: 'var(--accent)',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {cptFilter.bucket} · {cptFilter.stage}
+                <Box component="span" sx={{ fontSize: 14, lineHeight: 1, color: 'var(--ink-3)' }}>✕</Box>
+              </Box>
+            )}
           </Box>
         </Box>
 
@@ -416,6 +479,11 @@ const handleRelease = async () => {
                     : 'no CPT set'}
                 </Typography>
               </Box>
+              {matrixEmpty ? (
+                <Box sx={{ textAlign: 'center', py: 3, color: 'var(--ink-3)', fontSize: 13 }}>
+                  Nothing at risk right now
+                </Box>
+              ) : (
               <Box sx={{ display: 'grid', gridTemplateColumns: '92px repeat(3, minmax(0, 1fr))', gap: 1, alignItems: 'center' }}>
                 <Box />
                 {(['overdue', 'today', 'ahead'] as const).map(col => (
@@ -434,15 +502,31 @@ const handleRelease = async () => {
                       return (
                         <Box
                           key={col}
+                          onClick={() => {
+                            if (stage !== 'blocked' && stage !== 'pool') return;
+                            if (n === 0) return;
+                            setCptFilter(prev =>
+                              prev && prev.bucket === col && prev.stage === stage
+                                ? null
+                                : { bucket: col, stage },
+                            );
+                          }}
                           sx={{
                             textAlign: 'center',
                             py: 0.5,
                             borderRadius: '6px',
                             fontSize: 13,
                             fontWeight: 500,
+                            cursor: (stage === 'blocked' || stage === 'pool') && n > 0 ? 'pointer' : 'default',
                             color: n === 0 ? 'var(--ink-4)' : danger ? 'var(--accent)' : 'var(--ink)',
                             bgcolor: danger ? 'var(--accent-ghost)' : n > 0 ? 'var(--bg-2)' : 'transparent',
-                            border: danger ? '1px solid var(--accent-border)' : '1px solid transparent',
+                            border:
+                              cptFilter?.bucket === col && cptFilter?.stage === stage
+                                ? '1px solid var(--accent)'
+                                : danger
+                                ? '1px solid var(--accent-border)'
+                                : '1px solid transparent',
+                            transition: 'border-color 0.12s',
                           }}
                         >
                           {n === 0 ? '—' : n}
@@ -458,6 +542,10 @@ const handleRelease = async () => {
                   </Typography>
                 ))}
               </Box>
+              )}
+              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 1.5 }}>
+                Bucketed by order age against today's cutoff · per-order ship-by lands later
+              </Typography>
             </Box>
             <Box
               sx={{
@@ -715,7 +803,7 @@ const handleRelease = async () => {
                   </Typography>
                 </Box>
 
-                {blockedOrders.slice(0, 5).map((order) => (
+                {visibleBlocked.slice(0, 5).map((order) => (
                   <Box
                     key={order.order_id}
                     sx={{
@@ -819,7 +907,7 @@ const handleRelease = async () => {
                   </Box>
                 )}
 
-                {poolOrders.map((order) => {
+                {visiblePool.map((order) => {
                   const isSelected = selected.has(order.lasyncro_order_id);
                   const zones = getOrderZones(order);
                   const hours = ageHoursFrom(order.order_created_at);
