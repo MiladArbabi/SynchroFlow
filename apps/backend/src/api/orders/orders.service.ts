@@ -150,9 +150,23 @@ export const getOrderDetailsById = async (
       'event_occurred_at',
     );
 
+  /**
+   * External order identity is canonicalized outside `orders`.
+   * Do not read `orders.external_order_id`; that column is not part of
+   * the sovereign orders schema.
+   */
+  const externalIdentity = await db('external_order_identity_map')
+    .where({
+      shop_id: shopId,
+      platform: 'shopify',
+      lasyncro_order_id: lasyncroOrderId,
+    })
+    .select('external_order_id')
+    .first();
+
   return {
     id: order.lasyncro_order_id,
-    externalOrderId: order.external_order_id ?? null,
+    externalOrderId: externalIdentity?.external_order_id ?? null,
     total: order.total_price,
     currency: order.currency,
     paymentState: order.payment_state,

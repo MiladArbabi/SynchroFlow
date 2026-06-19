@@ -111,6 +111,8 @@ interface BoxProps {
   /** Occupancy 0-1 fraction — overrides fill for bin zones when provided */
   occupancyFraction?: number;
   isFrame: boolean;
+  /** Dimmed when a highlight set is active and this zone is not in it */
+  isDimmed?: boolean;
   label: string;
   rackLevels: number | null;
   zoom: number;
@@ -118,7 +120,7 @@ interface BoxProps {
   onClick: () => void;
 }
 
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label, rackLevels, zoom, onClick,flipped, occupancyFraction }: BoxProps) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, label, rackLevels, zoom, onClick, flipped, occupancyFraction }: BoxProps) {
   const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
   const selStroke  = 'var(--accent)';
@@ -170,7 +172,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
         fill={fill}
         stroke={isSelected ? selStroke : stroke}
         strokeWidth={isSelected ? 2 : 1}
-        opacity={isFlat ? 0.6 : 1}
+        opacity={isDimmed ? 0.25 : isFlat ? 0.6 : 1}
       />
       {/* Selection highlight */}
       {isSelected && (
@@ -232,20 +234,35 @@ export interface IsometricCanvasProps {
   zones: WarehouseZone[];
   onSelect?: (locationCode: string | null) => void;
   filteredCodes?: Set<string>;
+  highlightZoneTypes?: Set<string>;
   occupancy?: Record<string, { on_hand_quantity: number }>;
   showFloor?: boolean;
   showBins?: boolean;
   /** Override default zoom for embedded contexts (default: 0.9) */
   initialZoom?: number;
-  /** Override default pan offset for embedded contexts (default: { x: 420, y: 120 }) */
+  /** Override default pan offset for embedded contexts (default: { x:420, y: 120 }) */
   initialOffset?: { x: number; y: number };
+  /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
+  autoFit?: boolean;
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 } }: IsometricCanvasProps) {
+export function IsometricCanvas({ 
+    zones, 
+    onSelect, 
+    filteredCodes, 
+    highlightZoneTypes, 
+    occupancy, 
+    showFloor = true, 
+    showBins = true, 
+    initialZoom = 0.9, 
+    initialOffset = { x: 420, y: 120 },
+    autoFit = true }: 
+  IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
   const [offset, setOffset]     = useState(initialOffset);
   const [selected, setSelected] = useState<string | null>(null);
   const [flipped, setFlipped]   = useState(false);
+  const [size, setSize]         = useState({ w: 0, h: 0 });
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
   const zoomRef   = useRef(zoom);
   const offsetRef = useRef(offset);
@@ -308,6 +325,67 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, sho
     };
   }, []);
 
+  // Track the real rendered size of the canvas so the fit adapts to whatever
+  // column / aspect ratio it lands in (Order Flow, detail embeds, etc.).
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      const w = Math.round(r.width);
+      const h = Math.round(r.height);
+      setSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Signature of what's drawn — refit only when the layout actually changes,
+  // never on every render (so manual pan/zoom survives between changes).
+  const zoneSig = positionedZones
+    .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth},${z.rack_levels ?? ''}`)
+    .join('|');
+
+  // Auto-fit: centre + contain the whole warehouse in the current container.
+  // Projection scales linearly with zoom and has no additive origin, so we
+  // project all corners at zoom 1, take the screen-space bbox, then solve for
+  // the zoom + offset that fits it with a margin.
+  useEffect(() => {
+    if (!autoFit || size.w === 0 || size.h === 0 || positionedZones.length === 0) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const z of positionedZones) {
+      const wx = parseFloat(String(z.position_x ?? 0));
+      const wy = parseFloat(String(z.position_y ?? 0));
+      const ww = parseFloat(String(z.width  ?? 1));
+      const wd = parseFloat(String(z.depth  ?? 0.5));
+      const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
+      const corners: Array<[number, number, number]> = [
+        [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
+        [wx, wy, wh], [wx + ww, wy, wh], [wx + ww, wy + wd, wh], [wx, wy + wd, wh],
+      ];
+      for (const [px, py, pz] of corners) {
+        const { sx, sy } = project(px, py, pz, 1, flipped);
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
+      }
+    }
+
+    const bboxW = Math.max(1, maxX - minX);
+    const bboxH = Math.max(1, maxY - minY);
+    const PAD = 0.85; // breathing room so nothing kisses the edges
+    const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(size.w / bboxW, size.h / bboxH) * PAD));
+
+    const cx = ((minX + maxX) / 2) * fitZoom;
+    const cy = ((minY + maxY) / 2) * fitZoom;
+    setZoom(fitZoom);
+    setOffset({ x: size.w / 2 - cx, y: size.h / 2 - cy });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFit, size.w, size.h, flipped, zoneSig]);
+
   return (
     <Box sx={{ display: 'flex', width: '100%', height: '100%', position: 'relative', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
       <svg ref={svgRef} width="100%" height="100%"
@@ -333,6 +411,12 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, sho
                 wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
                 colorKey={colorKey}
                 isSelected={selected === zone.location_code}
+                isDimmed={
+                  highlightZoneTypes != null &&
+                  highlightZoneTypes.size > 0 &&
+                  !isFrame &&
+                  !highlightZoneTypes.has(zone.zone_type ?? '')
+                }
                 isFrame={isFrame}
                 label={zone.location_code}
                 rackLevels={rackLevels}

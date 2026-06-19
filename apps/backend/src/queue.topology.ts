@@ -113,10 +113,19 @@ const TOPOLOGY = [
   // ── Fulfillment reconciliation ───────────────────────────────────
   // NOTE: Reconciliation consumer is disabled (runs inline in processDomainEvent).
   // Queue declared to prevent silent accumulation if ever re-enabled.
+  // Args MUST mirror reconciliation.consumer.ts:31 and the live durable queue
+  // (x-dead-letter-exchange=fulfillment.reconciliation.dlx). Omitting them
+  // triggers 406 PRECONDITION_FAILED on declare and crashes the worker.
   {
     type: 'queue' as const,
     name: 'fulfillment.reconciliation',
-    options: { durable: true },
+    options: {
+      durable: true,
+      arguments: {
+        'x-dead-letter-exchange': 'fulfillment.reconciliation.dlx',
+        'x-dead-letter-routing-key': 'dead',
+      },
+    },
   },
 ] as const;
 

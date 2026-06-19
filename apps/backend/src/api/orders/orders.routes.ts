@@ -24,7 +24,11 @@ const router = Router();
  * @desc    Get a list of all orders.
  * @access  Private
  */
-router.get('/', ordersController.httpGetAllOrders);
+router.get(
+  '/',
+  authenticateToken,
+  ordersController.httpGetAllOrders
+);
 
 /**
  * Operational Control Snapshot
@@ -123,13 +127,21 @@ router.get(
  * @desc    Get profitability metrics for a single order.
  * @access  Private
  */
-router.get('/:id/profitability', ordersController.httpGetOrderProfitability);
+router.get(
+  '/:id/profitability',
+  authenticateToken,
+  ordersController.httpGetOrderProfitability
+);
 
 /**
  * @route   GET /api/v1/orders/:id
  * @desc    Get consolidated details for a single order.
  * @access  Private
  */
-router.get('/:id', ordersController.httpGetOrderDetails);
+router.get(
+  '/:id',
+  authenticateToken,
+  ordersController.httpGetOrderDetails
+);
 
 export default router;
