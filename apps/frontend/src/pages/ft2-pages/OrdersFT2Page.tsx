@@ -17,7 +17,7 @@
 //   flags immediately when the navigation lands there
 
 import { useState, useCallback } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSetPriority } from '../wms/useOrderPool';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
@@ -31,25 +31,6 @@ import { OrderCapBanner } from '../../components/OrderCapBanner';
 import { axiosInstance } from 'api/axiosConfig';
 
 const __DEV__ = import.meta.env.DEV;
-
-/**
- * useSetPriority
- * --------------
- * Mirrors the identical hook in ReleaseQueuePage.
- * Kept local — do not lift to a shared hook until a third consumer exists.
- * Invalidates order-pool so the Release Queue reflects flags on arrival.
- */
-function useSetPriority() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ orderId, flagged }: { orderId: string; flagged: boolean }) => {
-      await axiosInstance.post(`/api/v1/wms/orders/${orderId}/priority`, { flagged });
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
-    },
-  });
-}
 
 export default function OrdersFT2Page() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);

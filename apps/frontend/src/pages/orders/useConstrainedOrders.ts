@@ -26,6 +26,7 @@ export function getConstraintLabel(constraintType: string): string {
 
 export type ConstrainedOrder = {
   order_id: string;
+  external_order_id: string | null;
   constraint_type: string;
   block_type: string | null;
   constrained_since: string | null;

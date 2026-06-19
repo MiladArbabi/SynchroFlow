@@ -54,13 +54,11 @@ export function bootstrapNavGroups() {
     icon: ShoppingBag,
     requiredModuleId: 'order-nexus',
     children: [
-      { id: 'orders-overview', title: 'Overview',      path: '/orders'          },
-      { id: 'blocked',         title: 'Blocked',       path: '/orders/blocked'  },
-      { id: 'pool',            title: 'Release Queue', path: '/orders/pool'     },
-      { id: 'fulfillment',     title: 'Fulfillment',   path: '/fulfillment'     },
-      { id: 'outbound',        title: 'Outbound',      path: '/orders/outbound' },
-      { id: 'inbound',         title: 'Inbound',       path: '/orders/inbound'  },
-      { id: 'returns',         title: 'Returns',       path: '/returns'         },
+      { id: 'orders-overview', title: 'Overview',   path: '/orders'          },
+      { id: 'order-flow',      title: 'Order Flow', path: '/orders/flow'     },
+      { id: 'outbound',        title: 'Outbound',   path: '/orders/outbound' },
+      { id: 'inbound',         title: 'Inbound',    path: '/orders/inbound'  },
+      { id: 'returns',         title: 'Returns',    path: '/returns'         },
     ],
   });
 

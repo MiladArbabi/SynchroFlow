@@ -38,15 +38,15 @@ export interface PickBatchLineItem {
   location_code: string;
 }
 
-export function usePickBatches() {
+export function usePickBatches(options?: { refetchInterval?: number }) {
   return useQuery<{ batches: PickBatch[] }>({
     queryKey: ['wms', 'batches'],
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/wms/batches');
       return data;
     },
-    // Refetch every 30s — batch status changes as operators work
-    refetchInterval: 30_000,
+    // Default 30s; Order Flow passes a faster cadence for the live matrix/iso
+    refetchInterval: options?.refetchInterval ?? 30_000,
   });
 }
 

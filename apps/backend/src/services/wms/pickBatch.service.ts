@@ -23,12 +23,45 @@ import { fireBatchReleasedAlert } from './wmsAlerts.service.js';
  *   SET LOCAL "app.current_tenant" = '{shopId}'
  */
 
+export type SkippedReleaseOrderReason =
+  | 'blocked'
+  | 'already_batched'
+  | 'status_changed'
+  | 'not_in_pool';
+
+export interface SkippedReleaseOrder {
+  order_id: string;
+  external_order_id: string | null;
+  reason: SkippedReleaseOrderReason;
+  label: string;
+}
+
 export interface ReleaseBatchResult {
-  pick_batch_id: string;
+  pick_batch_id: string | null;
   order_count: number;
   total_line_items: number;
   total_units: number;
+  skipped_orders: SkippedReleaseOrder[];
 }
+
+const RELEASE_CONSTRAINT_LABELS: Record<string, string> = {
+  operational: 'Overdue',
+  inventory: 'Out of Stock',
+  customer: 'Address Issue',
+};
+
+const getSkippedReleaseLabel = (
+  reason: SkippedReleaseOrderReason,
+  constraintType?: string | null
+): string => {
+  if (reason === 'blocked') {
+    return constraintType ? RELEASE_CONSTRAINT_LABELS[constraintType] ?? 'Blocked' : 'Blocked';
+  }
+
+  if (reason === 'already_batched') return 'Already in a pick batch';
+  if (reason === 'status_changed') return 'Status changed';
+  return 'Not in release pool';
+};
 
 export async function releaseBatch(
   trx: Knex.Transaction,
@@ -85,25 +118,94 @@ export async function releaseBatch(
     .select('o.lasyncro_order_id', 'ofs.is_priority_flagged')
     .orderByRaw('ofs.is_priority_flagged DESC, o.order_created_at ASC');
 
-  if (eligibleOrders.length === 0) {
-    console.info('[PICK_BATCH_SERVICE] No eligible orders found', { shopId });
-    return null;
-  }
-
   // 3. Build ordered candidate list:
   //    a) Owner-selected priority orders (priorityOrderIds) — validated against pool
   //    b) Pool priority-flagged orders not already selected
   //    c) Remaining pool orders oldest-first
   const eligibleSet = new Set(eligibleOrders.map(o => o.lasyncro_order_id));
-  const validPriorityIds = (priorityOrderIds ?? []).filter(id => eligibleSet.has(id));
-  const priorityFlaggedIds = eligibleOrders
-    .filter(o => o.is_priority_flagged && !validPriorityIds.includes(o.lasyncro_order_id))
-    .map(o => o.lasyncro_order_id);
-  const remainingIds = eligibleOrders
-    .filter(o => !validPriorityIds.includes(o.lasyncro_order_id) && !priorityFlaggedIds.includes(o.lasyncro_order_id))
-    .map(o => o.lasyncro_order_id);
+  const requestedPriorityIds = priorityOrderIds ?? [];
+  const validPriorityIds = requestedPriorityIds.filter(id => eligibleSet.has(id));
+  const invalidPriorityIds = requestedPriorityIds.filter(id => !eligibleSet.has(id));
 
-  const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
+  const skippedOrders: SkippedReleaseOrder[] = [];
+
+  if (invalidPriorityIds.length > 0) {
+  const latestActiveConstraint = trx('order_constraints')
+    .distinctOn('lasyncro_order_id')
+    .select('lasyncro_order_id', 'constraint_type', 'block_type')
+    .where('is_active', true)
+    .orderByRaw('lasyncro_order_id, started_at DESC NULLS LAST')
+    .as('oc');
+
+  const invalidRows = await trx('orders as o')
+    .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+    .leftJoin(latestActiveConstraint, 'oc.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .whereIn('o.lasyncro_order_id', invalidPriorityIds)
+    .select(
+      'o.lasyncro_order_id',
+      'eim.external_order_id',
+      'ofs.status',
+      'pbo.pick_batch_id',
+      'oc.constraint_type',
+      'oc.block_type'
+    );
+
+  const invalidById = new Map(invalidRows.map(row => [row.lasyncro_order_id, row]));
+
+  for (const orderId of invalidPriorityIds) {
+    const row = invalidById.get(orderId);
+
+    const reason: SkippedReleaseOrderReason = !row
+      ? 'not_in_pool'
+      : row.constraint_type
+      ? 'blocked'
+      : row.pick_batch_id
+      ? 'already_batched'
+      : !['pending', 'processing'].includes(row.status)
+      ? 'status_changed'
+      : 'not_in_pool';
+
+    skippedOrders.push({
+      order_id: orderId,
+      external_order_id: row?.external_order_id ?? null,
+      reason,
+      label: getSkippedReleaseLabel(reason, row?.constraint_type ?? null),
+    });
+  }
+}
+
+if (exclusive && validPriorityIds.length === 0) {
+  console.info('[PICK_BATCH_SERVICE] Exclusive release requested with no valid selected orders', {
+    shopId,
+    requestedOrderCount: requestedPriorityIds.length,
+    skipped_order_count: skippedOrders.length,
+  });
+
+  return {
+    pick_batch_id: null,
+    order_count: 0,
+    total_line_items: 0,
+    total_units: 0,
+    skipped_orders: skippedOrders,
+  };
+}
+
+if (eligibleOrders.length === 0) {
+  console.info('[PICK_BATCH_SERVICE] No eligible orders found', { shopId });
+  return null;
+}
+
+const priorityFlaggedIds = eligibleOrders
+  .filter(o => o.is_priority_flagged && !validPriorityIds.includes(o.lasyncro_order_id))
+  .map(o => o.lasyncro_order_id);
+const remainingIds = eligibleOrders
+  .filter(o => !validPriorityIds.includes(o.lasyncro_order_id) && !priorityFlaggedIds.includes(o.lasyncro_order_id))
+  .map(o => o.lasyncro_order_id);
+
+const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
 
   // 4. Greedy fill up to max_batch_line_items ceiling — full orders only
   const selectedOrderIds: string[] = [];
@@ -323,5 +425,6 @@ export async function releaseBatch(
     order_count: selectedOrderIds.length,
     total_line_items: runningLineItems,
     total_units: runningUnits,
+    skipped_orders: skippedOrders,
   };
 }

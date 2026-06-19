@@ -2218,6 +2218,7 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
           'o.total_price',
           'o.currency',
           'o.order_created_at',
+          'o.promised_ship_by',
           'ofs.is_priority_flagged',
           trx.raw(`null::text as customer_name`),
           // Line item + unit counts via subquery

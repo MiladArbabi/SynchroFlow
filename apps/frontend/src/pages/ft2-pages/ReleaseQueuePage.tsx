@@ -9,66 +9,8 @@ import { Box, Typography, Checkbox, CircularProgress } from '@mui/material';
 import { Flag, Clock } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
-import { axiosInstance } from 'api/axiosConfig';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWmsOperators } from '../wms/useWmsOperators';
-
-interface PoolOrder {
-  lasyncro_order_id: string;
-  external_order_id: string | null;
-  total_price: string;
-  currency: string;
-  order_created_at: string;
-  is_priority_flagged: boolean;
-  customer_name: string | null;
-  line_item_count: number;
-  unit_count: number;
-  zone_distribution: string[] | string;
-}
-
-interface OrderPool {
-  eligible_order_count: number;
-  max_batch_line_items: number;
-  orders: PoolOrder[];
-}
-
-function useOrderPool() {
-  return useQuery<OrderPool>({
-    queryKey: ['wms', 'order-pool'],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/wms/order-pool');
-      return data;
-    },
-    refetchInterval: 30_000,
-  });
-}
-
-function useSetPriority() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ orderId, flagged }: { orderId: string; flagged: boolean }) => {
-      await axiosInstance.post(`/api/v1/wms/orders/${orderId}/priority`, { flagged });
-    },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] }),
-  });
-}
-
-function useReleaseBatch() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: {
-      priority_order_ids?: string[];
-      assigned_operator_id?: number;
-    }) => {
-      const { data } = await axiosInstance.post('/api/v1/wms/batch/release', payload);
-      return data;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
-      qc.invalidateQueries({ queryKey: ['wms', 'batches'] });
-    },
-  });
-}
+import { useOrderPool, useReleaseBatch, useSetPriority, type PoolOrder } from '../wms/useOrderPool';
 
 const ageLabel = (iso: string): string => {
   const hours = Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000);

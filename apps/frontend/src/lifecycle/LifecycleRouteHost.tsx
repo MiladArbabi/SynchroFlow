@@ -64,9 +64,7 @@ const CustomersFT2Page = lazy(() => import('pages/ft2-pages/CustomersFT2Page'));
 const ProductsFT2Page = lazy(() => import('pages/ft2-pages/ProductsFT2Page'));
 const FinancesFT2Page = lazy(() => import('pages/ft2-pages/FinancesFT2Page'));
 const OverviewFT2Page = lazy(() => import('pages/ft2-pages/OverviewFT2Page'));
-const FulfillmentQueuePage = lazy(() => import('pages/ft2-pages/FulfillmentQueuePage'));
-const BlockedOrdersPage = lazy(() => import('pages/ft2-pages/BlockedOrdersPage'));
-const ReleaseQueuePage = lazy(() => import('pages/ft2-pages/ReleaseQueuePage'));
+const OrderFlowPage = lazy(() => import('pages/ft2-pages/OrderFlowPage'));
 const ReturnsFT2Page = lazy(() => import('pages/ft2-pages/ReturnsFT2Page'));
 const OrdersOutboundPage = lazy(() => import('pages/ft2-pages/OrdersOutboundPage'));
 const OrdersInboundPage = lazy(() => import('pages/ft2-pages/OrdersInboundPage'));
@@ -235,8 +233,9 @@ export function LifecycleRouteHost() {
       <Route path="/overview/*" element={<OverviewFT2Page />} />
 
       {/* ORDERS — specific sub-routes must come before wildcard */}
-      <Route path="/orders/blocked" element={<BlockedOrdersPage />} />
-      <Route path="/orders/pool" element={<ReleaseQueuePage />} />
+      <Route path="/orders/flow" element={<OrderFlowPage />} />
+      <Route path="/orders/blocked" element={<Navigate to="/orders/flow" replace />} />
+      <Route path="/orders/pool" element={<Navigate to="/orders/flow" replace />} />
       <Route path="/orders/outbound" element={<OrdersOutboundPage />} />
       <Route path="/orders/inbound" element={<OrdersInboundPage />} />
       <Route path="/orders/:orderId" element={<OrderDetailPage />} />
@@ -252,7 +251,7 @@ export function LifecycleRouteHost() {
       <Route path="/finances/*" element={<FinancesFT2Page />} />
 
       {/* FULFILLMENT QUEUE */}
-      <Route path="/fulfillment/*" element={<FulfillmentQueuePage />} />
+      <Route path="/fulfillment/*" element={<Navigate to="/orders/flow" replace />} />
 
       {/* ALERTS */}
       <Route path="/alerts/*" element={<AlertsPage />} />

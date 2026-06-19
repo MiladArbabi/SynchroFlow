@@ -46,34 +46,36 @@ const TILE_W       = ISO_SCALE;       // width of one metre in screen px
 const TILE_H       = TILE_W / 2;     // height of one metre in screen px (2:1 ratio)
 const LEVEL_H      = ISO_SCALE * 0.6; // screen px per rack level height
 
-// Zone top-face colours — same as 2D
-const ZONE_COLORS: Record<string, string> = {
-  lane:       'rgba(217,179,83,0.25)',
-  warehouse:  'rgba(217,179,83,0.15)',
-  shelf:      'rgba(217,179,83,0.20)',
-  pick:       'rgba(99,102,241,0.35)',
-  pack:       'rgba(245,158,11,0.40)',
-  receive:    'rgba(16,185,129,0.35)',
-  ship:       'rgba(14,165,233,0.35)',
-  returns:    'rgba(251,113,133,0.40)',
-  quarantine: 'rgba(239,68,68,0.50)',
-  kitting:    'rgba(139,92,246,0.40)',
-  storage:    'rgba(100,116,139,0.30)',
+// Zone colours — sourced from --zone-* brand tokens (themes/index.tsx) so the
+// canvas, landing page, and OAuth scene stay in lockstep. Alpha math unchanged.
+const ZONE_KEYS = ['lane','shelf','warehouse','storage','pick','pack','receive','ship','returns','kitting','quarantine'] as const;
+
+const FILL_A: Record<string, number> = {
+  warehouse: 0.15, shelf: 0.20, lane: 0.25, storage: 0.30,
+  pick: 0.35, receive: 0.35, ship: 0.35, pack: 0.40,
+  returns: 0.40, kitting: 0.40, quarantine: 0.50,
 };
 
-const ZONE_STROKE: Record<string, string> = {
-  lane:       'rgba(217,179,83,0.6)',
-  warehouse:  'rgba(217,179,83,0.4)',
-  shelf:      'rgba(217,179,83,0.5)',
-  pick:       'rgba(99,102,241,0.9)',
-  pack:       'rgba(245,158,11,0.9)',
-  receive:    'rgba(16,185,129,0.9)',
-  ship:       'rgba(14,165,233,0.9)',
-  returns:    'rgba(251,113,133,0.9)',
-  quarantine: 'rgba(239,68,68,1.0)',
-  kitting:    'rgba(139,92,246,0.9)',
-  storage:    'rgba(100,116,139,0.7)',
+const STROKE_A: Record<string, number> = {
+  warehouse: 0.4, shelf: 0.5, lane: 0.6, storage: 0.7,
+  pick: 0.9, pack: 0.9, receive: 0.9, ship: 0.9,
+  returns: 0.9, kitting: 0.9, quarantine: 1.0,
 };
+
+function readZoneRGB(key: string): string {
+  if (typeof window === 'undefined') return '100,116,139';
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(`--zone-${key}`).trim();
+  return v || '100,116,139';
+}
+
+const ZONE_COLORS: Record<string, string> = Object.fromEntries(
+  ZONE_KEYS.map(k => [k, `rgba(${readZoneRGB(k)},${FILL_A[k] ?? 0.30})`])
+);
+
+const ZONE_STROKE: Record<string, string> = Object.fromEntries(
+  ZONE_KEYS.map(k => [k, `rgba(${readZoneRGB(k)},${STROKE_A[k] ?? 0.7})`])
+);
 
 // ── Isometric projection ──────────────────────────────────────────────────────
 /**
@@ -122,9 +124,9 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
   const selStroke  = 'var(--accent)';
   // Occupancy overlay: interpolate from empty (blue) → full (accent red) for bins.
   const fillOverride = occupancyFraction != null
-    ? occupancyFraction >= 0.85 ? 'rgba(239,68,68,0.75)'
-    : occupancyFraction >= 0.5  ? 'rgba(245,158,11,0.65)'
-    : occupancyFraction > 0     ? 'rgba(34,197,94,0.55)'
+    ? occupancyFraction >= 0.85 ? `rgba(${readZoneRGB('quarantine')},0.75)`
+    : occupancyFraction >= 0.5  ? `rgba(${readZoneRGB('pack')},0.65)`
+    : occupancyFraction > 0     ? `rgba(${readZoneRGB('receive')},0.55)`
     : 'rgba(100,116,139,0.25)'
     : null;
 
@@ -191,7 +193,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, label
             textAnchor="middle" dominantBaseline="middle"
             fontSize={fontSize}
             fontFamily="monospace" fontWeight={isSelected ? 700 : 600}
-            fill={isSelected ? 'var(--accent)' : isFrame ? 'rgba(217,179,83,0.9)' : 'var(--ink)'}
+            fill={isSelected ? 'var(--accent)' : isFrame ? `rgba(${readZoneRGB('lane')},0.9)` : 'var(--ink)'}
             style={{ pointerEvents: 'none', userSelect: 'none' }}>
             {label}
           </text>
@@ -380,7 +382,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, occupancy, sho
         <Typography sx={{ fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }}>FACES</Typography>
         {[{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (
           <Box key={f.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Box sx={{ width: 10, height: 6, bgcolor: 'rgba(99,102,241,1)', opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 }} />
+            <Box sx={{ width: 10, height: 6, bgcolor: `rgba(${readZoneRGB('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 }} />
             <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>{f.label} · {f.opacity}</Typography>
           </Box>
         ))}
