@@ -103,6 +103,23 @@ export async function projectOrderAge(
         )
       : null;
 
+  /**
+   * SHIPPING SLA BREACH (deterministic)
+   * -----------------------------------
+   * Mirrors operationalConstraintEvaluator.ts: an order breaches the
+   * shipping SLA when it is PAID but NOT yet fulfilled and its time-since-
+   * paid exceeds the shop's fulfillment_sla_hours window (default 24h).
+   * Computed here so order_age_snapshot.is_shipping_sla_breached is truthful
+   * (previously hardcoded false, which silently suppressed every sla_breach
+   * alert). Kept as the same 24h default fallback to avoid an extra settings
+   * read in the hot projection path; the evaluator owns settings-driven SLA.
+   */
+  const SHIPPING_SLA_SECONDS = 24 * 3600;
+  const isShippingSlaBreached =
+    fulfilledAt === null &&
+    ageSincePaid !== null &&
+    ageSincePaid >= SHIPPING_SLA_SECONDS;
+
   await trx('order_age_snapshot')
     .insert({
       lasyncro_order_id: orderId,
@@ -112,7 +129,7 @@ export async function projectOrderAge(
       age_since_paid_seconds: ageSincePaid,
       age_since_fulfillment_seconds: ageSinceFulfillment,
 
-      is_shipping_sla_breached: false,
+      is_shipping_sla_breached: isShippingSlaBreached,
       is_delivery_sla_breached: false,
 
       snapshot_generated_at: eventAnchor
@@ -131,7 +148,7 @@ export async function projectOrderAge(
       age_since_creation_seconds: ageSinceCreation,
       age_since_paid_seconds: ageSincePaid,
       age_since_fulfillment_seconds: ageSinceFulfillment,
-      is_shipping_sla_breached: false,
+      is_shipping_sla_breached: isShippingSlaBreached,
       is_delivery_sla_breached: false,
       snapshot_generated_at: eventAnchor,
       /**

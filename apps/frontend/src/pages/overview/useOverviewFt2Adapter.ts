@@ -69,7 +69,18 @@ export function mapOverviewFt2Props(
       customers: null,
     },
 
-    pulse: null,
+    pulse:
+      snapshot.pulse == null
+        ? null
+        : {
+            revenueToday: snapshot.pulse.revenueToday ?? null,
+            revenueDeltaVsYesterday:
+              snapshot.pulse.revenueDeltaVsYesterday ?? null,
+            collectedRevenue: snapshot.pulse.collectedRevenue ?? null,
+            atRiskRevenue: snapshot.pulse.atRiskRevenue ?? null,
+            blockedRevenue: snapshot.pulse.blockedRevenue ?? null,
+            topBlockingType: snapshot.pulse.topBlockingType ?? null,
+          },
     alignment: null,
   };
 }

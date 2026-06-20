@@ -133,9 +133,10 @@ const TOPOLOGY = [
  * declareTopology
  * ---------------
  * Asserts all exchanges and queues in dependency order.
- * Must be called once after initQueue() completes.
- *
- * Idempotent — safe to call on reconnect.
+ * Resilient to arg-mismatch (406 PRECONDITION_FAILED): instead of
+ * crash-looping the process, a mismatched queue is logged, deleted if
+ * empty, and recreated with the canonical args. A non-empty mismatch is
+ * logged as CRITICAL and skipped so the app still boots and serves HTTP.
  */
 export async function declareTopology(): Promise<void> {
   if (!connection) {
@@ -144,19 +145,95 @@ export async function declareTopology(): Promise<void> {
 
   const channel = connection.createChannel({ json: false });
 
-  await channel.addSetup(async (ch: any) => {
-    for (const entry of TOPOLOGY) {
-      if (entry.type === 'exchange') {
-        await ch.assertExchange(entry.name, entry.kind, entry.options);
-        console.info('[TOPOLOGY] Exchange declared:', entry.name);
-      } else {
-        await ch.assertQueue(entry.name, entry.options);
-        console.info('[TOPOLOGY] Queue declared:', entry.name);
-      }
-    }
-    console.info('[TOPOLOGY] All queues and exchanges declared');
+  // GUARD (a): never let a channel error become an unhandled 'error' event.
+  channel.on('error', (err: any) => {
+    console.error('[TOPOLOGY] channel error (handled, non-fatal):', err?.message || err);
   });
 
-  // Close topology channel — it's only needed for assertions
+  await channel.addSetup(async (ch: any) => {
+    for (const entry of TOPOLOGY) {
+      try {
+        if (entry.type === 'exchange') {
+          await ch.assertExchange(entry.name, entry.kind, entry.options);
+          console.info('[TOPOLOGY] Exchange declared:', entry.name);
+        } else {
+          await assertQueueResilient(ch, entry.name, entry.options);
+          console.info('[TOPOLOGY] Queue declared:', entry.name);
+        }
+      } catch (err: any) {
+        // GUARD (c): one failed entry must not abort the whole topology / boot.
+        console.error(
+          `[TOPOLOGY][DECLARE_FAILED] ${entry.type} "${entry.name}" skipped (non-fatal):`,
+          err?.message || err
+        );
+      }
+    }
+    console.info('[TOPOLOGY] Topology pass complete');
+  });
+
   await (channel as any).close?.();
+}
+
+/**
+ * assertQueueResilient
+ * --------------------
+ * GUARD (b): assertQueue, but a 406 arg-mismatch self-heals instead of crashing.
+ *
+ * On 406:
+ *  - if the existing queue is EMPTY → delete + recreate with canonical args.
+ *  - if it has messages → DO NOT destroy data; log CRITICAL and skip.
+ *
+ * NOTE: a 406 kills the channel, so we open a throwaway channel for the
+ * inspect/delete/recreate dance to avoid poisoning the topology channel.
+ */
+async function assertQueueResilient(
+  ch: any,
+  name: string,
+  options: any
+): Promise<void> {
+  try {
+    await ch.assertQueue(name, options);
+  } catch (err: any) {
+    const is406 =
+      err?.code === 406 ||
+      /PRECONDITION[-_]FAILED/i.test(err?.message || '');
+    if (!is406) throw err;
+
+    console.error(
+      `[TOPOLOGY][ARG_MISMATCH] queue "${name}" exists with different args than canonical topology.`
+    );
+
+    // The 406 closed `ch`; use a fresh, isolated channel for recovery.
+    const recovery = (connection as any).createChannel({ json: false });
+    recovery.on('error', (e: any) =>
+      console.error('[TOPOLOGY][recovery] channel error (handled):', e?.message || e)
+    );
+
+    try {
+      await recovery.addSetup(async (rch: any) => {
+        // checkQueue is passive — tells us depth without re-declaring args.
+        const info = await rch.checkQueue(name);
+        const depth = info?.messageCount ?? 0;
+
+        if (depth > 0) {
+          // GUARD: never silently destroy real messages.
+          console.error(
+            `[TOPOLOGY][ARG_MISMATCH_CRITICAL] queue "${name}" has ${depth} message(s); ` +
+            `refusing to delete. Boot continues but this queue is NOT reconciled. ` +
+            `Drain/shovel it, then redeploy.`
+          );
+          return; // skip — app still boots
+        }
+
+        // Empty → safe to delete and recreate with canonical args.
+        await rch.deleteQueue(name);
+        await rch.assertQueue(name, options);
+        console.warn(
+          `[TOPOLOGY][SELF_HEALED] queue "${name}" was empty; recreated with canonical args.`
+        );
+      });
+    } finally {
+      await recovery.close?.();
+    }
+  }
 }

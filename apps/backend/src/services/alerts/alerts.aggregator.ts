@@ -198,8 +198,8 @@ async function aggregateConstraintAlerts(
 
     const typeMap: Record<string, ConstraintConfig> = {
       operational: {
-        title:    `${count} order${count > 1 ? 's' : ''} overdue`,
-        message:  `${count} paid order${count > 1 ? 's are' : ' is'} past SLA and need${count === 1 ? 's' : ''} immediate action.`,
+        title:    `${count} order${count > 1 ? 's' : ''} blocked at fulfillment`,
+        message:  `${count} order${count > 1 ? 's have' : ' has'} an unresolved pick exception (item missing, short pick, or defect) stopping fulfillment.`,
         severity: 'critical',
         category: 'revenue_at_risk',
       },
@@ -252,11 +252,35 @@ async function aggregateSlaAlerts(
   trx: Knex.Transaction,
   shopId: number
 ): Promise<AlertUpsert[]> {
+  /**
+   * SHIPPING SLA BREACH COUNT (deterministic, version-safe)
+   * -------------------------------------------------------
+   * order_age_snapshot is versioned by aggregate_version — every rebuild/
+   * reconciliation appends a new row per order. Counting raw rows inflates
+   * the breach total (e.g. 18 orders × N versions = 59). We therefore:
+   *   1. Filter to the LATEST aggregate_version per order (correlated subquery,
+   *      matching OrdersOperatorFacts house pattern).
+   *   2. EXCLUDE fulfilled orders — a shipped order cannot breach a *shipping*
+   *      SLA, so fulfilled rows must never count even if the flag is stale.
+   *   3. COUNT DISTINCT orders (not rows) and sum revenue once per order.
+   */
   const row = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
+    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
     .where('o.shop_id', shopId)
     .where('oas.is_shipping_sla_breached', true)
-    .count('oas.lasyncro_order_id as breach_count')
+    .andWhere(function () {
+      // Unfulfilled only: status is null or anything other than 'fulfilled'
+      this.whereNull('ofs.status').orWhereNot('ofs.status', 'fulfilled');
+    })
+    // Latest snapshot version per order — avoids version multiplication
+    .andWhere(
+      'oas.aggregate_version',
+      db('order_age_snapshot as oas2')
+        .where('oas2.lasyncro_order_id', db.raw('oas.lasyncro_order_id'))
+        .max('oas2.aggregate_version')
+    )
+    .countDistinct('o.lasyncro_order_id as breach_count')
     .sum('o.total_price as total_revenue')
     .first();
 
@@ -378,10 +402,39 @@ export async function aggregateAlertsForShop(shopId: number): Promise<void> {
 
     await upsertAlerts(trx, allAlerts);
 
+    /**
+     * RECONCILE — DEACTIVATE ORPHANED ALERTS
+     * --------------------------------------
+     * upsertAlerts only writes the alerts that are produced THIS run. An
+     * alert whose underlying signal has cleared (e.g. operational
+     * constraints that no longer exist after a projection change) is never
+     * re-emitted, so without this step it would linger is_active=true
+     * forever. Here we deactivate any currently-active alert for this shop
+     * whose alert_key is NOT in the freshly-computed set. We preserve
+     * dismissed_at (audit) and stamp resolved_at, matching upsertAlerts.
+     *
+     * If allAlerts is empty, every active alert for the shop is cleared.
+     */
+    const activeKeys = allAlerts
+      .filter(a => a.is_active)
+      .map(a => a.alert_key);
+    const deactivateQuery = trx('alerts')
+      .where({ shop_id: shopId, is_active: true })
+      .update({
+        is_active:   false,
+        resolved_at: trx.fn.now(),
+        updated_at:  trx.fn.now(),
+      });
+    if (activeKeys.length > 0) {
+      deactivateQuery.whereNotIn('alert_key', activeKeys);
+    }
+    const deactivatedCount = await deactivateQuery;
+
     console.info('[ALERTS_AGGREGATED]', {
       shopId,
-      total:  allAlerts.length,
-      active: allAlerts.filter(a => a.is_active).length,
+      total:        allAlerts.length,
+      active:       allAlerts.filter(a => a.is_active).length,
+      deactivated:  deactivatedCount,
     });
   });
 }

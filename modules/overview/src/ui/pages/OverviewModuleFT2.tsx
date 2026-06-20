@@ -41,18 +41,18 @@ export interface OverviewModuleFT2DataProps {
     engagementRevenue?: 'aligned' | 'divergent' | 'unknown';
   } | null;
   pulse: {
-    shipToday: number | null;
-    blockedOrders: number | null;
+    /** Today's gross revenue. */
+    revenueToday: number | null;
+    /** Delta vs yesterday's gross revenue. */
+    revenueDeltaVsYesterday: number | null;
+    /** Revenue collected/realized today. */
+    collectedRevenue: number | null;
+    /** Revenue exposed but not yet lost. */
+    atRiskRevenue: number | null;
+    /** Revenue blocked from shipping. */
     blockedRevenue: number | null;
-    aging24h: number | null;
-    aging48h: number | null;
-    aging72hPlus: number | null;
-    /** Orders currently being picked or packed */
-    pickingNow?: number | null;
-    /** Orders shipped so far today */
-    shippedToday?: number | null;
-    /** Revenue collected today */
-    shippedRevenue?: number | null;
+    /** Dominant block domain: inventory | customer | operational | none. */
+    topBlockingType: string | null;
   } | null;
   userName?: string | null;
   currency?: string;
@@ -277,9 +277,10 @@ function GroupBand({ sevK, count }: { sevK: SevKey; count: number }) {
   );
 }
 
-// ─── TODAY'S FLOW SIDEBAR ─────────────────────────────────────
-
-function FlowSidebar({
+// ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
+// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
+// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
+function BusinessPulse({
   pulse,
   currency,
   onNavigate,
@@ -288,87 +289,124 @@ function FlowSidebar({
   currency: string;
   onNavigate?: (path: string) => void;
 }) {
-  const ready    = pulse?.shipToday    ?? 0;
-  const picking  = pulse?.pickingNow   ?? 0;
-  const blocked  = pulse?.blockedOrders ?? 0;
-  const breached = pulse?.aging72hPlus ?? 0;
-  const total    = ready + picking + blocked + breached;
+  if (!pulse) return null;
 
-  const rows: { label: string; value: number | null; color?: string; path?: string }[] = [
-    { label: 'Ready to ship',    value: pulse?.shipToday    ?? null,                       path: '/orders?filter=ready' },
-    { label: 'Picking & packing', value: pulse?.pickingNow  ?? null,                       },
-    { label: 'Blocked',          value: pulse?.blockedOrders ?? null, color: '#D9A23B',    path: '/orders?filter=blocked' },
-    { label: 'Breached 72h+',    value: pulse?.aging72hPlus ?? null,  color: '#E5484D',   path: '/orders?aging=72h' },
+  const fmt = (v: number | null) =>
+    v == null ? '—' : `${currency}${Math.round(v).toLocaleString()}`;
+
+  const delta = pulse.revenueDeltaVsYesterday;
+  const deltaLabel =
+    delta == null
+      ? null
+      : delta === 0
+        ? 'flat vs yesterday'
+        : `${delta > 0 ? '▲' : '▼'} ${currency}${Math.abs(Math.round(delta)).toLocaleString()} vs yesterday`;
+  const deltaColor =
+    delta == null || delta === 0 ? '#8A8F98' : delta > 0 ? '#4CAF82' : '#D9A23B';
+
+  const blockLabelMap: Record<string, string> = {
+    inventory: 'inventory',
+    customer: 'customer',
+    operational: 'fulfillment',
+    none: 'none',
+  };
+  const blockLabel =
+    pulse.topBlockingType && pulse.topBlockingType !== 'none'
+      ? blockLabelMap[pulse.topBlockingType] ?? pulse.topBlockingType
+      : null;
+
+  const rows: { label: string; value: string; color?: string; hint?: string }[] = [
+    {
+      label: 'Collected today',
+      value: fmt(pulse.collectedRevenue),
+      color: '#4CAF82',
+    },
+    {
+      label: 'At risk',
+      value: fmt(pulse.atRiskRevenue),
+      color: (pulse.atRiskRevenue ?? 0) > 0 ? '#D9A23B' : undefined,
+    },
+    {
+      label: 'Blocked',
+      value: fmt(pulse.blockedRevenue),
+      color: (pulse.blockedRevenue ?? 0) > 0 ? '#E06A5E' : undefined,
+      hint: blockLabel ? `mostly ${blockLabel}` : undefined,
+    },
   ];
 
   return (
-    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', overflow: 'hidden', flexShrink: 0, width: 272, display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)' }}>
-        <Typography sx={{ fontSize: 10.5, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'var(--ink-4)' }}>
-          Today's Flow
+    <Box
+      sx={{
+        flex: '0 0 300px',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '14px',
+        padding: '20px',
+        background: 'rgba(255,255,255,0.02)',
+      }}
+    >
+      <Typography
+        sx={{
+          fontSize: '11px',
+          letterSpacing: '0.12em',
+          textTransform: 'uppercase',
+          color: '#8A8F98',
+          marginBottom: '16px',
+        }}
+      >
+        Business Pulse
+      </Typography>
+
+      {/* Hero — revenue today */}
+      <Typography sx={{ fontSize: '13px', color: '#8A8F98' }}>
+        Revenue today
+      </Typography>
+      <Typography
+        sx={{ fontSize: '32px', fontWeight: 600, color: '#fff', lineHeight: 1.1 }}
+      >
+        {fmt(pulse.revenueToday)}
+      </Typography>
+      {deltaLabel && (
+        <Typography sx={{ fontSize: '12px', color: deltaColor, marginTop: '4px' }}>
+          {deltaLabel}
         </Typography>
-      </Box>
-
-      {/* KPI rows */}
-      <Box sx={{ px: '1.25rem', py: '0.5rem' }}>
-        {rows.map(row => (
-          <Box
-            key={row.label}
-            onClick={row.path && onNavigate ? () => onNavigate(row.path!) : undefined}
-            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: '7px', cursor: row.path && onNavigate ? 'pointer' : 'default', '&:hover': row.path && onNavigate ? { opacity: 0.8 } : {} }}
-          >
-            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-              {row.label}
-            </Typography>
-            <Typography sx={{ fontSize: 14, fontWeight: 700, color: row.color ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>
-              {row.value ?? '—'}
-            </Typography>
-          </Box>
-        ))}
-      </Box>
-
-      {/* Progress bar */}
-      {total > 0 && (
-        <Box sx={{ px: '1.25rem', pb: '0.75rem' }}>
-          <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', bgcolor: 'var(--bg-3)', mb: '8px' }}>
-            {ready   > 0 && <Box sx={{ flex: ready,   bgcolor: '#4CAF7A', minWidth: '2px' }} />}
-            {picking > 0 && <Box sx={{ flex: picking,  bgcolor: '#FF6B2B', minWidth: '2px' }} />}
-            {blocked > 0 && <Box sx={{ flex: blocked,  bgcolor: '#D9A23B', minWidth: '2px' }} />}
-            {breached > 0 && <Box sx={{ flex: breached, bgcolor: '#E5484D', minWidth: '2px' }} />}
-          </Box>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
-            {[
-              { label: 'Ready',    n: ready,   color: '#4CAF7A' },
-              { label: 'Picking',  n: picking,  color: '#FF6B2B' },
-              { label: 'Blocked',  n: blocked,  color: '#D9A23B' },
-              { label: 'Breached', n: breached, color: '#E5484D' },
-            ].filter(l => l.n > 0).map(l => (
-              <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: l.color, flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-3)' }}>
-                  {l.label} {l.n}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        </Box>
       )}
 
-      {/* Shipped today */}
-      {(pulse?.shippedToday != null || pulse?.shippedRevenue != null) && (
-        <Box sx={{ px: '1.25rem', py: '0.75rem', borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)', mt: 'auto' }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
-            {pulse.shippedToday != null && (
-              <>Shipped today <Box component="span" sx={{ fontWeight: 700, color: 'var(--ink)' }}>{pulse.shippedToday}</Box></>
+      <Box
+        sx={{
+          height: '1px',
+          background: 'rgba(255,255,255,0.08)',
+          margin: '18px 0',
+        }}
+      />
+
+      {/* Outcome rows */}
+      {rows.map((r) => (
+        <Box
+          key={r.label}
+          sx={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            padding: '8px 0',
+          }}
+        >
+          <Box>
+            <Typography sx={{ fontSize: '14px', color: '#C9CDD4' }}>
+              {r.label}
+            </Typography>
+            {r.hint && (
+              <Typography sx={{ fontSize: '11px', color: '#6E737C' }}>
+                {r.hint}
+              </Typography>
             )}
-            {pulse.shippedRevenue != null && pulse.shippedToday != null && ' · '}
-            {pulse.shippedRevenue != null && (
-              <>Collected <Box component="span" sx={{ fontWeight: 700, color: 'var(--ink)' }}>{fmtCurrency(pulse.shippedRevenue, currency)}</Box></>
-            )}
+          </Box>
+          <Typography
+            sx={{ fontSize: '16px', fontWeight: 600, color: r.color ?? '#fff' }}
+          >
+            {r.value}
           </Typography>
         </Box>
-      )}
+      ))}
     </Box>
   );
 }
@@ -550,8 +588,15 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             </Box>
           </Box>
 
-          {/* RIGHT: TODAY'S FLOW */}
-          <FlowSidebar pulse={pulse} currency={currency} onNavigate={onNavigate} />
+        {/*
+            RIGHT: BUSINESS PULSE (cross-domain financial outcomes)
+            ------------------------------------------------------
+            Replaces the removed Today's Flow rail (ISSUE-002 / ISSUE-003).
+            Reports business OUTCOMES (revenue today, collected, at-risk,
+            blocked) — NOT order queues, which remain owned by the Orders
+            module. Self-hides when no pulse is provided.
+          */}
+          {pulse && <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} />}
         </Box>
       )}
 

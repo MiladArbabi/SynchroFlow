@@ -34,7 +34,17 @@ process.env.REBUILD_MODE = 'true';
  */
 const { runSchemaGuard } = await import('../utils/schemaGuard.js');
 const { processDomainEvent } = await import('../events/processDomainEvent.js');
-const { default: db } = await import('@lasyncro/backend-core/db.js');
+/**
+ * REBUILD CONNECTS AS THE PRIVILEGED MIGRATION ROLE (sf_user)
+ * ----------------------------------------------------------
+ * The default `db` pool connects as PGUSER (sf_app) — the runtime app role,
+ * which is intentionally non-privileged and CANNOT TRUNCATE owner tables
+ * (error 42501). Rebuild is a deterministic admin replay that truncates and
+ * rematerializes projection tables, so it MUST use `systemDb`, which connects
+ * as PGMIGRATION_USER (sf_user, table owner + BYPASSRLS). Aliased to `db` so
+ * the rest of the CLI is unchanged.
+ */
+const { systemDb: db } = await import('@lasyncro/backend-core/db.js');
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');

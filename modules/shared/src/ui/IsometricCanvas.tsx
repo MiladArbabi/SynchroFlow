@@ -244,6 +244,8 @@ export interface IsometricCanvasProps {
   initialOffset?: { x: number; y: number };
   /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
   autoFit?: boolean;
+  /** Auto-fit density multiplier. Higher = less internal deadspace. Default preserves existing canvas behavior. */
+  fitPadding?: number;
 }
 export function IsometricCanvas({ 
     zones, 
@@ -255,7 +257,8 @@ export function IsometricCanvas({
     showBins = true, 
     initialZoom = 0.9, 
     initialOffset = { x: 420, y: 120 },
-    autoFit = true }: 
+    autoFit = true,
+    fitPadding = 0.85  }: 
   IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
@@ -376,8 +379,7 @@ export function IsometricCanvas({
 
     const bboxW = Math.max(1, maxX - minX);
     const bboxH = Math.max(1, maxY - minY);
-    const PAD = 0.85; // breathing room so nothing kisses the edges
-    const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(size.w / bboxW, size.h / bboxH) * PAD));
+    const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(size.w / bboxW, size.h / bboxH) * fitPadding));
 
     const cx = ((minX + maxX) / 2) * fitZoom;
     const cy = ((minY + maxY) / 2) * fitZoom;

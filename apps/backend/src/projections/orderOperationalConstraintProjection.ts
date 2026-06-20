@@ -29,7 +29,7 @@ export async function projectOrderOperationalConstraints(
 
   if (orderIds.length === 0) return;
 
-  const results = new Map<string, boolean>();
+  const results = new Map<string, string | null>();
 
   /**
    * EVALUATION PHASE
@@ -57,7 +57,12 @@ export async function projectOrderOperationalConstraints(
       shopId
     );
 
-    results.set(orderId, evaluation.isActive);
+    /**
+     * Store the evaluator-derived blockType (or null if not blocked).
+     * The evaluator now owns block classification (pick-exception based);
+     * the projection no longer hardcodes 'sla_breach'.
+     */
+    results.set(orderId, (evaluation.meta?.blockType as string | null) ?? null);
   }
 
   /**
@@ -75,11 +80,8 @@ export async function projectOrderOperationalConstraints(
       continue;
     } */
 
-    const isBlocked = results.get(orderId) === true;
-
-    const blockType = isBlocked
-      ? 'sla_breach'
-      : null;
+    const blockType = results.get(orderId) ?? null;
+    const isBlocked = blockType !== null;;
 
     const constraintId = uuidv5(
       `operational:${orderId}`,

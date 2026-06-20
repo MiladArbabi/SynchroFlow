@@ -9,6 +9,8 @@ import { projectOrderInventoryConstraints } from '../projections/orderInventoryC
 import { projectOrderRisk } from '../projections/orderRiskProjection.js';
 import { evaluateOrderConstraints } from '../services/constraints/constraintEngine.js';
 import { computeOrderMargin } from '../services/margin/computeOrderMargin.service.js';
+import { db } from '@lasyncro/backend-core';
+import { projectRevenueDaily } from '../projections/orderRevenueDailyProjection.js';
 
 /**
  * PROJECTION ENGINE
@@ -102,16 +104,20 @@ export async function projectDomainEventCore({
       throw new Error('[PROJECTION_TRX_MISSING]');
     }
 
-    /**
-     * PROJECTION WRITE CONTEXT (CRITICAL)
-     * -----------------------------------
-     * Enables DB-level write access to projection tables.
-     *
-     * Required because:
-     * - DB enforces single-writer invariant
-     * - prevents non-engine writes
-     */
     await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+    /**
+     * TENANT CONTEXT FOR REPLAY (CRITICAL)
+     * ------------------------------------
+     * RLS-protected projection targets (e.g. lifecycle_events) enforce
+     *   shop_id = current_setting('app.current_tenant')::int
+     * At runtime this GUC is set by request middleware. During rebuild/replay
+     * there is no request, so it is unset and every RLS INSERT fails with 42501
+     * (new row violates row-level security policy). The engine is the canonical
+     * writer for BOTH runtime and replay, so it sets tenant deterministically
+     * from the event's own shop_id. Safe at runtime too — value is identical to
+     * what middleware already set.
+     */
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(domainEvent.shop_id)}'`);
 
       /**
        * ENGINE IS STATELESS (CRITICAL)
@@ -401,6 +407,16 @@ export async function projectDomainEventCore({
               );
             }
 
+            /**
+             * IDEMPOTENT DEFER RE-QUEUE (replay-safe)
+             * --------------------------------------
+             * The deferred orders/paid event must be insert-once. Without
+             * ON CONFLICT, re-running a rebuild (or any second pass where a
+             * prior :deferN row survived a partial/failed run) throws 23505 on
+             * domain_events_shop_external_event_unique and aborts the whole
+             * rebuild. The defer key is deterministic, so a duplicate means the
+             * requeue already happened — safely ignore it.
+             */
             await trx('domain_events').insert({
               shop_id: domainEvent.shop_id,
               event_type: 'orders/paid',
@@ -411,7 +427,20 @@ export async function projectDomainEventCore({
               event_time: domainEvent.event_time,
               event_version: domainEvent.event_version,
               external_event_id: `${String(domainEvent.external_event_id).replace(/:defer\d+$/, '')}:defer${deferCount + 1}`,
-            });
+            })
+            /**
+             * Partial unique index target (replay-safe):
+             *   domain_events_shop_external_event_unique
+             *   ON (shop_id, external_event_id) WHERE external_event_id IS NOT NULL
+             * Knex cannot infer a PARTIAL index from a column list (error 42P10),
+             * so the conflict target is specified raw WITH its predicate. A
+             * duplicate means this paid event was already deferred on a prior
+             * pass — safely ignore so rebuild is re-runnable.
+             */
+            .onConflict(
+              trx.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+            )
+            .ignore();
 
             console.warn('[ORDER_PAID_DEFERRED_REQUEUED]', {
               originalEventId: domain_event_id,
@@ -614,6 +643,35 @@ export async function projectDomainEventCore({
               orderId: projectionTargetOrderId,
               error: (err as Error).message,
             });
+        }
+
+        /**
+         * DAILY REVENUE PROJECTION (SHOP-LEVEL, per-shop daily buckets)
+         * ------------------------------------------------------------
+         * Aggregates order_revenue_units_net → revenue_projection_daily.
+         * This is a whole-shop daily aggregation (not per-order), but it is
+         * idempotent: it re-derives every day bucket and upserts via
+         * onConflict(shop_id, revenue_date). Running it once per order event
+         * is therefore safe and self-healing — the final call of a replay
+         * lands the complete picture. Wired here because the projection was
+         * declared in projectionExecutionOrder but never invoked by the
+         * engine, leaving revenue_projection_daily permanently empty.
+         */
+        try {
+          await trx.raw('SAVEPOINT revenue_daily_projection');
+          await projectRevenueDaily(
+            trx,
+            shopId,
+            aggregateVersion,
+            eventAnchor
+          );
+          await trx.raw('RELEASE SAVEPOINT revenue_daily_projection');
+        } catch (err) {
+          await trx.raw('ROLLBACK TO SAVEPOINT revenue_daily_projection');
+          console.error('[REVENUE_DAILY_PROJECTION_FAILED]', {
+            shopId,
+            error: (err as Error).message,
+          });
         }
 
         debugLog('[PROJECTION_ORCHESTRATION_COMPLETED]', {

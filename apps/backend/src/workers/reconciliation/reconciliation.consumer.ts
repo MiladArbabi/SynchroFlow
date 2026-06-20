@@ -11,6 +11,11 @@ const QUEUE = 'fulfillment.reconciliation';
 export function startReconciliationConsumer() {
   const ch = getQueueChannel(QUEUE);
 
+  // Setup failures (e.g. 406 arg-mismatch) must not become unhandled 'error' → process crash.
+  ch.on('error', (err: any) => {
+    console.error('[reconciliation] channel error (handled, non-fatal):', err?.message || err);
+  });
+
   ch.addSetup((channel) => {
     console.log('[reconciliation] topology setup executing');
     return Promise.all([

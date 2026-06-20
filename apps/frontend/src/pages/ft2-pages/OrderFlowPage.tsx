@@ -62,12 +62,9 @@ import {
   type PoolOrder,
   type SkippedReleaseOrder,
 } from '../wms/useOrderPool';
-import { usePickBatches, usePickBatchLineItems } from '../wms/usePickBatches';
+import { usePickBatches } from '../wms/usePickBatches';
 import { useWmsOperators } from '../wms/useWmsOperators';
 import { useLiveCapacity } from '../wms/useWmsAnalytics';
-import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
-import { IsometricCanvas } from '@lasyncro/shared/ui';
-import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 // ---------------------------------------------------------------------------
 // Formatting + bucketing helpers (pure, render-independent)
@@ -178,21 +175,6 @@ export default function OrderFlowPage() {
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
 
-  // Warehouse zones power the isometric floor canvas (right column).
-  const floorPlanningQuery = useFloorPlanning();
-  const zones: WarehouseZone[] = floorPlanningQuery.data?.zones ?? [];
-
-  // The single in-progress batch (if any) lights its zones on the floor.
-  const activeBatch = useMemo(
-    () => batches.find(b => b.status === 'picking' || b.status === 'packing') ?? null,
-    [batches],
-  );
-  const activeBatchLineItems = usePickBatchLineItems(activeBatch?.pick_batch_id ?? null);
-  const activeZoneCodes = useMemo(
-    () => new Set((activeBatchLineItems.data?.line_items ?? []).map(li => li.location_code)),
-    [activeBatchLineItems.data],
-  );
-
   // --- CPT risk matrix (TIME lens) -----------------------------------------
   // Group every blocked + pool order, plus active batches, into a
   // { overdue, today, ahead } × { blocked, pool, picking, packing } grid,
@@ -256,7 +238,7 @@ export default function OrderFlowPage() {
 
   // --- Blocked resolution drawer (opened from matrix blocked cells) --------
   const [blockedDrawerBucket, setBlockedDrawerBucket] = useState<CptBucket | null>(null);
-
+  const [blockedBannerOpen, setBlockedBannerOpen] = useState(false);
   const blockedBucket = useCallback(
     (o: { age_since_creation_seconds: number | null; is_shipping_sla_breached: boolean | null }): CptBucket => {
       if (o.is_shipping_sla_breached) return 'overdue';
@@ -274,10 +256,34 @@ export default function OrderFlowPage() {
         : [],
     [blockedOrders, blockedDrawerBucket, blockedBucket],
   );
+
   const drawerHeld = useMemo(
     () => drawerBlocked.reduce((sum, o) => sum + Number(o.revenue ?? 0), 0),
     [drawerBlocked],
   );
+
+  const blockedByBucket = useMemo(() => {
+  const grouped: Record<CptBucket, typeof blockedOrders> = {
+    overdue: [],
+    today: [],
+    ahead: [],
+  };
+
+  blockedOrders.forEach((order) => {
+    grouped[blockedBucket(order)].push(order);
+  });
+
+  return grouped;
+}, [blockedOrders, blockedBucket]);
+
+const blockedBannerSummary = useMemo(
+  () => ({
+    overdue: blockedByBucket.overdue.length,
+    today: blockedByBucket.today.length,
+    ahead: blockedByBucket.ahead.length,
+  }),
+  [blockedByBucket],
+);
 
   // --- Wave selection + release state --------------------------------------
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -363,12 +369,38 @@ export default function OrderFlowPage() {
   // Render
   // -------------------------------------------------------------------------
   return (
-    <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%' }}>
+    <Box
+      sx={{
+        bgcolor: 'var(--bg)',
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+      }}
+    >
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
 
-      <Box sx={{ p: '32px 40px' }}>
+      <Box
+        sx={{
+          p: '20px 28px',
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
         {/* ---------- Header: title + live summary + pool-filter chip ---------- */}
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            mb: 2,
+            flexShrink: 0,
+          }}
+        >
           <Box>
             <Typography
               sx={{
@@ -443,19 +475,225 @@ export default function OrderFlowPage() {
           </Box>
         )}
 
-        {/* ---------- Two-column working body ---------- */}
-        {!isLoading && (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', lg: 'minmax(0, 1.1fr) minmax(0, 0.9fr)' },
-              gap: 3,
-              alignItems: 'stretch',
-            }}
-          >
-            {/* ===================== LEFT COLUMN — the work ===================== */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
-              {/* ---- CPT risk matrix (TIME lens) ---- */}
+        {/* ---------- Working body: top overview + bottom work area ---------- */}
+          {!isLoading && (
+            <Box
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                overflow: 'hidden',
+                display: 'grid',
+                gridTemplateRows: 'max-content minmax(0, 1fr)',
+                gap: 2,
+              }}
+            >
+              <Box
+                sx={{
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                  pb: '1px',
+                }}
+              >
+
+              {blockedCount > 0 && (
+                <Box
+                  component="button"
+                  type="button"
+                  onClick={() => setBlockedBannerOpen(prev => !prev)}
+                  sx={{
+                    width: '100%',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 2,
+                    px: 2,
+                    py: 1.25,
+                    bgcolor: 'var(--accent-ghost)',
+                    border: '1px solid var(--accent-border)',
+                    borderRadius: '12px',
+                    color: 'var(--ink)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    textAlign: 'left',
+                    boxSizing: 'border-box',
+                    '&:hover': {
+                      borderColor: 'var(--accent)',
+                    },
+                  }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.2 }}>
+                      Blocked orders · {blockedCount} · {fmt$(heldRevenue)} held
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: 0.375 }}>
+                      Overdue {blockedBannerSummary.overdue} · Today {blockedBannerSummary.today} · Ahead {blockedBannerSummary.ahead}
+                    </Typography>
+                  </Box>
+
+                  <Box component="span" sx={{ flexShrink: 0, fontSize: 15, color: 'var(--accent)', lineHeight: 1 }}>
+                    {blockedBannerOpen ? '▲' : '▼'}
+                  </Box>
+                </Box>
+              )}
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', lg: '380px minmax(0, 1fr)' },
+                  gap: 1.5,
+                  alignItems: 'stretch',
+                  minHeight: 0,
+                }}
+              >
+
+                              {/* Next-wave builder — kept above the pool so the primary floor action is visible before order selection. */}
+                <Box
+                  sx={{
+                    flexShrink: 0,
+                    bgcolor: 'var(--surface)',
+                    border: '1px solid var(--rule)',
+                    borderRadius: '14px',
+                    p: '12px 14px',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Typography
+                    sx={{
+                      fontSize: 10,
+                      fontWeight: 500,
+                      letterSpacing: '0.12em',
+                      textTransform: 'uppercase',
+                      color: 'var(--ink-4)',
+                      mb: 1,
+                    }}
+                  >
+                    Next wave
+                  </Typography>
+                  <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1, letterSpacing: '-0.02em' }}>
+                    {waveOrders} order{waveOrders !== 1 ? 's' : ''}
+                  </Typography>
+
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.625, mb: 0.25 }}>
+                    {waveValue > 0 ? fmt$(waveValue) : '—'}
+                    {waveZones !== '—' && ` · zones ${waveZones}`}
+                  </Typography>
+
+                  {selected.size > 0 && (
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mt: 0.375 }}>
+                      {selected.size} selected · only selected orders will be released
+                    </Typography>
+                  )}
+
+                  <Box sx={{ mt: 1.25 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Line items</Typography>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveLineItems}</Typography>
+                    </Box>
+
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Units to pick</Typography>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveUnits}</Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Floor-capacity gauge against the line-item ceiling. */}
+                  <Box sx={{ mt: 1.5 }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+                      <Typography
+                        sx={{
+                          fontSize: 10,
+                          fontWeight: 500,
+                          letterSpacing: '0.12em',
+                          textTransform: 'uppercase',
+                          color: 'var(--ink-4)',
+                        }}
+                      >
+                        Floor capacity
+                      </Typography>
+
+                      <Typography sx={{ fontSize: 11, fontWeight: 600, color: ceilingPct > 90 ? 'var(--accent)' : 'var(--ink-4)' }}>
+                        {ceilingPct}%
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ height: 6, borderRadius: '3px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
+                      <Box
+                        sx={{
+                          height: '100%',
+                          width: `${ceilingPct}%`,
+                          bgcolor: ceilingPct > 90 ? 'var(--accent)' : 'var(--rule-2)',
+                          borderRadius: '3px',
+                          transition: 'width 0.3s ease',
+                        }}
+                      />
+                    </Box>
+
+                    <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.75 }}>
+                      {waveLineItems} of {maxLineItems} line item ceiling
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    component="select"
+                    value={operatorId}
+                    onChange={(event: ChangeEvent<HTMLSelectElement>) => setOperatorId(event.target.value)}
+                    sx={{
+                      width: '100%',
+                      mt: 1,
+                      px: 1.5,
+                      py: 1,
+                      bgcolor: 'var(--bg)',
+                      border: '1px solid var(--rule)',
+                      borderRadius: '8px',
+                      color: operatorId ? 'var(--ink)' : 'var(--ink-3)',
+                      fontSize: 13,
+                      fontFamily: 'inherit',
+                      outline: 'none',
+                    }}
+                  >
+                    <option value="">Dispatch to all operators</option>
+                    {operators.map((operator) => (
+                      <option key={operator.user_id} value={operator.user_id}>
+                        {`${operator.first_name} ${operator.last_name}`.trim()}
+                      </option>
+                    ))}
+                  </Box>
+
+                  <Box
+                    component="button"
+                    type="button"
+                    disabled={releaseDisabled}
+                    onClick={handleRelease}
+                    sx={{
+                      width: '100%',
+                      mt: 1,
+                      py: 1.1,
+                      border: 0,
+                      borderRadius: '10px',
+                      bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent)',
+                      color: '#fff',
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: releaseDisabled ? 'not-allowed' : 'pointer',
+                      opacity: releaseDisabled ? 0.45 : 1,
+                      transition: 'background 0.12s, opacity 0.12s',
+                      '&:hover': {
+                        bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent-hover)',
+                      },
+                    }}
+                  >
+                    {releaseBatch.isPending ? 'Releasing…' : 'Release wave to floor'}
+                  </Box>
+
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', textAlign: 'center', mt: 1.25 }}>
+                    Pickers see it on their mobile instantly.
+                  </Typography>
+                 </Box>
+
+              {/* Next-wave builder — primary release action. */}
               <Box sx={{ border: '1px solid var(--rule)', borderRadius: '12px', p: 2 }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5 }}>
                   <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
@@ -547,7 +785,21 @@ export default function OrderFlowPage() {
                 <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 1.5 }}>
                   Bucketed by order age against today’s cutoff · per-order ship-by lands later · click a blocked cell to resolve
                 </Typography>
+                </Box>
+
+                </Box>
               </Box>
+
+              {/* ===================== BOTTOM ROW — release pool + next wave ===================== */}
+              <Box
+                sx={{
+                  minHeight: 0,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 1.5,
+                }}
+              >
 
               {/* ---- Release-success banner (transient, auto-dismisses) ---- */}
               {releaseSuccess && (
@@ -600,157 +852,35 @@ export default function OrderFlowPage() {
                 </Box>
               )}
 
-                            {/* ---- Next-wave builder + release pool table ---- */}
+            {/* ---- Release pool table + next-wave rail ---- */}
               <Box
                 sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 2.5,
+                  flex: 1,
+                  minHeight: 0,
+                  display: 'grid',
+                  gridTemplateColumns: '1fr',
+                  gap: 1.5,
                   alignItems: 'stretch',
+                  overflow: 'hidden',
                 }}
               >
-                {/* Next-wave builder — kept above the pool so the primary floor action is visible before order selection. */}
-                <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px' }}>
-                  <Typography
-                    sx={{
-                      fontSize: 10,
-                      fontWeight: 500,
-                      letterSpacing: '0.12em',
-                      textTransform: 'uppercase',
-                      color: 'var(--ink-4)',
-                      mb: 2,
-                    }}
-                  >
-                    Next wave
-                  </Typography>
-
-                  <Typography sx={{ fontSize: 38, fontWeight: 700, color: 'var(--ink)', lineHeight: 1, letterSpacing: '-0.02em' }}>
-                    {waveOrders} order{waveOrders !== 1 ? 's' : ''}
-                  </Typography>
-
-                  <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.625, mb: 0.25 }}>
-                    {waveValue > 0 ? fmt$(waveValue) : '—'}
-                    {waveZones !== '—' && ` · zones ${waveZones}`}
-                  </Typography>
-
-                  {selected.size > 0 && (
-                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mt: 0.375 }}>
-                      {selected.size} selected · only selected orders will be released
-                    </Typography>
-                  )}
-
-                  <Box sx={{ mt: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Line items</Typography>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveLineItems}</Typography>
-                    </Box>
-
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 1.25, borderTop: '1px solid var(--rule)' }}>
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>Units to pick</Typography>
-                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{waveUnits}</Typography>
-                    </Box>
-                  </Box>
-
-                  {/* Floor-capacity gauge against the line-item ceiling. */}
-                  <Box sx={{ mt: 2.5 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
-                      <Typography
-                        sx={{
-                          fontSize: 10,
-                          fontWeight: 500,
-                          letterSpacing: '0.12em',
-                          textTransform: 'uppercase',
-                          color: 'var(--ink-4)',
-                        }}
-                      >
-                        Floor capacity
-                      </Typography>
-
-                      <Typography sx={{ fontSize: 11, fontWeight: 600, color: ceilingPct > 90 ? 'var(--accent)' : 'var(--ink-4)' }}>
-                        {ceilingPct}%
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ height: 6, borderRadius: '3px', bgcolor: 'var(--bg)', overflow: 'hidden' }}>
-                      <Box
-                        sx={{
-                          height: '100%',
-                          width: `${ceilingPct}%`,
-                          bgcolor: ceilingPct > 90 ? 'var(--accent)' : 'var(--rule-2)',
-                          borderRadius: '3px',
-                          transition: 'width 0.3s ease',
-                        }}
-                      />
-                    </Box>
-
-                    <Typography sx={{ fontSize: 10.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.75 }}>
-                      {waveLineItems} of {maxLineItems} line item ceiling
-                    </Typography>
-                  </Box>
-
-                                    <Box
-                    component="select"
-                    value={operatorId}
-                    onChange={(event: ChangeEvent<HTMLSelectElement>) => setOperatorId(event.target.value)}
-                    sx={{
-                      width: '100%',
-                      mt: 2.5,
-                      px: 1.5,
-                      py: 1.25,
-                      bgcolor: 'var(--bg)',
-                      border: '1px solid var(--rule)',
-                      borderRadius: '8px',
-                      color: operatorId ? 'var(--ink)' : 'var(--ink-3)',
-                      fontSize: 13,
-                      fontFamily: 'inherit',
-                      outline: 'none',
-                    }}
-                  >
-                    <option value="">Dispatch to all operators</option>
-                    {operators.map((operator) => (
-                      <option key={operator.user_id} value={operator.user_id}>
-                        {`${operator.first_name} ${operator.last_name}`.trim()}
-                      </option>
-                    ))}
-                  </Box>
-
-                  <Box
-                    component="button"
-                    type="button"
-                    disabled={releaseDisabled}
-                    onClick={handleRelease}
-                    sx={{
-                      width: '100%',
-                      mt: 2.5,
-                      py: 1.35,
-                      border: 0,
-                      borderRadius: '10px',
-                      bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent)',
-                      color: '#fff',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      cursor: releaseDisabled ? 'not-allowed' : 'pointer',
-                      opacity: releaseDisabled ? 0.45 : 1,
-                      transition: 'background 0.12s, opacity 0.12s',
-                      '&:hover': {
-                        bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent-hover)',
-                      },
-                    }}
-                  >
-                    {releaseBatch.isPending ? 'Releasing…' : 'Release wave to floor'}
-                  </Box>
-
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', textAlign: 'center', mt: 1.25 }}>
-                    Pickers see it on their mobile instantly.
-                  </Typography>
-                </Box>
-
-                {/* Pool table — header is fixed; rows scroll internally so the page itself never grows beyond one screen. */}
-                <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+              {/* Pool table — header is fixed; rows scroll internally so the page itself never grows beyond one screen. */}
+                <Box
+                  sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    bgcolor: 'var(--surface)',
+                    border: '1px solid var(--rule)',
+                    borderRadius: '14px',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                >
                   <Box
                     sx={{
                       display: 'grid',
-                      gridTemplateColumns: '36px 40px minmax(0,1fr) 86px 72px 72px 90px 110px',
+                      gridTemplateColumns: '32px 32px minmax(150px,1fr) 64px 64px 74px minmax(80px,0.45fr)',
                       gap: '10px',
                       alignItems: 'center',
                       px: 2,
@@ -767,7 +897,7 @@ export default function OrderFlowPage() {
                       onChange={toggleSelectAll}
                     />
                     <Box />
-                    {['Order', 'Value', 'Lines', 'Units', 'Age', 'Zones'].map((col) => (
+                    {['Order / Value', 'Lines', 'Units', 'Age', 'Zones'].map((col) => (
                       <Typography
                         key={col}
                         sx={{
@@ -784,7 +914,7 @@ export default function OrderFlowPage() {
                   </Box>
 
                   {/* Scroll region — capped height keeps the page scroll-free after the wave card moved above the table. */}
-                  <Box sx={{ maxHeight: 'calc(100vh - 690px)', minHeight: 180, overflowY: 'auto' }}>
+                  <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
                     {poolOrders.length === 0 && (
                       <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
@@ -804,7 +934,7 @@ export default function OrderFlowPage() {
                           onClick={() => toggleSelect(order.lasyncro_order_id)}
                           sx={{
                             display: 'grid',
-                            gridTemplateColumns: '36px 40px minmax(0,1fr) 86px 72px 72px 90px 110px',
+                            gridTemplateColumns: '32px 32px minmax(150px,1fr) 64px 64px 74px minmax(80px,0.45fr)',
                             gap: '10px',
                             alignItems: 'center',
                             px: 2,
@@ -844,7 +974,7 @@ export default function OrderFlowPage() {
                             />
                           </Box>
 
-                          <Box>
+                          <Box sx={{ minWidth: 0 }}>
                             <Typography
                               sx={{
                                 fontSize: 13,
@@ -858,25 +988,15 @@ export default function OrderFlowPage() {
                               {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                             </Typography>
 
-                            {order.is_priority_flagged && (
-                              <Typography
-                                sx={{
-                                  fontSize: 9.5,
-                                  fontWeight: 600,
-                                  letterSpacing: '0.07em',
-                                  textTransform: 'uppercase',
-                                  color: 'var(--accent)',
-                                  mt: 0.125,
-                                }}
-                              >
-                                Priority
-                              </Typography>
-                            )}
+                            <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', mt: 0.125 }}>
+                              {fmtOrderValue(Number(order.total_price), order.currency)}
+                              {order.is_priority_flagged && (
+                                <Box component="span" sx={{ color: 'var(--accent)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                                  Priority
+                                </Box>
+                              )}
+                            </Typography>
                           </Box>
-
-                          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-                            {fmtOrderValue(Number(order.total_price), order.currency)}
-                          </Typography>
 
                           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
                             {order.line_item_count}
@@ -916,46 +1036,8 @@ export default function OrderFlowPage() {
                     })}
                   </Box>
                 </Box>
-              </Box>
-            </Box>
 
-            {/* ===================== RIGHT COLUMN — the floor (SPACE lens) ===================== */}
-            <Box
-              sx={{
-                border: '1px solid var(--rule)',
-                borderRadius: '12px',
-                p: 2,
-                display: 'flex',
-                flexDirection: 'column',
-                height: '100%',
-                minHeight: 480,
-              }}
-            >
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 1.5 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                  Floor
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                  {activeBatch
-                    ? `picking ${activeBatch.units_picked}/${activeBatch.total_units} · zones lit`
-                    : 'no active batch'}
-                </Typography>
               </Box>
-
-              {zones.length === 0 ? (
-                <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>
-                  No warehouse layout yet — build it in Floor Planning
-                </Box>
-              ) : (
-                // Canvas fills the remaining column height (taller than before),
-                // removing the previous top dead-space.
-                <Box sx={{ flex: 1, minHeight: 420, position: 'relative' }}>
-                  <IsometricCanvas
-                    zones={zones}
-                    filteredCodes={activeZoneCodes.size > 0 ? activeZoneCodes : undefined}
-                  />
-                </Box>
-              )}
             </Box>
           </Box>
         )}

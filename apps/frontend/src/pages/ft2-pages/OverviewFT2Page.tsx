@@ -1,9 +1,9 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
 import { useTrustFt2Snapshot } from '../trust/useTrustFt2Snapshot';
-import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { useMorningBriefSnapshot } from '../overview/useMorningBriefSnapshot';
 import { OverviewModuleFT2 } from '@lasyncro/overview';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
@@ -19,8 +19,11 @@ export default function OverviewPageFT2() {
   const [forceRefresh, setForceRefresh] = useState(false);
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
-  const ft2Snapshot = useOrdersFt2Snapshot(!authLoading);
-  const operationalControl = ft2Snapshot.data?.operationalControl;
+  // ISSUE-002 / ISSUE-003: Overview does NOT borrow the Orders operationalControl
+  // snapshot (the order-flow rail belongs to Orders). Overview's right rail is now
+  // its own cross-domain Business Pulse (revenue today, collected, at-risk, blocked),
+  // sourced via mapOverviewFt2Props → overviewProps.pulse from the modules-ft2 snapshot.
+  const operationalControl = null;
   const morningBrief = useMorningBriefSnapshot(forceRefresh, !authLoading);
 
   /**
@@ -45,15 +48,6 @@ export default function OverviewPageFT2() {
       <ProfileCompletionBanner />
       <OverviewModuleFT2
         {...overviewProps}
-
-        pulse={operationalControl ? {
-          shipToday: operationalControl.queue_ready_to_ship ?? null,
-          blockedOrders: operationalControl.constrained_orders ?? null,
-          blockedRevenue: operationalControl.blocked_revenue ?? null,
-          aging24h: operationalControl.aging_24h ?? null,
-          aging48h: operationalControl.aging_48h ?? null,
-          aging72hPlus: operationalControl.aging_72h_plus ?? null,
-        } : null}
         
         userName={user?.first_name ?? null}
         morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}

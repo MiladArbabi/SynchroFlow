@@ -30,6 +30,15 @@ export type OverviewModulesFt2Snapshot = {
       customersPresent?: boolean | null;
     };
   } | null;
+
+  pulse: {
+    revenueToday?: number | null;
+    revenueDeltaVsYesterday?: number | null;
+    collectedRevenue?: number | null;
+    atRiskRevenue?: number | null;
+    blockedRevenue?: number | null;
+    topBlockingType?: string | null;
+  } | null;
 };
 
 const DEFAULT_RANGE: FT2DateRange = { preset: 'past_30_days', from: null, to: null };
