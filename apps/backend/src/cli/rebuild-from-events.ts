@@ -98,12 +98,6 @@ async function truncateProjections() {
     'order_risk_snapshot',
     'revenue_projection_daily',
     'daily_operational_brief_snapshot',
-    'user_lifecycle_snapshot',
-    'lifecycle_audit_events',
-    'lifecycle_events',
-    'ft0_state',
-    'ft2_state',
-    'system_readiness_state',
     'expansion_eligibility_state'
   ];
 

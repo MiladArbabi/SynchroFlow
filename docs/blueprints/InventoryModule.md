@@ -2,6 +2,7 @@
 
 **LaSyncro | Sprint 4 Audit | May 26, 2026**
 **Status: Audited — Full UX rebuild required. Schema corrections applied. Issues INV-01–INV-11 registered.**
+**Sprint 5 (2026-06-20): Truth-bug cluster resolved, projector backfilled, phantom-stock model added, Catalog moved to triage+pulse. See §16 Sprint Log.**
 
 ---
 
@@ -140,30 +141,78 @@ The Problem Center is correctly scoped to WMS pick/pack exception escalation. Th
 | INV-03 | P2 | `border: '1px solid'` and `borderLeft: '4px solid'` throughout ProductsModuleFT2 |
 | INV-04 | P2 | `variance_count` and `total_variance_units` both null — variance tracking not computing in WMS Readiness |
 | INV-05 | P2 | Gift Card product appears in Catalog — should be filtered (same filter logic used in Demand service) |
-| INV-06 | P3 | Test/sample variants (test, test1, test2, testXL, testXXL) appear in Costs tab — seed data noise, not a bug |
+| INV-06 | P1 | Test/sample variants (test, test1, test2, testXL, testXXL) treated as truth across Catalog + Costs — inflates every count. MUST be excluded from inventory truth (tracked as INV-002). |
 | INV-07 | P3 | Catalog `image_url: null` for Canvas Tote, Linen Shirt, Wool Sweater — no images synced from Shopify for these products |
 | INV-08 | P3 | `problem_bin_location` in `problem_center_tasks` schema references a bin that has no workflow design (see WH-05) |
 
 ---
 
-## 8. Workshop Verdict
+## 8. Workshop Verdict — Direction A (Truth & Trust + Replenishment brain)
 
-**Keep all five sub-modules. No cuts.**
+**Supersedes the prior "keep all five sub-modules" verdict (see §15 decision log).**
 
-The Intelligence tab is the strongest intelligence surface in the entire app — it directly answers "what's wrong with my inventory right now and why" in a single scroll. The Catalog's missing-SKU section and the WMS Readiness pickability signals are operationally critical for the target user (own warehouse, mobile scanning, high SKU complexity).
+Inventory's job is to be the single source of *what you have, what's sellable, and what to reorder* — one number, computed once, shown identically everywhere. It does NOT re-own warehouse execution or margin reporting; those have existing owners and are reached via context-preloaded deep-links (Overview dispatcher pattern).
 
-**What needs work before production:**
+**Inventory owns:**
 
-1. DS cleanup — same hex/fontWeight/border pattern as Demand and WMS (INV-01 through INV-03)
-2. Variance tracking gap — `variance_count` always null (INV-04)
-3. Gift card filter in Catalog (INV-05)
+1. **Intelligence** — the decision surface: $-ranked "needs attention" + a stock-health pulse with one trusted headline (Sellable % / Accuracy).
+2. **Catalog** — the SKU registry and blocked-stock triage: each blocked row shows the single reason + one-click fix.
+3. **Replenishment** (new, Sprint 2) — velocity → days-of-stock → reorder, drafting a PO that hands off to Supplier Portal.
 
-**What is production-ready as-is:**
+**Inventory delegates (deep-link, never duplicate):**
 
-- Intelligence tab — signal quality is excellent
-- Costs — inline editing + CSV bulk upload complete
-- WMS Readiness — correct and useful
-- Problem Center — filter system built, empty state correct
+- **Costs / COGS / margin → Finances** (Costs becomes a thin capture strip or is removed).
+- **WMS Readiness (pickability, bin location) → WMS-lite + Floor Planning.** Its two real signals become *blocked reasons* inside Catalog.
+- **Problem Center (pick/pack/stow/receive exceptions) → WMS.** Already lives at `/problem-center`; surfaced as a count badge only.
+
+**Rationale:** the "everything-about-a-SKU hub" alternative structurally re-introduces the truth bug (same number computed in two modules = the 25-vs-16-vs-29 divergence). Direction A is the only shape consistent with the one-number thesis, reuses already-shipped WMS/Floorplanning/Finances surfaces, and avoids the feature-completeness trap.
+
+---
+
+## 15. Direction A Decision Log (2026-06-20)
+
+- **Decision:** Adopt Direction A (Truth & Trust + Replenishment brain). Overturns §8's original "keep all five sub-modules, no cuts."
+- **Why now:** Catalog audit proved the same metric is computed in multiple modules with divergent results (products 10 vs 19; no-SKU 16 vs 25; WMS not-pickable 29 > 28 total variants). The five-tab hub design guarantees this drift recurs.
+- **Sprint 1 scope:** (1) truth bug — one canonical source per number [INV-001/003/004 ✅], (2) purge test data from truth [INV-002], (3) Intelligence as decision surface, (4) Catalog blocked-stock triage.
+- **Sprint 2:** Replenishment surface (net-new).
+- **Boundary owners confirmed in codebase:** WMS-lite (pick/pack/stow/receive + exception queue), Floor Planning (bin locations), Finances (COGS/margin).
+
+---
+
+## 16. Sprint 5 Log — Truth, Projection & Phantom Stock (2026-06-20)
+
+**Resolved**
+
+| ID | Description |
+|---|---|
+| INV-003 | Catalog subtitle read paged `products.length`; → `allProducts.length`. Kills 10-vs-19. |
+| INV-004 | No-SKU count had two sources (product 16 vs variant 25); unified to variant-level server `sellability` snapshot, relabelled "missing SKU". |
+| INV-005 | Catalog selected only `sellable_quantity`; now returns `on_hand`/`available`; rows show on-hand + available subtext. |
+| INV-006 / INV-05 | Catalog (`whereNot gift_card`) and Costs (`where physical`) queried different universes → both aligned to `product_type = 'physical'`. Gift cards excluded by definition. |
+| INV-013a | Phantom (on_hand < 0) was conflated into `zeroStock`. Split into its own `blockedReason`; `blocked = noSku + noInventory + zeroStock + phantom`. |
+| INV-014 | Negative on_hand rendered raw ("−3 in stock") → "Phantom · check receiving" flag + adaptive stat card. |
+| INV-015 | Catalog stat-card grid (broken, 2-of-4) replaced with canonical FT2 decision + pulse layout (matches Orders/Inbound). Full-width sortable 6-col list (Product/Variants/On-hand/Available/Status/Action), severity-ranked Status sort. |
+| FLK-001 | List blanked on range change (no `keepPreviousData`) → `placeholderData: keepPreviousData` on operator-summary query. |
+| PROJ-001a | Projector "must negate outbound" comment was inverted; ledger is pre-signed (DB constraint forces sale<0). Comment corrected; math untouched. |
+| PROJ-002 | `committed_quantity` dead (hardcoded 0 everywhere); deprecated, documented `sellable = available`. |
+| PROJ-005 | WMS-readiness variance check was a tautology (`available` is derived); gated to `1=0` until a real cycle-count source exists (ties to INV-04). |
+| PROJ-004 | Replay of sales-only ledger yields negative on_hand. Policy: store true on_hand (audit truth), clamp available/sellable at 0, surface negative as phantom signal. Shop 1 backfilled (17 rows, 14 phantom) via the existing projector aggregation. |
+
+**Reclassified / not-a-bug**
+
+| ID | Outcome |
+|---|---|
+| INV-002 | WONT-FIX (code). Test products are `physical/active`, indistinguishable from real; hiding merchant products violates the mirror-Shopify principle. Count-inflation already fixed by INV-003/004. |
+| PROJ-001 | NOT-A-BUG. `quantity_delta` pre-signed; projector summing as-is is correct. |
+| PROJ-003 | NOT-A-CODE-GAP. Full-shop rebuild exists (`shopify.service` L133–150); never ran for shop 1 (no sync). |
+
+**Still open**
+
+| ID | Description |
+|---|---|
+| INV-016 | Intelligence tab still says "17 blocked / 3 stocked out" — hasn't adopted the phantom split. Cross-tab story mismatch with Catalog. |
+| INV-012 | `inventory_truth` durable trigger: one-shot backfill done; first-sync wiring for new shops still to verify. |
+| PROJ-004b | Surface phantom signal beyond Catalog (Intelligence / WMS Readiness). |
 
 ---
 

@@ -4,7 +4,7 @@
 // ==========
 // Unified, single-screen working surface for the outbound order lifecycle.
 //
-// LAYOUT (scroll-free, two columns)
+// LAYOUT (page-scroll, two columns)
 // ---------------------------------
 // The page fits in one viewport with no page-level scroll. It is split into a
 // header (full width) and a two-column working body:
@@ -17,7 +17,7 @@
 //   │ release-success banner (transient)    │ │ isometric warehouse   │
 //   │ ┌── release pool ──┐ ┌── next wave ──┐│ │ canvas (SPACE lens)   │
 //   │ │ pool table       │ │ wave summary  ││ │ fills full height —   │
-//   │ │ (internal scroll)│ │ + release btn ││ │ removes top dead-space│
+//   │ │ (page scroll)    │ │ + release btn ││ │ removes top dead-space│
 //   │ └──────────────────┘ └───────────────┘│ │                       │
 //   └───────────────────────────────────────┘ └───────────────────────┘
 //
@@ -372,11 +372,9 @@ const blockedBannerSummary = useMemo(
     <Box
       sx={{
         bgcolor: 'var(--bg)',
-        height: '100%',
-        minHeight: 0,
+        minHeight: '100%',
         display: 'flex',
         flexDirection: 'column',
-        overflow: 'hidden',
       }}
     >
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
@@ -384,11 +382,8 @@ const blockedBannerSummary = useMemo(
       <Box
         sx={{
           p: '20px 28px',
-          flex: 1,
-          minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden',
         }}
       >
         {/* ---------- Header: title + live summary + pool-filter chip ---------- */}
@@ -479,11 +474,8 @@ const blockedBannerSummary = useMemo(
           {!isLoading && (
             <Box
               sx={{
-                flex: 1,
-                minHeight: 0,
-                overflow: 'hidden',
                 display: 'grid',
-                gridTemplateRows: 'max-content minmax(0, 1fr)',
+                gridTemplateRows: 'max-content auto',
                 gap: 2,
               }}
             >
@@ -793,8 +785,6 @@ const blockedBannerSummary = useMemo(
               {/* ===================== BOTTOM ROW — release pool + next wave ===================== */}
               <Box
                 sx={{
-                  minHeight: 0,
-                  overflow: 'hidden',
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 1.5,
@@ -855,27 +845,23 @@ const blockedBannerSummary = useMemo(
             {/* ---- Release pool table + next-wave rail ---- */}
               <Box
                 sx={{
-                  flex: 1,
-                  minHeight: 0,
                   display: 'grid',
                   gridTemplateColumns: '1fr',
                   gap: 1.5,
                   alignItems: 'stretch',
-                  overflow: 'hidden',
                 }}
               >
-              {/* Pool table — header is fixed; rows scroll internally so the page itself never grows beyond one screen. */}
+
+                {/* Pool table — header and rows participate in page-level scroll. */}
                 <Box
-                  sx={{
-                    flex: 1,
-                    minHeight: 0,
-                    bgcolor: 'var(--surface)',
-                    border: '1px solid var(--rule)',
-                    borderRadius: '14px',
-                    overflow: 'hidden',
-                    display: 'flex',
-                    flexDirection: 'column',
-                  }}
+                 sx={{
+                  bgcolor: 'var(--surface)',
+                  border: '1px solid var(--rule)',
+                  borderRadius: '14px',
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
                 >
                   <Box
                     sx={{
@@ -913,8 +899,8 @@ const blockedBannerSummary = useMemo(
                     ))}
                   </Box>
 
-                  {/* Scroll region — capped height keeps the page scroll-free after the wave card moved above the table. */}
-                  <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                  {/* Release pool rows — page owns vertical scroll. */}
+                  <Box>
                     {poolOrders.length === 0 && (
                       <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
                         <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>

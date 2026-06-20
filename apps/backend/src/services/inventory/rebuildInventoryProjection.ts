@@ -110,12 +110,14 @@ export async function rebuildInventoryProjectionForVariants(
        * inbound movements  → +quantity
        * outbound movements → -quantity
        *
-       * IMPORTANT:
-       * quantity_delta from Shopify ingestion is always positive.
-       * Outbound movements MUST therefore be negated here.
-       *
-       * Failure to negate outbound movements causes inventory_truth
-       * to drift negative across the entire catalog.
+       * IMPORTANT — quantity_delta is PRE-SIGNED at the ledger layer.
+       * The inventory_movements sign-constraint enforces:
+       *   inbound_purchase / refund_return / manual_adjustment / reservation_hold  > 0
+       *   sale / damage / shrinkage / reservation_release                          < 0
+       *   opening_balance / reconciliation_correction / location_transfer          <> 0
+       * Therefore movements are summed AS-IS. Do NOT negate outbound here —
+       * negating would flip sales positive and inflate on_hand.
+       * Verified against live ledger 2026-06-20 (sale rows sum to a negative).
        */
       .sum({
         on_hand: trx.raw(`
@@ -184,14 +186,20 @@ export async function rebuildInventoryProjectionForVariants(
 
       const onHand = Number(r.on_hand ?? 0);
       const reserved = Number(r.reserved ?? 0);
-      const available = onHand - reserved;
-
+      // PROJ-004: on_hand stores TRUE value (may be negative = sold without
+      // recorded receiving = "phantom stock" signal). available/sellable are
+      // clamped at 0 — you cannot sell negative stock. The negative survives
+      // only on on_hand_quantity, which downstream surfaces flag, not sum blindly.
+      const available = Math.max(0, onHand - reserved);
       return {
         shop_id: r.shop_id,
         lasyncro_variant_id: r.lasyncro_variant_id,
         location_code: r.location_code,
         on_hand_quantity: onHand,
         reserved_quantity: reserved,
+        // PROJ-002: committed_quantity is deprecated (no commit movement type exists;
+        // commitment is expressed via reservation_hold/release → reserved_quantity).
+        // Kept at 0 for schema stability. sellable == available by definition.
         committed_quantity: 0,
         available_quantity: available,
         sellable_quantity: available,

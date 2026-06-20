@@ -31,8 +31,11 @@ export interface ProductsOperatorFacts {
   noSkuCount: number | null;
   // Active variants with no inventory_truth row
   noInventoryCount: number | null;
-  // Active variants with inventory row but sellable_quantity = 0
+
+  // Active variants with inventory row but on_hand = 0 (genuinely empty)
   zeroStockCount: number | null;
+  // Active variants with inventory row but on_hand < 0 (phantom: sold without recorded receiving)
+  phantomCount: number | null;
 
   // ── Dead weight (period-scoped) ────────────────────────────
   // Active variants with zero order_revenue_units in period
@@ -87,6 +90,7 @@ export async function getProductsOperatorFacts(
       noSkuCount: null,
       noInventoryCount: null,
       zeroStockCount: null,
+      phantomCount: null,
       noSalesCount: null,
       addedThisPeriodCount: null,
       topReturned: [],
@@ -102,10 +106,13 @@ export async function getProductsOperatorFacts(
   const inventoryRows = await qb('inventory_truth')
     .where('shop_id', shopId)
     .whereIn('lasyncro_variant_id', allVariantIds)
-    .select(['lasyncro_variant_id', 'sellable_quantity']);
+    .select(['lasyncro_variant_id', 'sellable_quantity', 'on_hand_quantity']);
 
-  const inventoryMap = new Map(
-    inventoryRows.map((r: any) => [r.lasyncro_variant_id, Number(r.sellable_quantity)])
+    const inventoryMap = new Map(
+    inventoryRows.map((r: any) => [r.lasyncro_variant_id, {
+      sellable: Number(r.sellable_quantity),
+      onHand: Number(r.on_hand_quantity),
+    }])
   );
 
   // ─────────────────────────────────────────
@@ -115,21 +122,27 @@ export async function getProductsOperatorFacts(
   let noSkuCount = 0;
   let noInventoryCount = 0;
   let zeroStockCount = 0;
-
+  let phantomCount = 0;
   for (const v of activeVariants) {
     // Non-physical products don't require SKUs — exclude from gap signal
     if (v.product_type !== 'physical') continue;
-
     if (v.sku === null) {
       noSkuCount++;
       continue;
     }
+    // INVENTORY BLOCK: no inventory_truth row exists — absence of data.
     if (!inventoryMap.has(v.lasyncro_variant_id)) {
       noInventoryCount++;
       continue;
     }
-    const sellable = inventoryMap.get(v.lasyncro_variant_id)!;
-    if (sellable <= 0) {
+    // A row exists. Classify by TRUE on_hand (not clamped sellable):
+    //  - on_hand < 0  → PHANTOM: recorded contradiction (sold without recorded receiving)
+    //  - on_hand === 0 → ZERO STOCK: genuinely empty
+    //  - on_hand > 0  → SELLABLE
+    const { onHand } = inventoryMap.get(v.lasyncro_variant_id)!;
+    if (onHand < 0) {
+      phantomCount++;
+    } else if (onHand === 0) {
       zeroStockCount++;
     } else {
       sellableCount++;
@@ -245,5 +258,6 @@ export async function getProductsOperatorFacts(
     addedThisPeriodCount,
     topReturned,
     noSkuProducts,
+    phantomCount
   };
 }

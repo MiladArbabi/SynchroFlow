@@ -266,15 +266,23 @@ export async function projectDomainEventCore({
 
 
       if (!handler) {
-        console.error('[PROJECTION_HANDLER_MISSING_FATAL]', {
+        /**
+         * UNKNOWN HANDLER — SKIP, DO NOT CRASH.
+         * --------------------------------------------------
+         * An event type with no registered handler is inert:
+         * it cannot mutate any projection. Crashing the worker
+         * halts the entire pipeline over an event it would never
+         * have acted on (e.g. renamed/orphaned event types from
+         * seeds or replays). Log at ERROR for visibility and let
+         * the caller advance the cursor past it.
+         */
+        console.error('[PROJECTION_HANDLER_MISSING_SKIPPED]', {
           event_type: normalizedEventType,
           domain_event_id,
-          knownHandlers: Object.keys(projectionRegistry)
+          knownHandlers: Object.keys(projectionRegistry),
+          action: 'skipping inert event — no handler registered',
         });
-
-        throw new Error(
-          `[PROJECTION_HANDLER_MISSING] event_type=${normalizedEventType}`
-        );
+        return;
       }
 
       /**

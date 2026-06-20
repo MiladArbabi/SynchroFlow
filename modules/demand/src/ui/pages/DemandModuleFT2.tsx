@@ -1,19 +1,16 @@
 // modules/demand/src/ui/pages/DemandModuleFT2.tsx
 import { useState } from 'react';
 import {
-  Box, Typography, Chip, Button, Collapse,
+  Box, Typography, Collapse,
   useTheme,
 } from '@mui/material';
-import { useColorScheme } from '@mui/material/styles';
 import {
   TrendingDown, TrendingUp, Package,
-  CheckCircle, ChevronDown, ShoppingCart, Minus,
+  CheckCircle, ChevronDown, Minus,
 } from 'lucide-react';
-import { 
-  BinOccupancy, 
-  formatCurrencyCompact, 
-  ModuleLoadingSkeleton, 
-  WarehouseLocation 
+import {
+  formatCurrencyCompact,
+  ModuleLoadingSkeleton,
 } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
@@ -59,26 +56,26 @@ export type DemandModuleFT2Props = {
   isLoading: boolean;
   isError: boolean;
   currency?: CurrencyContext;
-  gridLocations?: WarehouseLocation[];
-  gridOccupancy?: Record<string, BinOccupancy>;
+  /**
+   * Demand owns reorder risk and replenishment decisions.
+   * Warehouse occupancy belongs to Floor Planning/WMS.
+   */
 };
 
 // ─────────────────────────────────────────────
-// THEME HOOK
+// STYLE TOKENS
 // ─────────────────────────────────────────────
-function useDemandTheme() {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  return {
-    isDark,
-    cardBg:      isDark ? '#1C2740' : '#FFFFFF',
-    border:      isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.10)',
-    rowHover:    isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-    textPrimary: isDark ? '#F0EEE8' : '#0F0E0D',
-    textSecond:  isDark ? '#8B8F9A' : '#6B7280',
-    tileBg:      isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)',
-  };
-}
+// Demand inherits FT2 app tokens. Do not reintroduce local hex palettes here.
+const demandPalette = {
+  cardBg: 'var(--surface)',
+  border: 'var(--rule)',
+  rowHover: 'var(--bg-2)',
+  textPrimary: 'var(--ink)',
+  textSecond: 'var(--ink-3)',
+  tileBg: 'var(--bg-2)',
+} as const;
+
+type DemandPalette = typeof demandPalette;
 
 // ─────────────────────────────────────────────
 // VELOCITY TREND BADGE
@@ -104,7 +101,7 @@ function TrendBadge({ trend, prev, current }: { trend: 'up' | 'down' | 'stable';
 }
 
 // ─────────────────────────────────────────────
-// ORDER CTA — navigates to suppliers portal
+// CREATE PO HANDOFF
 // ─────────────────────────────────────────────
 function OrderCTA({ variant }: { variant: DemandVelocity }) {
   const params = new URLSearchParams();
@@ -117,15 +114,28 @@ function OrderCTA({ variant }: { variant: DemandVelocity }) {
   const href = `/suppliers-portal?${params.toString()}`;
 
   return (
-    <Button
-      size="small"
-      variant="contained"
-      startIcon={<ShoppingCart size={12} />}
+    <Box
+      component="a"
       href={href}
-      sx={{ fontSize: 10, py: 0.25, px: 1, minWidth: 0, borderRadius: '6px', whiteSpace: 'nowrap', bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+      sx={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        px: '10px',
+        py: '5px',
+        borderRadius: '999px',
+        bgcolor: 'var(--accent)',
+        color: 'var(--surface)',
+        fontSize: 11,
+        fontWeight: 600,
+        lineHeight: 1,
+        textDecoration: 'none',
+        whiteSpace: 'nowrap',
+        '&:hover': { opacity: 0.88 },
+      }}
     >
-      {variant.suggested_reorder_qty ? `Order ${variant.suggested_reorder_qty}` : 'Order'}
-    </Button>
+      Create PO →
+    </Box>
   );
 }
 
@@ -135,7 +145,7 @@ function OrderCTA({ variant }: { variant: DemandVelocity }) {
 function VariantRow({ variant, currency, pal }: {
   variant: DemandVelocity;
   currency?: CurrencyContext;
-  pal: ReturnType<typeof useDemandTheme>;
+  pal: DemandPalette;
 }) {
   const theme = useTheme();
   const isCritical = variant.reorder_urgency === 'critical';
@@ -156,7 +166,7 @@ function VariantRow({ variant, currency, pal }: {
       display: 'grid',
       gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
       px: 2, py: 1.25,
-      borderBottom: `0.5px solid ${pal.border}`,
+      borderBottom: `1px solid ${pal.border}`,
       alignItems: 'center',
       gap: 1,
       borderLeft: `3px solid ${isCritical ? theme.palette.error.main : isWarning ? theme.palette.warning.main : 'transparent'}`,
@@ -167,7 +177,7 @@ function VariantRow({ variant, currency, pal }: {
         <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, lineHeight: 1.3 }}>
           {variant.title ?? 'Unknown'}
         </Typography>
-        <Typography sx={{ fontSize: 10, color: pal.textSecond, fontFamily: 'monospace' }}>
+        <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
           {variant.sku ?? '—'}
         </Typography>
       </Box>
@@ -193,13 +203,32 @@ function VariantRow({ variant, currency, pal }: {
         )}
       </Typography>
 
-      {/* Status chip */}
-      <Box>
-        {isCritical && <Chip label="Critical" size="small" color="error" sx={{ fontSize: 10, height: 20, fontWeight: 700 }} />}
-        {isWarning && <Chip label="Reorder Soon" size="small" color="warning" sx={{ fontSize: 10, height: 20 }} />}
-        {variant.reorder_urgency === 'healthy' && <Chip label="Healthy" size="small" color="success" sx={{ fontSize: 10, height: 20 }} />}
-        {variant.reorder_urgency === 'overstocked' && <Chip label="Overstocked" size="small" color="info" sx={{ fontSize: 10, height: 20 }} />}
-        {variant.reorder_urgency === 'no_velocity' && <Chip label="No Sales" size="small" sx={{ fontSize: 10, height: 20 }} />}
+            {/* Plain status badge keeps dense demand rows aligned with FT2 row styling. */}
+      <Box
+        sx={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '6px',
+          width: 'fit-content',
+          px: '7px',
+          py: '4px',
+          borderRadius: '999px',
+          bgcolor: 'var(--bg-2)',
+          border: '1px solid var(--rule)',
+        }}
+      >
+        <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: accentColor }} />
+        <Typography sx={{ fontSize: 10, fontWeight: 600, color: accentColor, lineHeight: 1 }}>
+          {isCritical
+            ? 'Critical'
+            : isWarning
+            ? 'Reorder soon'
+            : variant.reorder_urgency === 'overstocked'
+            ? 'Excess stock'
+            : variant.reorder_urgency === 'no_velocity'
+            ? 'No recent sales'
+            : 'Healthy'}
+        </Typography>
       </Box>
 
       {/* CTA */}
@@ -215,16 +244,14 @@ function VariantRow({ variant, currency, pal }: {
 // ─────────────────────────────────────────────
 // MAIN EXPORT
 // ─────────────────────────────────────────────
-function DemandModuleFT2Inner({ 
-  data, 
-  isLoading, 
-  isError, 
-  currency, 
-  gridLocations, 
-  gridOccupancy 
+function DemandModuleFT2Inner({
+  data,
+  isLoading,
+  isError,
+  currency,
 }: DemandModuleFT2Props) {
   const theme = useTheme();
-  const pal = useDemandTheme();
+  const pal = demandPalette;
   const [showRest, setShowRest] = useState(false);
 
   const summary = data?.summary;
@@ -234,7 +261,8 @@ function DemandModuleFT2Inner({
 
   const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
 
-  // Command header framing
+  // Reorder-risk header framing.
+  // Keep copy operator-friendly: Demand is about what to buy, when, and why.
   const criticalCount = summary?.critical_reorder_count ?? 0;
   const warningCount = summary?.warning_reorder_count ?? 0;
   const headerStatus = criticalCount > 0 ? 'critical' : warningCount > 0 ? 'warning' : 'healthy';
@@ -242,44 +270,48 @@ function DemandModuleFT2Inner({
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
 
-      {/* ── ZONE 1: COMMAND HEADER ── */}
+      {/* ── SUMMARY HEADER ── */}
       <Box sx={{
         background: pal.cardBg,
-        border: `0.5px solid ${pal.border}`,
+        border: `1px solid ${pal.border}`,
         borderRadius: '12px',
         overflow: 'hidden',
         mb: 2,
       }}>
         <Box sx={{
           p: '1rem 1.25rem',
-          borderBottom: `0.5px solid ${pal.border}`,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 2,
+          borderBottom: `1px solid ${pal.border}`,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 2,
         }}>
           <Box>
             <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-              Demand Intelligence
+              Demand
             </Typography>
             {isLoading ? (
-              <Typography sx={{ fontSize: 16, color: pal.textPrimary }}>Computing...</Typography>
+              <Typography sx={{ fontSize: 16, color: pal.textPrimary }}>Checking reorder risk...</Typography>
             ) : summary ? (
               <Typography sx={{ fontSize: 16, fontWeight: 500, color: headerStatus === 'critical' ? theme.palette.error.main : headerStatus === 'warning' ? theme.palette.warning.main : theme.palette.success.main }}>
                 {criticalCount > 0
-                  ? `${criticalCount} product${criticalCount > 1 ? 's' : ''} at critical stockout risk`
+                  ? `${criticalCount} product${criticalCount > 1 ? 's' : ''} at stockout risk`
                   : warningCount > 0
-                  ? `${warningCount} product${warningCount > 1 ? 's' : ''} need reordering soon`
-                  : 'All products have healthy stock levels'}
+                  ? `${warningCount} product${warningCount > 1 ? 's' : ''} should be reordered soon`
+                  : 'No products need reordering right now'}
               </Typography>
             ) : null}
           </Box>
 
-          {/* Metric tiles */}
+          {/* Current-contract metrics only. Incoming coverage lands in the backend enrichment pass. */}
           {summary && (
             <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
               {[
                 { label: 'Critical', value: summary.critical_reorder_count, color: theme.palette.error.main },
-                { label: 'Reorder Soon', value: summary.warning_reorder_count, color: theme.palette.warning.main },
-                { label: 'Avg Days Stock', value: summary.avg_days_of_stock != null ? `${summary.avg_days_of_stock}d` : '—', color: pal.textPrimary },
-                { label: 'Inventory Value', value: fmt(summary.total_inventory_value), color: pal.textPrimary },
+                { label: 'Reorder soon', value: summary.warning_reorder_count, color: theme.palette.warning.main },
+                { label: 'Avg cover', value: summary.avg_days_of_stock != null ? `${summary.avg_days_of_stock}d` : '—', color: pal.textPrimary },
+                { label: 'Stock value', value: fmt(summary.total_inventory_value), color: pal.textPrimary },
               ].map(({ label, value, color }) => (
                 <Box key={label} sx={{ background: pal.tileBg, borderRadius: '6px', px: 1.5, py: 0.75, minWidth: 80 }}>
                   <Typography sx={{ fontSize: 16, fontWeight: 600, color, lineHeight: 1.2 }}>{value}</Typography>
@@ -297,123 +329,82 @@ function DemandModuleFT2Inner({
         <Typography color="error" sx={{ p: 2 }}>Failed to load demand data.</Typography>
       )}
 
-       {/* Warehouse occupancy summary — links to full isometric map in Floor Planning */}
-          {gridLocations && gridLocations.length > 0 && (() => {
-            const bins        = gridLocations.filter(l => l.type === 'bin');
-            const stockedBins = gridOccupancy ? Object.values(gridOccupancy).filter(o => o.on_hand_quantity > 0).length : 0;
-            const totalBins   = bins.length;
-            const pct         = totalBins > 0 ? Math.round((stockedBins / totalBins) * 100) : 0;
-            const pickBins    = bins.filter(l => l.zone_type === 'pick');
-            const pickStocked = gridOccupancy ? pickBins.filter(l => (gridOccupancy[l.location_code]?.on_hand_quantity ?? 0) > 0).length : 0;
-            const packBins    = bins.filter(l => l.zone_type === 'pack');
-            const packStocked = gridOccupancy ? packBins.filter(l => (gridOccupancy[l.location_code]?.on_hand_quantity ?? 0) > 0).length : 0;
-            return (
-              <Box sx={{ mb: 3, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    Warehouse Occupancy
-                  </Typography>
-                  <Box
-                    onClick={() => window.location.href = '/floor-planning?tab=map'}
-                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
-                    View in Warehouse →
-                  </Box>
-                </Box>
-                {/* Occupancy bar */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-                  <Box sx={{ flex: 1, height: 6, borderRadius: 3, bgcolor: 'var(--bg-3)', overflow: 'hidden' }}>
-                    <Box sx={{ height: '100%', width: `${pct}%`, bgcolor: pct > 80 ? 'rgba(239,68,68,0.8)' : pct > 40 ? 'rgba(245,158,11,0.8)' : 'rgba(34,197,94,0.8)', borderRadius: 3, transition: 'width 0.3s' }} />
-                  </Box>
-                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', minWidth: 32 }}>{pct}%</Typography>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>{stockedBins} of {totalBins} bins stocked</Typography>
-                </Box>
-                {/* Zone breakdown */}
-                <Box sx={{ display: 'flex', gap: 3 }}>
-                  {pickBins.length > 0 && (
-                    <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                      Pick zones: <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{pickStocked}/{pickBins.length}</Typography> stocked
-                    </Typography>
-                  )}
-                  {packBins.length > 0 && (
-                    <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
-                      Pack zones: <Typography component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{packStocked}/{packBins.length}</Typography> stocked
-                    </Typography>
-                  )}
-                </Box>
-              </Box>
-            );
-          })()}
+      {/* Warehouse occupancy intentionally excluded: Floor Planning/WMS own storage utilization. */}
 
-      {/* ── ZONE 2: PRIORITY ACTION LIST ── */}
-      {!isLoading && allVariants.length > 0 && (
-        <Box sx={{
-          background: pal.cardBg,
-          border: `0.5px solid ${pal.border}`,
-          borderRadius: '12px',
-          overflow: 'hidden',
-          mb: 2,
-        }}>
-          {/* Table header */}
+              {/* ── REORDER LIST ── */}
+        {!isLoading && allVariants.length > 0 && (
           <Box sx={{
-            display: 'grid',
-            gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
-            px: 2, py: 1,
-            borderBottom: `0.5px solid ${pal.border}`,
-            gap: 1,
+            background: pal.cardBg,
+            border: `1px solid ${pal.border}`,
+            borderRadius: '12px',
+            overflow: 'hidden',
+            mb: 2,
           }}>
-            {['Product', 'In Stock', 'Sold 30d', 'Days Left', 'Status', 'Action'].map(h => (
-              <Typography key={h} sx={{ fontSize: 10, fontWeight: 600, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                {h}
-              </Typography>
-            ))}
-          </Box>
-
-          {/* Action items (critical + warning) */}
-          {actionVariants.length === 0 ? (
-            <Box sx={{ py: 4, textAlign: 'center' }}>
-              <CheckCircle size={24} color={theme.palette.success.main} />
-              <Typography sx={{ fontSize: 13, color: pal.textSecond, mt: 1 }}>
-                No reorder signals — all products are healthy.
-              </Typography>
+            {/* Table header */}
+            <Box sx={{
+              display: 'grid',
+              gridTemplateColumns: '2fr 80px 80px 80px 100px 120px',
+              px: 2,
+              py: 1,
+              borderBottom: `1px solid ${pal.border}`,
+              gap: 1,
+            }}>
+              {['Product', 'In stock', 'Sold 30d', 'Cover', 'Status', 'Action'].map(h => (
+                <Typography key={h} sx={{ fontSize: 10, fontWeight: 600, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {h}
+                </Typography>
+              ))}
             </Box>
-          ) : (
-            actionVariants.map(v => (
-              <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
-            ))
-          )}
 
-          {/* Collapsed: healthy + overstocked + no_velocity */}
-          {restVariants.length > 0 && (
-            <>
-              <Box
-                onClick={() => setShowRest(v => !v)}
-                sx={{
-                  display: 'flex', alignItems: 'center', gap: 1,
-                  px: 2, py: 1, cursor: 'pointer',
-                  borderTop: `0.5px solid ${pal.border}`,
-                  '&:hover': { background: pal.rowHover },
-                }}
-              >
-                <ChevronDown size={14} color={pal.textSecond} style={{ transform: showRest ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
-                <Typography sx={{ fontSize: 12, color: pal.textSecond }}>
-                  {restVariants.length} healthy / overstocked / no-sales product{restVariants.length > 1 ? 's' : ''}
+            {/* Action items: critical + warning only. Full decision grouping comes next pass. */}
+            {actionVariants.length === 0 ? (
+              <Box sx={{ py: 4, textAlign: 'center' }}>
+                <CheckCircle size={24} color={theme.palette.success.main} />
+                <Typography sx={{ fontSize: 13, color: pal.textSecond, mt: 1 }}>
+                  No products need reordering right now.
                 </Typography>
               </Box>
-              <Collapse in={showRest}>
-                {restVariants.map(v => (
-                  <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
-                ))}
-              </Collapse>
-            </>
-          )}
-        </Box>
-      )}
+            ) : (
+              actionVariants.map(v => (
+                <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
+              ))
+            )}
+
+            {/* Non-action rows stay collapsed until Demand gets full FT2 decision groups. */}
+            {restVariants.length > 0 && (
+              <>
+                <Box
+                  onClick={() => setShowRest(v => !v)}
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1,
+                    px: 2,
+                    py: 1,
+                    cursor: 'pointer',
+                    borderTop: `1px solid ${pal.border}`,
+                    '&:hover': { background: pal.rowHover },
+                  }}
+                >
+                  <ChevronDown size={14} color={pal.textSecond} style={{ transform: showRest ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+                  <Typography sx={{ fontSize: 12, color: pal.textSecond }}>
+                    {restVariants.length} healthy / excess / no-sales product{restVariants.length > 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+                <Collapse in={showRest}>
+                  {restVariants.map(v => (
+                    <VariantRow key={v.lasyncro_variant_id} variant={v} currency={currency} pal={pal} />
+                  ))}
+                </Collapse>
+              </>
+            )}
+          </Box>
+        )}
 
       {!isLoading && !isError && allVariants.length === 0 && (
         <Box sx={{ textAlign: 'center', py: 8, color: pal.textSecond }}>
           <Package size={36} style={{ opacity: 0.3 }} />
-          <Typography sx={{ mt: 2, fontSize: 14 }}>No inventory data yet.</Typography>
+          <Typography sx={{ mt: 2, fontSize: 14 }}>No demand data yet.</Typography>
         </Box>
       )}
     </Box>

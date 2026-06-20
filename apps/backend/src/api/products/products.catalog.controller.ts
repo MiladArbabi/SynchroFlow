@@ -21,8 +21,9 @@ export async function getProductsCatalogHandler(
       .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .leftJoin('inventory_truth as it', 'it.lasyncro_variant_id', 'v.lasyncro_variant_id')
       .where('v.shop_id', shopId)
-      // INV-05: exclude gift cards — not physical inventory, distorts sellability counts
-      .whereNot('p.product_type', 'gift_card')
+      // INV-006: canonical inventory universe = physical only.
+      // digital/service/gift_card carry no warehouse stock and distort sellability + cost counts.
+      .where('p.product_type', 'physical')
       .select([
         'v.lasyncro_variant_id',
         'v.sku',
@@ -32,6 +33,8 @@ export async function getProductsCatalogHandler(
         'p.title as product_title',
         'p.lasyncro_product_id',
         'p.product_type',
+        db.raw('COALESCE(it.on_hand_quantity, 0) as on_hand_quantity'),
+        db.raw('COALESCE(it.available_quantity, 0) as available_quantity'),
         db.raw('COALESCE(it.sellable_quantity, 0) as sellable_quantity'),
       ])
       .orderBy(['p.title', 'v.title']);

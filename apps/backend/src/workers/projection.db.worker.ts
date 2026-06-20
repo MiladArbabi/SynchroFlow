@@ -213,19 +213,56 @@ for (const event of nextEvents) {
 
         } else {
           /**
-           * MULTI-ID GAP — genuine missing events.
-           * Halting to prevent silent permanent skip.
+           * MULTI-ID GAP — evidence-based resolution.
+           * --------------------------------------------------
+           * A gap > 1 is only FATAL if the missing ids actually
+           * exist in domain_events (genuine ordering violation).
+           * If the missing ids are provably absent (rebuild replay,
+           * rolled-back sequence values), the gap is a phantom and
+           * is safe to skip — halting would stall forever.
+           */
+          const presentMissing = await trx('domain_events')
+            .whereBetween('id', [expectedId, eventId - 1])
+            .count<{ count: string }>('id as count')
+            .first();
+          const presentMissingCount = Number(presentMissing?.count ?? 0);
+
+          if (presentMissingCount === 0) {
+            console.warn('[DB_PROJECTION_GAP_PHANTOM_SKIPPED]', {
+              expectedId,
+              nextEventId: eventId,
+              missingIds: `${expectedId}..${eventId - 1}`,
+              missingCount: gapSize,
+              reason: 'missing ids provably absent in domain_events (rebuild/sequence gap)',
+              action: 'advancing cursor past phantom gap',
+            });
+
+            await trx('projection_cursors')
+              .where({ projection_name: 'orders_projection' })
+              .update({
+                last_processed_event_id: eventId - 1, // bridge gap; next poll picks up eventId
+                updated_at: trx.fn.now(),
+              });
+
+            transientGapRetries = 0;
+            return;
+          }
+
+          /**
+           * GENUINE GAP — missing ids exist but were not processed.
+           * Halt to prevent silent permanent skip of real data.
            */
           console.error('[DB_PROJECTION_GAP_FATAL]', {
             eventId,
             expectedId,
             missingIds: `${expectedId}..${eventId - 1}`,
             missingCount: gapSize,
+            presentMissingCount,
             action: 'HALTED — operator intervention required',
             recovery: `UPDATE projection_cursors SET last_processed_event_id = ${currentLastProcessed} WHERE projection_name = 'orders_projection'`,
           });
           throw new Error(
-            `[PROJECTION_GAP_FATAL] missing events ${expectedId}..${eventId - 1} (count=${gapSize})`
+            `[PROJECTION_GAP_FATAL] missing events ${expectedId}..${eventId - 1} (count=${gapSize}, present=${presentMissingCount})`
           );
         }
 

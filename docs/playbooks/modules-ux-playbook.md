@@ -1,7 +1,8 @@
 # LaSyncro — Modules UX Playbook
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces.
-> **Last updated:** 2026-05-28
+> **Last updated:** 2026-06-20
+> **2026-06-20 — Inventory/Catalog adopted the canonical triage + pulse layout** (decision card + `PulseRow` rail, matching Orders/Inbound). Catalog is now the reference for a **full-width sortable column grid**: a shared `gridTemplateColumns` constant drives both header and rows (Product · Variants · On-hand · Available · Status · Action), every header sortable with the `↑/↓` affordance, and a severity-ranked Status sort (phantom > zero-stock > no-SKU > sellable). Avoid the legacy fixed stat-card grid for new module surfaces.
 > **Sprint:** CTA Consistency Audit & Standardisation
 
 ---
@@ -38,6 +39,63 @@ Decision card then takes the full available row width.
 Card shell uses bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px'.
 Pulse card padding is p: '18px 20px'.
 Orders Overview is the source of truth for this layout.
+
+### FT2 Page Scroll Rule
+
+Main module pages should prefer page-level vertical scroll over nested card/list scroll.
+
+Rules:
+
+- Do not give primary lists their own `overflowY: 'auto'` unless explicitly required.
+- Avoid parent `height: '100%'` + `overflow: 'hidden'` clamps when the list should extend the page.
+- Drawer, modal, and side-panel bodies may keep internal scroll.
+- Table/list cards may keep `overflow: 'hidden'` for rounded corners, but the row container should not own vertical scroll.
+
+### Orders Outbound Pattern
+
+Outbound is the post-pack control page for shipped orders.
+
+Purpose:
+
+- Show what shipped.
+- Show what is missing tracking or carrier setup.
+- Help the merchant fix shipping issues before customers ask.
+- Avoid technical audit language.
+
+Plain-language naming rules:
+
+- Use `Shipped orders`, not `Shipment proof ledger`.
+- Use `Needs attention`, not `Outbound exceptions`.
+- Use `Shipping health`, not `Shipment coverage`.
+- Use `Proof`, not `Shipment proof`.
+- Use `Tracking`, not `Customer tracking` when space is tight.
+- Use `Set up →` for missing carrier setup, not plain `Missing` when the value is clickable.
+
+Layout rules:
+
+- Use the same FT2 decision + pulse pattern:
+  - Decision card: `flex: '1 0 300px'`
+  - Pulse card: `flex: { xs: '1 0 300px', lg: '0 0 300px' }`
+- Pulse cards must fill the available row when they wrap below the decision card.
+- Do not leave dead empty space to the right of a wrapped pulse card.
+- Full-width tables/lists must not use the decision-card flex behavior.
+
+Shipped orders filters:
+
+- Filters may sit directly under the `Shipped orders` section title.
+- Do not add explanatory subcopy unless the filter behavior is unclear.
+- Keep filter labels short:
+  - `Needs action`
+  - `This week`
+  - `This month`
+  - `All time`
+
+Responsive table rules:
+
+- Use shorter column labels on constrained widths.
+- Prefer `Shipped` over `Fulfilled` in user-facing table headers.
+- Prefer `Tracking` over `Customer tracking` in table headers.
+- Use responsive `gridTemplateColumns` for shipped-order rows and headers so columns do not overlap.
 
 ### FT2 Decision Group Reveal Pattern
 

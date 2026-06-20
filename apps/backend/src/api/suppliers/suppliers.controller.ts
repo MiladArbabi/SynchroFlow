@@ -122,7 +122,9 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
           's.avg_delivery_days as supplier_avg_delivery_days',
           trx.raw('COUNT(li.id) as line_items_count'),
           trx.raw('COALESCE(SUM(li.quantity_ordered), 0) as total_units_ordered'),
-          trx.raw('COALESCE(SUM(li.quantity_received), 0) as total_units_received')
+          trx.raw('COALESCE(SUM(li.quantity_received), 0) as total_units_received'),
+          trx.raw('COALESCE(SUM(li.unit_cost_cents * li.quantity_ordered), 0) as total_cost_cents'),
+          trx.raw('COUNT(*) FILTER (WHERE li.lasyncro_variant_id IS NULL) as unlinked_lines_count')
         );
     });
 

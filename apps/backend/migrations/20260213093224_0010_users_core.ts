@@ -169,6 +169,36 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['user_id', 'key']);
   });
 
+  await knex.schema.createTable('user_milestones', (table) => {
+    table.increments('id').primary();
+    table.integer('user_id')
+      .unsigned()
+      .notNullable()
+      .references('id')
+      .inTable('users')
+      .onDelete('CASCADE');
+    table.string('milestone').notNullable();
+    table.timestamp('achieved_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
+    table.unique(['user_id', 'milestone']); // required for .onConflict(['user_id','milestone'])
+  });
+  await knex.raw(`
+    ALTER TABLE user_milestones ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE user_milestones FORCE ROW LEVEL SECURITY;
+  `);
+  await knex.raw(`
+    DROP POLICY IF EXISTS user_milestones_tenant_isolation_policy ON user_milestones;
+  `);
+  await knex.raw(`
+    CREATE POLICY user_milestones_tenant_isolation_policy
+    ON user_milestones
+    USING (
+      user_id IN (
+        SELECT id FROM users
+        WHERE shop_id = current_setting('app.current_tenant')::int
+      )
+    );
+  `);
+
   // --- RLS: Enforce tenant isolation (via users) ---
   await knex.raw(`
     ALTER TABLE user_states ENABLE ROW LEVEL SECURITY;
@@ -295,6 +325,7 @@ export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('operator_task_log');
   await knex.schema.dropTableIfExists('operator_availability');
   await knex.schema.dropTableIfExists('user_states');
+  await knex.schema.dropTableIfExists('user_milestones');
   await knex.schema.dropTableIfExists('users');
   await knex.schema.dropTableIfExists('operator_audit_log');
 }

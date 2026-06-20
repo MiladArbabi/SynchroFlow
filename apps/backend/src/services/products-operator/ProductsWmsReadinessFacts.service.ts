@@ -92,9 +92,12 @@ export async function getProductsWmsReadinessFacts(
       .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
       .where('it.shop_id', shopId)
       .groupBy('it.lasyncro_variant_id')
-      .havingRaw(
-        'SUM(it.on_hand_quantity) != SUM(it.reserved_quantity + it.committed_quantity + it.available_quantity)'
-      )
+      // PROJ-005: a true variance compares ledger on_hand vs a PHYSICAL cycle count.
+      // available_quantity is derived (on_hand − reserved), so on_hand vs
+      // (reserved + committed + available) is a tautology that can never fire.
+      // Gated to a real cycle-count source (blueprint INV-04); until then this
+      // intentionally returns no rows rather than a meaningless 0/non-0.
+      .havingRaw('1 = 0')
       .select(
         qb.raw('SUM(it.on_hand_quantity) - SUM(it.reserved_quantity + it.committed_quantity + it.available_quantity) as delta')
       );

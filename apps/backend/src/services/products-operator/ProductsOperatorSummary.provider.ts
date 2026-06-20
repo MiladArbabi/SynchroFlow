@@ -36,6 +36,7 @@ export interface ProductsOperatorSummary {
       noSku: number | null;
       noInventory: number | null;
       zeroStock: number | null;
+      phantom: number | null;
     };
   };
 
@@ -105,7 +106,8 @@ export async function getProductsOperatorSummary(input: {
   const blocked =
     (facts.noSkuCount ?? 0) +
     (facts.noInventoryCount ?? 0) +
-    (facts.zeroStockCount ?? 0);
+    (facts.zeroStockCount ?? 0) +
+    (facts.phantomCount ?? 0);
 
   return {
     period: facts.period,
@@ -117,6 +119,7 @@ export async function getProductsOperatorSummary(input: {
         noSku: facts.noSkuCount,
         noInventory: facts.noInventoryCount,
         zeroStock: facts.zeroStockCount,
+        phantom: facts.phantomCount,
       },
     },
 

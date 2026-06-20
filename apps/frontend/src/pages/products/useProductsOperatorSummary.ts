@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/products/useProductsOperatorSummary.ts
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 
@@ -19,6 +19,7 @@ export type ProductsOperatorSummary = {
       noSku: number | null;
       noInventory: number | null;
       zeroStock: number | null;
+      phantom: number | null;
     };
   };
 
@@ -128,6 +129,7 @@ export function useProductsOperatorSummary(range: FT2DateRange) {
       range.from,
       range.to,
     ],
+    placeholderData: keepPreviousData,
     queryFn: async () => {
       const { data } = await axiosInstance.get(
         '/api/v1/modules/products/operator-summary',
