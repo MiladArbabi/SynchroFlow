@@ -16,7 +16,9 @@
 // - No fetching. All data via props.
 // - Font: Plus Jakarta Sans (app default) — never set fontFamily explicitly.
 
-import { Box, Typography } from '@mui/material';
+import { useState } from 'react';
+import { Box, Collapse, Typography } from '@mui/material';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
@@ -130,6 +132,8 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
 // ─── HELPERS ──────────────────────────────────────────────────
 
+const TRIAGE_PREVIEW_LIMIT = 4;
+
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
 
@@ -190,9 +194,17 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // ── Triage queues ────────────────────────────────────────────
   const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => b.ageHours - a.ageHours);
   // Critical = SLA already breached — act today
-  const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
-  // Watch = aging 24h+ but not yet breached — monitor
-  const watchOrders    = allAgingOrders.filter(o => !o.isShippingSlaBreached && o.ageHours >= 24).slice(0, 4);
+  const [criticalExpanded, setCriticalExpanded] = useState(false);
+const [watchExpanded, setWatchExpanded] = useState(false);
+
+const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+// Watch = aging 24h+ but not yet breached — monitor
+const watchOrders    = allAgingOrders.filter(o => !o.isShippingSlaBreached && o.ageHours >= 24);
+
+const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
+const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
+const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
+const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
 
   const constraintLabel = (type: string | null): string => {
     switch (type) {
@@ -256,10 +268,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       </Box>
 
       {/* ── TRIAGE-FIRST GRID ─────────────────────────────────── */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 300px', gap: 2.25, alignItems: 'start' }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
 
         {/* ── LEFT: Needs a decision ──────────────────────────── */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+        <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
 
           {/* Card header */}
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }}>
@@ -287,7 +299,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Box sx={{ flex: 1 }} />
                 <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{criticalOrders.length} items</Typography>
               </Box>
-              {criticalOrders.map(order => (
+              {visibleCriticalOrders.map(order => (
                 <Box
                   key={order.lasyncro_order_id}
                   sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}
@@ -317,6 +329,52 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   </Box>
                 </Box>
               ))}
+              {hiddenCriticalOrders.length > 0 && (
+                <>
+                  <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
+                    {hiddenCriticalOrders.map(order => (
+                      <Box
+                        key={order.lasyncro_order_id}
+                        sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}
+                      >
+                        <Box>
+                          <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
+                            {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                            {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'right' }}>
+                          <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
+                            {fmt$(order.revenue)}
+                          </Typography>
+                          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
+                            at stake
+                          </Typography>
+                        </Box>
+                        <Box
+                          component="button"
+                          onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
+                          sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                        >
+                          {order.constraintType !== null ? 'Review queue' : 'Release →'}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Collapse>
+
+                  <Box
+                    onClick={() => setCriticalExpanded(v => !v)}
+                    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                  >
+                    <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                      {criticalExpanded ? 'Show less' : `See ${hiddenCriticalOrders.length} more`}
+                    </Typography>
+                    {criticalExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </Box>
+                </>
+              )}
             </>
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(76,175,122,0.06)' }}>
@@ -328,42 +386,80 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           )}
 
           {/* Watch band */}
-          {watchOrders.length > 0 && (
-            <>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(217,162,59,0.06)', borderTop: '1px solid var(--rule)' }}>
-                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#D9A23B', flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D9A23B' }}>
-                  Watch
-                </Typography>
-                <Box sx={{ flex: 1 }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{watchOrders.length} items</Typography>
-              </Box>
-              {watchOrders.map(order => (
-                <Box
-                  key={order.lasyncro_order_id}
-                  sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
-                >
-                  <Box>
-                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
-                      {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                      {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
-                    </Typography>
-                  </Box>
-                  {/* Tier 2 navigation CTA — keep aligned with modules UX playbook ghost pill anatomy. */}
-                  <Box
-                    component="button"
-                    onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
-                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
-                    View order →
-                  </Box>
+            {watchOrders.length > 0 && (
+              <>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(217,162,59,0.06)', borderTop: '1px solid var(--rule)' }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#D9A23B', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D9A23B' }}>
+                    Watch
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{watchOrders.length} items</Typography>
                 </Box>
-              ))}
-            </>
-          )}
 
+                {visibleWatchOrders.map(order => (
+                  <Box
+                    key={order.lasyncro_order_id}
+                    sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
+                  >
+                    <Box>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
+                        {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                        {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
+                      </Typography>
+                    </Box>
+                    <Box
+                      component="button"
+                      onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
+                      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                    >
+                      View order →
+                    </Box>
+                  </Box>
+                ))}
+
+                {hiddenWatchOrders.length > 0 && (
+                  <>
+                    <Collapse in={watchExpanded} timeout={180} unmountOnExit>
+                      {hiddenWatchOrders.map(order => (
+                        <Box
+                          key={order.lasyncro_order_id}
+                          sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
+                        >
+                          <Box>
+                            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
+                              {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                            </Typography>
+                            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                              {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
+                            </Typography>
+                          </Box>
+                          <Box
+                            component="button"
+                            onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
+                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                          >
+                            View order →
+                          </Box>
+                        </Box>
+                      ))}
+                    </Collapse>
+
+                    <Box
+                      onClick={() => setWatchExpanded(v => !v)}
+                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                    >
+                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                        {watchExpanded ? 'Show less' : `See ${hiddenWatchOrders.length} more`}
+                      </Typography>
+                      {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </Box>
+                  </>
+                )}
+              </>
+            )}
           {/* Footer */}
           <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}>
             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
@@ -374,7 +470,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         </Box>
 
         {/* ── RIGHT: Today's flow ─────────────────────────────── */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+        <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
             Today's flow
           </Typography>

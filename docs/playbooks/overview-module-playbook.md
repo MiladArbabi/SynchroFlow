@@ -167,3 +167,13 @@ Do NOT use the value the fatal log suggests (it points to the pre-gap id, which 
 - Brief: **3 signals** — "14 orders overdue" (critical, $24,724) · "8 orders out of stock" (watch, $3,800) · "2 products missing cost data" (watch).
 - Today's Flow: Ready 4 / Blocked 14 / Breached 13.
 - Account on **Scale** tier, app healthy (health check passing), verified in incognito.
+
+---
+
+## 7. 2026-06-20 update — Pulse rail + signal dedup + pipeline fixes
+
+The Overview right rail is **no longer Today's Flow** — it is now a cross-domain **Business Pulse** (revenue today, collected, at-risk, blocked). The operational/SLA signal duplication, the inflated SLA count, two missing tables (`historical_sales`, `product_costs`), and a dead `projectRevenueDaily` were all fixed. Full detail + the dev pitfalls (stale `dist`, FT2 reset on rebuild, safe-seed membership gap, versioned-snapshot count multiplication, uninvoked projections) are documented in:
+
+**`docs/playbooks/overview_pulse_and_signal_dedup_2026_06_20.md`**
+
+Note: §6's "verified end state" above is from the 2026-06-18 prod seed and predates these changes (e.g. the brief now shows 2 de-duplicated signals, not the older "14 orders overdue" set).

@@ -12,7 +12,7 @@
 //        Severity palette: #E5484D critical · #D9A23B watch · #4CAF7A on-track.
 
 import { useState } from 'react';
-import { Box, Typography, Skeleton } from '@mui/material';
+import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
@@ -90,6 +90,8 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
 
 // ─── CONSTANTS ────────────────────────────────────────────────
+
+const TRIAGE_PREVIEW_LIMIT = 4;
 
 // Baked severity palette — no alpha() needed
 const SEV = {
@@ -177,10 +179,10 @@ function TriageRow({
 
   return (
     <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'var(--bg-2)' }, transition: 'background 0.1s' }}>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: onNavigate ? 'minmax(0,1fr) 90px 118px' : 'minmax(0,1fr) 90px', gap: 1.75, alignItems: 'center' }}>
 
         {/* LEFT: badge + content */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Box sx={{ minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px', mb: '4px' }}>
             <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', px: '5px', py: '2px', borderRadius: '4px', bgcolor: sev.badge, flexShrink: 0 }}>
               <Box sx={{ width: 5, height: 5, borderRadius: '50%', bgcolor: sev.color }} />
@@ -219,20 +221,18 @@ function TriageRow({
         </Box>
 
         {/* CENTER: revenue + age */}
-        {(signal.revenueImpact != null || signal.ageLabel) && (
-          <Box sx={{ flexShrink: 0, textAlign: 'right', minWidth: 80 }}>
-            {signal.revenueImpact != null && (
-              <Typography sx={{ fontSize: 14, fontWeight: 700, color: isCritical ? '#E5484D' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
-                {fmtCurrency(signal.revenueImpact, currency)}
-              </Typography>
-            )}
-            {signal.ageLabel && (
-              <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
-                {signal.ageLabel}
-              </Typography>
-            )}
-          </Box>
-        )}
+        <Box sx={{ textAlign: 'right' }}>
+          {signal.revenueImpact != null && (
+            <Typography sx={{ fontSize: 14, fontWeight: 700, color: isCritical ? '#E5484D' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
+              {fmtCurrency(signal.revenueImpact, currency)}
+            </Typography>
+          )}
+          {signal.ageLabel && (
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
+              {signal.ageLabel}
+            </Typography>
+          )}
+        </Box>
 
         {/* RIGHT: CTA */}
         {onNavigate && (
@@ -240,7 +240,6 @@ function TriageRow({
             component="button"
             onClick={() => onNavigate(signal.deepLink)}
             sx={{
-              flexShrink: 0,
               fontSize: 12, fontWeight: 600,
               px: '12px', py: '6px', borderRadius: '8px',
               ...(isCritical
@@ -280,6 +279,12 @@ function GroupBand({ sevK, count }: { sevK: SevKey; count: number }) {
 // ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
 // Cross-domain financial outcomes — distinct from Orders' Today's Flow.
 // Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
+// ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
+// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
+// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
+// Styling mirrors the Today's Flow rail (modules UX playbook): var(--surface)
+// card, uppercase micro-header, label/value rows on var(--rule) dividers,
+// design tokens only — no hardcoded hex or px.
 function BusinessPulse({
   pulse,
   currency,
@@ -297,12 +302,17 @@ function BusinessPulse({
   const delta = pulse.revenueDeltaVsYesterday;
   const deltaLabel =
     delta == null
-      ? null
+      ? undefined
       : delta === 0
         ? 'flat vs yesterday'
         : `${delta > 0 ? '▲' : '▼'} ${currency}${Math.abs(Math.round(delta)).toLocaleString()} vs yesterday`;
+
   const deltaColor =
-    delta == null || delta === 0 ? '#8A8F98' : delta > 0 ? '#4CAF82' : '#D9A23B';
+    delta == null || delta === 0
+      ? 'var(--ink-4)'
+      : delta > 0
+        ? '#4CAF7A'
+        : '#D9A23B';
 
   const blockLabelMap: Record<string, string> = {
     inventory: 'inventory',
@@ -310,103 +320,104 @@ function BusinessPulse({
     operational: 'fulfillment',
     none: 'none',
   };
+
   const blockLabel =
     pulse.topBlockingType && pulse.topBlockingType !== 'none'
       ? blockLabelMap[pulse.topBlockingType] ?? pulse.topBlockingType
       : null;
 
-  const rows: { label: string; value: string; color?: string; hint?: string }[] = [
+  const rows = [
+    {
+      label: 'Revenue today',
+      value: fmt(pulse.revenueToday),
+      color: 'var(--ink)',
+      hint: deltaLabel,
+      hintColor: deltaColor,
+    },
     {
       label: 'Collected today',
       value: fmt(pulse.collectedRevenue),
-      color: '#4CAF82',
+      color: '#4CAF7A',
     },
     {
       label: 'At risk',
       value: fmt(pulse.atRiskRevenue),
-      color: (pulse.atRiskRevenue ?? 0) > 0 ? '#D9A23B' : undefined,
+      color: (pulse.atRiskRevenue ?? 0) > 0 ? '#D9A23B' : 'var(--ink)',
     },
     {
       label: 'Blocked',
       value: fmt(pulse.blockedRevenue),
-      color: (pulse.blockedRevenue ?? 0) > 0 ? '#E06A5E' : undefined,
+      color: (pulse.blockedRevenue ?? 0) > 0 ? 'var(--accent)' : 'var(--ink)',
       hint: blockLabel ? `mostly ${blockLabel}` : undefined,
+      hintColor: 'var(--ink-4)',
     },
   ];
 
+  const pulseStages = [
+    { key: 'collected', label: 'Collected', count: pulse.collectedRevenue ?? 0, color: '#4CAF7A' },
+    { key: 'atRisk', label: 'At risk', count: pulse.atRiskRevenue ?? 0, color: '#D9A23B' },
+    { key: 'blocked', label: 'Blocked', count: pulse.blockedRevenue ?? 0, color: 'var(--accent)' },
+  ];
+
+  const activeStages = pulseStages.filter(s => s.count > 0);
+  const stageTotal = activeStages.reduce((s, d) => s + d.count, 0) || 1;
+
   return (
-    <Box
-      sx={{
-        flex: '0 0 300px',
-        border: '1px solid rgba(255,255,255,0.08)',
-        borderRadius: '14px',
-        padding: '20px',
-        background: 'rgba(255,255,255,0.02)',
-      }}
-    >
-      <Typography
-        sx={{
-          fontSize: '11px',
-          letterSpacing: '0.12em',
-          textTransform: 'uppercase',
-          color: '#8A8F98',
-          marginBottom: '16px',
-        }}
-      >
-        Business Pulse
+    <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
+        Business pulse
       </Typography>
 
-      {/* Hero — revenue today */}
-      <Typography sx={{ fontSize: '13px', color: '#8A8F98' }}>
-        Revenue today
-      </Typography>
-      <Typography
-        sx={{ fontSize: '32px', fontWeight: 600, color: '#fff', lineHeight: 1.1 }}
-      >
-        {fmt(pulse.revenueToday)}
-      </Typography>
-      {deltaLabel && (
-        <Typography sx={{ fontSize: '12px', color: deltaColor, marginTop: '4px' }}>
-          {deltaLabel}
-        </Typography>
-      )}
-
-      <Box
-        sx={{
-          height: '1px',
-          background: 'rgba(255,255,255,0.08)',
-          margin: '18px 0',
-        }}
-      />
-
-      {/* Outcome rows */}
-      {rows.map((r) => (
-        <Box
-          key={r.label}
-          sx={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'baseline',
-            padding: '8px 0',
-          }}
-        >
+      {rows.map(({ label, value, color, hint, hintColor }) => (
+        <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', py: 1.125, borderBottom: '1px solid var(--rule)' }}>
           <Box>
-            <Typography sx={{ fontSize: '14px', color: '#C9CDD4' }}>
-              {r.label}
-            </Typography>
-            {r.hint && (
-              <Typography sx={{ fontSize: '11px', color: '#6E737C' }}>
-                {r.hint}
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
+            {hint && (
+              <Typography sx={{ fontSize: 11, fontWeight: 300, color: hintColor ?? 'var(--ink-4)', mt: 0.25 }}>
+                {hint}
               </Typography>
             )}
           </Box>
-          <Typography
-            sx={{ fontSize: '16px', fontWeight: 600, color: r.color ?? '#fff' }}
-          >
-            {r.value}
-          </Typography>
+          <Typography sx={{ fontSize: 15, fontWeight: 600, color }}>{value}</Typography>
         </Box>
       ))}
+
+      <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 1.25, bgcolor: 'var(--bg)' }}>
+        {activeStages.map(stage => (
+          <Box
+            key={stage.key}
+            sx={{ width: `${(stage.count / stageTotal) * 100}%`, bgcolor: stage.color }}
+          />
+        ))}
+      </Box>
+
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px', mb: 2 }}>
+        {activeStages.map(stage => (
+          <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ width: 7, height: 7, borderRadius: '2px', bgcolor: stage.color, flexShrink: 0 }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>{stage.label}</Typography>
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{fmt(stage.count)}</Typography>
+          </Box>
+        ))}
+      </Box>
+
+      <Box sx={{ borderTop: '1px solid var(--rule)', pt: 1.5 }}>
+        <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
+          Revenue today{' '}
+          <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt(pulse.revenueToday)}</Box>
+          {' · Blocked '}
+          <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt(pulse.blockedRevenue)}</Box>
+        </Typography>
+      </Box>
+
+      {onNavigate && (
+        <Box
+          onClick={() => onNavigate('/orders')}
+          sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+        >
+          View order flow →
+        </Box>
+      )}
     </Box>
   );
 }
@@ -428,6 +439,14 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
   const criticalSignals = signals.filter(s => s.priority <= 2);
   const watchSignals    = signals.filter(s => s.priority === 3 || s.priority === 4);
   const onTrackSignals  = signals.filter(s => s.priority === 5);
+
+  const [criticalExpanded, setCriticalExpanded] = useState(false);
+  const [watchExpanded, setWatchExpanded] = useState(false);
+
+  const visibleCriticalSignals = criticalSignals.slice(0, TRIAGE_PREVIEW_LIMIT);
+  const hiddenCriticalSignals  = criticalSignals.slice(TRIAGE_PREVIEW_LIMIT);
+  const visibleWatchSignals    = watchSignals.slice(0, TRIAGE_PREVIEW_LIMIT);
+  const hiddenWatchSignals     = watchSignals.slice(TRIAGE_PREVIEW_LIMIT);
 
   const generatedTime = generatedAt
     ? new Date(generatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -499,10 +518,9 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
       {/* ── BODY: two-column ── */}
       {!isLoading && (
-        <Box sx={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
           {/* LEFT: Needs a decision */}
-          <Box sx={{ flex: 1, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', overflow: 'hidden' }}>
+          <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
             {/* Card header */}
             <Box sx={{ px: '1.25rem', py: '0.9rem', borderBottom: '1px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
               <Box>
@@ -554,9 +572,29 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             {criticalSignals.length > 0 && (
               <>
                 <GroupBand sevK="critical" count={criticalSignals.length} />
-                {criticalSignals.map(s => (
+                {visibleCriticalSignals.map(s => (
                   <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
                 ))}
+
+                {hiddenCriticalSignals.length > 0 && (
+                  <>
+                    <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
+                      {hiddenCriticalSignals.map(s => (
+                        <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                      ))}
+                    </Collapse>
+
+                    <Box
+                      onClick={() => setCriticalExpanded(v => !v)}
+                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                    >
+                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                        {criticalExpanded ? 'Show less' : `See ${hiddenCriticalSignals.length} more`}
+                      </Typography>
+                      {criticalExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </Box>
+                  </>
+                )}
               </>
             )}
 
@@ -564,9 +602,29 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             {watchSignals.length > 0 && (
               <>
                 <GroupBand sevK="watch" count={watchSignals.length} />
-                {watchSignals.map(s => (
+                {visibleWatchSignals.map(s => (
                   <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
                 ))}
+
+                {hiddenWatchSignals.length > 0 && (
+                  <>
+                    <Collapse in={watchExpanded} timeout={180} unmountOnExit>
+                      {hiddenWatchSignals.map(s => (
+                        <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                      ))}
+                    </Collapse>
+
+                    <Box
+                      onClick={() => setWatchExpanded(v => !v)}
+                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                    >
+                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                        {watchExpanded ? 'Show less' : `See ${hiddenWatchSignals.length} more`}
+                      </Typography>
+                      {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </Box>
+                  </>
+                )}
               </>
             )}
 
@@ -602,11 +660,11 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
       {/* Loading state for body */}
       {isLoading && (
-        <Box sx={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-          <Box sx={{ flex: 1, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+          <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {[1, 2, 3].map(i => <Skeleton key={i} height={56} sx={{ borderRadius: '8px' }} />)}
           </Box>
-          <Box sx={{ width: 272, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+          <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {[1, 2, 3, 4].map(i => <Skeleton key={i} height={24} sx={{ borderRadius: '4px' }} />)}
           </Box>
         </Box>

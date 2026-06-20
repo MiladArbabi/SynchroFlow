@@ -8,10 +8,74 @@
 
 ## 1. Design System Foundations
 
-### Typography
+### FT2 Triage + Pulse Layout
 
-- Headlines: `Instrument Serif`
-- Body / UI: `DM Sans`
+Canonical triage + pulse layout:
+
+```tsx
+<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+```
+
+Decision card:
+
+```tsx
+<Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+```
+
+Pulse card:
+
+```tsx
+<Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+```
+
+## Rules
+
+Use flex with wrapping, not fixed two-column grid.
+Decision card must not shrink below 300px.
+Pulse rail is fixed at 300px.
+When both cards no longer fit side by side, the pulse card wraps below.
+Decision card then takes the full available row width.
+Card shell uses bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px'.
+Pulse card padding is p: '18px 20px'.
+Orders Overview is the source of truth for this layout.
+
+### FT2 Decision Group Reveal Pattern
+
+Decision groups must not render unbounded lists by default.
+
+Rules:
+
+- Show a maximum of 4 visible decisions per decision group.
+- If a group has more than 4 items, render a centered `See X more` control below the first 4.
+- Clicking `See X more` expands the remaining items with MUI `<Collapse timeout={180} unmountOnExit>`.
+- Expanded state must provide `Show less` and collapse the hidden items.
+- Apply this pattern to decision categories such as `Critical — act today` and `Watch`.
+- Do not discard hidden items with `.slice(0, 4)` at the source level.
+- Keep the full source array, then derive:
+  - `visibleItems = items.slice(0, TRIAGE_PREVIEW_LIMIT)`
+  - `hiddenItems = items.slice(TRIAGE_PREVIEW_LIMIT)`
+- Use `TRIAGE_PREVIEW_LIMIT = 4`.
+- `Everything else` may remain a separate collapsed/on-track group, but should not be treated as an urgent decision category.
+
+Canonical reveal control:
+
+```tsx
+<Box
+  onClick={() => setExpanded(v => !v)}
+  sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+>
+  <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+    {expanded ? 'Show less' : `See ${hiddenItems.length} more`}
+  </Typography>
+  {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+</Box>
+```
+
+- App font: `Plus Jakarta Sans`
+- All app/module UI inherits the global app font.
+- Do not set `fontFamily` inside FT2 module components.
+- Do not use `Instrument Serif`, `DM Sans`, `DM Serif Display`, `DM Mono`, `var(--serif)`, or decorative serif fonts.
+- Avoid `monospace` unless a documented exception exists for scanner/barcode/technical-code readability.
 
 ### Color Tokens
 
@@ -29,8 +93,12 @@
 
 ### Hard Rules
 
-- Borders: always `0.5px` — never `1px`
-- `fontWeight`: max `600` for CTAs, max `500` for body — never `700`
+- Card/module borders: `1px solid var(--rule)`
+- CTA ghost borders: `0.5px solid var(--accent)` or `0.5px solid var(--accent-border)`
+- Page/module headlines may use `fontWeight: 700`
+- Body copy uses `fontWeight: 300`
+- Section/card titles usually use `fontWeight: 500`
+- Metric values and CTAs use `fontWeight: 600`
 - Never hardcode hex colors in components — always use tokens or `theme.palette.*`
 - Never use `color="secondary"` on MUI Buttons — renders MUI amber, not LaSyncro orange
 - Clickable elements: always `<Box>` — never `<Typography>` (semantic correctness)
@@ -122,7 +190,7 @@ sx={{
 | `<Button variant="contained">` with no `sx` accent override | Renders MUI default blue |
 | `<Button variant="outlined" color="success">` for receive actions | Wrong color, inconsistent |
 | `borderRadius: '5px'` | Must be `'6px'` across all CTAs |
-| `fontWeight: 700` | Max is `600` per design system |
+| `fontWeight: 700` on body copy, captions, rows, or CTAs | `700` is reserved for page/module headlines only |
 
 ---
 
@@ -317,7 +385,7 @@ const handleSort = (field: SortField) => {
 2. Use `<Box>` — never `<Typography>` for clickable elements.
 3. For MUI `<Button>`, always add `sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}`.
 4. Never hardcode colors. Use `var(--accent)` or `theme.palette.common.white`.
-5. `borderRadius` is always `'6px'`. `fontWeight` max `600`.
+5. CTA `borderRadius` is always `'6px'`. Use `fontWeight: 600` for CTA emphasis. Page/module headlines may use `700`.
 6. Run `npm run build -w <module>` after every change to confirm type safety.
 
 ### Auditing a new module
