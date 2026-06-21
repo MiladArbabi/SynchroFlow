@@ -1,6 +1,6 @@
 // modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -186,6 +186,7 @@ function CreatePoDialog({
   onCreateSupplier,
   onCreatePo,
   onSearchVariants,
+  prefilledLineItem,
 }: {
   open: boolean;
   suppliers: Supplier[];
@@ -193,6 +194,7 @@ function CreatePoDialog({
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
+  prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
 }) {
   const [supplierId, setSupplierId] = useState<string>('');
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
@@ -201,6 +203,17 @@ function CreatePoDialog({
   const [lineItems, setLineItems] = useState<LineItemDraft[]>([
     { key: 0, description: '', quantity_ordered: '', unit_cost_cents: '' },
   ]);
+  // REPL-001: seed first line from a reorder deep-link (Demand → Order →). Qty stays editable (MOQ-aware-ready).
+  useEffect(() => {
+    if (prefilledLineItem && prefilledLineItem.description) {
+      setLineItems([{
+        key: 0,
+        description: prefilledLineItem.description,
+        quantity_ordered: prefilledLineItem.quantity_ordered ? String(prefilledLineItem.quantity_ordered) : '',
+        unit_cost_cents: '',
+      }]);
+    }
+  }, [prefilledLineItem]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [variantOptions, setVariantOptions] = useState<VariantOption[]>([]);
@@ -1185,6 +1198,7 @@ function SuppliersPortalModuleFT2Inner({
       <CreatePoDialog
         open={createPoOpen}
         suppliers={suppliers}
+        prefilledLineItem={prefilledLineItem}
         onClose={handlePoCreated}
         onCreateSupplier={onCreateSupplier}
         onCreatePo={onCreatePo}
@@ -1195,5 +1209,18 @@ function SuppliersPortalModuleFT2Inner({
 }
 
 export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {
-  return <ModuleErrorBoundary moduleName="suppliers-portal"><SuppliersPortalModuleFT2Inner {...props} /></ModuleErrorBoundary>;
+  const [searchParams] = useSearchParams();
+  const autoOpenCreatePo = searchParams.get('action') === 'create-po';
+  const prefilledLineItem = autoOpenCreatePo
+    ? {
+        description: searchParams.get('description') ?? searchParams.get('sku') ?? '',
+        quantity_ordered: Number(searchParams.get('qty') ?? 0) || 0,
+        lasyncro_variant_id: searchParams.get('variantId') ?? undefined,
+      }
+    : undefined;
+  return (
+    <ModuleErrorBoundary moduleName="suppliers-portal">
+      <SuppliersPortalModuleFT2Inner {...props} autoOpenCreatePo={autoOpenCreatePo} prefilledLineItem={prefilledLineItem} />
+    </ModuleErrorBoundary>
+  );
 }

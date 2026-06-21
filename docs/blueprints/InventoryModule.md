@@ -174,8 +174,10 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 - **Decision:** Adopt Direction A (Truth & Trust + Replenishment brain). Overturns §8's original "keep all five sub-modules, no cuts."
 - **Why now:** Catalog audit proved the same metric is computed in multiple modules with divergent results (products 10 vs 19; no-SKU 16 vs 25; WMS not-pickable 29 > 28 total variants). The five-tab hub design guarantees this drift recurs.
 - **Sprint 1 scope:** (1) truth bug — one canonical source per number [INV-001/003/004 ✅], (2) purge test data from truth [INV-002], (3) Intelligence as decision surface, (4) Catalog blocked-stock triage.
-- **Sprint 2:** Replenishment surface (net-new).
-- **Boundary owners confirmed in codebase:** WMS-lite (pick/pack/stow/receive + exception queue), Floor Planning (bin locations), Finances (COGS/margin).
+- **Sprint 2 (revised):** NOT a net-new Replenishment surface. The reorder brain already lives in the Demand module (`reorder_signal`, `reorder_urgency`, `suggested_reorder_qty`; "Demand owns reorder risk and replenishment decisions"). Inventory deep-links to it rather than duplicating. Sprint 2 shipped: Intelligence re-house (INV-016/017/018), Demand→Suppliers reorder deep-link (REPL-001). MOQ deferred to its own sprint (REPL-002).
+- **Costs placement (refines Direction A):** Costs stays in Inventory as **capture-only** — unit cost is entered where the SKU lives. Finances **reads** those costs for margin/COGS reporting. Overturns Direction A's original "move Costs to Finances": capture and reporting are one source, two surfaces with distinct jobs.
+- **WMS Readiness + Problem Center:** kept for now (defer deletion). They read WMS data, don't recompute it — only nav lives in Inventory; deleting adds friction without removing duplication.
+- **Boundary owners confirmed in codebase:** WMS-lite (pick/pack/stow/receive + exception queue), Floor Planning (bin locations), Finances (COGS/margin), Demand (reorder/replenishment).
 
 ---
 
@@ -210,10 +212,18 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 
 | ID | Description |
 |---|---|
-| INV-016 | Intelligence tab still says "17 blocked / 3 stocked out" — hasn't adopted the phantom split. Cross-tab story mismatch with Catalog. |
 | INV-012 | `inventory_truth` durable trigger: one-shot backfill done; first-sync wiring for new shops still to verify. |
-| PROJ-004b | Surface phantom signal beyond Catalog (Intelligence / WMS Readiness). |
+| REPL-002 | 🔵 DEFERRED → **MOQ Sprint.** Suppliers won't accept small qtys. Add supplier-level `moq` at supplier create/edit. On reorder: aggregate required qty across SKUs, match satisfiable suppliers, confirm via banner ("order 150 units from Supplier X or Y — proceed?") before drafting the PO. No `supplier_products` link table exists yet; no MOQ column anywhere. |
 
+**Resolved this sprint (Sprint 2)**
+
+| ID | Description |
+|---|---|
+| INV-016 | Intelligence subtitle + pulse rail adopt the phantom split — matches Catalog. |
+| INV-017 | Ready-to-sell sub regex mangled ("3 outSKU") → array-join; shows non-zero segments only. |
+| INV-018 | Intelligence re-housed to canonical decision-left / pulse-right (matches Orders Overview). 4 stat cards → "Inventory pulse" rail. |
+| PROJ-004b | Phantom signal surfaced beyond Catalog (now in Intelligence pulse + subtitle). |
+| REPL-001 | Demand → Create PO deep-link now prefills the New-PO draft (description + qty); qty stays editable (MOQ-aware-ready, no auto-send). |
 ---
 
 ## 9. UX Rebuild Directive
