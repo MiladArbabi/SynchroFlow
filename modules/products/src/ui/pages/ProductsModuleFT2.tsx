@@ -455,7 +455,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   </Box>
                 </Box>
                 <Box
-                  onClick={() => navigate('/inventory/wms-readiness')}
+                  onClick={() => navigate('/wms/readiness')}
                   sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { opacity: 0.75 } }}
                 >
                   Fix in WMS →

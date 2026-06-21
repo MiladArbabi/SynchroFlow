@@ -463,7 +463,8 @@ export default function WmsPage() {
     <>
     <PlanGate feature="wms.pick_batches">
     <ModuleTabBar tabs={[
-      { id: 'operations',    label: 'Operations',     path: '/wms'            },
+      { id: 'operations',    label: 'Operations',     path: '/wms'    },
+      { id: 'readiness',     label: 'WMS Readiness',  path: '/wms/readiness'  },
       { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
       { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
     ]} />

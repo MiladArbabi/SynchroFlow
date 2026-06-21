@@ -10,15 +10,12 @@
 
 **Routes:**
 
-- `/inventory` → Intelligence (ProductsFT2Page → ProductsModuleFT2)
-- `/inventory/catalog` → Catalog (ProductsCatalogPage)
 - `/inventory/costs` → Costs (ProductsCostsPage)
-- `/inventory/wms-readiness` → WMS Readiness (ProductsWmsReadinessPage)
 - `/problem-center` → Problem Center (ProblemCenterPage → ProblemCenterModuleFT2)
 
-**Sidenav:** Inventory accordion with 5 children. Problem Center is a child of Inventory in the sidenav but routes to `/problem-center` — cross-module navigation via tab bar.
-
-**Tier gate:** Intelligence tab uses `PlanGate`. Costs + WMS Readiness require `requireFt2`.
+> **2026-06-21:** WMS Readiness moved out of Inventory to WMS (`/wms/readiness`, renders `ProductsWmsReadinessPage` with the WMS tab bar). Inventory is now 4 tabs: Intelligence · Catalog · Costs · Problem Center. Problem Center kept in Inventory by decision (exceptions an inventory owner acts on, though WMS-sourced).
+**Sidenav:** Inventory accordion with 4 children. Problem Center is a child of Inventory in the sidenav but routes to `/problem-center` — cross-module navigation via tab bar.
+**Tier gate:** Intelligence tab uses `PlanGate`. Costs requires `requireFt2`. WMS Readiness now lives under WMS.
 
 **Route registration:** `LifecycleRouteHost.tsx`. `/inventory/*` appears in both FT1 and FT2 blocks — phase-gated, not duplicated.
 
@@ -209,11 +206,19 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 | PROJ-003 | NOT-A-CODE-GAP. Full-shop rebuild exists (`shopify.service` L133–150); never ran for shop 1 (no sync). |
 
 **Still open**
-
 | ID | Description |
 |---|---|
 | INV-012 | `inventory_truth` durable trigger: one-shot backfill done; first-sync wiring for new shops still to verify. |
-| REPL-002 | 🔵 DEFERRED → **MOQ Sprint.** Suppliers won't accept small qtys. Add supplier-level `moq` at supplier create/edit. On reorder: aggregate required qty across SKUs, match satisfiable suppliers, confirm via banner ("order 150 units from Supplier X or Y — proceed?") before drafting the PO. No `supplier_products` link table exists yet; no MOQ column anywhere. |
+| REPL-002 | 🟡 IN PROGRESS — MOQ guard in CreatePoDialog (warn + bump when total qty < supplier MOQ). Capture done (see Sprint 3); guard UI pending. |
+| REPL-004 | 🔴 Reorder-by date planner in the Demand bridge: `reorder_by = today + (days_of_stock − lead_time_days)`. Capture done; signal math pending. |
+
+**Resolved this sprint (Sprint 3 — Suppliers MOQ/lead-time + tab finalize, 2026-06-21)**
+| ID | Description |
+|---|---|
+| REPL-003 | Supplier-level `moq` + `lead_time_days` captured (migration 0094, controller, supplier form). |
+| SUP-001 | Standalone supplier CRUD on the portal (add/edit/remove via reusable `SupplierFormDialog`); delete = soft (`active=false`). |
+| INV-TAB-01 | WMS Readiness moved Inventory → WMS (`/wms/readiness`, with WMS tab bar). Inventory now 4 tabs. |
+| INV-TAB-02 | Problem Center kept in Inventory by decision (WMS-sourced exceptions an inventory owner acts on). |
 
 **Resolved this sprint (Sprint 2)**
 

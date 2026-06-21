@@ -74,6 +74,7 @@ const WmsPage = lazy(() => import('pages/ft2-pages/WmsPage'));
 const SuppliersPortalPage = lazy(() => import('pages/ft2-pages/SuppliersPortalPage'));
 const FloorPlanningPage = lazy(() => import('pages/ft2-pages/FloorPlanningPage'));
 const WmsAnalyticsPage = lazy(() => import('pages/ft2-pages/WmsAnalyticsPage'));
+const ProductsWmsReadinessPage = lazy(() => import('pages/ft2-pages/ProductsWmsReadinessPage'));
 const ShopSettingsPage = lazy(() => import('pages/ft2-pages/ShopSettingsPage'));
 const MembersPage = lazy(() => import('pages/ft2-pages/MembersPage'));
 const MemberDetailPage = lazy(() => import('pages/ft2-pages/MemberDetailPage'));
@@ -266,8 +267,9 @@ export function LifecycleRouteHost() {
       <Route path="/demand/*" element={<DemandPage />} />
 
       {/* WMS */}
-      {/* /wms/analytics must precede /wms/* — wildcard would shadow it otherwise */}
+      {/* /wms/analytics and /wms/readiness must precede /wms/* — wildcard would shadow them otherwise */}
       <Route path="/wms/analytics" element={<WmsAnalyticsPage />} />
+      <Route path="/wms/readiness" element={<ProductsWmsReadinessPage />} />
       <Route path="/wms/*" element={<WmsPage />} />
 
       {/* SUPPLIERS PORTAL */}

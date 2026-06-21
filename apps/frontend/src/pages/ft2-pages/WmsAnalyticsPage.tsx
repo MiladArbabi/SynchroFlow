@@ -800,6 +800,7 @@ export default function WmsAnalyticsPage() {
       <Box sx={{ bgcolor: 'var(--bg)', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <ModuleTabBar tabs={[
           { id: 'operations',     label: 'Operations',     path: '/wms' },
+          { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
           { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
           { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
         ]} />

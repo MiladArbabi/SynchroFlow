@@ -17,7 +17,7 @@ const INVENTORY_TABS = [
   { id: 'intelligence',   label: 'Intelligence',   path: '/inventory'               },
   { id: 'catalog',        label: 'Catalog',        path: '/inventory/catalog'       },
   { id: 'costs',          label: 'Costs',          path: '/inventory/costs'         },
-  { id: 'wms-readiness',  label: 'WMS Readiness',  path: '/inventory/wms-readiness' },
+  { id: 'wms-readiness',  label: 'WMS Readiness',  path: '/wms/readiness' },
   { id: 'problem-center', label: 'Problem Center', path: '/problem-center'          },
 ];
 

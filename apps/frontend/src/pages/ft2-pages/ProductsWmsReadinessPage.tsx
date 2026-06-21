@@ -12,6 +12,7 @@
 // - Read-only — never mutates
 import { Box, Typography, Divider, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { AlertTriangle, ScanBarcode, MapPin, Scale, PackageOpen } from 'lucide-react';
 import { useProductsWmsReadiness } from '../products/useProductsWmsReadiness';
 
@@ -60,7 +61,13 @@ export default function ProductsWmsReadinessPage() {
 
   return (
     <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
-
+      <ModuleTabBar tabs={[
+        { id: 'operations',     label: 'Operations',     path: '/wms' },
+        { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
+        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
+        { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
+      ]} />
+      
       {/* ── HEADER ───────────────────────────────────────────── */}
       <Box sx={{ mb: 2.5 }}>
         <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.25 }}>
