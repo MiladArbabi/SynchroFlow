@@ -53,9 +53,9 @@ export default function ProductsFT2Page() {
 
       {/* Date range bar — visible on Intelligence + Catalog tabs only */}
       <Routes>
-        <Route path="/" element={
+        {/* <Route path="/" element={
           <FT2DateRangeBar value={range} onChange={setRange} />
-        } />
+        } /> */}
         <Route path="/catalog" element={
           <FT2DateRangeBar value={range} onChange={setRange} />
         } />

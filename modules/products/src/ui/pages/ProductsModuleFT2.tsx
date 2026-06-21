@@ -44,6 +44,7 @@ export interface ProductsModuleFT2DataProps {
         noSku: number | null;
         noInventory: number | null;
         zeroStock: number | null;
+        phantom: number | null;
       };
     };
     deadWeight: { noSalesCount: number | null };
@@ -155,9 +156,20 @@ export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
 
+function PulseRow({ label, value, valueColor, sub }: { label: string; value: string; valueColor?: string; sub?: string }) {
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', py: 1, borderBottom: '1px solid var(--rule)' }}>
+      <Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
+        {sub && <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-4)', mt: 0.125 }}>{sub}</Typography>}
+      </Box>
+      <Typography sx={{ fontSize: 13, fontWeight: 600, color: valueColor ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
+    </Box>
+  );
+}
+
 // ─── STAT CARD ────────────────────────────────────────────────
 // Matches Orders FT2 StatCard exactly.
-
 function StatCard({ label, value, valueColor, sub, cta, ctaHref }: {
   label: string;
   value: string;
@@ -366,10 +378,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const total     = sellable + blocked;
   const noSku     = os?.sellability.blockedReasons.noSku ?? 0;
   const zeroStock = os?.sellability.blockedReasons.zeroStock ?? 0;
+  const phantom   = os?.sellability.blockedReasons.phantom ?? 0;
 
   // Determine signal line
   const signalParts: string[] = [];
   if (context.variantsObserved)   signalParts.push(`${context.variantsObserved} SKUs`);
+  if (phantom > 0)                 signalParts.push(`${phantom} phantom`);
   if (zeroStock > 0)               signalParts.push(`${zeroStock} stocked out`);
   if (os?.inbound?.total_units_expected) signalParts.push(`${os.inbound.total_units_expected} units inbound`);
   if (os?.warehouse?.pick_zone_occupancy_pct != null) signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
@@ -410,44 +424,6 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
               .join(', ')}{' '}
             data needs a sync.
           </Typography>
-        </Box>
-      )}
-
-      {/* ── 2. STAT ROW — 4 cards ─────────────────────────────── */}
-      {os && (
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.5, mb: 3 }}>
-          <StatCard
-            label="Ready to sell"
-            value={`${fmtN(sellable)} of ${fmtN(total)}`}
-            valueColor={sellable === 0 ? theme.palette.error.main : sellable < total ? theme.palette.warning.main : theme.palette.success.main}
-            sub={blocked > 0 ? `${blocked} blocked` : undefined}
-            cta="Fix in Catalog"
-            ctaHref="/inventory/catalog"
-          />
-          <StatCard
-            label="Margin at risk"
-            value={os.finances ? fmt$(os.finances.total_margin_at_risk_per_week) + '/wk' : '—'}
-            valueColor={os.finances && os.finances.total_margin_at_risk_per_week > 0 ? theme.palette.error.main : undefined}
-            sub={os.finances ? `${zeroStock} stocked out` : undefined}
-            cta="See Demand"
-            ctaHref="/demand"
-          />
-          <StatCard
-            label="Inbound"
-            value={os.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—'}
-            valueColor={os.inbound && os.inbound.overdue_pos.length > 0 ? theme.palette.warning.main : undefined}
-            sub={os.inbound ? `${os.inbound.open_po_count} open POs` : 'No open POs'}
-            cta="View Inbound"
-            ctaHref="/orders/inbound"
-          />
-          <StatCard
-            label="Dead capital"
-            value={os.demand ? fmt$(os.demand.dead_capital_value) : '—'}
-            valueColor={os.demand && os.demand.dead_capital_value > 0 ? theme.palette.warning.main : undefined}
-            sub="0-velocity stock"
-            cta="Review in Demand"
-            ctaHref="/demand"
-          />
         </Box>
       )}
 
@@ -594,8 +570,26 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
           </Box>
         )}
 
-        {/* ── RIGHT COLUMN — Inbound pipeline + Return leakage ─── */}
+        {/* ── RIGHT COLUMN — Inventory pulse + Inbound pipeline + Return leakage ─── */}
         <Box sx={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 2 }}>
+
+          {/* Inventory pulse */}
+          {os && (
+            <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                Inventory pulse
+              </Typography>
+              <PulseRow label="Ready to sell" value={`${fmtN(sellable)} of ${fmtN(total)}`} valueColor={sellable === 0 ? '#E5484D' : sellable < total ? '#D9A23B' : '#4CAF7A'} />
+              <PulseRow label="Margin at risk" value={os.finances ? fmt$(os.finances.total_margin_at_risk_per_week) + '/wk' : '—'} valueColor={os.finances && os.finances.total_margin_at_risk_per_week > 0 ? '#E5484D' : undefined} />
+              <PulseRow label="Phantom" value={String(phantom)} valueColor={phantom > 0 ? '#E5484D' : undefined} sub="sold without recorded receiving" />
+              <PulseRow label="Stocked out" value={String(zeroStock)} valueColor={zeroStock > 0 ? '#D9A23B' : undefined} />
+              <PulseRow label="Inbound" value={os.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—'} sub={os.inbound ? `${os.inbound.open_po_count} open PO${os.inbound.open_po_count === 1 ? '' : 's'}` : undefined} />
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Dead capital</Typography>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: os.demand && os.demand.dead_capital_value > 0 ? '#D9A23B' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{os.demand ? fmt$(os.demand.dead_capital_value) : '—'}</Typography>
+              </Box>
+            </Box>
+          )}
 
           {/* Inbound pipeline */}
           {os?.inbound && os.inbound.open_po_count > 0 && (
