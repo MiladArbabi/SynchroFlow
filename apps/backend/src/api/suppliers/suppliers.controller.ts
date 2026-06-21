@@ -34,6 +34,7 @@ export async function httpGetSuppliers(req: Request, res: Response) {
 
       return trx('suppliers as s')
         .where('s.shop_id', shopId)
+        .andWhere('s.active', true)
         .leftJoin('purchase_orders as po', function () {
           this.on('po.supplier_id', 's.id')
               .andOn('po.shop_id', trx.raw('?', [shopId]))
@@ -44,7 +45,7 @@ export async function httpGetSuppliers(req: Request, res: Response) {
         .select(
           's.id', 's.name', 's.contact_name', 's.contact_email', 's.contact_phone',
           's.on_time_rate', 's.fill_rate', 's.defect_rate', 's.avg_delivery_days',
-          's.total_pos', 's.active', 's.notes', 's.created_at',
+          's.total_pos', 's.active', 's.notes', 's.moq', 's.lead_time_days', 's.created_at',
           trx.raw('COUNT(po.id) as open_po_count')
         );
     });
@@ -60,7 +61,15 @@ export async function httpCreateSupplier(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { name, contact_name, contact_email, contact_phone, notes } = req.body;
+const { 
+  name, 
+  contact_name, 
+  contact_email, 
+  contact_phone, 
+  notes, 
+  moq, 
+  lead_time_days 
+} = req.body;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'name is required' });
@@ -77,6 +86,8 @@ export async function httpCreateSupplier(req: Request, res: Response) {
           contact_name: contact_name ?? null,
           contact_email: contact_email ?? null,
           contact_phone: contact_phone ?? null,
+          moq: (moq === undefined || moq === null || moq === '') ? null : Number(moq),
+          lead_time_days: (lead_time_days === undefined || lead_time_days === null || lead_time_days === '') ? null : Number(lead_time_days),
           notes: notes ?? null,
         })
         .returning('*');
@@ -89,6 +100,72 @@ export async function httpCreateSupplier(req: Request, res: Response) {
     }
     console.error('[suppliers] httpCreateSupplier failed', err);
     return res.status(500).json({ error: 'Failed to create supplier' });
+  }
+}
+
+// ─────────────────────────────────────────────
+// PATCH /api/v1/suppliers/:id — update supplier fields
+// ─────────────────────────────────────────────
+export async function httpUpdateSupplier(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { id } = req.params;
+  const { name, contact_name, contact_email, contact_phone, notes, moq, lead_time_days } = req.body;
+
+  const updates: Record<string, unknown> = {};
+  if (name !== undefined) {
+    if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'name cannot be empty' });
+    updates.name = name.trim();
+  }
+  if (contact_name !== undefined) updates.contact_name = contact_name?.trim() || null;
+  if (contact_email !== undefined) updates.contact_email = contact_email?.trim() || null;
+  if (contact_phone !== undefined) updates.contact_phone = contact_phone?.trim() || null;
+  if (notes !== undefined) updates.notes = notes?.trim() || null;
+  if (moq !== undefined) updates.moq = (moq === null || moq === '') ? null : Number(moq);
+  if (lead_time_days !== undefined) updates.lead_time_days = (lead_time_days === null || lead_time_days === '') ? null : Number(lead_time_days);
+
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'No valid fields provided' });
+  updates.updated_at = new Date();
+
+  try {
+    const [supplier] = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const existing = await trx('suppliers').where({ id, shop_id: shopId }).first();
+      if (!existing) throw Object.assign(new Error('SUPPLIER_NOT_FOUND'), { statusCode: 404 });
+      return trx('suppliers').where({ id, shop_id: shopId }).update(updates).returning('*');
+    });
+    return res.json({ supplier });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Supplier not found' });
+    if (err?.code === '23505') return res.status(409).json({ error: 'A supplier with this name already exists' });
+    console.error('[suppliers] httpUpdateSupplier failed', err);
+    return res.status(500).json({ error: 'Failed to update supplier' });
+  }
+}
+
+// ─────────────────────────────────────────────
+// DELETE /api/v1/suppliers/:id — soft-delete (active=false)
+// purchase_orders.supplier_id is ON DELETE RESTRICT; soft-delete preserves PO history.
+// ─────────────────────────────────────────────
+export async function httpDeleteSupplier(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { id } = req.params;
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const existing = await trx('suppliers').where({ id, shop_id: shopId }).first();
+      if (!existing) throw Object.assign(new Error('SUPPLIER_NOT_FOUND'), { statusCode: 404 });
+      await trx('suppliers').where({ id, shop_id: shopId }).update({ active: false, updated_at: new Date() });
+      console.info('[SUPPLIERS] supplier soft-deleted', { shopId, id });
+    });
+    return res.json({ success: true });
+  } catch (err: any) {
+    if (err.statusCode === 404) return res.status(404).json({ error: 'Supplier not found' });
+    console.error('[suppliers] httpDeleteSupplier failed', err);
+    return res.status(500).json({ error: 'Failed to delete supplier' });
   }
 }
 

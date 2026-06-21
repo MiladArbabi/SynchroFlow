@@ -6,6 +6,8 @@ import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   httpGetSuppliers,
   httpCreateSupplier,
+  httpUpdateSupplier,
+  httpDeleteSupplier,
   httpGetPurchaseOrders,
   httpCreatePurchaseOrder,
   httpGetPoLineItems,
@@ -58,6 +60,20 @@ router.post(
   requireFt2,
   requireAction('suppliers:write'),
   httpCreateSupplier
+);
+router.patch(
+  '/:id',
+  authenticateToken,
+  requireFt2,
+  requireAction('suppliers:write'),
+  httpUpdateSupplier
+);
+router.delete(
+  '/:id',
+  authenticateToken,
+  requireFt2,
+  requireAction('suppliers:write'),
+  httpDeleteSupplier
 );
 
 // ── PURCHASE ORDERS ────────────────────────────────────

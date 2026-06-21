@@ -1,9 +1,9 @@
 # LaSyncro — Modules UX Playbook
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces.
-> **Last updated:** 2026-06-20
+> **Last updated:** 2026-06-21
+> **2026-06-21 — Suppliers Portal gained standalone supplier CRUD.** Suppliers were previously create-only inside the New-PO dialog; the portal's Suppliers list now supports add/edit/remove without a PO. Pattern: a single reusable `SupplierFormDialog` (mode `add` | `edit`) drives every supplier entry point for identical fields + validation; "Add supplier" uses the filled-accent CTA convention (per CTA-016); per-row Edit/Delete are outlined inline actions. Delete is a **soft-delete** (`active = false`) — `purchase_orders.supplier_id` is `ON DELETE RESTRICT`, so PO history is preserved and the supplier is hidden from new POs. Place record-management CRUD on the owning operational surface, not in Settings (which is for shop config, not records).
 > **2026-06-20 — Inventory/Catalog adopted the canonical triage + pulse layout** (decision card + `PulseRow` rail, matching Orders/Inbound). Catalog is now the reference for a **full-width sortable column grid**: a shared `gridTemplateColumns` constant drives both header and rows (Product · Variants · On-hand · Available · Status · Action), every header sortable with the `↑/↓` affordance, and a severity-ranked Status sort (phantom > zero-stock > no-SKU > sellable). Avoid the legacy fixed stat-card grid for new module surfaces.
-> **Sprint:** CTA Consistency Audit & Standardisation
 
 ---
 
@@ -288,6 +288,8 @@ Does this CTA commit an action or resolve an issue?
 | CTA-017 | ✅ | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | 863 | `New PO` MUI blue → filled accent |
 | CTA-018 | ✅ | `apps/frontend/src/pages/ft2-pages/ReleaseQueuePage.tsx` | 192 | `Release Batch` MUI blue → filled accent |
 | CTA-019 | ✅ | `modules/cashflow/src/ui/pages/CashFlowModuleFT2.tsx` | 293 | `Plan a new order` plain outlined → ghost pill with accent border |
+| CTA-020 | ✅ | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | Suppliers header | `Add Supplier` filled accent (per CTA-016) |
+| CTA-021 | ✅ | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | SupplierAccordion | `Edit` / `Delete` outlined inline actions (Delete = error color, soft-delete) |
 | ORD-01 | 🟡 | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | 624 | `View all orders →` navigates to `/orders` root — needs wiring to full order list |
 
 ---

@@ -91,6 +91,8 @@ export type Supplier = {
   defect_rate: number | null;
   total_pos: number;
   active: boolean;
+  moq: number | null;
+  lead_time_days: number | null;
   open_po_count: number;
 };
 
@@ -99,6 +101,8 @@ export type CreateSupplierInput = {
   contact_name?: string;
   contact_email?: string;
   contact_phone?: string;
+  moq?: number;
+  lead_time_days?: number;
 };
 
 export type CreatePoInput = {
@@ -126,6 +130,8 @@ export type SuppliersPortalPageProps = {
   onFetchLineItems: (poId: string) => Promise<PoLineItem[]>;
   onUpdatePoStatus: (poId: string, status: PurchaseOrderStatus, actualDeliveryDate?: string) => Promise<void>;
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
+  onUpdateSupplier: (id: number, input: CreateSupplierInput) => Promise<Supplier>;
+  onDeleteSupplier: (id: number) => Promise<void>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
@@ -193,11 +199,12 @@ function CreatePoDialog({
   onClose: () => void;
   onCreateSupplier: (input: CreateSupplierInput) => Promise<Supplier>;
   onCreatePo: (input: CreatePoInput) => Promise<void>;
+  /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
   prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
 }) {
   const [supplierId, setSupplierId] = useState<string>('');
-  const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
+  const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
   const [expectedDate, setExpectedDate] = useState('');
   const [notes, setNotes] = useState('');
   const [lineItems, setLineItems] = useState<LineItemDraft[]>([
@@ -275,6 +282,8 @@ function CreatePoDialog({
           contact_name: newSupplier.contact_name.trim() || undefined,
           contact_email: newSupplier.contact_email.trim() || undefined,
           contact_phone: newSupplier.contact_phone.trim() || undefined,
+          moq: newSupplier.moq.trim() ? Number(newSupplier.moq) : undefined,
+          lead_time_days: newSupplier.lead_time_days.trim() ? Number(newSupplier.lead_time_days) : undefined,
         });
         resolvedSupplierId = created.id;
       } else {
@@ -306,7 +315,7 @@ function CreatePoDialog({
   const handleClose = () => {
     if (submitting) return;
     setSupplierId('');
-    setNewSupplier({ name: '', contact_name: '', contact_email: '', contact_phone: '' });
+    setNewSupplier({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
     setExpectedDate('');
     setNotes('');
     setLineItems([{ key: 0, description: '', quantity_ordered: '', unit_cost_cents: '' }]);
@@ -354,6 +363,12 @@ function CreatePoDialog({
                 onChange={(e) => setNewSupplier((p) => ({ ...p, contact_email: e.target.value }))} />
               <TextField label="Phone" size="small" fullWidth value={newSupplier.contact_phone}
                 onChange={(e) => setNewSupplier((p) => ({ ...p, contact_phone: e.target.value }))} />
+                <TextField label="Min order qty (MOQ)" type="number" size="small" fullWidth value={newSupplier.moq}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, moq: e.target.value }))}
+                helperText="Units this supplier requires per order. Leave blank for no minimum." />
+              <TextField label="Lead time (days)" type="number" size="small" fullWidth value={newSupplier.lead_time_days}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, lead_time_days: e.target.value }))}
+                helperText="Days from PO sent to goods received. Used to compute the best reorder date." />
             </Box>
           )}
 
@@ -989,13 +1004,92 @@ function PoAccordion({
       </AccordionDetails>
     </Accordion>
   );
+};
+
+function SupplierFormDialog({ open, mode, initial, onClose, onSubmit }: {
+  open: boolean;
+  mode: 'add' | 'edit';
+  initial?: Supplier;
+  onClose: () => void;
+  onSubmit: (input: CreateSupplierInput) => Promise<void>;
+}) {
+  const [form, setForm] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setForm({
+        name: initial?.name ?? '',
+        contact_name: initial?.contact_name ?? '',
+        contact_email: initial?.contact_email ?? '',
+        contact_phone: initial?.contact_phone ?? '',
+        moq: initial?.moq != null ? String(initial.moq) : '',
+        lead_time_days: initial?.lead_time_days != null ? String(initial.lead_time_days) : '',
+      });
+      setError(null);
+    }
+  }, [open, initial]);
+
+  const handleSave = async () => {
+    if (!form.name.trim()) return setError('Name is required.');
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        name: form.name.trim(),
+        contact_name: form.contact_name.trim() || undefined,
+        contact_email: form.contact_email.trim() || undefined,
+        contact_phone: form.contact_phone.trim() || undefined,
+        moq: form.moq.trim() ? Number(form.moq) : undefined,
+        lead_time_days: form.lead_time_days.trim() ? Number(form.lead_time_days) : undefined,
+      });
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to save supplier.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>{mode === 'add' ? 'Add supplier' : 'Edit supplier'}</DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, pt: 1 }}>
+        {error && <Alert severity="error">{error}</Alert>}
+        <TextField label="Name *" size="small" fullWidth value={form.name}
+          onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
+        <TextField label="Contact name" size="small" fullWidth value={form.contact_name}
+          onChange={(e) => setForm((p) => ({ ...p, contact_name: e.target.value }))} />
+        <TextField label="Email" size="small" fullWidth value={form.contact_email}
+          onChange={(e) => setForm((p) => ({ ...p, contact_email: e.target.value }))} />
+        <TextField label="Phone" size="small" fullWidth value={form.contact_phone}
+          onChange={(e) => setForm((p) => ({ ...p, contact_phone: e.target.value }))} />
+        <TextField label="Min order qty (MOQ)" type="number" size="small" fullWidth value={form.moq}
+          onChange={(e) => setForm((p) => ({ ...p, moq: e.target.value }))}
+          helperText="Units this supplier requires per order. Leave blank for no minimum." />
+        <TextField label="Lead time (days)" type="number" size="small" fullWidth value={form.lead_time_days}
+          onChange={(e) => setForm((p) => ({ ...p, lead_time_days: e.target.value }))}
+          helperText="Days from PO sent to goods received. Used to compute the best reorder date." />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} color="inherit">Cancel</Button>
+        <Button onClick={handleSave} disabled={submitting} variant="contained"
+          sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+          {mode === 'add' ? 'Add supplier' : 'Save changes'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 }
 
 // ─────────────────────────────────────────────
 // SUPPLIER ACCORDION
 // ─────────────────────────────────────────────
-
-function SupplierAccordion({ supplier }: { supplier: Supplier }) {
+function SupplierAccordion({ supplier, onEdit, onDelete }: {
+  supplier: Supplier;
+  onEdit: (s: Supplier) => void;
+  onDelete: (s: Supplier) => void;
+}) {
   return (
     <Accordion
       variant="outlined"
@@ -1037,6 +1131,12 @@ function SupplierAccordion({ supplier }: { supplier: Supplier }) {
           {supplier.defect_rate !== null && (
             <Typography variant="caption" color="text.secondary">Defect rate: {supplier.defect_rate}%</Typography>
           )}
+          <Typography variant="caption" color="text.secondary">MOQ: {supplier.moq != null ? `${supplier.moq} units` : '—'}</Typography>
+          <Typography variant="caption" color="text.secondary">Lead time: {supplier.lead_time_days != null ? `${supplier.lead_time_days} days` : '—'}</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
+          <Button size="small" variant="outlined" onClick={() => onEdit(supplier)}>Edit</Button>
+          <Button size="small" variant="outlined" color="error" onClick={() => onDelete(supplier)}>Delete</Button>
         </Box>
       </AccordionDetails>
     </Accordion>
@@ -1055,6 +1155,8 @@ function SuppliersPortalModuleFT2Inner({
   onFetchLineItems,
   onUpdatePoStatus,
   onCreateSupplier,
+  onUpdateSupplier,
+  onDeleteSupplier,
   onCreatePo,
   onCreateReceiveJob,
   onSearchVariants,
@@ -1062,6 +1164,8 @@ function SuppliersPortalModuleFT2Inner({
   prefilledLineItem,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [showClosed, setShowClosed] = useState(false);
 
   const allPos = data?.purchase_orders ?? [];
@@ -1178,6 +1282,12 @@ function SuppliersPortalModuleFT2Inner({
               <Star size={18} />
               <Typography variant="subtitle1" fontWeight={700}>Suppliers</Typography>
               <Chip label={suppliers.length} size="small" />
+              <Box sx={{ flex: 1 }} />
+              <Button size="small" startIcon={<Plus size={16} />} variant="contained"
+                onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
+                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+                Add supplier
+              </Button>
             </Box>
 
             {suppliers.length === 0 ? (
@@ -1188,7 +1298,18 @@ function SuppliersPortalModuleFT2Inner({
                 </Typography>
               </Paper>
             ) : (
-              suppliers.map((s) => <SupplierAccordion key={s.id} supplier={s} />)
+              suppliers.map((s) => (
+                <SupplierAccordion
+                  key={s.id}
+                  supplier={s}
+                  onEdit={(sup) => { setEditingSupplier(sup); setSupplierFormOpen(true); }}
+                  onDelete={async (sup) => {
+                    if (window.confirm(`Remove ${sup.name}? Past purchase orders are kept; the supplier is hidden from new POs.`)) {
+                      await onDeleteSupplier(sup.id);
+                    }
+                  }}
+                />
+              ))
             )}
           </Box>
         </>
@@ -1204,9 +1325,19 @@ function SuppliersPortalModuleFT2Inner({
         onCreatePo={onCreatePo}
         onSearchVariants={onSearchVariants}
       />
+      <SupplierFormDialog
+        open={supplierFormOpen}
+        mode={editingSupplier ? 'edit' : 'add'}
+        initial={editingSupplier ?? undefined}
+        onClose={() => { setSupplierFormOpen(false); setEditingSupplier(null); }}
+        onSubmit={async (input) => {
+          if (editingSupplier) await onUpdateSupplier(editingSupplier.id, input);
+          else await onCreateSupplier(input);
+        }}
+      />
     </Box>
   );
-}
+};
 
 export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {
   const [searchParams] = useSearchParams();

@@ -36,6 +36,14 @@ export async function up(knex: Knex): Promise<void> {
       .comment('Average actual vs expected delivery delta in days across all received POs. Negative = early, positive = late.');
 
     table.boolean('active').notNullable().defaultTo(true);
+    table
+      .integer('moq')
+      .nullable()
+      .comment('Minimum order quantity (units) this supplier accepts per PO. Null = no minimum. Supplier-level; reorder qty is rounded up to this before drafting a PO.');
+    table
+      .integer('lead_time_days')
+      .nullable()
+      .comment('Typical days from PO sent to goods received (produce + ship). Null = unknown. Supplier-level; used to compute reorder-by date = today + (days_of_stock - lead_time_days).');
     table.text('notes').nullable();
 
     table.timestamp('created_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());

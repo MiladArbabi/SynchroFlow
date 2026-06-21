@@ -59,8 +59,20 @@ export default function SuppliersPortalPage() {
 
   const handleCreateSupplier = useCallback(async (input: CreateSupplierInput): Promise<Supplier> => {
     const { data } = await axiosInstance.post('/api/v1/suppliers', input);
+    refetch();
     return data.supplier;
-  }, []);
+  }, [refetch]);
+
+  const handleUpdateSupplier = useCallback(async (id: number, input: CreateSupplierInput): Promise<Supplier> => {
+    const { data } = await axiosInstance.patch(`/api/v1/suppliers/${id}`, input);
+    refetch();
+    return data.supplier;
+  }, [refetch]);
+
+  const handleDeleteSupplier = useCallback(async (id: number): Promise<void> => {
+    await axiosInstance.delete(`/api/v1/suppliers/${id}`);
+    refetch();
+  }, [refetch]);
 
   const handleCreatePo = useCallback(async (input: CreatePoInput): Promise<void> => {
     await axiosInstance.post('/api/v1/suppliers/purchase-orders', input);
@@ -104,6 +116,8 @@ export default function SuppliersPortalPage() {
       onFetchLineItems={handleFetchLineItems}
       onUpdatePoStatus={handleUpdatePoStatus}
       onCreateSupplier={handleCreateSupplier}
+      onUpdateSupplier={handleUpdateSupplier}
+      onDeleteSupplier={handleDeleteSupplier}
       onCreatePo={handleCreatePo}
       onCreateReceiveJob={handleCreateReceiveJob}
       onSearchVariants={handleSearchVariants}

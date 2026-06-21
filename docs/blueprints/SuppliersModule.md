@@ -21,7 +21,9 @@ All routes require `authenticateToken` + `requireFt2` + `requireAction`.
 | Method | Path | Status | Notes |
 |---|---|---|---|
 | GET | `/api/v1/suppliers` | ✅ Live | Returns `{suppliers: []}` with `open_po_count` computed |
-| POST | `/api/v1/suppliers` | ✅ Wired | Create supplier |
+| POST | `/api/v1/suppliers` | ✅ Wired | Create supplier (now refetches list) |
+| PATCH | `/api/v1/suppliers/:id` | ✅ Wired | Update supplier (name/contact/moq/lead_time_days) |
+| DELETE | `/api/v1/suppliers/:id` | ✅ Wired | Soft-delete (`active=false`) — preserves PO FK history |
 | GET | `/api/v1/suppliers/purchase-orders` | ✅ Live | Returns `{purchase_orders: []}` with supplier name + line counts |
 | POST | `/api/v1/suppliers/purchase-orders` | ✅ Wired | Create PO |
 | GET | `/api/v1/suppliers/purchase-orders/:poId/line-items` | ✅ Wired | Line items per PO |
@@ -47,7 +49,11 @@ All routes require `authenticateToken` + `requireFt2` + `requireAction`.
 | `on_time_rate`, `fill_rate`, `defect_rate` | All null — computed on PO `received`/`partially_received` transition. Never triggered on clean seed. |
 | `avg_delivery_days` | Null — needs completed receive jobs |
 | `total_pos` | 0 on both suppliers — counter not incrementing (bug or trigger not firing) |
-| `open_po_count` | Computed at query time — correct (Linen House: 1, Wool & Co: 2) |
+| `open_po_count` | Computed at query time |
+| `moq` | Supplier-level minimum order qty (units), nullable. Captured at supplier create/edit. Reorder qty must round up to this (REPL-002 guard, future). |
+| `lead_time_days` | Days PO-sent → goods-received, nullable. Feeds reorder-by date = today + (days_of_stock − lead_time_days) (REPL-004, future). |
+
+> **Sprint (2026-06-21):** Added supplier-level `moq` + `lead_time_days` (base migration `0094`). Standalone supplier CRUD on the portal (add/edit/remove via reusable `SupplierFormDialog`); delete is soft (`active=false`). `httpGetSuppliers` now filters `active=true` and returns moq/lead_time. Next: REPL-002 MOQ guard in CreatePoDialog, REPL-004 reorder-by-date planner in the Demand bridge.
 
 ### `purchase_orders` (3 rows)
 
