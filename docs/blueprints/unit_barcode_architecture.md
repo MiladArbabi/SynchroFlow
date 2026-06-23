@@ -72,7 +72,19 @@ EAN/UPC is variant-level (many units share it). At receive, a unique `LSU-` ID i
 
 **Class B — Products arriving WITHOUT any barcode**
 
-No secondary identifier exists on the physical object. The only anchors are the variant identity, the location, and the `receive_sequence`. Re-print path: operator triggers reprint workflow → scans shelf/bin barcode (WM-28, see §8) → selects variant from list of what's expected at that location → system narrows to units of that variant in that bin → if one match, reprints → if multiple, short disambiguation list (receive date, batch sequence).
+No secondary identifier exists on the physical object. The only anchors are the variant identity, the location, and the `receive_sequence`. Re-print path: operator triggers reprint workflow → scans shelf/bin barcode (WM-28, see §8) → selects variant from list of what's expected at that location→ system narrows to units of that variant in that bin → if one match, reprints → if multiple, short disambiguation list (receive date, batch sequence).
+
+### UI naming canon (locked June 2026 — WMS-FP-04)
+Four distinct barcode systems exist. They must NEVER be co-mingled, summed, or share a count/label in any UI surface:
+
+| System | UI name | What it is | Generated at | Owning surface |
+|--------|---------|-----------|--------------|----------------|
+| `LSU-` | **Unit labels (LSU)** | Per-unit identity, single source of truth stow→pick→pack→ship | Receiving | Settings → Warehouse (coverage) + WMS scan surfaces |
+| `LSO-` | **Order codes (LSO)** | Invoice barcode, pack→ship confirmation | Pack (invoice PDF) | WMS pack flow |
+| Shelf/bin (WM-28) | **Location codes** | Bin, shelf & zone labels — scanned to locate stock | Floor setup | Floor Planning → Barcodes (Location codes) |
+| EAN/UPC | **Product codes** | Shopify variant barcode — camera-scan fallback / re-print lookup coupling field | Synced from Shopify | Floor Planning → Barcodes (Product codes) |
+
+Floor Planning's "Barcodes" tab owns **Location codes** and **Product codes** only. Its badge counts **missing location codes** (the to-do signal) — never a sum across systems. LSU coverage is an integration milestone, surfaced in Settings → Warehouse, with a teaching pointer from the Barcodes tab
 
 ---
 

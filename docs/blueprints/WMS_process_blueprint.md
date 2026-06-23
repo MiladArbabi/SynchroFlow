@@ -201,7 +201,15 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 - Operator carries units to location, scans location barcode (WM‑28) or manually confirms  
 - **Confirm Stow** → two `inventory_movements` records written: `location_transfer` debit at `WH-{n}-ROOT` (stock leaves staging) and `location_transfer` credit at destination bin (stock arrives). `stow_tasks.inventory_movement_id` linked to credit movement. See `docs/blueprints/inventory_movement_audit_trail.md`.  
 - Stow alert auto‑resolves → `inventory_truth` projection updated  
+- **Unit status update (both paths):** Confirm Stow must flip `inventory_units` → `status='stowed'` + `current_location_code` on **both** scan paths: (a) scanned-LSU path updates the scanned unit + qty-1 siblings from the same receive job line; (b) web task-confirm path (no LSU) resolves the variant's oldest `received` units FIFO, limited to qty.
 
+> **Known bug fixed (June 2026) — WMS-OPS-01:** the no-LSU branch and the bin-capacity check were mistakenly nested *inside* `if (lasyncroUnitId)` in `confirmStow` (`stow.service.ts`). On the web task-confirm path (`lasyncroUnitId` undefined) the whole block was skipped — task completed and `inventory_movements`/`inventory_truth` updated, but units stayed `received`, so picking could never locate the stock. Fix: the LSU and no-LSU branches must be **siblings** of `if (lasyncroUnitId)`, and the capacity check must sit **outside** the branch so it runs for both. Prior service-level patches failed because they edited logic inside the unreachable block.
+
+> **Dual-track principle — WMS-OPS-02 (June 2026):** LaSyncro runs **both** LSU-tracked and non-LSU (legacy) stock through the *same* lifecycle (receive → stow → pick → pack → ship) so merchants adopt **without** re-labelling existing stock or halting operations. Non-LSU stock has no `inventory_units` rows — it lives only as variant-level `inventory_truth` quantities. Both paths are proven end-to-end. LSU coverage grows progressively as new stock is received.
+
+> **Known bug fixed (June 2026) — WMS-OPS-02b (coverage metric):** `computeCoverage` (`inventoryUnit.service.ts`) measured `inventory_units` against itself (denominator = unit-row count), so non-LSU stock was invisible — it would report ~100% while hundreds of units sat unlabelled. **Correct definition:** denominator = total physical stock = SUM(`inventory_truth.on_hand_quantity`) where qty > 0 (all locations incl. WH-{n}-ROOT staging — a unit in staging is physically present and unlabelled); numerator = active `inventory_units` (status NOT IN shipped/lost). Result adds `unlabelled_in_circulation` (= physical − labelled), surfaced in the Settings → Warehouse coverage strip as the actionable adoption gap. Verified: 4 / 624 → 1%, 620 unlabelled.
+
+> **Known bug fixed (June 2026) — WMS-OPS-03 (pick-complete):** the `order_warehouse_status` UPDATE in pick-complete (`wms.controller.ts`) filtered by `shop_id` — a column that table does **not** have (tenant isolation is via RLS on the order subquery) — and by the wrong source status. It threw
 ---
 
 ## PART 2 — OUTBOUND: ORDERS & FULFILLMENT

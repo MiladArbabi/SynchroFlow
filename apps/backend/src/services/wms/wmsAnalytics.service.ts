@@ -44,11 +44,22 @@ export async function getLiveCapacity(shopId: number, knex: Knex) {
 
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
-    const shippedTodayRow = await trx('order_warehouse_status')
+    // Canonical fulfilled-today (matches Orders module) split by fulfillment path.
+    // WMS-scanned = fulfilled AND has a WMS 'shipped' warehouse-status row today.
+    // Legacy/Shopify = fulfilled today with no WMS shipped row.
+    const fulfilledTodayRow = await trx('order_fulfillment_status')
+      .where('status', 'fulfilled')
+      .where('fulfilled_at', '>=', startOfDay)
+      .count('* as count')
+      .first();
+    const shippedViaWmsRow = await trx('order_warehouse_status')
       .where('status', 'shipped')
       .where('status_updated_at', '>=', startOfDay)
       .count('* as count')
       .first();
+    const fulfilledTotal = Number(fulfilledTodayRow?.count ?? 0);
+    const shippedViaWms = Number(shippedViaWmsRow?.count ?? 0);
+    const shippedViaLegacy = Math.max(0, fulfilledTotal - shippedViaWms);
 
     const settings = await trx('shop_operational_settings')
       .where('shop_id', shopId)
@@ -160,7 +171,9 @@ export async function getLiveCapacity(shopId: number, knex: Knex) {
       required_uph: requiredUph,
       standard_uph: standardUph,
       on_track: onTrack,
-      shipped_today: Number(shippedTodayRow?.count ?? 0),
+      shipped_today: fulfilledTotal,
+      shipped_via_wms: shippedViaWms,
+      shipped_via_legacy: shippedViaLegacy,
       unfulfilled_orders: unfulfilled,
     };
   });
@@ -309,10 +322,10 @@ export async function getPipelineVelocity(shopId: number, windowDays: number, kn
     const r = receiveRow.rows[0];
     return {
       stages: {
-        released_to_picking_s: batchStages?.released_to_picking_s ? Math.round(Number(batchStages.released_to_picking_s)) : null,
-        picking_s: batchStages?.picking_s ? Math.round(Number(batchStages.picking_s)) : null,
-        packing_s: batchStages?.packing_s ? Math.round(Number(batchStages.packing_s)) : null,
-        packed_to_shipped_s: shipStage?.packed_to_shipped_s ? Math.round(Number(shipStage.packed_to_shipped_s)) : null,
+        released_to_picking_s: batchStages?.released_to_picking_s != null ? Math.round(Number(batchStages.released_to_picking_s)) : null,
+        picking_s: batchStages?.picking_s != null ? Math.round(Number(batchStages.picking_s)) : null,
+        packing_s: batchStages?.packing_s != null ? Math.round(Number(batchStages.packing_s)) : null,
+        packed_to_shipped_s: shipStage?.packed_to_shipped_s != null ? Math.round(Number(shipStage.packed_to_shipped_s)) : null,
       },
       latencies: {
         receive_to_pickable_hours: r?.avg_hours ? Math.round(Number(r.avg_hours) * 10) / 10 : null,
@@ -527,6 +540,101 @@ export async function getCostStory(shopId: number, windowDays: number, knex: Kne
       orders_shipped: ordersShipped,
       editorial,
     };
+  });
+}
+
+// ─── AGING WIP — live, what's stuck on the floor ──────────────
+export async function getAgingWip(shopId: number, knex: Knex) {
+  return knex.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    const ACTIVE = ['picking', 'picked', 'packing', 'packed'];
+    const rows = await trx('order_warehouse_status as ows')
+      .whereIn('ows.status', ACTIVE)
+      .select(
+        'ows.status',
+        'ows.status_updated_at',
+        trx.raw(`EXTRACT(EPOCH FROM (now() - ows.status_updated_at)) as age_s`),
+      )
+      .orderBy('ows.status_updated_at', 'asc');
+
+    const byStage: Record<string, { count: number; oldest_age_s: number }> = {};
+    for (const s of ACTIVE) byStage[s] = { count: 0, oldest_age_s: 0 };
+    for (const r of rows) {
+      const stage = byStage[r.status];
+      stage.count += 1;
+      stage.oldest_age_s = Math.max(stage.oldest_age_s, Math.round(Number(r.age_s)));
+    }
+    const oldest_overall_s = rows.length ? Math.round(Number(rows[0].age_s)) : 0;
+    return { total: rows.length, by_stage: byStage, oldest_overall_s };
+  });
+}
+
+// ─── THROUGHPUT TREND — daily UPH over the window ─────────────
+export async function getThroughputTrend(shopId: number, windowDays: number, knex: Knex) {
+  return knex.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    const since = windowSince(windowDays);
+    const rows = await trx('pick_batches')
+      .where('shop_id', shopId)
+      .where('pick_completed_at', '>=', since)
+      .whereNotNull('pick_claimed_at')
+      .whereNotNull('pick_completed_at')
+      .select(
+        trx.raw(`date_trunc('day', pick_completed_at)::date as day`),
+        trx.raw(`SUM(units_picked) as units`),
+        trx.raw(`SUM(EXTRACT(EPOCH FROM (pick_completed_at - pick_claimed_at)) / 3600.0) as hours`),
+      )
+      .groupByRaw(`date_trunc('day', pick_completed_at)`)
+      .orderByRaw(`date_trunc('day', pick_completed_at)`);
+    const points = rows.map((r: any) => {
+      const units = Number(r.units ?? 0);
+      const hours = Number(r.hours ?? 0);
+      return {
+        day: r.day,
+        units,
+        uph: hours > 0 ? Math.round((units / hours) * 10) / 10 : null,
+      };
+    });
+    const withUph = points.filter((p) => p.uph != null);
+    const avgUph = withUph.length > 0
+      ? Math.round((withUph.reduce((a, p) => a + (p.uph as number), 0) / withUph.length) * 10) / 10
+      : null;
+    return { points, avg_uph: avgUph, latest_uph: withUph.length ? withUph[withUph.length - 1].uph : null };
+  });
+}
+
+// ─── EXCEPTION TREND — by type over the window ────────────────
+export async function getExceptionTrend(shopId: number, windowDays: number, knex: Knex) {
+  return knex.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    const since = windowSince(windowDays);
+    const rows = await trx('pick_exceptions')
+      .where('shop_id', shopId)
+      .where('raised_at', '>=', since)
+      .whereNot('exception_type', 'order_cancelled')
+      .select(
+        trx.raw(`date_trunc('day', raised_at)::date as day`),
+        'exception_type',
+        trx.raw(`COUNT(*) as count`),
+        trx.raw(`COUNT(*) FILTER (WHERE resolved = false) as open_count`),
+      )
+      .groupByRaw(`date_trunc('day', raised_at), exception_type`)
+      .orderByRaw(`date_trunc('day', raised_at)`);
+
+    const byType: Record<string, number> = {};
+    const byDay: Record<string, number> = {};
+    let total = 0;
+    let openTotal = 0;
+    for (const r of rows) {
+      const c = Number(r.count);
+      total += c;
+      openTotal += Number(r.open_count);
+      byType[r.exception_type] = (byType[r.exception_type] ?? 0) + c;
+      const dayKey = String(r.day);
+      byDay[dayKey] = (byDay[dayKey] ?? 0) + c;
+    }
+    const points = Object.entries(byDay).map(([day, count]) => ({ day, count }));
+    return { total, open_total: openTotal, by_type: byType, points };
   });
 }
 

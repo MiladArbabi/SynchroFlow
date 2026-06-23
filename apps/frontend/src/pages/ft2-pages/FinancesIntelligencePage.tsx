@@ -4,11 +4,9 @@
 // Signals: net margin pulse, cost coverage gap, refund leakage,
 // blocked revenue at margin, negative margin SKU alert.
 
-import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, LinearProgress, Chip } from '@mui/material';
 import { AlertTriangle, TrendingDown, Lock, CheckCircle } from 'lucide-react';
-import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useFinancesIntelligence } from '../finances/useFinancesIntelligence';
 import { useColorScheme, useTheme } from '@mui/material/styles';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
@@ -99,7 +97,6 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
 
 export default function FinancesIntelligencePage() {
   const theme = useTheme();
-  const [range, setRange] = useState<FT2DateRange>({ preset: 'past_30_days', from: null, to: null });
   const intelligenceQuery = useFinancesIntelligence();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
@@ -121,7 +118,7 @@ export default function FinancesIntelligencePage() {
 
   return (
     <Box sx={{ background: pal.pageBg, minHeight: '100%' }}>
-      <FT2DateRangeBar value={range} onChange={setRange} />
+      {/* <FT2DateRangeBar value={range} onChange={setRange} /> */}
 
       <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box>

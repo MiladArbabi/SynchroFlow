@@ -79,12 +79,6 @@ const PALETTE_ITEMS = [
   { type: 'bin',  label: 'Materials',  zone_type: 'kitting',   defaultW: 2.0, defaultD: 1.0, defaultRackLevels: 2    },
 ] as const;
 
-const TEMPLATES = [
-  { label: 'Pick-pack-ship (linear)' },
-  { label: 'U-shaped flow'           },
-  { label: 'Fish-bone with kitting'  },
-];
-
 function snapV(v: number): number {
   return Math.round(v / SNAP) * SNAP;
 }
@@ -139,13 +133,22 @@ interface CanvasEditorProps {
   }) => Promise<void>;
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
-function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCentreX, canvasCentreY }: {
+function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, canvasCentreX, canvasCentreY }: {
+  zones: WarehouseZone[];
   unpositionedZones: WarehouseZone[];
   onPlace: (zone: WarehouseZone) => void;
   onCreateZone?: CanvasEditorProps['onCreateZone'];
   canvasCentreX: number;
   canvasCentreY: number;
 }) {
+  // Layout health — real checks computed from live zone state (WMS-FP-06).
+  const healthIssues: string[] = [];
+  const unpositioned = zones.filter((z) => z.position_x == null).length;
+  if (unpositioned > 0) healthIssues.push(`${unpositioned} zone${unpositioned !== 1 ? 's' : ''} not placed on the floor`);
+  const detachedBins = zones.filter((z) => z.type === 'bin' && z.zone_type !== 'quarantine' && z.parent_location_code == null).length;
+  if (detachedBins > 0) healthIssues.push(`${detachedBins} bin${detachedBins !== 1 ? 's' : ''} with no parent aisle`);
+  const unbarcoded = zones.filter((z) => z.type !== 'warehouse' && z.barcode == null).length;
+  if (unbarcoded > 0) healthIssues.push(`${unbarcoded} location${unbarcoded !== 1 ? 's' : ''} without a barcode`);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const [locationCode, setLocationCode] = useState('');
   const [creating, setCreating] = useState(false);
@@ -253,24 +256,22 @@ function ComponentPalette({ unpositionedZones, onPlace, onCreateZone, canvasCent
       )}
 
       <Divider />
-      <Box sx={{ p: 1.5, borderBottom: '1px solid var(--rule)' }}>
-        <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-          Templates
-        </Typography>
-        {TEMPLATES.map((t) => (
-          <Box key={t.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75, py: 0.75, px: 1, borderRadius: 1, cursor: 'pointer', mb: 0.5, '&:hover': { bgcolor: 'var(--bg-2)' } }}>
-            <Box sx={{ width: 3, height: 3, borderRadius: '50%', bgcolor: 'var(--ink-4)', flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', lineHeight: 1.3 }}>{t.label}</Typography>
-          </Box>
-        ))}
-      </Box>
       <Box sx={{ p: 1.5, mt: 'auto', borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
         <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
           Layout health
         </Typography>
-        <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic', lineHeight: 1.4 }}>
-          All good — no issues detected.
-        </Typography>
+        {healthIssues.length === 0 ? (
+          <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic', lineHeight: 1.4 }}>
+            All good — no issues detected.
+          </Typography>
+        ) : (
+          healthIssues.map((issue, i) => (
+            <Box key={i} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.5 }}>
+              <Box sx={{ width: 4, height: 4, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0, mt: 0.5 }} />
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', lineHeight: 1.4 }}>{issue}</Typography>
+            </Box>
+          ))
+        )}
       </Box>
     </Box>
   );
@@ -838,6 +839,7 @@ export function CanvasEditor({
 
       {/* LEFT — palette */}
       {renderMode === '2D' && <ComponentPalette
+        zones={zones}
         unpositionedZones={zones.filter(z => z.position_x == null)}
         onPlace={(zone) => {
           const centreX = snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)));

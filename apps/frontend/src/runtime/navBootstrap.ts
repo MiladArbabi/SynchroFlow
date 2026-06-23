@@ -74,6 +74,7 @@ export function bootstrapNavGroups() {
       { id: 'wms-operations',  title: 'Operations',     path: '/wms'             },
       { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale' },
       { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
+      { id: 'products-wms-readiness', title: 'WMS Readiness',  path: '/wms/readiness'  },
     ],
   });
 
@@ -101,7 +102,6 @@ export function bootstrapNavGroups() {
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
       { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
-      { id: 'products-wms-readiness', title: 'WMS Readiness',  path: '/wms/readiness'  },
       { id: 'problem-center',         title: 'Problem Center', path: '/problem-center'          },
     ],
   });

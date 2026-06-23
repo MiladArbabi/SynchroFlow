@@ -417,6 +417,13 @@ function BarcodesTab({
   return (
     <Box>
       {/* Sub-tab toggle */}
+      <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', mb: 1.5 }}>
+        Unit labels (LSU) are generated at receiving and tracked in{' '}
+        <Box component="a" href="/settings/warehouse" sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+          Settings → Warehouse
+        </Box>
+        . Codes below locate stock (location codes) and identify products (Shopify EAN/UPC, a camera-scan fallback).
+      </Typography>
       <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
         {(['locations', 'products'] as const).map((st) => (
           <Box
@@ -431,7 +438,7 @@ function BarcodesTab({
               transition: 'all 0.15s',
             }}
           >
-            {st === 'locations' ? `Locations  ${zones.length}` : `Products  ${productBarcodes.length}`}
+            {st === 'locations' ? `Location codes  ${zones.length}` : `Product barcodes  ${productBarcodes.length}`}
           </Box>
         ))}
       </Box>
@@ -471,7 +478,7 @@ function BarcodesTab({
           {/* Section label + print action — matches target design */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
             <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-              Location Barcodes · This Floor
+              Location codes · Bin, shelf & zone labels · This Floor
             </Typography>
           </Box>
           {/* Stat row */}
@@ -682,7 +689,10 @@ function FloorPlanningModuleFT2Inner({
 
   const binCount      = (gridLocations ?? []).filter((l) => l.type === 'bin').length;
   const setupCount    = zones.length;
-  const barcodesCount = zones.filter((z) => z.barcode !== null).length + productBarcodes.filter((p) => p.barcode !== null).length;
+  // Badge = location codes still MISSING a barcode (the to-do signal).
+  // Never sum across barcode systems — location codes (WM-28) and product
+  // codes (EAN/UPC coupling) are distinct namespaces; LSU unit labels live in Settings → Warehouse.
+  const barcodesCount = zones.filter((z) => z.barcode === null).length;
 
     const handleCreate = async () => {
     if (!createCode.trim()) { setCreateError('Location code is required'); return; }
@@ -722,29 +732,34 @@ function FloorPlanningModuleFT2Inner({
       })()}
       {tab === 'map' && (() => {
         const bins   = (gridLocations ?? []).filter((l) => l.type === 'bin');
-        const aisles = new Set(bins.map((l) => l.location_code.split('-')[0])).size;
+        const aisles = new Set(
+        bins
+          .filter((l) => l.zone_type !== 'quarantine' && l.parent_location_code != null)
+          .map((l) => l.parent_location_code)
+      ).size;
         const hot    = Object.values(gridOccupancy ?? {}).filter((o) => o.on_hand_quantity > 0).length;
         const subLine = bins.length > 0
           ? `${bins.length} bin${bins.length !== 1 ? 's' : ''} across ${aisles} aisle${aisles !== 1 ? 's' : ''} · ${hot} bin${hot !== 1 ? 's' : ''} with stock`
           : 'No bins configured yet — add aisles and bins in Setup.';
         return <>
-          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Floor planning today
           </Typography>
           <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>{subLine}</Typography>
         </>;
       })()}
       {tab === 'setup' && <>
-        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Build your warehouse.{' '}</Typography>
-        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>One zone at a time.</Typography>
+        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Build your warehouse.</Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Configure aisles, shelves, and bins. Your layout is the foundation of every pick.</Typography>
       </>}
       {tab === 'barcodes' && (() => {
         const barcodedLocs     = zones.filter((z) => z.barcode !== null).length;
+        const missingLocs      = zones.filter((z) => z.barcode === null).length;
         const barcodedProducts = productBarcodes.filter((p) => p.barcode !== null).length;
         const missingProducts  = productBarcodes.filter((p) => p.barcode === null).length;
+        // Two systems kept separate — never co-mingled into one "missing" count (WMS-FP-04).
         const subLine = zones.length > 0 || productBarcodes.length > 0
-          ? `${barcodedLocs} location${barcodedLocs !== 1 ? 's' : ''} barcoded · ${barcodedProducts} product${barcodedProducts !== 1 ? 's' : ''} barcoded · ${missingProducts} without — generate or import to clear.`
+          ? `Location codes: ${barcodedLocs}/${zones.length} labelled${missingLocs > 0 ? ` · ${missingLocs} missing` : ''}  —  Product barcodes: ${barcodedProducts}/${productBarcodes.length}${missingProducts > 0 ? ` · ${missingProducts} missing` : ''}. Generate or import to clear.`
           : 'No locations or products found. Add zones in Setup and sync products.';
         return <>
           <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Every location, every product.{' '}</Typography>
@@ -784,7 +799,7 @@ function FloorPlanningModuleFT2Inner({
                   </Typography>
                   {([
                     { id: 'occupancy',    label: 'Occupancy',     sub: 'How full each bin is.' },
-                    { id: 'stockout',     label: 'Stock-out risk', sub: 'Bins below reorder.' },
+                    { id: 'stockout',     label: 'Stock-out risk', sub: 'Bins low on stock (≤3 units).' },
                     { id: 'empty',        label: 'Empty bins',     sub: 'Available capacity.' },
                     { id: 'none',         label: 'No overlay',     sub: 'Just the layout.' },
                   ] as const).map((o) => (
@@ -952,7 +967,8 @@ function FloorPlanningModuleFT2Inner({
                   : pct > 0
                   ? 'rgba(34,197,94,0.9)'
                   : 'var(--ink-4)';
-                const [aisleLabel] = selectedBin.split('-');
+                // Aisle from parent_location_code, not string-split (consistent with WMS-FP-01/02).
+                const aisleLabel = selectedLocation?.parent_location_code ?? '—';
                 return (
                   <Paper variant="outlined" sx={{ width: 240, p: 2.5, borderRadius: 2, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {/* Header */}

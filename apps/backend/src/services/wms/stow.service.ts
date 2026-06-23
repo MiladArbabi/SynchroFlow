@@ -310,7 +310,7 @@ export async function confirmStow(
           .limit(remaining)
           .pluck('lasyncro_unit_id');
 
-        if (siblingIds.length > 0) {
+    if (siblingIds.length > 0) {
           await trx('inventory_units')
             .whereIn('lasyncro_unit_id', siblingIds)
             .andWhere({ shop_id: shopId })
@@ -322,7 +322,29 @@ export async function confirmStow(
         }
       }
     }
+  } else {
+    // 4e. No LSU scanned (web task-confirm path) — resolve units from the task itself.
+    // Stow the variant's oldest `received` units (FIFO), limited to qty. This closes the
+    // gap where task-confirm completed the move but left inventory_units at 'received'.
+    const unitIds = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_variant_id: task.lasyncro_variant_id, status: 'received' })
+      .orderBy('received_at', 'asc')
+      .limit(qty)
+      .pluck('lasyncro_unit_id');
 
+    if (unitIds.length > 0) {
+      await trx('inventory_units')
+        .whereIn('lasyncro_unit_id', unitIds)
+        .andWhere({ shop_id: shopId })
+        .update({
+          status: 'stowed',
+          current_location_code: task.location_code,
+          updated_at: completedAt,
+        });
+    }
+  }
+
+  {
     // 4d. Soft capacity check — count all stowed units at this location.
     // If over max_capacity, create a Problem Center task for bin audit.
     const location = await trx('warehouse_locations')

@@ -73,7 +73,7 @@ interface WarehouseLocation {
 ## Grid Derivation
 
 - Grid renders **bin-type locations only** — warehouse/lane/shelf are structural, not rendered as cells
-- Aisle label = segment before first `-` in `location_code` (e.g. `"A"` from `"A-1"`)
+- Aisle = the bin's `parent_location_code` (the lane it belongs to). **Do NOT** string-split `location_code` — that breaks on quarantine/problem bins with no aisle prefix (fixed June 2026, WMS-FP-01/02). Aisle counts exclude `zone_type='quarantine'` bins.
 - Bins sorted `ASC` within each aisle — matches `wms.controller.ts` pick route sort
 - Aisles sorted alphabetically left→right
 
@@ -155,8 +155,10 @@ SVG floor plan editor rendered in the Setup tab. Reads `position_x/y`, `width`, 
 All require: `authenticateToken` + `requireFt2` + `requireAction('floor-planning:read|write')`
 
 ### Known bug fixed (May 2026)
-
 `httpGetBinStats` previously ran two sequential transactions — the first was dead code. Now single transaction. The `order_revenue_units` subquery omits `shop_id` filter and relies on RLS `SET LOCAL` tenant isolation.
+
+### Known bug fixed (June 2026) — WMS-FP-01 / WMS-FP-02
+Map header aisle count diverged from Barcodes card ("4 aisles" vs "0/3"). Root cause: header derived aisle via `location_code.split('-')[0]`, which counted the `PROBLEM` quarantine bin (no aisle prefix) as a phantom aisle. Fixed in `FloorPlanningModuleFT2.tsx` to derive aisle from `parent_location_code` of non-quarantine bins, matching the lane-based Barcodes count. Both now report 3 (A,B,C).
 
 ---
 

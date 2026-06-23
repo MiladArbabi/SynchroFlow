@@ -20,6 +20,8 @@ export type LiveCapacity = {
   standard_uph: number | null;
   on_track: 'green' | 'amber' | 'red' | null;
   shipped_today: number;
+  shipped_via_wms: number;
+  shipped_via_legacy: number;
   unfulfilled_orders: number;
 };
 
@@ -86,6 +88,26 @@ export type CostStory = {
   editorial: string | null;
 };
 
+// ─── AGING WIP / TRENDS ───────────────────────────────────────
+export type AgingWip = {
+  total: number;
+  by_stage: Record<string, { count: number; oldest_age_s: number }>;
+  oldest_overall_s: number;
+};
+
+export type ThroughputTrend = {
+  points: { day: string; units: number; uph: number | null }[];
+  avg_uph: number | null;
+  latest_uph: number | null;
+};
+
+export type ExceptionTrend = {
+  total: number;
+  open_total: number;
+  by_type: Record<string, number>;
+  points: { day: string; count: number }[];
+};
+
 // ─── COMPOSITE RESPONSE ───────────────────────────────────────
 export type WmsAnalyticsResponse = {
   live: LiveCapacity;
@@ -93,6 +115,9 @@ export type WmsAnalyticsResponse = {
   pipeline: PipelineVelocity;
   exceptions: ExceptionIntelligence;
   cost: CostStory;
+  aging_wip: AgingWip;
+  throughput_trend: ThroughputTrend;
+  exception_trend: ExceptionTrend;
   days: number;
 };
 

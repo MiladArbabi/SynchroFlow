@@ -260,6 +260,7 @@ function UnitLabelCoverageSection() {
   const { data, isLoading } = useQuery<{
     labelled_units: number;
     total_active_units: number;
+    unlabelled_in_circulation: number;
     coverage_pct: number;
   }>({
     queryKey: ['unit-label-coverage'],
@@ -273,6 +274,7 @@ function UnitLabelCoverageSection() {
   const pct     = data?.coverage_pct ?? 0;
   const total   = data?.total_active_units ?? 0;
   const labelled = data?.labelled_units ?? 0;
+  const unlabelled = data?.unlabelled_in_circulation ?? 0;
 
   const barColor = pct === 100
     ? '#22C55E'
@@ -320,9 +322,17 @@ function UnitLabelCoverageSection() {
               No active inventory yet. Coverage will grow automatically as stock is received.
             </Typography>
           ) : (
-            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              Coverage grows automatically as new stock is received. Run a targeted stocktake to accelerate.
-            </Typography>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#EAB308' }} />
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 500 }}>
+                  {unlabelled.toLocaleString()} {unlabelled === 1 ? 'unit' : 'units'} still in circulation without a label
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                Coverage grows automatically as new stock is received. Run a targeted stocktake to accelerate.
+              </Typography>
+            </Box>
           )}
         </>
       )}

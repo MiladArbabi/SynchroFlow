@@ -42,6 +42,8 @@ type DisplayData = {
     standard_uph: number | null;
     on_track: 'green' | 'amber' | 'red' | null;
     shipped_today: number;
+    shipped_via_wms: number;
+    shipped_via_legacy: number;
     unfulfilled_orders: number;
   };
   pipeline: {
@@ -218,7 +220,7 @@ function Slot1TeamPerformance({ live }: { live: DisplayData['live'] | undefined 
 
       {/* UPH TRIO */}
       <Box sx={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
-        <BigStat label="Live UPH" value={live?.live_uph != null ? String(live.live_uph) : '—'} color={uphColor} />
+        <BigStat label={live?.live_uph != null ? 'Live UPH' : 'UPH · 30d'} value={live?.live_uph != null ? String(live.live_uph) : (live?.standard_uph != null ? String(live.standard_uph) : '—')} color={uphColor} />
         <BigStat label="Required" value={live?.required_uph != null ? String(live.required_uph) : '—'} color="rgba(255,255,255,0.5)" />
         <BigStat label="30d Baseline" value={live?.standard_uph != null ? String(live.standard_uph) : '—'} color="rgba(255,255,255,0.3)" />
       </Box>

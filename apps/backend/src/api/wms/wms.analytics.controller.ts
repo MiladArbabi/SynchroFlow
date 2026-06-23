@@ -7,6 +7,9 @@ import {
   getPipelineVelocity,
   getExceptionIntelligence,
   getCostStory,
+  getAgingWip,
+  getThroughputTrend,
+  getExceptionTrend,
   getActivityStream,
   getDisplayZones,
   validateDisplayToken,
@@ -19,14 +22,17 @@ export const httpGetPickAnalytics = async (req: Request, res: Response) => {
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
     const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 30));
     await db.raw(`SET "app.current_tenant" = '${shopId}'`);
-    const [live, operators, pipeline, exceptions, cost] = await Promise.all([
+    const [live, operators, pipeline, exceptions, cost, agingWip, throughputTrend, exceptionTrend] = await Promise.all([
       getLiveCapacity(shopId, db),
       getOperatorPerformance(shopId, days, db),
       getPipelineVelocity(shopId, days, db),
       getExceptionIntelligence(shopId, days, db),
       getCostStory(shopId, days, db),
+      getAgingWip(shopId, db),
+      getThroughputTrend(shopId, days, db),
+      getExceptionTrend(shopId, days, db),
     ]);
-    return res.json({ live, operators, pipeline, exceptions, cost, days });
+    return res.json({ live, operators, pipeline, exceptions, cost, aging_wip: agingWip, throughput_trend: throughputTrend, exception_trend: exceptionTrend, days });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_ANALYTICS_FAILED]', { error: message });

@@ -60,17 +60,18 @@ export default function ProductsWmsReadinessPage() {
   }
 
   return (
-    <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
+    <>
       <ModuleTabBar tabs={[
         { id: 'operations',     label: 'Operations',     path: '/wms' },
-        { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
         { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
         { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
+        { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
       ]} />
+    <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
       
       {/* ── HEADER ───────────────────────────────────────────── */}
       <Box sx={{ mb: 2.5 }}>
-        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.25 }}>
+        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           WMS Readiness
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
@@ -273,5 +274,6 @@ export default function ProductsWmsReadinessPage() {
       </Box>
 
     </Box>
+  </>
   );
 }

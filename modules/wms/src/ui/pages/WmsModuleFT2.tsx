@@ -673,11 +673,7 @@ function WmsModuleFT2Inner({
       {/* PAGE HEADER */}
       <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }}>
         <Box>
-          <Typography sx={{
-            fontFamily: '"Instrument Serif", Georgia, serif',
-            fontSize: 30, fontWeight: 400, letterSpacing: '-0.01em',
-            color: 'var(--ink)', lineHeight: 1.1,
-          }}>
+          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Warehouse
           </Typography>
           <Typography sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }}>

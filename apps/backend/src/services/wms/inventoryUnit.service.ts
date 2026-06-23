@@ -36,6 +36,7 @@ export interface InventoryUnitRow {
 export interface CoverageResult {
   labelled_units: number;
   total_active_units: number;
+  unlabelled_in_circulation: number;
   coverage_pct: number;
 }
 
@@ -202,26 +203,34 @@ export async function computeCoverage(
   trx: Knex | Knex.Transaction,
   shopId: number
 ): Promise<CoverageResult> {
-  const row = await trx('inventory_units')
+  // Denominator: total physical stock on hand across all locations (inventory_truth
+  // is the source of truth for what is physically present — staging + bins). Non-LSU
+  // (legacy) stock lives here as variant-level quantities with no per-unit rows.
+  const truthRow = await trx('inventory_truth')
+    .where({ shop_id: shopId })
+    .where('on_hand_quantity', '>', 0)
+    .sum<{ sum: string }>('on_hand_quantity as sum')
+    .first();
+  const totalPhysical = Number(truthRow?.sum ?? 0);
+
+  // Numerator: physical stock that is LSU-backed. Each active inventory_units row
+  // (not shipped/lost) represents one physically-present labelled unit.
+  const unitRow = await trx('inventory_units')
     .where({ shop_id: shopId })
     .whereNotIn('status', ['shipped', 'lost'])
-    .select(
-      trx.raw(`COUNT(*) AS total_active_units`),
-      trx.raw(`
-        COUNT(*) FILTER (
-          WHERE source IN ('lasyncro_receive', 'legacy_stocktake')
-        ) AS labelled_units
-      `)
-    )
+    .count<{ count: string }>('* as count')
     .first();
+  const labelled = Number(unitRow?.count ?? 0);
 
-  const total = Number(row?.total_active_units ?? 0);
-  const labelled = Number(row?.labelled_units ?? 0);
-  const pct = total === 0 ? 0 : Math.round((labelled / total) * 100);
+  // Guard: labelled can never exceed physical (would indicate truth/unit drift).
+  const labelledClamped = Math.min(labelled, totalPhysical);
+  const unlabelled = Math.max(0, totalPhysical - labelledClamped);
+  const pct = totalPhysical === 0 ? 0 : Math.round((labelledClamped / totalPhysical) * 100);
 
   return {
-    labelled_units: labelled,
-    total_active_units: total,
+    labelled_units: labelledClamped,
+    total_active_units: totalPhysical,
+    unlabelled_in_circulation: unlabelled,
     coverage_pct: pct,
   };
 }

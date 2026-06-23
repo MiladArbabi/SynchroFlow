@@ -61,6 +61,7 @@ export default function FloorPlanningPage() {
         { id: 'operations',     label: 'Operations',     path: '/wms'            },
         { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
         { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth' },
+        { id: 'readiness',     label: 'WMS Readiness',  path: '/wms/readiness'  },
       ]} />
       <FloorPlanningModuleFT2
         data={data ?? null}

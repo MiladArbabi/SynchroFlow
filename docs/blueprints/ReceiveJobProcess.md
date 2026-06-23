@@ -148,6 +148,8 @@ For variant-linked lines only (steps 7–10 skipped for unlinked lines):
 3. **Barcode print jobs created** — one per accepted variant
 4. **Stow tasks created** — one per accepted line at ROOT location
 
+> **Planned — WMS-EPIC-01 (Directed Putaway):** stow tasks currently default to `WH-{shopId}-ROOT`. The forward epic upgrades this so the system computes an optimal target bin per received unit against the PO — using zone affinity, bin capacity, SKU velocity, and pick-path proximity — turning the floor plan into a live routing engine instead of a static map. Likely builds on `locationSuggestion.service.ts` + `stow.service.ts`. Scoped as its own workshop post-submission audit.
+
 All-or-nothing. Failure rolls back entire close. Job remains open and retryable.
 
 ---

@@ -442,7 +442,7 @@ export const httpCompletePick = async (req: Request, res: Response) => {
             .where({ pick_batch_id: batchId })
             .select('lasyncro_order_id')
         )
-        .where({ shop_id: shopId, status: 'picking' })
+        .where({ status: 'picking' })
         .update({
           status:             'picked',
           picked_at:          now,
