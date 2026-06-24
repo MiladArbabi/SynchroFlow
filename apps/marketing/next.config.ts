@@ -5,6 +5,8 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: 'lasyncro.com', pathname: '/**' },
+      // AUD-009: hostname was a literal markdown-link string ('[www.lasyncro.com](https://...)'),
+      // not a valid hostname — next/image remote-pattern matching silently failed for all www-hosted images.
       { protocol: 'https', hostname: 'www.lasyncro.com', pathname: '/**' },
     ],
   },
