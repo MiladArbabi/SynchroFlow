@@ -21,7 +21,7 @@ import { FileText, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { SectionLabel, SettingsPageWrapper } from './ShopSettingsShared';
-import { QUICK_REPORTS, isTierSufficient, MIME, type ExportFormat, type QuickReport } from 'config/exportReports';
+import { QUICK_REPORTS, isTierSufficient, MIME, type ExportFormat, type QuickReport } from '../../config/exportReports';
 import { FormatBadge } from 'components/ExportFormatBadge';
 
 // ─── QUICK REPORT CARD ────────────────────────────────────────────────────────

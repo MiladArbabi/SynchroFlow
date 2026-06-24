@@ -1,6 +1,6 @@
 // apps/frontend/src/components/ExportFormatBadge.tsx
 import { Box } from '@mui/material';
-import type { ExportFormat } from 'config/exportReports';
+import type { ExportFormat } from '../config/exportReports';
 
 export function FormatBadge({ format }: { format: ExportFormat }) {
   return (

@@ -10,7 +10,7 @@ import { useState } from 'react';
 import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
 import { X, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
-import { QUICK_REPORTS, isTierSufficient, MIME, type QuickReport } from 'config/exportReports';
+import { QUICK_REPORTS, isTierSufficient, MIME, type QuickReport } from '../config/exportReports';
 import { FormatBadge } from './ExportFormatBadge';
 
 interface ExportDrawerProps {
