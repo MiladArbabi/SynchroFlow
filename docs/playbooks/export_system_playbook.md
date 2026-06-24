@@ -226,3 +226,7 @@ apps/backend/src/api/exports/
 7. PDF: use `pdfkit` doc piped to `res`.
 8. Frontend CTAs: always Tier 2 ghost pill, always pre-filtered to current view.
 9. Never duplicate column definitions — canonical list lives in `exports.controller.ts`.
+
+## 12. Changelog
+
+- **2026-06-24** — Overview's `Export brief →` CTA now opens `ExportDrawer` (page-level fixed slide-in, per §6 CTA Placement Rule) instead of hardcoding the PDF brief download. Drawer offers Brief (PDF), All Orders / Returns / Finances (CSV) — reuses existing Sprint 1 endpoints, no new backend work. Canonical report list moved from `ShopSettingsReportsPage.tsx` to `apps/frontend/src/config/exportReports.ts` (single source, both surfaces import it). True `.xlsx` still not implemented — tracked separately.
