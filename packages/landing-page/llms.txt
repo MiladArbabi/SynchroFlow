@@ -31,9 +31,8 @@ https://www.lasyncro.com/about
 https://www.lasyncro.com/pricing
 https://www.lasyncro.com/getting-started
 https://www.lasyncro.com/faq
-https://www.lasyncro.com/glossary
-https://www.lasyncro.com/industries
 https://www.lasyncro.com/features
+<!-- AUD-016: /glossary and /industries intentionally omitted — routes exist but have no real content yet. Add once populated; do not link AI crawlers to empty pages. -->
 https://www.lasyncro.com/features/po-receiving
 https://www.lasyncro.com/features/traceability
 https://www.lasyncro.com/features/workforce-management
