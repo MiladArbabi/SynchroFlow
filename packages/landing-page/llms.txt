@@ -28,12 +28,42 @@ Shopify merchants doing $500K–$10M+ revenue, operating from their own warehous
 ## Key pages
 https://www.lasyncro.com/
 https://www.lasyncro.com/about
-https://www.lasyncro.com/blog
-https://www.lasyncro.com/compare
+https://www.lasyncro.com/pricing
+https://www.lasyncro.com/getting-started
+https://www.lasyncro.com/faq
+https://www.lasyncro.com/glossary
+https://www.lasyncro.com/industries
+https://www.lasyncro.com/features
 https://www.lasyncro.com/features/po-receiving
 https://www.lasyncro.com/features/traceability
 https://www.lasyncro.com/features/workforce-management
 https://www.lasyncro.com/features/morning-brief
+
+## Blog
+https://www.lasyncro.com/blog
+https://www.lasyncro.com/blog/best-wms-for-shopify-small-business
+https://www.lasyncro.com/blog/how-to-fix-inventory-drift-shopify
+https://www.lasyncro.com/blog/how-to-run-shopify-warehouse-small-team
+https://www.lasyncro.com/blog/shopify-inventory-management-apparel
+https://www.lasyncro.com/blog/shopify-inventory-management-auto-parts
+https://www.lasyncro.com/blog/shopify-inventory-management-beauty
+https://www.lasyncro.com/blog/shopify-inventory-management-sports-hobby
+https://www.lasyncro.com/blog/shopify-inventory-management-supplements
+https://www.lasyncro.com/blog/shopify-lagerhantering
+https://www.lasyncro.com/blog/shopify-lagerstyring
+https://www.lasyncro.com/blog/shopify-operations-guide
+https://www.lasyncro.com/blog/shopify-order-fulfillment-workflow
+https://www.lasyncro.com/blog/shopify-overselling-problem
+https://www.lasyncro.com/blog/shopify-warehouse-management
+https://www.lasyncro.com/blog/shopify-warehouse-workflow
+https://www.lasyncro.com/blog/why-shopify-inventory-not-syncing
+
+## Compare
+https://www.lasyncro.com/compare
+https://www.lasyncro.com/compare/brightpearl-alternative
+https://www.lasyncro.com/compare/cin7-alternative
+https://www.lasyncro.com/compare/linnworks-alternative
+https://www.lasyncro.com/compare/stocky-alternative
 
 ## Topics covered
 - Shopify inventory management for small warehouse teams
