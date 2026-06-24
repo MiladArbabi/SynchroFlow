@@ -27,6 +27,21 @@ import db from '@lasyncro/backend-core/db.js';
  * - Computed on demand — not cached (snapshot handles caching)
  */
 
+export type CashFlowComparison = {
+  period: { from: string; to: string };
+  prior:  { from: string; to: string };
+  prior_totals: {
+    realized_revenue: number;
+    pending_revenue:  number;
+    total_refunded:   number;
+  };
+  delta: {
+    realized_pct: number | null;
+    pending_pct:  number | null;
+    refunds_pct:  number | null;
+  };
+};
+
 export type CashFlowSummary = {
   realized_revenue: number;
   pending_revenue: number;
@@ -35,6 +50,11 @@ export type CashFlowSummary = {
   inventory_value: number;
   net_cash_position: number;
   working_capital_locked: number;
+  // UX-sweep 2026-06-23: days of cash at current burn.
+  // null when burn ≤ 0 (cash positive — no runway concern).
+  runway_days: number | null;
+  // UX-sweep 2026-06-23: prior-period totals for "How am I doing?" framing.
+  comparison: CashFlowComparison | null;
 };
 
 export type CashFlowBucket = {
@@ -85,7 +105,8 @@ export type CashFlowProjectionResult = {
 };
 
 export async function computeCashFlowProjection(
-  shopId: number
+  shopId: number,
+  compareDays = 30,
 ): Promise<CashFlowProjectionResult> {
   
   return db.transaction(async (trx) => {
@@ -140,6 +161,20 @@ export async function computeCashFlowProjection(
       .first();
 
     /**
+     * BLOCKED REVENUE (FIN-09 — 2026-06-23)
+     * -------------------------------------
+     * Operationally-blocked orders the owner can unblock — distinct from
+     * `atRiskRow` above which counts constrained (uncertain-timing) orders.
+     * Used by the optimistic projection scenario: "what releases if blocked
+     * orders are unblocked this week?". Sourced from the operational snapshot
+     * to match the cross-domain semantics used in Finances/Intelligence
+     * (blockedRevenue × avgMarginPct).
+     */
+    const blockedRow = await trx('orders_operational_control_snapshot')
+      .where('shop_id', shopId)
+      .select('blocked_revenue')
+      .first();
+    /**
      * TOTAL REFUNDED
      * --------------
      * Cash returned to customers.
@@ -152,6 +187,63 @@ export async function computeCashFlowProjection(
         trx.raw('COALESCE(SUM(re.total_refund_amount), 0) as total_refunded'),
       )
       .first();
+
+    // UX-sweep 2026-06-23: prior-period comparison for headline delta.
+    // Windowed on order_created_at / refund created_at. Lifetime totals
+    // above are unaffected — we just measure the change in the last N days.
+    const now = new Date();
+    const periodFrom = new Date(now.getTime() - compareDays * 86_400_000);
+    const priorTo    = new Date(periodFrom.getTime());
+    const priorFrom  = new Date(periodFrom.getTime() - compareDays * 86_400_000);
+
+    const comparePeriod = async (since: Date, until: Date) => {
+      const realized = await trx('order_fulfillment_status as ofs')
+        .join('order_revenue_units as oru', 'oru.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .where('ofs.status', 'fulfilled')
+        .whereBetween('o.order_created_at', [since, until])
+        .select(trx.raw('COALESCE(SUM(oru.line_total), 0) as revenue'))
+        .first();
+      const pending = await trx('order_fulfillment_status as ofs')
+        .join('order_revenue_units as oru', 'oru.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .join('orders as o', 'o.lasyncro_order_id', 'ofs.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .whereIn('ofs.status', ['pending', 'partially_fulfilled'])
+        .whereBetween('o.order_created_at', [since, until])
+        .select(trx.raw('COALESCE(SUM(oru.line_total), 0) as revenue'))
+        .first();
+      const refunds = await trx('refund_executions as re')
+        .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .whereBetween('re.created_at', [since, until])
+        .select(trx.raw('COALESCE(SUM(re.total_refund_amount), 0) as total'))
+        .first();
+      return {
+        realized: Number(realized?.revenue ?? 0),
+        pending:  Number(pending?.revenue ?? 0),
+        refunds:  Number(refunds?.total ?? 0),
+      };
+    };
+
+    const currentPeriod = await comparePeriod(periodFrom, now);
+    const priorPeriod   = await comparePeriod(priorFrom, priorTo);
+    const pctDelta = (curr: number, prev: number): number | null =>
+      prev > 0 ? Math.round(((curr - prev) / prev) * 1000) / 10 : null;
+    const comparison = {
+      period: { from: periodFrom.toISOString(), to: now.toISOString() },
+      prior:  { from: priorFrom.toISOString(),  to: priorTo.toISOString() },
+      prior_totals: {
+        realized_revenue: priorPeriod.realized,
+        pending_revenue:  priorPeriod.pending,
+        total_refunded:   priorPeriod.refunds,
+      },
+      delta: {
+        realized_pct: pctDelta(currentPeriod.realized, priorPeriod.realized),
+        pending_pct:  pctDelta(currentPeriod.pending,  priorPeriod.pending),
+        refunds_pct:  pctDelta(currentPeriod.refunds,  priorPeriod.refunds),
+      },
+    };
 
     /**
      * INVENTORY VALUE
@@ -255,6 +347,9 @@ export async function computeCashFlowProjection(
     const realizedRevenue = Number(realizedRow?.revenue ?? 0);
     const pendingRevenue = Number(pendingRow?.revenue ?? 0);
     const atRiskRevenue = Number(atRiskRow?.revenue ?? 0);
+    // FIN-09: optimistic scenario boost comes from BLOCKED revenue (operational
+    // snapshot), not at-risk. Blocked = unblockable today; at-risk = uncertain.
+    const blockedRevenue = Number(blockedRow?.blocked_revenue ?? 0);
     const totalRefunded = Number(refundRow?.total_refunded ?? 0);
     const inventoryValue = Number(inventoryRow?.inventory_value ?? 0);
 
@@ -294,18 +389,36 @@ export async function computeCashFlowProjection(
     let baseCumulative = startingBalance;
     let optimisticCumulative = startingBalance;
 
-    // Optimistic boost: blocked orders releasing adds at-risk revenue
-    const optimisticBoost = atRiskRevenue;
+    // FIN-09 (2026-06-23): comment and code previously disagreed — comment said
+    // "blocked orders releasing" but code used atRiskRevenue. With at-risk=0
+    // (common case), optimistic collapsed onto base, rendering as ONE line
+    // instead of THREE on the 60-day projection. Now reads `blockedRevenue`
+    // from orders_operational_control_snapshot — semantically correct AND keeps
+    // optimistic distinct whenever there are blocked orders to release.
+    const optimisticBoost = blockedRevenue;
 
     for (let week = 1; week <= 9; week++) {
       const weekDate = new Date();
       weekDate.setDate(weekDate.getDate() + week * 7);
 
-      // PO outflows due this week
+      // PO outflows due this week.
+      // FIN-10 (2026-06-23): week 1's lower bound was previously `today`, which
+      // silently dropped past-dated, not-yet-received POs (shipped/in-transit
+      // status) from the projection while still surfacing them in po_outflows
+      // — under-modeling committed cash by $X and showing them as "Upcoming"
+      // anyway. Fix: week 1 sweeps everything overdue + due this week (any
+      // open PO with expected_delivery_date < end of week 1). Other weeks
+      // unchanged: strict [weekStart, weekDate) windowing.
       const weekStart = new Date();
       weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
       const weekOutflows = poOutflows
-        .filter(p => p.expected_delivery_date && new Date(p.expected_delivery_date) >= weekStart && new Date(p.expected_delivery_date) < weekDate)
+        .filter(p => {
+          if (!p.expected_delivery_date) return false;
+          const due = new Date(p.expected_delivery_date);
+          // Week 1 absorbs any overdue commitments (no lower bound).
+          if (week === 1) return due < weekDate;
+          return due >= weekStart && due < weekDate;
+        })
         .reduce((sum, p) => sum + p.total_cost, 0);
 
       // Conservative: only confirmed pending revenue, no new sales
@@ -325,6 +438,16 @@ export async function computeCashFlowProjection(
       });
     }
 
+    // UX-sweep 2026-06-23: runway days = how many days of net cash cover
+    // daily burn. Burn = overhead - velocity (refunds already netted into
+    // netCashPosition). null when burn ≤ 0 (cash positive). Capped at 999
+    // to avoid Infinity in the wire payload.
+    const dailyOverhead = weeklyOverhead / 7;
+    const dailyBurn = Math.max(0, dailyOverhead - dailyVelocity);
+    const runwayDays = dailyBurn > 0
+      ? Math.min(999, Math.floor(netCashPosition / dailyBurn))
+      : null;
+
     const summary: CashFlowSummary = {
       realized_revenue: Math.round(realizedRevenue * 100) / 100,
       pending_revenue: Math.round(pendingRevenue * 100) / 100,
@@ -333,6 +456,8 @@ export async function computeCashFlowProjection(
       inventory_value: Math.round(inventoryValue * 100) / 100,
       net_cash_position: Math.round(netCashPosition * 100) / 100,
       working_capital_locked: Math.round(workingCapitalLocked * 100) / 100,
+      runway_days: runwayDays,
+      comparison
     };
 
     const buckets: CashFlowBucket[] = [

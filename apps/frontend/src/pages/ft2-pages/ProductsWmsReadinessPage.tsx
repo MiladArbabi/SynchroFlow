@@ -11,14 +11,13 @@
 // - INV-04: variance_count now returns 0 (not null) when data exists
 // - Read-only — never mutates
 import { Box, Typography, Divider, useTheme } from '@mui/material';
-import { useNavigate } from 'react-router-dom';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { AlertTriangle, ScanBarcode, MapPin, Scale, PackageOpen } from 'lucide-react';
 import { useProductsWmsReadiness } from '../products/useProductsWmsReadiness';
+import { navigate } from 'runtime';
 
 export default function ProductsWmsReadinessPage() {
   const theme = useTheme();
-  const navigate = useNavigate();
   const { data, isSuccess } = useProductsWmsReadiness();
 
   const notPickable = data?.not_pickable_count ?? null;
@@ -70,83 +69,50 @@ export default function ProductsWmsReadinessPage() {
     <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
       
       {/* ── HEADER ───────────────────────────────────────────── */}
-      <Box sx={{ mb: 2.5 }}>
+      <Box sx={{ mb: 2 }}>
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           WMS Readiness
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
           Can your warehouse pick, receive, and count your inventory?
-          {oldestEval && ` · Last evaluated ${formatAge(oldestEval)}`}
         </Typography>
       </Box>
 
-      {/* ── STAT ROW — 4 cards ───────────────────────────────── */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.5, mb: 3 }}>
-        {/* Not pickable */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '8px', p: '12px 14px' }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-            Not pickable
-          </Typography>
-          <Typography sx={{ fontSize: 24, fontWeight: 500, color: (notPickable ?? 0) > 0 ? theme.palette.error.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-            {notPickable ?? '—'}
-          </Typography>
-          {(notPickable ?? 0) > 0 && (
-            <Box
-              onClick={() => navigate('/inventory/catalog')}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-            >
-              Fix in Catalog →
+      {/* ── VERDICT BANNER ───────────────────────────────────── */}
+      {(() => {
+        const blockers = (notPickable ?? 0) + (noBin ?? 0);
+        const ready = blockers === 0;
+        const tone = ready ? theme.palette.success.main : theme.palette.warning.main;
+        return (
+          <Box sx={{ bgcolor: 'var(--surface)', border: `0.5px solid ${tone}`, borderRadius: '10px', mb: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, p: '18px 20px' }}>
+              <Box sx={{ width: 40, height: 40, borderRadius: '10px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'var(--bg-2)', color: tone }}>
+                {ready ? <PackageOpen size={20} /> : <AlertTriangle size={20} />}
+              </Box>
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }}>
+                  {ready ? 'Your warehouse is ready to pick' : 'Some items aren\u2019t ready to pick'}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }}>
+                  {ready
+                    ? 'Every active SKU can be scanned and located.'
+                    : [
+                        (notPickable ?? 0) > 0 ? `${notPickable} SKU${notPickable === 1 ? '' : 's'} will fail at scan` : null,
+                        (noBin ?? 0) > 0 ? `${noBin} can't be located` : null,
+                      ].filter(Boolean).join(' · ')}
+                  {oldestEval && ` · counts synced ${formatAge(oldestEval)}`}
+                </Typography>
+              </Box>
             </Box>
-          )}
-        </Box>
-        {/* No bin location */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '8px', p: '12px 14px' }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-            No bin location
-          </Typography>
-          <Typography sx={{ fontSize: 24, fontWeight: 500, color: (noBin ?? 0) > 0 ? theme.palette.warning.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-            {noBin ?? '—'}
-          </Typography>
-          {(noBin ?? 0) > 0 && (
-            <Box
-              onClick={() => navigate('/floor-planning')}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: 1, py: 0.375, fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', mt: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-            >
-              Stow in Warehouse →
-            </Box>
-          )}
-        </Box>
-        {/* Variance */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '8px', p: '12px 14px' }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-            Count mismatch
-          </Typography>
-          <Typography sx={{ fontSize: 24, fontWeight: 500, color: variance == null ? 'var(--ink-4)' : variance > 0 ? theme.palette.warning.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-            {variance ?? '—'}
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
-            {variance == null ? 'No cycle count run yet' : variance === 0 ? 'Stock counts match' : `${varUnits ?? 0} units unaccounted`}
-          </Typography>
-        </Box>
-        {/* Last evaluation */}
-        <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '8px', p: '12px 14px' }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
-            Last evaluated
-          </Typography>
-          <Typography sx={{ fontSize: 20, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.1 }}>
-            {formatAge(oldestEval)}
-          </Typography>
-          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
-            Oldest sync across all bins
-          </Typography>
-        </Box>
-      </Box>
+          </Box>
+        );
+      })()}
 
-      {/* ── TWO COLUMN BODY ──────────────────────────────────── */}
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+      {/* ── TWO COLUMN BODY — symmetric grid ─────────────────── */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 2, alignItems: 'start' }}>
 
-        {/* LEFT — Pickability + Inventory trust */}
-        <Box sx={{ flex: 2, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {/* LEFT — Pickability */}
+        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
 
           {/* Pickability */}
           <Box sx={cardSx}>
@@ -168,9 +134,16 @@ export default function ProductsWmsReadinessPage() {
                     Active variants with no SKU. Camera scan will fail at pick step.
                   </Typography>
                 </Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: (notPickable ?? 0) > 0 ? theme.palette.error.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums' }}>
-                  {notPickable ?? '—'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: (notPickable ?? 0) > 0 ? theme.palette.error.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {notPickable ?? '—'}
+                  </Typography>
+                  {(notPickable ?? 0) > 0 && (
+                    <Box onClick={() => navigate('/inventory/catalog')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                      Fix in Catalog →
+                    </Box>
+                  )}
+                </Box>
               </Box>
               <Divider sx={{ borderColor: 'var(--rule)' }} />
               <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, py: 1.5 }}>
@@ -185,12 +158,23 @@ export default function ProductsWmsReadinessPage() {
                     SKU present but not stowed in floor plan. Operator can't locate it.
                   </Typography>
                 </Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 500, color: (noBin ?? 0) > 0 ? theme.palette.warning.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums' }}>
-                  {noBin ?? '—'}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 500, color: (noBin ?? 0) > 0 ? theme.palette.warning.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums' }}>
+                    {noBin ?? '—'}
+                  </Typography>
+                  {(noBin ?? 0) > 0 && (
+                    <Box onClick={() => navigate('/floor-planning')} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                      Stow in Warehouse →
+                    </Box>
+                  )}
+                </Box>
               </Box>
             </Box>
           </Box>
+        </Box>
+
+        {/* RIGHT — Trust + Receive */}
+        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
 
           {/* Inventory trust */}
           <Box sx={cardSx}>
@@ -213,7 +197,7 @@ export default function ProductsWmsReadinessPage() {
                       ? 'No cycle count run yet — run your first count to establish a baseline'
                       : varUnits != null && varUnits > 0
                         ? `${varUnits} units unaccounted for`
-                        : 'On-hand vs available delta'}
+                        : 'Physical cycle count not yet enabled'}
                   </Typography>
                 </Box>
                 <Typography sx={{ fontSize: 13, fontWeight: 500, color: variance == null ? 'var(--ink-4)' : variance > 0 ? theme.palette.warning.main : theme.palette.success.main, fontVariantNumeric: 'tabular-nums' }}>
@@ -241,8 +225,7 @@ export default function ProductsWmsReadinessPage() {
           </Box>
         </Box>
 
-        {/* RIGHT — Receive readiness */}
-        <Box sx={{ flex: 1, minWidth: 280 }}>
+        {/* Receive readiness */}
           <Box sx={cardSx}>
             <Box sx={headerSx}>
               <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
@@ -271,7 +254,6 @@ export default function ProductsWmsReadinessPage() {
             </Box>
           </Box>
         </Box>
-      </Box>
 
     </Box>
   </>

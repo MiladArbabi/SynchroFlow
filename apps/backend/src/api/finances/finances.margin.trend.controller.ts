@@ -34,7 +34,19 @@ export const httpGetMarginTrend = async (req: Request, res: Response) => {
         .orderBy('date', 'asc');
     });
 
-    return res.status(200).json({ data: rows, days });
+    // FIN-12 (2026-06-23): coerce numerics. Knex returns pg NUMERIC + COUNT
+    // as strings; chart components silently coerce or break. `date` ships as
+    // a Date/string from pg — leave as-is, frontend formats it.
+    return res.status(200).json({
+      data: rows.map((r) => ({
+        ...r,
+        avg_margin_pct: Number(r.avg_margin_pct),
+        total_margin: Number(r.total_margin),
+        total_revenue: Number(r.total_revenue),
+        order_count: Number(r.order_count),
+      })),
+      days,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[MARGIN_TREND_FAILED]', { error: message });

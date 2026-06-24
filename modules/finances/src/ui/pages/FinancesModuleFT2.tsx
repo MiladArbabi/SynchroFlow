@@ -1,14 +1,18 @@
 // modules/finances/src/ui/pages/FinancesModuleFT2.tsx
-import { useState } from 'react';
-import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme, alpha, LinearProgress } from '@mui/material';
+import { ReactNode, useState } from 'react';
+import { Box, Typography, ToggleButtonGroup, ToggleButton, useTheme, alpha, LinearProgress, Divider } from '@mui/material';
 import { FT2Layout } from '@lasyncro/ui-ft2';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
-import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+// 2026-06-24: canonical cross-module contract, shared with the
+// Intelligence hook (apps/frontend/src/pages/finances/useFinancesIntelligence.ts).
+import type { CurrencyContext, FinancesIntelligenceData } from '@lasyncro/shared/ui-contracts';
+import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { DollarSign, Truck, TrendingDown, AlertTriangle } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
-import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
+
 
 /**
  * LOCAL MARGIN TYPE
@@ -30,10 +34,11 @@ export type MarginSummary = {
 
 export type MarginOrder = {
   order_id: string;
-  gross_revenue: string;
-  estimated_cost: string;
-  gross_margin: string;
-  margin_pct: string;
+  // FIN-12 (2026-06-23): backend coerces NUMERIC → number; types follow runtime.
+  gross_revenue: number;
+  estimated_cost: number;
+  gross_margin: number;
+  margin_pct: number;
   carrier_shipping_cost: number | null;
   true_margin: number | null;
   true_margin_pct: number | null;
@@ -75,6 +80,11 @@ export type MarginData = {
   orders: MarginOrder[];
   pagination: { page: number; limit: number };
 } | null;
+
+// 2026-06-24: moved to @lasyncro/shared/contracts/finances-intelligence —
+// canonical cross-module type, shared with the Intelligence hook. See
+// §10 of finances-module-architecture.md for the migration note.
+
 
 export interface FinancesModuleFT2DataProps {
   context: {
@@ -118,6 +128,10 @@ export interface FinancesModuleFT2DataProps {
    * null when loading or unavailable.
    */
   marginTrend: MarginTrendData;
+  // UX-sweep 2026-06-23: optional Intelligence signals for the Profit Trust
+  // panel. Optional so existing call sites (which only pass margin* props)
+  // don't break — panel degrades to safe defaults ('—' values, no CTAs).
+  intelligence?: FinancesIntelligenceData | null;
 }
 
 export type FinancesModuleFT2Props = FinancesModuleFT2DataProps & {
@@ -192,12 +206,163 @@ function MarginBar({ min, avg, max }: { min: number; avg: number; max: number })
   );
 }
 
+// ────────────────────────────────────────────────────────────────────
+// ProfitTrustPanel — UX-sweep 2026-06-23
+// ────────────────────────────────────────────────────────────────────
+// Answers the operator's question on Margin: "can I trust this number,
+// and what's eating it?". Two grouped sections mirror the WMS Readiness
+// pattern (ProductsWmsReadinessPage):
+//   COST KNOWLEDGE — do you know what each sale costs?
+//   LEAKAGE        — what's eating margin after the sale?
+// Row anatomy + tokens mirror WMS Readiness byte-for-byte so operators
+// read the same mental model across modules.
+function ProfitTrustRow({
+  icon, severity, label, sub, value, cta,
+}: {
+  icon: ReactNode;
+  severity: 'ok' | 'warn' | 'bad';
+  label: string;
+  sub: string;
+  value: string | number | null;
+  cta?: { label: string; onClick: () => void };
+}) {
+  const theme = useTheme();
+  const sevColor =
+    severity === 'bad'  ? theme.palette.error.main :
+    severity === 'warn' ? theme.palette.warning.main :
+                          theme.palette.success.main;
+  return (
+    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, py: 1.5 }}>
+      <Box sx={{ mt: 0.25, color: sevColor }}>{icon}</Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+          {label}
+        </Typography>
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+          {sub}
+        </Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: sevColor, fontVariantNumeric: 'tabular-nums' }}>
+          {value ?? '—'}
+        </Typography>
+        {cta && (
+          <Box
+            onClick={cta.onClick}
+            sx={{
+              display: 'inline-flex', alignItems: 'center',
+              px: 1.25, py: 0.5,
+              fontSize: 11, fontWeight: 600,
+              color: 'var(--accent)',
+              border: '0.5px solid var(--accent)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.75 },
+            }}
+          >
+            {cta.label}
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
+function ProfitTrustPanel({
+  summary, intelligence, currency,
+}: {
+  summary: MarginSummary;
+  intelligence?: FinancesIntelligenceData | null;
+  currency?: CurrencyContext;
+}) {
+  const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
+
+  // Cost Knowledge.
+  const costCoveragePct = intelligence?.costCoverage?.coveragePct ?? null;
+  const costCoverageTotal = intelligence?.costCoverage?.totalVariants ?? null;
+  const costCoverageMissing = intelligence?.costCoverage?.zeroCostCount ?? null;
+  const costCoverageOk = (costCoveragePct ?? 0) >= 95;
+  const hasCarrierData = intelligence?.hasCarrierData ?? false;
+  const trueMarginPct = intelligence?.trueMarginPct ?? null;
+
+  // Leakage.
+  const refundTotal = intelligence?.totalRefunds ?? 0;
+  const grossRevenue = summary.total_revenue ?? 0;
+  const refundPct = grossRevenue > 0 ? (refundTotal / grossRevenue) * 100 : 0;
+  const refundSev: 'ok' | 'warn' | 'bad' = refundPct < 5 ? 'ok' : refundPct <= 15 ? 'warn' : 'bad';
+  const negMarginOrders = intelligence?.negativemarginOrders ?? 0;
+  const negSev: 'ok' | 'warn' | 'bad' = negMarginOrders === 0 ? 'ok' : negMarginOrders <= 5 ? 'warn' : 'bad';
+
+  const cardSx = { border: '0.5px solid', borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper', overflow: 'hidden', mb: 2 };
+  const groupHeaderSx = { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', px: 2, pt: 2, pb: 1 };
+
+  return (
+    <Box sx={cardSx}>
+      <Typography sx={groupHeaderSx}>
+        Cost knowledge — do you know what each sale costs?
+      </Typography>
+      <Box sx={{ px: 2 }}>
+        <ProfitTrustRow
+          icon={<DollarSign size={16} strokeWidth={2} />}
+          severity={costCoverageOk ? 'ok' : (costCoveragePct ?? 0) >= 80 ? 'warn' : 'bad'}
+          label="Cost coverage"
+          sub={costCoverageTotal != null
+            ? `${(costCoverageTotal - (costCoverageMissing ?? 0))}/${costCoverageTotal} SKUs have unit cost`
+            : 'No SKU cost data available'}
+          value={costCoveragePct != null ? `${costCoveragePct}%` : null}
+          cta={!costCoverageOk && (costCoverageMissing ?? 0) > 0
+            ? { label: 'Fix in Catalog →', onClick: () => window.location.assign('/inventory/catalog') }
+            : undefined}
+        />
+        <Divider sx={{ borderColor: 'var(--rule)' }} />
+        <ProfitTrustRow
+          icon={<Truck size={16} strokeWidth={2} />}
+          severity={hasCarrierData ? 'ok' : 'warn'}
+          label="True-margin coverage"
+          sub={hasCarrierData ? 'Carrier shipping costs tracked' : 'No carrier labels — flying blind on shipping'}
+          value={hasCarrierData && trueMarginPct != null ? `${trueMarginPct}%` : '0%'}
+          cta={!hasCarrierData
+            ? { label: 'Configure →', onClick: () => window.location.assign('/settings/integrations') }
+            : undefined}
+        />
+      </Box>
+
+      <Typography sx={{ ...groupHeaderSx, borderTop: '0.5px solid var(--rule)', mt: 1 }}>
+        Leakage — what's eating margin after the sale?
+      </Typography>
+      <Box sx={{ px: 2 }}>
+        <ProfitTrustRow
+          icon={<TrendingDown size={16} strokeWidth={2} />}
+          severity={refundSev}
+          label="Refund leakage"
+          sub={refundTotal > 0 ? `${fmt(refundTotal)} of ${fmt(grossRevenue)} gross` : 'no refunds in this period'}
+          value={refundTotal > 0 ? `${refundPct.toFixed(1)}%` : '0%'}
+          cta={refundSev !== 'ok'
+            ? { label: 'View refunds →', onClick: () => window.location.assign('/finances') }
+            : undefined}
+        />
+        <Divider sx={{ borderColor: 'var(--rule)' }} />
+        <ProfitTrustRow
+          icon={<AlertTriangle size={16} strokeWidth={2} />}
+          severity={negSev}
+          label="Negative-margin orders"
+          sub={negMarginOrders === 0 ? 'no orders selling at a loss' : `${negMarginOrders} order${negMarginOrders === 1 ? '' : 's'} where cost exceeded revenue`}
+          value={negMarginOrders}
+          // No CTA — the table below already sorts by margin, so worst-margin
+          // orders surface naturally. Adding a CTA here would be a no-op.
+        />
+      </Box>
+    </Box>
+  );
+}
+
+
 function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) {
   const theme = useTheme();
 
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('orders');
-  const { margin, skuMargin, marginTrend } = props;
+  const { margin, skuMargin, marginTrend, intelligence } = props;
   const trendPoints = marginTrend?.data ?? [];
 
   const summary = margin?.summary;
@@ -254,6 +419,7 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
     <FT2Layout>
       <Box sx={{ p: { xs: 2, md: 3 } }}>
         <Box>
+          <Box>
           <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, py: 2 }}>
             Margin
           </Typography>
@@ -265,26 +431,40 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
 
         {summary && (
           <>
-            {/* ZONE 1 — STAT CARDS */}
-            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 2 }}>
-              <StatBox label="Avg Gross Margin" value={`${summary.avg_margin_pct}%`} accent={summary.avg_margin_pct >= 40 ? 'positive' : summary.avg_margin_pct >= 20 ? 'warning' : 'negative'} />
-              {summary.avg_true_margin_pct != null && (
-                <StatBox label="Avg True Margin" value={`${summary.avg_true_margin_pct}%`} accent={summary.avg_true_margin_pct >= 40 ? 'positive' : summary.avg_true_margin_pct >= 20 ? 'warning' : 'negative'} />
-              )}
-              <StatBox label="Total Margin"     value={fmt(summary.total_margin)}    accent="positive" />
-              <StatBox label="Total Revenue"    value={fmt(summary.total_revenue)}   accent="neutral" />
-              {summary.total_shipping_cost != null && (
-                <StatBox label="Total Shipping"  value={fmt(summary.total_shipping_cost)} accent="neutral" />
-              )}
-              <StatBox label="Total Cost"       value={fmt(summary.total_cost)}      accent="neutral" />
-              <StatBox label="Orders Analysed"  value={String(summary.order_count)}  accent="neutral" />
+            {/* UX-sweep 2026-06-23:
+                Replaced 5-7 StatBox row + Distribution bar with
+                  (1) a one-sentence headline answering the screen's question,
+                  (2) Profit Trust panel modeled on WMS Readiness — Cost
+                      Knowledge + Leakage groups.
+                The 5 StatBoxes were cognitively cheap but did not answer the
+                operator's actual question on Margin ("where is profit
+                leaking?"). Trust + diagnostic table now do. Distribution
+                dropped — it was redundant once Profit Trust exists and reads
+                as dead pixels on uniform unit economics. Trend kept and goes
+                full width below. */}
+
+            {/* HEADLINE — answers the screen's question in one sentence. */}
+            <Box sx={{ mb: 2.5 }}>
+              <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', mb: 0.5 }}>
+                Where is profit leaking?
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+                {fmt(summary.total_margin)} gross margin · {summary.avg_margin_pct}% avg
+                {summary.avg_true_margin_pct != null
+                  ? ` · True margin ${summary.avg_true_margin_pct}% after shipping`
+                  : ' · True margin not tracked yet (carrier labels missing)'}
+              </Typography>
             </Box>
 
-            {/* ZONE 2 — DISTRIBUTION + TREND SIDE BY SIDE */}
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mb: 2 }}>
-              <Box sx={{ p: 2.5, bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2 }}>
-                <MarginBar min={summary.min_margin_pct} avg={summary.avg_margin_pct} max={summary.max_margin_pct} />
-              </Box>
+            {/* PROFIT TRUST — Cost Knowledge + Leakage, Readiness pattern. */}
+            <ProfitTrustPanel
+              summary={summary}
+              intelligence={intelligence}
+              currency={currency}
+            />
+
+            {/* ZONE 2 — TREND ONLY (Distribution dropped per UX-sweep above) */}
+            <Box sx={{ mb: 2 }}>
               <Box sx={{ p: 2.5, bgcolor: 'background.paper', border: '0.5px solid', borderColor: 'divider', borderRadius: 2 }}>
                 <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
                   Margin Trend — {marginTrend?.days ?? 30}d
@@ -507,9 +687,11 @@ function FinancesModuleFT2Inner({ currency, ...props }: FinancesModuleFT2Props) 
           </>
         )}
       </Box>
+     </Box>
     </FT2Layout>
   );
 }
+
 
 export default function FinancesModuleFT2(props: FinancesModuleFT2Props) {
   return <ModuleErrorBoundary moduleName="finances"><FinancesModuleFT2Inner {...props} /></ModuleErrorBoundary>;

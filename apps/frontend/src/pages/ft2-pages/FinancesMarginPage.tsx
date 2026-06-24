@@ -8,6 +8,11 @@ import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useMargin } from '../finances/useMargin';
 import { useSkuMargin } from '../finances/useSkuMargin';
 import { useMarginTrend } from '../finances/useMarginTrend';
+// UX-sweep 2026-06-23: Margin's Profit Trust panel needs cross-domain trust
+// signals (cost coverage, refund leakage, true-margin presence, neg-margin
+// orders) which live on Intelligence's endpoint, not Margin's. We piggyback
+// the already-cached Intelligence query instead of reshaping the API.
+import { useFinancesIntelligence } from '../finances/useFinancesIntelligence';
 import { FinancesModuleFT2 } from '@lasyncro/finances';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
@@ -37,6 +42,7 @@ export default function FinancesMarginPage() {
   const marginQuery     = useMargin();
   const skuMarginQuery  = useSkuMargin();
   const marginTrendQuery = useMarginTrend(days);
+  const intelligenceQuery = useFinancesIntelligence();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
 
@@ -57,6 +63,7 @@ export default function FinancesMarginPage() {
         margin={marginQuery.data ?? null}
         skuMargin={skuMarginQuery.data ?? null}
         marginTrend={marginTrendQuery.data ?? null}
+        intelligence={intelligenceQuery.data ?? null}
         currency={{ displayCurrency, locale, rates }}
       />
     </>

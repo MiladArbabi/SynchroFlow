@@ -59,7 +59,19 @@ export const httpGetSkuMargin = async (req: Request, res: Response) => {
         .limit(limit);
     });
 
-    return res.status(200).json({ data: rows });
+    // FIN-12 (2026-06-23): coerce numerics. Knex returns pg NUMERIC + SUM
+    // as strings — same trap as /margin and /margin/trend. Per-SKU table
+    // would silently parseFloat() or break sort comparisons on the frontend.
+    return res.status(200).json({
+      data: rows.map((r) => ({
+        ...r,
+        total_units_sold: Number(r.total_units_sold),
+        gross_revenue: Number(r.gross_revenue),
+        estimated_cost: Number(r.estimated_cost),
+        gross_margin: Number(r.gross_margin),
+        margin_pct: Number(r.margin_pct),
+      })),
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[SKU_MARGIN_FETCH_FAILED]', { error: message });

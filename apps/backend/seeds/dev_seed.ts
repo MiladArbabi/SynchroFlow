@@ -196,6 +196,13 @@ export async function seed(knex: Knex): Promise<void> {
     // ── LIFECYCLE SNAPSHOT (FT2) ───────────────────────────────────────────
     // Seeds shop lifecycle to FT2 so mobile operator flows work immediately
     // without requiring manual owner onboarding after every dev:full-reset.
+    //
+    // RLS NOTE: user_lifecycle_snapshot has FORCE ROW LEVEL SECURITY with a
+    // WITH CHECK on (shop_id = current_setting('app.current_tenant')::integer).
+    // Without this SET LOCAL, the insert silently fails the policy check and
+    // the seed-success log lies — leaving the app routing every user to
+    // FT_MINUS_ONE ("Connect store") even though all upstream data exists.
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
     await trx('user_lifecycle_snapshot')
       .insert({
         shop_id: shop.id,
@@ -815,6 +822,7 @@ export async function seed(knex: Knex): Promise<void> {
     console.log(`[DEV_SEED] Created ${orderCount} orders with revenue units and fulfillment status`);
 
     // ── REFUND EXECUTIONS + LINE ITEMS ───────────────────────────────────────
+
     // Required for: Returns intelligence (revenue leakage, return rate charts)
     // Uses fulfilled orders only — refunds reference real order_revenue_units
     // RLS note: refund_executions has no shop_id — enforced via orders join

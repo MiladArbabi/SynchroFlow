@@ -718,11 +718,13 @@ function AgingWipCard({ wip, loading }: { wip: AgingWip | undefined; loading: bo
 
 // ─── THROUGHPUT TREND — daily UPH sparkline ──────────────────
 function ThroughputTrendCard({ trend, loading }: { trend: ThroughputTrend | undefined; loading: boolean }) {
-  if (loading) return <ZoneCard sx={{ flex: '1 1 0' }}><ZoneCardHeader><SectionLabel>Throughput trend</SectionLabel></ZoneCardHeader><Box sx={{ p: 2 }}><Skeleton height={80} /></Box></ZoneCard>;
+  const fillSx = { flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' } as const;
+
+  if (loading) return <ZoneCard sx={fillSx}><ZoneCardHeader><SectionLabel>Throughput trend</SectionLabel></ZoneCardHeader><Box sx={{ p: 2 }}><Skeleton height={80} /></Box></ZoneCard>;
   const pts = (trend?.points ?? []).filter(p => p.uph != null);
   const max = pts.reduce((m, p) => Math.max(m, p.uph as number), 0) || 1;
   return (
-    <ZoneCard>
+    <ZoneCard sx={fillSx}>
       <ZoneCardHeader>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <SectionLabel>Throughput trend</SectionLabel>
@@ -925,8 +927,8 @@ export default function WmsAnalyticsPage() {
           </Box>
 
           {/* PULSE RAIL — live capacity + throughput, fixed 300px */}
-          <Box sx={{ flex: '1 1 300px', maxWidth: { xs: '100%', lg: 300 }, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-            <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}><Zone1CapacityStrip live={liveQuery.data} /></Box>
+          <Box sx={{ flex: '1 1 300px', maxWidth: { xs: '100%', lg: 300 }, display: 'flex', flexDirection: 'column', gap: 1.5, alignSelf: 'stretch', minHeight: 0 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}><Zone1CapacityStrip live={liveQuery.data} /></Box>
             <ThroughputTrendCard trend={throughput} loading={loading} />
           </Box>
         </Box>

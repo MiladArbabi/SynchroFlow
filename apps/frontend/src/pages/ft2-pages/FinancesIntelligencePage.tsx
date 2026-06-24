@@ -1,14 +1,19 @@
 // apps/frontend/src/pages/ft2-pages/FinancesIntelligencePage.tsx
 //
-// Intelligence tab — daily financial pulse for SMB commerce owners.
-// Signals: net margin pulse, cost coverage gap, refund leakage,
-// blocked revenue at margin, negative margin SKU alert.
-
+// Intelligence — answers "How am I doing?" for SMB commerce owners.
+// UX-sweep 2026-06-23: conformed to canonical FT2 triage + pulse layout
+// (Overview/Orders/Inbound pattern). Five-`PulseCard` grid + standalone
+// Cost-Coverage block + Signals header collapsed into:
+//   (1) headline sentence with vs-prior delta
+//   (2) "Needs a decision" triage card (left)
+//   (3) Profit pulse rail with deltas (right)
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Typography, LinearProgress, Chip } from '@mui/material';
-import { AlertTriangle, TrendingDown, Lock, CheckCircle } from 'lucide-react';
+import { Box, Typography } from '@mui/material';
+import { AlertTriangle, TrendingDown, Lock, CheckCircle, Truck } from 'lucide-react';
+import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useFinancesIntelligence } from '../finances/useFinancesIntelligence';
-import { useColorScheme, useTheme } from '@mui/material/styles';
+import { useColorScheme } from '@mui/material/styles';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
 import { formatCurrencyCompact } from '@lasyncro/shared/ui';
@@ -30,31 +35,54 @@ function useIntelligenceTheme() {
   };
 }
 
-function PulseCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: 'positive' | 'negative' | 'warning' | 'neutral';
+/** Maps FT2 preset to ISO date range for Intelligence API. */
+function presetToRange(range: FT2DateRange): { from: string | null; to: string | null } {
+  const now = new Date();
+  const startOf = (d: Date) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
+  switch (range.preset) {
+    case 'today':         return { from: startOf(now).toISOString(),    to: now.toISOString() };
+    case 'this_week':
+    case 'past_7_days':   return { from: daysAgo(7).toISOString(),      to: now.toISOString() };
+    case 'this_month':
+    case 'past_30_days':  return { from: daysAgo(30).toISOString(),     to: now.toISOString() };
+    case 'custom':        return { from: range.from ?? null,            to: range.to ?? null };
+    default:              return { from: null, to: null }; // server default
+  }
+}
+
+/** Canonical pulse-rail row (PulseRow pattern from Orders/Catalog). */
+function PulseRow({ label, value, delta, sub, valueColor }: {
+  label: string; value: string; delta?: number | null; sub?: string; valueColor?: string;
 }) {
   const pal = useIntelligenceTheme();
-  const accentColor =
-    accent === 'positive' ? '#22C55E' :
-    accent === 'negative' ? '#EF4444' :
-    accent === 'warning'  ? '#F59E0B' :
-    pal.textPrimary;
-
+  const deltaColor =
+    delta == null ? pal.textSecond :
+    delta > 0     ? '#22C55E' :
+    delta < 0     ? '#EF4444' : pal.textSecond;
+  const deltaText =
+    delta == null ? '' : `${delta > 0 ? '+' : ''}${delta.toFixed(1)}%`;
   return (
-    <Box sx={{ flex: 1, minWidth: 140, p: 2.5, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
-      <Typography sx={{ fontSize: 11, fontWeight: 600, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.06em', mb: 0.75 }}>
-        {label}
-      </Typography>
-      <Typography sx={{ fontSize: 22, fontWeight: 700, color: accentColor, fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
-        {value}
-      </Typography>
-      {sub && (
-        <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: 0.5 }}>{sub}</Typography>
-      )}
+    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', py: 1.25 }}>
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 12, color: pal.textSecond }}>{label}</Typography>
+        {sub && <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: 0.25 }}>{sub}</Typography>}
+      </Box>
+      <Box sx={{ textAlign: 'right', flexShrink: 0, ml: 2 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, color: valueColor ?? pal.textPrimary, fontVariantNumeric: 'tabular-nums' }}>
+          {value}
+        </Typography>
+        {delta != null && (
+          <Typography sx={{ fontSize: 11, color: deltaColor, mt: 0.25, fontVariantNumeric: 'tabular-nums' }}>
+            {deltaText} vs prior
+          </Typography>
+        )}
+      </Box>
     </Box>
   );
 }
 
+/** Triage row (canonical "Needs a decision" anatomy). */
 function SignalRow({ icon, title, detail, cta, onClick, severity }: {
   icon: React.ReactNode;
   title: string;
@@ -63,30 +91,35 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
   onClick?: () => void;
   severity: 'critical' | 'warning' | 'ok';
 }) {
-  const theme = useTheme();
   const pal = useIntelligenceTheme();
-  const borderColor =
+  const sevColor =
     severity === 'critical' ? '#EF4444' :
     severity === 'warning'  ? '#F59E0B' :
-    '#22C55E';
-
+                              '#22C55E';
   return (
     <Box sx={{
       display: 'flex', alignItems: 'flex-start', gap: 2,
-      p: 2, background: pal.cardBg,
-      border: `1px solid ${pal.border}`,
-      borderLeft: `3px solid ${borderColor}`,
-      borderRadius: 2,
+      px: 2.5, py: 2,
+      borderTop: `0.5px solid ${pal.border}`,
     }}>
-      <Box sx={{ mt: 0.25, color: borderColor, flexShrink: 0 }}>{icon}</Box>
-      <Box sx={{ flex: 1 }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 600, color: pal.textPrimary }}>{title}</Typography>
-        <Typography sx={{ fontSize: 12, color: pal.textSecond, mt: 0.25 }}>{detail}</Typography>
+      <Box sx={{ mt: 0.25, color: sevColor, flexShrink: 0 }}>{icon}</Box>
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary }}>{title}</Typography>
+        <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: 0.25 }}>{detail}</Typography>
       </Box>
       {cta && onClick && (
         <Box
           onClick={onClick}
-          sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', flexShrink: 0, mt: 0.25, '&:hover': { opacity: 0.88 } }}
+          sx={{
+            display: 'inline-flex', alignItems: 'center',
+            px: 1.25, py: 0.5,
+            fontSize: 11, fontWeight: 600,
+            color: 'var(--accent)',
+            border: '0.5px solid var(--accent)',
+            borderRadius: '6px',
+            cursor: 'pointer', flexShrink: 0,
+            '&:hover': { opacity: 0.75 },
+          }}
         >
           {cta} →
         </Box>
@@ -96,12 +129,14 @@ function SignalRow({ icon, title, detail, cta, onClick, severity }: {
 }
 
 export default function FinancesIntelligencePage() {
-  const theme = useTheme();
-  const intelligenceQuery = useFinancesIntelligence();
+  const navigate = useNavigate();
+  const pal = useIntelligenceTheme();
+
+  const [range, setRange] = useState<FT2DateRange>({ preset: 'past_30_days', from: null, to: null });
+  const apiRange = presetToRange(range);
+  const intelligenceQuery = useFinancesIntelligence(apiRange);
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
-  const pal = useIntelligenceTheme();
-  const navigate = useNavigate();
 
   const currency: CurrencyContext = { displayCurrency, locale, rates };
   const fmt = (n: number) => formatCurrencyCompact(n, currency.displayCurrency, currency.locale, currency.rates);
@@ -116,160 +151,143 @@ export default function FinancesIntelligencePage() {
   const missingCosts = d.costCoverage.zeroCostCount;
   const netMarginPct = d.netMarginPct ?? 0;
 
+  // FIN-01 (2026-06-23): honest margin headline. GROSS until carrier
+  // cost is known, then TRUE (revenue − COGS − shipping).
+  const hasCarrier = d.hasCarrierData === true && d.trueMarginPct != null;
+  const marginLabel = hasCarrier ? 'True Margin' : 'Gross Margin';
+  const marginPct = hasCarrier ? (d.trueMarginPct ?? 0) : netMarginPct;
+  const marginValue = hasCarrier ? d.trueMargin : d.netMargin;
+
+  // Period delta narrative — "How am I doing?".
+  const c = d.comparison;
+  const revenueDelta = c?.delta?.revenuePct ?? null;
+  const marginDelta  = c?.delta?.netMarginPct ?? null;
+  const refundsDelta = c?.delta?.refundsPct ?? null;
+  const headlineDelta =
+    marginDelta == null ? 'first period of activity' :
+    marginDelta > 0     ? `↑ ${marginDelta.toFixed(1)}% vs prior period` :
+    marginDelta < 0     ? `↓ ${Math.abs(marginDelta).toFixed(1)}% vs prior period` :
+                          'flat vs prior period';
+
+  // Triage signals — count to know if "all clear" footer shows.
+  const hasNegMargin = d.negativemarginOrders > 0;
+  const hasRefunds   = d.totalRefunds > 0;
+  const hasBlocked   = d.blockedMarginValue != null && d.blockedMarginValue > 0 && d.constrainedOrders != null && d.constrainedOrders > 0;
+  const hasShipping  = d.totalShippingCost != null && d.totalShippingCost > 0;
+  const hasMissingCosts = missingCosts > 0;
+  const allClear = !hasNegMargin && !hasRefunds && !hasBlocked && !hasMissingCosts;
+
   return (
     <Box sx={{ background: pal.pageBg, minHeight: '100%' }}>
-      {/* <FT2DateRangeBar value={range} onChange={setRange} /> */}
+      <FT2DateRangeBar value={range} onChange={setRange} />
 
       <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 3 }}>
+        {/* HEADLINE — answers "How am I doing?" in one sentence. */}
         <Box>
-          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-            Finances
+          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2, mb: 0.5 }}>
+            How am I doing?
+          </Typography>
+          <Typography sx={{ fontSize: 13, color: pal.textSecond, lineHeight: 1.5 }}>
+            {fmt(marginValue ?? 0)} {marginLabel.toLowerCase()} · {marginPct}% · {headlineDelta}
           </Typography>
         </Box>
 
-        {/* ZONE 1 — NET MARGIN PULSE */}
-        <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1.5 }}>
-            Financial Pulse
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-            <PulseCard
-              label="Net Margin"
-              value={`${netMarginPct}%`}
-              sub={`${fmt(d.netMargin)} after refunds`}
-              accent={netMarginPct >= 40 ? 'positive' : netMarginPct >= 20 ? 'warning' : 'negative'}
-            />
-            <PulseCard label="Gross Revenue"   value={fmt(d.totalRevenue)}  accent="neutral" />
-            <PulseCard label="Total Cost"       value={fmt(d.totalCost)}     accent="neutral" />
-            <PulseCard label="Refund Leakage"   value={fmt(d.totalRefunds)}
-              sub="revenue lost to returns"
-              accent={d.totalRefunds > 0 ? 'warning' : 'positive'}
-            />
-            <PulseCard label="Avg Gross Margin" value={`${d.avgMarginPct}%`} accent="neutral" />
-          </Box>
-        </Box>
-
-        {/* ZONE 2 — COST COVERAGE */}
-        <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1.5 }}>
-            Cost Coverage
-          </Typography>
-          <Box sx={{ p: 2.5, background: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, color: pal.textPrimary }}>
-                {coveragePct}% of SKUs have cost entered
-              </Typography>
-              <Chip
-                label={missingCosts > 0 ? `${missingCosts} missing` : 'Complete'}
-                size="small"
-                sx={{
-                  bgcolor: missingCosts > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(34,197,94,0.12)',
-                  color: missingCosts > 0 ? '#F59E0B' : '#22C55E',
-                  fontWeight: 700, fontSize: 11,
-                }}
-              />
+        {/* TRIAGE + PULSE — canonical FT2 layout (Overview/Orders pattern). */}
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+          {/* LEFT: Needs a decision */}
+          <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: '14px', overflow: 'hidden' }}>
+            <Box sx={{ px: 2.5, py: 2 }}>
+              <Typography sx={{ fontSize: 15, fontWeight: 500, color: pal.textPrimary }}>Needs a decision</Typography>
+              <Typography sx={{ fontSize: 11, color: pal.textSecond, mt: 0.25 }}>Ranked by margin impact</Typography>
             </Box>
-            <LinearProgress
-              variant="determinate"
-              value={coveragePct}
-              sx={{
-                height: 6, borderRadius: 3,
-                bgcolor: pal.tileBg,
-                '& .MuiLinearProgress-bar': {
-                  bgcolor: coveragePct === 100 ? '#22C55E' : coveragePct >= 70 ? '#F59E0B' : '#EF4444',
-                  borderRadius: 3,
-                },
-              }}
-            />
-            {missingCosts > 0 && (
-              <Box
-                onClick={() => navigate('/inventory/costs')}
-                sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', mt: 1, '&:hover': { opacity: 0.88 } }}
-              >
-                Enter missing costs to unlock full margin intelligence →
-              </Box>
-            )}
-          </Box>
-        </Box>
 
-        {/* ZONE 3 — ACTIONABLE SIGNALS */}
-        <Box>
-          <Typography sx={{ fontSize: 11, fontWeight: 700, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1.5 }}>
-            Signals
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-
-            {/* Negative margin orders */}
-            {d.negativemarginOrders > 0 && (
+            {hasNegMargin && (
               <SignalRow
                 severity="critical"
                 icon={<TrendingDown size={16} />}
-                title={`${d.negativemarginOrders} orders with negative margin`}
-                detail="You are losing money on these orders. Review SKU costs or pricing."
-                cta="Review in Margin"
+                title={`${d.negativemarginOrders} orders selling at a loss`}
+                detail="Cost exceeds revenue. Review SKU costs or pricing."
+                cta="Review"
                 onClick={() => navigate('/finances/margin')}
               />
             )}
-
-            {/* Refund leakage */}
-            {d.totalRefunds > 0 && (
+            {hasRefunds && (
               <SignalRow
                 severity="warning"
                 icon={<AlertTriangle size={16} />}
                 title={`${fmt(d.totalRefunds)} lost to refunds`}
-                detail="Refund leakage is reducing your net margin. Review return patterns."
+                detail={`${((d.totalRefunds / Math.max(1, d.totalRevenue)) * 100).toFixed(1)}% of gross revenue${refundsDelta != null ? ` · ${refundsDelta > 0 ? '+' : ''}${refundsDelta.toFixed(1)}% vs prior` : ''}`}
                 cta="View Margin"
                 onClick={() => navigate('/finances/margin')}
               />
             )}
-
-            {/* Blocked revenue at margin */}
-            {d.blockedRevenue != null && d.blockedMarginValue != null && (
+            {hasBlocked && (
               <SignalRow
                 severity="warning"
                 icon={<Lock size={16} />}
-                title={`${fmt(d.blockedMarginValue)} gross profit trapped in ${d.constrainedOrders} blocked orders`}
-                detail={`${fmt(d.blockedRevenue)} blocked at ${d.avgMarginPct}% avg margin — resolve constraints to unlock.`}
-                cta="Unblock Orders"
+                title={`${fmt(d.blockedMarginValue!)} gross profit trapped in ${d.constrainedOrders} blocked orders`}
+                detail={`${fmt(d.blockedRevenue ?? 0)} blocked at ${d.avgMarginPct}% avg margin`}
+                cta="Unblock"
                 onClick={() => navigate('/orders')}
               />
             )}
-
-            {/* Carrier shipping spend */}
-            {d.totalShippingCost != null && d.totalShippingCost > 0 && (
-              <SignalRow
-                severity="warning"
-                icon={<TrendingDown size={16} />}
-                title={`${fmt(d.totalShippingCost)} spent on carrier labels`}
-                detail="Shipping cost deducted from gross margin. True margin shown in Margin tab."
-                cta="View True Margin"
-                onClick={() => navigate('/finances/margin')}
-              />
-            )}
-            {/* Missing costs */}
-            {missingCosts > 0 && (
+            {hasMissingCosts && (
               <SignalRow
                 severity="warning"
                 icon={<AlertTriangle size={16} />}
                 title={`${missingCosts} SKUs missing cost data`}
-                detail="Margin calculations are incomplete. Enter costs to get accurate net margin."
-                cta="Fix in Products"
-                onClick={() => navigate('/inventory/costs')}
+                detail={`Margin coverage at ${coveragePct}%. Enter costs to unlock full intelligence.`}
+                cta="Fix in Catalog"
+                onClick={() => navigate('/inventory/catalog')}
               />
             )}
-
-            {/* All clear */}
-            {d.negativemarginOrders === 0 && d.totalRefunds === 0 && missingCosts === 0 && (
+            {hasShipping && (
+              <SignalRow
+                severity="warning"
+                icon={<Truck size={16} />}
+                title={`${fmt(d.totalShippingCost!)} spent on carrier labels`}
+                detail="Shipping deducted from gross margin. See true margin per order."
+                cta="View Margin"
+                onClick={() => navigate('/finances/margin')}
+              />
+            )}
+            {allClear && (
               <SignalRow
                 severity="ok"
                 icon={<CheckCircle size={16} />}
                 title="Finances look healthy"
-                detail="No negative margin orders, no refund leakage, all costs entered."
+                detail="No negative-margin orders, no refund leakage, all costs entered."
               />
             )}
           </Box>
-        </Box>
 
+          {/* RIGHT: Profit Pulse rail */}
+          <Box sx={{ flex: '0 0 300px', bgcolor: pal.cardBg, border: `1px solid ${pal.border}`, borderRadius: '14px', p: '18px 20px' }}>
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: pal.textSecond, mb: 0.5 }}>
+              Profit pulse
+            </Typography>
+            <PulseRow label="Gross Revenue"   value={fmt(d.totalRevenue)} delta={revenueDelta} />
+            <PulseRow label={marginLabel}     value={fmt(marginValue ?? 0)} delta={marginDelta} sub={`${marginPct}%`} valueColor={marginPct >= 40 ? '#22C55E' : marginPct >= 20 ? '#F59E0B' : '#EF4444'} />
+            <PulseRow label="Refund Leakage"  value={fmt(d.totalRefunds)} delta={refundsDelta} valueColor={d.totalRefunds > 0 ? '#F59E0B' : undefined} />
+            <PulseRow label="Avg Gross Margin" value={`${d.avgMarginPct}%`} delta={c?.delta?.avgMarginPtDelta ?? null} />
+            <PulseRow label="Cost Coverage"   value={`${coveragePct}%`} sub={`${d.costCoverage.totalVariants - missingCosts}/${d.costCoverage.totalVariants} SKUs costed`} valueColor={coveragePct === 100 ? '#22C55E' : coveragePct >= 70 ? '#F59E0B' : '#EF4444'} />
+            <Box
+              onClick={() => navigate('/finances/margin')}
+              sx={{
+                display: 'inline-flex', alignItems: 'center',
+                mt: 1.5, px: 1.25, py: 0.5,
+                fontSize: 11, fontWeight: 500,
+                color: 'var(--accent)',
+                border: '0.5px solid var(--accent)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              View Margin →
+            </Box>
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

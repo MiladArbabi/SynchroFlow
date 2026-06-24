@@ -6,6 +6,9 @@ export type SkuMarginRow = {
   lasyncro_variant_id: string;
   sku: string | null;
   title: string | null;
+  // SKU table renders product thumbnails — controller selects v.image_url
+  // (finances.margin.sku.controller.ts:39). Type was missing this field.
+  image_url: string | null;
   total_units_sold: number;
   gross_revenue: number;
   estimated_cost: number;

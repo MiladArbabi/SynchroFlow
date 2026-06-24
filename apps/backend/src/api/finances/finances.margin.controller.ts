@@ -59,7 +59,12 @@ export const httpGetMargin = async (
           trx.raw('ROUND(MIN(oms.margin_pct) * 100, 1) as min_margin_pct'),
           trx.raw('ROUND(MAX(oms.margin_pct) * 100, 1) as max_margin_pct'),
           trx.raw('ROUND(SUM(oms.carrier_shipping_cost), 2) as total_shipping_cost'),
-          trx.raw('ROUND(AVG(oms.true_margin_pct) * 100, 1) FILTER (WHERE oms.true_margin_pct IS NOT NULL) as avg_true_margin_pct'),
+          // FIN-06 (2026-06-23): FILTER must attach to the AGGREGATE
+          // (AVG), not the wrapping ROUND. Postgres rejects `ROUND(...)
+          // FILTER (...)` with "FILTER specified, but round is not an
+          // aggregate function" — which 500'd the whole margin endpoint
+          // and froze the UI on "Loading margin data…".
+          trx.raw('ROUND(AVG(oms.true_margin_pct) FILTER (WHERE oms.true_margin_pct IS NOT NULL) * 100, 1) as avg_true_margin_pct'),
         )
         .first();
 
@@ -117,7 +122,26 @@ export const httpGetMargin = async (
           ? Number(result.summary.avg_true_margin_pct)
           : null,
       },
-      orders: result.orders,
+      // FIN-12 (2026-06-23): coerce per-order numerics. Knex returns pg
+      // NUMERIC columns as strings to preserve precision; the summary
+      // block already maps via Number(), but per-order rows shipped raw —
+      // forcing the frontend into silent parseFloat() or chart breakage.
+      // Nullable money/percent fields (carrier_shipping_cost, true_margin*)
+      // preserve null instead of becoming 0.
+      orders: result.orders.map((o) => ({
+        ...o,
+        gross_revenue: Number(o.gross_revenue),
+        estimated_cost: Number(o.estimated_cost),
+        gross_margin: Number(o.gross_margin),
+        margin_pct: Number(o.margin_pct),
+        carrier_shipping_cost: o.carrier_shipping_cost != null
+          ? Number(o.carrier_shipping_cost)
+          : null,
+        true_margin: o.true_margin != null ? Number(o.true_margin) : null,
+        true_margin_pct: o.true_margin_pct != null
+          ? Number(o.true_margin_pct)
+          : null,
+      })),
       pagination: { page, limit },
     });
 

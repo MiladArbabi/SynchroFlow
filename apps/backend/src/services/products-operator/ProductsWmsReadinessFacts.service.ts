@@ -59,11 +59,13 @@ export async function getProductsWmsReadinessFacts(
     // ── Not pickable: variants with no SKU ───────────────────
     const notPickableResult = await qb('variants')
       .where('shop_id', shopId)
-      .whereNull('sku')
-      .orWhere('sku', '')
       .where('status', 'active')
+      .andWhere(function () {
+        this.whereNull('sku').orWhere('sku', '');
+      })
       .count('lasyncro_variant_id as count')
       .first();
+      
     const not_pickable_count = notPickableResult
       ? Number(notPickableResult.count)
       : null;

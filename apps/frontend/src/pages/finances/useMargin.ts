@@ -11,14 +11,25 @@ export type MarginSummary = {
   avg_margin_pct: number;
   min_margin_pct: number;
   max_margin_pct: number;
+  // FIN-01 (2026-06-23): backend surfaces shipping + true-margin fields on
+  // every margin response. Nullable until a carrier label exists.
+  total_shipping_cost: number | null;
+  avg_true_margin_pct: number | null;
 };
 
 export type MarginOrder = {
   order_id: string;
-  gross_revenue: string;
-  estimated_cost: string;
-  gross_margin: string;
-  margin_pct: string;
+  // FIN-12 (2026-06-23): backend now coerces to numbers (Number(...) per
+  // controller). Types previously lied as strings — bringing types in
+  // line with runtime so frontend can drop silent parseFloat() calls.
+  gross_revenue: number;
+  estimated_cost: number;
+  gross_margin: number;
+  margin_pct: number;
+  // FIN-01 (2026-06-23): true-margin surface — null until carrier data exists.
+  carrier_shipping_cost: number | null;
+  true_margin: number | null;
+  true_margin_pct: number | null;
   aggregate_version: number;
   fulfillment_status: string | null;
   evaluated_at: string;

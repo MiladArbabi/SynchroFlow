@@ -387,15 +387,80 @@ CTA navigates to `/orders` — the owner resolves constraints there, which then 
 
 ## 10. Known Issues / Gaps
 
-| ID | Description |
-|---|---|
-| — | `netResult` in FT2 snapshot always null — no sovereign cost layer. Use `/intelligence` endpoint for net margin instead. |
-| — | `trendDirection` always `unknown` — never computed from timeseries. Phase 2 item. |
-| — | `daily_operational_brief_snapshot` always empty — snapshot worker disabled. `blockedRevenue` from operational snapshot may be null in dev. |
-| — | Margin trend chart `y-axis` domain hardcoded `[0, 100]` — negative margin shops will have clipped chart. Fix when negative margin data exists. |
-| — | `/finances/costs` tab removed — cost entry lives in `/products/costs`. Intelligence tab CTAs navigate there directly. |
+### Screen-1 (Intelligence) Correctness Audit — 2026-06-23
+
+| ID | Status | Description | Evidence | Fix |
+|---|---|---|---|---|
+| FIN-01 | ✅ RESOLVED 2026-06-23 | Headline "Net Margin" computed `gross_margin − refunds`, not true net, and mislabelled gross as net. `true_margin_pct` (purpose-built, WM-39) was never read. | Payload `netMargin==totalMargin`; `true_margin*` NULL on all 18 rows; `order_shipment_tracking` empty (0 shipments). | Backend surfaces `trueMargin`/`trueMarginPct`/`hasCarrierData` (`finances.intelligence.controller.ts`). Headline shows **Gross Margin** ("before shipping") when no carrier cost, switches to **True Margin** ("after shipping") once a label exists. Never labels gross as net. |
+| FIN-02 | ✅ RESOLVED 2026-06-23 | **Revenue-completeness bug** (initial "stale snapshot" hypothesis disproven by audit). `computeOrderMargin` filtered `estimated_unit_cost > 0` at row level, dropping cost-less line items from **revenue** as well as cost. Order `c7bad89d…097c`: true 2365.85 → stored 1479.90, losing cost-less unit `7efbeddf…` (885.95). Caused the cross-screen revenue mismatch. | DB: `recon(line_total, cost>0 filter)=1479.90` vs `order.total_price=2365.85`; post-fix snapshot=2365.85, `remaining_drift=0`. | **Source fix** (`computeOrderMargin.service.ts`): revenue = `SUM(line_total)` over ALL units; cost = `SUM(...) FILTER (WHERE estimated_unit_cost>0)`; skip guard now on `cost_line_count`. A cost-less line correctly lowers margin instead of vanishing from revenue. **Hardening:** read-only `margin-snapshot-integrity.worker.ts` (every 5 min) detects future `snapshot.gross_revenue <> SUM(net_revenue)` drift and logs it — never writes. |
+| FIN-03 | ✅ RESOLVED 2026-06-23 | Blocked-orders signal rendered at £0 and printed literal "null". Gate was `!= null` not `> 0`; title interpolated `constrainedOrders:null`. | `FinancesIntelligencePage.tsx:227/231`; payload `blockedRevenue:0, constrainedOrders:null`. | Gate now requires `blockedMarginValue > 0 && constrainedOrders > 0`; suppresses the £0/null card and the "null" leak. |
+
+**Deferred:** Consumables cost (tape/labels/box/dunnage) not modelled in true margin — [issue #1020](https://github.com/MiladArbabi/SynchroFlow/issues/1020). Out of scope for this audit.
+
+**Carried to Screen 2 (Cash Flow):**
+
+- **FIN-07 🟡** — Cash Flow `realized_revenue` ≠ Intelligence `totalRevenue` (post-rebuild: 16686.40 vs 32071.60). Different population: Cash Flow filters `order_fulfillment_status='fulfilled'`, Intelligence counts all margin-snapshot orders. To be pinned in Screen 2 audit — determine authoritative scope. Not a regression from FIN-02 (Intelligence side verified correct at 32071.60).
 
 ---
+
+### Screen-2 (Cash Flow) Correctness Audit — 2026-06-23
+
+| ID | Status | Description | Evidence | Fix |
+|---|---|---|---|---|
+| FIN-07 | ✅ RECLASSIFIED 2026-06-23 | Not a defect. Intel `totalRevenue` is the whole order book (`SUM(oms.gross_revenue)`); Cash Flow splits the same number into `realized` (fulfilled) + `pending` (paid-unfulfilled). On reseeded data: 3,177.35 ≡ 1,918.40 + 1,258.95. | API: `intel.totalRevenue=3177.35`; `cashflow.summary.realized_revenue=1918.40 + pending_revenue=1258.95=3177.35`. | No code change. UX-phase action: label Cash Flow's headline as **Realized** explicitly so cross-screen comparisons stop reading as inconsistency. |
+| FIN-08 | ✅ VERIFIED CORRECT 2026-06-23 | Formula `workingCapital = inventoryValue + pendingRevenue` (`cashFlowProjection.service.ts:268`) is correct. Earlier "Working Capital == Inventory Value" observation was a coincidence on a dataset where `pending_revenue = 0`. | Today: 16,975 + 1,258.95 = 18,233.95 ✓ matches API exactly. | No code change. |
+| FIN-09 | ✅ RESOLVED 2026-06-23 | 60-day projection rendered only **2 distinct series** (conservative ≠ base, but base ≡ optimistic). Comment said "blocked orders releasing"; code used `atRiskRevenue` (constrained orders). With at-risk=0 (common case), optimistic collapsed onto base. Even with at-risk>0, the source was semantically wrong (constrained ≠ blocked). | API pre-fix: `last={conservative:-7770.52, base:-4371.36, optimistic:-4371.36}`, `distinct:false`. Post-fix with injected `blocked_revenue=2500`: `optimistic:-1871.36` (= base + 2500), `distinct:true`. | New query `blockedRow` on `orders_operational_control_snapshot.blocked_revenue` (mirrors Intelligence's cross-domain field). `optimisticBoost = blockedRevenue` (`cashFlowProjection.service.ts:298`). Three scenarios now semantically and visually distinct whenever blocked orders exist. |
+| FIN-10 | ✅ RESOLVED 2026-06-23 | Past-dated PO commitments (status `shipped`/`in-transit`, delivery overdue) were silently dropped from the projection by the week-1 lower bound (`expected_delivery_date >= today`), yet still emitted in `po_outflows` and surfaced in UI as "Upcoming." Under-modelled committed cash by $7,860 on the seed dataset (4 POs × ~$1,965). | API pre-fix: `week1.base=447.63` (overdue $7,860 not pulling). Post-fix: `week1.base=-7412.37` (drop of exactly $7,859.63 ✓). `po_total=$16,260` confirms all open PO commitments now flow through the projection. | Week-1 loop filter relaxed: `if (week === 1) return due < weekDate;` — week 1 sweeps every open PO with delivery date before end of week 1 (overdue + due-this-week). Other weeks unchanged (`[weekStart, weekDate)`). |
+
+**Deferred:**
+- **FIN-11 🟡** — `orders_operational_control_snapshot` and `order_margin_snapshot` are not populated by the dev seed (same class as FIN-02's original "no events to project" trap, different tables). `backfill:margin` covers `order_margin_snapshot`; the operational snapshot remains empty without a real reconciliation event flow. `orders_operational_control_snapshot` is also append-only (`IMMUTABILITY_VIOLATION` on DELETE). Logged for a later seed-completeness pass — does not block Screen 3.
+
+**Carried to Screen 3 (Margin):**
+- Initial register pending (FIN-06 was "Margin tab stuck on `Loading margin data…`" from the original screenshots).
+
+---
+
+### Screen-3 (Margin) Correctness Audit — 2026-06-23
+
+| ID | Status | Description | Evidence | Fix |
+|---|---|---|---|---|
+| FIN-06 | ✅ RESOLVED 2026-06-23 | `/api/v1/modules/finances/margin` returned **HTTP 500** on every call: Postgres rejected `ROUND(AVG(oms.true_margin_pct) * 100, 1) FILTER (WHERE oms.true_margin_pct IS NOT NULL)` with `FILTER specified, but round is not an aggregate function`. The frontend's TanStack query stayed in `pending` indefinitely, freezing the Margin tab on **"Loading margin data…"** — the original screenshot's hang. | API pre-fix: HTTP 500 with the verbatim Postgres error. Trend endpoint (same DB) returned 30 orders / 3,177.35 revenue cleanly, proving the data existed and only the summary controller was broken. | `FILTER` clause moved onto the aggregate (`AVG`), not its wrapper: `ROUND(AVG(x) FILTER (WHERE x IS NOT NULL) * 100, 1)`. Post-fix: HTTP 200, summary `order_count:30, total_revenue:3177.35, total_margin:1852.35` (matches Intelligence exactly). |
+| FIN-12 | ✅ RESOLVED 2026-06-23 | Knex returns pg NUMERIC + COUNT as strings to preserve precision. All three margin endpoints (`/margin`, `/margin/trend`, `/margin/sku`) leaked strings into the UI: `gross_revenue:"179.85"`, `margin_pct:"58.3"`, `order_count:"30"`. Frontend either silently `parseFloat()`s (rounding risk) or chart/sort components misbehave. `/margin` summary fields were already coerced via `Number(...)`; per-row arrays were not. | API pre-fix: `gross_revenue` type `"string"` on all three endpoints. Post-fix: type `"number"`, nulls preserved on `carrier_shipping_cost`/`true_margin*`. | Per-row `.map()` coercion via `Number()` on each endpoint's response. Nullable money/percent fields explicitly check `!= null` to preserve null instead of becoming 0. |
+| FIN-13 | ⏭️ NOT A BUG | `min_margin_pct == max_margin_pct == avg_margin_pct == 58.3` across all 30 orders. Every order has identical unit price + cost. Dev-seed artifact (uniform unit economics), not a defect. Logged so we don't chase it on the next audit. | API: summary `min/max/avg_margin_pct = 58.3`. | N/A — would resolve naturally on real data with varied SKU prices/costs. |
+
+### UX consistency sweep — 2026-06-23/24
+
+Following correctness, all three Finances screens (Intelligence, Cash Flow, Margin) were reshaped from one-off "snowflake" layouts into the canonical FT2 patterns documented in `docs/playbooks/modules-ux-playbook.md` (Pattern A/B/C, Decision Group Reveal).
+
+**Backend reshapes:**
+- `cashFlowProjection.service.ts` — added `runway_days` (days of cash at current burn; `null` when cash-positive) and a `comparison` block (prior-period realized/pending/refunds totals + pct deltas, `compareDays` default 30).
+- `finances.intelligence.controller.ts` — added `?from=&to=` parsing and a `comparison` block (current vs prior period totals + deltas), mirroring the Cash Flow shape.
+
+**Margin (`FinancesMarginPage.tsx` / `FinancesModuleFT2.tsx`):**
+- Dropped the 5–7 StatBox grid + Distribution block.
+- Added **ProfitTrustPanel** — two grouped sections ("Cost knowledge" / "Leakage") with severity-colored rows, mirroring `ProductsWmsReadinessPage` byte-for-byte. Consumes the Intelligence endpoint's trust signals (cost coverage, true-margin coverage, refund leakage, negative-margin orders) via `useFinancesIntelligence()`.
+- Headline sentence replaces the old multi-card summary: "Where is profit leaking? · $X gross margin · Y% avg · [true-margin status]".
+- Trend chart and tables unchanged.
+
+**Intelligence (`FinancesIntelligencePage.tsx`, full-file replace):**
+- Headline: "How am I doing?" + margin value/pct + vs-prior delta.
+- Canonical triage ("Needs a decision") + pulse rail (5 `PulseRow`s with deltas: Gross Revenue, True/Gross Margin, Refund Leakage, Avg Gross Margin, Cost Coverage) replacing the prior PulseCard grid.
+- Time range from `FT2DateRangeBar` now drives the API range and comparison window.
+
+**Cash Flow (`CashFlowModuleFT2.tsx`) — iterated through several passes:**
+- Removed the "Needs a decision" triage card entirely — its signals (overdue POs, negative cash crossover, unlockable blocked revenue) now render as inline alert chips directly under the headline subline.
+- "Upcoming PO commitments" moved into the triage card's former slot beside the Cash Pulse rail, closing the empty-space gap.
+- PO list applies the Decision Group Reveal pattern: 3 visible + "See X more" / "Show less" (`PO_PREVIEW_LIMIT = 3`, matched to Cash Pulse rail height).
+- 60-day projection chart restored full-width-equivalent (2-column: chart left, "Plan a new stock order" beside it on the right — always visible, no longer behind a toggle).
+- Fixed a wiring bug where the what-if overlay (`whatIfChartData`) silently no-op'd after the always-visible refactor — a stale `whatIfOpen` gate (always `false`) blocked the subtraction math from ever running. Removed the dead gate; overlay now reacts live to amount/date changes.
+- Merged the separate "Make this projection more accurate" panel into the Plan-a-new-order card itself: an inline `+ Adjust fixed costs & balance` toggle reveals accent-tinted overhead/balance fields in the same card (`Collapse`, `var(--accent-ghost)` background). Removed the now-redundant standalone Collapse block and the `⚙ Adjust` button from the chart header.
+- Net effect: 2 zones (headline+chips → PO list/pulse/chart/plan-order) instead of 3, no empty space, scroll-free on standard viewports.
+
+**Deferred — [issue #1022](https://github.com/MiladArbabi/SynchroFlow/issues/1022):** Cash Flow's projection currently models only PO commitments + flat monthly overhead. Tracked for a future sprint: manpower scaling with incoming POs, packaging materials, outbound shipping, 3PL fees, payment processor fees, marketing spend, returns cost, and per-category breakdown in the chart tooltip.
+
+**Resolved — `FinancesIntelligenceData` / `FinancesComparison` type duplication (2026-06-24):** these types were independently defined inline in both `apps/frontend/src/pages/finances/useFinancesIntelligence.ts` and `modules/finances/src/ui/pages/FinancesModuleFT2.tsx`. Moved to `modules/shared/src/contracts/finances-intelligence.ts` as the canonical cross-module contract; both sites now import (or re-export, for back-compat) from there.
+
+Exported via `modules/shared/src/ui-contracts.ts`, reached through the **`@lasyncro/shared/ui-contracts`** subpath — not the bare `@lasyncro/shared` package root. The bare-root import (`@lasyncro/shared`, which resolves to `dist/index.js`) caused `tsc` composite-project errors in `modules/finances` (`TS6059`/`TS6307`/`TS5055`: file not under `rootDir`, not listed in the project's file list, would overwrite an input file) — `index.js` aggregates runtime exports (e.g. the `ModuleEntry` default) alongside types, which the composite build couldn't reconcile across package boundaries. `ui-contracts` is a plain, type-only file with no such aggregation, matching the existing proven pattern used for `CurrencyContext`. **Invariant: new cross-module types intended for module consumption go through a dedicated subpath export (`ui-contracts`, `ui`, etc.), never the bare package root.**
 
 ## 11. Invariants — Do Not Violate
 
@@ -411,6 +476,25 @@ CTA navigates to `/orders` — the owner resolves constraints there, which then 
 ---
 
 ## 12. Key Commands
+
+### Canonical dev reset sequence (FIN-02 hardening — 2026-06-23)
+
+**STOP the dev backend first** (it holds DB sessions that block `DROP DATABASE`).
+
+```bash
+# In project root, with dev servers stopped:
+npm run db:reset
+npm run migrate --workspace ./apps/backend
+DEV_SEED_MODE=full_data npm run seed --workspace ./apps/backend
+npm run backfill:margin --workspace ./apps/backend
+npm run dev   # restart in separate terminal
+```
+
+Or one-shot: `npm run dev:full-reset` (already wires backfill:margin after the seed).
+
+**Why backfill:margin exists:** dev_seed writes source tables directly and emits no domain events. `order_margin_snapshot` writes are guarded by two invariants (PROJECTION_WRITE_VIOLATION + SNAPSHOT_WRITE_BLOCKED) requiring `synchroflow.projection` AND `synchroflow.reconciliation` GUCs. The backfill script sets both inside `withTenant`, mirroring `rebuildInventoryProjection.ts:78`. Never run from inside the seed transaction — a guarded-write failure aborts the whole seed.
+
+**Why lifecycle seeding needs explicit tenant:** `user_lifecycle_snapshot` has FORCE ROW LEVEL SECURITY with WITH CHECK on `app.current_tenant`. Without `SET LOCAL "app.current_tenant" = '${shop.id}'` before the insert, the row silently fails the policy and the seed-success log lies. Fixed at `dev_seed.ts:199`.
 
 ```bash
 # Test intelligence endpoint

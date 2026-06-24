@@ -305,7 +305,22 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
-
+  // start margin snapshot integrity worker (FIN-02 hardening — read-only drift detector)
+  try {
+    const marginIntegrity = await import('../workers/margin-snapshot-integrity.worker.js');
+    if (typeof marginIntegrity.startMarginSnapshotIntegrityWorker === 'function') {
+      void marginIntegrity.startMarginSnapshotIntegrityWorker();
+      if (typeof marginIntegrity.stopMarginSnapshotIntegrityWorker === 'function') {
+        workerStopFns.push(async () => marginIntegrity.stopMarginSnapshotIntegrityWorker());
+      }
+      console.log('[bootstrap/workers] Margin snapshot integrity worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Margin snapshot integrity worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
   // start morning brief worker (OVR-02)
   try {
     const morningBrief = await import('../workers/morning-brief.worker.js');

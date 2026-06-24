@@ -17,6 +17,6 @@
     "composite": true,
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*", "../shared/src/contracts.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.spec.*"]
 }

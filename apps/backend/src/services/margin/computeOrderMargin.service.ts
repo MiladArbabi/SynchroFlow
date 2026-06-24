@@ -35,22 +35,29 @@ export async function computeOrderMargin(
    * Only include line items with cost data.
    * Orders with no cost data are skipped — no margin row.
    */
+  // FIN-02 (2026-06-23): revenue completeness fix.
+  // BUG: a row-level `estimated_unit_cost > 0` filter dropped cost-less
+  // line items from ALL aggregates — so revenue was understated by any
+  // line missing a cost (e.g. order c7bad89d: 2365.85 → 1479.90, losing
+  // an 885.95 cost-less unit). Revenue and cost-coverage were conflated.
+  //
+  // FIX: revenue sums EVERY unit; cost sums ONLY cost-bearing units via
+  // FILTER; cost_line_count drives the skip guard so genuinely cost-less
+  // orders still produce no row. A cost-less line now correctly lowers
+  // margin (full revenue, partial cost) instead of vanishing from revenue.
   const row = await trx('order_revenue_units')
     .where({ lasyncro_order_id: orderId })
-    .whereNotNull('estimated_unit_cost')
-    .where('estimated_unit_cost', '>', 0)
     .select(
       trx.raw('SUM(line_total) as gross_revenue'),
-      trx.raw('SUM(quantity * estimated_unit_cost) as estimated_cost'),
-      trx.raw('COUNT(*) as line_count')
+      trx.raw('SUM(quantity * estimated_unit_cost) FILTER (WHERE estimated_unit_cost > 0) as estimated_cost'),
+      trx.raw('COUNT(*) FILTER (WHERE estimated_unit_cost > 0) as cost_line_count')
     )
     .first();
-
-  const lineCount = Number(row?.line_count ?? 0);
+  const lineCount = Number(row?.cost_line_count ?? 0);
   if (lineCount === 0) {
     /**
-     * No cost data available — skip silently.
-     * This is expected for orders without variant cost information.
+     * No cost data on ANY line — skip silently.
+     * Expected for orders without variant cost information.
      */
     return;
   }
