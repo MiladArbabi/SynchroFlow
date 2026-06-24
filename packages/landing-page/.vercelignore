@@ -1,0 +1,5 @@
+# AUD-021: index.html.bak was committed and served publicly at /index.html.bak (200, info disclosure).
+# This dir is deployed as raw static output — anything here is web-servable. Block backup/temp file patterns.
+*.bak
+*.tmp
+*.old
