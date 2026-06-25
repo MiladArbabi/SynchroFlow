@@ -9,7 +9,12 @@ export const metadata: Metadata = {
 }
 
 const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
+// AUD-028: split into two constants — Plus Jakarta Sans for headings/titles/price digits,
+// DM Sans for body, labels, fine print, and buttons — matching the convention on
+// /about, /getting-started, /faq, /pilot. Previously every element on this page used
+// FONT (Plus Jakarta Sans) regardless of role.
 const FONT = "'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+const BODY_FONT = "'DM Sans', system-ui, sans-serif"
 
 const pricingSchema = {
   '@context': 'https://schema.org',
@@ -112,7 +117,7 @@ export default function PricingPage() {
             gap: 8,
             color: '#FF6B2B',
             marginBottom: 22,
-            fontFamily: FONT,
+            fontFamily: BODY_FONT,
             fontSize: 11,
             fontWeight: 700,
             letterSpacing: '0.12em',
@@ -148,7 +153,7 @@ export default function PricingPage() {
 
         <p
           style={{
-            fontFamily: FONT,
+            fontFamily: BODY_FONT,
             fontSize: 18,
             fontWeight: 400,
             lineHeight: 1.65,
@@ -162,7 +167,7 @@ export default function PricingPage() {
 
         <p
           style={{
-            fontFamily: FONT,
+            fontFamily: BODY_FONT,
             fontSize: 13,
             fontWeight: 500,
             lineHeight: 1.6,
@@ -190,7 +195,7 @@ export default function PricingPage() {
       >
         <div
           style={{
-            fontFamily: FONT,
+            fontFamily: BODY_FONT,
             fontSize: 13,
             fontWeight: 600,
             color: '#6B7280',
@@ -214,7 +219,7 @@ export default function PricingPage() {
         >
           <span
             style={{
-              fontFamily: FONT,
+              fontFamily: BODY_FONT,
               fontSize: 13,
               fontWeight: 750,
               color: '#0F0E0D',
@@ -230,7 +235,7 @@ export default function PricingPage() {
 
           <span
             style={{
-              fontFamily: FONT,
+              fontFamily: BODY_FONT,
               fontSize: 13,
               fontWeight: 650,
               color: '#6B7280',
@@ -262,7 +267,7 @@ export default function PricingPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 minHeight: 520,
-                boxShadow: plan.featured ? '0 20px 60px rgba(255, 107, 43, 0.08)' : 'none',
+                boxShadow: plan.featured ? '0 20px 60px rgba(255,107, 43, 0.08)' : 'none',
               }}
             >
               {plan.badge && (
@@ -270,7 +275,7 @@ export default function PricingPage() {
                   style={{
                     display: 'inline-block',
                     alignSelf: 'flex-start',
-                    fontFamily: FONT,
+                    fontFamily: BODY_FONT,
                     fontSize: 10,
                     fontWeight: 800,
                     letterSpacing: '0.08em',
@@ -329,7 +334,7 @@ export default function PricingPage() {
 
               <p
                 style={{
-                  fontFamily: FONT,
+                  fontFamily: BODY_FONT,
                   fontSize: 13,
                   fontWeight: 450,
                   lineHeight: 1.6,
@@ -358,7 +363,7 @@ export default function PricingPage() {
                   <li
                     key={feature}
                     style={{
-                      fontFamily: FONT,
+                      fontFamily: BODY_FONT,
                       fontSize: 13,
                       fontWeight: 450,
                       color: '#3A3835',
@@ -401,7 +406,7 @@ export default function PricingPage() {
         >
           <p
             style={{
-              fontFamily: FONT,
+              fontFamily: BODY_FONT,
               fontSize: 18,
               fontWeight: 550,
               color: '#6B7280',
@@ -413,7 +418,7 @@ export default function PricingPage() {
 
           <p
             style={{
-              fontFamily: FONT,
+              fontFamily: BODY_FONT,
               fontSize: 13,
               fontWeight: 500,
               color: '#9CA3AF',
