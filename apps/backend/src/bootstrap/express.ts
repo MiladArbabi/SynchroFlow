@@ -48,6 +48,7 @@ import { verifyStripeSignature } from '../api/billing/stripe.verify.middleware.j
 import billingRoutes from '../api/billing/billing.routes.js';
 import { registerLifecycleRoutes } from '../api/lifecycle/lifecycle.routes.js';
 import waitlistRoutes from '../api/waitlist/waitlist.routes.js';
+import pilotRoutes from '../api/pilot/pilot.routes.js';
 
 // Raw body capture for webhook verification
 // -----------------------------------------
@@ -151,6 +152,8 @@ app.get('/health', (_req, res) => res.status(200).send({ status: 'ok' }));
 
 // Public waitlist signup — no auth, called from landing page via marketing proxy
 app.use('/api/v1/waitlist', waitlistRoutes);
+// AUD-1023: Public pilot application signup — no auth, called from /pilot via marketing proxy
+app.use('/api/v1/pilot-applications', pilotRoutes);
 
 /**
  * FRONTEND SPA SERVING

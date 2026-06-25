@@ -378,3 +378,63 @@ export async function sendPasswordResetEmail(params: SendPasswordResetEmailParam
 
   console.info('[EMAIL] Password reset email sent', { toEmail });
 }
+
+export interface SendPilotApplicationNotificationParams {
+  name: string;
+  email: string;
+  company: string;
+  storeUrl: string;
+  country: string;
+  ordersPerDay: string;
+  skuCount: string;
+  fulfillment: string;
+  biggestIssue: string;
+  usesStocky: string;
+  currentTools: string;
+  openToPaidPilot: string;
+  contactMethod: string;
+}
+
+/**
+ * sendPilotApplicationNotification
+ * ---------------------------------
+ * AUD-1023: Notifies the team when a new 5-Merchant Warehouse Accuracy Pilot
+ * application is submitted via /pilot. Mirrors the waitlist notification pattern —
+ * application is already persisted to pilot_applications before this is called.
+ * Non-fatal: caller logs failure but does not block the application response.
+ */
+export async function sendPilotApplicationNotification(params: SendPilotApplicationNotificationParams): Promise<void> {
+  const {
+    name, email, company, storeUrl, country, ordersPerDay, skuCount,
+    fulfillment, biggestIssue, usesStocky, currentTools, openToPaidPilot, contactMethod,
+  } = params;
+
+  const { error } = await resend.emails.send({
+    from: FROM,
+    to: ['contact@lasyncro.com'],
+    subject: `New pilot application — ${company}`,
+    html: emailHtml(`
+      <h2 style="margin:0 0 16px;color:#0F0E0D;font-size:20px;font-weight:700;">New 5-Merchant Pilot application</h2>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Name:</strong> ${name}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Email:</strong> ${email}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Company:</strong> ${company}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Store URL:</strong> ${storeUrl}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Country:</strong> ${country}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Orders/day:</strong> ${ordersPerDay}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>SKUs/variants:</strong> ${skuCount}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Fulfillment:</strong> ${fulfillment}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Biggest issue:</strong> ${biggestIssue}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Uses Stocky:</strong> ${usesStocky}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Current tools:</strong> ${currentTools}</p>
+      <p style="margin:0 0 4px;color:#3A3835;"><strong>Open to paid pilot:</strong> ${openToPaidPilot}</p>
+      <p style="margin:0 0 0;color:#3A3835;"><strong>Preferred contact:</strong> ${contactMethod}</p>
+    `),
+  });
+
+  if (error) {
+    console.error('[EMAIL] sendPilotApplicationNotification failed:', error);
+    throw new Error(`EMAIL_DELIVERY_FAILED: ${error.message}`);
+  }
+
+  console.info('[EMAIL] Pilot application notification sent', { email, company });
+}

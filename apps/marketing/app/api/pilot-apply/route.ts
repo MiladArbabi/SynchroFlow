@@ -1,12 +1,10 @@
 // apps/marketing/app/api/pilot-apply/route.ts
-// AUD-1023: STUB endpoint — no backend persistence exists yet for pilot applications
-// (confirmed via grep, apps/backend/src has zero "pilot" references as of this commit).
-// Validates required fields and logs the full payload to Vercel function logs so nothing
-// is silently dropped. Replace the TODO block with a real backend call once
-// apps/backend exposes POST /api/v1/pilot-applications — follow the /api/waitlist
-// thin-proxy pattern (see apps/marketing/app/api/waitlist/route.ts) when that lands.
-
+// AUD-1023: Thin proxy — forwards pilot applications to the backend API on Fly.
+// The backend owns the DB connection (pilot_applications table) and Resend notification.
+// This keeps Postgres off Vercel's network entirely. Mirrors /api/waitlist/route.ts.
 import { NextResponse } from 'next/server'
+
+const BACKEND_URL = process.env.BACKEND_API_URL ?? 'https://synchroflow.fly.dev'
 
 const REQUIRED_FIELDS = [
   'name',
@@ -33,13 +31,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Missing fields: ${missing.join(', ')}` }, { status: 400 })
     }
 
-    // TODO(AUD-1023): replace with real backend call once pilot-applications
-    // persistence exists. Logging full payload now so no submission is lost.
-    console.log('[pilot-apply STUB] New pilot application received:', JSON.stringify(body))
+    const res = await fetch(`${BACKEND_URL}/api/v1/pilot-applications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
 
-    return NextResponse.json({ success: true, stub: true })
+    const data = await res.json()
+
+    if (!res.ok) {
+      console.error('[pilot-apply proxy] Backend error:', res.status, data)
+      return NextResponse.json({ error: 'Server error' }, { status: 502 })
+    }
+
+    return NextResponse.json(data)
   } catch (err) {
-    console.error('[pilot-apply STUB] Failed to process submission:', err)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    console.error('[pilot-apply proxy] Error:', err)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
