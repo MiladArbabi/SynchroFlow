@@ -142,6 +142,7 @@ function Footer() {
         <Link href="/compare" style={{ color: '#6B7280', textDecoration: 'none' }}>Compare</Link>
         <Link href="/pricing" style={{ color: '#6B7280', textDecoration: 'none' }}>Pricing</Link>
         <Link href="/about" style={{ color: '#6B7280', textDecoration: 'none' }}>About</Link>
+        <Link href="/pilot" style={{ color: '#6B7280', textDecoration: 'none' }}>Pilot</Link>
         <a href="mailto:contact@lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Contact</a>
       </div>
     </footer>
