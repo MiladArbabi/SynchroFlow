@@ -879,8 +879,11 @@ em { font-style: italic; color: var(--accent); }
       </div>
       <span style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.08em; color: #5A5F6E;">&#169; 2026 LaSyncro · Built for Shopify merchants</span>
     </div>
-    <!-- AUD-1023: full page list added, this footer previously had zero nav links of any kind. -->
-    <div style="display: flex; gap: 20px; flex-wrap: wrap; margin-top: 20px;">
+    <!-- AUD-1023: full page list added, this footer previously had zero nav links of any kind.
+         Wrapped in the same max-width:1060px/margin:0 auto constraint as the row above —
+         the first version was a direct child of <footer> with no centering, causing the
+         left-edge misalignment seen in the live screenshot. -->
+    <div style="max-width: 1060px; margin: 20px auto 0; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 20px;">
       <a href="/about" style="font: 400 12px/1.4 'DM Sans', sans-serif; color: #8B8F9A; text-decoration: none;">About</a>
       <a href="/blog" style="font: 400 12px/1.4 'DM Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Blog</a>
       <a href="/compare" style="font: 400 12px/1.4 'DM Sans', sans-serif; color: #8B8F9A; text-decoration: none;">Compare</a>
