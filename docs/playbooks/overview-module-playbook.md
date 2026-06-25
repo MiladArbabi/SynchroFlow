@@ -177,3 +177,9 @@ The Overview right rail is **no longer Today's Flow** — it is now a cross-doma
 **`docs/playbooks/overview_pulse_and_signal_dedup_2026_06_20.md`**
 
 Note: §6's "verified end state" above is from the 2026-06-18 prod seed and predates these changes (e.g. the brief now shows 2 de-duplicated signals, not the older "14 orders overdue" set).
+
+## 8. 2026-06-25 update — daily operational brief dispatch fix + local dev seed scripts
+
+`dailyOperationalBriefProjection` was fully declared in the contracts/dependencies/execution-order registries but never dispatched anywhere — fixed by wiring it into `shopSnapshotJob.dispatcher.ts` alongside its two siblings. Also added `npm run dev:full-seed` / `dev:trigger-snapshot` for local dev DB resets (distinct from §3.4's production seeding flow). GOTCHA #4 and §5's margin bug were both observed behaving differently than documented in this session, but neither status is confirmed — see full detail and explicit caveats in:
+
+**`docs/playbooks/overview_daily_brief_dispatch_and_dev_seed_fix_2026_06_25.md`**

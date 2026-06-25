@@ -54,9 +54,7 @@ export async function startShopSnapshotJobDispatcher() {
     for (const job of jobs) {
 
       try {
-
         await computeShopOperationalSnapshot(String(job.shop_id));
-
         /**
          * ALERTS AGGREGATION
          * --------------------------
@@ -65,7 +63,27 @@ export async function startShopSnapshotJobDispatcher() {
          * SLA, and revenue signals.
          */
         await aggregateAlertsForShop(job.shop_id);
-
+        /**
+         * DAILY OPERATIONAL BRIEF (DEV-08 FIX)
+         * --------------------------------------
+         * projectDailyOperationalBrief was fully declared in
+         * projectionContracts/projectionDependencies/projectionExecutionOrder
+         * but never dispatched anywhere — daily_operational_brief_snapshot
+         * stayed empty regardless of seed/rebuild order. This is the one
+         * canonical per-shop snapshot pipeline (reconciliation -> here),
+         * so it belongs alongside its two siblings above, not in rebuild
+         * (rebuild is intentionally pure / no bulk recompute, see its
+         * own header comment) and not as a separate cron job.
+         *
+         * aggregateVersion is accepted by the function signature but
+         * unused in its body — passing 0 is safe, not a placeholder hack.
+         */
+        await systemDb.transaction(async (trx) => {
+          await trx.raw(`SET LOCAL "app.current_tenant" = '${job.shop_id}'`);
+          const { projectDailyOperationalBrief } = await import('../../projections/dailyOperationalBriefProjection.js');
+          await projectDailyOperationalBrief(trx, String(job.shop_id), 0, new Date());
+        });
+        
         await systemDb('shop_snapshot_jobs')
           .where({ shop_id: job.shop_id })
           .delete();
