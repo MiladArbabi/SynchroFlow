@@ -21,8 +21,6 @@ All constraints are now:
 
 All constraints MUST be stored in:
 
-
-
 order_constraints
 
 No other table is allowed to:
@@ -47,9 +45,7 @@ update → insert if missing
 
 **Constraint identity:**
 
-
-constraint_id = uuidv5(`${type}:${orderId}`, NAMESPACE)
-
+constraint_id = uuidv5(`${type}:${orderId}:${targetId}`, NAMESPACE)
 
 ---
 
@@ -57,15 +53,15 @@ constraint_id = uuidv5(`${type}:${orderId}`, NAMESPACE)
 
 Enforced by DB:
 
-
-UNIQUE (lasyncro_order_id, constraint_type)
+UNIQUE (lasyncro_order_id, constraint_type, target_id)
 WHERE is_active = true
-
 
 Implication:
 
-* Multiple historical records allowed
-* Only ONE active per type
+- Multiple historical records allowed
+- Only ONE active per type PER TARGET — variant-scoped types (inventory) can have several simultaneous active constraints across different `target_id` values on the same order; order-level types (customer, operational) use `target_id = null`, so still effectively one active row.
+
+**Corrected 2026-06-26:** this section previously described a stricter single-active-per-type model the schema doesn't enforce (see migration `20260320124601_0070_create_order_constraints.ts`, `uniq_active_constraint_per_scope`). Real schema drift, not a simplification.
 
 ---
 
@@ -73,13 +69,13 @@ Implication:
 
 Do NOT:
 
-* compare previous vs next state
-* track transitions manually
+- compare previous vs next state
+- track transitions manually
 
 Instead:
 
-* rely on `is_active`
-* use `started_at` / `resolved_at` as simple timestamps
+- rely on `is_active`
+- use `started_at` / `resolved_at` as simple timestamps
 
 ---
 
@@ -87,14 +83,12 @@ Instead:
 
 ALL reads must use:
 
-
 order_constraints
-
 
 NEVER:
 
-* `order_fulfillment_status.*_block_type`
-* derived booleans from legacy fields
+- `order_fulfillment_status.*_block_type`
+- derived booleans from legacy fields
 
 ---
 
@@ -119,29 +113,39 @@ NEVER:
 
 ### Inventory
 
-* Source: inventory projection
-* Example block types:
+- Source: inventory projection
+- Example block types:
 
-  * `oversell`
-  * `allocation_pending`
+  - `oversell`
+  - `allocation_pending`
 
 ---
 
 ### Customer
 
-* Source: order/payment state
-* Example block types:
+- Source: `orders.shipping_address1` / `shipping_city` / `shipping_zip` / `shipping_country_code` completeness
+- Example block types:
 
-  * `awaiting_payment`
+  - `incomplete_address`
+
+**Corrected 2026-06-25:** this section previously said "order/payment state" with example `awaiting_payment`. That's not achievable in this system — laSyncro only ever receives the Shopify `orders/paid` webhook; draft (pre-payment) orders are never visible here, so there is no payment-pending state to detect. The evaluator was also found to still read the forbidden legacy field `ofs.customer_block_type` (see "❌ Legacy Reads" below) — fixed in `customerConstraintEvaluator.ts` the same day. Address completeness is the correct, durable, derivable signal for this constraint type.
+
+**Known limitation:** no `requires_shipping`/pickup-order concept exists anywhere in this codebase. A genuine Shopify local-pickup order (no shipping address by design) would currently be misflagged as `incomplete_address`. Not fixed — flagged honestly pending a real signal if/when pickup orders become relevant.
 
 ---
 
 ### Operational
 
-* Source: SLA evaluator
-* Example block types:
+- Source: unresolved `pick_exceptions` rows joined via `order_line_items` — physical pick/pack blockers (item missing, short pick, product/packaging defect, wrong item)
+- Example block types:
 
-  * `sla_breach`
+  - `pick_item_missing`
+  - `pick_short`
+  - `product_defect`
+  - `packaging_defect`
+  - `pick_wrong_item`
+
+**Corrected 2026-06-26:** previously said `sla_breach`. The evaluator's own comment explicitly forbids this — shipping-SLA breach is a TIME signal owned exclusively by `order_age_snapshot.is_shipping_sla_breached`; re-deriving it here would create two identical signals on the same orders. Operational is a PHYSICAL-blocker signal, orthogonal to age. See `operationalConstraintEvaluator.ts`.
 
 ---
 
@@ -151,14 +155,11 @@ Every constraint projection MUST:
 
 ### 1. Compute block type
 
-
 let blockType: string | null = ...
-
 
 ---
 
 ### 2. Perform update
-
 
 await trx('order_constraints')
   .where({ lasyncro_order_id, constraint_type })
@@ -168,17 +169,16 @@ await trx('order_constraints')
     resolved_at: blockType ? null : new Date()
   });
 
-
 ---
 
 ### 3. Insert if missing
-
 
 if (updated === 0) {
   await trx('order_constraints').insert({
     constraint_id,
     lasyncro_order_id,
     constraint_type,
+    target_id: targetId, // null for order-level types; required for variant-scoped types — corrected 2026-06-26, previously omitted
     block_type: blockType,
     started_at: blockType ? new Date() : null,
     resolved_at: blockType ? null : new Date(),
@@ -187,16 +187,13 @@ if (updated === 0) {
   });
 }
 
-
 ---
 
 ### 4. Logging (optional, non-authoritative)
 
-
 if (blockType) {
   console.debug('[CONSTRAINT_ACTIVE]', { orderId, blockType });
 }
-
 
 ---
 
@@ -204,7 +201,11 @@ if (blockType) {
 
 All consumers MUST read like this:
 
-
+// NOTE (corrected 2026-06-26): for variant-scoped types (inventory), this
+// generic example returns only ONE of potentially several active rows
+// across different target_id values — add target_id to the where() when
+// checking a specific variant. For order-level types (customer,
+// operational), target_id is always null and this example is complete.
 const constraint = await trx('order_constraints')
   .where({
     lasyncro_order_id: orderId,
@@ -213,13 +214,10 @@ const constraint = await trx('order_constraints')
   })
   .first();
 
-
 Derived:
-
 
 isBlocked = !!constraint
 blockType = constraint?.block_type ?? null
-
 
 ---
 
@@ -256,32 +254,28 @@ Dispatcher MUST:
 
 Writing to both:
 
-* `order_constraints`
-* `order_fulfillment_status`
+- `order_constraints`
+- `order_fulfillment_status`
 
 ---
 
 ### ❌ Legacy Reads
 
-
 ofs.inventory_block_type
 ofs.customer_block_type
-
 
 ---
 
 ### ❌ Recomputing Constraints Outside Projections
 
-* No duplication of logic in workers/services
-* Evaluators must be read-only or minimal
+- No duplication of logic in workers/services
+- Evaluators must be read-only or minimal
 
 ---
 
 ### ❌ Lifecycle Diffing
 
-
 if (!prev && next) ...
-
 
 This is obsolete.
 
@@ -304,29 +298,29 @@ No schema changes required.
 
 Recommended logs:
 
-* `[CONSTRAINT_ACTIVE]`
-* `[CONSTRAINT_RESOLVED]` (optional)
-* `[PRIORITY_ORDER]`
-* `[PRIORITY_BREAKDOWN]`
+- `[CONSTRAINT_ACTIVE]`
+- `[CONSTRAINT_RESOLVED]` (optional)
+- `[PRIORITY_ORDER]`
+- `[PRIORITY_BREAKDOWN]`
 
 ---
 
 ## Migration Guarantees (Achieved)
 
-* No legacy column reads
-* No legacy column writes
-* Deterministic rebuild
-* Idempotent projections
-* Consistent prioritization
+- No legacy column reads
+- No legacy column writes
+- Deterministic rebuild
+- Idempotent projections
+- Consistent prioritization
 
 ---
 
 ## Future Work (Optional)
 
-* Drop `*_block_type` columns from DB
-* Remove `order_fulfillment_status` entirely
-* Add constraint analytics (duration, frequency)
-* Multi-constraint prioritization tuning
+- Drop `*_block_type` columns from DB
+- Remove `order_fulfillment_status` entirely
+- Add constraint analytics (duration, frequency)
+- Multi-constraint prioritization tuning
 
 ---
 

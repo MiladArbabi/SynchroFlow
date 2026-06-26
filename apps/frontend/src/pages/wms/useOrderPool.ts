@@ -7,7 +7,7 @@
 // Used by:
 // - ReleaseQueuePage
 // - OrdersFT2Page priority actions
-// - Future OrderFlowPage
+// - OrderFlowPage
 //
 // Backend ownership:
 // - GET  /api/v1/wms/order-pool

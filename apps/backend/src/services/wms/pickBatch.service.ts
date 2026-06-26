@@ -130,82 +130,82 @@ export async function releaseBatch(
   const skippedOrders: SkippedReleaseOrder[] = [];
 
   if (invalidPriorityIds.length > 0) {
-  const latestActiveConstraint = trx('order_constraints')
-    .distinctOn('lasyncro_order_id')
-    .select('lasyncro_order_id', 'constraint_type', 'block_type')
-    .where('is_active', true)
-    .orderByRaw('lasyncro_order_id, started_at DESC NULLS LAST')
-    .as('oc');
+    const latestActiveConstraint = trx('order_constraints')
+      .distinctOn('lasyncro_order_id')
+      .select('lasyncro_order_id', 'constraint_type', 'block_type')
+      .where('is_active', true)
+      .orderByRaw('lasyncro_order_id, started_at DESC NULLS LAST')
+      .as('oc');
 
-  const invalidRows = await trx('orders as o')
-    .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
-    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
-    .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
-    .leftJoin(latestActiveConstraint, 'oc.lasyncro_order_id', 'o.lasyncro_order_id')
-    .where('o.shop_id', shopId)
-    .whereIn('o.lasyncro_order_id', invalidPriorityIds)
-    .select(
-      'o.lasyncro_order_id',
-      'eim.external_order_id',
-      'ofs.status',
-      'pbo.pick_batch_id',
-      'oc.constraint_type',
-      'oc.block_type'
-    );
+    const invalidRows = await trx('orders as o')
+      .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+      .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+      .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+      .leftJoin(latestActiveConstraint, 'oc.lasyncro_order_id', 'o.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .whereIn('o.lasyncro_order_id', invalidPriorityIds)
+      .select(
+        'o.lasyncro_order_id',
+        'eim.external_order_id',
+        'ofs.status',
+        'pbo.pick_batch_id',
+        'oc.constraint_type',
+        'oc.block_type'
+      );
 
-  const invalidById = new Map(invalidRows.map(row => [row.lasyncro_order_id, row]));
+    const invalidById = new Map(invalidRows.map(row => [row.lasyncro_order_id, row]));
 
-  for (const orderId of invalidPriorityIds) {
-    const row = invalidById.get(orderId);
+    for (const orderId of invalidPriorityIds) {
+      const row = invalidById.get(orderId);
 
-    const reason: SkippedReleaseOrderReason = !row
-      ? 'not_in_pool'
-      : row.constraint_type
-      ? 'blocked'
-      : row.pick_batch_id
-      ? 'already_batched'
-      : !['pending', 'processing'].includes(row.status)
-      ? 'status_changed'
-      : 'not_in_pool';
+      const reason: SkippedReleaseOrderReason = !row
+        ? 'not_in_pool'
+        : row.constraint_type
+        ? 'blocked'
+        : row.pick_batch_id
+        ? 'already_batched'
+        : !['pending', 'processing'].includes(row.status)
+        ? 'status_changed'
+        : 'not_in_pool';
 
-    skippedOrders.push({
-      order_id: orderId,
-      external_order_id: row?.external_order_id ?? null,
-      reason,
-      label: getSkippedReleaseLabel(reason, row?.constraint_type ?? null),
-    });
+      skippedOrders.push({
+        order_id: orderId,
+        external_order_id: row?.external_order_id ?? null,
+        reason,
+        label: getSkippedReleaseLabel(reason, row?.constraint_type ?? null),
+      });
+    }
   }
-}
 
-if (exclusive && validPriorityIds.length === 0) {
-  console.info('[PICK_BATCH_SERVICE] Exclusive release requested with no valid selected orders', {
-    shopId,
-    requestedOrderCount: requestedPriorityIds.length,
-    skipped_order_count: skippedOrders.length,
-  });
+  if (exclusive && validPriorityIds.length === 0) {
+    console.info('[PICK_BATCH_SERVICE] Exclusive release requested with no valid selected orders', {
+      shopId,
+      requestedOrderCount: requestedPriorityIds.length,
+      skipped_order_count: skippedOrders.length,
+    });
 
-  return {
-    pick_batch_id: null,
-    order_count: 0,
-    total_line_items: 0,
-    total_units: 0,
-    skipped_orders: skippedOrders,
-  };
-}
+    return {
+      pick_batch_id: null,
+      order_count: 0,
+      total_line_items: 0,
+      total_units: 0,
+      skipped_orders: skippedOrders,
+    };
+  }
 
-if (eligibleOrders.length === 0) {
-  console.info('[PICK_BATCH_SERVICE] No eligible orders found', { shopId });
-  return null;
-}
+  if (eligibleOrders.length === 0) {
+    console.info('[PICK_BATCH_SERVICE] No eligible orders found', { shopId });
+    return null;
+  }
 
-const priorityFlaggedIds = eligibleOrders
-  .filter(o => o.is_priority_flagged && !validPriorityIds.includes(o.lasyncro_order_id))
-  .map(o => o.lasyncro_order_id);
-const remainingIds = eligibleOrders
-  .filter(o => !validPriorityIds.includes(o.lasyncro_order_id) && !priorityFlaggedIds.includes(o.lasyncro_order_id))
-  .map(o => o.lasyncro_order_id);
+  const priorityFlaggedIds = eligibleOrders
+    .filter(o => o.is_priority_flagged && !validPriorityIds.includes(o.lasyncro_order_id))
+    .map(o => o.lasyncro_order_id);
+  const remainingIds = eligibleOrders
+    .filter(o => !validPriorityIds.includes(o.lasyncro_order_id) && !priorityFlaggedIds.includes(o.lasyncro_order_id))
+    .map(o => o.lasyncro_order_id);
 
-const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
+  const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
 
   // 4. Greedy fill up to max_batch_line_items ceiling — full orders only
   const selectedOrderIds: string[] = [];

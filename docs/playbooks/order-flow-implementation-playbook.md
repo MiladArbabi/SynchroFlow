@@ -71,23 +71,11 @@ No other orders can be released.
 
 Therefore, the `Order Flow` UX must not auto-focus the user into blocked orders every time blocked count is greater than zero. In a real warehouse, there will often be some blocked orders.
 
-### 2.3 Frequency-led, not urgency-led
+### 2.3 Equal visibility, not frequency-led (revised 2026-06-25)
 
-The main daily job is release-pool work:
+Original principle (kept for history): release-pool work is the most frequent daily action, so blocked orders should stay behind a compact alert + panel rather than occupy equal space.
 
-```text
-build the next wave
-release it to the floor
-monitor fulfillment
-```
-
-Blocked orders are urgent, but not always the most frequent action. Therefore:
-
-```text
-Release pool stays the main working canvas.
-Blocked orders appear as a persistent alert and compact review panel.
-Fulfillment appears as a compact live status strip.
-```
+That principle is superseded. The actual shipped target gives Blocked, Pool, and Fulfillment equal persistent visual weight as three side-by-side columns ("Blocked → Pool → Fulfillment, read left to right"). Severity within each column is now signalled by content (reason tags, age, stalled flags), not by whether the column itself is visible at all.
 
 ### 2.4 Truth over optimistic UX
 
@@ -131,21 +119,18 @@ Fulfillment
 
 These legacy pages/routes can continue to exist internally for compatibility, but they should no longer be primary user-facing navigation once `Order Flow` is active.
 
-### 3.1 Order Flow layout
+### 3.1 Order Flow layout (revised 2026-06-25)
 
-The target page structure is:
+The target page structure is a 3-column board, read left to right:
 
 ```text
-Order Flow header
-Summary stat cards
-Blocked alert strip
-Live flow strip
-Fulfillment live strip
-Blocked review panel
-Release pool table
-Next wave builder
-Release feedback banner
+Order Flow header (rollup line)
+Blocked orders column
+Order pool column
+Fulfillment column
 ```
+
+Each column is self-contained: header states its entry criteria, body lists/cards, footer (where relevant) holds the column's primary action.
 
 ### 3.2 Header
 
@@ -155,47 +140,21 @@ The header should communicate live operational state:
 10 blocked · $21,899 held · 6 ready to release · 1 batch active
 ```
 
-### 3.3 Stat cards
+### 3.3 Blocked orders column
 
-Current stat cards:
+Entry criteria: any order with an active row in `order_constraints`.
 
-```text
-Blocked
-Release pool
-Fulfillment
-Main action
-```
-
-These are high-level operational signals, not deep workflows.
-
-### 3.4 Blocked alert strip
-
-When blocked orders exist, show a persistent theme-aware alert:
+Card per order shows:
 
 ```text
-10 blocked orders need review
-$21,899 is held until customer, inventory, or operational blocks are resolved.
-Review blocked →
+order id
+value
+reason tag (constraint_type, operator-facing label)
+recommended_action.type (or "Manual review required")
+age since creation
 ```
 
-This CTA should not route to a legacy page. It should anchor to the local blocked review panel inside `Order Flow`.
-
-### 3.5 Blocked review panel
-
-The blocked panel should show a compact list of blocked orders using canonical constrained-order data.
-
-Current fields used:
-
-```text
-external_order_id
-order_id
-constraint_type
-revenue
-recommended_action.type
-age_since_creation_seconds
-```
-
-Operator-facing labels must be used:
+Operator-facing labels:
 
 ```text
 operational → Overdue
@@ -203,13 +162,17 @@ inventory → Out of Stock
 customer → Address Issue
 ```
 
-System words should not leak to the operator when a more useful operational label exists.
+System words should not leak to the operator when a more useful label exists.
 
-### 3.6 Release pool table
+No "Phantom" category exists. `constraint_type` is a hard DB enum — inventory | customer | operational only (`order_constraint_events` migration). Any UI/design reference to a 4th "Phantom" category was based on the original target mockup, not actual data — confirmed false 2026-06-25.
 
-The release pool table is the main working surface.
+No advance/resolve action on this column yet — reason-specific resolution workflows (e.g. retry label, verify address) are explicitly deferred to a future, separate task. This column is read + triage only for now.
 
-It should show:
+### 3.4 Order pool column
+
+Entry criteria (unchanged): constraint-free, unbatched, pending or processing, inside the current shop.
+
+Table:
 
 ```text
 selection checkbox
@@ -222,42 +185,39 @@ age
 zones
 ```
 
-Selecting rows prepares an exclusive selected-order release.
-
-### 3.7 Next wave builder
-
-The wave builder should show:
+Footer:
 
 ```text
-selected/eligible order count
-wave value
-zone spread
-line items
-units to pick
-floor capacity
+live selection summary (N selected · only selected orders will be released)
+line items / units to pick, against max_batch_line_items
 operator assignment
 Release wave to floor
 ```
 
-Important copy:
+Important copy: "Pickers see it on their mobile instantly."
+
+Release model (clarified 2026-06-25): exactly ONE batch per release action — either the full eligible pool (greedy-filled to `max_batch_line_items`), explicitly selected orders only (exclusive), or selected orders with the remaining batch capacity greedy-filled from the rest of the pool. There is no per-zone batching and no multi-batch release in a single action — any UI implying "Release N batches" in one click is incorrect.
+
+### 3.5 Fulfillment column
+
+Entry criteria: batches returned by `GET /api/v1/wms/batches` (excludes `pack_complete` and `cancelled` server-side).
+
+Card per batch shows:
 
 ```text
-Pickers see it on their mobile instantly.
+batch id
+status (Picking / Picked / Packing / Packed)
+4-stage stepper
+time in current stage
+line/unit counts
+picker or packer name, once assigned
 ```
 
-### 3.8 Fulfillment live strip
+Read-only. No advance-stage actions on this column: claim, pick-complete, and pack-complete are gated by operator ownership (`picked_by`/`packed_by` must match the caller) and, for pick-complete, a scan-completion guard — none of which a manager-facing screen can satisfy. Those transitions belong to the picker/packer's own flow, not Order Flow.
 
-Because `Fulfillment` is no longer a primary nav item, `Order Flow` needs a compact fulfillment status strip.
+"Shipped" is intentionally not a stage here: per `POST /api/v1/wms/batch/:batchId/ship`, shipment is confirmed per-order, not as a pick-batch status transition. A shipped order leaves Fulfillment entirely and is tracked in Outbound.
 
-Current fulfillment strip shows:
-
-```text
-Fulfillment live
-1 picking · 2 pending
-1 currently picking
-```
-
-This avoids the feeling that released batches disappear after release.
+Stalled-batch highlighting: deferred pending integration with the existing `alerts` table (`alert_type: 'wms_operator_idle'`), not a frontend-computed threshold — `shop_wms_settings.idle_alert_threshold_minutes` is already the source of truth server-side and should not be duplicated.
 
 ---
 
@@ -464,9 +424,24 @@ Data caveats:
 
 Cadence: batches 10s on this page (per-call override); blocked/pool via existing hooks.
 
-Deferred: iso twin (ISSUE-4, phase 2); per-carrier CPT columns + promised_ship_by writer (GitHub #1017).
+Per-carrier CPT columns + promised_ship_by writer (GitHub #1017) still deferred. Iso twin is NOT deferred — see §5.9, status corrected 2026-06-25: shipped then removed, not currently present.
 
-### 5.9 Isometric floor twin (v1)
+### 5.9 Isometric floor twin (REMOVED — see status note)
+
+**Status corrected 2026-06-25 (code audit):** shipped in commit `670977ed`
+("v1 iso twin shipped and documented"), then removed when the full page
+rewrite landed in `27999b71` ("orders flow module rewired fully"). This
+section was never updated after the removal, which is why §7 separately
+(and correctly) lists it under "Not done yet" — both statements were true
+at different points in time, just never reconciled until now.
+
+The `IsometricCanvas` component itself was NOT deleted — it's still live in
+`@lasyncro/shared/ui` and actively used by `modules/floor-planning`
+(`FloorPlanningModuleFT2.tsx`, `CanvasEditor.tsx`). Re-adding it to Order
+Flow would be a re-wire against an existing, working component, not a
+from-scratch build.
+
+Original v1 documentation preserved below for reference:
 
 File: apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx
 
@@ -479,7 +454,7 @@ Zone source:
 
 - useFloorPlanning() → data.zones (WarehouseZone[]), from GET /api/v1/floor-planning/layout
   (controller returns { zones, product_barcodes }). Canonical map — same hook the
-  Floor Planning Setup surface uses. NOT useWarehouseGrid (that returns { locations }).
+  Floor Planning Setup surface uses. NOT useWarehouseGrid (that returns {locations }).
 
 Batch → zone (ISSUE-4, resolved frontend-only):
 
@@ -494,7 +469,7 @@ v1 scope:
 - Canvas from @lasyncro/shared/ui, token-sourced (--zone-*).
 - Guards: zones.length === 0 → "build it in Floor Planning"; no active batch → label only.
 
-Deferred:
+Deferred (as of original v1 ship — not re-verified against current code):
 
 - ISSUE-4d — light ALL active batches at once (usePickBatchLineItems is single-batchId;
   hooks can't loop). Needs aggregate useActiveBatchZones hook. v1+.
@@ -608,13 +583,20 @@ Made selected release exclusive.
 Added backend skipped-order response contract.
 Updated frontend ReleaseBatchResult contract.
 Started frontend skipped-order banner wiring.
+Cleaned backend indentation around skipped-order block (pickBatch.service.ts:132-208).
+Fixed hardcoded #fff on release button → theme.palette.common.white (OrderFlowPage.tsx:671).
+Fixed stale/misleading code comments (OrderFlowPage.tsx, useOrderPool.ts) and a broken indentation block (blockedByBucket/blockedBannerSummary).
+Added blockedByReason grouping by constraint_type, surfaced in the blocked banner.
+Added persistent reason-tagged Blocked orders column (target-IA Phase 1) — additive, alongside existing banner/Drawer pending Phase 4 cleanup.
+Added consolidated Order pool column (target-IA Phase 2) — additive, alongside existing Next-Wave panel/pool table pending Phase 4 cleanup.
+Added compact Fulfillment batch cards (target-IA Phase 3a) — read-only monitoring (status, 4-stage stepper, time-in-stage); no advance-stage actions, see §3.5.
+Reconciled this playbook's isometric-twin contradiction and rewrote §2.3/§3 to match the actual 3-column target.
 ```
 
 ### In progress
 
 ```text
 Verify releaseSuccess banner guard around nullable batchId.
-Clean backend indentation around skipped-order block.
 Wire skipped_orders fully into frontend release feedback.
 Run targeted TypeScript build after frontend/backend contract changes.
 ```
@@ -622,15 +604,15 @@ Run targeted TypeScript build after frontend/backend contract changes.
 ### Not done yet
 
 ```text
-Full blocked-order resolution drawer inside Order Flow.
-Inline blocked-order action execution.
-Compact fulfillment batch cards.
-Deep-link panel state such as /orders/flow?panel=blocked.
-Order Flow map / isometric warehouse visual.
+Blocked-order resolution actions inside the new Blocked orders column (reason-specific workflows — e.g. retry label, verify address — explicitly deferred, not yet scoped).
+Deep-link panel state such as /orders/flow?panel=blocked. — OBSOLETE: referred to the old Drawer pattern, which the target architecture doesn't use. No replacement currently planned.
+Phase 3b — stalled-batch highlighting via the existing alerts table (alert_type: 'wms_operator_idle'); needs an alerts-fetching-hook audit first. Do not compute a separate frontend threshold — shop_wms_settings.idle_alert_threshold_minutes is the single source of truth server-side.
+Phase 4 — replace the old 2-column shell (Next-Wave panel + CPT-risk matrix + old pool table + blocked banner/Drawer) with the new 3-column board as the only UI; remove the now-dead code. Old and new UI currently coexist on the page side-by-side — this is verification scaffolding, not the final state.
 Permission-aware release action UI.
 Operator role UX check.
 Final removal or archival of old split pages.
 Automated tests for exclusive selected release.
+
 ```
 
 ---
