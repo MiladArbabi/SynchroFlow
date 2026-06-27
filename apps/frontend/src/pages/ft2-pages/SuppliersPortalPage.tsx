@@ -1,7 +1,9 @@
 // apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx
 import { useCallback, useEffect, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Route, Routes, useSearchParams } from 'react-router-dom';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { PURCHASING_SUB_TABS } from './purchasingSubTabs';
 import type { 
   PurchaseOrderStatus, 
   PoLineItem, 
@@ -107,26 +109,34 @@ export default function SuppliersPortalPage() {
     }
   }, []);
 
+  const sharedProps = {
+    data,
+    isLoading,
+    isError,
+    onRefresh: refetch,
+    onFetchLineItems: handleFetchLineItems,
+    onUpdatePoStatus: handleUpdatePoStatus,
+    onCreateSupplier: handleCreateSupplier,
+    onUpdateSupplier: handleUpdateSupplier,
+    onDeleteSupplier: handleDeleteSupplier,
+    onCreatePo: handleCreatePo,
+    onCreateReceiveJob: handleCreateReceiveJob,
+    onSearchVariants: handleSearchVariants,
+    autoOpenCreatePo: demandAction === 'create-po',
+    prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
+      description: demandDescription ?? demandSku ?? '',
+      quantity_ordered: demandQty ? parseInt(demandQty, 10) : 1,
+      lasyncro_variant_id: demandVariantId ?? undefined,
+    } : undefined,
+  };
+
   return (
-    <SuppliersPortalModuleFT2
-      data={data}
-      isLoading={isLoading}
-      isError={isError}
-      onRefresh={refetch}
-      onFetchLineItems={handleFetchLineItems}
-      onUpdatePoStatus={handleUpdatePoStatus}
-      onCreateSupplier={handleCreateSupplier}
-      onUpdateSupplier={handleUpdateSupplier}
-      onDeleteSupplier={handleDeleteSupplier}
-      onCreatePo={handleCreatePo}
-      onCreateReceiveJob={handleCreateReceiveJob}
-      onSearchVariants={handleSearchVariants}
-      autoOpenCreatePo={demandAction === 'create-po'}
-      prefilledLineItem={demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
-        description: demandDescription ?? demandSku ?? '',
-        quantity_ordered: demandQty ? parseInt(demandQty, 10) : 1,
-        lasyncro_variant_id: demandVariantId ?? undefined,
-      } : undefined}
-    />
+    <>
+      <ModuleTabBar tabs={PURCHASING_SUB_TABS} />
+      <Routes>
+        <Route path="/" element={<SuppliersPortalModuleFT2 view="pos" {...sharedProps} />} />
+        <Route path="/suppliers" element={<SuppliersPortalModuleFT2 view="suppliers" {...sharedProps} />} />
+      </Routes>
+    </>
   );
 }

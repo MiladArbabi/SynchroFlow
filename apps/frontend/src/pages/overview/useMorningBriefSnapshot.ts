@@ -36,7 +36,6 @@ export interface MorningBriefData {
   summaryLine: string | null;
 }
 
-// AFTER
 export function useMorningBriefSnapshot(force = false, enabled = true) {
   return useQuery<MorningBriefData | null>({
     queryKey: ['overview', 'morning-brief', force],

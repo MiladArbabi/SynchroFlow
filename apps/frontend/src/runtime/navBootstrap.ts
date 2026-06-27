@@ -18,7 +18,7 @@ import {
   LayoutDashboard,
   ShoppingBag,
   Warehouse,
-  TrendingUp,
+  RotateCcw,
   Box,
   Truck,
   DollarSign,
@@ -54,11 +54,9 @@ export function bootstrapNavGroups() {
     icon: ShoppingBag,
     requiredModuleId: 'order-nexus',
     children: [
-      { id: 'orders-overview', title: 'Overview',   path: '/orders'          },
-      { id: 'order-flow',      title: 'Order Flow', path: '/orders/flow'     },
+      { id: 'orders-overview', title: 'Overview',   path: '/orders'   },
+      { id: 'order-flow',      title: 'Order Flow', path: '/orders/flow'   },
       { id: 'outbound',        title: 'Outbound',   path: '/orders/outbound' },
-      { id: 'inbound',         title: 'Inbound',    path: '/orders/inbound'  },
-      { id: 'returns',         title: 'Returns',    path: '/returns'         },
     ],
   });
 
@@ -74,20 +72,23 @@ export function bootstrapNavGroups() {
       { id: 'wms-operations',  title: 'Operations',     path: '/wms'             },
       { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale' },
       { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
-      { id: 'products-wms-readiness', title: 'WMS Readiness',  path: '/wms/readiness'  },
     ],
   });
 
   registerNavItem({
-    id: 'demand',
-    title: 'Demand',
-    path: '/demand',
+    id: 'returns-resolution',
+    title: 'Returns & Resolution',
+    path: '/returns',
     group: 'workspace',
     order: 40,
-    icon: TrendingUp,
-    requiredModuleId: 'demand',
-    requiredTier: 'growth',
-    // No children — navigates directly.
+    icon: RotateCcw,
+    requiredTier: 'core',
+    // No requiredModuleId: children enforce independently server-side
+    // under different module gates (returns:*, wms:read). See #38/#39.
+    children: [
+      { id: 'order-issues',   title: 'Returns',   path: '/returns'        },
+      { id: 'product-issues', title: 'Product Issues', path: '/problem-center' },
+    ],
   });
 
   registerNavItem({
@@ -101,20 +102,25 @@ export function bootstrapNavGroups() {
     children: [
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
+      { id: 'demand',                 title: 'Demand',         path: '/demand',  requiredTier: 'growth' },
       { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
-      { id: 'problem-center',         title: 'Problem Center', path: '/problem-center'          },
+      { id: 'data-quality',           title: 'Data Quality',   path: '/wms/readiness'           },
     ],
   });
 
   registerNavItem({
     id: 'suppliers',
-    title: 'Suppliers',
+    title: 'Purchasing',
     path: '/suppliers-portal',
     group: 'workspace',
     order: 60,
     icon: Truck,
     requiredModuleId: 'suppliers-portal',
-    // No children — navigates directly.
+    // No children — single real destination today. Receiving happens
+    // inline per-PO inside Suppliers Portal (PoAccordion.handleReceive),
+    // not a separate page. /orders/inbound is a parallel, likely-duplicate
+    // implementation — flagged for deprecation review (#63), intentionally
+    // unlinked from nav for now rather than deleted.
   });
 
   registerNavItem({

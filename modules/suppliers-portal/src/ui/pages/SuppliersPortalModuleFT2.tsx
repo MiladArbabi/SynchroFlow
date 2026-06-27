@@ -123,6 +123,8 @@ export type SuppliersPortalData = {
 } | null;
 
 export type SuppliersPortalPageProps = {
+  /** Which half of the Purchasing surface to render. Tab routing lives in the ft2-pages wrapper, not here. */
+  view: 'pos' | 'suppliers';
   data: SuppliersPortalData;
   isLoading: boolean;
   isError: boolean;
@@ -1147,25 +1149,12 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
 // MAIN MODULE
 // ─────────────────────────────────────────────
 
-function SuppliersPortalModuleFT2Inner({
-  data,
-  isLoading,
-  isError,
-  onRefresh,
-  onFetchLineItems,
-  onUpdatePoStatus,
-  onCreateSupplier,
-  onUpdateSupplier,
-  onDeleteSupplier,
-  onCreatePo,
-  onCreateReceiveJob,
-  onSearchVariants,
-  autoOpenCreatePo = false,
-  prefilledLineItem,
+function PurchasingPosView({
+  data, isLoading, isError, onRefresh,
+  onFetchLineItems, onUpdatePoStatus, onCreateSupplier, onCreatePo,
+  onCreateReceiveJob, onSearchVariants, autoOpenCreatePo = false, prefilledLineItem,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
-  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
-  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
   const [showClosed, setShowClosed] = useState(false);
 
   const allPos = data?.purchase_orders ?? [];
@@ -1185,10 +1174,10 @@ function SuppliersPortalModuleFT2Inner({
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
           <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-            Suppliers
+            Purchasing
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Purchase orders, ETAs, and supplier ratings.
+            Purchase orders and ETAs.
           </Typography>
         </Box>
         <Button
@@ -1273,46 +1262,7 @@ function SuppliersPortalModuleFT2Inner({
               ))}
             </Box>
           )}
-
-          <Divider sx={{ mb: 3 }} />
-
-          {/* SUPPLIERS LIST — bottom */}
-          <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <Star size={18} />
-              <Typography variant="subtitle1" fontWeight={700}>Suppliers</Typography>
-              <Chip label={suppliers.length} size="small" />
-              <Box sx={{ flex: 1 }} />
-              <Button size="small" startIcon={<Plus size={16} />} variant="contained"
-                onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
-                Add supplier
-              </Button>
-            </Box>
-
-            {suppliers.length === 0 ? (
-              <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
-                <Star size={36} style={{ opacity: 0.3 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-                  No suppliers added yet. Create a PO to add your first supplier.
-                </Typography>
-              </Paper>
-            ) : (
-              suppliers.map((s) => (
-                <SupplierAccordion
-                  key={s.id}
-                  supplier={s}
-                  onEdit={(sup) => { setEditingSupplier(sup); setSupplierFormOpen(true); }}
-                  onDelete={async (sup) => {
-                    if (window.confirm(`Remove ${sup.name}? Past purchase orders are kept; the supplier is hidden from new POs.`)) {
-                      await onDeleteSupplier(sup.id);
-                    }
-                  }}
-                />
-              ))
-            )}
-          </Box>
-        </>
+          </>
       )}
 
       {/* CREATE PO DIALOG */}
@@ -1325,6 +1275,66 @@ function SuppliersPortalModuleFT2Inner({
         onCreatePo={onCreatePo}
         onSearchVariants={onSearchVariants}
       />
+    </Box>
+  );
+}
+
+function PurchasingSuppliersView({
+  data, isLoading, isError, onUpdateSupplier, onCreateSupplier, onDeleteSupplier,
+}: SuppliersPortalPageProps) {
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false);
+  const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const suppliers = data?.suppliers ?? [];
+
+  return (
+    <Box sx={{ p: 2, maxWidth: 700, mx: 'auto' }}>
+
+      {isLoading && <ModuleLoadingSkeleton />}
+
+      {isError && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          Failed to load supplier data. Please refresh.
+        </Alert>
+      )}
+
+      {!isLoading && !isError && (
+        <Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb:2 }}>
+            <Star size={18} />
+            <Typography variant="subtitle1" fontWeight={700}>Suppliers</Typography>
+            <Chip label={suppliers.length} size="small" />
+            <Box sx={{ flex: 1 }} />
+            <Button size="small" startIcon={<Plus size={16} />} variant="contained"
+              onClick={() => { setEditingSupplier(null); setSupplierFormOpen(true); }}
+              sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+              Add supplier
+            </Button>
+          </Box>
+
+          {suppliers.length === 0 ? (
+            <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
+              <Star size={36} style={{ opacity: 0.3 }} />
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+                No suppliers added yet. Create a PO to add your first supplier.
+              </Typography>
+            </Paper>
+          ) : (
+            suppliers.map((s) => (
+              <SupplierAccordion
+                key={s.id}
+                supplier={s}
+                onEdit={(sup) => { setEditingSupplier(sup); setSupplierFormOpen(true); }}
+                onDelete={async (sup) => {
+                  if (window.confirm(`Remove ${sup.name}? Past purchase orders are kept; the supplier is hidden from new POs.`)) {
+                    await onDeleteSupplier(sup.id);
+                  }
+                }}
+              />
+            ))
+          )}
+        </Box>
+      )}
+
       <SupplierFormDialog
         open={supplierFormOpen}
         mode={editingSupplier ? 'edit' : 'add'}
@@ -1337,6 +1347,12 @@ function SuppliersPortalModuleFT2Inner({
       />
     </Box>
   );
+}
+
+function SuppliersPortalModuleFT2Inner(props: SuppliersPortalPageProps) {
+  return props.view === 'suppliers'
+    ? <PurchasingSuppliersView {...props} />
+    : <PurchasingPosView {...props} />;
 };
 
 export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {

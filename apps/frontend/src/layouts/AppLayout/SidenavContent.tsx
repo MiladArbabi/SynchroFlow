@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/layouts/AppLayout/SidenavContent.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   List,
@@ -81,9 +81,31 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   // Tracks which top-level item has its accordion open in expanded mode.
   // Only one item open at a time. Null = all collapsed.
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
+   // Exact-match precedence: prevents a relocated route (e.g. /wms/readiness,
+  // now an Inventory child) from being re-claimed by a sibling module whose
+  // own path happens to be a string-prefix of it (e.g. Warehouse's '/wms').
+  const findExactMatchItemId = useCallback((path: string): string | null => {
+    for (const group of groups) {
+      for (const item of group.items) {
+        if (path === item.path) return item.id;
+        for (const child of item.children ?? []) {
+          if (path === child.path) return item.id;
+        }
+      }
+    }
+    return null;
+  }, [groups]);
 
   // Auto-expand parent accordion when child route is active (e.g. landing via tab bar).
   useEffect(() => {
+    const exactMatchId = findExactMatchItemId(pathname);
+    if (exactMatchId) {
+      const matchedItem = groups.flatMap(g => g.items).find(i => i.id === exactMatchId);
+      if (matchedItem && (matchedItem.children ?? []).length > 0) {
+        setExpandedItem(matchedItem.id);
+      }
+      return;
+    }
     for (const group of groups) {
       for (const item of group.items) {
         if ((item.children ?? []).some(c => pathname === c.path || pathname.startsWith(c.path + '/') || pathname.startsWith(c.path + '?'))) {
@@ -92,13 +114,14 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         }
       }
     }
-  }, [pathname, groups]);
+  }, [pathname, groups, findExactMatchItemId]);
 
   // Hover popover anchor for compact mode submodule flyout.
   const [popoverAnchor, setPopoverAnchor] = useState<{ el: HTMLElement; itemId: string } | null>(null);
   const popoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const isItemActive = (item: ResolvedNavItem): boolean => {
+    const exactMatchId = findExactMatchItemId(pathname);
+    if (exactMatchId) return exactMatchId === item.id;
     // Item is active if current path matches it directly OR any of its children
     if (pathname === item.path || pathname.startsWith(item.path + '?')) return true;
     return (item.children ?? []).some(

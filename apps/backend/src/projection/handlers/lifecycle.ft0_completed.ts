@@ -128,7 +128,6 @@ export async function handleLifecycleFT0Completed({
         });
       }
 
-      // AFTER
       /**
        * REPLAY IDEMPOTENCY GUARD — FT1
        * --------------------------------

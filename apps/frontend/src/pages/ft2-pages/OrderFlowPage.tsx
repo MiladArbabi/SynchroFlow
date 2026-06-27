@@ -435,7 +435,6 @@ export default function OrderFlowPage() {
                    <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
                       Blocked orders
                     </Typography>
-                    // AFTER
                     {(['operational', 'inventory', 'customer', 'unknown']as const).map((key) =>
                       blockedByReason[key].length > 0 && (
                         <Box key={key} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>

@@ -12,13 +12,7 @@ import { usePackDecisions, useResolvePackDecision } from '../problem-center/useP
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { axiosInstance } from 'api/axiosConfig';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
-
-const INVENTORY_TABS = [
-  { id: 'intelligence',   label: 'Intelligence',   path: '/inventory'               },
-  { id: 'catalog',        label: 'Catalog',        path: '/inventory/catalog'       },
-  { id: 'costs',          label: 'Costs',          path: '/inventory/costs'         },
-  { id: 'problem-center', label: 'Problem Center', path: '/problem-center'          },
-];
+import { RETURNS_RESOLUTION_MODULE_TABS } from './returnsResolutionModuleTabs';
 
 function relativeAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -209,7 +203,7 @@ export default function ProblemCenterPage() {
 
   return (
     <>
-      <ModuleTabBar tabs={INVENTORY_TABS} />
+      <ModuleTabBar tabs={RETURNS_RESOLUTION_MODULE_TABS} />
       {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
       <Box sx={{ px: '40px', pt: '24px' }}>
         <PendingDecisionsStrip />

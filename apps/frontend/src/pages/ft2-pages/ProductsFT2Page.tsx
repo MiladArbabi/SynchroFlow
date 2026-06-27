@@ -15,6 +15,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
 import { mapProductsFt2Props } from '../products/useProductsFt2Adapter';
@@ -42,12 +43,7 @@ export default function ProductsFT2Page() {
 
   return (
     <>
-      <ModuleTabBar tabs={[
-        { id: 'intelligence',    label: 'Intelligence',   path: '/inventory'                },
-        { id: 'catalog',         label: 'Catalog',        path: '/inventory/catalog'        },
-        { id: 'costs',           label: 'Costs',          path: '/inventory/costs'          },
-        { id: 'problem-center',  label: 'Problem Center', path: '/problem-center'          },
-      ]} />
+      <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
 
       {/* Date range bar — visible on Intelligence + Catalog tabs only */}
       <Routes>

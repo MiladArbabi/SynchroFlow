@@ -12,6 +12,7 @@
 // - Read-only — never mutates
 import { Box, Typography, Divider, useTheme } from '@mui/material';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 import { AlertTriangle, ScanBarcode, MapPin, Scale, PackageOpen } from 'lucide-react';
 import { useProductsWmsReadiness } from '../products/useProductsWmsReadiness';
 import { navigate } from 'runtime';
@@ -60,21 +61,16 @@ export default function ProductsWmsReadinessPage() {
 
   return (
     <>
-      <ModuleTabBar tabs={[
-        { id: 'operations',     label: 'Operations',     path: '/wms' },
-        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
-        { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
-        { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
-      ]} />
+    <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
     <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
       
       {/* ── HEADER ───────────────────────────────────────────── */}
       <Box sx={{ mb: 2 }}>
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
-          WMS Readiness
+          Data Quality
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          Can your warehouse pick, receive, and count your inventory?
+          Is your inventory data accurate enough to pick, receive, and count?
         </Typography>
       </Box>
 

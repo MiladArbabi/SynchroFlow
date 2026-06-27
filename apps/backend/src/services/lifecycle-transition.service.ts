@@ -146,7 +146,6 @@ export class LifecycleTransitionService {
     const previousPhase: UserLifecyclePhase =
       snapshot?.phase ?? 'FT_MINUS_ONE';
 
-    // AFTER
     const transitionKey = `${previousPhase}->${currentPhase}`;
 
     /**

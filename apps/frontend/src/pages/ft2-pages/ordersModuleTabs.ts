@@ -25,6 +25,4 @@ export const ORDERS_MODULE_TABS: ModuleTab[] = [
   { id: 'overview',   label: 'Overview',   path: '/orders'          },
   { id: 'flow',       label: 'Order Flow', path: '/orders/flow'     },
   { id: 'outbound',   label: 'Outbound',   path: '/orders/outbound' },
-  { id: 'inbound',    label: 'Inbound',    path: '/orders/inbound'  },
-  { id: 'returns',    label: 'Returns',    path: '/returns'         },
 ];

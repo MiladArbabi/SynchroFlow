@@ -9,8 +9,8 @@
 import type { ModuleTab } from '../../components/ModuleTabBar';
 
 export const RETURNS_SUB_TABS: ModuleTab[] = [
-  { id: 'returns-overview',   label: 'Intelligence',   path: '/returns'       },
+  { id: 'returns-overview',   label: 'Overview',   path: '/returns'       },
   { id: 'returns-items',      label: 'Items',      path: '/returns/items'     },
-  { id: 'returns-suppliers',  label: 'Suppliers',  path: '/returns/suppliers',
+  { id: 'returns-suppliers',  label: 'Supplier Ratings',  path: '/returns/suppliers',
     requiredTier: 'growth' },
 ];

@@ -7,10 +7,10 @@
 
 ## 1. Module Structure
 
-**Route:** `/suppliers-portal` (single page, no sub-routes)
-**Sidenav:** Standalone item — `id: 'suppliers'`
-**Route registration:** `LifecycleRouteHost.tsx` line 231 — `/suppliers-portal/*`
-**No ModuleTabBar** — correct. Single-surface module with no sub-navigation needed.
+**Routes:** `/suppliers-portal` (Open POs) · `/suppliers-portal/suppliers` (Suppliers)
+**Sidenav:** Standalone item — `id: 'suppliers'`, title **"Purchasing"** *(renamed from "Suppliers," June 2026 nav restructure)*
+**Route registration:** `LifecycleRouteHost.tsx` — `/suppliers-portal/*`
+**ModuleTabBar:** Added June 2026 — `PURCHASING_SUB_TABS` (`apps/frontend/src/pages/ft2-pages/purchasingSubTabs.ts`), rendered by `SuppliersPortalPage.tsx`. Splits the former single fused page (POs + Suppliers on one scroll) into two routed sub-views. *Supersedes this section's prior claim that no tab bar was needed.*
 
 ---
 
@@ -77,14 +77,15 @@ No receive jobs initiated — WMS receive pipeline not started.
 
 | File | Role |
 |---|---|
-| `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx` | Gate page — all PO/supplier/receive callbacks wired |
+| `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx` | Gate page — PO/supplier/receive callbacks wired; renders `ModuleTabBar` + nested `<Routes>` (June 2026 — see §1) |
+| `apps/frontend/src/pages/ft2-pages/purchasingSubTabs.ts` | `PURCHASING_SUB_TABS` definition — Open POs / Suppliers |
 | `apps/frontend/src/pages/suppliers-portal/useSuppliersPortal.ts` | Fetches suppliers + POs |
-| `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | Full module — 899 lines |
+| `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | Full module — 1,372 lines. Split June 2026 into `PurchasingPosView` / `PurchasingSuppliersView`, dispatched via `view` prop; tab bar/routing intentionally kept out of this file (package-boundary rule — see `apps/frontend` ↔ `modules/*` import restrictions) |
 
 ### Key integrations wired in SuppliersPortalPage
 
 - **Demand → Suppliers handoff** — reads `?action=create-po&variantId=&sku=&qty=&description=` params, auto-opens PO creation dialog with variant pre-filled, clears params after reading. Full loop complete.
-- **Suppliers → WMS receive** — `navigate('/wms?receiveJobId=...')` on line 530 — creates receive job then routes operator directly to WMS receive session.
+- **Suppliers → WMS receive** — `navigate('/wms?receiveJobId=...')`, `SuppliersPortalModuleFT2.tsx` line 848 (inside `PurchasingPosView`'s `PoAccordion.handleReceive` post-split) — creates receive job then routes operator directly to WMS receive session. **This is the canonical, documented implementation referenced in §8 — `OrdersInboundPage.tsx` independently duplicates this same sequence, in violation of its own spec.**
 
 ### Design system violations
 
@@ -100,19 +101,26 @@ No receive jobs initiated — WMS receive pipeline not started.
 
 | Route | State | Notes |
 |---|---|---|
-| `/suppliers-portal` | ✅ Live | 3 POs in accordion, 2 supplier cards, "+ New PO" CTA working |
+| `/suppliers-portal` (Open POs tab) | ✅ Live | POs in accordion, "+ New PO" CTA working |
+| `/suppliers-portal/suppliers` (Suppliers tab) | ✅ Live | Supplier cards, "+ Add Supplier" CTA working |
 
-**What renders:**
+**What renders — Open POs tab:**
 
-- Page title "Suppliers" + signal line "Purchase orders, ETAs, and supplier ratings."
-- "Open Purchase Orders (3)" section — accordion rows with supplier name, status badge, ETA, units, line count
-- "Suppliers (2)" section — accordion rows with open PO count badges
+- Page title **"Purchasing"** + signal line "Purchase orders and ETAs." *(retitled from "Suppliers," June 2026 — see §1)*
+- "Open Purchase Orders" section — accordion rows with supplier name, status badge, ETA, units, line count
+- Closed/cancelled POs collapsed by default
 - Status badges: Shipped (blue), Confirmed (blue), Sent (blue) — see issue SUP-01
+
+**What renders — Suppliers tab:**
+
+- "Suppliers" section — accordion rows with open PO count, on-time/fill rating badges
+- "+ Add Supplier" CTA
 
 **UX observations:**
 
 - Supplier scorecard (on_time_rate, fill_rate, defect_rate) will be empty for all new tenants until first PO is fully received — no empty state messaging for this
 - No filtering or search on PO list — will become unwieldy at 20+ POs
+- POs and Suppliers no longer share one scroll — each has its own route/tab now (was one fused page; see §1)
 
 ---
 
@@ -149,3 +157,21 @@ The Suppliers module is the operational hub for inbound stock management. The tw
 - Demand handoff with pre-filled PO dialog
 - WMS receive session navigation
 - Supplier management (create, view)
+
+---
+
+## 8. Relationship to Orders/Inbound (`/orders/inbound`) — relocated spec + open contradiction
+
+*Relocated from `OrdersModule.md` §8, June 2026 nav restructure — Inbound moved out of Orders into this module's domain.*
+
+### Original design intent (Inbound)
+
+> "What it is NOT: Not a receiving execution surface — that's the mobile `ReceiveJobScreen`. Not a duplicate of the Suppliers portal — that's at `/suppliers-portal`."
+
+[full original spec: PO lifecycle, role-split table, "critical missing link" inventory-credit feature — see git history of OrdersModule.md for verbatim content]
+
+### Contradiction with this document, §4 and §7
+
+This module's own §4 documents `SuppliersPortalModuleFT2.tsx`'s `PoAccordion.handleReceive` performing the exact action Inbound's spec rules out — `navigate('/wms?receiveJobId=...')` after creating a receive job — and §7 names this integration as one of two reasons the module is "genuinely differentiated." Live code audit (June 2026) confirms `OrdersInboundPage.tsx` independently implements the same create-job → navigate-to-WMS sequence, in violation of its own spec, duplicating a feature this document treats as a strength, not a gap to fill twice.
+
+**Recommendation, pending your sign-off:** Inbound's receive-execution code should be removed, returning it to read-only triage per its original spec — not because the feature is wrong, but because Suppliers Portal already owns it correctly, documented and praised. This is a code fix, not a redesign; the design decision already exists in writing.

@@ -1,16 +1,15 @@
 import { Routes, Route } from 'react-router-dom';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
-import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
+import { RETURNS_RESOLUTION_MODULE_TABS } from './returnsResolutionModuleTabs';
 import { RETURNS_SUB_TABS } from './returnsSubTabs';
 import ReturnsOverviewPage from './ReturnsOverviewPage';
 import ReturnsItemsPage from './ReturnsItemsPage';
 import ReturnsSuppliersPage from './ReturnsSuppliersPage';
 import { Box } from '@mui/material';
-
 export default function ReturnsFT2Page() {
   return (
     <>
-      <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
+    <ModuleTabBar tabs={RETURNS_RESOLUTION_MODULE_TABS} />
       <Box sx={{
         bgcolor: 'var(--bg)',
         borderBottom: '1px solid var(--rule)',

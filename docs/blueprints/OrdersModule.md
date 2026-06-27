@@ -9,32 +9,32 @@
 
 The Orders module is LaSyncro's primary execution surface. It is where an SMB operator — owner, admin, or warehouse operator — arrives under pressure, sees exactly what needs to happen today, takes action, and confirms the result. Every design decision in this module is evaluated against one question: does this help an operator with 1-20 people, fulfilling from their own warehouse, making $100k–$50M/year, resolve their daily firefighting faster?
 
-The module must eliminate five operator pain points:
+The module must eliminate three operator pain points:
 
-1. "I don't know which orders are blocked and why" → Blocked tab
-2. "I don't know what to pick next" → Release Queue tab
-3. "I can't see pick/pack progress" → Fulfillment tab
-4. "I don't know what shipped and when" → Outbound tab
-5. "I don't know what stock is arriving or when" → Inbound tab
+1. "I don't know which orders are blocked and why, or what to work on next" → Order Flow tab *(consolidates former Blocked / Release Queue / Fulfillment tabs)*
+2. "I don't know what shipped and when" → Outbound tab
+
+*(Former pain point 5, "I don't know what stock is arriving or when," is now owned by the Purchasing module's documentation — Inbound moved out of Orders in the June 2026 nav restructure.)*
 
 ---
 
 ## 2. Module Structure
 
 **Route:** `/orders`
-**Tab bar:** Overview · Blocked · Release Queue · Fulfillment · Outbound · Inbound · Returns
+**Tab bar:** Overview · Order Flow · Outbound
 
 ### Tab inventory
 
 | Tab | Route | Status | Backend endpoint |
 |---|---|---|---|
 | Overview | `/orders` | ✅ Complete | `useOrdersFt2Snapshot` + `useOrdersOperatorSummary` |
-| Blocked | `/orders/blocked` | ✅ Complete | `GET /api/v1/orders/constrained` |
-| Release Queue | `/orders/pool` | ✅ Complete | `GET /api/v1/wms/order-pool` |
-| Fulfillment | `/fulfillment` | ✅ Complete | `GET /api/v1/wms/batches` |
+| Order Flow | `/orders/flow` | ✅ Complete — consolidated | Merges former Blocked/Release Queue/Fulfillment views. `/orders/blocked`, `/orders/pool`, `/fulfillment/*` now redirect here (`LifecycleRouteHost.tsx`) |
 | Outbound | `/orders/outbound` | ✅ Complete — Phase 1 | `GET /api/v1/orders/fulfilled` |
-| Inbound | `/orders/inbound` | ✅ Complete — Phase 1 | `GET /api/v1/suppliers/purchase-orders` + `GET /api/v1/suppliers/receive-jobs` |
-| Returns | `/returns` | ✅ Complete | 3 sub-tabs: Intelligence · Items · Suppliers |
+
+**Moved out of this module (nav restructure, June 2026):**
+
+- **Inbound** (`/orders/inbound`) → now a Purchasing concern. Its own design spec (§8 below) explicitly forbids it from duplicating Suppliers Portal's receive-execution behavior; current code violates that — tracked separately, not yet resolved.
+- **Returns** (`/returns`) → now lives in **Returns & Resolution Center**, paired with Product Issues (former Problem Center). See new `ReturnsResolutionModule.md` (pending).
 
 ---
 
@@ -142,9 +142,6 @@ Order created
 | PROJ-01 | 🔴 P1 | Backend | `orderFulfillmentProjection.ts` hardcodes `incomingStatus = 'pending'` — projection can never advance orders to `fulfilled` through the event pipeline |
 | ORD-OUT-01 | 🟡 P2 | Outbound | Pulse stats computed from paginated rows — needs dedicated summary endpoint for accurate this-week counts |
 | ORD-OUT-02 | 🟡 P2 | Outbound | click on each order and pop up the orders details page |
-| RET-SUP-01 | 🟡 P2 | Returns/Suppliers | Supplier linkage null — requires receive jobs to be completed via mobile `ReceiveJobScreen` |
-| RET-REASON-01 | 🟡 P2 | Returns/Intelligence | `by_reason` always null — Shopify refund reason not mapped during sync |
-| RET-THEME-01 | 🟡 P2 | Returns/Intelligence | `ReturnsOverviewPage` still uses hardcoded hex in `useReturnsTheme()` — migration to CSS variables pending |
 
 ---
 
@@ -288,8 +285,8 @@ When accepted units satisfy a blocked order's inventory constraint, surface: "N 
 3. ✅ Value column wired
 4. ✅ Priority flag → Release Queue
 5. ✅ Outbound tab Phase 1 (shipped ledger)
-6. ✅ Inbound tab Phase 1 (PO status board)
-7. ✅ Returns tab — Intelligence · Items · Suppliers sub-navigation complete
+6. ✅ Inbound tab Phase 1 (PO status board) — ⚠️ scope-creep flagged: now performs receive-execution actions §8 explicitly says it shouldn't
+7. ✅ Returns tab — Intelligence · Items · Suppliers sub-navigation complete — *(ownership moved to Returns & Resolution Center, June 2026)*
 8. 🔲 Inventory movement credit on receive job close (critical backend)
 9. 🔲 Blocked orders → inbound connection (unblock on receive)
 10. 🔲 Carrier tracking workshop
@@ -304,6 +301,7 @@ When accepted units satisfy a blocked order's inventory constraint, surface: "N 
 **Root cause:** `handleOrderFulfillment.ts` was writing to `domain_events` correctly but the `orderFulfillmentProjection.ts` dead code was never called. The live path was always through `handleOrdersFulfilled` in the projection engine — but the webhook router was crashing on RLS before events reached `domain_events`.
 
 **Fixes applied:**
+
 1. `webhookRouter.ts` — added `SET app.current_tenant` after `shopId` resolution, before ledger write. Resolves RLS violation on `integration_webhook_events`.
 2. `handleOrderFulfillment.ts` — no behavioral change needed. Domain event write was already correct.
 3. `operators.controller.ts` (TEAM-07) — fixed `u.name` → `CONCAT(u.first_name, ' ', u.last_name)`.

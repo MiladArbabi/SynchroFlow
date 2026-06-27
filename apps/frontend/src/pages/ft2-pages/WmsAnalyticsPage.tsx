@@ -889,7 +889,6 @@ export default function WmsAnalyticsPage() {
           { id: 'operations',     label: 'Operations',     path: '/wms' },
           { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
           { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
-          { id: 'readiness',      label: 'WMS Readiness',  path: '/wms/readiness' },
         ]} />
 
         {/* HEADER */}
