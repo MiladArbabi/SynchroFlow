@@ -10,12 +10,18 @@ import { axiosInstance } from 'api/axiosConfig';
  * Always translate to operator-facing language.
  *
  * system → operator
- * operational → Overdue
+ * operational → Pick Exception
  * inventory  → Out of Stock
  * customer   → Address Issue
+ *
+ * 'operational' was previously labeled 'Overdue', which collided with the
+ * unrelated CPT-bucket time indicator (also literally 'overdue') shown on
+ * the same Blocked card. Renamed to reflect the evaluator's real signal —
+ * a physical pick exception, not a time/SLA breach. See
+ * operationalConstraintEvaluator.ts.
  */
 export const CONSTRAINT_LABELS: Record<string, string> = {
-  operational: 'Overdue',
+  operational: 'Pick Exception',
   inventory: 'Out of Stock',
   customer: 'Address Issue',
 };

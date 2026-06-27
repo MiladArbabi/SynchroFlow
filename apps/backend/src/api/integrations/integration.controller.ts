@@ -661,6 +661,12 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           active: true,
         });
 
+        // ISSUE-12: shop_wms_settings was never provisioned at install time —
+        // every shop hit "No WMS settings found" on first batch release.
+        // All columns except shop_id have NOT NULL defaults (confirmed via
+        // information_schema), so this minimal insert is safe.
+        await trx('shop_wms_settings').insert({ shop_id: newShop.id });
+
         // Ghost user — password-login-disabled via random irreversible hash
         const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
         const ghostPasswordHash = await bcrypt.hash(

@@ -397,8 +397,21 @@ export async function projectDomainEventCore({
            * Fix: re-insert at tail so orders/create processes first,
            * writes identity map, then deferred paid resolves cleanly.
            *
-           * Cap: MAX_DEFERS=3. Fatal on exhaustion.
-           * All other event types: fatal throw immediately (unchanged).
+           * Cap: MAX_DEFERS=3. Skipped (not fatal) on exhaustion — see
+           * 2026-06-26 incident: one unresolvable order (a product never
+           * synced into laSyncro) crashed this entire backend process
+           * repeatedly until Fly's machine exhausted its restart count.
+           * This worker and the HTTP server run in the same process —
+           * throwing here doesn't just halt one projection, it takes the
+           * whole app down for every shop.
+           *
+           * Evidence-backed permanent condition, same category as
+           * DB_PROJECTION_GAP_PHANTOM_SKIPPED in projection.db.worker.ts:
+           * after MAX_DEFERS retries against real Shopify delivery jitter
+           * (milliseconds, not retries), orders/create is provably never
+           * coming. Continuing to retry — or crashing — stalls forever
+           * for no benefit. Skip it; the cursor advances normally once
+           * this function returns, same as any successfully-handled event.
            */
           if (normalizedEventType === 'orders/paid') {
             const deferCount = Number((domainEvent.event_payload as any)?._defer_count ?? 0);
@@ -409,10 +422,10 @@ export async function projectDomainEventCore({
                 eventId: domain_event_id,
                 externalId,
                 deferCount,
+                reason: 'orders/create never arrived after max retries — order identity permanently unresolvable',
+                action: 'skipping event, cursor advances normally',
               });
-              throw new Error(
-                `[ORDER_PAID_DEFER_EXHAUSTED] externalId=${externalId} attempts=${deferCount}`
-              );
+              return; // no throw — see comment above; this must not crash the process
             }
 
             /**
