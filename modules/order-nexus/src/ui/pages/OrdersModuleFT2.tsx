@@ -90,7 +90,9 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
     } | null;
   };
 
-  onOrderSelect?: (orderId: string) => void;
+  // onOrderSelect removed 2026-06-28 — dead prop, zero consumers found
+  // (only the interface + compiled .d.ts reflected it). Same pattern as
+  // OV-02's onResolveAll. onOrderClick below is the real, wired mechanism.
   onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
   /** Opens the shared EntityDetailModal for this order. See entity-detail-modal-playbook.md §2. */
   onOrderClick?: (orderId: string) => void;
