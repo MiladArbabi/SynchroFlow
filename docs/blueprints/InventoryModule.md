@@ -10,12 +10,18 @@
 
 **Routes:**
 
+- `/inventory` → Intelligence (ProductsFT2Page → ProductsModuleFT2)
+- `/inventory/catalog` → Catalog (ProductsCatalogPage)
+- `/demand` → Demand (DemandPage → DemandModuleFT2) — *nested under Inventory in nav; route itself unchanged*
 - `/inventory/costs` → Costs (ProductsCostsPage)
-- `/problem-center` → Problem Center (ProblemCenterPage → ProblemCenterModuleFT2)
+- `/wms/readiness` → **Data Quality** (ProductsWmsReadinessPage) — *renamed from "WMS Readiness"*
 
-> **2026-06-21:** WMS Readiness moved out of Inventory to WMS (`/wms/readiness`, renders `ProductsWmsReadinessPage` with the WMS tab bar). Inventory is now 4 tabs: Intelligence · Catalog · Costs · Problem Center. Problem Center kept in Inventory by decision (exceptions an inventory owner acts on, though WMS-sourced).
-**Sidenav:** Inventory accordion with 4 children. Problem Center is a child of Inventory in the sidenav but routes to `/problem-center` — cross-module navigation via tab bar.
-**Tier gate:** Intelligence tab uses `PlanGate`. Costs requires `requireFt2`. WMS Readiness now lives under WMS.
+> **2026-06-21:** WMS Readiness moved out of Inventory to WMS. Inventory was 4 tabs: Intelligence · Catalog · Costs · Problem Center.
+>
+> **2026-06-27 (this session) — supersedes the above:** Inventory is now 5 tabs: Intelligence · Catalog · Demand · Costs · Data Quality. **Problem Center left Inventory entirely**, moving to a new **Returns & Resolution Center**, not to WMS as §8 Direction A proposed. This is a real divergence from §8's recommendation — see new §17 for the reconciliation rather than silently rewriting Direction A as if it never argued otherwise.
+
+**Sidenav:** Inventory accordion, 5 children (was 4). Demand was a standalone top-level item with its own `requiredModuleId: 'demand'` gate; that gate couldn't be preserved as a child (children only support `requiredTier`) — collapsed onto Inventory's `'products'` gate after confirming `/api/v1/modules/demand` independently enforces `requireTier('growth')` server-side regardless of nav visibility.
+**Tier gate:** Intelligence tab uses `PlanGate`. Costs requires `requireFt2`. Demand child carries `requiredTier: 'growth'`.
 
 **Route registration:** `LifecycleRouteHost.tsx`. `/inventory/*` appears in both FT1 and FT2 blocks — phase-gated, not duplicated.
 
@@ -384,3 +390,11 @@ Pick=teal (#14B8A6), Pack=blue (#3B82F6), Stow=purple (#8B5CF6), Receive=amber (
 Root cause was absence of `inventory_truth` data in dev seed — resolved when full_data seed was corrected.
 `0` is the correct signal: inventory data exists, no variance detected.
 Endpoint: `GET /api/v1/modules/products/wms-readiness` (separate from operator-summary).
+
+## 17. Reconciliation with §8 Direction A (2026-06-27)
+
+**Not actually in conflict — different layers.** Direction A's core worry was *recomputation*, not nav placement: the same number computed by two modules drifting apart (the 25-vs-16-vs-29 divergence it cites). This session's move didn't touch backend computation — Data Quality calls the same endpoint, same owner, as before. Only the sidenav parent moved. Direction A's deeper ask — folding these signals as inline blocked-reason badges directly into Catalog rows, eliminating the separate tab entirely — was never built, and remains open regardless of which module the tab nests under.
+
+**A real reversal on Problem Center, but on better evidence.** §15 already shows Direction A's Problem Center recommendation was overridden once before, for friction reasons. This session's move to a new Returns & Resolution Center (not WMS) is grounded in something neither prior decision had: `returnJobs.service.ts` writes directly into `problem_center_tasks` on `repackable` condition and quantity shortfalls — confirmed via code, not inferred. See `ReturnsResolutionModule.md` §2.5.
+
+**Genuinely undecided, by either document:** whether §8's "Inventory delegates, never duplicates" principle needs new wording now that Data Quality sits back in Inventory. The principle holds; only its example changed.

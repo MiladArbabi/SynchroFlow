@@ -41,7 +41,6 @@ export default function OverviewPageFT2() {
         onNavigate={(deepLink) => navigate(deepLink)}
         onRefreshBrief={() => setForceRefresh(f => !f)}
         onExportBrief={async () => setExportDrawerOpen(true)}
-        onResolveAll={() => navigate('/orders?filter=blocked')}
       />
       <ExportDrawer
         open={exportDrawerOpen}

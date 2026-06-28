@@ -44,6 +44,7 @@
 //     per-batch deadlines exist.
 
 import { type ChangeEvent, useCallback, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from '@mui/material';
 import { Clock, Flag, ChevronDown } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -131,12 +132,28 @@ export default function OrderFlowPage() {
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
 
+  // --- Deep-link params: ?constraint=<type> auto-expands its accordion
+  // section; ?urgency=sla_breach filters to order_age_snapshot's real
+  // is_shipping_sla_breached flag. See cta-deeplink-playbook.md §3 — these
+  // are intentionally NOT the same as bucketByCpt/CptBucket below, which is
+  // a separate, capacity-relative concept.
+  const [searchParams] = useSearchParams();
+  const constraintParam = searchParams.get('constraint');
+  const urgencyFilter = searchParams.get('urgency') === 'sla_breach';
+
   // --- Cross-linking: pool cell → pool-table filter ------------------------
   // Clicking a POOL cell filters the pool table to that bucket.
   const [cptFilter, setCptFilter] = useState<{ bucket: CptBucket; stage: 'pool' } | null>(null);
   // ISSUE-15 — accordion state for Blocked Orders categories. Empty Set = all
-  // collapsed on load, regardless of which categories have items.
-  const [expandedReasons, setExpandedReasons] = useState<Set<string>>(new Set());
+  // collapsed on load, regardless of which categories have items, EXCEPT a
+  // deep-linked ?constraint=<type> auto-expands its matching section.
+  const [expandedReasons, setExpandedReasons] = useState<Set<string>>(
+    () => new Set(
+      constraintParam === 'inventory' || constraintParam === 'customer' || constraintParam === 'operational'
+        ? [constraintParam]
+        : []
+    )
+  );
   const toggleReason = useCallback((key: string) => {
     setExpandedReasons((prev) => {
       const next = new Set(prev);
@@ -155,8 +172,11 @@ export default function OrderFlowPage() {
   );
 
   const visiblePool = useMemo(
-    () => (cptFilter ? poolOrders.filter(o => poolBucket(o) === cptFilter.bucket) : poolOrders),
-    [poolOrders, cptFilter, poolBucket],
+    () => poolOrders.filter(o =>
+      (!cptFilter || poolBucket(o) === cptFilter.bucket) &&
+      (!urgencyFilter || o.is_shipping_sla_breached)
+    ),
+    [poolOrders, cptFilter, poolBucket, urgencyFilter],
   );
 
   // --- Blocked column CPT-bucket indicator (overdue / today / ahead) -------
@@ -173,6 +193,13 @@ export default function OrderFlowPage() {
   // constraint_type is a hard DB enum — inventory | customer | operational
   // only (order_constraint_events migration). Any other value is a contract
   // break, not a silent miscategorization: log it and bucket separately.
+  // urgencyFilter (?urgency=sla_breach) narrows to real SLA-breached orders
+  // only, independent of which constraint group they fall into.
+  const blockedForDisplay = useMemo(
+    () => (urgencyFilter ? blockedOrders.filter(o => o.is_shipping_sla_breached) : blockedOrders),
+    [blockedOrders, urgencyFilter],
+  );
+
   const blockedByReason = useMemo(() => {
     const grouped: Record<'inventory' | 'customer' | 'operational' | 'unknown', typeof blockedOrders> = {
       inventory: [],
@@ -181,7 +208,7 @@ export default function OrderFlowPage() {
       unknown: [],
     };
 
-    blockedOrders.forEach((order) => {
+    blockedForDisplay.forEach((order) => {
       const key = order.constraint_type;
       if (key === 'inventory' || key === 'customer' || key === 'operational') {
         grouped[key].push(order);
@@ -195,7 +222,7 @@ export default function OrderFlowPage() {
     });
 
     return grouped;
-  }, [blockedOrders]);
+  }, [blockedForDisplay]);
 
   // --- Wave selection + release state --------------------------------------
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -646,11 +673,16 @@ export default function OrderFlowPage() {
                               {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                             </Typography>
 
-                            <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', mt: 0.125 }}>
+                            <Typography sx={{ fontSize: 11.5, fontWeight:500, color: 'var(--ink-3)', mt: 0.125 }}>
                               {fmtOrderValue(Number(order.total_price), order.currency)}
                               {order.is_priority_flagged && (
                                 <Box component="span" sx={{ color: 'var(--accent)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
                                   Priority
+                                </Box>
+                              )}
+                              {order.is_shipping_sla_breached && (
+                                <Box component="span" sx={{ color: 'var(--accent)', ml: 0.75, fontSize: 9.5, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase' }}>
+                                  SLA breached
                                 </Box>
                               )}
                             </Typography>

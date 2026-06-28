@@ -7,10 +7,10 @@
 
 ## 1. Module Structure
 
-**Route:** `/demand` (single page, no sub-routes)
-**Sidenav:** Standalone item, `requiredModuleId: 'demand'`
-**Tier gate:** `PlanGate feature="demand.forecasting"` → requires `growth` tier
-**Route registration:** `LifecycleRouteHost.tsx` line 223 — `/demand/*`
+**Route:** `/demand` (single page, no sub-routes) — unchanged
+**Sidenav:** *Was* a standalone top-level item. **2026-06-27:** nested as a child of Inventory — see `InventoryModule.md` §1/§17 for why the distinct `'demand'` module gate couldn't be preserved as-is.
+**Tier gate:** `PlanGate feature="demand.forecasting"` → requires `growth` tier — unaffected by the nav move
+**Route registration:** `LifecycleRouteHost.tsx` — `/demand/*`
 
 ---
 

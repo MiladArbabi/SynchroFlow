@@ -2198,10 +2198,21 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
        * Zone distribution: distinct zone_type values of bins holding
        * the order's variants — feeds pre-release preview UI.
        */
-      const rows = await trx('orders as o')
-        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+      const rows = await trx
+        .with('latest_age_snapshot', (qb) => {
+          // Same DISTINCT ON pattern as sla.metrics.ts / pickBatch.service.ts —
+          // order_age_snapshot is append-only/versioned, must read latest only.
+          qb.from('order_age_snapshot as oas')
+            .distinctOn('oas.lasyncro_order_id')
+            .select('oas.lasyncro_order_id', 'oas.is_shipping_sla_breached')
+            .orderBy('oas.lasyncro_order_id')
+            .orderBy('oas.aggregate_version', 'desc');
+        })
+        .from('orders as o')
+        .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id','o.lasyncro_order_id')
         .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
         .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .leftJoin('latest_age_snapshot as las', 'las.lasyncro_order_id', 'o.lasyncro_order_id')
         .whereNotExists(
           trx('order_constraints as oc')
             .where('oc.lasyncro_order_id', trx.raw('o.lasyncro_order_id'))
@@ -2211,7 +2222,7 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
         .where('o.shop_id', shopId)
         .whereIn('ofs.status', ['pending', 'processing'])
         .whereNull('pbo.lasyncro_order_id')
-        .orderByRaw('ofs.is_priority_flagged DESC, o.order_created_at ASC')
+        .orderByRaw('ofs.is_priority_flagged DESC, COALESCE(las.is_shipping_sla_breached, false) DESC, o.order_created_at ASC')
         .select(
           'o.lasyncro_order_id',
           'eim.external_order_id',
@@ -2220,6 +2231,7 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
           'o.order_created_at',
           'o.promised_ship_by',
           'ofs.is_priority_flagged',
+          'las.is_shipping_sla_breached',
           trx.raw(`null::text as customer_name`),
           // Line item + unit counts via subquery
           trx.raw(`(

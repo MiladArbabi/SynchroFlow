@@ -105,13 +105,13 @@ export interface MorningBriefSnapshot {
 // Must stay in sync with frontend router.
 const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   // Order signals
-  sla_breach:               { module: 'order-nexus',      deepLink: '/orders?filter=sla_breached' },
-  operational:              { module: 'order-nexus',      deepLink: '/orders?filter=aging_72h' },
-  inventory:                { module: 'order-nexus',      deepLink: '/orders?filter=out_of_stock' },
-  customer:                 { module: 'order-nexus',      deepLink: '/orders?filter=address_issue' },
+  sla_breach:               { module: 'order-nexus',      deepLink: '/orders/flow?urgency=sla_breach' },
+  operational:              { module: 'order-nexus',      deepLink: '/orders/flow?constraint=operational' },
+  inventory:                { module: 'order-nexus',      deepLink: '/orders/flow?constraint=inventory' },
+  customer:                 { module: 'order-nexus',      deepLink: '/orders/flow?constraint=customer' },
   // Financial signals
-  revenue_at_risk:          { module: 'cashflow',         deepLink: '/cash-flow?focus=constrained' },
-  missing_cogs:             { module: 'finances',         deepLink: '/finances?focus=missing_cogs' },
+  revenue_at_risk:          { module: 'cashflow',         deepLink: '/cashflow?filter=constrained' },
+  missing_cogs:             { module: 'finances',         deepLink: '/finances?filter=missing_cogs' },
   // WMS signals
   wms_receive_arrived:      { module: 'wms',              deepLink: '/wms?filter=receive_pending' },
   wms_receive_exception:    { module: 'wms',              deepLink: '/wms?filter=receive_exceptions' },

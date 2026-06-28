@@ -13,7 +13,9 @@
 - `/floor-planning` → Floor Planning (FloorPlanningPage.tsx → FloorPlanningModuleFT2)
 - `/wms/analytics` → Analytics (WmsAnalyticsPage.tsx)
 
-**Sidenav:** Warehouse accordion, 3 children. Module gated on `requiredModuleId: 'wms-lite'`. Floor Planning requires tier `scale`. Analytics requires tier `growth`.
+**Sidenav:** Warehouse accordion, 3 children *(was 4 before June 2026)*. Module gated on `requiredModuleId: 'wms-lite'`. Floor Planning requires tier `scale`. Analytics requires tier `growth`.
+
+> **Departed, June 2026 nav restructure:** `WMS Readiness` (`/wms/readiness`) moved to **Inventory → Data Quality**. This document's own §5 never listed Readiness in its route table to begin with — independent confirmation it was never really this module's content; it covers SKU/catalog data completeness (no product code, no bin assignment, count mismatches), not warehouse-floor operations. The route itself is unchanged; only its sidenav parent and page H1 changed (was "WMS Readiness," now "Data Quality"). §6/§8's discussion of the `PROBLEM` vs `quarantine` vs `returns` zone-type conflation is unaffected by this move — that's floor-physical zoning, correctly still owned here.
 
 **Route registration:** `LifecycleRouteHost.tsx` — `/wms/analytics` registered before `/wms/*` (correct — wildcard would shadow it).
 

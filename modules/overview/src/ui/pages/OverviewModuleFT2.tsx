@@ -412,7 +412,7 @@ function BusinessPulse({
 
       {onNavigate && (
         <Box
-          onClick={() => onNavigate('/orders')}
+          onClick={() => onNavigate('/orders/flow')}
           sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
         >
           View order flow →

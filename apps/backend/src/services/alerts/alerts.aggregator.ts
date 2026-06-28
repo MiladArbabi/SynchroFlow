@@ -1,5 +1,4 @@
 // apps/backend/src/services/alerts/alerts.aggregator.ts
-
 import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 

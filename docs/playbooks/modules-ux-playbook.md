@@ -290,7 +290,7 @@ Does this CTA commit an action or resolve an issue?
 | CTA-019 | ✅ | `modules/cashflow/src/ui/pages/CashFlowModuleFT2.tsx` | 293 | `Plan a new order` plain outlined → ghost pill with accent border |
 | CTA-020 | ✅ | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | Suppliers header | `Add Supplier` filled accent (per CTA-016) |
 | CTA-021 | ✅ | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | SupplierAccordion | `Edit` / `Delete` outlined inline actions (Delete = error color, soft-delete) |
-| ORD-01 | 🟡 | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | 624 | `View all orders →` navigates to `/orders` root — needs wiring to full order list |
+| ORD-01 | 🟡 | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | 624 | `View all orders →` navigates to `/orders` root — root cause and fix tracked in `docs/playbooks/cta-deeplink-playbook.md` (same issue class as OV-01/OV-04: `/orders` is an executive-summary surface by design, no order list lives there — destination should be `/orders/flow`) |
 
 ---
 
