@@ -1,82 +1,78 @@
 # LaSyncro — CTA Deep-Link & Cascade Playbook
 
-> **Scope:** The cross-module deep-link contract — how a signal (alert, decision card, CTA) becomes a working navigation to a *specific, pre-filtered* destination. Owns the shared `DEEP_LINK_MAP`, the alert-type → param → destination table, the urgency/constraint filter dimensions, and the entity-precision gap.
-> **Companion docs:** `docs/playbooks/modules-ux-playbook.md` (CTA visual tiers/colors — this doc does not duplicate that), `docs/playbooks/overview-module-playbook.md` (Overview's data pipeline + AL-01 trigger rules — this doc consumes that table, doesn't redefine it), `docs/blueprints/constraint_system_blueprint.md` (`order_constraints` schema truth).
-> **Created:** 2026-06-27, from a full audit of Overview's outbound CTAs and every destination they target.
+> **Scope:** The cross-module deep-link contract — how a signal (alert, decision card, CTA) becomes a working navigation to a *specific, pre-filtered* destination. Owns the alert-type → param → destination table, the constraint/urgency filter dimensions on Order Flow, the SLA-priority release ordering, and the entity-precision gap.
+> **Companion docs:** `docs/playbooks/modules-ux-playbook.md` (CTA visual tiers/colors), `docs/playbooks/overview-module-playbook.md` (Overview's data pipeline + AL-01 trigger rules — see its 2026-06-28 correction, §2 there, before trusting the alert_type table), `docs/playbooks/order-flow-implementation-playbook.md` (Order Flow's product fundamentals + backend release model), `docs/blueprints/constraint_system_blueprint.md` (`order_constraints` schema truth).
+> **Created:** 2026-06-27. **Major revision:** 2026-06-28, after discovering `operational`'s true meaning and shipping the full Phase 2/3 wiring.
 > **Status legend:** ✅ done & verified · 🔴 open · 🟡 open, lower priority · 🔵 design decided, not yet implemented
 
 ---
 
 ## 1. The Principle
 
-Stated once already in the codebase (`useMorningBriefSnapshot.ts`), and this doc exists to make it actually true everywhere:
+Stated once already in the codebase (`useMorningBriefSnapshot.ts`):
 
 > **Deep links are backend-generated. The frontend never constructs them.**
 
-Two violations of this principle are what caused most of tonight's findings — not missing features, but components quietly hand-writing a path instead of using the one the backend already sends.
+Most bugs in this doc's history were violations of this principle — a component hand-writing a path instead of using the one the backend sends. One still-open violation remains: **CASH-01** below.
 
 ---
 
-## 2. Architecture (current + planned)
+## 2. Architecture
+alerts table (AL-01 aggregator, apps/backend/src/services/alerts/alerts.aggregator.ts
 
-alerts table (AL-01 aggregator — see overview-module-playbook.md §2 for full trigger rules)
-
-│
-
-▼
-
-DEEP_LINK_MAP   lives in overviewMorningBrief.resolver.ts
-     │            ✅ aha.controller.ts is a SEPARATE pipeline, does not consume this map
-     │               (confirmed 2026-06-27 — see §3, was misregistered as OV-08 duplication)
-     │            🔵 OPTIONAL: extract to its own module for hygiene if a real second
-     │               consumer ever appears — not currently blocking on anything
-
-▼
-
-signal.deepLink (string, e.g. "/orders/flow?constraint=inventory&urgency=overdue")
+— the canonical source; see §3 for what each alert_type actually means)
 
 │
 
 ▼
 
-Frontend onNavigate(signal.deepLink) — TriageRow, BusinessPulse, etc.
+DEEP_LINK_MAP (overviewMorningBrief.resolver.ts)
 
 │
 
 ▼
 
-Destination page reads useSearchParams() and actually filters
+signal.deepLink (string, e.g. "/orders/flow?constraint=inventory&urgency=sla_breach")
 
-🔴 Most destinations don't do this yet — see §4
+│
+
+▼
+
+onNavigate(signal.deepLink) — TriageRow, BusinessPulse, etc.
+
+│
+
+▼
+
+Destination page reads useSearchParams() and filters
+
+`aha.controller.ts` is a confirmed-separate pipeline (own header: *"all signals derived from existing snapshots"*) — does not read `alerts` or this map. Not a duplicate to reconcile.
 
 ---
 
-## 3. Canonical alert_type → deep link table
+## 3. Canonical alert_type → deep link table (corrected, ground-truth verified against `alerts.aggregator.ts` directly — 2026-06-28)
 
-Cross-referencing AL-01's verified trigger rules (`overview-module-playbook.md` §2) against the current `DEEP_LINK_MAP`. This is the **corrected** version — see §5 for what's wrong with the current code.
+| `alert_type` | Severity | Real trigger (verified against aggregator source) | deepLink | Dimension |
+|---|---|---|---|---|
+| `sla_breach` | critical | `order_age_snapshot.is_shipping_sla_breached` — paid, unfulfilled, `age_since_paid ≥ fulfillment_sla_hours×3600` (default 24h) | `/orders/flow?urgency=sla_breach` | **urgency** |
+| `operational` | critical | **Unresolved pick exception** (item missing, short pick, product/packaging defect, wrong item) — see `operationalConstraintEvaluator.ts`. Has nothing to do with age or time. | `/orders/flow?constraint=operational` | **constraint** |
+| `inventory` | warning | Active `inventory` constraint — no sellable bin-type stock | `/orders/flow?constraint=inventory` | **constraint** |
+| `customer` | warning | Active `customer` constraint — address problem | `/orders/flow?constraint=customer` | **constraint** |
+| `revenue_at_risk` | warning/critical | `at_risk_revenue` from `orders_operational_control_snapshot`, summed across all constraint types | `/orders/flow` (no param — sum across types, not isolable to one) | none |
+| `missing_cogs` | warning | Active order has a variant with `unit_cost=0`/null | `/inventory/catalog` (no param — see §6, Catalog has no cost-completeness concept to filter on) | none |
+| `stockout_risk` | critical | `reorder_urgency === 'critical'` in `demandIntelligence.service.ts` — confirmed exact match, same source | `/demand?filter=critical` | category (page shows this by default already) |
+| `wms_*` (7 types) | — | — | `/wms?filter=...` | **mismatch, still open — OV-07** |
 
-| `alert_type` (AL-01 canonical) | Severity | Trigger | Current deepLink (as of pre-Phase-2) | Correct destination | Filter dimension |
-|---|---|---|---|---|---|
-| `sla_breach` | critical | shipping/delivery SLA breach (age snapshot) | `/orders?filter=sla_breached` | `/orders/flow` | **urgency** — maps onto existing `CptBucket.overdue` (see `blockedBucket()` in `OrderFlowPage.tsx`) |
-| `operational` | critical | paid + unfulfilled + `age_since_paid ≥ fulfillment_sla_hours×3600` (default **24h**) | `/orders?filter=aging_72h` ⚠️ | `/orders/flow` | **urgency** — likely also `overdue`, see open question below |
-| `inventory` | warning | no sellable bin-type stock for variant | `/orders?filter=out_of_stock` | `/orders/flow` | **constraint** — `constraint_type='inventory'` accordion section |
-| `customer` | warning | active customer constraint | `/orders?filter=address_issue` | `/orders/flow` | **constraint** — `constraint_type='customer'` accordion section |
-| `revenue_at_risk` | warning | from `orders_operational_control_snapshot` | `/cashflow?filter=constrained` ✅ (Phase 0 fixed) | `/cashflow` | none yet — page doesn't read params |
-| `missing_cogs` | warning | active order has variant with `unit_cost=0`/null | `/finances?filter=missing_cogs` ✅ (Phase 0 fixed) | `/finances` | none yet — page doesn't read params |
-| `stockout_risk` (demand) | — | — | `/demand?filter=critical` | `/demand` | none yet — page doesn't read params |
-| `wms_*` (7 types) | — | — | `/wms?filter=...` | `/wms` | **mismatch** — see §6, `WmsPage.tsx` reads entity-ID params, not category filters |
+### ⚠️ History of getting `operational` wrong — read before touching this alert_type again
 
-### ✅ RESOLVED — `operational` → `aging_72h` naming collision (was OV-08)
+Got this wrong **twice** before landing on the truth above:
 
-Originally flagged as "OV-08: duplicate hardcoded copy in `aha.controller.ts`." That framing was **wrong** — corrected 2026-06-27. `aha.controller.ts`'s Signal 4 ("Fulfilment gap") is a completely separate, standalone signal pipeline (its own header: *"all signals derived from existing snapshots"*) that queries `orders_operational_control_snapshot.aging_72h_plus` **directly** — a genuine, correctly-named absolute-age-≥72h metric. It was never reading `DEEP_LINK_MAP` or `alert_type` at all. There was no duplicate to extract.
+1. **First belief:** `operational`'s deepLink slug `aging_72h` was just a typo colliding with Aha's genuine `aging_72h_plus` metric (`sla.metrics.ts`). Fixed by renaming to `fulfillment_sla_breach`, treating it as a 24h-SLA urgency concept — this matched `overview-module-playbook.md`'s AL-01 table at the time.
+2. **Second, ground-truth check (2026-06-28):** read `operationalConstraintEvaluator.ts` and `alerts.aggregator.ts` directly. Neither has anything to do with age. The evaluator's own comment is explicit: *"IMPORTANT — NOT SLA... Operational is a PHYSICAL-blocker signal, orthogonal to age"* — written after a prior bug where someone *had* conflated the two and produced duplicate signals. `operational` = unresolved pick exception, full stop. It belongs in the **constraint** dimension, same bucket as `inventory`/`customer`, not anywhere near urgency.
 
-The actual bug was a **naming collision**: the resolver's `operational` alert_type (AL-01's 24h fulfillment-SLA rule) happened to reuse the literal string `aging_72h` for its filter slug — an unrelated number that just sounded similar. Fixed by renaming the resolver's slug only, to `fulfillment_sla_breach`. `aha.controller.ts`'s `/orders?filter=aging_72h` was correct all along and was **not** touched.
+**Lesson:** `overview-module-playbook.md`'s AL-01 table was stale (described pre-fix behavior its own §7 said had been corrected, but the table itself was never updated to match). Corrected there 2026-06-28 — see that doc's own §10. **Always verify alert_type meaning against `alerts.aggregator.ts` directly, never against a derived description, however authoritative-looking.**
 
-**Still open, deferred to Phase 2:** there are now three distinct order-aging concepts that may each need their own urgency bucket on `/orders/flow`:
-
-1. `sla_breach` → capacity-relative `overdue` (existing `CptBucket`, UI already built)
-2. `operational` (24h fulfillment SLA, now `fulfillment_sla_breach`) → bucket still undecided
-3. `aging_72h_plus` (Aha's, absolute ≥72h) → no filter mechanism exists for this on Order Flow yet; data (`age_since_creation_seconds`) is already present on blocked orders, so this is a design decision, not a missing-data problem
+**Net effect:** there is only **one** real urgency dimension on Order Flow (`sla_breach`). `aging_72h_plus` (Aha's, absolute ≥72h) remains a separate, unconnected metric — no filter mechanism exists for it on Order Flow, and nothing currently requires one.
 
 ---
 
@@ -84,60 +80,79 @@ The actual bug was a **naming collision**: the resolver's `operational` alert_ty
 
 | ID | Status | Description |
 |---|---|---|
-| OV-01 | 🔴 OPEN | `/orders/flow` (`OrderFlowPage.tsx`) doesn't read any URL params yet — `cptFilter` is click-state only. Needs `useSearchParams` for both `constraint` and `urgency`. |
-| OV-02 | ✅ FIXED | `onResolveAll` was a fully dead prop (zero consuming UI) — removed from `OverviewModuleFT2.tsx` and `OverviewFT2Page.tsx`. |
-| OV-03 | 🔴 OPEN | `FinancesIntelligencePage.tsx` has zero param-reading capability. |
-| OV-04 | ✅ FIXED | Overview's "View order flow →" now points at `/orders/flow` instead of bare `/orders`. |
-| OV-05 | ✅ FIXED | `DEEP_LINK_MAP` typo `/cash-flow` → `/cashflow` corrected. |
-| OV-06 | ✅ FIXED | `?focus=missing_cogs` standardized to `?filter=missing_cogs`. |
-| OV-07 | 🟡 OPEN | `WmsPage.tsx` already has working deep-link support, but for **entity IDs** (`stowTaskId`, `batchId`, etc.), not the category filters (`?filter=stow_pending`) that `DEEP_LINK_MAP` emits for the 7 `wms_*` alert types. Two contracts, don't speak to each other. Likely resolved by Phase 5 (entity_id), not before. |
-| OV-08 | ✅ FIXED (reframed) | Was misregistered as a duplicate emitter. Actually a naming collision between two unrelated metrics sharing one string — see §3. Resolved by renaming the resolver's `operational` slug to `fulfillment_sla_breach`; `aha.controller.ts` required no change. |
-| AHA-01 | 🟡 OPEN, parked | `aha.controller.ts` Signal 3 ("Revenue concentration") emits `deepLink: '/orders?filter=revenue_concentration'` — orphaned, not in any constraint/urgency dimension, not in `DEEP_LINK_MAP`. Different feature surface (customer concentration analytics), not a time/urgency concept — park separately from the Order Flow filter work. |
-| ORD-01 | 🟡 OPEN (pre-existing, tracked since 2026-05-28 in `modules-ux-playbook.md`) | `OrdersModuleFT2.tsx` line ~624, "View all orders →" navigates to bare `/orders` — same root cause as OV-04/OV-01: there is no order list at `/orders` (it's an executive-summary surface by design). Needs to point at `/orders/flow`. |
-| PHANTOM-01 | 🔴 OPEN | Phantom stock (`on_hand < 0`, sold without recorded receiving) is correctly computed, severity-scored, and has a working in-module CTA (`ProductsCatalogPage.tsx` → `/orders/inbound`) — but never reaches `alerts`. Invisible to morning brief / Overview entirely. |
-| ENTITY-01 | 🔴 OPEN, foundational | `alerts.aggregator.ts` writes `entity_id: null`, `entity_type: 'shop'` on every alert emission site, with no exception found. No alert can ever deep-link to a specific order/batch/SKU until this changes — only to a filtered category list. |
+| OV-01 | ✅ FIXED | `/orders/flow` now reads `constraint` and `urgency` from URL — see §5. |
+| OV-02 | ✅ FIXED | Dead `onResolveAll` prop removed. |
+| OV-03 | ✅ FIXED (reframed) | Was never a missing-`useSearchParams` problem — `FinancesIntelligencePage`'s own CTA already sends operators to Catalog for this signal. Resolver corrected to match (`/inventory/catalog`, no param). |
+| OV-04 | ✅ FIXED | Overview's "View order flow →" points at `/orders/flow`. |
+| OV-05 | ✅ FIXED | `/cash-flow` → `/cashflow` typo. |
+| OV-06 | ✅ FIXED | `?focus=` → `?filter=` standardization (superseded — `revenue_at_risk` no longer uses Cashflow at all, see below). |
+| OV-07 | 🟡 OPEN | WMS alerts need entity-level params; `alerts.aggregator.ts` doesn't carry them. Blocked on ENTITY-01. |
+| OV-08 | ✅ FIXED (reframed) | Was never a duplicate — `aha.controller.ts` is a separate, correct pipeline. No fix needed there. |
+| ORD-01 | 🔴 **STILL OPEN** | `OrdersModuleFT2.tsx` "View all orders →" still points at bare `/orders`. Same fix as OV-04 (→ `/orders/flow`), never actually applied — tracked but not yet done. See `entity-detail-modal-playbook.md` §2 for ORD-02 (removed) and ORD-03 (the real entity-modal trigger work), found in the same file during the Orders modal investigation. |
+| AHA-01 | 🟡 OPEN, parked | `aha.controller.ts` Signal 3 "Revenue concentration" → `/orders?filter=revenue_concentration`, fully orphaned, different feature surface (customer analytics). |
+| **CASH-01** | 🔴 **NEW, OPEN** | `CashFlowModuleFT2.tsx`'s `atRiskRevenue` chip hardcodes `href="/orders?filter=blocked"` — a frontend-constructed link, violating §1's core principle. Doubly stale now: wrong route (`/orders`, not `/orders/flow`) and wrong param shape (`filter=blocked` isn't read by anything — Order Flow reads `constraint`/`urgency`). Same class of bug as OV-02/OV-04 (frontend hand-writing a path), found but not yet fixed. |
+| PHANTOM-01 | 🔴 OPEN | Phantom stock computed/scored/has a working CTA in `ProductsCatalogPage.tsx`, never reaches `alerts`. |
+| ENTITY-01 | 🔴 OPEN, foundational — **reframed 2026-06-28** | Originally framed as "build entity-aware alerts from scratch." **Wrong** — `demandIntelligence.service.ts` and `resolve_inventory_block.handler.ts` already correctly populate `entity_id`/`entity_type` (`'variant'`, real variant ID) on `stockout_risk` alerts. The real task is bringing `alerts.aggregator.ts` (AL-01's constraint/SLA/revenue/cogs alerts) up to the standard already met elsewhere in this codebase — not inventing the pattern. |
+| **CATALOG-GAP** | 🔴 **NEW, OPEN, future feature, not urgent** | `ProductsCatalogPage.tsx` / `ProductsOperatorFacts.service.ts` has no cost-completeness tracking at all — only `phantom`/`zeroStock`/`noSku`/`sellable` exist as states. `missing_cogs`'s "Fix in Catalog" CTA (on both Overview and Finances Intelligence) lands on Catalog with nothing to filter into. Not broken — just a real future feature (a `missingCost` status + filter) if this signal is ever expected to be actionable from Catalog directly rather than via Finances' own existing margin breakdown. |
 
 ---
 
-## 5. Two filter dimensions on `/orders/flow` — design
+## 5. Order Flow filter dimensions — ✅ IMPLEMENTED (Phase 2, 2026-06-28)
 
-`OrderFlowPage.tsx` already has the machinery for both; neither is wired to the URL yet.
+`OrderFlowPage.tsx` reads two independent URL params via `useSearchParams`:
 
-| Param | Values | Existing mechanism to reuse |
+| Param | Values | Mechanism |
 |---|---|---|
-| `constraint` | `inventory` \| `customer` \| `operational` | `blockedByReason` grouping — auto-expand the matching accordion section (`expandedReasons` state) on mount |
-| `urgency` | `overdue` (possibly also a distinct value for AL-01's `operational`, pending the open question in §3) | `blockedBucket()` — already collapses `is_shipping_sla_breached` into `'overdue'` for badges; promote to an actual filter predicate |
+| `constraint` | `inventory` \| `customer` \| `operational` | Auto-expands the matching `blockedByReason` accordion section on mount |
+| `urgency` | `sla_breach` | Filters both Blocked and Pool columns to `order.is_shipping_sla_breached === true` |
 
-Both params are independent and can combine (e.g. `?constraint=inventory&urgency=overdue` — inventory-blocked orders that are also SLA-breached).
+Deliberately **not** reusing `bucketByCpt`/`CptBucket` (`overdue`/`today`/`ahead`) for `urgency` — confirmed that logic is a degenerate fallback (fires on missing/zero capacity data, not actual lateness) layered with the real SLA flag for *display* purposes only. The URL filter uses the real `is_shipping_sla_breached` field directly, so a deep link shows exactly what the alert claimed — no silent inclusion of unrelated orders via a stale capacity reading.
+
+**Known scoping gap, not yet addressed:** header summary figures (`blockedCount`, `heldRevenue`) still show true unfiltered totals when a filter is active, and there's no visible chip indicating a deep-link filter is live (unlike the existing `cptFilter` pill). Violates the "truth over optimistic UX" principle from `order-flow-implementation-playbook.md` — logged, not yet fixed.
 
 ---
 
-## 6. Known gaps (bigger than a wiring fix)
+## 6. SLA-priority release ordering — ✅ IMPLEMENTED (2026-06-28)
 
-- **`OV-07`** — WMS alerts need entity-level params (`stowTaskId`, `batchId`...), but `alerts.aggregator.ts` doesn't carry entity references (see `ENTITY-01`). Can't fully resolve OV-07 until ENTITY-01 is addressed.
-- **`ENTITY-01`** — the ceiling on this entire system. Every alert is shop-level today (`entity_type: 'shop'`, `entity_id: null`), regardless of type. Category-filtered lists are the practical limit until this changes.
-- **`PHANTOM-01`** — also has no `entity_id`-equivalent today; even once wired into alerts, it can only point at "go check receiving," not a specific SKU, unless `ProductsOperatorFacts.service.ts` is extended with a `phantomProducts` detail array (same shape as its existing `noSkuProducts`).
+Separate from the filter work above — this changes which orders **physically release first** in a batch, per product requirement: *"prioritize orders about to breach SLA, or older, so the next batch picks them up first."*
+
+**Confirmed existing mechanism, reused rather than reinvented:** `pickBatch.service.ts` already had `is_priority_flagged DESC, order_created_at ASC` as its fill order — manual flags already preceded everything else. Added `is_shipping_sla_breached DESC` as a second sort key, between priority-flag and age:
+ORDER BY is_priority_flagged DESC, is_shipping_sla_breached DESC, order_created_at ASC
+
+Applied identically in **two places** that both needed it independently — they were never sharing logic:
+- `apps/backend/src/services/wms/pickBatch.service.ts` (`eligibleOrders` — decides actual release order)
+- `apps/backend/src/api/wms/wms.controller.ts` `httpGetOrderPool` (`GET /api/v1/wms/order-pool` — decides what the operator *sees*)
+
+Both joined via the same `DISTINCT ON ... aggregate_version DESC` CTE pattern already established in `sla.metrics.ts` (`order_age_snapshot` is append-only/versioned — a naive join would multiply rows and corrupt the greedy-fill loop).
+
+**Manual flag always outranks automatic SLA-breach status** — deliberate design choice, not a default: a human's explicit flag should never be silently overridden by a heuristic.
+
+`PoolOrder` type (`useOrderPool.ts`) extended with `is_shipping_sla_breached: boolean | null` (nullable — `LEFT JOIN`, an order with no snapshot row yet is "unknown," not "false"). `OrderFlowPage.tsx` pool rows now show an "SLA breached" badge (`var(--accent)`, same token as the existing "Priority" badge — this file's playbook grants no hardcoded-severity-color exception, unlike `OrdersModuleFT2.tsx`).
+
+**Not touched, by design:** the existing `hours > 48` ad hoc red-clock coloring on pool rows stays as-is — a sixth, still-uncatalogued age threshold, reconciling it is a separate future decision.
 
 ---
 
 ## 7. Procedure — adding a new alert's deep link correctly
 
-1. Add the `alert_type` to AL-01's aggregator with real `entity_id`/`entity_type` if at all possible — don't perpetuate the `null`/`'shop'` pattern if the entity is known at write time.
-2. Add the entry to the **shared** `DEEP_LINK_MAP` (post-Phase-1: `apps/backend/src/services/alerts/deepLinkMap.ts`) — never hardcode a path in a controller or a frontend component.
-3. Pick real filter param names that match what the destination page already reads (check first — don't invent a new query-param convention per alert type).
-4. Confirm the destination page actually has `useSearchParams` wired for that param — if not, that's a second piece of work, not assumed-free.
-5. Verify the param values match the actual destination data model (e.g. `constraint_type`'s real enum), not an alert-taxonomy name that sounds similar but isn't the same field.
-6. Update §3's table in this doc in the same commit.
+1. **Read the alert_type's real trigger directly in `alerts.aggregator.ts` (or the relevant emitter) — never trust a derived table, comment, or prior doc's description without checking the source.** This playbook itself got `operational` wrong twice by trusting derived descriptions.
+2. Add real `entity_id`/`entity_type` at emission if the entity is known — `demandIntelligence.service.ts` is the working reference pattern.
+3. Add the entry to `DEEP_LINK_MAP` in `overviewMorningBrief.resolver.ts`.
+4. **Before assuming the destination page can filter, check whether the destination even has the concept the alert describes** — `CashFlowModuleFT2`, `FinancesIntelligencePage`, and `ProductsCatalogPage` all turned out to have *no* matching concept for their original alert types; the fix was redirecting to the page's own existing CTA destination, not adding a filter.
+5. If the destination does have a real list, confirm the param values match its actual data model (e.g. real DB enum), not an alert-taxonomy name that sounds similar.
+6. Update §3's table in the same commit.
 
 ---
 
-## 8. Phase plan (sequencing, as of 2026-06-27)
+## 8. Phase plan — current state (2026-06-28)
 
-- **Phase 0** ✅ — Resolver typos, dead prop, OV-04. Done.
-- **Phase 1** ✅ — Revised from "extract DEEP_LINK_MAP" (no second consumer existed — see §3) to "fix the `operational`/`aging_72h` naming collision." Done — slug renamed to `fulfillment_sla_breach`. Extracting `DEEP_LINK_MAP` to a shared module remains an optional hygiene improvement, not currently blocking on anything — revisit only if a real second consumer appears.
-- **Phase 2** 🔴 — `OrderFlowPage` reads `constraint` + `urgency` from URL (§5); resolve the 3-way urgency bucket design (`overdue` / `fulfillment_sla_breach` / `aging_72h_plus`, see §3); point all 4 order alert types + ORD-01 at `/orders/flow`.
-- **Phase 3** 🔴 — Wire `useSearchParams` into `CashFlowPage`, `DemandPage`, `FinancesIntelligencePage`.
+- **Phase 0** ✅ — Resolver typos, dead prop, OV-04.
+- **Phase 1** ✅ — Resolved into "fix the naming collision," then fully corrected again after ground-truth check (§3). `operational` now correctly in the constraint dimension.
+- **Phase 2** ✅ — `OrderFlowPage` constraint/urgency params (§5) + SLA-priority release ordering (§6), including the badge.
+- **Phase 3** ✅ (with corrections) — Cashflow/Demand/Finances audited. Demand confirmed already correct as-is. Cashflow and Finances/Catalog turned out to be **wrong-destination bugs**, not missing-filter bugs — fixed by redirecting deep links to match each page's own existing CTA precedent, not by adding `useSearchParams` to pages with nothing to filter.
 - **Phase 4** 🔴 — Promote phantom stock into `alerts` (PHANTOM-01).
-- **Phase 5** 🔴 — `ENTITY-01` — populate real `entity_id`/`entity_type` on alert emission.
+- **Phase 5** 🔴 — ENTITY-01, reframed as "match the existing standard," not greenfield.
 
-Parked, separate track: Alerts-in-sidenav placement (Option A/B/C — bell icon vs. 9th nav item vs. fold into Overview). Revisit once Phase 4–5 make the signal layer richer.
+**Newly surfaced, not yet scheduled:** CASH-01 (hardcoded stale link), ORD-01 (still genuinely unfixed despite being tracked since 2026-05-28), CATALOG-GAP (future feature).
+
+Parked, separate track: Alerts-in-sidenav placement (Option A/B/C).

@@ -7,3 +7,4 @@ export * from './WarehouseGrid/index.js';
 export * from './WarehouseGrid/WarehouseGrid.types.js';
 export * from './IsometricCanvas.types.js';
 export * from './IsometricCanvas.js';
+export * from './EntityDetailModal.js';

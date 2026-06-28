@@ -258,12 +258,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
               Export →
             </Box>
           )}
-          <Box
-            onClick={() => navigate('/orders/blocked')}
-            sx={{ px: 1.5, py: 0.625, borderRadius: '8px', bgcolor: 'var(--accent)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color:'#10151E', '&:hover': { opacity: 0.88 } }}
-          >
-            Resolve all →
-          </Box>
+
         </Box>
       </Box>
 

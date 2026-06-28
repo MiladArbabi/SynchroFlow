@@ -45,7 +45,7 @@ orders (canonical, upserted)  +  order_line_items  +  order_revenue_units
 
 | alert_type | severity | Trigger (verified rule) |
 |---|---|---|
-| `operational` | critical | order paid + fulfillment `pending` + age_since_paid ≥ `fulfillment_sla_hours`×3600 (default **24h**) |
+| `operational` | critical | **CORRECTED 2026-06-28 — this row was wrong.** Unresolved pick exception (item missing, short pick, defect, wrong item) — see `operationalConstraintEvaluator.ts`. Has NO relationship to age/time; that's `sla_breach`'s job. See §10 below for how this stayed wrong for two rounds of fix attempts before being caught against the source directly. |
 | `sla_breach` | critical | shipping/delivery SLA breach (age snapshot flags) |
 | `revenue_at_risk` | warning | from `orders_operational_control_snapshot` |
 | `missing_cogs` | warning | active (non-fulfilled) order has a variant with `unit_cost = 0` / null `estimated_unit_cost` |
@@ -208,3 +208,11 @@ Note: §6's "verified end state" above is from the 2026-06-18 prod seed and pred
 A full audit of Overview's outbound CTAs (and every page they target) surfaced that `DEEP_LINK_MAP` — previously living only in `overviewMorningBrief.resolver.ts` — has a misleading slug: `operational` maps to `?filter=aging_72h`, but AL-01's actual `operational` rule (table in §2 above) uses a 24-hour threshold, unrelated to the `aging_72h_plus` column this slug implies. Also found a second, independent hardcoded copy of the same deep link in `aha.controller.ts`. Full register, corrected mapping table, and the planned shared-module extraction are now tracked in:
 
 **`docs/playbooks/cta-deeplink-playbook.md`**
+
+## 10. 2026-06-28 correction — `operational` row above was wrong, caused two downstream bugs
+
+The AL-01 table's `operational` row (above) described a 24h fulfillment-SLA age check. That description was stale — superseded by the same dedup fix §7/§9 already reference, but the table cell itself was never updated to match. Two separate fix attempts in `docs/playbooks/cta-deeplink-playbook.md` trusted this table instead of reading `alerts.aggregator.ts` directly, and both landed on a wrong urgency-based rename before the actual source was finally checked.
+
+**Ground truth, verified directly against `alerts.aggregator.ts`'s `aggregateConstraintAlerts` and `operationalConstraintEvaluator.ts`:** `operational` = unresolved pick exception, a physical-blocker signal, unrelated to age. Full detail, the two-round correction history, and the corrected deep-link mapping are in `docs/playbooks/cta-deeplink-playbook.md` §3.
+
+**Standing lesson for this doc:** treat this table as a convenience summary, not a substitute for reading the aggregator source when precision matters.

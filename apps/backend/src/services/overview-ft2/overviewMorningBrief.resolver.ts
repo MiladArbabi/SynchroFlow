@@ -110,8 +110,16 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   inventory:                { module: 'order-nexus',      deepLink: '/orders/flow?constraint=inventory' },
   customer:                 { module: 'order-nexus',      deepLink: '/orders/flow?constraint=customer' },
   // Financial signals
-  revenue_at_risk:          { module: 'cashflow',         deepLink: '/cashflow?filter=constrained' },
-  missing_cogs:             { module: 'finances',         deepLink: '/finances?filter=missing_cogs' },
+  // revenue_at_risk: CashFlowModuleFT2 has no constrained-orders list to
+  // filter into — the page's own UI already deep-links this exact signal
+  // to /orders/flow (see its atRiskRevenue chip). Route there directly.
+  revenue_at_risk:          { module: 'order-nexus',      deepLink: '/orders/flow' },
+  // No missing-cost concept exists on ProductsCatalogPage today (confirmed
+  // by reading the full file — phantom/zeroStock/noSku only). Matches the
+  // existing precedent: FinancesIntelligencePage's own CTA for this same
+  // signal already lands here with zero params. Don't invent a filter
+  // value the destination has no way to honor.
+  missing_cogs:             { module: 'inventory',        deepLink: '/inventory/catalog' },
   // WMS signals
   wms_receive_arrived:      { module: 'wms',              deepLink: '/wms?filter=receive_pending' },
   wms_receive_exception:    { module: 'wms',              deepLink: '/wms?filter=receive_exceptions' },
