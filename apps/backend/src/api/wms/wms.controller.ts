@@ -1732,13 +1732,21 @@ export const httpGetProblemCenterExceptions = async (req: Request, res: Response
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
+  // Optional scope: ?order_id=<id> — used by EntityDetailModal to fetch only
+  // this order's exceptions, instead of the whole shop's history. Omitted =
+  // unchanged shop-wide behavior for the general Problem Center page.
+  const orderId = typeof req.query.order_id === 'string' ? req.query.order_id : null;
+
   try {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const exceptions = await trx('pick_exceptions as pe')
-        .leftJoin('order_line_items as oli', 'oli.lasyncro_line_item_id', 'pe.lasyncro_line_item_id')
+        .leftJoin('order_line_items as oli', 'oli.lasyncro_line_item_id','pe.lasyncro_line_item_id')
         .where('pe.shop_id', shopId)
+        .modify((qb) => {
+          if (orderId) qb.where('oli.lasyncro_order_id', orderId);
+        })
         .orderBy('pe.raised_at', 'desc')
         .select(
           'pe.pick_exception_id',
@@ -1757,6 +1765,7 @@ export const httpGetProblemCenterExceptions = async (req: Request, res: Response
           'pe.resolution_note',
           'oli.title as variant_title',
           'oli.sku',
+          'oli.lasyncro_order_id',
           trx.raw(`upper(substring(pe.pick_batch_id::text, 1, 8)) as batch_short_id`)
         );
 

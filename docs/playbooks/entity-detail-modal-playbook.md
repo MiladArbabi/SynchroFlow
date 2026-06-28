@@ -18,11 +18,12 @@ Props: `entityId` (drives open state), `onClose`, `title`, `subtitle`, `headerAc
 
 ---
 
-## 2. Orders — in progress
+## 2. Orders — ✅ done (2026-06-28)
 
 ### 2.1 What already existed, and why neither alone was sufficient
 
 Two pre-existing, never-reconciled pieces:
+
 - **`OrderDetailPanel.tsx`** (`B-02`) — a real `Drawer anchor="right"`, narrow (420px), already stays-in-context (never navigates away). Content: constraint reason + a single "execute recommended action" button via `useOrderDecision`/`useExecuteOrderDecision` (`GET /api/v1/orders/:id/decision`). **Confirmed dead**: `setSelectedOrderId` (the prop that opens it) is called exactly once in `OrdersFT2Page.tsx` — as the *close* handler. Nothing in that file, or in `OrdersModuleFT2.tsx`, ever sets it to a real order ID. This panel has likely never opened in production.
 - **`OrderDetailPage.tsx`** — comprehensive, but a full route (`/orders/:orderId`-style navigation away), via `useOrderDetail` (`GET /api/v1/orders/:id`) — line items, payment, fulfillment, tracking, timeline, pack decision history.
 
@@ -43,6 +44,7 @@ Both `/orders/blocked` and `/fulfillment` are confirmed legacy routes that just 
 **This is the actual entry point the new modal needs.** Fixing ORD-03 — replacing these `navigate()` calls with opening `EntityDetailModal` with the real `order.lasyncro_order_id` — *is* step one of shipping this feature, not a separate cleanup task.
 
 **ORD-01** (Orders' own "View all orders →" → bare `/orders`) and **ORD-02** ("Resolve all →" → `/orders/blocked`) are separate, adjacent buttons in the same file:
+
 - **ORD-02 — ✅ removed**, per explicit product decision: a single aggregate action across structurally different blocking reasons (inventory shortage, address issue, physical pick exception) doesn't make sense as one button. No replacement built — see §2.3 below for why "bulk-create Problem Center tasks" (the original replacement idea) turned out to not apply.
 - **ORD-01 — still 🔴 open**, unrelated to the modal work, simple fix (`/orders` → `/orders/flow`), just never circled back to.
 
@@ -75,18 +77,23 @@ router.post('/problem-center/:taskId/resolve', ...);
 
 **The lesson, stated plainly:** `problem_center_tasks` having `'pick'` in its source enum is a *red herring*, not evidence of intended integration. The two tables (`pick_exceptions`, `problem_center_tasks`) have **always** had fully separate, complete resolve flows — they just happen to share a URL prefix (`/problem-center/`) and similar-sounding names, which is what caused the confusion. **Before assuming any "missing integration" between two tables in this codebase, check for a route file's own inline comments first — they're often more current and more honest than a derived theory.**
 
-### 2.4 Known gap before the Orders modal can use this
+### 2.4 — ✅ done
 
-`httpGetProblemCenterExceptions`'s `SELECT` needs `oli.lasyncro_order_id` added — the join already exists (`order_line_items as oli`), it's a one-line addition, not a new join. Without it, there's no way to filter "which exceptions belong to this specific order" for the modal's content.
+`httpGetProblemCenterExceptions` now takes an optional `?order_id=` query param (`oli.lasyncro_order_id` added to the `SELECT`, existing join reused). Omitted = unchanged shop-wide behavior for the general Problem Center page.
 
-### 2.5 Next steps for Orders (not yet done)
+### 2.5 — ✅ all six steps done
 
-1. Add `lasyncro_order_id` to `httpGetProblemCenterExceptions`'s `SELECT` (§2.4).
-2. Fix ORD-03's four `navigate()` calls to open `EntityDetailModal` with the real order ID instead.
-3. Inside the modal: merge `useOrderDecision` + `useOrderDetail` + a new "pick exceptions for this order" query (filtering the now-fixed GET response by `lasyncro_order_id`).
-4. Add the missing `['order-detail', orderId]` invalidation to `useExecuteOrderDecision`'s `onSettled` (§2.1).
-5. Surface `httpResolveException`'s resolve action inside the modal for any pick-exception-blocked order, alongside the existing recommended-action button for other constraint types.
-6. Fix ORD-01 separately (unrelated, trivial).
+What shipped: `EntityDetailModal` for Orders merges `useOrderDecision` (constraint + recommended action, with the "Mark as Resolved" button ported from the now-deleted `OrderDetailPanel.tsx`), `usePickExceptionsForOrder`/`useResolvePickException` (new hook, per-exception audit-trail resolve — does NOT unblock the order, see §2.3), and `useOrderDetail` (line items, total, tracking — title and full content). ORD-03's four `navigate()` calls in `OrdersModuleFT2.tsx` now call `onOrderClick`, except the constraint-free "Release →" branch, which redirects to `/orders/flow` per explicit product decision (a clean SLA-breached pool order should be released, not inspected). The `['order-detail', orderId]` invalidation was added to `useExecuteOrderDecision`'s `onSettled`. ORD-01 fixed (`/orders` → `/orders/flow`).
+
+### 2.6 Cleanup, and one corrected assumption
+
+- **`OrderDetailPanel.tsx` — ✅ deleted.** Confirmed zero importers before removal (its open trigger was dead, as established in §2.1).
+- **`OrderDetailPage.tsx` — kept, NOT orphaned.** Before deleting it alongside the Panel, a fresh importer check caught that `LifecycleRouteHost.tsx` mounts it live at `/orders/:orderId` — a real route, not dead code. Worth stating plainly: I'd grouped both files together as "two pre-existing, never-reconciled pieces" in §2.1 without separately verifying each one's importers, and almost deleted a live route on that unverified grouping. **Lesson: "these two look like the same situation" is not the same as "I checked both."** Each file gets its own importer check, every time, no matter how similar two files look from their role description alone.
+- This also leaves a real, separate full-page surface sitting at that route — a plausible future "Open full page →" link from inside the modal, not built now, just noting it exists.
+
+### 2.7 Known remaining gap, not fixed
+
+Between the modal opening and `useOrderDetail` resolving, the header title is briefly empty (`modalTitle` starts as `''`, only set once `onTitleReady` fires from inside the body). Not broken, just a brief flash — logged rather than fixed, since `EntityDetailModal`'s header renders before its `children` mount, and the real fix (e.g. a passed-in fallback title from `OrdersModuleFT2`'s already-known `externalOrderId`, if available at click time) is a small but real design decision, not a one-line patch.
 
 ---
 

@@ -92,6 +92,8 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 
   onOrderSelect?: (orderId: string) => void;
   onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
+  /** Opens the shared EntityDetailModal for this order. See entity-detail-modal-playbook.md §2. */
+  onOrderClick?: (orderId: string) => void;
 
   /**
    * Module-level export CTA.
@@ -164,7 +166,7 @@ const STAGE_COLORS: Record<string, string> = {
 
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const navigate = useNavigate();
-  const { operationalControl, revenue, operatorSummary, currency, onExport } = props
+  const { operationalControl, revenue, operatorSummary, currency, onExport, onOrderClick } = props
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -317,7 +319,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                   </Box>
                   <Box
                     component="button"
-                    onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
+                    onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
                     sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                   >
                     {order.constraintType !== null ? 'Review queue' : 'Release →'}
@@ -350,10 +352,10 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                         </Box>
                         <Box
                           component="button"
-                          onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
-                          sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                          onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
+                          sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                         >
-                          {order.constraintType !== null ? 'Review queue' : 'Release →'}
+                          {order.constraintType !== null ? 'Review queue': 'Release →'}
                         </Box>
                       </Box>
                     ))}
@@ -407,8 +409,8 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                     </Box>
                     <Box
                       component="button"
-                      onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
-                      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                      onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                      sx={{ display: 'inline-flex', alignItems: 'center',justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                     >
                       View order →
                     </Box>
@@ -433,7 +435,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                           </Box>
                           <Box
                             component="button"
-                            onClick={() => navigate(order.constraintType !== null ? '/orders/blocked' : `/fulfillment?order=${order.lasyncro_order_id}`)}
+                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
                             sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                           >
                             View order →
@@ -512,7 +514,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
 
           {/* Tier 2 navigation CTA — keep aligned with modules UX playbook ghost pill anatomy. */}
           <Box
-            onClick={() => navigate('/orders')}
+            onClick={() => navigate('/orders/flow')}
             sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
           >
             View all orders →

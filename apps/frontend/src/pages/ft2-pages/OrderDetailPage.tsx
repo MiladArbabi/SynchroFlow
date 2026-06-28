@@ -256,7 +256,7 @@ export default function OrderDetailPage() {
 
         {/* Back link */}
         <Box
-          onClick={() => navigate('/orders')}
+          onClick={() => navigate('/orders/flow')}
           sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 2.5, cursor: 'pointer', width: 'fit-content' }}
         >
           <ArrowLeft size={14} color="var(--ink-4)" />

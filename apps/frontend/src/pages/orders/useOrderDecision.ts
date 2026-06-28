@@ -128,12 +128,17 @@ export function useExecuteOrderDecision() {
       }
     },
 
-    onSettled: () => {
+    onSettled: (_data, _error, orderId) => {
       /**
        * IMMEDIATE invalidation — catches fast execution paths.
+       * Added 2026-06-28: ['order-detail', orderId] — the EntityDetailModal
+       * merges this query with this hook's own decision data; without this,
+       * the modal's fulfillment-status section shows stale data after
+       * "Mark as Resolved" until manually closed/reopened.
        */
-      queryClient.invalidateQueries({ queryKey: ['orders', 'constrained'] });
+      queryClient.invalidateQueries({ queryKey: ['orders', 'constrained']});
       queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
+      queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
 
       /**
        * DELAYED invalidation (C-03)
@@ -147,6 +152,7 @@ export function useExecuteOrderDecision() {
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['orders', 'constrained'] });
         queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
+        queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
       }, 4000);
     },
   });
