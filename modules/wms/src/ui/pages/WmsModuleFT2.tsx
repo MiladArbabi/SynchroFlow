@@ -397,7 +397,7 @@ const StowTaskCard = memo(function StowTaskCard({
         onClick={() => isPending ? onClaim(task.stow_task_id) : onConfirm(task.stow_task_id)}
         sx={{
           width: '100%', fontSize: 12, fontWeight: 600,
-          color: '#10151E', bgcolor: 'var(--accent)',
+          color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
           border: 'none', borderRadius: '8px',
           py: 1.25, cursor: 'pointer',
           '&:hover': { opacity: 0.88 },

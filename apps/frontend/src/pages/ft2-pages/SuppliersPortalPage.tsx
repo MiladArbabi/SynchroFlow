@@ -136,6 +136,7 @@ export default function SuppliersPortalPage() {
       <Routes>
         <Route path="/" element={<SuppliersPortalModuleFT2 view="pos" {...sharedProps} />} />
         <Route path="/suppliers" element={<SuppliersPortalModuleFT2 view="suppliers" {...sharedProps} />} />
+        <Route path="/sourcing" element={<SuppliersPortalModuleFT2 view="sourcing" {...sharedProps} />} />
       </Routes>
     </>
   );

@@ -455,3 +455,33 @@ grep -rn "textDecoration: 'underline'" modules/<name>/src/ --include="*.tsx"
 grep -rn "variant=\"contained\"" modules/<name>/src/ --include="*.tsx" | grep -v "sx.*accent"
 grep -rn "color: '#" modules/<name>/src/ --include="*.tsx"
 ```
+
+---
+
+## 8. Color Token Correction — 2026-06-29
+
+**`--accent-ink: #10151E`** added. WCAG contrast against `--accent` (#FF6B2B), computed directly from the hex values:
+- White text: 2.84:1 — **fails AA** (needs 4.5:1 at this text size)
+- `#10151E`: 6.44:1 — passes AA comfortably
+
+The Tier 1 spec's code example (§2) showing `color: theme.palette.common.white` is **wrong** and should read `color: 'var(--accent-ink)'`. The 7+ files already hardcoding `#10151E` independently (`WmsPage.tsx`, `FulfillmentQueuePage.tsx` ×2, `WmsAnalyticsPage.tsx`, `ReleaseQueuePage.tsx`, `BlockedOrdersPage.tsx`, `OrdersOutboundPage.tsx` ×2) were right by repeated convention; the doc's example was stale. CTA-001 (which moved a button toward white) should be re-verified — possible readability regression, not yet confirmed either way.
+
+**Manual edit needed** (one-line, in §2's Tier 1 code block):
+```diff
+- bgcolor: 'var(--accent)', color: theme.palette.common.white,
++ bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
+```
+
+**Manual edit needed** (Color Tokens list, after `--accent-border`):
+```css
+--accent-ink:    #10151E   /* on-accent text — 6.44:1 vs --accent; white fails at 2.84:1 */
+```
+
+## 9. New Issue Register Entries — 2026-06-29
+
+| ID | Status | File | Line | Description |
+|---|---|---|---|---|
+| CTA-022 | 🔴 OPEN | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | 324, 357 | `borderRadius: '8px'` → `'6px'`. Also relabeling `Release →` → `Prioritize` and fixing `color: '#10151E'` → `var(--accent-ink)` in the same pass — see `cta-deeplink-playbook.md` RELEASE-CASCADE-01. |
+| CTA-023 | 🔴 OPEN, sweep | 7 files (see §8 list above) | — | Migrate hardcoded `#10151E` → `var(--accent-ink)` once the token exists. |
+
+**Caveat on §5 Modules Audited:** Orders is marked "✅ Clean" but CTA-022 was found after that audit closed — status should not be trusted as exhaustive without re-verification.

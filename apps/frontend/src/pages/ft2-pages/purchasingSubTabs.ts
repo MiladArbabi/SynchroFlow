@@ -7,6 +7,7 @@
 // Import into SuppliersPortalPage only.
 import type { ModuleTab } from '../../components/ModuleTabBar';
 export const PURCHASING_SUB_TABS: ModuleTab[] = [
-  { id: 'purchasing-pos',       label: 'Open POs',  path: '/suppliers-portal'           },
-  { id: 'purchasing-suppliers', label: 'Suppliers', path: '/suppliers-portal/suppliers' },
+  { id: 'purchasing-pos',       label: 'Open POs',  path: '/suppliers-portal'             },
+  { id: 'purchasing-suppliers', label: 'Suppliers', path: '/suppliers-portal/suppliers'   },
+  { id: 'purchasing-sourcing',  label: 'Sourcing',  path: '/suppliers-portal/sourcing'    },
 ];

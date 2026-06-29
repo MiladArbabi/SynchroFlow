@@ -322,7 +322,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                   <Box
                     component="button"
                     onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
-                    sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                    sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                   >
                     {order.constraintType !== null ? 'Review queue' : 'Release →'}
                   </Box>
@@ -355,7 +355,7 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                         <Box
                           component="button"
                           onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
-                          sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                         >
                           {order.constraintType !== null ? 'Review queue': 'Release →'}
                         </Box>

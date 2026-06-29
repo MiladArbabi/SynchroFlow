@@ -534,7 +534,7 @@ export default function OrdersOutboundPage() {
                 px: 1.5, py: 0.625, borderRadius: '6px', cursor: 'pointer',
                 fontSize: 12, fontWeight: 500,
                 bgcolor: ledgerFilter === key ? 'var(--accent)' : 'var(--surface)',
-                color: ledgerFilter === key ? '#10151E' : 'var(--ink-3)',
+                color: ledgerFilter === key ? 'var(--accent-ink)' : 'var(--ink-3)',
                 border: '1px solid',
                 borderColor: ledgerFilter === key ? 'var(--accent)' : 'var(--rule)',
                 transition: 'all 0.12s ease',
@@ -725,7 +725,7 @@ export default function OrdersOutboundPage() {
                       <Box
                         key={i}
                         onClick={() => setPage(i + 1)}
-                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '1px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? '#10151E' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '1px solid', borderColor: i + 1 === page ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === page ? 'var(--accent)' : 'var(--surface)', color: i + 1 === page ? 'var(--accent-ink)' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === page ? 600 : 400 }}
                       >
                         {i + 1}
                       </Box>

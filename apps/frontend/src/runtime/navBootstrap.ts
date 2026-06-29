@@ -109,18 +109,18 @@ export function bootstrapNavGroups() {
   });
 
   registerNavItem({
-    id: 'suppliers',
+    id: 'purchasing',
     title: 'Purchasing',
     path: '/suppliers-portal',
     group: 'workspace',
     order: 60,
     icon: Truck,
     requiredModuleId: 'suppliers-portal',
-    // No children — single real destination today. Receiving happens
-    // inline per-PO inside Suppliers Portal (PoAccordion.handleReceive),
-    // not a separate page. /orders/inbound is a parallel, likely-duplicate
-    // implementation — flagged for deprecation review (#63), intentionally
-    // unlinked from nav for now rather than deleted.
+    children: [
+      { id: 'open-pos',               title: 'Open POs',   path: '/suppliers-portal'                },
+      { id: 'suppliers',              title: 'Suppliers',        path: '/suppliers-portal/suppliers'},
+      { id: 'sourcing',               title: 'Sourcing',         path: '/suppliers-portal/sourcing'  },
+    ],
   });
 
   registerNavItem({

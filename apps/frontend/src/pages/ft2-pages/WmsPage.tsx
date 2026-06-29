@@ -73,7 +73,7 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
           sx={{
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
             px: 1.5, py: 0.75, borderRadius: '8px',
-            bgcolor: 'var(--accent)', color: '#10151E',
+            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
             border: 'none', cursor: 'pointer',
             fontSize: 12, fontWeight: 600,
             '&:disabled': { opacity: 0.5, cursor: 'not-allowed' },

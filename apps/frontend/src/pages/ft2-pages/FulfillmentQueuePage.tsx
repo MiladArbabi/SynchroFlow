@@ -221,7 +221,7 @@ function BatchCard({ batch }: { batch: PickBatch }) {
           <Box
             component="a"
             href={`/wms/batch/${batch.pick_batch_id}`}
-            sx={{ fontSize: 12.5, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', borderRadius: '8px', px: 2.5, py: 1.125, cursor: 'pointer', textDecoration: 'none', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+            sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', px: 2.5, py: 1.125, cursor: 'pointer', textDecoration: 'none', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Continue →
           </Box>
@@ -270,7 +270,7 @@ export default function FulfillmentQueuePage() {
             </Box>
             <PlanGate feature="wms.pick_batches" mode="locked">
               <Box sx={{ px: 2, py: 1, bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', '&:hover': { opacity: 0.9 } }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#10151E' }}>Merge batches</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)' }}>Merge batches</Typography>
               </Box>
             </PlanGate>
           </Box>
@@ -302,7 +302,7 @@ export default function FulfillmentQueuePage() {
               <Box
                 component="a"
                 href="/orders/pool"
-                sx={{ display: 'inline-flex', alignItems: 'center', px: 2, py: 1, borderRadius: '8px', bgcolor: 'var(--accent)', color: '#10151E', fontSize: 13, fontWeight: 600, textDecoration: 'none', '&:hover': { opacity: 0.9 } }}
+                sx={{ display: 'inline-flex', alignItems: 'center', px: 2, py: 1, borderRadius: '6px', bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 13, fontWeight: 600, textDecoration: 'none', '&:hover': { opacity: 0.9 } }}
               >
                 Go to Release Queue →
               </Box>

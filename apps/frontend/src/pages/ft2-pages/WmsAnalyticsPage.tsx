@@ -126,7 +126,7 @@ function CtaButton({ children, onClick }: { children: React.ReactNode; onClick: 
   return (
     <Box
       onClick={onClick}
-      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: '#10151E', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 }, transition: 'opacity 0.1s' }}
+      sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.5, fontSize: 12, fontWeight: 600, bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 }, transition: 'opacity 0.1s' }}
     >
       {children}
     </Box>

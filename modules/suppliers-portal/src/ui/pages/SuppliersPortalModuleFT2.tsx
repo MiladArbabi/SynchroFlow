@@ -124,7 +124,7 @@ export type SuppliersPortalData = {
 
 export type SuppliersPortalPageProps = {
   /** Which half of the Purchasing surface to render. Tab routing lives in the ft2-pages wrapper, not here. */
-  view: 'pos' | 'suppliers';
+  view: 'pos' | 'suppliers' | 'sourcing';
   data: SuppliersPortalData;
   isLoading: boolean;
   isError: boolean;
@@ -1174,7 +1174,7 @@ function PurchasingPosView({
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Box>
           <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-            Purchasing
+            Open POs
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             Purchase orders and ETAs.
@@ -1349,10 +1349,23 @@ function PurchasingSuppliersView({
   );
 }
 
-function SuppliersPortalModuleFT2Inner(props: SuppliersPortalPageProps) {
-  return props.view === 'suppliers'
-    ? <PurchasingSuppliersView {...props} />
-    : <PurchasingPosView {...props} />;
+function PurchasingSourcingView(props: SuppliersPortalPageProps) {
+  return (
+    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: 4, textAlign: 'center' }}>
+      <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
+        Sourcing recommendations are coming soon
+      </Typography>
+      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+        This page will help you match low-stock products to the right supplier.
+      </Typography>
+    </Box>
+  );
+}
+
+function SuppliersPortalModuleFT2Inner(props: SuppliersPortalPageProps) {  
+  if (props.view === 'suppliers') return <PurchasingSuppliersView {...props} />;
+  if (props.view === 'sourcing') return <PurchasingSourcingView {...props} />;
+  return <PurchasingPosView {...props} />;
 };
 
 export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps) {

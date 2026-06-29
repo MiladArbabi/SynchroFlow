@@ -334,7 +334,7 @@ export default function ReleaseQueuePage() {
               disabled={releaseBatch.isPending || orders.length === 0}
               sx={{
                 width: '100%', fontSize: 13, fontWeight: 600,
-                color: orders.length > 0 ? '#10151E' : 'var(--ink-4)',
+                color: orders.length > 0 ? 'var(--accent-ink)' : 'var(--ink-4)',
                 bgcolor: orders.length > 0 ? 'var(--accent)' : 'var(--bg-2)',
                 border: 'none', borderRadius: '8px', py: 1.375,
                 textAlign: 'center', cursor: releaseBatch.isPending ? 'not-allowed' : 'pointer',

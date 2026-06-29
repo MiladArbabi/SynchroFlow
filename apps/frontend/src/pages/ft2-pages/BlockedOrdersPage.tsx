@@ -170,7 +170,7 @@ export default function BlockedOrdersPage() {
             <Box
               component="a"
               href="/fulfillment"
-              sx={{ fontSize: 12, fontWeight: 600, color: '#10151E', bgcolor: 'var(--accent)', border: 'none', borderRadius: '8px', px: 1.75, py: 0.75, cursor: 'pointer', textDecoration: 'none', '&:hover': { opacity: 0.88 } }}
+              sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.75, py: 0.75, cursor: 'pointer', textDecoration: 'none', '&:hover': { opacity: 0.88 } }}
             >
               Release to floor
             </Box>

@@ -243,7 +243,7 @@ function TriageRow({
               fontSize: 12, fontWeight: 600,
               px: '12px', py: '6px', borderRadius: '8px',
               ...(isCritical
-                ? { bgcolor: 'var(--accent)', color: '#10151E', border: 'none' }
+                ? { bgcolor: 'var(--accent)', color: 'var(--accent-ink)', border: 'none' }
                 : { bgcolor: 'transparent', color: 'var(--ink-3)', border: '1px solid var(--rule)' }),
               cursor: 'pointer',
               '&:hover': { opacity: 0.88 },
