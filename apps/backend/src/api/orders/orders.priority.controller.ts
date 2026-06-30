@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import db from '@lasyncro/backend-core/db.js';
 import { DecisionRepository } from '../../domain/decision/decision.repository.js';
 
 /**
@@ -45,7 +46,10 @@ export const httpGetPriorityStack = async (
      *
      * Source of truth: decisions table
      */
-    const rows = await DecisionRepository.getByShop(shopId);
+    const rows = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+      return DecisionRepository.getByShop(trx, shopId);
+    });
 
     /**
      * NOTE:

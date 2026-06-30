@@ -33,7 +33,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Box, Typography, Button, CircularProgress, Alert } from '@mui/material';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
-import { useSetPriority } from '../wms/useOrderPool';
+import { useBulkSetPriority } from '../wms/useOrderPool';
 import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
@@ -276,15 +276,19 @@ export default function OrdersFT2Page() {
   const operatorSummaryQuery = useOrdersOperatorSummary();
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
-  const setPriority = useSetPriority();
-
+  const bulkSetPriority = useBulkSetPriority();
   const onPriorityFlag = useCallback(
+    // THREAD B (2026-06-30): consolidated from an N-call Promise.all loop
+    // against the singular WMS endpoint to one call against the bulk
+    // ON-01 endpoint, which now carries the same pool-membership guard.
+    // `flagged` is currently always true here (Prioritize is a one-way
+    // action in the UI) — kept as a no-op param for forward
+    // compatibility, not wired to a deprioritise call yet.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars -- flagged kept for signature compatibility with OrdersModuleFT2's onPriorityFlag prop type; always true today, see comment above.
     async (orderIds: string[], flagged: boolean) => {
-      await Promise.all(
-        orderIds.map(orderId => setPriority.mutateAsync({ orderId, flagged }))
-      );
+      await bulkSetPriority.mutateAsync(orderIds);
     },
-    [setPriority]
+    [bulkSetPriority]
   );
 
   if (!snapshotQuery.data) {

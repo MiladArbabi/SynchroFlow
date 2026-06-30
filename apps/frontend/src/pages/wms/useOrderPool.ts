@@ -83,13 +83,46 @@ export function useOrderPool() {
 
 export function useSetPriority() {
   const qc = useQueryClient();
-
   return useMutation({
     mutationFn: async ({ orderId, flagged }: { orderId: string; flagged: boolean }) => {
       await axiosInstance.post(`/api/v1/wms/orders/${orderId}/priority`, { flagged });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
+    },
+  });
+}
+
+/**
+ * useBulkSetPriority (THREAD B, 2026-06-30)
+ * ------------------------------------------
+ * Consolidated bulk endpoint (ON-01, /api/v1/modules/order-nexus/prioritise)
+ * — now carries the same pool-membership guard the singular WMS endpoint
+ * has always had. Deliberately additive, not a replacement for
+ * useSetPriority: that hook is still used by ReleaseQueuePage and
+ * OrderFlowPage, neither audited as part of this change. Only
+ * OrdersFT2Page's onPriorityFlag (N-call Promise.all loop) is being
+ * migrated to this single bulk call.
+ */
+export function useBulkSetPriority() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (orderIds: string[]) => {
+      await axiosInstance.post('/api/v1/modules/order-nexus/prioritise', {
+        order_ids: orderIds,
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
+      // THREAD B FIX (2026-06-30): the Orders Overview button reverted
+      // from "Prioritized ✓" back to "Prioritize →" after 2s — confirmed
+      // live. Root cause: order.isPriorityFlagged comes from
+      // useOrdersOperatorSummary's ['order-nexus', 'operator-summary']
+      // query, never invalidated here, so the persistent flag never
+      // actually refreshed — only the local 2s transient state was
+      // ever true. Backend write itself was correct the whole time
+      // (confirmed visible in Order Flow).
+      qc.invalidateQueries({ queryKey: ['order-nexus', 'operator-summary'] });
     },
   });
 }

@@ -147,6 +147,12 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--accent-ghost':  '#FFF0E8',
           '--accent-border': '#FFDCCA',
           '--accent-ink':    '#10151E',
+          // Confirmed/success state ONLY (Thread B, 2026-06-30) — exception
+          // to the orange-only CTA system, documented in modules-ux-playbook.md.
+          // Not for general use. Anchored to --ft2-infoblock-diff-up (#2E7D32).
+          '--confirm-ghost':  '#E8F5E9',
+          '--confirm-border': '#A5D6A7',
+          '--confirm-ink':    '#2E7D32',
           '--bg':            '#FAFAF8',
           '--bg-2':          '#F3F2EF',
           '--bg-3':          '#E8E6E0',
@@ -210,6 +216,9 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--accent-ghost':  'rgba(255,107,43,0.12)',
           '--accent-border': 'rgba(255,107,43,0.25)',
           '--accent-ink':    '#10151E',
+          '--confirm-ghost':  'rgba(76,175,80,0.12)',
+          '--confirm-border': 'rgba(76,175,80,0.35)',
+          '--confirm-ink':    '#66BB6A',
           '--bg':            '#151D29',
           '--bg-2':          '#1C2740',
           '--bg-3':          '#243050',

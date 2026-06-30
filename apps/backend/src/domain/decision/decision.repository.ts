@@ -360,13 +360,13 @@ export class DecisionRepository {
     }
   }
 
-  /**
-   * Fetch decisions for tenant (priority-ordered)
-   * 
-   * shop_id MUST be number — matches DB integer column + app.current_tenant::int RLS.
-   */
-  static async getByShop(shopId: number): Promise<Decision[]> {
-    return db('decisions')
+  // THREAD A-2 cont'd (2026-06-30): bare db() here was silently
+  // returning empty under real RLS — confirmed live, this is why
+  // /api/v1/orders/decision/priority-stack always hit its 503 branch
+  // despite real decisions existing. Now takes trx; caller must wrap in
+  // a tenant-scoped transaction (see httpGetPriorityStack).
+  static async getByShop(trx: any, shopId: number): Promise<Decision[]> {
+    return trx('decisions')
       .where({ shop_id: shopId })
       .orderBy('priority', 'desc');
   }

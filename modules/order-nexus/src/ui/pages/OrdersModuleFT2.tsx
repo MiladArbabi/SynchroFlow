@@ -164,11 +164,102 @@ const STAGE_COLORS: Record<string, string> = {
   awaiting_stock: '#EAB308',
 };
 
-// ─── MAIN COMPONENT ───────────────────────────────────────────
+/**
+ * PrioritizeButton (THREAD B, 2026-06-30)
+ * -----------------------------------------
+ * Replaces the old "Release →" CTA, which navigated to /orders/flow and
+ * did nothing else — dead-end, no actual prioritization happened.
+ *
+ * New behavior: flags the order via onPriorityFlag (ON-01, now
+ * consolidated + pool-guarded), which sets is_priority_flagged on the
+ * order. Prioritized orders surface at the top of the Orders Pool in
+ * /orders/flow. No navigation on click.
+ *
+ * Three visual states:
+ * - already prioritized (order.isPriorityFlagged === true, persisted)
+ * - just clicked (local transient state, brief confirmation)
+ * - default
+ */
+function PrioritizeButton({
+  isPriorityFlagged,
+  onPrioritize,
+}: {
+  isPriorityFlagged: boolean;
+  onPrioritize: () => Promise<void>;
+}) {
+  const [justPrioritized, setJustPrioritized] = useState(false);
+  const [isPending, setIsPending] = useState(false);
 
+  const handleClick = async () => {
+    if (isPending || isPriorityFlagged || justPrioritized) return;
+    setIsPending(true);
+    try {
+      await onPrioritize();
+      setJustPrioritized(true);
+      setTimeout(() => setJustPrioritized(false), 2000);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const showConfirmed = isPriorityFlagged || justPrioritized;
+
+  return (
+    <Box>
+      <Box
+        component="button"
+        onClick={handleClick}
+        disabled={isPending || showConfirmed}
+        sx={{
+          width: '100%',
+          fontSize: 12,
+          fontWeight: 600,
+          // CONFIRM-GHOST EXCEPTION (Thread B, 2026-06-30): documented
+          // deviation from the orange-only CTA system — see
+          // modules-ux-playbook.md §9. Confirmed/persisted state only,
+          // never used for an actionable CTA.
+          color: showConfirmed ? 'var(--confirm-ink)' : 'var(--accent-ink)',
+          bgcolor: showConfirmed ? 'var(--confirm-ghost)' : 'var(--accent)',
+          border: showConfirmed ? '1px solid var(--confirm-border)' : 'none',
+          borderRadius: '6px',
+          py: 1,
+          textAlign: 'center',
+          cursor: showConfirmed ? 'default' : 'pointer',
+          opacity: isPending ? 0.6 : 1,
+          '&:hover': { opacity: showConfirmed ? 1 : 0.88 },
+        }}
+      >
+        {showConfirmed ? 'Prioritized ✓' : isPending ? 'Prioritizing…' : 'Prioritize →'}
+      </Box>
+      {showConfirmed && (
+        <Typography
+          sx={{
+            fontSize: 10,
+            fontWeight: 400,
+            color: 'var(--ink-4)',
+            textAlign: 'center',
+            mt: 0.5,
+          }}
+        >
+          To be released in the next batch
+        </Typography>
+      )}
+    </Box>
+  );
+}
+
+// MAIN COMPONENT
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const navigate = useNavigate();
-  const { operationalControl, revenue, operatorSummary, currency, onExport, onOrderClick } = props
+  const { 
+    operationalControl, 
+    revenue, 
+    operatorSummary, 
+    currency, 
+    onExport, 
+    onOrderClick, 
+    onPriorityFlag 
+  } = props
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -196,19 +287,28 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   })();
 
   // ── Triage queues ────────────────────────────────────────────
-  const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => b.ageHours - a.ageHours);
+  // THREAD B (2026-06-30): prioritized orders sort to the bottom of
+  // Critical — they've already been actioned (flagged for the Order
+  // Pool's top), so the orders still genuinely needing attention should
+  // surface first. Secondary sort (age desc) preserved within each group.
+  const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => {
+    if (a.isPriorityFlagged !== b.isPriorityFlagged) {
+      return a.isPriorityFlagged ? 1 : -1;
+    }
+    return b.ageHours - a.ageHours;
+  });
   // Critical = SLA already breached — act today
   const [criticalExpanded, setCriticalExpanded] = useState(false);
-const [watchExpanded, setWatchExpanded] = useState(false);
+  const [watchExpanded, setWatchExpanded] = useState(false);
 
-const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
-// Watch = aging 24h+ but not yet breached — monitor
-const watchOrders    = allAgingOrders.filter(o => !o.isShippingSlaBreached && o.ageHours >= 24);
+  const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+  // Watch = aging 24h+ but not yet breached — monitor
+  const watchOrders    = allAgingOrders.filter(o => !o.isShippingSlaBreached && o.ageHours >= 24);
 
-const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
-const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
-const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
-const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
+  const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
+  const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
+  const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
+  const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
 
   const constraintLabel = (type: string | null): string => {
     switch (type) {
@@ -319,13 +419,20 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                       at stake
                     </Typography>
                   </Box>
-                  <Box
-                    component="button"
-                    onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
-                    sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                  >
-                    {order.constraintType !== null ? 'Review queue' : 'Release →'}
-                  </Box>
+                  {order.constraintType !== null ? (
+                    <Box
+                      component="button"
+                      onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                      sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                    >
+                      Review queue
+                    </Box>
+                  ) : (
+                    <PrioritizeButton
+                      isPriorityFlagged={order.isPriorityFlagged}
+                      onPrioritize={() => onPriorityFlag?.([order.lasyncro_order_id], true) ?? Promise.resolve()}
+                    />
+                  )}
                 </Box>
               ))}
               {hiddenCriticalOrders.length > 0 && (
@@ -352,13 +459,20 @@ const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
                             at stake
                           </Typography>
                         </Box>
-                        <Box
-                          component="button"
-                          onClick={() => order.constraintType !== null ? onOrderClick?.(order.lasyncro_order_id) : navigate('/orders/flow')}
-                          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                        >
-                          {order.constraintType !== null ? 'Review queue': 'Release →'}
-                        </Box>
+                        {order.constraintType !== null ? (
+                          <Box
+                            component="button"
+                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                          >
+                            Review queue
+                          </Box>
+                        ) : (
+                          <PrioritizeButton
+                            isPriorityFlagged={order.isPriorityFlagged}
+                            onPrioritize={() => onPriorityFlag?.([order.lasyncro_order_id], true) ?? Promise.resolve()}
+                          />
+                        )}
                       </Box>
                     ))}
                   </Collapse>

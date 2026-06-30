@@ -35,11 +35,17 @@ export async function httpPrioritiseOrders(req: Request, res: Response) {
     });
   }
 
-  // Validate all IDs belong to this shop before acting
-  const validOrders = await db('orders')
-    .where('shop_id', shopId)
-    .whereIn('lasyncro_order_id', order_ids)
-    .select('lasyncro_order_id');
+  // THREAD B (2026-06-30): pool-membership guard added — ported from
+  // the WMS singular endpoint (httpSetOrderPriority, wms.controller.ts),
+  // which this bulk endpoint is replacing. Orders already in an active
+  // pick batch must not be flagged — left join + whereNull excludes them,
+  // matching the singular endpoint's exact semantics.
+  const validOrders = await db('orders as o')
+    .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .whereIn('o.lasyncro_order_id', order_ids)
+    .whereNull('pbo.lasyncro_order_id')
+    .select('o.lasyncro_order_id');
 
   const validIds = validOrders.map((r: any) => r.lasyncro_order_id);
 

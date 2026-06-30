@@ -485,3 +485,43 @@ The Tier 1 spec's code example (§2) showing `color: theme.palette.common.white`
 | CTA-023 | 🔴 OPEN, sweep | 7 files (see §8 list above) | — | Migrate hardcoded `#10151E` → `var(--accent-ink)` once the token exists. |
 
 **Caveat on §5 Modules Audited:** Orders is marked "✅ Clean" but CTA-022 was found after that audit closed — status should not be trusted as exhaustive without re-verification.
+
+## 10. Confirm-Ghost Exception — 2026-06-30
+
+**New tokens, light + dark** (`apps/frontend/src/themes/index.tsx`):
+```css
+--confirm-ghost:   #E8F5E9                    /* light */ / rgba(76,175,80,0.12)  /* dark */
+--confirm-border:  #A5D6A7                    /* light */ / rgba(76,175,80,0.35) /* dark */
+--confirm-ink:     #2E7D32                    /* light */ / #66BB6A              /* dark */
+```
+
+**Scope:** confirmed/persisted state ONLY — never an actionable CTA.
+First and currently only use: `PrioritizeButton` (Orders module,
+`OrdersModuleFT2.tsx`) once an order's priority flag is confirmed
+persisted (`isPriorityFlagged === true`), replacing the filled-orange
+default state.
+
+**Why this is a deliberate, documented exception, not drift:** §1's
+Hard Rules and §2's CTA Hierarchy are orange-accent-only by design —
+CTA-006 explicitly rejected green (`outlined color="success"`) for the
+Suppliers "Receive via WMS" action. That rule still holds for
+**actionable** CTAs. This exception applies narrowly to a *state*
+indicator (something already happened, nothing left to click) — a
+different semantic category, anchored to the existing
+`--ft2-infoblock-diff-up` green already used elsewhere for positive
+deltas, not an arbitrary new color choice.
+
+**Pattern, for the next engineer reaching for this:**
+```tsx
+sx={{
+  color: showConfirmed ? 'var(--confirm-ink)' : 'var(--accent-ink)',
+  bgcolor: showConfirmed ? 'var(--confirm-ghost)' : 'var(--accent)',
+  border: showConfirmed ? '1px solid var(--confirm-border)' : 'none',
+  cursor: showConfirmed ? 'default' : 'pointer',
+}}
+```
+
+**Rule going forward:** before reusing `--confirm-*` anywhere, confirm
+the element is a true persisted-state indicator (disabled, no further
+action possible) — not a hover/active CTA state, not a toggle. If it's
+still clickable or reversible, it stays orange per §2.
