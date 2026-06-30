@@ -449,3 +449,47 @@ empty system-wide since `decisions` was never populated (see
 decision-engine-playbook.md). The instant decisions start flowing for
 real, this worker will hit the exact same silent-zero-rows failure
 unless fixed first.
+### FOR UPDATE silently returns zero rows under cross-tenant split policies
+
+**Cause:** `SELECT ... FOR UPDATE` does not only evaluate the table's
+SELECT policy — Postgres also requires the row to pass the table's
+UPDATE policy, because locking a row implies you might write to it. A
+table with a split policy (permissive SELECT for cross-tenant infra
+scans, strict ALL/write policy — see §4 pattern) will silently return
+**zero rows** from a `FOR UPDATE` query run with no tenant context set,
+even though a plain `SELECT count(*)` against the identical table, same
+connection, same missing context, correctly returns the real count.
+
+**Verified directly, 2026-06-30:**
+```sql
+-- as sf_app, no tenant context set:
+SELECT count(*) FROM order_reconciliation_intents;              -- → 18
+SELECT count(*) FROM (
+  SELECT * FROM order_reconciliation_intents
+  ORDER BY created_at FOR UPDATE SKIP LOCKED
+) sub;                                                            -- → 0
+```
+
+**Real incident:** `projection.db.worker.ts`'s Step 4 polls
+`order_reconciliation_intents` cross-tenant (genuine infra scan, same
+shape as auth-path tables) using `.forUpdate().skipLocked()` — copied
+from `processDomainEvent.ts`'s pattern without re-examining whether
+locking was actually needed in this context. The table's split policy
+(permissive SELECT, strict write) meant this specific query always
+returned `[]`, silently — no crash, no error, no log output at all. The
+worker appeared completely healthy (cursor advancing, no errors) while
+genuinely doing nothing with the reconciliation backlog, for hours.
+
+**Fix:** if the query is read-only discovery (finding out what's pending
+before acting on individual rows one at a time, not racing other
+concurrent consumers for the same rows), drop `FOR UPDATE` entirely.
+Don't reach for it by default just because a similar-looking pattern
+elsewhere used it — confirm whether *this* call site actually has
+concurrent writers to guard against.
+
+**Diagnostic:** if a cross-tenant poll against a split-policy table
+returns suspiciously empty with zero errors, test with and without
+`FOR UPDATE` as two separate `BEGIN; ... ROLLBACK;` blocks under
+`sf_app`, no tenant context, before assuming the table or its policy is
+broken. The policy is very likely fine — `FOR UPDATE` is invoking a
+second policy you didn't mean to invoke.

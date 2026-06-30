@@ -230,3 +230,9 @@ apps/backend/src/api/exports/
 ## 12. Changelog
 
 - **2026-06-24** — Overview's `Export brief →` CTA now opens `ExportDrawer` (page-level fixed slide-in, per §6 CTA Placement Rule) instead of hardcoding the PDF brief download. Drawer offers Brief (PDF), All Orders / Returns / Finances (CSV) — reuses existing Sprint 1 endpoints, no new backend work. Canonical report list moved from `ShopSettingsReportsPage.tsx` to `apps/frontend/src/config/exportReports.ts` (single source, both surfaces import it). True `.xlsx` still not implemented — tracked separately.
+- **2026-06-30** — Orders module's `Export →` CTA (ORDM-01) fixed: was a
+  hardcoded blob-download bypassing the drawer entirely, despite §6
+  specifying the standard drawer pattern. Now opens `ExportDrawer` with
+  `reportIds={['orders-all', 'orders-blocked']}` — both report IDs
+  already existed in `exportReports.ts`, unused until now. No backend
+  work needed.

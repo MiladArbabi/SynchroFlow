@@ -32,3 +32,118 @@ Reconciliation (`reconciliation.handlers.ts`) explicitly forbids calling `genera
 **Implication:** decisions cannot be created from live traffic today, regardless of whether the commands-consumer (this playbook's Option A) gets built. The consumer and this gap are both required before DECISION-ENGINE-01 is actually fixed end-to-end.
 
 **Not yet decided:** whether Thread A-2 is its own ticket or folds into this one.
+
+## 4. Session 3 (2026-06-30) — WORKING END TO END, FIRST TIME EVER
+
+**Status: 🟢 Decisions are now created live, automatically, from real
+domain events.** Verified live: 18/18 commands processed, 18/18 real
+decision rows created, zero manual intervention, full pipeline:
+domain event → projection.db.worker.ts (Step 3)
+→ order_reconciliation_intents row created (orders.create.ts /
+wms.controller.ts, now carries shop_id)
+→ projection.db.worker.ts Step 4 drains intents, calls
+reconcileOrderFulfillment(..., knownShopId)
+→ constraint evaluation → dispatchCommand('RECONCILIATION_RUN')
+→ commands row persisted (tenant-scoped)
+→ commands.consumer.ts (NEW) polls pending commands
+→ generateDecisions() → DecisionRepository.create()
+→ real row in decisions
+
+### 4a. The architecture, as built
+
+**`apps/backend/src/workers/commands.consumer.ts`** (new file) — the
+piece this playbook always said was missing. Polls `commands` where
+`status = 'pending'` (cross-tenant, `systemQuery()` — safe here because
+`commands` now has a split policy, see §4c below), hydrates payload
+(`shopId`, `orderId`, `aggregateVersion`, `riskSnapshot` — already
+present, already correctly typed, no parsing needed), calls
+`generateDecisions()`, persists each result via
+`DecisionRepository.create(trx, decision)` inside a
+`SET LOCAL app.current_tenant`-scoped transaction, marks the command
+`processed`. Registered in `bootstrap/workers.ts` alongside
+`execution.dispatcher.worker.ts`, same `import → check → start → push
+stop fn` convention as every other worker in that file.
+
+### 4b. Thread A-2 resolved — the live reconciliation gap
+
+The gap documented in §3 (`reconcileOrderFulfillment` unreachable from
+live traffic, only from `rebuild-from-events`) is now closed.
+`projection.db.worker.ts` Step 4 calls `reconcileOrderFulfillment`
+directly, every poll cycle, unconditional on whether a new event
+arrived that cycle — see inline comments in that file for the full
+reasoning (A2-BUG-01 fix).
+
+### 4c. RLS fixes required to get here (full list, for the next person)
+
+Every one of these was found by something *working* (no crash, no
+error) but silently doing nothing — the genuinely hard part of tonight
+wasn't writing fixes, it was noticing each successive silent failure.
+
+1. `DecisionRepository.create()` — took bare `db`, now takes `trx` first
+   param.
+2. `order_reconciliation_intents` — had **zero RLS policy at all**
+   (not exempt, just never given one). Added `shop_id` column
+   (base migration `0037`) + split policy (permissive SELECT for the
+   cross-tenant Step 4 scan, strict write).
+3. `order_reconciliation_intents` INSERT sites (`orders.create.ts`,
+   `wms.controller.ts`) — needed `shop_id` added to their insert objects
+   once the column existed; nothing wrote it initially.
+4. Step 4's `orderRow` lookup — `systemQuery()` misuse (see
+   RLS_blueprint.md §7, "systemQuery() does not bypass RLS"). Fixed by
+   tenant-scoping via `intent.shop_id`.
+5. Step 4's `FOR UPDATE` on the intent poll — see RLS_blueprint.md §7,
+   "FOR UPDATE silently returns zero rows". Removed; not needed for this
+   single-threaded sequential worker.
+6. `reconcileOrderFulfillment()` — had no tenant bootstrap at all (only
+   ever ran via `rebuild-from-events`, whose `systemDb` role has
+   `BYPASSRLS`, masking the gap entirely). Added optional `knownShopId`
+   param so callers who already know it (Step 4) skip the broken
+   cross-tenant lookup.
+7. `command.bus.ts`'s `dispatchCommand()` — the **original** Thread A
+   finding from session 1, never actually fixed until tonight. Bare
+   `db('commands').insert(...)`, no tenant context, ever.
+8. `commands` table — same as #2: standard strict policy, no permissive
+   carve-out, would have made the new consumer's poll silently return
+   empty. Added split policy (`0078` migration) alongside building the
+   consumer, not after — this one was caught before shipping broken.
+
+### 4d. A real, separate, unrelated bug found along the way
+
+**Seed data collision** (now fixed): `dev_seed.ts`'s QA orders and
+`seed_overview.sql`'s cohort A both started their external order ID
+range at `900001`. Two unrelated orders collided in
+`external_order_identity_map` (last-seed-script-wins), causing
+`reconcileOrderFulfillment` to throw `EVENT_ANCHOR_INVARIANT` for a
+real order while resolving to a *different* real order's identity
+mapping. Took a full deterministic-hash verification (recomputing the
+order UUID by hand, ruling out namespace drift, ruling out every other
+writer of that table) to prove it wasn't a code bug. Fixed: QA orders
+now use `800001+`.
+
+### 4e. Still open, not fixed tonight
+
+- **`MARGIN_COMPUTATION_FAILED`** — fires on nearly every order during
+  live reconciliation (`order_margin_snapshot` rejects the write,
+  `PROJECTION_WRITE_VIOLATION` guard — same class as the documented
+  RLS_blueprint.md §7 entry, just triggered from a new call path).
+  Marked non-fatal by existing code (`// Non-fatal — margin failure
+  must not block reconciliation`), confirmed not to block anything
+  tonight, but real margin data isn't being computed during live
+  reconciliation. Needs its own fix.
+- **A2-BUG-02** — `decision_execution_queue` insert in
+  `reconciliation.handlers.ts`'s `executionBuffer` drain loop, outside
+  `trx` scope. Still dormant (only reachable via decision-reuse, which
+  hasn't happened yet in this dataset — all 18 decisions tonight were
+  fresh, never reused).
+- **`execution.dispatcher.worker.ts`** — same `systemQuery()` exposure
+  on `decision_execution_queue` / `decisions`, confirmed via direct
+  policy read, never fixed. Will matter the moment a decision actually
+  reaches execution.
+- `inventory_blocked_revenue` decimal-as-string in
+  `mapToDecisionSignals` — now visible in real payloads
+  (`"blocked_revenue": "260.00"`, confirmed string-typed).
+- Reuse-branch double-push/double-create in `reconciliation.handlers.ts`
+  — still dormant, same reason as A2-BUG-02.
+
+See GitHub issues #1024–#1028 and the seed-collision issue created
+2026-06-30 for individually tracked items.
