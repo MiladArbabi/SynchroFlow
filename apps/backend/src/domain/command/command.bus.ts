@@ -45,20 +45,30 @@ export async function dispatchCommand(command: Command): Promise<void> {
    * PERSIST COMMAND (IDEMPOTENT)
    * ---------------------------
    * ON CONFLICT → prevents duplicate processing
+   *
+   * THREAD A-2 (2026-06-30): bare db() insert here had no tenant context
+   * — the original Thread A finding, never fixed until now. commands has
+   * the standard strict RLS policy. shopId is already validated above,
+   * straight off the command payload — no extra lookup needed.
    */
-  const inserted = await db('commands')
-    .insert({
-      id: randomUUID(),
-      type: command.type,
-      payload: command.payload,
-      idempotency_key: command.idempotencyKey,
-      shop_id: shopId,
-      status: 'pending',
-      created_at: db.fn.now(),
-    })
-    .onConflict('idempotency_key')
-    .ignore()
-    .returning('id');
+  let inserted: { id: string }[] = [];
+
+  await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+    inserted = await trx('commands')
+      .insert({
+        id: randomUUID(),
+        type: command.type,
+        payload: command.payload,
+        idempotency_key: command.idempotencyKey,
+        shop_id: shopId,
+        status: 'pending',
+        created_at: trx.fn.now(),
+      })
+      .onConflict('idempotency_key')
+      .ignore()
+      .returning('id');
+  });
 
   if (!inserted.length) {
     console.warn('[COMMAND_SUPERSEDED]', {

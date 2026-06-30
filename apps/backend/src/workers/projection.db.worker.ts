@@ -1,6 +1,7 @@
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { projectDomainEventCore } from '../projection/projection.engine.js';
 import { debugLog } from '../projection/projection.utils.js';
+import { reconcileOrderFulfillment } from './reconciliation/reconciliation.handlers.js';
 
 /**
  * DB-DRIVEN PROJECTION WORKER (SOURCE OF TRUTH)
@@ -80,14 +81,18 @@ const nextEvents = await db('domain_events')
 
 if (nextEvents.length === 0) {
   /**
-   * IDLE BACKOFF (CRITICAL)
-   * -----------------------
-   * `continue` skips the sleep at the bottom of the loop,
-   * causing a tight busy-loop against the DB when the queue is empty.
-   * Always wait POLL_INTERVAL_MS before re-polling.
+   * A2-BUG-01 FIX (2026-06-29): previously `continue`'d here, which
+   * skipped STEP 4 (intent reconciliation) on every idle cycle — i.e.
+   * every cycle once the cursor catches up, which is most cycles in
+   * steady state. That made leftover/orphaned intents (e.g. from a
+   * crash mid-reconciliation) permanently stuck — never retried.
+   *
+   * Fix: do NOT continue. Let control fall through — the STEP 3 `for`
+   * loop below is naturally a no-op on an empty array, and STEP 4
+   * still runs every cycle as originally intended. The end-of-loop
+   * sleep (line ~443) still fires either way, so this does not
+   * reintroduce the busy-loop the original comment warned about.
    */
-  await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-  continue;
 }
 
 /**
@@ -326,6 +331,129 @@ for (const event of nextEvents) {
         });
       });
     }
+
+    // THREAD A-2 (2026-06-29): FOR UPDATE was silently filtering this query
+    // to zero rows. Confirmed directly: PostgreSQL RLS evaluates FOR UPDATE
+    // against the table's WRITE policy too (locking implies potential
+    // write), not just SELECT. order_reconciliation_intents has a
+    // permissive cross-tenant SELECT policy but a strict write policy
+    // (see 0037 migration) — with no app.current_tenant set on this trx
+    // (a genuine cross-tenant scan, by design), the write policy matched
+    // zero rows, silently. plain count() (no FOR UPDATE) returned 18;
+    // identical query + FOR UPDATE returned 0 — verified live via psql.
+    //
+    // Locking isn't needed at this discovery stage anyway — this worker
+    // is single-threaded/sequential (no concurrent instances racing for
+    // these rows, unlike the disabled queue-based dispatcher this pattern
+    // was originally copied from). Each intent is acted on individually,
+    // synchronously, right after being read here.
+    const pendingIntents = await db('order_reconciliation_intents')
+      .orderBy('created_at', 'asc');
+
+    for (const intent of pendingIntents) {
+      let observed:
+        | { status: 'fulfilled'; observedAt: Date; source: 'shopify_sync' }
+        | undefined;
+
+      if (intent.observed) {
+        const parsed =
+          typeof intent.observed === 'string'
+            ? JSON.parse(intent.observed)
+            : intent.observed;
+
+        if (parsed?.status === 'fulfilled') {
+          observed = {
+            status: 'fulfilled',
+            source: 'shopify_sync',
+            observedAt: new Date(parsed.observedAt),
+          };
+        }
+      }
+
+      // THREAD A-2 (2026-06-29): systemQuery() only bypasses this
+      // codebase's app-level guard, NOT real Postgres RLS (see
+      // RLS_blueprint.md §7, "systemQuery() does not bypass RLS").
+      // orders has a strict policy, no permissive carve-out — this was
+      // silently returning undefined for every single intent, masked
+      // for hours by the FOR UPDATE bug above also returning empty.
+      // intent.shop_id is on every row specifically to fix exactly this.
+      const orderRow = await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL app.current_tenant = '${intent.shop_id}'`);
+        return trx('orders')
+          .where({ lasyncro_order_id: intent.lasyncro_order_id })
+          .select('aggregate_version')
+          .first();
+      });
+
+      if (!orderRow || intent.aggregate_version !== orderRow.aggregate_version) {
+        const isStale =
+          orderRow !== undefined &&
+          intent.aggregate_version < orderRow.aggregate_version;
+
+        console.warn('[DB_PROJECTION_RECONCILE_VERSION_MISMATCH]', {
+          order: intent.lasyncro_order_id,
+          intent_version: intent.aggregate_version,
+          order_version: orderRow?.aggregate_version,
+          action: isStale ? 'deleting_stale_intent' : 'waiting_not_yet_ready',
+        });
+
+        // THREAD A-2 (2026-06-29): a mismatch has two distinct causes.
+        // (1) intent_version < order_version: this intent is for data the
+        //     order has already moved past (e.g. event replayed/superseded
+        //     it). Safe and correct to delete — reconciling against it
+        //     would apply stale state. Without this, such intents are
+        //     `continue`d past forever, permanently tripping the
+        //     end-of-cycle RECONCILIATION_BACKLOG_VIOLATION guard below
+        //     every single cycle — confirmed live, 2026-06-29.
+        // (2) intent_version >= order_version (order missing, or intent
+        //     ahead of projection): genuinely not ready yet. Must NOT
+        //     delete — next cycle, once projection catches up, this same
+        //     intent should be processed normally.
+        if (isStale) {
+          // THREAD A-2 (2026-06-29): bare db() delete here was silently
+          // affecting 0 rows — order_reconciliation_intents' write policy
+          // is strict (unlike its permissive SELECT policy), so deletes
+          // need real tenant context, not just app-guard bypass.
+          // intent.shop_id exists specifically for this (see 0037 migration).
+          await db.transaction(async (trx) => {
+            await trx.raw(`SET LOCAL app.current_tenant = '${intent.shop_id}'`);
+            await trx('order_reconciliation_intents')
+              .where({ reconciliation_intent_id: intent.reconciliation_intent_id })
+              .delete();
+          });
+        }
+        continue;
+      }
+
+      await reconcileOrderFulfillment(
+        intent.lasyncro_order_id,
+        intent.aggregate_version,
+        observed,
+        intent.created_at,
+        intent.shop_id
+      );
+
+      // Same tenant-context requirement as the stale-delete above.
+      await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL app.current_tenant = '${intent.shop_id}'`);
+        await trx('order_reconciliation_intents')
+          .where({ reconciliation_intent_id: intent.reconciliation_intent_id })
+          .delete();
+      });
+    }
+
+    const remainingIntentsRow = await db('order_reconciliation_intents')
+      .count<{ count: string }>('reconciliation_intent_id as count')
+      .first();
+
+    const remainingIntents = Number(remainingIntentsRow?.count ?? 0);
+
+    if (remainingIntents > 0) {
+      throw new Error(
+        `[RECONCILIATION_BACKLOG_VIOLATION] remaining_intents=${remainingIntents}`
+      );
+    }
+
     } catch (err) {
       console.error('[projection-db-worker][FATAL]', err);
 

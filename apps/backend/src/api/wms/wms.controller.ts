@@ -1458,6 +1458,10 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
             .insert({
               lasyncro_order_id: order.lasyncro_order_id,
               aggregate_version: order.aggregate_version,
+              // THREAD A-2 (2026-06-29): shop_id now required by this
+              // table's RLS policy. shopId already in scope from the
+              // constrainedOrders query above — same tenant, no lookup.
+              shop_id: shopId,
               created_at: new Date(),
             })
             .onConflict(['lasyncro_order_id', 'aggregate_version'])

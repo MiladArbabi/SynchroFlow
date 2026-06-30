@@ -337,6 +337,28 @@ export async function up(knex: Knex): Promise<void> {
       .onDelete('CASCADE');
 
     /**
+     * TENANT ANCHOR (THREAD A-2, 2026-06-29)
+     * ---------------------------------------
+     * Added so every consumer of this row (projection.db.worker.ts Step 4,
+     * reconcileOrderFulfillment, the disabled reconciliation.consumer.ts)
+     * can SET LOCAL app.current_tenant from data already on the row,
+     * instead of a cross-tenant systemQuery() lookup against `orders` by
+     * lasyncro_order_id — which only skips this codebase's app-level
+     * guard, not real Postgres RLS, and silently returns zero rows
+     * against a FORCE RLS table when tenant context isn't yet set
+     * (see docs/security/RLS_blueprint.md §7, "systemQuery() does not
+     * bypass RLS"). The creator (orders.create.ts) already has
+     * domainEvent.shop_id in scope at insert time — no extra lookup
+     * needed there.
+     */
+    table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
+
+    /**
      * VERSION CONTRACT
      * -----------------
      * Intent is tied to specific aggregate_version.
@@ -377,9 +399,55 @@ export async function up(knex: Knex): Promise<void> {
       ['lasyncro_order_id', 'aggregate_version'],
       'order_reconciliation_version_unique'
     );
-
     table.index(['lasyncro_order_id']);
+    table.index(['shop_id']);
   });
+
+  // --- RLS: Enforce tenant isolation (direct) ---
+  // THREAD A-2 (2026-06-29): this table had NO RLS at all — not
+  // documented as exempt, just never given a policy. shop_id added
+  // above specifically so this can be a direct, strict policy matching
+  // every other tenant table in this file (inventory_movements,
+  // inventory_truth), not a relational/join-based one.
+  await knex.raw(`
+    ALTER TABLE order_reconciliation_intents ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE order_reconciliation_intents FORCE ROW LEVEL SECURITY;
+  `);
+
+  // SPLIT POLICY (THREAD A-2, 2026-06-29): Step 4 in projection.db.worker.ts
+  // (and the disabled reconciliation.consumer.ts) must scan PENDING intents
+  // ACROSS ALL TENANTS to discover what needs reconciling next — this is a
+  // genuine cross-tenant infra poll, same shape as auth-path tables (see
+  // RLS_blueprint.md §4), not a bug to route around. The original single
+  // strict ALL-command policy made this scan silently return zero rows
+  // under FORCE RLS with no tenant context set — confirmed live,
+  // 2026-06-29: intents piled up indefinitely with no error, no log
+  // output, nothing.
+  //
+  // TRADEOFF, explicit, approved: the SELECT policy below is permissive
+  // when no tenant context is set — any untenanted connection can read
+  // order_id + aggregate_version across ALL shops. Writes remain strictly
+  // scoped via the separate ALL-command policy below.
+  await knex.raw(`
+    DROP POLICY IF EXISTS order_reconciliation_intents_tenant_isolation_policy ON order_reconciliation_intents;
+    DROP POLICY IF EXISTS order_reconciliation_intents_select_policy ON order_reconciliation_intents;
+    DROP POLICY IF EXISTS order_reconciliation_intents_write_policy ON order_reconciliation_intents;
+  `);
+  await knex.raw(`
+    CREATE POLICY order_reconciliation_intents_select_policy
+    ON order_reconciliation_intents FOR SELECT
+    USING (
+      shop_id = current_setting('app.current_tenant', true)::int
+      OR current_setting('app.current_tenant', true) IN ('', '0')
+      OR current_setting('app.current_tenant', true) IS NULL
+    );
+  `);
+  await knex.raw(`
+    CREATE POLICY order_reconciliation_intents_write_policy
+    ON order_reconciliation_intents FOR ALL
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
+  `);
 }
 
 export async function down(knex: Knex): Promise<void> {

@@ -104,7 +104,8 @@ export class DecisionRepository {
    *
    * NEVER pass string here — RLS will silently mismatch.
    */
-  static async create(decision: Decision & { shop_id: number }): Promise<void> {
+  static async create(trx: any, decision: Decision & { shop_id: number }): Promise<void> {
+
 
     console.debug('[DECISION_REPO_ENTER]', {
       id: decision?.id
@@ -287,15 +288,16 @@ export class DecisionRepository {
     });
 
     /**
-     * IDEMPOTENCY WITH VERIFICATION (CRITICAL)
-     * ---------------------------------------
-     * Conflict must NOT be silently ignored.
-     *
-     * Behavior:
-     * - If insert conflicts → verify row already exists
-     * - If not → FAIL (data loss)
+     * TENANT-SCOPED WRITE (CRITICAL — DECISION-ENGINE-01)
+     * ----------------------------------------------------
+     * MUST use the caller's `trx` (opened via withTenant), never the
+     * pooled `db` export. RLS on `decisions` requires app.current_tenant
+     * to be SET on the same connection performing the write — the pool
+     * has no default and the Proxy guard in db.ts blocks unscoped queries.
+     * This method had exactly one call site, inside dead code, until
+     * tonight — `db(...)` here was unverified, not intentional.
      */
-    const result = await db('decisions')
+    const result = await trx('decisions')
       .insert({
         id: decision.id,
         type: decision.type,
@@ -322,10 +324,10 @@ export class DecisionRepository {
          *
          * DO NOT replace with plain object assignment.
          */
-        recommended_action: db.raw('?::jsonb', [JSON.stringify(decision.recommended_action)]),
-        actions: db.raw('?::jsonb', [JSON.stringify(decision.actions)]),
-        score_breakdown: db.raw('?::jsonb', [JSON.stringify(decision.score_breakdown)]),
-        signals: db.raw('?::jsonb', [JSON.stringify(decision.signals)]),
+        recommended_action: trx.raw('?::jsonb', [JSON.stringify(decision.recommended_action)]),
+        actions: trx.raw('?::jsonb', [JSON.stringify(decision.actions)]),
+        score_breakdown: trx.raw('?::jsonb', [JSON.stringify(decision.score_breakdown)]),
+        signals: trx.raw('?::jsonb', [JSON.stringify(decision.signals)]),
         reason: decision.reason,
         status: decision.status,
         created_at: decision.created_at,
@@ -338,7 +340,7 @@ export class DecisionRepository {
 
     // If insert did NOT happen → verify existence
     if (!result || result.length === 0) {
-      const existing = await db('decisions')
+      const existing = await trx('decisions')
         .where({ id: decision.id })
         .first();
 

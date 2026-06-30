@@ -402,3 +402,50 @@ Without it, the table owner (the role that created the table) bypasses RLS. In P
 
 **Why database-level default `app.current_tenant = '0'`?**
 Setting `ALTER DATABASE synchroflow_db SET app.current_tenant = '0'` ensures the GUC is always recognized by non-superuser roles. Without this, `current_setting('app.current_tenant')` throws "unrecognized configuration parameter" for `sf_app`. The value `'0'` is safe because no shop has ID 0.
+
+### `systemQuery()` does not bypass RLS — only the app-level guard
+
+**Cause:** `systemQuery()` (in `db.ts`) sets `__skipTenantCheck = true`,
+which skips *only* this codebase's own Proxy check (the one that throws
+"app.current_tenant is not set"). It does nothing at the Postgres level.
+If `app.current_tenant` is genuinely at its database-level default `'0'`
+(see §3), a `systemQuery()`-wrapped read against a table with the
+standard strict RLS policy still silently returns zero rows — RLS
+itself is still active and evaluating `shop_id = 0`, which never
+matches. `systemQuery()` is only safe for tables that are RLS-exempt
+(§4, e.g. `projection_cursors`) or have a deliberately permissive policy
+(e.g. `domain_events`' write policy, `USING (true)`) — never for a
+strict-policy table you're trying to read cross-tenant by a
+globally-unique key.
+
+**Real incident (2026-06-29, Thread A-2):** `projection.db.worker.ts`'s
+per-event-loop intent reconciliation looked up `orders.aggregate_version`
+by `lasyncro_order_id` (globally unique, shop_id not yet known — the
+exact chicken-and-egg case auth-path tables solve with split policies).
+Wrapped the read in `systemQuery()`, assuming it was a Postgres-level
+bypass like `sf_user`. It is not. The query silently returned `undefined`
+instead of throwing, was misread as a real version mismatch, and the
+intent was skipped — not corrupted, just silently stuck, masked for
+several poll cycles before being traced back to this.
+
+**Fix:** for a genuine chicken-and-egg lookup (global ID known, tenant
+not yet known, table has a strict policy) there is no safe generic
+bypass available to `sf_app` — `sf_app` has no `BYPASSRLS`. The two real
+options are: (a) add a split SELECT policy to the specific table,
+matching the auth-path pattern in §4, if this kind of tenant-blind
+lookup is a legitimate, recurring need; or (b) restructure the caller so
+shop_id is already known/passed in before this point, avoiding the
+lookup entirely. Reaching for `systemQuery()` as a default "make RLS go
+away" tool is the trap — confirm the target table's actual policy text
+first, every time.
+
+**Confirmed second instance, same root cause, still dormant:**
+`execution.dispatcher.worker.ts` uses the identical `systemQuery()`
+pattern to poll `decision_execution_queue` cross-tenant, then reads
+`decisions` immediately after — both standard strict policies (verified
+2026-06-29, `decision_execution_queue_isolation`, no permissive
+carve-out). Neither has failed yet only because both tables have been
+empty system-wide since `decisions` was never populated (see
+decision-engine-playbook.md). The instant decisions start flowing for
+real, this worker will hit the exact same silent-zero-rows failure
+unless fixed first.

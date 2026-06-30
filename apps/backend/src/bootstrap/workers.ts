@@ -207,8 +207,26 @@ export async function startWorkers(): Promise<void> {
            */
           if (typeof dispatcher.startExecutionDispatcher === 'function') {
             dispatcher.startExecutionDispatcher();
-
             console.log('[bootstrap/workers] Execution dispatcher started');
+          }
+
+          /**
+           * COMMANDS CONSUMER (THREAD A, 2026-06-30)
+           * -----------------------------------------
+           * dispatchCommand() (command.bus.ts) has always been
+           * write-only — this is the consumer that finally reads
+           * pending RECONCILIATION_RUN commands and turns them into
+           * real Decision rows via generateDecisions().
+           */
+          const commandsConsumer = await import('../workers/commands.consumer.js');
+
+          if (typeof commandsConsumer.startCommandsConsumer === 'function') {
+            commandsConsumer.startCommandsConsumer();
+            console.log('[bootstrap/workers] Commands consumer started');
+
+            if (typeof commandsConsumer.stopCommandsConsumer === 'function') {
+              workerStopFns.push(async () => await commandsConsumer.stopCommandsConsumer());
+            }
           }
         } catch (err) {
           console.warn(

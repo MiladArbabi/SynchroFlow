@@ -421,7 +421,14 @@ export async function seed(knex: Knex): Promise<void> {
           lasyncro_order_id: order.lasyncro_order_id,
           shop_id: shop.id,
           platform: 'shopify',
-          external_order_id: `${900001 + i}`,
+          // SEED COLLISION FIX (2026-06-30): was 900001+i, colliding
+          // directly with seed_overview.sql's cohort A1-A10 range
+          // (900001-900018). Both scripts run in the same dev:full-seed
+          // chain; external_order_identity_map's onConflict(...).ignore()
+          // meant whichever ran first silently won, routing any
+          // external_order_id=900001 lookup to the wrong order. Confirmed
+          // live during Thread A-2 testing via full hash verification.
+          external_order_id: `${800001 + i}`,
         })
         .onConflict(['shop_id', 'platform', 'external_order_id'])
         .ignore();

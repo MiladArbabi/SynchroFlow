@@ -653,6 +653,10 @@ export async function handleOrdersCreate({
     .insert({
       lasyncro_order_id: lasyncroOrderId,
       aggregate_version: orderRow.aggregate_version,
+      // THREAD A-2 (2026-06-29): shop_id added to this table's base
+      // migration (0037) for the new tenant-isolation RLS policy.
+      // Required on every insert now — WITH CHECK fails on NULL.
+      shop_id: domainEvent.shop_id,
       observed: JSON.stringify({
         observedAt: domainEvent.event_time,
         source: domainEvent.event_type

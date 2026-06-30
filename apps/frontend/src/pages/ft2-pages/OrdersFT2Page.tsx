@@ -47,7 +47,7 @@ import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { OrderCapBanner } from '../../components/OrderCapBanner';
-import { axiosInstance } from 'api/axiosConfig';
+import { ExportDrawer } from 'components/ExportDrawer';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -271,9 +271,10 @@ function OrderDetailModalBody({ orderId, onTitleReady }: { orderId: string; onTi
 export default function OrdersFT2Page() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [modalTitle, setModalTitle] = useState('');
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const snapshotQuery = useOrdersFt2Snapshot();
   const operatorSummaryQuery = useOrdersOperatorSummary();
-  const { displayCurrency, locale } = useEntitlements();
+  const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
   const setPriority = useSetPriority();
 
@@ -309,19 +310,19 @@ export default function OrdersFT2Page() {
         currency={{ displayCurrency, locale, rates }}
         onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}
-        onExport={async () => {
-          try {
-            const res = await axiosInstance.post('/api/v1/exports/orders', {}, { responseType: 'blob' });
-            const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `lasyncro-orders-${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-          } catch {
-            console.error('[Orders] export failed');
-          }
-        }}
+        // ORDM-01 FIX (2026-06-29): was a hardcoded blob-download bypassing
+        // the established ExportDrawer pattern (see export_system_playbook.md
+        // §6 — Orders/Overview is specced as "Export → opens drawer with
+        // format picker", same as Overview's Export brief). 'orders-all' and
+        // 'orders-blocked' report IDs already existed in exportReports.ts,
+        // unused until now.
+        onExport={async () => setExportDrawerOpen(true)}
+      />
+      <ExportDrawer
+        open={exportDrawerOpen}
+        onClose={() => setExportDrawerOpen(false)}
+        userTier={tier}
+        reportIds={['orders-all', 'orders-blocked']}
       />
       <EntityDetailModal
         entityId={selectedOrderId}

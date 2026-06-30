@@ -1,5 +1,5 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 
 import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
@@ -58,7 +58,14 @@ export async function reconcileOrderFulfillment(
     observedAt: Date;
     source: 'shopify_sync';
   },
-  eventTime?: Date
+  eventTime?: Date,
+  // THREAD A-2 (2026-06-29): optional — when the caller already knows
+  // shop_id (e.g. projection.db.worker.ts's Step 4, which reads it
+  // straight off the intent row), skip the cross-tenant bootstrap lookup
+  // below entirely. That lookup uses systemQuery(), which does NOT
+  // bypass real RLS (see RLS_blueprint.md §7) — it was silently throwing
+  // RECONCILIATION_ORDER_NOT_FOUND for every order, confirmed live.
+  knownShopId?: number
 ): Promise<{
   result: ReconciliationResult;
   affectedVariantIds: string[];
@@ -75,7 +82,37 @@ export async function reconcileOrderFulfillment(
  */
   const executionBuffer: Decision[] = [];
 
+  // TENANT BOOTSTRAP (THREAD A-2, 2026-06-29): this function had NO
+  // app.current_tenant setup anywhere — it only ever ran via the rebuild
+  // CLI, whose systemDb role has BYPASSRLS, masking the gap entirely.
+  // Called live (worker), its first query (orders, FORCE RLS) would
+  // silently return no row. Resolve shop_id by globally-unique
+  // lasyncroOrderId first, tenant-agnostic by necessity (chicken/egg:
+  // can't know the tenant without this read), THEN scope the transaction.
+  let resolvedShopId = knownShopId;
+
+  if (resolvedShopId === undefined) {
+    // Fallback path — still broken under real RLS for any caller that
+    // doesn't pass knownShopId (processDomainEvent.ts, the dormant
+    // reconciliation.consumer.ts). Not fixed tonight; only the live
+    // worker path (which now always passes knownShopId) is fixed.
+    const shopRow = await systemQuery(
+      db('orders')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .select('shop_id')
+    ).first();
+
+    if (!shopRow) {
+      throw new Error(
+        `[RECONCILIATION_ORDER_NOT_FOUND] order=${lasyncroOrderId}`
+      );
+    }
+
+    resolvedShopId = shopRow.shop_id;
+  }
+
   const txResult = await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${resolvedShopId}'`);
 
     /**
      * RECONCILIATION SNAPSHOT WRITE FLAG
@@ -597,7 +634,10 @@ export async function reconcileOrderFulfillment(
           typeof_first_action_payload: typeof decision.actions?.[0]?.payload,
         });
 
-        await DecisionRepository.create({
+        // DECISION-ENGINE-01: create() now requires the active tenant-scoped
+        // trx (see decision.repository.ts) — RLS on `decisions` needs
+        // app.current_tenant SET on this exact connection.
+        await DecisionRepository.create(trx, {
           ...decision,
 
           /**
