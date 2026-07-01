@@ -129,30 +129,23 @@ export function useExecuteOrderDecision() {
     },
 
     onSettled: (_data, _error, orderId) => {
-      /**
-       * IMMEDIATE invalidation — catches fast execution paths.
-       * Added 2026-06-28: ['order-detail', orderId] — the EntityDetailModal
-       * merges this query with this hook's own decision data; without this,
-       * the modal's fulfillment-status section shows stale data after
-       * "Mark as Resolved" until manually closed/reopened.
-       */
       queryClient.invalidateQueries({ queryKey: ['orders', 'constrained']});
       queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
       queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
+      // FIX (2026-07-01): missing from the original ORD-03 invalidation
+      // list. The modal's resolved-vs-still-blocked distinction now reads
+      // directly from this query's `constraints[]` array (see
+      // OrdersFT2Page.tsx) rather than trusting decision.status, since
+      // both success/still-short branches of resolve_inventory_block.handler.ts
+      // mark decision_execution_queue as 'success' identically. Without
+      // this invalidation, constraints[] would never refresh after execute.
+      queryClient.invalidateQueries({ queryKey: ['orders', 'decision', orderId] });
 
-      /**
-       * DELAYED invalidation (C-03)
-       * ---------------------------
-       * The snapshot dispatcher has a 2s delay guard before recomputing.
-       * A second invalidation at 4s catches the recomputed snapshot,
-       * ensuring the UI reflects post-execution state accurately.
-       *
-       * This eliminates the need for manual refresh after execution.
-       */
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['orders', 'constrained'] });
         queryClient.invalidateQueries({ queryKey: ['order-nexus', 'ft2'] });
         queryClient.invalidateQueries({ queryKey: ['order-detail', orderId] });
+        queryClient.invalidateQueries({ queryKey: ['orders', 'decision', orderId] });
       }, 4000);
     },
   });

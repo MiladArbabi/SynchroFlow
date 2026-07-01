@@ -21,7 +21,7 @@ import { Box, Collapse, Typography } from '@mui/material';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
-import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ReorderTransitionList } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 // ─── PROPS ────────────────────────────────────────────────────
@@ -135,8 +135,9 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────
-
-const TRIAGE_PREVIEW_LIMIT = 4;
+const TRIAGE_PREVIEW_LIMIT = 3;
+const PRIORITY_REORDER_HOLD_MS = 560;
+const PRIORITY_FLASH_MS = 1400;
 
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
@@ -156,8 +157,8 @@ const fmtSlaAge = (hours: number): string => {
 const STAGE_COLORS: Record<string, string> = {
   new:            '#9CA3AF',
   ready:          '#10B981',
-  picking:        '#14B8A6',
-  packed:         '#3B82F6',
+  picking:        '#3B82F6',
+  packed:         '#6366F1',
   blocked:        '#F97316',
   breached:       '#EF4444',
   awaiting_reply: '#F59E0B',
@@ -288,33 +289,116 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
   // ── Triage queues ────────────────────────────────────────────
   // THREAD B (2026-06-30): prioritized orders sort to the bottom of
-  // Critical — they've already been actioned (flagged for the Order
-  // Pool's top), so the orders still genuinely needing attention should
-  // surface first. Secondary sort (age desc) preserved within each group.
-  const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => {
-    if (a.isPriorityFlagged !== b.isPriorityFlagged) {
-      return a.isPriorityFlagged ? 1 : -1;
-    }
-    return b.ageHours - a.ageHours;
-  });
-  // Critical = SLA already breached — act today
+  // Critical after a short confirmation hold. This prevents the row from
+  // teleporting immediately after the user clicks Prioritize.
   const [criticalExpanded, setCriticalExpanded] = useState(false);
   const [watchExpanded, setWatchExpanded] = useState(false);
+  const [movementHeldOrderIds, setMovementHeldOrderIds] = useState<Set<string>>(() => new Set());
+  const [priorityFlashOrderIds, setPriorityFlashOrderIds] = useState<Set<string>>(() => new Set());
 
+  const holdPriorityMovement = (orderId: string) => {
+    setMovementHeldOrderIds(prev => {
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+
+    window.setTimeout(() => {
+      setMovementHeldOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    }, PRIORITY_REORDER_HOLD_MS);
+  };
+
+  const flashPriorityRow = (orderId: string) => {
+    setPriorityFlashOrderIds(prev => {
+      const next = new Set(prev);
+      next.add(orderId);
+      return next;
+    });
+
+    window.setTimeout(() => {
+      setPriorityFlashOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+    }, PRIORITY_FLASH_MS);
+  };
+
+  const handlePrioritizeOrder = async (orderId: string): Promise<void> => {
+    holdPriorityMovement(orderId);
+
+    try {
+      await onPriorityFlag?.([orderId], true);
+      flashPriorityRow(orderId);
+    } catch (error) {
+      setMovementHeldOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+
+      setPriorityFlashOrderIds(prev => {
+        const next = new Set(prev);
+        next.delete(orderId);
+        return next;
+      });
+
+      throw error;
+    }
+  };
+
+  const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => {
+    const aPrioritySettled = a.isPriorityFlagged && !movementHeldOrderIds.has(a.lasyncro_order_id);
+    const bPrioritySettled = b.isPriorityFlagged && !movementHeldOrderIds.has(b.lasyncro_order_id);
+
+    if (aPrioritySettled !== bPrioritySettled) {
+      return aPrioritySettled ? 1 : -1;
+    }
+
+    return b.ageHours - a.ageHours;
+  });
+
+  // Critical = SLA already breached — act today
   const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
-  // Watch = aging 24h+ but not yet breached — monitor
-  const watchOrders    = allAgingOrders.filter(o => !o.isShippingSlaBreached && o.ageHours >= 24);
+  // FIX (2026-07-01): the >= 24 check was dead weight — the backend already
+  // pre-filters agingOrders to WATCH_FLOOR_SECONDS (now SLA-aware, was a flat
+  // 48h) before this array ever reaches the frontend, so every order here
+  // already qualifies. Re-checking a hardcoded 24h client-side both duplicated
+  // backend logic and used a different, disconnected number.
+  const watchOrders = allAgingOrders.filter(o => !o.isShippingSlaBreached);
 
   const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
   const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
   const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
   const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
+  const prioritizedCriticalCount = criticalOrders.filter(o => o.isPriorityFlagged).length;
+  const unprioritizedCriticalCount = Math.max(criticalOrders.length - prioritizedCriticalCount, 0);
+  const pulseRows = [
+    { label: 'Breached', n: aging72, color: STAGE_COLORS.breached },
+    { label: 'Picking',  n: qPicking, color: STAGE_COLORS.picking },
+    { label: 'Ready',    n: qReady, color: STAGE_COLORS.ready },
+    { label: 'Blocked',  n: constrained, color: STAGE_COLORS.blocked },
+  ];
 
-  const constraintLabel = (type: string | null): string => {
+  const pulseMax = Math.max(...pulseRows.map(row => row.n), 1);
+
+  // FIX (2026-07-01): default branch fired identically for "operational
+  // constraint, unspecified type" AND "no constraint at all, just aging"
+  // — the second case is exactly every Watch-band order, which have zero
+  // constraint type by definition. Confirmed live: Watch rows showed
+  // "SLA breach · Xd past aging" on orders that were explicitly NOT
+  // SLA-breached (isShippingSlaBreached: false). Now takes the real
+  // breach flag so it can tell the two apart honestly.
+  const constraintLabel = (type: string | null, isBreached: boolean): string => {
     switch (type) {
       case 'inventory': return 'Out of stock';
       case 'customer':  return 'Address issue';
-      default:          return 'SLA breach';
+      case 'operational': return 'Pick exception';
+      default: return isBreached ? 'SLA breach' : 'Aging';
     }
   };
 
@@ -347,10 +431,23 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Orders
           </Typography>
+
           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
             {constrained > 0
               ? `${constrained} need a decision · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
-              : 'All orders on track — nothing needs immediate action'}
+              // FIX (2026-07-01): previously only checked `constrained`
+              // (order_constraints-based count) — completely blind to
+              // SLA-breached aging orders, which are a separate signal
+              // (isShippingSlaBreached, unconstrained but overdue).
+              // Confirmed live: headline said "All orders on track" while
+              // 8 orders sat in the Critical band below it, same page.
+              // Reuse the same criticalOrders/watchOrders arrays the
+              // bands already render from — single source, no new query.
+              : criticalOrders.length > 0
+                ? `${criticalOrders.length} SLA-breached · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
+                : watchOrders.length > 0
+                  ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging, approaching SLA`
+                  : 'All orders on track — nothing needs immediate action'}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
@@ -398,17 +495,36 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                 <Box sx={{ flex: 1 }} />
                 <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{criticalOrders.length} items</Typography>
               </Box>
-              {visibleCriticalOrders.map(order => (
+              <ReorderTransitionList
+                items={visibleCriticalOrders}
+                getKey={(order) => order.lasyncro_order_id}
+                durationMs={520}
+                renderItem={(order) => (
                 <Box
                   key={order.lasyncro_order_id}
-                  sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
+                    gap: 1.75,
+                    alignItems: 'center',
+                    px: 2.5,
+                    py: 1.75,
+                    borderTop: '1px solid var(--rule)',
+                    bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                      ? 'rgba(16,185,129,0.08)'
+                      : 'transparent',
+                    boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                      ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
+                      : 'inset 0 0 0 rgba(16,185,129,0)',
+                    transition: 'background-color 520ms ease, box-shadow 520ms ease',
+                  }}
                 >
                   <Box>
                     <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
                       {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                     </Typography>
                     <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                      {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)}
+                      {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
                     </Typography>
                   </Box>
                   <Box sx={{ textAlign: 'right' }}>
@@ -430,25 +546,45 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   ) : (
                     <PrioritizeButton
                       isPriorityFlagged={order.isPriorityFlagged}
-                      onPrioritize={() => onPriorityFlag?.([order.lasyncro_order_id], true) ?? Promise.resolve()}
+                      onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
                     />
                   )}
                 </Box>
-              ))}
+                  )}
+                />
               {hiddenCriticalOrders.length > 0 && (
                 <>
                   <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
-                    {hiddenCriticalOrders.map(order => (
+                    <ReorderTransitionList
+                      items={hiddenCriticalOrders}
+                      getKey={(order) => order.lasyncro_order_id}
+                      durationMs={520}
+                      renderItem={(order) => (
                       <Box
                         key={order.lasyncro_order_id}
-                        sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 90px 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
+                          gap: 1.75,
+                          alignItems: 'center',
+                          px: 2.5,
+                          py: 1.75,
+                          borderTop: '1px solid var(--rule)',
+                          bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                            ? 'rgba(16,185,129,0.08)'
+                            : 'transparent',
+                          boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                            ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
+                            : 'inset 0 0 0 rgba(16,185,129,0)',
+                          transition: 'background-color 520ms ease, box-shadow 520ms ease',
+                        }}
                       >
                         <Box>
                           <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
                             {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                           </Typography>
                           <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                            {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)}
+                            {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
                           </Typography>
                         </Box>
                         <Box sx={{ textAlign: 'right' }}>
@@ -470,11 +606,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                         ) : (
                           <PrioritizeButton
                             isPriorityFlagged={order.isPriorityFlagged}
-                            onPrioritize={() => onPriorityFlag?.([order.lasyncro_order_id], true) ?? Promise.resolve()}
+                            onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
                           />
                         )}
                       </Box>
-                    ))}
+                      )}
+                    />
                   </Collapse>
 
                   <Box
@@ -520,7 +657,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                         {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                       </Typography>
                       <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                        {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
+                        {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)} aging
                       </Typography>
                     </Box>
                     <Box
@@ -546,7 +683,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                               {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                             </Typography>
                             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                              {constraintLabel(order.constraintType)} · {fmtSlaAge(order.ageHours)} aging
+                              {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)} aging
                             </Typography>
                           </Box>
                           <Box
@@ -582,58 +719,128 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           </Box>
         </Box>
 
-        {/* ── RIGHT: Today's flow ─────────────────────────────── */}
-        <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
-            Today's flow
-          </Typography>
-
-          {[
-            { label: 'Ready to ship',     n: qReady,      color: '#4CAF7A'       },
-            { label: 'Picking & packing', n: qPicking,    color: 'var(--ink)'    },
-            { label: 'Blocked',           n: constrained, color: 'var(--accent)' },
-            { label: 'Breached 72h+',     n: aging72,     color: '#E5484D'       },
-          ].map(({ label, n, color }) => (
-            <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', py: 1.125, borderBottom: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
-              <Typography sx={{ fontSize: 15, fontWeight: 600, color }}>{fmtN(n)}</Typography>
-            </Box>
-          ))}
-
-          <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 1.25, bgcolor: 'var(--bg)' }}>
-            {allStages.filter(s => s.count > 0).map(stage => (
-              <Box
-                key={stage.key}
-                sx={{ width: `${(stage.count / stageTotal) * 100}%`, bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)' }}
-              />
-            ))}
-          </Box>
-
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px', mb: 2 }}>
-            {allStages.filter(s => s.count > 0).map(stage => (
-              <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Box sx={{ width: 7, height: 7, borderRadius: '2px', bgcolor: STAGE_COLORS[stage.key] ?? 'var(--ink-4)', flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>{stage.label}</Typography>
-                <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{fmtN(stage.count)}</Typography>
-              </Box>
-            ))}
-          </Box>
-
-          <Box sx={{ borderTop: '1px solid var(--rule)', pt: 1.5 }}>
-            <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-              Shipped today{' '}
-              <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmtN(props.orders?.fulfilled)}</Box>
-              {' · Collected '}
-              <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(revenue?.earned)}</Box>
-            </Typography>
-          </Box>
-
-          {/* Tier 2 navigation CTA — keep aligned with modules UX playbook ghost pill anatomy. */}
+                {/* ── RIGHT: Today's pulse ───────────────────────────── */}
+        <Box sx={{ flex: '0 0 300px' }}>
           <Box
-            onClick={() => navigate('/orders/flow')}
-            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+            sx={{
+              bgcolor: 'var(--surface)',
+              border: '1px solid var(--rule)',
+              borderRadius: '14px',
+              p: '18px 20px',
+            }}
           >
-            View all orders →
+            <Typography
+              sx={{
+                fontSize: 10,
+                fontWeight: 500,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: 'var(--ink-4)',
+                mb: 1,
+              }}
+            >
+              Today&apos;s pulse
+            </Typography>
+
+            <Typography
+              sx={{
+                fontSize: 24,
+                fontWeight: 700,
+                color: aging72 > 0 ? STAGE_COLORS.breached : 'var(--ink)',
+                lineHeight: 1.1,
+              }}
+            >
+              {fmtN(aging72)} breached
+            </Typography>
+
+            <Typography
+              sx={{
+                fontSize: 12,
+                fontWeight: 300,
+                color: 'var(--ink-4)',
+                mt: 0.5,
+                mb: 2,
+              }}
+            >
+              {unprioritizedCriticalCount > 0
+                ? `${unprioritizedCriticalCount} still need priority`
+                : 'Critical queue is under control'}
+            </Typography>
+
+            <Box sx={{ display: 'grid', gap: 1.15 }}>
+              {pulseRows.map(row => (
+                <Box key={row.label}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      justifyContent: 'space-between',
+                      mb: 0.5,
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)' }}>
+                      {row.label}
+                    </Typography>
+                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>
+                      {fmtN(row.n)}
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      height: 5,
+                      borderRadius: '999px',
+                      overflow: 'hidden',
+                      bgcolor: 'rgba(255,255,255,0.06)',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        width: `${Math.max((row.n / pulseMax) * 100, row.n > 0 ? 8 : 0)}%`,
+                        height: '100%',
+                        borderRadius: '999px',
+                        bgcolor: row.color,
+                      }}
+                    />
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+
+            <Box sx={{ borderTop: '1px solid var(--rule)', mt: 2, pt: 1.5 }}>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
+                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+                  {fmtN(props.orders?.fulfilled)}
+                </Box>
+                {' shipped today · '}
+                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+                  {fmt$(revenue?.earned)}
+                </Box>
+                {' collected'}
+              </Typography>
+            </Box>
+
+            <Box
+              onClick={() => navigate('/orders/flow')}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                mt: 1.5,
+                px: 1.25,
+                py: 0.5,
+                fontSize: 11,
+                fontWeight: 500,
+                color: 'var(--accent)',
+                bgcolor: 'transparent',
+                border: '0.5px solid var(--accent)',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              View order flow →
+            </Box>
           </Box>
         </Box>
       </Box>

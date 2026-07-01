@@ -133,6 +133,17 @@ export const getOrderDetailsById = async (
     )
     .first();
 
+  // Real warehouse pipeline stage — distinct from fulfillment.status above
+  // (order_fulfillment_status = commercial layer: pending/processing/
+  // fulfilled/...). Nullable: order_warehouse_status rows only exist once
+  // an order is released into a pick batch (see wms.controller.ts, the
+  // insert on batch-picking transition) — an order sitting unconstrained
+  // in the pool legitimately has no row here yet.
+  const warehouseStatus = await db('order_warehouse_status')
+    .where('lasyncro_order_id', lasyncroOrderId)
+    .select('status', 'status_updated_at')
+    .first();
+
   // Carrier tracking — most recent shipment for this order
   const shipmentTracking = await db('order_shipment_tracking')
     .where('lasyncro_order_id', lasyncroOrderId)
@@ -173,6 +184,7 @@ export const getOrderDetailsById = async (
     createdAt: order.order_created_at,
     lineItems,
     fulfillment: fulfillment ?? null,
+    warehouseStatus: warehouseStatus?.status ?? null,
     timeline,
     tracking: shipmentTracking ?? null,
   };

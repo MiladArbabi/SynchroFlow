@@ -1,6 +1,6 @@
 # LaSyncro — Sourcing & Reorder Recommendation Playbook
 
-> **Created:** 2026-06-29. **Status:** Direction decided. Recommendation algorithm NOT yet designed — next session's focus.
+> **Created:** 2026-06-29. **Status:** ✅ Algorithm designed and shipped (§6, 2026-06-30). Tuning & re-routing items tracked in §6b.
 
 ## 1. Why Reorder Changed Direction
 
@@ -34,3 +34,91 @@ The actual recommendation logic: how `on_time_rate` / `fill_rate` / `defect_rate
 ## 5. Update — 2026-06-29, plumbing shipped
 
 §3's structural plumbing is done, not just confirmed mechanical: `navBootstrap.ts`, `purchasingSubTabs.ts`, `SuppliersPortalPage.tsx`, and `SuppliersPortalModuleFT2.tsx` (type widened to `'pos' | 'suppliers' | 'sourcing'`, three-way branch replacing the old binary ternary) all updated and verified live. Tab name "Sourcing" is final. The placeholder view (`PurchasingSourcingView`) renders "Sourcing recommendations are coming soon" — §4's algorithm is still the only thing standing between this tab and a real feature.
+
+## 6. Final Design — 2026-06-30, grounded in a real trigger
+
+§4's open question is now answered, designed backward from a **real,
+concrete trigger** instead of abstractly: the "Acknowledge Stock Issue"
+decision-execution path (`resolve_inventory_block.handler.ts`, live and
+verified tonight) already fires a real `stockout_risk` alert with
+exactly the inputs Sourcing needs — `entity_id` (the short variant),
+`entity_type: 'variant'`, and a `message` containing the precise unit
+shortfall. This is the actual real-world starting point for every
+Sourcing recommendation; the page is designed to answer the question
+this alert poses, not a hypothetical one.
+
+**✅ Fixed, 2026-06-30 (confirmed in code 2026-07-01):** `stockout_risk`
+now routes to `/suppliers-portal/sourcing?variantId=X` in both
+`AlertsPage.tsx` and `TopnavbarContent.tsx` — the `/demand` routing
+described above is no longer accurate, this line is kept for history.
+
+### 6a. Two-branch recommendation logic
+
+Every Sourcing recommendation falls into exactly one of two cases —
+**no third case, no silent gap**:
+
+**Branch A — variant has PO history.**
+1. Find every supplier who has ever shipped this variant, via
+   `purchase_order_line_items.lasyncro_variant_id → purchase_orders.supplier_id`
+   (confirmed real FK relationship, not inferred).
+2. Pull each candidate's live scorecard — `on_time_rate`, `fill_rate`,
+   `defect_rate`, `avg_delivery_days`, `moq`, `lead_time_days` — all
+   already computed by `supplierRating.service.ts`, currently unused
+   anywhere. This design is their first real consumer.
+3. Hard filter: exclude any supplier whose `moq` exceeds the alert's
+   needed quantity (a supplier requiring 500 units when 12 are needed
+   is not a real option for this stockout — surface it only if no
+   other candidate exists, clearly labeled "exceeds MOQ").
+4. Rank survivors by a simple weighted composite of on_time_rate,
+   fill_rate (higher better), defect_rate (lower better) — exact
+   weights are a tuning decision, not an architectural one; ship with
+   equal weighting, adjust from real usage data.
+5. Render ranked list, each row → pre-filled "Create PO" (qty = exact
+   shortfall from the alert, supplier pre-selected) — mirrors the
+   existing REPL-001 deep-link pattern (§1), same UX family.
+
+**Branch B — variant has zero PO history (the question this session
+raised).** Resolved by the 2026-06-29 workshop, not newly decided
+tonight — re-stated here for implementation:
+- **No `default_supplier_id` ever** — confirmed twice (workshop +
+  tonight, independently, same conclusion). A variant's supplier is
+  never a stored property; it is always derived fresh from real order
+  history, because the schema already allows (and operators may
+  deliberately use) different suppliers for the same variant across
+  different orders — different MOQ, different lead time, different
+  reason each time. Locking a default would be a real regression.
+- These variants render in a **visually distinct "Never ordered
+  before" group**, not silently dropped from the page and not mixed
+  into the ranked list above (a 0-history variant has no real ranking
+  signal — pretending otherwise would be the exact kind of implicit,
+  unverified inference the constraint-system's explicit-data principle
+  warns against, per the original workshop reasoning).
+- Each row's action is **"Assign a supplier →"**, linking to the
+  existing Suppliers tab — not a dead end, a real next step.
+- **Live count, not stored**: `MIN(purchase_order_line_items.created_at)
+  GROUP BY lasyncro_variant_id`, same proven technique as
+  `customerLtv.service.ts`'s `first_order_at` — variants with zero
+  matching rows are the "never ordered" set. No new column, no drift
+  risk, matches the workshop's explicit decision.
+- **Badge placement**: surfaced on the Purchasing tab itself
+  (`ModuleTab.count`, already supports this — confirmed mechanical in
+  §3) AND as the group header count on the Sourcing page itself. The
+  workshop left exact placement open; this locks it to "both," since
+  the tab badge answers "is there anything to look at" and the
+  in-page group header answers "how many, specifically, right here."
+
+### 6b. What ships in v1 vs. explicitly deferred
+
+**v1 (this design, ready to build):**
+- Branch A ranking (equal-weighted composite, MOQ hard filter)
+- Branch B empty-state group with live count + assign-supplier action
+- Pre-filled Create PO action from either branch
+
+**Explicitly deferred, not silently dropped:**
+- Tuning the composite weights from real usage data (stated above)
+- Re-routing the `stockout_risk` alert from `/demand` to Sourcing
+  (separate, small, tracked fix)
+- Multi-supplier-per-variant tie-breaking logic beyond the simple
+  composite — current dataset has zero variants with >1 historical
+  supplier (§2), so this can't be meaningfully designed or tested yet;
+  revisit once real multi-sourcing data exists.

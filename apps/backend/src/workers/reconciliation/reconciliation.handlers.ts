@@ -447,6 +447,8 @@ export async function reconcileOrderFulfillment(
     const isCustomerBlocked = customerConstraints.length > 0;
     const isOperationalBlocked = operationalConstraints.length > 0;
 
+    // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
+
     /**
      * PROJECTION READ — GUARDED (CRITICAL)
      * -----------------------------------
@@ -459,9 +461,23 @@ export async function reconcileOrderFulfillment(
      * If this fails:
      * → projection system is broken upstream
      * → reconciliation must stop
+     *
+     * FIX (2026-07-01): order_risk_snapshot's PK is composite
+     * (lasyncro_order_id, aggregate_version) — this table WILL have
+     * multiple rows per order (confirmed: 6 historical rows for a real
+     * order in dev data). Without .orderBy(), .first() returns an
+     * arbitrary row, not necessarily the current one. This is the exact
+     * cause of a real bug found live: a decision was generated from a
+     * version-1 snapshot (is_inventory_blocked: true, from May) instead
+     * of the current version-6 snapshot (false), producing a
+     * "recommended action" for an order with zero active constraints.
+     * Must fetch the row matching the aggregateVersion this reconciliation
+     * pass is actually running for — not just "the latest" — to stay
+     * consistent with the riskSnapshotExists guard above it, which
+     * already correctly scopes by aggregate_version.
      */
     const riskSnapshot = await trx('order_risk_snapshot')
-      .where({ lasyncro_order_id: lasyncroOrderId })
+      .where({ lasyncro_order_id: lasyncroOrderId, aggregate_version: aggregateVersion })
       .first();
 
     if (!riskSnapshot) {

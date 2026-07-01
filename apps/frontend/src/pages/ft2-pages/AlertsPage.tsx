@@ -85,8 +85,19 @@ const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> = {
   wms_batch_released:      { route: '/wms',            label: 'Warehouse' },
   wms_receive_arrived:     { route: '/wms',            label: 'Warehouse' },
   wms_receive_exception:   { route: '/problem-center', label: 'Problem Center' },
-  stockout_risk:           { route: '/demand',         label: 'Demand' },
-  reorder_warning:         { route: '/demand',         label: 'Demand' },
+  // FIX (2026-06-30): was routing to /demand — Sourcing module didn't
+  // exist when this was written. Real path confirmed in
+  // purchasingSubTabs.ts. bellDeepLink() already appends ?variantId=
+  // for this alert type; Sourcing's v1 build (sourcing-recommendation-
+  // playbook.md §6) should read that param to scope directly to the
+  // flagged variant once implemented.
+  stockout_risk:           { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
+  // Currently dead — nothing in the backend creates this alert type yet
+  // (confirmed via repo-wide search, 2026-06-30). Routed alongside
+  // stockout_risk in anticipation of DF-03 (proactive, velocity-based
+  // reorder signal — see MVP Roadmap, still 🔴 OPEN). When built, this
+  // is where it should land.
+  reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
   revenue_at_risk:         { route: '/cash-flow',      label: 'Cash Flow' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },

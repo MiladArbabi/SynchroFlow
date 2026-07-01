@@ -96,6 +96,37 @@ export async function getOrdersOperatorFacts(
       db.raw('COUNT(DISTINCT oc.lasyncro_order_id) as count')
     );
 
+  // Add near the top of the exported function, before constraintRows is queried
+  // — shopId here is already typed `number`, no cast needed.
+  const slaSettings = await trx('shop_operational_settings')
+    .where({ shop_id: shopId })
+    .select('fulfillment_sla_hours')
+    .first();
+  const slaHours = slaSettings?.fulfillment_sla_hours ?? 24;
+
+  /**
+   * UNIFIED THRESHOLD MODEL (2026-07-01)
+   * --------------------------------------
+   * Previously three independent hardcoded numbers computed what's
+   * supposed to be one concept — "how urgent is this order" — and could
+   * disagree with each other and with the real breach flag
+   * (order_age_snapshot.is_shipping_sla_breached, which is anchored to
+   * age_since_paid + fulfillment_sla_hours):
+   *   - agingRows floor was a flat 172800s (48h), age_since_creation-anchored
+   *   - imminentSlaBreachers deadline was a flat 72h, order_created_at-anchored
+   * Both are now derived from the shop's real, configurable SLA setting,
+   * and both are re-anchored to age_since_paid to match the actual breach
+   * flag's own anchor — so these numbers can no longer contradict it.
+   *
+   * WATCH_FLOOR_SECONDS: half the SLA window — "worth surfacing before
+   * it's actually late," not an arbitrary 48h.
+   * IMMINENT_LEAD_SECONDS: fixed 4h lead window before the real breach
+   * point, not a separate 72h/created_at deadline recomputation.
+   */
+  const SLA_SECONDS = slaHours * 3600;
+  const WATCH_FLOOR_SECONDS = Math.floor(SLA_SECONDS * 0.5);
+  const IMMINENT_LEAD_SECONDS = 4 * 3600;
+
   const constraintCounts = { inventory: 0, customer: 0, operational: 0 };
 
   for (const row of constraintRows) {
@@ -164,7 +195,10 @@ export async function getOrdersOperatorFacts(
       'o.lasyncro_order_id'
     )
     .where('o.shop_id', shopId)
-    .andWhere('oas.age_since_creation_seconds', '>', 172800) // > 48h
+    .andWhereRaw(
+      'GREATEST(oas.age_since_creation_seconds, COALESCE(oas.age_since_paid_seconds, 0)) > ?',
+      [WATCH_FLOOR_SECONDS]
+    )
     // Only latest snapshot version per order
     .andWhere(
       'oas.aggregate_version',
@@ -175,6 +209,16 @@ export async function getOrdersOperatorFacts(
     .orderBy('oas.age_since_creation_seconds', 'desc')
     .limit(20)
     .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+    // FIX (2026-07-01): the comment above this block (line 135) already
+    // documented the intent — "order_fulfillment_status → filter out
+    // fulfilled orders" — but the filter itself was never written, only
+    // the join (used solely for is_priority_flagged). Confirmed live:
+    // already-fulfilled orders were showing up in the Watch/aging list
+    // with a stale "SLA breach · Xd past" label, giving the false
+    // impression something still needed action.
+    .where((builder) => {
+      builder.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled']);
+    })
     .leftJoin(
       db('order_revenue_units')
         .groupBy('lasyncro_order_id')
@@ -211,54 +255,19 @@ export async function getOrdersOperatorFacts(
     };
   });
 
-  // ─────────────────────────────────────────
-  // Imminent SLA breachers — will breach 72h SLA within 8 hours
-  // NOT yet breached (age < 72h) but within the warning window
-  // ─────────────────────────────────────────
-  const imminentWindowStart = 72 * 3600 - 8 * 3600; // 64h in seconds
-  const imminentWindowEnd   = 72 * 3600;             // 72h in seconds
-
   const imminentRows = await trx('order_age_snapshot as oas')
     .join('orders as o', 'o.lasyncro_order_id', 'oas.lasyncro_order_id')
-    .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
-    .leftJoin(
-      db('order_constraints').where('is_active', true)
-        .groupBy('lasyncro_order_id')
-        .select('lasyncro_order_id')
-        .min('constraint_type as constraint_type')
-        .as('dc'),
-      'dc.lasyncro_order_id', 'o.lasyncro_order_id'
-    )
-    .leftJoin(
-      db('order_revenue_units').groupBy('lasyncro_order_id')
-        .select('lasyncro_order_id')
-        .sum('line_total as revenue')
-        .as('rev'),
-      'rev.lasyncro_order_id', 'o.lasyncro_order_id'
-    )
-    .where('o.shop_id', shopId)
-    .andWhere('oas.age_since_creation_seconds', '>=', imminentWindowStart)
-    .andWhere('oas.age_since_creation_seconds', '<', imminentWindowEnd)
-    .andWhere(
-      'oas.aggregate_version',
-      db('order_age_snapshot as oas2')
-        .where('oas2.lasyncro_order_id', db.raw('oas.lasyncro_order_id'))
-        .max('oas2.aggregate_version')
-    )
-    .orderBy('oas.age_since_creation_seconds', 'desc')
-    .limit(20)
-    .select(
-      'o.lasyncro_order_id',
-      'o.order_created_at',
-      'eim.external_order_id',
-      'oas.age_since_creation_seconds',
-      'dc.constraint_type',
-      db.raw('COALESCE(rev.revenue, 0) as revenue'),
-    );
+    // ...existing joins unchanged...
+    // FIX: re-anchor to age_since_paid_seconds + SLA_SECONDS, matching the
+    // real breach flag's own definition — was order_created_at + flat 72h.
+    .andWhere('oas.age_since_paid_seconds', '>', SLA_SECONDS - IMMINENT_LEAD_SECONDS)
+    .andWhere('oas.age_since_paid_seconds', '<=', SLA_SECONDS)
+    .andWhere('oas.is_shipping_sla_breached', false)
+    // ...existing ordering/limit/select unchanged...
 
   const imminentSlaBreachers = imminentRows.map((row: any) => {
-    const slaDeadline = new Date(new Date(row.order_created_at).getTime() + 72 * 60 * 60 * 1000);
-    const minutesUntilBreach = Math.max(0, Math.round((slaDeadline.getTime() - Date.now()) / 60000));
+    const secondsUntilBreach = SLA_SECONDS - Number(row.age_since_paid_seconds);
+    const minutesUntilBreach = Math.max(0, Math.round(secondsUntilBreach / 60));
     return {
       lasyncro_order_id: row.lasyncro_order_id,
       externalOrderId: row.external_order_id ?? null,

@@ -7,6 +7,8 @@ import { recomputeSupplierRating, recomputeSupplierDefectRate } from '../supplie
 import { suggestStowLocation } from './locationSuggestion.service.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { batchConfirmUnits } from './inventoryUnit.service.js';
+import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
+import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
 
 /**
  * RECEIVE JOB SERVICE (FEAT-004)
@@ -197,6 +199,107 @@ export interface CloseReceiveJobInput {
   receiveJobId: string;
   actualDeliveryDate?: string;
   closedBy: number;
+}
+
+/**
+ * REVALIDATE ORDERS AFFECTED BY RECEIVED STOCK (DF-04, 2026-07-01)
+ * -------------------------------------------------------------------
+ * Closes a confirmed gap: receiving stock updates inventory_truth
+ * correctly, but nothing previously re-checked whether orders that
+ * were blocked waiting on that exact stock could now unblock. Without
+ * this, order_constraints stayed stale until an unrelated order event
+ * happened to touch the same order, or an operator manually re-clicked
+ * the order's "Acknowledge Stock Issue" action.
+ *
+ * Scope is intentionally narrow: only orders with an ACTIVE inventory
+ * constraint whose target_id is one of the variants just received.
+ * Not a shop-wide sweep — see demand-velocity-reorder-playbook.md §6.
+ *
+ * Reuses the exact evaluate → persist pair projection.engine.ts already
+ * uses for the normal domain-event path (evaluateOrderConstraints +
+ * projectOrderConstraints) — no new constraint-writing logic, no risk
+ * of colliding with orderConstraintProjection.ts's multi-writer guard.
+ *
+ * order_constraints has no shop_id column (RLS-only tenant isolation
+ * via a join to orders — see migration 0070) — joined explicitly here
+ * rather than relying on RLS alone for a cross-order lookup.
+ */
+async function revalidateOrdersForReceivedVariants(
+  trx: Knex.Transaction,
+  shopId: number,
+  receivedVariantIds: string[]
+): Promise<void> {
+  if (receivedVariantIds.length === 0) return;
+
+  const affected = await trx('order_constraints as oc')
+    .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+    .where('o.shop_id', shopId)
+    .where('oc.constraint_type', 'inventory')
+    .where('oc.is_active', true)
+    .whereIn('oc.target_id', receivedVariantIds)
+    .distinct('oc.lasyncro_order_id')
+    .select('oc.lasyncro_order_id');
+
+  if (affected.length === 0) {
+    console.info('[DF04_NO_AFFECTED_ORDERS]', { shopId, receivedVariantIds });
+    return;
+  }
+
+  console.info('[DF04_REVALIDATING_ORDERS]', {
+    shopId,
+    receivedVariantIds,
+    affectedOrderCount: affected.length,
+  });
+
+  for (const row of affected) {
+    const orderId = row.lasyncro_order_id;
+
+    const orderRow = await trx('orders')
+      .where({ lasyncro_order_id: orderId })
+      .select('aggregate_version')
+      .first();
+
+    if (!orderRow?.aggregate_version) {
+      // Same invariant projection.engine.ts enforces — log and skip
+      // rather than throw, so one bad order can't abort the receive close.
+      console.error('[DF04_MISSING_AGGREGATE_VERSION]', { orderId, shopId });
+      continue;
+    }
+
+    try {
+      const evaluations = await evaluateOrderConstraints(trx, orderId, shopId);
+
+      /**
+       * PROJECTION WRITER BYPASS (DF-04-FIX-01)
+       * ----------------------------------------
+       * order_constraints is guarded by enforce_projection_writer_order_constraints
+       * trigger. This is a legitimate projection write (constraint revalidation
+       * after stock receipt) occurring outside the projection engine's own
+       * transaction — set the GUC to satisfy the trigger guard, same pattern
+       * already used in rebuildInventoryProjectionForVariants.
+       * SET LOCAL scopes it to this transaction only.
+       */
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+      await projectOrderConstraints(
+        trx,
+        orderId,
+        shopId,
+        orderRow.aggregate_version,
+        new Date(),
+        evaluations
+      );
+      console.info('[DF04_ORDER_REVALIDATED]', { orderId, shopId });
+    } catch (err) {
+      // Isolate failures per-order — one bad revalidation must not roll
+      // back the receive job close itself.
+      console.error('[DF04_REVALIDATION_FAILED]', {
+        orderId,
+        shopId,
+        error: (err as Error).message,
+      });
+    }
+  }
 }
 
 /**
@@ -448,12 +551,33 @@ export async function closeReceiveJob(
   });
 
   console.info('[RECEIVE_JOB_CLOSED]', { shopId, receiveJobId, poId: job.po_id, newPoStatus, closedBy });
-  await writeAuditLog(trx, {
-    shopId,
-    operatorId: closedBy,
-    actionType: 'receive_close',
-    entityType: 'receive_job',
-    entityId: receiveJobId,
-    metadata: { po_id: job.po_id, po_status: newPoStatus },
-  });
+    await writeAuditLog(trx, {
+      shopId,
+      operatorId: closedBy,
+      actionType: 'receive_close',
+      entityType: 'receive_job',
+      entityId: receiveJobId,
+      metadata: { po_id: job.po_id, po_status: newPoStatus },
+    });
+  
+  console.info('[RECEIVE_JOB_CLOSED]', { shopId, receiveJobId, poId: job.po_id, newPoStatus, closedBy });
+    await writeAuditLog(trx, {
+      shopId,
+      operatorId: closedBy,
+      actionType: 'receive_close',
+      entityType: 'receive_job',
+      entityId: receiveJobId,
+      metadata: { po_id: job.po_id, po_status: newPoStatus },
+    });
+
+    // DF-04 — revalidate orders that were blocked waiting on the variants
+    // just received. Same trx, same atomic scope as the receive close.
+    const receivedVariantIds = [
+      ...new Set(
+        lines
+          .filter((l: any) => l.quantity_accepted > 0 && l.lasyncro_variant_id)
+          .map((l: any) => l.lasyncro_variant_id as string)
+      ),
+    ];
+    await revalidateOrdersForReceivedVariants(trx, shopId, receivedVariantIds);
 }

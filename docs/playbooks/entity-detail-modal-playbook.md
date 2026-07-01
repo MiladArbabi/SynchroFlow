@@ -108,3 +108,21 @@ Between the modal opening and `useOrderDetail` resolving, the header title is br
 ## 4. Products — not started
 
 Zero existing detail page or panel of any kind (confirmed: `find` returned nothing for product/variant detail anywhere in the codebase). Content scope undefined — likely candidates from tonight's other work: stock status (sellable/zeroStock/phantom from `ProductsCatalogPage.tsx`'s existing classification), cost-completeness (currently doesn't exist anywhere — see `cta-deeplink-playbook.md`'s `CATALOG-GAP`), demand/reorder signal (`DemandModuleFT2`'s `reorder_urgency`), recent returns. Needs its own scoping pass before building.
+
+### 2.8 Resolved-state bug + design pivot — ✅ shipped (2026-07-01)
+
+**Root-cause fix, not a patch on the symptom:** rather than trusting `decision.status`/`isSuccess` (proven unreliable — both branches of `resolve_inventory_block.handler.ts` mark `decision_execution_queue` as `'success'` identically), the modal now reads ground truth directly: `hasActiveInventoryConstraint = constraints.some(c => c.constraint_type === 'inventory')`, sourced from the same `constraints[]` array the Issue section already renders. If still present after refetch → still short, shows "Go to sourcing." If gone → real success banner. Required adding `['orders','decision', orderId]` to `useExecuteOrderDecision`'s `onSettled` invalidation list (previously missing — the array would never have refreshed).
+
+**Shipped, matching the locked design:**
+- Stacked, independently-colored alert cards per active constraint type (severity: inventory/operational = critical, customer = warning), reusing the icon+color+label pattern from `AlertsModule.md`'s `BellAlertRow` — decision made in favor of the compact pattern, not the full `AlertCard`.
+- "Go to sourcing" replaces "Acknowledge Stock Issue" as the inventory-block CTA — direct link to `/suppliers-portal/sourcing`, clean redirect, no confirmation step.
+- Similar-orders inline list (same constraint type + block type), navigable in-modal via `selectedOrderId` swap — no new routing needed.
+- Timeline capped at 3 visible entries, "Show N more" expansion.
+- Alternate actions (`decision.actions[]` beyond the recommended one) surfaced under "Other options."
+- Real `order_warehouse_status` join added to `getOrderDetailsById` — pipeline status pill now shows one of three honest states in priority order: **Blocked** (active constraint) → **real warehouse stage** (`order_warehouse_status.status`, if a pick-batch row exists) → **"In pool"** (no constraint, no batch row yet — order genuinely just hasn't been released).
+
+**Second bug found during live verification, not designed for — real, separate, now fixed:** `httpGetOrderDecision` had no `status` filter (unlike the execute controller, which correctly filters to `pending`/`in_progress`) — so a resolved-but-stale `decisions` row could be served as "current" even after `order_constraints` had already cleared via an unrelated path. Fixed with a matching `whereIn('status', ['pending','in_progress'])`, plus a cross-check inside the same transaction: if the recommended action's constraint type has zero active rows in `order_constraints`, the decision is treated as stale and `null` is returned instead. This closes the gap for *any* future write path that clears a constraint without updating `decisions` — not just the ones we know about today.
+
+DF-04 dependency is now moot — see `demand-velocity-reorder-playbook.md` §6, shipped same session.
+
+See also `docs/playbooks/sla_threshold_unification_2026_07_01.md` for the SLA/aging threshold bugs found during the same verification pass — unrelated to the modal itself, but surfaced by it.

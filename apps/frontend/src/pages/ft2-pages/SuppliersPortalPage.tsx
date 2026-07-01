@@ -9,7 +9,8 @@ import type {
   PoLineItem, 
   CreateSupplierInput, 
   CreatePoInput, 
-  Supplier 
+  Supplier,
+  SourcingRecommendation
 } from '@lasyncro/suppliers-portal';
 import { useSuppliersPortal } from '../suppliers-portal/useSuppliersPortal';
 import { axiosInstance } from 'api/axiosConfig';
@@ -86,6 +87,20 @@ export default function SuppliersPortalPage() {
     return data.variants ?? [];
   }, []);
 
+  // SOURCING (Thread C, sourcing-recommendation-playbook.md §6) — fetched
+  // on demand per variant, not all up front (never_ordered list is the
+  // only thing fetched eagerly, via useSuppliersPortal).
+  const handleFetchSourcingRecommendations = useCallback(async (
+    variantId: string,
+    neededQty?: number
+  ): Promise<SourcingRecommendation[]> => {
+    const { data } = await axiosInstance.get(
+      `/api/v1/suppliers/sourcing-recommendations/${variantId}`,
+      { params: neededQty ? { needed: neededQty } : undefined }
+    );
+    return data.recommendations ?? [];
+  }, []);
+
   /**
    * RECEIVE VIA WMS
    * ---------------
@@ -122,6 +137,7 @@ export default function SuppliersPortalPage() {
     onCreatePo: handleCreatePo,
     onCreateReceiveJob: handleCreateReceiveJob,
     onSearchVariants: handleSearchVariants,
+    onFetchSourcingRecommendations: handleFetchSourcingRecommendations,
     autoOpenCreatePo: demandAction === 'create-po',
     prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
       description: demandDescription ?? demandSku ?? '',

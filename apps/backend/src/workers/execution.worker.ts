@@ -190,9 +190,12 @@ async function processExecutionMessage(
      * - If already executed → skip
      * - If already started → skip (in-flight protection)
      */
-    /**
-     * SYSTEM QUERY — infrastructure idempotency check, no tenant context required.
-     */
+    // THREAD A-2 cont'd (2026-06-30): systemQuery() doesn't bypass real
+    // RLS — only the app-level guard (see RLS_blueprint.md §7). This
+    // table's SELECT policy is now permissive cross-tenant (split
+    // policy, see 0075 migration), so this specific read is actually
+    // safe as-is. Kept on systemQuery() deliberately — job.shop_id
+    // isn't needed here since the SELECT policy already allows it.
     const existing = await systemQuery(
       db('decision_execution_queue')
         .where({ decision_id: job.decision_id })
@@ -303,17 +306,22 @@ async function processExecutionMessage(
        * - Detects duplicates via error handling (no schema change required)
        */
       try {
-        /**
-         * SYSTEM QUERY — manual mode queue insert, no tenant context required.
-         */
-        await systemQuery(
-          db('decision_execution_queue').insert({
+        // THREAD A-2 cont'd (2026-06-30): was systemQuery() — only skips
+        // the app-level guard, not real RLS. This table's write policy
+        // is strict (split policy, see 0075 migration) — this insert
+        // was failing live, confirmed via [EXECUTION_WORKER_JOB_FAILED]
+        // "new row violates row-level security policy", looping through
+        // all 3 retries to poison-message failure. job.shop_id already
+        // known — use withTenant (already imported in this file) for
+        // real tenant context.
+        await withTenant(job.shop_id, async (trx) => {
+          await trx('decision_execution_queue').insert({
             decision_id: job.decision_id,
             shop_id: job.shop_id,
             status: 'pending',
-            created_at: db.fn.now()
-          })
-        );
+            created_at: trx.fn.now()
+          });
+        });
       } catch (err: any) {
         /**
          * DUPLICATE DETECTION (CRITICAL)

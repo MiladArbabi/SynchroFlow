@@ -213,3 +213,4 @@ Via `useAppTheme()` (canonical hook — `useModuleTheme` does not exist).
 - Escalation worker (phase 2) — strongest anti-firefighting feature, deferred.
 - External routing (Slack / email digest / webhook) — phase 2.
 - FT2DateRangeBar on Resolved tab only — confirm in next audit.
+- Order-detail-modal alert reuse (2026-07-01, see `entity-detail-modal-playbook.md` §2.8) — `AlertCard`/`BellAlertRow` may become a shared reuse target for order-scoped alerts inside `EntityDetailModal`. Not yet decided which component, or whether a new shared variant is needed.

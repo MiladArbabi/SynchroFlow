@@ -14,23 +14,33 @@ export function useSuppliersPortal() {
     queryFn: () =>
       axiosInstance.get('/api/v1/suppliers/purchase-orders').then((r) => r.data),
   });
-
   const suppliers = useQuery({
     queryKey: ['suppliers-portal', 'suppliers'],
     queryFn: () =>
       axiosInstance.get('/api/v1/suppliers').then((r) => r.data),
   });
-
+  // SOURCING (Thread C, sourcing-recommendation-playbook.md §6) — the
+  // never-ordered list, fetched once for the whole page. Per-variant
+  // recommendations are fetched on demand inside the Sourcing view
+  // itself (one request per expanded item, not all up front).
+  const neverOrdered = useQuery({
+    queryKey: ['suppliers-portal', 'never-ordered'],
+    queryFn: () =>
+      axiosInstance.get('/api/v1/suppliers/sourcing-recommendations/never-ordered').then((r) => r.data),
+  });
   return {
     data: {
       purchase_orders: pos.data?.purchase_orders ?? [],
       suppliers: suppliers.data?.suppliers ?? [],
+      never_ordered: neverOrdered.data?.variants ?? [],
+      never_ordered_count: neverOrdered.data?.count ?? 0,
     },
-    isLoading: pos.isLoading || suppliers.isLoading,
-    isError: pos.isError || suppliers.isError,
+    isLoading: pos.isLoading || suppliers.isLoading || neverOrdered.isLoading,
+    isError: pos.isError || suppliers.isError || neverOrdered.isError,
     refetch: () => {
       void pos.refetch();
       void suppliers.refetch();
+      void neverOrdered.refetch();
     },
   };
 }

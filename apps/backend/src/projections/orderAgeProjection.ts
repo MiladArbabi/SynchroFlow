@@ -43,6 +43,7 @@ export async function projectOrderAge(
 
   const createdAt = new Date(row.order_created_at);
 
+  
   /**
    * PAID TIMESTAMP RESOLUTION
    * --------------------------
@@ -103,18 +104,27 @@ export async function projectOrderAge(
         )
       : null;
 
+  // constant — this function's shopId param is typed as `string` (confirmed from
+  // its own signature), while shop_operational_settings.shop_id is an integer PK,
+  // so the read needs an explicit cast.
+  const slaSettingsRow = await trx('shop_operational_settings')
+    .where({ shop_id: Number(shopId) })
+    .select('fulfillment_sla_hours')
+    .first();
+
   /**
-   * SHIPPING SLA BREACH (deterministic)
-   * -----------------------------------
-   * Mirrors operationalConstraintEvaluator.ts: an order breaches the
-   * shipping SLA when it is PAID but NOT yet fulfilled and its time-since-
-   * paid exceeds the shop's fulfillment_sla_hours window (default 24h).
-   * Computed here so order_age_snapshot.is_shipping_sla_breached is truthful
-   * (previously hardcoded false, which silently suppressed every sla_breach
-   * alert). Kept as the same 24h default fallback to avoid an extra settings
-   * read in the hot projection path; the evaluator owns settings-driven SLA.
+   * SHIPPING SLA BREACH (deterministic, now shop-configurable)
+   * -----------------------------------------------------------
+   * FIX (2026-07-01): previously hardcoded to 24h regardless of the
+   * shop's actual configured fulfillment_sla_hours (shop_operational_settings,
+   * already fully editable via Settings → General — confirmed live). The
+   * comment that used to sit here claimed "the evaluator owns settings-driven
+   * SLA," but operationalConstraintEvaluator.ts never reads settings at all
+   * — that comment was stale. This is now the actual, correct place SLA
+   * hours are read from, matching what the shop owner configures.
+   * Defaults to 24 only if no settings row exists yet (new shop, pre-seed).
    */
-  const SHIPPING_SLA_SECONDS = 24 * 3600;
+  const SHIPPING_SLA_SECONDS = (slaSettingsRow?.fulfillment_sla_hours ?? 24) * 3600;
   const isShippingSlaBreached =
     fulfilledAt === null &&
     ageSincePaid !== null &&

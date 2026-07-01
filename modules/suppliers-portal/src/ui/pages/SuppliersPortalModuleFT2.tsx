@@ -117,9 +117,26 @@ export type CreatePoInput = {
   }[];
 };
 
+export type SourcingRecommendation = {
+  id: number;
+  name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  on_time_rate: string | null;
+  fill_rate: string | null;
+  defect_rate: string | null;
+  avg_delivery_days: string | null;
+  moq: number | null;
+  lead_time_days: number | null;
+  score: number;
+  exceeds_moq: boolean;
+};
+
 export type SuppliersPortalData = {
   purchase_orders: PurchaseOrder[];
   suppliers: Supplier[];
+  never_ordered: { lasyncro_variant_id: string; sku: string | null; title: string }[];
+  never_ordered_count: number;
 } | null;
 
 export type SuppliersPortalPageProps = {
@@ -138,6 +155,8 @@ export type SuppliersPortalPageProps = {
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
+  /** Sourcing (Thread C): ranked supplier recommendations for one variant, fetched on demand. */
+  onFetchSourcingRecommendations: (variantId: string, neededQty?: number) => Promise<SourcingRecommendation[]>;
   /** When true, auto-opens the Create PO dialog on mount (from demand module handoff) */
   autoOpenCreatePo?: boolean;
   /** Pre-filled line item from demand module handoff */
@@ -195,6 +214,7 @@ function CreatePoDialog({
   onCreatePo,
   onSearchVariants,
   prefilledLineItem,
+  prefilledSupplierId,
 }: {
   open: boolean;
   suppliers: Supplier[];
@@ -204,8 +224,10 @@ function CreatePoDialog({
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
   prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
+  /** Sourcing (Thread C): pre-select the recommended supplier when opened from Sourcing. */
+  prefilledSupplierId?: number;
 }) {
-  const [supplierId, setSupplierId] = useState<string>('');
+  const [supplierId, setSupplierId] = useState<string>(prefilledSupplierId ? String(prefilledSupplierId) : '');
   const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
   const [expectedDate, setExpectedDate] = useState('');
   const [notes, setNotes] = useState('');
@@ -1349,15 +1371,169 @@ function PurchasingSuppliersView({
   );
 }
 
-function PurchasingSourcingView(props: SuppliersPortalPageProps) {
+function PurchasingSourcingView({
+  data,
+  onCreatePo,
+  onCreateSupplier,
+  onSearchVariants,
+  onFetchSourcingRecommendations,
+}: SuppliersPortalPageProps) {
+  const neverOrdered = data?.never_ordered ?? [];
+  const neverOrderedCount = data?.never_ordered_count ?? 0;
+
+  const [searchParams] = useSearchParams();
+  const triggerVariantId = searchParams.get('variantId');
+
+  const [activeVariantId, setActiveVariantId] = useState<string | null>(triggerVariantId);
+  const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
+  const [isLoadingRecs, setIsLoadingRecs] = useState(false);
+
+  const [createPoOpen, setCreatePoOpen] = useState(false);
+  const [poVariantId, setPoVariantId] = useState<string | undefined>(undefined);
+  const [poSupplierId, setPoSupplierId] = useState<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!activeVariantId) return;
+    setIsLoadingRecs(true);
+    onFetchSourcingRecommendations(activeVariantId)
+      .then(setRecommendations)
+      .finally(() => setIsLoadingRecs(false));
+  }, [activeVariantId, onFetchSourcingRecommendations]);
+
+  const handleCreatePoFromRec = (variantId: string, supplierId: number) => {
+    setPoVariantId(variantId);
+    setPoSupplierId(supplierId);
+    setCreatePoOpen(true);
+  };
+
+  const goodMatches = recommendations.filter(r => !r.exceeds_moq);
+  const exceedsMoqMatches = recommendations.filter(r => r.exceeds_moq);
+
   return (
-    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: 4, textAlign: 'center' }}>
-      <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
-        Sourcing recommendations are coming soon
-      </Typography>
-      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-        This page will help you match low-stock products to the right supplier.
-      </Typography>
+    <Box sx={{ p: 2 }}>
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+
+        {/* DECISION CARD */}
+        <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+          <Box sx={{ p: '18px 20px', borderBottom: '1px solid var(--rule)' }}>
+            <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>
+              Sourcing recommendations
+            </Typography>
+            <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }}>
+              {activeVariantId
+                ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate'
+                : 'Select a stockout alert to see ranked supplier options'}
+            </Typography>
+          </Box>
+
+          {!activeVariantId && (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                No active stockout selected. Recommendations appear here when reached from a stock alert.
+              </Typography>
+            </Box>
+          )}
+
+          {activeVariantId && isLoadingRecs && (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Loading recommendations…</Typography>
+            </Box>
+          )}
+
+          {activeVariantId && !isLoadingRecs && recommendations.length === 0 && (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                No supplier history for this product yet.
+              </Typography>
+            </Box>
+          )}
+
+          {goodMatches.map((rec) => (
+            <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
+              <Box>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  On-time {rec.on_time_rate ?? '—'}% · Fill {rec.fill_rate ?? '—'}% · Lead {rec.lead_time_days ?? '—'}d
+                </Typography>
+              </Box>
+              <Box
+                component="button"
+                onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
+                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+              >
+                Create PO →
+              </Box>
+            </Box>
+          ))}
+
+          {exceedsMoqMatches.map((rec) => (
+            <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', opacity: 0.7 }}>
+              <Box>
+                <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: '#C62828' }}>
+                  Exceeds MOQ ({rec.moq} units)
+                </Typography>
+              </Box>
+              <Box
+                component="button"
+                onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
+                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              >
+                Create PO anyway →
+              </Box>
+            </Box>
+          ))}
+
+          {neverOrderedCount > 0 && (
+            <Box sx={{ borderTop: '1px solid var(--rule)' }}>
+              <Box sx={{ px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  Never ordered before · {neverOrderedCount}
+                </Typography>
+              </Box>
+              {neverOrdered.slice(0, 4).map((v) => (
+                <Box key={v.lasyncro_variant_id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
+                    {v.title} {v.sku ? `(${v.sku})` : ''}
+                  </Typography>
+                  <Box
+                    component="button"
+                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                  >
+                    Assign a supplier →
+                  </Box>
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+
+        {/* PULSE CARD */}
+        <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-3)', mb: 1.5 }}>
+            Sourcing pulse
+          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Never ordered before</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{neverOrderedCount}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Ready to order</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{goodMatches.length}</Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      <CreatePoDialog
+        open={createPoOpen}
+        suppliers={[]}
+        onClose={() => setCreatePoOpen(false)}
+        onCreateSupplier={onCreateSupplier}
+        onCreatePo={onCreatePo}
+        onSearchVariants={onSearchVariants}
+        prefilledLineItem={poVariantId ? { description: '', quantity_ordered: 1, lasyncro_variant_id: poVariantId } : undefined}
+        prefilledSupplierId={poSupplierId}
+      />
     </Box>
   );
 }

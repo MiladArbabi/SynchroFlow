@@ -47,6 +47,11 @@ export interface OrderDetail {
   createdAt: string;
   lineItems: OrderLineItem[];
   fulfillment: OrderFulfillment | null;
+  // Real warehouse pipeline stage (order_warehouse_status_type):
+  // awaiting_pick | picking | picked | packing | packed | shipped |
+  // partially_shipped | cancelled. Null = order not yet released to a
+  // pick batch — a real, valid state, not missing data.
+  warehouseStatus: string | null;
   timeline: OrderTimelineEvent[];
   tracking: OrderTracking | null;
 }

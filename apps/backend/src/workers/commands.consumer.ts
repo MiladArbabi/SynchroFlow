@@ -35,6 +35,8 @@ import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { generateDecisions } from '../domain/decision/decision.engine.js';
 import { DecisionRepository } from '../domain/decision/decision.repository.js';
 import type { Decision } from '../domain/decision/Decision.js';
+import { executeJob } from './execution.worker.js';
+import type { ExecutionJob } from '../domain/decision/Decision.js';
 
 const POLL_INTERVAL_MS = 1000;
 let running = false;
@@ -47,29 +49,170 @@ type CommandRow = {
     orderId?: string;
     aggregateVersion?: number;
     riskSnapshot?: any;
+    decisionId?: string;
   };
   shop_id: number;
   status: string;
 };
 
+async function markCommandError(command: CommandRow, errorMessage: string): Promise<void> {
+  await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL app.current_tenant = '${command.shop_id}'`);
+    await trx('commands')
+      .where({ id: command.id })
+      .update({
+        status: 'error',
+        error: errorMessage,
+        processed_at: trx.fn.now(),
+      });
+  });
+}
+
+async function markCommandProcessed(command: CommandRow, shopId: number): Promise<void> {
+  await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+    await trx('commands')
+      .where({ id: command.id })
+      .update({
+        status: 'processed',
+        processed_at: trx.fn.now(),
+      });
+  });
+}
+
+/**
+ * EXECUTE_DECISION (THREAD A-2 cont'd, 2026-06-30)
+ * --------------------------------------------------
+ * Closes the gap found tonight: manualExecution.service.ts's
+ * executeManualDecision() has always thrown [MANUAL_EXECUTION_DISABLED]
+ * unconditionally, with zero callers anywhere — manual-mode decisions
+ * queued correctly (decision_execution_queue) but nothing ever drained
+ * them. Per that disabled function's own comment, this is the proper
+ * Command Bus path it called for but was never built: dispatched from
+ * orders.execute.controller.ts, consumed here, calling the real
+ * executeJob() — same function execution.worker.ts uses for automated
+ * decisions.
+ */
+async function processExecuteDecisionCommand(command: CommandRow): Promise<void> {
+  const { shopId, decisionId } = command.payload;
+
+  if (!shopId || !decisionId) {
+    console.error('[COMMANDS_CONSUMER_INVALID_EXECUTE_PAYLOAD]', {
+      id: command.id,
+      payload: command.payload,
+    });
+    await markCommandError(command, 'Invalid EXECUTE_DECISION payload — missing required field');
+    return;
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+
+      const decision = await trx('decisions')
+        .where({ id: decisionId, shop_id: shopId })
+        .first();
+
+      if (!decision) {
+        throw new Error(`Decision not found: ${decisionId}`);
+      }
+
+      const queueRow = await trx('decision_execution_queue')
+        .where({ decision_id: decisionId })
+        .forUpdate()
+        .first();
+
+      if (!queueRow) {
+        throw new Error(`No queue row found for decision: ${decisionId}`);
+      }
+
+      if (queueRow.status === 'success' || queueRow.status === 'in_progress') {
+        console.warn('[EXECUTE_DECISION_SKIPPED_ALREADY_PROCESSED]', {
+          decision_id: decisionId,
+          status: queueRow.status,
+        });
+        return;
+      }
+
+      await trx('decision_execution_queue')
+        .where({ decision_id: decisionId })
+        .update({ status: 'in_progress' });
+
+      const job: ExecutionJob = {
+        decision_id: decision.id,
+        entity_id: decision.entity_id,
+        shop_id: decision.shop_id,
+        aggregate_version: decision.aggregate_version,
+        action_type: decision.recommended_action?.type,
+        payload: decision.recommended_action?.payload ?? {},
+        execution_mode: decision.recommended_action?.execution_mode ?? 'manual',
+      };
+
+      if (!job.action_type) {
+        throw new Error(`Decision missing action_type: ${decisionId}`);
+      }
+
+      await executeJob(job, trx);
+
+      await trx('decision_execution_queue')
+        .where({ decision_id: decisionId })
+        .update({
+          status: 'success',
+          executed_at: trx.fn.now(),
+        });
+    });
+
+    console.info('[COMMANDS_CONSUMER_EXECUTE_DECISION_PROCESSED]', {
+      id: command.id,
+      decisionId,
+    });
+  } catch (err) {
+    console.error('[COMMANDS_CONSUMER_EXECUTE_DECISION_FAILED]', {
+      id: command.id,
+      decisionId,
+      error: (err as Error).message,
+    });
+
+    // Best-effort failure marking — separate transaction since the one
+    // above rolled back.
+    try {
+      await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
+        await trx('decision_execution_queue')
+          .where({ decision_id: decisionId })
+          .update({
+            status: 'failure',
+            executed_at: trx.fn.now(),
+            error: (err as Error).message,
+          });
+      });
+    } catch (markErr) {
+      console.error('[COMMANDS_CONSUMER_FAILURE_MARK_FAILED]', {
+        decisionId,
+        error: (markErr as Error).message,
+      });
+    }
+
+    await markCommandError(command, (err as Error).message);
+    return;
+  }
+
+  await markCommandProcessed(command, shopId);
+}
+
 async function processCommand(command: CommandRow): Promise<void> {
+  if (command.type === 'EXECUTE_DECISION') {
+    await processExecuteDecisionCommand(command);
+    return;
+  }
+
   if (command.type !== 'RECONCILIATION_RUN') {
     console.warn('[COMMANDS_CONSUMER_UNKNOWN_TYPE]', {
       id: command.id,
       type: command.type,
     });
 
-    await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL app.current_tenant = '${command.shop_id}'`);
-      await trx('commands')
-        .where({ id: command.id })
-        .update({
-          status: 'error',
-          error: `Unknown command type: ${command.type}`,
-          processed_at: trx.fn.now(),
-        });
-    });
-
+    await markCommandError(command, `Unknown command type: ${command.type}`);
     return;
   }
 

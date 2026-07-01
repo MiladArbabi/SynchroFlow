@@ -9,5 +9,6 @@ export type {
   Supplier,
   CreateSupplierInput,
   CreatePoInput,
+  SourcingRecommendation,
 } from './pages/SuppliersPortalModuleFT2.js';
 export { default } from './ModuleEntry.js';

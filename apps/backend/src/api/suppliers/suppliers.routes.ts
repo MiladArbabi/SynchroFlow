@@ -17,6 +17,10 @@ import {
   httpSearchVariants,
 } from './suppliers.controller.js';
 import {
+  httpGetSourcingRecommendations,
+  httpGetNeverOrderedVariants,
+} from './sourcingRecommendations.controller.js';
+import {
   httpListReceiveJobs,
   httpCreateReceiveJob,
   httpGetReceiveJob,
@@ -177,6 +181,22 @@ router.post(
   requireFt2,
   requireAction('receive-job:exception'),
   httpReportReceiveException
+);
+
+// SOURCING RECOMMENDATIONS (Thread C, sourcing-recommendation-playbook.md §6)
+router.get(
+  '/sourcing-recommendations/never-ordered',
+  authenticateToken,
+  requireFt2,
+  requireAction('suppliers:read'),
+  httpGetNeverOrderedVariants
+);
+router.get(
+  '/sourcing-recommendations/:variantId',
+  authenticateToken,
+  requireFt2,
+  requireAction('suppliers:read'),
+  httpGetSourcingRecommendations
 );
 
 export default router;

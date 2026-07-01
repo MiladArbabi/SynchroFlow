@@ -54,6 +54,28 @@ export type ConstrainedOrder = {
 };
 
 /**
+ * CONSTRAINT SEVERITY MAPPING (2026-07-01)
+ * -----------------------------------------
+ * order_constraints carries no severity field of its own — this is a
+ * design judgment layered on top, following the same rail+icon+label
+ * pattern already established in TopnavbarContent.tsx's BellAlertRow
+ * (AlertsModule.md D5: severity communicated by icon+color+label, never
+ * colour alone). Not derived from data — a deliberate choice, documented
+ * here so it isn't mistaken for a confirmed backend signal.
+ */
+export type ConstraintSeverity = 'critical' | 'warning';
+
+export const CONSTRAINT_SEVERITY: Record<string, ConstraintSeverity> = {
+  inventory: 'critical',
+  operational: 'critical',
+  customer: 'warning',
+};
+
+export function getConstraintSeverity(constraintType: string): ConstraintSeverity {
+  return CONSTRAINT_SEVERITY[constraintType] ?? 'warning';
+}
+
+/**
  * SLA_PROXIMITY
  * -------------
  * Derives color-coded urgency from age and SLA breach flags.

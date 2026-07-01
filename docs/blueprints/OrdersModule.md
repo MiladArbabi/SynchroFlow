@@ -239,10 +239,9 @@ draft → ordered → confirmed → in_production → shipped → partially_rece
 
 ### The critical missing link
 
-When a receive job closes, `inventory_movements` must receive a credit entry for accepted quantities. This is what unblocks inventory-constrained orders automatically. Without this, the inbound → blocked orders feedback loop is broken.
+**CORRECTED 2026-07-01:** this section's original framing was outdated. `receiveJob.service.ts` already upserts `inventory_truth` directly (`on_hand_quantity`, `available_quantity`, `sellable_quantity`) on job close — confirmed live in code, no `inventory_movements` intermediary needed for that specific read path.
 
-**Required backend work:**
-In `closeReceiveJob` service: after job closes, for each accepted line item, insert into `inventory_movements` with `movement_type = 'receive'` and `quantity_delta = units_accepted`.
+**The real gap, confirmed 2026-07-01** (full trace in `demand-velocity-reorder-playbook.md` §6): receiving stock updates `inventory_truth` correctly, but nothing triggers constraint re-evaluation for orders waiting on that stock. `receiveJob.service.ts` writes zero `domain_events`, and the constraint evaluator only runs inline inside `processDomainEvent` — there is no scheduled sweep. A previously-blocked order stays blocked in `order_constraints` until an unrelated event touches it, or an operator manually re-triggers resolution. Tracked as DF-04 in the demand-velocity playbook.
 
 ### Blocked orders connection
 
@@ -288,7 +287,7 @@ When accepted units satisfy a blocked order's inventory constraint, surface: "N 
 6. ✅ Inbound tab Phase 1 (PO status board) — ⚠️ scope-creep flagged: now performs receive-execution actions §8 explicitly says it shouldn't
 7. ✅ Returns tab — Intelligence · Items · Suppliers sub-navigation complete — *(ownership moved to Returns & Resolution Center, June 2026)*
 8. 🔲 Inventory movement credit on receive job close (critical backend)
-9. 🔲 Blocked orders → inbound connection (unblock on receive)
+9. 🔲 Blocked orders → inbound connection (unblock on receive) — re-scoped 2026-07-01, see DF-04 in demand-velocity-reorder-playbook.md for the confirmed mechanism gap — re-scoped 2026-07-01, see DF-04 in demand-velocity-reorder-playbook.md for the confirmed mechanism gap
 10. 🔲 Carrier tracking workshop
 11. 🔲 Full precision value display (ORD-VAL-01)
 12. 🔲 Release Queue serif fix (ORD-SERIF-01)
