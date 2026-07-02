@@ -9,7 +9,6 @@ import { projectOrderInventoryConstraints } from '../projections/orderInventoryC
 import { projectOrderRisk } from '../projections/orderRiskProjection.js';
 import { evaluateOrderConstraints } from '../services/constraints/constraintEngine.js';
 import { computeOrderMargin } from '../services/margin/computeOrderMargin.service.js';
-import { db } from '@lasyncro/backend-core';
 import { projectRevenueDaily } from '../projections/orderRevenueDailyProjection.js';
 
 /**
@@ -352,7 +351,18 @@ export async function projectDomainEventCore({
         'orders/sync',
         'orders/paid',
         'orders/fulfilled',
-        'orders/fulfillment_updated'
+        'orders/fulfillment_updated',
+        /**
+         * GH-1036 (2026-07-02): added so the shipping-address
+         * correction event triggers the constraint/risk orchestration
+         * block below (projectOrderAge → evaluateOrderConstraints →
+         * projectOrderConstraints → projectOrderRisk). Without this,
+         * handleOrdersShippingAddressCorrected runs but the order never
+         * gets a fresh order_risk_snapshot row or a re-evaluated
+         * order_constraints row — exactly the bug this whole issue
+         * traces back to.
+         */
+        'orders/shipping_address_corrected'
       ].includes(normalizedEventType);
 
       if (isOrderEntityEvent) {

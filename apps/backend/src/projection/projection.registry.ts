@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 
 import { handleOrdersCreate } from './handlers/orders.create.js';
 import { handleOrdersPaid } from './handlers/orders.paid.js';
+import { handleOrdersShippingAddressCorrected } from './handlers/orders.shipping_address_corrected.js';
 import { handleOrdersFulfilled } from './handlers/orders.fulfilled.js';
 import { handleRefundsCreate } from './handlers/refunds.create.js';
 import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.js';
@@ -47,6 +48,17 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/sync_started': handleOrdersSyncStarted,
   'integration/sync_requested': handleIntegrationSyncRequested,
   'orders/paid': handleOrdersPaid,
+  /**
+   * SHIPPING ADDRESS CORRECTED (GH-1036, 2026-07-02)
+   * ---------------------------------------------------
+   * See orders.shipping_address_corrected.ts's header for full context.
+   * The write already happened directly in
+   * orders.shipping-address.controller.ts — this event's sole purpose
+   * is to be a real, valid domain event that flows through
+   * projectDomainEventCore's constraint/risk orchestration (requires
+   * being in the isOrderEntityEvent list too — see projection.engine.ts).
+   */
+  'orders/shipping_address_corrected': handleOrdersShippingAddressCorrected,
   'orders/fulfilled': handleOrdersFulfilled,
   'orders/fulfillment_updated': async (params) => {
   /**

@@ -46,39 +46,16 @@ export async function projectOrderCustomerConstraints(
       blockType = 'awaiting_payment';
     }
     /**
-     * SIGNAL: incomplete shipping address (2026-07-02)
-     * ---------------------------------------------------
-     * Was listed under "Future" above but never actually implemented
-     * here — meanwhile evaluateCustomerConstraint.ts (constraintEngine.ts)
-     * independently evaluates this exact signal and generates
-     * resolve_customer_block decisions from it, but NEVER persists to
-     * order_constraints — that table is only written by this file. Two
-     * disconnected pipelines: one computes the right answer, the other
-     * owns the write. Confirmed live: an order's address was corrected,
-     * reconciliation ran (last_reconciled_at populated), but
-     * order_constraints stayed is_active=true indefinitely, because
-     * nothing here knew address completeness was a signal to check.
-     *
-     * Same field/definition as evaluateCustomerConstraint.ts — kept in
-     * sync conceptually, not literally shared, since consolidating
-     * these two pipelines into one is bigger scope than this fix
-     * (logged separately). This is the minimal, correct extension: the
-     * file's own comment already listed missing_address as the
-     * intended next signal, just never built.
-     *
-     * else-if, not else: awaiting_payment stays first-match priority
-     * per this file's existing rule — an unpaid order with a bad
-     * address should show as awaiting_payment, not address issue,
-     * until it's paid.
+     * REVERTED (2026-07-02): incorrectly added an incomplete_address
+     * signal here earlier this session, believing this file was the
+     * live customer-constraint writer. Confirmed via grep it has ZERO
+     * live callers — orderConstraintProjection.ts (no "Customer" in
+     * the name) is the real, live writer, invoked from
+     * projection.engine.ts's projectDomainEventCore. See GH-1036 for
+     * the full corrected investigation. Leaving this file's
+     * awaiting_payment-only logic untouched, matching its last known
+     * live behavior before this session's incorrect edit.
      */
-    else if (
-      !order.shipping_address1 ||
-      !order.shipping_city ||
-      !order.shipping_zip ||
-      !order.shipping_country_code
-    ) {
-      blockType = 'incomplete_address';
-    }
 
     const constraintId = uuidv5(
       `customer:${orderId}`,

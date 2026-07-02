@@ -105,9 +105,10 @@ function Nav() {
         <Link href="/faq" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>FAQ</Link>
         <Link href="/pilot" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pilot</Link>
         <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
-        <a
-          href="https://app.lasyncro.com/register"
+        <Link
+          href="/pilot#apply"
           className="nav-cta"
+          aria-label="Apply for the pilot program"
           style={{
             display: 'inline-flex', alignItems: 'center',
             padding: '8px 18px',
@@ -117,8 +118,8 @@ function Nav() {
             transition: 'background 0.15s',
           }}
         >
-          Get early access
-        </a>
+          Apply for pilot
+        </Link>
       </div>
     </nav>
   )

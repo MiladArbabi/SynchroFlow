@@ -10,23 +10,21 @@ import db from '@lasyncro/backend-core/db.js';
  * — the primary resolution path for `customer`/`incomplete_address`
  * blocks (OF-08, 2026-07-02), instead of sending operators to Shopify.
  *
- * DELIBERATELY a direct API write, not a domain event through the
- * Command Bus / projection pipeline: that pipeline exists for external
- * facts requiring deterministic replay (Shopify webhooks — see
- * orders.paid.ts, orders.fulfilled.ts, refunds.create.ts). An operator
- * correcting a typo inside our own app is a first-party correction, not
- * an external event to replay. See entity-detail-modal-playbook.md /
- * cta-deeplink-playbook.md for the full reasoning, recorded alongside
- * this decision.
- *
- * Still follows the SAME real mechanism every projection handler uses
- * to signal "this order changed" to reconciliation:
- * aggregate_version + 1. evaluateCustomerConstraint (customerConstraint
- * Evaluator.ts) derives its isActive purely from live address-column
- * completeness — no separate "resolved" flag exists or is needed. Once
- * this write lands and aggregate_version bumps, the next reconciliation
- * poll cycle (projection.db.worker.ts, ~200ms) will re-evaluate, find
- * the address complete, and the constraint clears itself automatically.
+ * CORRECTED (GH-1036, 2026-07-02): originally built as a direct API
+ * write only (bump aggregate_version, insert a reconciliation intent),
+ * reasoning that domain events were only for external Shopify facts.
+ * Confirmed live this was WRONG — reconciliation.handlers.ts's
+ * intent-driven path can only READ existing order_risk_snapshot rows,
+ * never create new ones, and never calls the real constraint
+ * persistence layer (projectOrderConstraints). Only a real domain
+ * event flowing through projection.db.worker.ts →
+ * projectDomainEventCore actually re-evaluates and persists cleared
+ * constraints. This endpoint now does BOTH: the direct write (for
+ * immediate UI feedback / the timeline entry) AND emits a real
+ * 'orders/shipping_address_corrected' domain event (to actually
+ * trigger constraint re-evaluation). See GH-1036 for the full
+ * investigation trail — this is genuinely how the system works, not
+ * a workaround.
  *
  * Also appends a real order_fulfillment_history row ('address_corrected')
  * so the correction is visible in the Order Detail modal's "Why —
@@ -139,6 +137,53 @@ export const httpUpdateShippingAddress = async (
         status: 'address_corrected',
         event_occurred_at: trx.fn.now(),
       });
+
+      /**
+       * DOMAIN EVENT EMISSION (GH-1036, 2026-07-02)
+       * ---------------------------------------------
+       * Confirmed live: bumping aggregate_version + inserting a
+       * reconciliation intent alone does NOT clear the constraint.
+       * order_reconciliation_intents-driven reconciliation
+       * (reconciliation.handlers.ts) can only READ existing
+       * order_risk_snapshot rows — it never creates new ones as
+       * versions advance, and it never calls the real constraint
+       * persistence layer (projectOrderConstraints). Only a real
+       * domain event, processed by projection.db.worker.ts →
+       * projectDomainEventCore, triggers the full orchestration
+       * (age → evaluateOrderConstraints → projectOrderConstraints →
+       * projectOrderRisk) that actually re-evaluates and persists the
+       * cleared constraint. See GH-1036 for the full investigation —
+       * this was a genuine, system-wide gap, not specific to this
+       * feature.
+       *
+       * external_order_id resolved from external_order_identity_map
+       * (not orderId itself, which is the internal lasyncro UUID) —
+       * matches the shape extractExternalOrderId expects (payload.id).
+       */
+      const externalIdentity = await trx('external_order_identity_map')
+        .where({
+          shop_id: shopId,
+          platform: 'shopify',
+          lasyncro_order_id: orderId,
+        })
+        .select('external_order_id')
+        .first();
+
+      if (externalIdentity?.external_order_id) {
+        await trx('domain_events').insert({
+          shop_id: shopId,
+          event_type: 'orders/shipping_address_corrected',
+          event_payload: { id: externalIdentity.external_order_id },
+          event_time: trx.fn.now(),
+          event_version: 1,
+          external_event_id: `${externalIdentity.external_order_id}:shipping_address_corrected:${Date.now()}`,
+        });
+      } else {
+        console.warn('[SHIPPING_ADDRESS_CORRECTED_NO_EXTERNAL_ID]', {
+          order_id: orderId,
+          shop_id: shopId,
+        });
+      }
 
       console.info('[SHIPPING_ADDRESS_UPDATED]', {
         order_id: orderId,
