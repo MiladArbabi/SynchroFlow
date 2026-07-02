@@ -44,9 +44,11 @@ export interface OrdersOperatorSummary {
     lasyncro_order_id: string;
     externalOrderId: string | null;
     ageHours: number;
-    isShippingSlaBreached: boolean;
+    isShippingSlaBreached: boolean;      
     constraintType: string | null;
     isPriorityFlagged: boolean;
+    inPickBatch: boolean;
+    pickBatchStatus: string | null;
     revenue: number;
     timeToSlaBreachMinutes: number | null;
   }>;

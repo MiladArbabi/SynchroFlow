@@ -363,10 +363,14 @@ export default function OrderFlowPage() {
     pickBatchesQuery.isError;
 
   // --- Header summary figures ----------------------------------------------
+  const poolSummary = orderPoolQuery.data?.summary;
   const blockedCount = blockedOrders.length;
   const heldRevenue = blockedOrders.reduce((sum, order) => sum + Number(order.revenue ?? 0), 0);
   const readyCount = orderPoolQuery.data?.eligible_order_count ?? poolOrders.length;
-  const activeBatchCount = batches.length;
+  const inBatchOrderCount = poolSummary?.in_batch_order_count ?? 0;
+  const poolBlockedCount = poolSummary?.blocked_count ?? blockedCount;
+  const fulfilledCount = poolSummary?.fulfilled_count ?? 0;
+  const activeBatchCount = poolSummary?.active_batch_count ?? batches.length;
 
   // --- Next-wave derived totals --------------------------------------------
   // If the user has hand-selected orders, the wave previews that subset;
@@ -696,13 +700,43 @@ export default function OrderFlowPage() {
                     flexDirection: 'column',
                   }}
                 >
-                  <Box sx={{ p: '12px 14px', borderBottom: '1px solid var(--rule)' }}>
-                    <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                      Order pool · {readyCount} ready
-                    </Typography>
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                      paid · stock reserved
-                    </Typography>
+                    <Box sx={{ p: '12px 14px', borderBottom: '1px solid var(--rule)' }}>
+                      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                        Order pool · {readyCount} ready
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
+                        paid · stock reserved
+                      </Typography>
+
+                      <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>
+                        {[
+                          { label: 'Ready', value: readyCount },
+                          { label: 'In batch', value: inBatchOrderCount },
+                          { label: 'Blocked', value: poolBlockedCount },
+                          { label: 'Fulfilled', value: fulfilledCount },
+                        ].map(({ label, value }) => (
+                          <Box
+                            key={label}
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 0.5,
+                              px: 1,
+                              py: 0.375,
+                              borderRadius: '999px',
+                              border: '0.5px solid var(--rule)',
+                              bgcolor: 'var(--bg-3)',
+                            }}
+                          >
+                            <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)' }}>
+                              {label}
+                            </Typography>
+                            <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink)' }}>
+                              {value}
+                            </Typography>
+                          </Box>
+                        ))}
+                      </Box>
                     {/*
                       OF-02 (2026-07-02): in-table status filter chips —
                       additive alongside cptFilter (that's a cross-link
@@ -813,12 +847,46 @@ export default function OrderFlowPage() {
 
                   <Box>
                     {poolOrders.length === 0 && (
-                      <Box sx={{ px: 3, py: 6, textAlign: 'center' }}>
-                        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
-                          No orders in the release pool. Orders are either blocked, already batched, or not ready yet.
-                        </Typography>
-                      </Box>
-                    )}
+                        <Box sx={{ px: 3, py: 5, textAlign: 'center' }}>
+                          {orderPoolQuery.data?.empty_reason === 'ALL_ELIGIBLE_ORDERS_ALREADY_BATCHED' ? (
+                            <>
+                              <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', mb: 0.75 }}>
+                                Release pool is clear
+                              </Typography>
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)', maxWidth: 360, mx: 'auto', lineHeight: 1.6 }}>
+                                All eligible orders have already been released into active batch work.
+                                There are no more orders waiting to be released right now.
+                              </Typography>
+
+                              <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1, flexWrap: 'wrap', mt: 2 }}>
+                                <Box sx={{ px: 1.25, py: 0.625, borderRadius: '999px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)' }}>
+                                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)' }}>
+                                    {orderPoolQuery.data?.summary?.in_batch_order_count ?? 0} in batch
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ px: 1.25, py: 0.625, borderRadius: '999px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)' }}>
+                                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)' }}>
+                                    {orderPoolQuery.data?.summary?.active_batch_count ?? 0} active batch
+                                  </Typography>
+                                </Box>
+                                <Box sx={{ px: 1.25, py: 0.625, borderRadius: '999px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)' }}>
+                                  <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink-3)' }}>
+                                    {orderPoolQuery.data?.summary?.ready_for_release_count ?? 0} ready for release
+                                  </Typography>
+                                </Box>
+                              </Box>
+
+                              <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 2 }}>
+                                Check the Fulfillment column to continue batch work.
+                              </Typography>
+                            </>
+                          ) : (
+                            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
+                              No orders are ready for release right now.
+                            </Typography>
+                          )}
+                        </Box>
+                      )}
 
                     {visiblePool.map((order) => {
                       const isSelected = selected.has(order.lasyncro_order_id);

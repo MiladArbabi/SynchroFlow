@@ -112,7 +112,12 @@ export class WebhookRouter {
      */
     if (!(envelope as any).__fromQueue) {
 
-      if (envelope.shopDomain) {
+      if (envelope.shopId) {
+        // Already resolved upstream (e.g. Sendcloud: resolved via per-shop
+        // webhook token during signature verification, before this envelope
+        // was even built — no shopDomain concept exists for this provider).
+        shopId = envelope.shopId;
+      } else if (envelope.shopDomain) {
         const installation = await db('shopify_app_installations')
           .where({ shop_domain: envelope.shopDomain })
           .select('shop_id')

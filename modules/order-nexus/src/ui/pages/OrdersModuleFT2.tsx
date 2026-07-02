@@ -113,6 +113,8 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       isShippingSlaBreached: boolean;
       constraintType: string | null;
       isPriorityFlagged: boolean;
+      inPickBatch: boolean;
+      pickBatchStatus: string | null;
       revenue: number;
       timeToSlaBreachMinutes: number | null;
     }>;
@@ -535,20 +537,35 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                       at stake
                     </Typography>
                   </Box>
-                  {order.constraintType !== null ? (
-                    <Box
-                      component="button"
-                      onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                      sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                    >
-                      Review queue
-                    </Box>
-                  ) : (
-                    <PrioritizeButton
-                      isPriorityFlagged={order.isPriorityFlagged}
-                      onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
-                    />
-                  )}
+                    {order.constraintType !== null ? (
+                      <Box
+                        component="button"
+                        onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                        sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                      >
+                        Review queue
+                      </Box>
+                    ) : order.inPickBatch ? (
+                      <Box
+                        sx={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: 'var(--ink-3)',
+                          bgcolor: 'var(--bg-3)',
+                          border: '0.5px solid var(--rule)',
+                          borderRadius: '6px',
+                          py: 1,
+                          textAlign: 'center',
+                        }}
+                      >
+                        In batch
+                      </Box>
+                    ) : (
+                      <PrioritizeButton
+                        isPriorityFlagged={order.isPriorityFlagged}
+                        onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
+                      />
+                    )}
                 </Box>
                   )}
                 />
@@ -595,20 +612,35 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                             at stake
                           </Typography>
                         </Box>
-                        {order.constraintType !== null ? (
-                          <Box
-                            component="button"
-                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                            sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py:1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                          >
-                            Review queue
-                          </Box>
-                        ) : (
-                          <PrioritizeButton
-                            isPriorityFlagged={order.isPriorityFlagged}
-                            onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
-                          />
-                        )}
+                                                  {order.constraintType !== null ? (
+                            <Box
+                              component="button"
+                              onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                              sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                            >
+                              Review queue
+                            </Box>
+                          ) : order.inPickBatch ? (
+                            <Box
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: 'var(--ink-3)',
+                                bgcolor: 'var(--bg-3)',
+                                border: '0.5px solid var(--rule)',
+                                borderRadius: '6px',
+                                py: 1,
+                                textAlign: 'center',
+                              }}
+                            >
+                              In batch
+                            </Box>
+                          ) : (
+                            <PrioritizeButton
+                              isPriorityFlagged={order.isPriorityFlagged}
+                              onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
+                            />
+                          )}
                       </Box>
                       )}
                     />

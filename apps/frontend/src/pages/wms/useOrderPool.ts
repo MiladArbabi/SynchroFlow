@@ -36,10 +36,29 @@ export interface PoolOrder {
   zone_distribution: string[] | string;
 }
 
+export type OrderPoolEmptyReason =
+  | 'ALL_ELIGIBLE_ORDERS_ALREADY_BATCHED'
+  | 'ORDERS_BLOCKED'
+  | 'ORDERS_NOT_READY'
+  | 'NO_UNFULFILLED_ORDERS'
+  | 'NO_ORDERS'
+  | null;
+
+export interface OrderPoolSummary {
+  ready_for_release_count: number;
+  in_batch_order_count: number;
+  active_batch_count: number;
+  blocked_count: number;
+  fulfilled_count: number;
+  not_ready_count: number;
+}
+
 export interface OrderPool {
   eligible_order_count: number;
   max_batch_line_items: number;
   orders: PoolOrder[];
+  summary?: OrderPoolSummary;
+  empty_reason?: OrderPoolEmptyReason;
 }
 
 export interface ReleaseBatchPayload {

@@ -44,17 +44,19 @@ export interface OrdersOperatorFacts {
 
   // ── Aging orders past SLA (named, actionable, top 20) ─────
   // Unfulfilled orders with age > 48h, with external ID for operator action
-  agingOrders: Array<{
-    lasyncro_order_id: string;
-    externalOrderId: string | null;
-    ageHours: number;
-    isShippingSlaBreached: boolean;
-    constraintType: string | null;
-    isPriorityFlagged: boolean;
-    revenue: number;
-    /** Minutes until 72h SLA breach — negative means already breached */
-    timeToSlaBreachMinutes: number | null;
-  }>;
+    agingOrders: Array<{
+      lasyncro_order_id: string;
+      externalOrderId: string | null;
+      ageHours: number;
+      isShippingSlaBreached: boolean;
+      constraintType: string | null;
+      isPriorityFlagged: boolean;
+      inPickBatch: boolean;
+      pickBatchStatus: string | null;
+      revenue: number;
+      /** Minutes until 72h SLA breach — negative means already breached */
+      timeToSlaBreachMinutes: number | null;
+    }>;
 
   /** Orders breaching 72h SLA within the next 8 hours */
   imminentSlaBreachers: Array<{
@@ -208,35 +210,39 @@ export async function getOrdersOperatorFacts(
     )
     .orderBy('oas.age_since_creation_seconds', 'desc')
     .limit(20)
-    .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
-    // FIX (2026-07-01): the comment above this block (line 135) already
-    // documented the intent — "order_fulfillment_status → filter out
-    // fulfilled orders" — but the filter itself was never written, only
-    // the join (used solely for is_priority_flagged). Confirmed live:
-    // already-fulfilled orders were showing up in the Watch/aging list
-    // with a stale "SLA breach · Xd past" label, giving the false
-    // impression something still needed action.
-    .where((builder) => {
-      builder.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled']);
-    })
-    .leftJoin(
-      db('order_revenue_units')
-        .groupBy('lasyncro_order_id')
-        .select('lasyncro_order_id')
-        .sum('line_total as revenue')
-        .as('rev'),
-      'rev.lasyncro_order_id', 'o.lasyncro_order_id'
-    )
-    .select(
-      'o.lasyncro_order_id',
-      'o.order_created_at',
-      'eim.external_order_id',
-      'oas.age_since_creation_seconds',
-      'oas.is_shipping_sla_breached',
-      'dominant_constraint.constraint_type',
-      db.raw('COALESCE(ofs.is_priority_flagged, false) as is_priority_flagged'),
-      db.raw('COALESCE(rev.revenue, 0) as revenue'),
-    );
+      .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+      .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+      .leftJoin('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+      // FIX (2026-07-01): the comment above this block (line 135) already
+      // documented the intent — "order_fulfillment_status → filter out
+      // fulfilled orders" — but the filter itself was never written, only
+      // the join (used solely for is_priority_flagged). Confirmed live:
+      // already-fulfilled orders were showing up in the Watch/aging list
+      // with a stale "SLA breach · Xd past" label, giving the false
+      // impression something still needed action.
+      .where((builder) => {
+        builder.whereNull('ofs.status').orWhereNotIn('ofs.status', ['fulfilled']);
+      })
+      .leftJoin(
+        db('order_revenue_units')
+          .groupBy('lasyncro_order_id')
+          .select('lasyncro_order_id')
+          .sum('line_total as revenue')
+          .as('rev'),
+        'rev.lasyncro_order_id', 'o.lasyncro_order_id'
+      )
+      .select(
+        'o.lasyncro_order_id',
+        'o.order_created_at',
+        'eim.external_order_id',
+        'oas.age_since_creation_seconds',
+        'oas.is_shipping_sla_breached',
+        'dominant_constraint.constraint_type',
+        'pb.status as pick_batch_status',
+        db.raw('COALESCE(ofs.is_priority_flagged, false) as is_priority_flagged'),
+        db.raw('CASE WHEN pbo.lasyncro_order_id IS NULL THEN false ELSE true END as in_pick_batch'),
+        db.raw('COALESCE(rev.revenue, 0) as revenue'),
+      );
 
   const SLA_HOURS = 72;
   const agingOrders = agingRows.map((row: any) => {
@@ -250,6 +256,8 @@ export async function getOrdersOperatorFacts(
       isShippingSlaBreached: Boolean(row.is_shipping_sla_breached),
       constraintType: row.constraint_type ?? null,
       isPriorityFlagged: Boolean(row.is_priority_flagged),
+      inPickBatch: Boolean(row.in_pick_batch),
+      pickBatchStatus: row.pick_batch_status ?? null,
       revenue: Math.round(Number(row.revenue) * 100) / 100,
       timeToSlaBreachMinutes,
     };

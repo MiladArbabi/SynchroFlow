@@ -73,6 +73,13 @@ import {
   httpDeletePrinter, 
   httpGetDefaultPrinter 
 } from './printers.controller.js';
+import {
+  httpCreateCarrierWebhookToken,
+  httpGetCarrierWebhookToken,
+  httpRotateCarrierWebhookToken,
+  httpRevokeCarrierWebhookToken,
+  httpSetCarrierWebhookSecret,
+} from './carrierWebhookToken.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -621,6 +628,47 @@ router.get(
   requireTier('core'), 
   requireAction('wms:read'), 
   httpGetDefaultPrinter
+);
+
+router.put(
+  '/carrier-webhook-tokens',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:batch:release'),
+  httpCreateCarrierWebhookToken
+);
+router.get(
+  '/carrier-webhook-tokens',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:read'),
+  httpGetCarrierWebhookToken
+);
+router.post(
+  '/carrier-webhook-tokens/:id/rotate',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:batch:release'),
+  httpRotateCarrierWebhookToken
+);
+router.delete(
+  '/carrier-webhook-tokens/:id',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:batch:release'),
+  httpRevokeCarrierWebhookToken
+);
+router.patch(
+  '/carrier-settings/:carrierCode/webhook-secret',
+  authenticateToken,
+  requireFt2,
+  requireTier('growth'),
+  requireAction('wms:batch:release'),
+  httpSetCarrierWebhookSecret
 );
 
 export default router;

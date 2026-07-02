@@ -94,6 +94,7 @@ const ALLOWED_CONTEXTS = [
   'shopify-token-backfill',
   'shopify.webhook.registration',
   'wms.carrier.sendcloud',
+  'wms.carrier.sendcloud.webhook', // WM-40 — decrypt webhook_secret for HMAC verification
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {

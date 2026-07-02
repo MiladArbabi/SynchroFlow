@@ -2274,20 +2274,104 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
           ) as zone_distribution`),
         );
 
-      // Load max_batch_line_items for ceiling display in UI
-      const settings = await trx('shop_wms_settings')
-        .where({ shop_id: shopId })
-        .select('max_batch_line_items')
-        .first();
+        // Load max_batch_line_items for ceiling display in UI
+        const settings = await trx('shop_wms_settings')
+          .where({ shop_id: shopId })
+          .select('max_batch_line_items')
+          .first();
 
-      return { rows, maxBatchLineItems: settings?.max_batch_line_items ?? 108 };
-    });
+        const activeConstraints = trx('order_constraints')
+          .where('is_active', true)
+          .groupBy('lasyncro_order_id')
+          .select('lasyncro_order_id')
+          .as('active_constraints');
 
-    return res.json({
-      eligible_order_count: result.rows.length,
-      max_batch_line_items: result.maxBatchLineItems,
-      orders: result.rows,
-    });
+        const summaryRow = await trx('orders as o')
+          .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+          .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
+          .leftJoin('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          .leftJoin(activeConstraints, 'active_constraints.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where('o.shop_id', shopId)
+          .select(
+            trx.raw(`
+              COUNT(*) FILTER (
+                WHERE pbo.lasyncro_order_id IS NULL
+                AND ofs.status IN ('pending', 'processing')
+                AND active_constraints.lasyncro_order_id IS NULL
+              )::integer as ready_for_release_count
+            `),
+            trx.raw(`
+              COUNT(DISTINCT o.lasyncro_order_id) FILTER (
+                WHERE pbo.lasyncro_order_id IS NOT NULL
+              )::integer as in_batch_order_count
+            `),
+            trx.raw(`
+              COUNT(DISTINCT pb.pick_batch_id) FILTER (
+                WHERE pbo.lasyncro_order_id IS NOT NULL
+              )::integer as active_batch_count
+            `),
+            trx.raw(`
+              COUNT(*) FILTER (
+                WHERE pbo.lasyncro_order_id IS NULL
+                AND active_constraints.lasyncro_order_id IS NOT NULL
+              )::integer as blocked_count
+            `),
+            trx.raw(`
+              COUNT(*) FILTER (
+                WHERE pbo.lasyncro_order_id IS NULL
+                AND ofs.status = 'fulfilled'
+              )::integer as fulfilled_count
+            `),
+            trx.raw(`
+              COUNT(*) FILTER (
+                WHERE pbo.lasyncro_order_id IS NULL
+                AND active_constraints.lasyncro_order_id IS NULL
+                AND (
+                  ofs.lasyncro_order_id IS NULL
+                  OR ofs.status NOT IN ('pending', 'processing', 'fulfilled')
+                )
+              )::integer as not_ready_count
+            `)
+          )
+          .first();
+
+        const summary = {
+          ready_for_release_count: Number(summaryRow?.ready_for_release_count ?? rows.length),
+          in_batch_order_count: Number(summaryRow?.in_batch_order_count ?? 0),
+          active_batch_count: Number(summaryRow?.active_batch_count ?? 0),
+          blocked_count: Number(summaryRow?.blocked_count ?? 0),
+          fulfilled_count: Number(summaryRow?.fulfilled_count ?? 0),
+          not_ready_count: Number(summaryRow?.not_ready_count ?? 0),
+        };
+
+        const emptyReason =
+          rows.length > 0
+            ? null
+            : summary.in_batch_order_count > 0
+              ? 'ALL_ELIGIBLE_ORDERS_ALREADY_BATCHED'
+              : summary.blocked_count > 0
+                ? 'ORDERS_BLOCKED'
+                : summary.not_ready_count > 0
+                  ? 'ORDERS_NOT_READY'
+                  : summary.fulfilled_count > 0
+                    ? 'NO_UNFULFILLED_ORDERS'
+                    : 'NO_ORDERS';
+
+        return {
+          rows,
+          maxBatchLineItems: settings?.max_batch_line_items ?? 108,
+          summary,
+          emptyReason,
+        };
+      });
+
+      return res.json({
+        eligible_order_count: result.rows.length,
+        max_batch_line_items: result.maxBatchLineItems,
+        orders: result.rows,
+        summary: result.summary,
+        empty_reason: result.emptyReason,
+      });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_ORDER_POOL_FAILED]', { shopId, error: message });

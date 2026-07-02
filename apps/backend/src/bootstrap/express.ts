@@ -50,6 +50,9 @@ import { registerLifecycleRoutes } from '../api/lifecycle/lifecycle.routes.js';
 import waitlistRoutes from '../api/waitlist/waitlist.routes.js';
 import pilotRoutes from '../api/pilot/pilot.routes.js';
 
+import sendcloudTrackingRouter from '../api/webhooks/sendcloud.tracking.router.js';
+import { verifySendcloudTrackingWebhook } from '../api/webhooks/sendcloud.tracking.verify.middleware.js';
+
 // Raw body capture for webhook verification
 // -----------------------------------------
 // Certain webhook providers (Stripe, Shopify) require HMAC verification
@@ -129,6 +132,8 @@ export function createApp(): Express {
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/shopify-billing', shopifyBillingRoutes);
   app.use('/api/v1/exports', exportsRoutes);
+
+  app.use('/api/v1/webhooks/carriers/sendcloud/tracking', sendcloudTrackingRouter);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

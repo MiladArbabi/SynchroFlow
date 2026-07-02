@@ -30,7 +30,83 @@ type CarrierRow = {
   updated_at: string;
 };
 
+type WebhookTokenRow = {
+  id: string;
+  carrier_code: string;
+  created_at: string;
+  rotated_at: string | null;
+  last_seen_at: string | null;
+};
+
 // ─── HOOKS ────────────────────────────────────────────────────
+function useCarrierWebhookToken() {
+  return useQuery<{ token: WebhookTokenRow | null }>({
+    queryKey: ['carrier-webhook-token', 'sendcloud'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/carrier-webhook-tokens', {
+        params: { carrier_code: 'sendcloud' },
+      });
+      return data;
+    },
+  });
+}
+
+function useCreateWebhookToken() {
+  const queryClient = useQueryClient();
+  return useMutation<{ id: string; raw_token: string }, Error, void>({
+    mutationFn: async () => {
+      const { data } = await axiosInstance.put('/api/v1/wms/carrier-webhook-tokens', {
+        carrier_code: 'sendcloud',
+      });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carrier-webhook-token', 'sendcloud'] });
+    },
+  });
+}
+
+function useRotateWebhookToken() {
+  const queryClient = useQueryClient();
+  return useMutation<{ raw_token: string }, Error, string>({
+    mutationFn: async (id) => {
+      const { data } = await axiosInstance.post(`/api/v1/wms/carrier-webhook-tokens/${id}/rotate`);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carrier-webhook-token', 'sendcloud'] });
+    },
+  });
+}
+
+function useRevokeWebhookToken() {
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+  return useMutation<void, Error, string>({
+    mutationFn: async (id) => {
+      await axiosInstance.delete(`/api/v1/wms/carrier-webhook-tokens/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carrier-webhook-token', 'sendcloud'] });
+      show('Webhook URL revoked', 'success');
+    },
+    onError: () => show('Failed to revoke webhook URL.', 'error'),
+  });
+}
+
+// NEW BACKEND ENDPOINT NEEDED — see note above.
+function useSetWebhookSecret() {
+  const { show } = useToast();
+  return useMutation<void, Error, string>({
+    mutationFn: async (secret) => {
+      await axiosInstance.patch('/api/v1/wms/carrier-settings/sendcloud/webhook-secret', {
+        webhook_secret: secret,
+      });
+    },
+    onSuccess: () => show('Webhook secret saved', 'success'),
+    onError: () => show('Failed to save webhook secret.', 'error'),
+  });
+}
 
 function useShopSettings() {
   return useQuery<ShopSettings>({
@@ -337,6 +413,163 @@ function CarrierIntegrationSection() {
   );
 }
 
+function WebhookIntegrationSection() {
+  const pal = useAppTheme();
+  const { show } = useToast();
+  const { data, isLoading } = useCarrierWebhookToken();
+  const { mutate: createToken, isPending: creating } = useCreateWebhookToken();
+  const { mutate: rotateToken, isPending: rotating } = useRotateWebhookToken();
+  const { mutate: revokeToken, isPending: revoking } = useRevokeWebhookToken();
+  const { mutate: setSecret, isPending: savingSecret } = useSetWebhookSecret();
+
+  const [revealedUrl, setRevealedUrl] = useState<string | null>(null);
+  const [secretInput, setSecretInput] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
+
+  const token = data?.token;
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+  const buildUrl = (rawToken: string) =>
+    `${API_BASE_URL}/api/v1/webhooks/carriers/sendcloud/tracking/${rawToken}`;
+
+  const handleCopy = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => show('Copied to clipboard', 'success'));
+  };
+
+  const handleCreate = () => {
+    createToken(undefined, {
+      onSuccess: (res) => setRevealedUrl(buildUrl(res.raw_token)),
+    });
+  };
+
+  const handleRotate = () => {
+    if (!token) return;
+    if (!window.confirm('Rotating will invalidate the current URL. You must update it in Sendcloud immediately, or tracking updates will stop.')) return;
+    rotateToken(token.id, {
+      onSuccess: (res) => setRevealedUrl(buildUrl(res.raw_token)),
+    });
+  };
+
+  const handleRevoke = () => {
+    if (!token) return;
+    if (!window.confirm('Revoke this webhook URL? Tracking updates will stop until a new one is created and configured in Sendcloud.')) return;
+    revokeToken(token.id);
+    setRevealedUrl(null);
+  };
+
+  return (
+    <Box sx={{
+      p: 1.5, bgcolor: 'var(--bg-2)', border: `0.5px solid ${pal.rule}`,
+      borderRadius: '6px', display: 'flex', flexDirection: 'column', gap: 1.5,
+    }}>
+      <Box>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+          Live tracking updates
+        </Typography>
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: '2px' }}>
+          Register this URL in Sendcloud → Settings → Webhooks to get live parcel status in Outbound.
+        </Typography>
+      </Box>
+
+      {isLoading ? (
+        <Skeleton height={36} sx={{ borderRadius: '6px' }} />
+      ) : !token ? (
+        <Box
+          onClick={handleCreate}
+          sx={{
+            display: 'inline-flex', alignSelf: 'flex-start',
+            px: 1.5, py: 0.625, fontSize: 12, fontWeight: 600,
+            bgcolor: 'var(--accent)', color: 'white',
+            borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 },
+          }}
+        >
+          {creating ? 'Generating…' : 'Generate webhook URL'}
+        </Box>
+      ) : (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {revealedUrl && (
+            <Box sx={{
+              p: 1.25, bgcolor: 'rgba(34,197,94,0.06)',
+              border: '0.5px solid rgba(34,197,94,0.3)', borderRadius: '6px',
+            }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 600, color: '#22C55E', mb: 0.5 }}>
+                Copy this URL now — it won't be shown again.
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Typography sx={{
+                  fontSize: 11, color: 'var(--ink)', fontFamily: 'monospace', flex: 1,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {revealedUrl}
+                </Typography>
+                <Box onClick={() => handleCopy(revealedUrl)} sx={{ cursor: 'pointer', color: 'var(--accent)', flexShrink: 0 }}>
+                  Copy
+                </Box>
+              </Box>
+            </Box>
+          )}
+
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: token.last_seen_at ? '#22C55E' : 'var(--ink-4)' }} />
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                {token.last_seen_at
+                  ? `Last event received ${new Date(token.last_seen_at).toLocaleString()}`
+                  : 'Configured — no events received yet'}
+              </Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Box onClick={handleRotate} sx={{ fontSize: 12, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>
+                {rotating ? 'Rotating…' : 'Rotate'}
+              </Box>
+              <Box onClick={handleRevoke} sx={{ fontSize: 12, color: 'error.main', cursor: 'pointer', '&:hover': { opacity: 0.8 } }}>
+                {revoking ? 'Revoking…' : 'Revoke'}
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+      )}
+
+      <Box sx={{ mt: 0.5 }}>
+        <SectionLabel>Webhook signing secret</SectionLabel>
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mb: 0.75 }}>
+          Set when you register the webhook in Sendcloud — used to verify incoming events.
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Box sx={{ position: 'relative', flex: 1 }}>
+            <TextField
+              size="small" fullWidth
+              type={showSecret ? 'text' : 'password'}
+              placeholder="Sendcloud webhook secret"
+              value={secretInput}
+              onChange={(e) => setSecretInput(e.target.value)}
+              inputProps={{ style: { fontSize: 13, paddingRight: 36 } }}
+            />
+            <Box
+              onClick={() => setShowSecret(v => !v)}
+              sx={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                cursor: 'pointer', color: 'var(--ink-3)', '&:hover': { color: 'var(--ink)' } }}
+            >
+              {showSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+            </Box>
+          </Box>
+          <Box
+            onClick={() => secretInput.trim() && setSecret(secretInput.trim(), { onSuccess: () => setSecretInput('') })}
+            sx={{
+              px: 1.5, py: 0.625, fontSize: 12, fontWeight: 600,
+              bgcolor: !secretInput.trim() || savingSecret ? 'var(--bg-3)' : 'var(--accent)',
+              color: !secretInput.trim() || savingSecret ? 'var(--ink-3)' : 'white',
+              borderRadius: '6px', cursor: !secretInput.trim() ? 'not-allowed' : 'pointer',
+              display: 'flex', alignItems: 'center', flexShrink: 0,
+            }}
+          >
+            {savingSecret ? 'Saving…' : 'Save'}
+          </Box>
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
 // ─── PAGE ─────────────────────────────────────────────────────
 
 export default function ShopSettingsCarriersPage() {
@@ -347,6 +580,7 @@ export default function ShopSettingsCarriersPage() {
     <SettingsPageWrapper>
       <CarrierCutoffSection settings={settings} saving={saving} onSave={patch} />
       <CarrierIntegrationSection />
+      <WebhookIntegrationSection />
     </SettingsPageWrapper>
   );
 }
