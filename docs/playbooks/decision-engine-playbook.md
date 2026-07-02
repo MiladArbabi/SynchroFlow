@@ -130,11 +130,12 @@ now use `800001+`.
   must not block reconciliation`), confirmed not to block anything
   tonight, but real margin data isn't being computed during live
   reconciliation. Needs its own fix.
-- **A2-BUG-02** — `decision_execution_queue` insert in
+  - **A2-BUG-02** — `decision_execution_queue` insert in
   `reconciliation.handlers.ts`'s `executionBuffer` drain loop, outside
-  `trx` scope. Still dormant (only reachable via decision-reuse, which
-  hasn't happened yet in this dataset — all 18 decisions tonight were
-  fresh, never reused).
+  `trx` scope. **Still open, still dormant** — this is a distinct bug
+  from the reuse-branch issue below and was NOT touched by that fix
+  (2026-07-02). Only reachable via decision-reuse, now confirmed to
+  actually fire in practice (see below) — no longer purely theoretical.
 - **`execution.dispatcher.worker.ts`** — same `systemQuery()` exposure
   on `decision_execution_queue` / `decisions`, confirmed via direct
   policy read, never fixed. Will matter the moment a decision actually
@@ -142,8 +143,66 @@ now use `800001+`.
 - `inventory_blocked_revenue` decimal-as-string in
   `mapToDecisionSignals` — now visible in real payloads
   (`"blocked_revenue": "260.00"`, confirmed string-typed).
-- Reuse-branch double-push/double-create in `reconciliation.handlers.ts`
-  — still dormant, same reason as A2-BUG-02.
+- ~~Reuse-branch double-push/double-create in `reconciliation.handlers.ts`~~
+  **— ✅ FIXED 2026-07-02, see §5 below.** This entry's original framing
+  was imprecise: the real bug wasn't a push/create defect *inside* the
+  reuse branch — it was that the reuse branch's scope (per
+  `aggregate_version`) was too narrow. An order's version can increment
+  while its constraint state is genuinely unchanged, so the old
+  per-version check correctly found "no existing decision for *this*
+  version" and dispatched a fresh, functionally-duplicate one. This
+  also confirms the prediction above was right: this was NOT
+  purely dormant — GitHub issue #1035 shows it fired live, twice,
+  ~36 hours after this entry was written.
 
 See GitHub issues #1024–#1028 and the seed-collision issue created
-2026-06-30 for individually tracked items.
+2026-06-30 for individually tracked items. #1035 tracks the reuse-branch
+fix (closed, see §5).
+
+## 5. Session 4 (2026-07-02) — Reuse-branch cross-version duplicate, fixed
+
+**Trigger:** found live during an Order Flow module UX audit (unrelated
+starting point) — Blocked Orders list showed the same order twice.
+Traced through `order_constraints` (one row, correct) → live API
+response (two rows, duplicated) → `decisions` table (two `pending`
+rows, same `entity_id`, same `type`, created 2.26s apart, `aggregate_version`
+1 and 2 respectively).
+
+**Root cause:** `reconcileOrderFulfillment`'s decision-reuse check
+(`existingDecisions`) was scoped to `{ entity_id, aggregate_version }`.
+This is correct for idempotency *within* one version, but an order's
+`aggregate_version` can increment (any unrelated projection event) while
+it sits in the exact same unresolved constraint state. Each version bump
+then generates a genuinely distinct, correctly-formed idempotency key
+(`reconciliation-{orderId}-{version}`) — so `command.bus.ts`'s
+`.onConflict('idempotency_key').ignore()` (working exactly as designed)
+has nothing to collide against, and dispatches a second command,
+producing a second, functionally-identical decision.
+
+**Fix, shipped:** the reuse check now compares the *set* of currently-
+active constraint action types (derived from
+`isInventoryBlocked`/`isCustomerBlocked`/`isOperationalBlocked`, already
+computed earlier in the same function) against the *set* of action types
+already `pending` for the entity — regardless of `aggregate_version`.
+Matches `generateDecisions()`'s real behavior of producing one decision
+per active constraint type, not a single decision. If the sets match,
+existing pending decisions are reused and no new command is dispatched.
+
+**Two self-caught mistakes during this fix, worth restating:** the first
+draft (a) referenced a `riskSnapshot.recommended_action_type` field that
+doesn't exist anywhere on that table, and (b) introduced an unbalanced
+brace when wrapping the existing reuse-check block in a new `if/else`,
+breaking compilation two ways at once. Both were caught only via live
+TypeScript errors after applying, not before — this file's own §4c
+already documents that "the genuinely hard part... wasn't writing fixes,
+it was noticing each successive silent failure"; this session's mistakes
+were at least *loud* failures (compile errors), not silent ones, but the
+lesson holds: this function's real complexity (650+ lines, heavy
+RLS/transaction sensitivity, several prior subtle bugs) warrants viewing
+the full relevant scope before editing, not incremental grep-and-guess.
+
+**Verified live:** existing duplicate decision rows cleaned up in dev,
+API (`GET /api/v1/orders/constrained`) confirmed zero duplicates,
+Order Flow UI screenshot confirmed correct (2 distinct orders in
+"Address issue" category, not 1 order duplicated). See GitHub issue
+#1035 (closed) for the full investigation trail.

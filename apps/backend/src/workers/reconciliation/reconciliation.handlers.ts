@@ -491,10 +491,61 @@ export async function reconcileOrderFulfillment(
         `[PROJECTION_STATE_MISSING] order_risk_snapshot missing for order=${lasyncroOrderId}`
       );
   } else {
-
     // Holds reused decisions ONLY (new decisions are created via Command Bus)
     let decisions: Decision[] | undefined;
+    /**
+     * STALE-DUPLICATE GUARD (#1035, 2026-07-02) — corrected
+     * -------------------------------------------------------
+     * Confirmed live: the aggregate_version-scoped reuse check below is
+     * correct for its own purpose (idempotency within one version), but
+     * insufficient across version bumps. An order's aggregate_version can
+     * increment while it sits in the exact same unresolved constraint
+     * state — each version bump dispatches a genuinely new
+     * RECONCILIATION_RUN command (correct idempotency key per version,
+     * no conflict), creating a second, functionally-identical pending
+     * decision. Confirmed via live DB: two decisions, same entity_id,
+     * same type, aggregate_version 1 and 2, created 2.26s apart.
+     *
+     * CORRECTED (first draft wrongly referenced a nonexistent
+     * riskSnapshot.recommended_action_type field): generateDecisions()
+     * creates ONE decision PER active constraint type
+     * (resolve_inventory_block / resolve_customer_block /
+     * resolve_operational_block), not a single decision — so the guard
+     * must compare the full SET of currently-active constraint action
+     * types against the full set already pending, using the
+     * isInventoryBlocked/isCustomerBlocked/isOperationalBlocked booleans
+     * already computed above in this same function (constraintEvaluations
+     * block), not a field that doesn't exist on riskSnapshot.
+     */
+    const activeActionTypes = new Set<string>();
+    if (isInventoryBlocked) activeActionTypes.add('resolve_inventory_block');
+    if (isCustomerBlocked) activeActionTypes.add('resolve_customer_block');
+    if (isOperationalBlocked) activeActionTypes.add('resolve_operational_block');
 
+    const pendingDecisions = await trx('decisions')
+      .where({ entity_id: lasyncroOrderId, status: 'pending' });
+
+    const pendingActionTypes = new Set(
+      pendingDecisions.map((d) => d.recommended_action?.type)
+    );
+
+    const setsMatch =
+      activeActionTypes.size > 0 &&
+      activeActionTypes.size === pendingActionTypes.size &&
+      [...activeActionTypes].every((t) => pendingActionTypes.has(t));
+
+    if (setsMatch) {
+      console.info('[RECONCILIATION_SKIP_STALE_DUPLICATE]', {
+        orderId: lasyncroOrderId,
+        aggregateVersion,
+        activeActionTypes: [...activeActionTypes],
+        existingDecisionIds: pendingDecisions.map((d) => d.id),
+      });
+      decisions = pendingDecisions;
+      for (const decision of decisions) {
+        executionBuffer.push(decision);
+      }
+    } else {
     /**
      * DECISION EXISTENCE CHECK (CORRECT SOURCE OF TRUTH)
      * -------------------------------------------------
@@ -742,11 +793,12 @@ export async function reconcileOrderFulfillment(
     );
 
     return {
-      result: (observed?.status === 'fulfilled'
-        ? 'observed'
-        : 'synthetic') as ReconciliationResult,
-      affectedVariantIds: affectedVariantIds as string[]
-    };
+        result: (observed?.status === 'fulfilled'
+          ? 'observed'
+          : 'synthetic') as ReconciliationResult,
+        affectedVariantIds: affectedVariantIds as string[]
+      };
+    }
   });
 
   /**
