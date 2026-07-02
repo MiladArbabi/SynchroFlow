@@ -143,6 +143,8 @@ Canonical reveal control:
 --accent-ghost:  rgba(255,107,43,0.12)
 --accent-border: rgba(255,107,43,0.25)
 --bg:            #FAFAF8   /* light */ / #151D29 /* dark */
+--bg-2:          #F3F2EF   /* light */ / #1C2740 /* dark — WARNING: identical to --surface in dark mode, see §11 */
+--bg-3:          #E8E6E0   /* light */ / #243050 /* dark */
 --surface:       #FFFFFF   /* light */ / #1C2740 /* dark */
 --ink:           #0F0E0D   /* light */ / #F0EEE8 /* dark */
 --ink-3:         #6B7280   /* light */ / #8B8F9A /* dark */
@@ -525,3 +527,13 @@ sx={{
 the element is a true persisted-state indicator (disabled, no further
 action possible) — not a hover/active CTA state, not a toggle. If it's
 still clickable or reversible, it stays orange per §2.
+
+## 11. `--bg-2` vs `--surface` Collision in Dark Mode — 2026-07-02
+
+**The gotcha:** `--bg-2` and `--surface` share the **identical hex value in dark mode** (`#1C2740` == `#1C2740`, confirmed live via `themes/index.tsx`). In light mode they're correctly distinct (`--bg-2: #F3F2EF` vs `--surface: #FFFFFF`). This means any component styled with `bgcolor: 'var(--bg-2)'` sitting against a `var(--surface)` parent will render **visually identical in dark mode only** — a bug that's invisible in light-mode QA and only shows up for dark-mode users.
+
+**Where this bit us:** `EntityDetailModal.tsx`'s header/footer were styled `--bg-2` to frame the `--surface`-toned body (per the Order Detail modal redesign, 2026-07-02) — worked correctly in light mode, showed zero visual distinction in dark mode. Flagged live via screenshot.
+
+**The fix — use `--bg-3` instead, not a new token.** `--bg-3` (`#243050` dark / `#E8E6E0` light) is already established elsewhere for exactly this "frame distinct from `--surface`" purpose — see `ModuleTabBar.tsx`'s `active ? 'var(--surface)' : 'var(--bg-3)'` tab treatment, and `OrderDetailPage.tsx`'s bordered footer. Reuse it rather than inventing `--surface-2` or similar.
+
+**Rule going forward:** `--bg-2` is a **hover-state / page-background-context** token only (confirmed via full-codebase audit — every one of its ~60 existing usages is either a `&:hover` state or a panel against `var(--bg)`, never against `var(--surface)`). If you need a shade that reads as distinct **from `var(--surface)` specifically**, reach for `--bg-3`, not `--bg-2`. Before introducing any new background token, check both light AND dark hex values for accidental collisions with tokens it will be paired against — don't assume parity across modes.

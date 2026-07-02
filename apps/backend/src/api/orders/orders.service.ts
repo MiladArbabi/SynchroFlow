@@ -165,7 +165,7 @@ export const getOrderDetailsById = async (
       .first();
 
     // Timeline — append-only history, ascending chronological order
-    const timeline = await trx('order_fulfillment_history')
+    const historyEvents = await trx('order_fulfillment_history')
       .where('lasyncro_order_id', lasyncroOrderId)
       .orderBy('event_occurred_at', 'asc')
       .select(
@@ -173,6 +173,43 @@ export const getOrderDetailsById = async (
         'status',
         'event_occurred_at',
       );
+
+    /**
+     * TIMELINE MERGE (VO-02, 2026-07-02)
+     * ------------------------------------
+     * order_fulfillment_history only ever records 2 real statuses
+     * (pending/fulfilled — confirmed live) — far short of the target
+     * design's multi-stage flow. Rather than fabricate stages with no
+     * backing data, this merges in two OTHER real, already-populated
+     * timestamps that live on separate tables for good architectural
+     * reasons (payment timing vs. warehouse pipeline are different
+     * domains — see GH-1034 for the case to eventually make
+     * order_fulfillment_history the single writer instead):
+     *   - orders.paid_at (real payment-capture timestamp, reliably
+     *     populated — 23/26 orders in dev)
+     *   - order_warehouse_status.status_updated_at (real "released to
+     *     pick batch" moment, only present once an order leaves the pool)
+     * This is a query-side, read-only merge — no new writes, no schema
+     * change. See GH-1034 for the deferred write-path alternative.
+     */
+    const synthesizedEvents: { id: string; status: string; event_occurred_at: Date }[] = [];
+    if (order.paid_at) {
+      synthesizedEvents.push({
+        id: `synthetic-paid-${lasyncroOrderId}`,
+        status: 'payment_captured',
+        event_occurred_at: order.paid_at,
+      });
+    }
+    if (warehouseStatus?.status_updated_at) {
+      synthesizedEvents.push({
+        id: `synthetic-warehouse-${lasyncroOrderId}`,
+        status: 'in_release_pool',
+        event_occurred_at: warehouseStatus.status_updated_at,
+      });
+    }
+    const timeline = [...historyEvents, ...synthesizedEvents].sort(
+      (a, b) => new Date(a.event_occurred_at).getTime() - new Date(b.event_occurred_at).getTime()
+    );
 
     /**
      * External order identity is canonicalized outside `orders`.

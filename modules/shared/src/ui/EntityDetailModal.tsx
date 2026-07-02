@@ -92,9 +92,14 @@ export function EntityDetailModal({
       }}
     >
       {/*
-        HEADER — bg-2 per target design (2026-07-02): header/footer read
+        HEADER — bg-3 per target design (2026-07-02): header/footer read
         as a slightly different tone framing the surface-toned body,
         matching the target mockup. Was uniformly --surface throughout.
+        NOTE: originally used --bg-2, but --bg-2 and --surface share the
+        identical hex value in dark mode (#1C2740 == #1C2740, confirmed
+        live) — --bg-3 is the correct token, already established
+        elsewhere for this exact "framing a surface card" purpose (see
+        ModuleTabBar.tsx's active/inactive tab treatment, OrderDetailPage.tsx).
       */}
       <Box
         sx={{
@@ -104,7 +109,7 @@ export function EntityDetailModal({
           px: 3,
           pt: 2.5,
           pb: 2,
-          bgcolor: 'var(--bg-2)',
+          bgcolor: 'var(--bg-3)',
           borderBottom: '1px solid var(--rule)',
         }}
       >
@@ -166,7 +171,7 @@ export function EntityDetailModal({
           sx={{
             px: 3,
             py: 2,
-            bgcolor: 'var(--bg-2)',
+            bgcolor: 'var(--bg-3)',
             borderTop: '1px solid var(--rule)',
           }}
         >

@@ -167,11 +167,17 @@ See also `docs/playbooks/sla_threshold_unification_2026_07_01.md` for the SLA/ag
 - Two separate `str_replace` applications silently landed partial (the `useEffect` firing `onFooterReady`, and the destructured `onFooterReady` param) — both caught only via live TS errors after the fact, not before. **Lesson: after any multi-part diff, grep for every distinct piece separately** (type declaration, destructured param, and usage are three different grep targets, not one) rather than trusting a single confirmation grep that only checked one of them.
 - Item images (VO-08) still render as a bordered placeholder box, not a real image — `image_url` is null on all live sample orders. Not fixed this pass, still open.
 
+**Shipped (2026-07-02) — VO-02 timeline stages:**
+Query-side merge in `getOrderDetailsById` (Option 1, explicit product decision — Option 2's write-path fix logged separately as GH-1034, deferred). Combines real `order_fulfillment_history` rows with two other real, already-populated timestamps that live on separate tables for legitimate architectural reasons: `orders.paid_at` (→ synthetic `payment_captured` event) and `order_warehouse_status.status_updated_at` (→ synthetic `in_release_pool` event, only present once an order leaves the pool). Sorted chronologically, read-only, no schema changes. `captured_at`/`settlement_at` remain confirmed dead (0/26 populated, no writer anywhere) — not used.
+
+Frontend: raw status codes were leaking into the UI unlabeled (`'pending'` rendering as literally "pending" — flagged live as unclear to SMB operators of any skill level). Added `formatTimelineEventLabel()` — an explicit label map (`pending → 'Order placed'`, `payment_captured → 'Payment captured'`, etc.) with a safe raw-string fallback for any future unmapped status, replacing the old `event.status.replace(/_/g, ' ')` inline formatting. **Any new status introduced anywhere upstream (history table, or a new synthetic event) must get a case added here** — this is now the single place timeline vocabulary is translated to plain English.
+
 **Not yet started (open):**
 
-- VO-02 (timeline stages — data model only supports 2 real statuses, `pending`/`fulfilled`, not the target design's 4-stage flow)
 - VO-04 (Open in Shopify / Print pick list — no backend exists for either)
 - VO-12 (warehouse/location subline — no `warehouses` table with name/city exists; dropped from header rather than fabricated)
 - GH-1032 (shipping cost — needs real carrier-rate data audit, see `shop_carrier_settings`)
+- GH-1034 (make `order_fulfillment_history` the single source of truth for timeline events, replacing today's query-side merge — deferred, touches `pickBatch.service.ts`'s write path)
+- GH-1033 (separate thread: `integrations.sync_status` never updates on successful sync, health pill stuck on "Syncing" — confirmed unrelated to this modal's timeline, audited and ruled out as a shared-engine candidate)
 
 **NOTE, per explicit instruction (2026-07-01):** this codebase's docs are known to run stale in places — this conversation's approvals are the current source of truth where they conflict with anything written earlier in this file, including §2.5's now-superseded line above.

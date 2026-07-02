@@ -82,6 +82,39 @@ function formatWarehouseStatus(status: string | null): string {
   if (!status) return 'In pool';
   return status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
 }
+/**
+ * formatTimelineEventLabel (2026-07-02)
+ * ----------------------------------------
+ * Raw order_fulfillment_history status codes are internal state-machine
+ * vocabulary, not customer-facing language — 'pending' as a first-ever
+ * timeline entry reads as "pending what?" to an SMB operator, not as
+ * "order was placed." Every status shown in the Order Detail modal's
+ * timeline must map to a plain-English phrase here, not just have its
+ * underscores swapped for spaces (event.status.replace(/_/g, ' ')).
+ *
+ * 'pending' specifically means "order synced from Shopify, no
+ * fulfillment action taken yet" — i.e. the very first lifecycle event —
+ * so it's labeled as such, not left as raw status jargon.
+ *
+ * Add new cases here whenever a new status value is introduced anywhere
+ * upstream (order_fulfillment_history, orders.paid_at synthetic event,
+ * order_warehouse_status synthetic event — see VO-02, GH-1034). Falls
+ * back to the raw underscore-replaced string only for genuinely unknown
+ * future statuses, so nothing silently renders blank.
+ */
+function formatTimelineEventLabel(status: string): string {
+  const labels: Record<string, string> = {
+    pending: 'Order placed',
+    processing: 'Processing',
+    partially_fulfilled: 'Partially fulfilled',
+    fulfilled: 'Fulfilled',
+    cancelled: 'Cancelled',
+    failed: 'Fulfillment failed',
+    payment_captured: 'Payment captured',
+    in_release_pool: 'Released to pick batch',
+  };
+  return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
+}
 
 const TIMELINE_VISIBLE_COUNT = 3;
 
@@ -478,7 +511,7 @@ function OrderDetailModalBody({
             {displayedTimeline.map((event, i) => (
               <Box key={event.id} sx={{ pb: i < displayedTimeline.length - 1 ? 1.25 : 0, position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
                 <Box sx={{ position: 'absolute', left: -25, top: 4, width: 8, height: 8, borderRadius: '50%', bgcolor: i === 0 ? 'var(--accent)' : 'var(--ink-4)' }} />
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)', flexShrink: 0 }}>{event.status.replace(/_/g, ' ')}</Typography>
+                <Typography sx={{ fontSize: 13, color: 'var(--ink)', flexShrink: 0 }}>{formatTimelineEventLabel(event.status)}</Typography>
                 {/*
                   ORDM-04f (2026-07-02): dotted leader connects label to
                   timestamp, closing the empty-space gap flagged live —
