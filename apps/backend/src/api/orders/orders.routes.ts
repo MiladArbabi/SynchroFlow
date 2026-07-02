@@ -16,6 +16,8 @@ import { httpGetOrderDecision }
   from './orders.decision-by-order.controller.js';
 import { httpExecuteOrderDecision }
   from './orders.execute.controller.js';
+import { httpUpdateShippingAddress }
+  from './orders.shipping-address.controller.js';
 
 const router = Router();
 
@@ -109,6 +111,20 @@ router.post(
   '/:orderId/execute',
   authenticateToken,
   httpExecuteOrderDecision
+);
+
+/**
+ * @route   PATCH /api/v1/orders/:orderId/shipping-address
+ * @desc    Correct an order's shipping address — primary in-app
+ *          resolution path for customer/incomplete_address blocks
+ *          (OF-08, 2026-07-02). See controller header for why this is
+ *          a direct write, not a domain event.
+ * @access  Private
+ */
+router.patch(
+  '/:orderId/shipping-address',
+  authenticateToken,
+  httpUpdateShippingAddress
 );
 
 /**

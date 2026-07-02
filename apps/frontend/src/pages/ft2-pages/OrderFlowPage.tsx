@@ -44,10 +44,12 @@
 //   - picking/packing counts are parked in the "today" column until
 //     per-batch deadlines exist.
 
-import { type ChangeEvent, useCallback, useMemo, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from '@mui/material';
 import { Clock, Flag, ChevronDown, ChevronUp } from 'lucide-react';
+import { EntityDetailModal } from '@lasyncro/shared/ui';
+import { OrderDetailModalBody } from '../orders/OrderDetailModalBody';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { getAgeLabel, getConstraintLabel, useConstrainedOrders } from '../orders/useConstrainedOrders';
@@ -55,6 +57,7 @@ import {
   useOrderPool,
   useReleaseBatch,
   useSetPriority,
+  useBulkSetPriority,
   type PoolOrder,
   type SkippedReleaseOrder,
 } from '../wms/useOrderPool';
@@ -126,6 +129,27 @@ export default function OrderFlowPage() {
   const liveCapacityQuery = useLiveCapacity();
   const releaseBatch = useReleaseBatch();
   const setPriority = useSetPriority();
+  /**
+   * OF-08 (2026-07-02) — Blocked-order resolution path.
+   * Reuses the exact same modal + body component as OrdersFT2Page.tsx
+   * (extracted to orders/OrderDetailModalBody.tsx specifically so both
+   * pages could share it — see that file's header comment). onPriorityFlag
+   * reuses useBulkSetPriority (the same bulk endpoint OrdersFT2Page.tsx's
+   * own Prioritize action calls), not the single-order useSetPriority
+   * already in this file (that one is for the pool table's row-level flag
+   * toggle, different call shape).
+   */
+  const bulkSetPriority = useBulkSetPriority();
+  const onPriorityFlag = useCallback(
+    async (orderIds: string[], _flagged: boolean) => {
+      await bulkSetPriority.mutateAsync(orderIds);
+    },
+    [bulkSetPriority]
+  );
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
+  const [modalFooter, setModalFooter] = useState<ReactNode>(null);
   const { data: operatorsData } = useWmsOperators();
 
   const operators = operatorsData?.operators ?? [];
@@ -588,6 +612,7 @@ export default function OrderFlowPage() {
                               {(revealedGroups.has(key) ? blockedByReason[key] : blockedByReason[key].slice(0, TRIAGE_PREVIEW_LIMIT)).map((order) => (
                                 <Box
                                   key={order.order_id}
+                                  onClick={() => setSelectedOrderId(order.order_id)}
                                   sx={{
                                     border: '1px solid var(--rule)',
                                     borderRadius: '10px',
@@ -595,6 +620,8 @@ export default function OrderFlowPage() {
                                     display: 'flex',
                                     flexDirection: 'column',
                                     gap: 0.5,
+                                    cursor: 'pointer',
+                                    '&:hover': { borderColor: 'var(--accent-border)', bgcolor: 'var(--bg-2)' },
                                   }}
                                 >
                                   <Box sx={{ display: 'flex', justifyContent:'space-between' }}>
@@ -1199,6 +1226,32 @@ export default function OrderFlowPage() {
           </Box>
         )}
       </Box>
+      {/*
+        OF-08 (2026-07-02): blocked-order resolution path. Same
+        EntityDetailModal + OrderDetailModalBody pair OrdersFT2Page.tsx
+        uses — reused, not duplicated (see OrderDetailModalBody.tsx's
+        header comment for why it lives in apps/frontend, not
+        modules/shared).
+      */}
+      <EntityDetailModal
+        entityId={selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
+        title={modalTitle}
+        subtitle={modalSubtitle}
+        maxWidth="md"
+        footerActions={modalFooter}
+      >
+        {selectedOrderId && (
+          <OrderDetailModalBody
+            orderId={selectedOrderId}
+            onTitleReady={setModalTitle}
+            onSubtitleReady={setModalSubtitle}
+            onNavigateToOrder={setSelectedOrderId}
+            onFooterReady={setModalFooter}
+            onPriorityFlag={onPriorityFlag}
+          />
+        )}
+      </EntityDetailModal>
     </Box>
   );
 }

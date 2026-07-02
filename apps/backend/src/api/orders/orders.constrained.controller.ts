@@ -65,14 +65,47 @@ export const httpGetConstrainedOrders = async (
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
         .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'oc.lasyncro_order_id')
         .leftJoin(
-          // Deduplicate decisions — take the single highest-priority decision per order
+          /**
+           * DECISION MATCHING FIX (2026-07-02)
+           * -----------------------------------
+           * Comment above previously claimed "single highest-priority
+           * decision per order" but the code never actually deduped —
+           * no DISTINCT ON, no per-entity limit, no status filter. A
+           * plain entity_id join against ALL of a shop's decisions
+           * fans out 1 constraint row × N matching decisions, producing
+           * duplicate cards for the same order (confirmed live: one
+           * order with both a stale resolve_inventory_block decision
+           * and the real resolve_customer_block decision, both
+           * 'pending', both rendered as separate cards under the same
+           * constraint category).
+           *
+           * Real fix: only join a decision whose recommended_action
+           * type actually corresponds to oc.constraint_type — the
+           * single active constraint already selected by
+           * dedupedConstraints above. This guarantees at most one
+           * matching decision per order and can never surface a
+           * decision for a constraint type that isn't currently
+           * active, regardless of how many stale/duplicate decisions
+           * exist in the table. Same CONSTRAINT_TYPE_BY_ACTION mapping
+           * as orders.decision-by-order.controller.ts's staleness
+           * check — kept in sync conceptually, not shared as a single
+           * source (different layer: SQL join vs. app-level filter).
+           */
           trx('decisions')
             .select('entity_id', 'recommended_action', 'priority', 'id', 'shop_id')
             .where('shop_id', shopId)
-            .orderBy('priority', 'desc')
+            .whereIn('status', ['pending', 'in_progress'])
             .as('d'),
           function () {
-            this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'));
+            this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'))
+              .andOn(trx.raw(`
+                "d"."recommended_action"->>'type' = CASE "oc"."constraint_type"
+                  WHEN 'inventory' THEN 'resolve_inventory_block'
+                  WHEN 'customer' THEN 'resolve_customer_block'
+                  WHEN 'operational' THEN 'resolve_operational_block'
+                  ELSE NULL
+                END
+              `));
           }
         )
         .leftJoin(

@@ -15,7 +15,15 @@ export async function up(knex: Knex): Promise<void> {
           'fulfilled',
           'partially_fulfilled',
           'cancelled',
-          'failed'
+          'failed',
+          /**
+           * OF-08/OF-11 (2026-07-02): supports the in-app shipping-
+           * address correction endpoint — appended to
+           * order_fulfillment_history so the correction shows in the
+           * Order Detail modal's timeline, same as every other real
+           * event there.
+           */
+          'address_corrected'
         );
       END IF;
     END$$;
