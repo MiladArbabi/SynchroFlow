@@ -108,7 +108,7 @@ function Nav() {
         <Link
           href="/pilot#apply"
           className="nav-cta"
-          aria-label="Apply for the pilot program"
+          aria-label="Apply for the pilot program, so we can grow together"
           style={{
             display: 'inline-flex', alignItems: 'center',
             padding: '8px 18px',
