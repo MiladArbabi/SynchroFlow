@@ -48,6 +48,16 @@ export interface EntityDetailModalProps {
   errorMessage?: string | null;
   /** Body content — each module supplies its own */
   children?: ReactNode;
+  /**
+   * FOOTER ACTIONS (2026-07-02)
+   * ---------------------------
+   * Optional fixed footer region, visually --bg-2 (matches header) to
+   * frame the --surface-toned body per target design. Consumer supplies
+   * its own CTA row — shell has zero entity-specific button logic, same
+   * separation as the rest of this file. Omit for entities with no
+   * footer actions; the region simply doesn't render.
+   */
+  footerActions?: ReactNode;
   /** Default 'lg' — override only with a specific reason */
   maxWidth?: 'md' | 'lg' | 'xl';
 }
@@ -61,6 +71,7 @@ export function EntityDetailModal({
   isLoading,
   errorMessage,
   children,
+  footerActions,
   maxWidth = 'lg',
 }: EntityDetailModalProps) {
   const open = entityId !== null;
@@ -80,7 +91,11 @@ export function EntityDetailModal({
         },
       }}
     >
-      {/* HEADER */}
+      {/*
+        HEADER — bg-2 per target design (2026-07-02): header/footer read
+        as a slightly different tone framing the surface-toned body,
+        matching the target mockup. Was uniformly --surface throughout.
+      */}
       <Box
         sx={{
           display: 'flex',
@@ -89,6 +104,7 @@ export function EntityDetailModal({
           px: 3,
           pt: 2.5,
           pb: 2,
+          bgcolor: 'var(--bg-2)',
           borderBottom: '1px solid var(--rule)',
         }}
       >
@@ -139,6 +155,24 @@ export function EntityDetailModal({
 
         {!isLoading && !errorMessage && children}
       </DialogContent>
+      {/*
+        FOOTER — bg-2, matching header, per target design (2026-07-02).
+        Only renders when a consumer supplies footerActions — entities
+        with no footer CTA (e.g. Members, if it never needs one) simply
+        omit the prop and get no empty bar.
+      */}
+      {footerActions && (
+        <Box
+          sx={{
+            px: 3,
+            py: 2,
+            bgcolor: 'var(--bg-2)',
+            borderTop: '1px solid var(--rule)',
+          }}
+        >
+          {footerActions}
+        </Box>
+      )}
     </Dialog>
   );
 }

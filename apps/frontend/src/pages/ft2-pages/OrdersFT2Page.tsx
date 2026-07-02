@@ -31,7 +31,7 @@
 //   entity-detail-modal-playbook.md §2.5 step 3. Until merged, the modal
 //   title shows a truncated order ID rather than externalOrderId, since
 //   that field isn't fetched at this layer yet.
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, ReactNode, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, CircularProgress, Alert } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -167,11 +167,31 @@ function OrderDetailModalBody({
   onTitleReady,
   onSubtitleReady,
   onNavigateToOrder,
+  onFooterReady,
+  onPriorityFlag,
 }: {
   orderId: string;
   onTitleReady: (title: string) => void;
   onSubtitleReady: (subtitle: string | undefined) => void;
   onNavigateToOrder: (orderId: string) => void;
+  /**
+   * FOOTER LIFT (2026-07-02)
+   * ------------------------
+   * Unlike onTitleReady/onSubtitleReady (fire-once-per-order, simple
+   * useEffect), the footer's content depends on several pieces of
+   * mid-render local state (constraint status, isPrioritizing,
+   * prioritized) — so it's computed via useMemo, not set once, and
+   * re-fires onFooterReady whenever that memoized value changes.
+   */
+  onFooterReady: (footer: ReactNode) => void;
+  /**
+   * ORDM-04b (2026-07-01): same mutation as ORDM-02's list-row
+   * "Prioritize" action (see OrdersModuleFT2.tsx handlePrioritizeOrder).
+   * Reused here rather than re-implementing — one source of truth for
+   * what "prioritize" does (bulk-set-priority endpoint, order surfaces
+   * at top of pool with a Priority badge).
+   */
+  onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
 }) {
   const { data, isLoading, isError, error } = useOrderDecision(orderId);
   const navigate = useNavigate();
@@ -200,6 +220,15 @@ function OrderDetailModalBody({
   const cachedRow = useCachedConstrainedRow(orderId);
   const queryClient = useQueryClient();
   const [timelineExpanded, setTimelineExpanded] = useState(false);
+  /**
+   * ORDM-04b (2026-07-01): local pending/success state for the modal's
+   * "Prioritize" action — deliberately NOT reusing OrdersModuleFT2's
+   * holdPriorityMovement/flashPriorityRow (that's row-hold/flash
+   * animation logic coupled to the list view, not applicable inside a
+   * single-order modal). Same underlying mutation, simpler local UI.
+   */
+  const [isPrioritizing, setIsPrioritizing] = useState(false);
+  const [prioritized, setPrioritized] = useState(false);
 
   const allConstrained = queryClient
     .getQueriesData<ConstrainedOrdersResponse>({ queryKey: ['orders', 'constrained'] })
@@ -227,6 +256,60 @@ function OrderDetailModalBody({
 
   const hasActiveInventoryConstraint = constraints.some((c) => c.constraint_type === 'inventory');
   const hasAnyActiveConstraint = constraints.length > 0;
+  /**
+   * FOOTER LIFT (2026-07-02)
+   * ------------------------
+   * Computed here (not inline in JSX) because it must reach
+   * EntityDetailModal's footerActions slot via onFooterReady, not
+   * render inside this component's own body. Only the constraint-free/
+   * unbatched case has a footer today — other states (blocked,
+   * resolved) render nothing here, same as before this change.
+   */
+  const footerContent = useMemo(() => {
+    if (hasAnyActiveConstraint || order?.warehouseStatus) return null;
+    return (
+      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
+        <Button
+          variant="contained"
+          size="small"
+          sx={{
+            flex: '0 1 auto',
+            minWidth: 140,
+            textTransform: 'none',
+            borderRadius: '6px',
+            color: prioritized ? 'var(--confirm-ink)' : 'var(--accent-ink)',
+            bgcolor: prioritized ? 'var(--confirm-ghost)' : 'var(--accent)',
+            border: prioritized ? '1px solid var(--confirm-border)' : 'none',
+            cursor: prioritized ? 'default' : 'pointer',
+            '&:hover': { bgcolor: prioritized ? 'var(--confirm-ghost)' : 'var(--accent)', opacity: prioritized ? 1 : 0.88 },
+            '&.Mui-disabled': { color: prioritized ? 'var(--confirm-ink)' : undefined, bgcolor: prioritized ? 'var(--confirm-ghost)' : undefined },
+          }}
+          disabled={isPrioritizing || prioritized}
+          onClick={async () => {
+            if (!onPriorityFlag) return;
+            setIsPrioritizing(true);
+            try {
+              await onPriorityFlag([orderId], true);
+              setPrioritized(true);
+            } finally {
+              setIsPrioritizing(false);
+            }
+          }}
+        >
+          {prioritized ? 'Prioritized ✓' : isPrioritizing ? 'Prioritizing…' : 'Prioritize'}
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          endIcon={<ArrowRight size={14} />}
+          onClick={() => navigate('/orders/flow')}
+          sx={{ flex: '0 1 auto', minWidth: 140, borderColor: 'var(--accent-border)', color: 'var(--accent)', textTransform: 'none' }}
+        >
+          Go to order flow
+        </Button>
+      </Box>
+    );
+  }, [hasAnyActiveConstraint, order?.warehouseStatus, isPrioritizing, prioritized, onPriorityFlag, orderId, navigate]);
   const showInventoryResolvedBanner = !hasActiveInventoryConstraint && isSuccess;
 
   useEffect(() => {
@@ -238,6 +321,10 @@ function OrderDetailModalBody({
   useEffect(() => {
     onSubtitleReady(buildUrgencySubtitle(cachedRow));
   }, [cachedRow, onSubtitleReady]);
+
+  useEffect(() => {
+    onFooterReady(footerContent);
+  }, [footerContent, onFooterReady]);
 
   if (isLoading || detailQuery.isLoading) {
     return (
@@ -271,54 +358,114 @@ function OrderDetailModalBody({
   return (
     <Box>
       {order && (
-        <Box sx={{ mb: 3, pb: 2, borderBottom: '1px solid var(--rule)' }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-            Order contents
-          </Typography>
-          {order.lineItems.map((item) => (
-            <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.75 }}>
-              {item.image_url && (
-                <Box component="img" src={item.image_url} alt=""
-                  sx={{ width: 36, height: 36, borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--rule)' }} />
-              )}
-              <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{item.title}</Typography>
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{item.sku ?? 'No SKU'} · qty {item.quantity}</Typography>
-              </Box>
-              <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                {formatCurrency(item.line_total, order.currency)}
-              </Typography>
-            </Box>
-          ))}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
-            <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Total</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{formatCurrency(order.total, order.currency)}</Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.75 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Payment status</Typography>
-              <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'rgba(99,153,34,0.12)', color: '#3B6D11' }}>
-                {order.paymentState.replace(/_/g, ' ')}
-              </Box>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Pipeline status</Typography>
-              <Box sx={{
-                px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500,
-                bgcolor: pipelineColorKey === 'danger' ? 'rgba(226,75,74,0.12)' : pipelineColorKey === 'accent' ? 'var(--accent-ghost)' : 'var(--rule)',
-                color: pipelineColorKey === 'danger' ? '#A32D2D' : pipelineColorKey === 'accent' ? 'var(--accent)' : 'var(--ink-3)',
-              }}>
-                {pipelineLabel}
-              </Box>
-            </Box>
-          </Box>
-
-          {order.tracking?.tracking_number && (
-            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 1.5 }}>
-              Tracking: {order.tracking.tracking_number}{order.tracking.carrier_code && ` (${order.tracking.carrier_code})`}
+        <Box sx={{ mb: 3, pb: 2, borderBottom: '1px solid var(--rule)', display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+          {/*
+            LEFT COLUMN — ITEMS
+            Per target design (2026-07-01) + explicit layout instruction:
+            top section = order details in two columns (items / customer
+            + summary), "Why — activity" stays full-width below this
+            block, unchanged.
+          */}
+          <Box sx={{ flex: '1 1 260px', minWidth: 0 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+              Order contents
             </Typography>
-          )}
+            {order.lineItems.map((item) => (
+              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.75 }}>
+                {item.image_url ? (
+                  <Box component="img" src={item.image_url} alt=""
+                    sx={{ width: 36, height: 36, borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--rule)' }} />
+                ) : (
+                  // VO-08: no placeholder asset exists yet — a plain
+                  // bordered box avoids a broken-image icon without
+                  // inventing product imagery.
+                  <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, border: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }} />
+                )}
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{item.title}</Typography>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{item.sku ?? 'No SKU'} · qty {item.quantity}</Typography>
+                </Box>
+                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                  {formatCurrency(item.line_total, order.currency)}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+
+          {/*
+            RIGHT COLUMN — CUSTOMER + SUMMARY
+            Customer identity sourced from orders.shipping_* (VO-01/
+            VO-07) — NOT customers.email/first_name, which is
+            structurally blank for most merchants (Shopify PCD scope).
+            "name" here is the shipping recipient, not a verified
+            account identity — do not imply otherwise in copy.
+            No order-count/"returning" badge — that requires a
+            customers-table join keyed on data we've confirmed is
+            usually blank; not worth building on an unreliable key.
+          */}
+          <Box sx={{ flex: '1 1 220px', minWidth: 200 }}>
+            {order.shipping.name && (
+              <Box sx={{ mb: 2 }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+                  Customer
+                </Typography>
+                <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{order.shipping.name}</Typography>
+                {order.shipping.address1 && (
+                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }}>{order.shipping.address1}</Typography>
+                )}
+                {order.shipping.address2 && (
+                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{order.shipping.address2}</Typography>
+                )}
+                {(order.shipping.city || order.shipping.province || order.shipping.countryCode) && (
+                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                    {[order.shipping.city, order.shipping.province, order.shipping.countryCode].filter(Boolean).join(', ')}
+                  </Typography>
+                )}
+              </Box>
+            )}
+
+            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+              Summary
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Subtotal</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{formatCurrency(order.subtotal, order.currency)}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Tax</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{formatCurrency(order.tax, order.currency)}</Typography>
+            </Box>
+            {/* Shipping line intentionally omitted — GH-1032, no reliable source yet */}
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Total</Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{formatCurrency(order.total, order.currency)}</Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.75 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Payment status</Typography>
+                <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'rgba(99,153,34,0.12)', color: '#3B6D11' }}>
+                  {order.paymentState.replace(/_/g, ' ')}
+                </Box>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Pipeline status</Typography>
+                <Box sx={{
+                  px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500,
+                  bgcolor: pipelineColorKey === 'danger' ? 'rgba(226,75,74,0.12)' : pipelineColorKey === 'accent' ? 'var(--accent-ghost)' : 'var(--rule)',
+                  color: pipelineColorKey === 'danger' ? '#A32D2D' : pipelineColorKey === 'accent' ? 'var(--accent)' : 'var(--ink-3)',
+                }}>
+                  {pipelineLabel}
+                </Box>
+              </Box>
+            </Box>
+
+            {order.tracking?.tracking_number && (
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 1.5 }}>
+                Tracking: {order.tracking.tracking_number}{order.tracking.carrier_code && ` (${order.tracking.carrier_code})`}
+              </Typography>
+            )}
+          </Box>
         </Box>
       )}
 
@@ -329,10 +476,17 @@ function OrderDetailModalBody({
           </Typography>
           <Box sx={{ borderLeft: '2px solid var(--rule)', pl: 2, ml: 0.5 }}>
             {displayedTimeline.map((event, i) => (
-              <Box key={event.id} sx={{ pb: i < displayedTimeline.length - 1 ? 1.25 : 0, position: 'relative' }}>
+              <Box key={event.id} sx={{ pb: i < displayedTimeline.length - 1 ? 1.25 : 0, position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
                 <Box sx={{ position: 'absolute', left: -25, top: 4, width: 8, height: 8, borderRadius: '50%', bgcolor: i === 0 ? 'var(--accent)' : 'var(--ink-4)' }} />
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{event.status.replace(/_/g, ' ')}</Typography>
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{new Date(event.event_occurred_at).toLocaleString()}</Typography>
+                <Typography sx={{ fontSize: 13, color: 'var(--ink)', flexShrink: 0 }}>{event.status.replace(/_/g, ' ')}</Typography>
+                {/*
+                  ORDM-04f (2026-07-02): dotted leader connects label to
+                  timestamp, closing the empty-space gap flagged live —
+                  was a bare flex justify-between with nothing filling
+                  the middle.
+                */}
+                <Box sx={{ flex: 1, borderBottom: '1px dotted var(--rule)', mb: '3px', minWidth: 12 }} />
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0, whiteSpace: 'nowrap' }}>{new Date(event.event_occurred_at).toLocaleString()}</Typography>
               </Box>
             ))}
           </Box>
@@ -387,22 +541,6 @@ function OrderDetailModalBody({
               No open issues. Order is in the pool, waiting to be released into a pick batch.
             </Typography>
           </Box>
-          {/*
-            ORDM-04 (2026-07-01): a dead-end informational state is not
-            an acceptable terminal CTA state — every entity-detail surface
-            must either resolve directly or navigate to where resolution
-            happens. Release into a pick batch happens on /orders/flow,
-            not here, so route there rather than leaving the operator stuck.
-          */}
-          <Button
-            variant="outlined"
-            fullWidth
-            endIcon={<ArrowRight size={14} />}
-            onClick={() => navigate('/orders/flow')}
-            sx={{ borderColor: 'var(--accent-border)', color: 'var(--accent)', textTransform: 'none' }}
-          >
-            Go to order flow
-          </Button>
         </Box>
       )}
 
@@ -493,6 +631,7 @@ export default function OrdersFT2Page() {
   const [modalTitle, setModalTitle] = useState('');
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
+  const [modalFooter, setModalFooter] = useState<ReactNode>(null);
   const snapshotQuery = useOrdersFt2Snapshot();
   const operatorSummaryQuery = useOrdersOperatorSummary();
   const { displayCurrency, locale, tier } = useEntitlements();
@@ -548,11 +687,13 @@ export default function OrdersFT2Page() {
         userTier={tier}
         reportIds={['orders-all', 'orders-blocked']}
       />
-      <EntityDetailModal
+     <EntityDetailModal
         entityId={selectedOrderId}
         onClose={() => setSelectedOrderId(null)}
         title={modalTitle}
         subtitle={modalSubtitle}
+        maxWidth="md"
+        footerActions={modalFooter}
       >
         {selectedOrderId && (
           <OrderDetailModalBody
@@ -560,6 +701,8 @@ export default function OrdersFT2Page() {
             onTitleReady={setModalTitle}
             onSubtitleReady={setModalSubtitle}
             onNavigateToOrder={setSelectedOrderId}
+            onFooterReady={setModalFooter}
+            onPriorityFlag={onPriorityFlag}
           />
         )}
       </EntityDetailModal>

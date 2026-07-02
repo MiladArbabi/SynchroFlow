@@ -100,92 +100,143 @@ export const getOrderDetailsById = async (
   shopId: number,
   lasyncroOrderId: string
 ) => {
-  const order = await db('orders')
-    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
-    .first();
-
-  if (!order) return null;
-
-  // Line items joined to variants for image_url
-  const lineItems = await db('order_line_items as oli')
-    .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-    .where('oli.lasyncro_order_id', lasyncroOrderId)
-    .select(
-      'oli.lasyncro_line_item_id as id',
-      'oli.sku',
-      'oli.title',
-      'oli.quantity',
-      'oli.unit_price',
-      'oli.line_total',
-      'v.image_url',
-    );
-
-  // Current fulfillment status + block context
-  const fulfillment = await db('order_fulfillment_status')
-    .where('lasyncro_order_id', lasyncroOrderId)
-    .select(
-      'status',
-      'inventory_block_type',
-      'customer_block_type',
-      'operational_block_type',
-      'fulfilled_at',
-      'status_updated_at',
-    )
-    .first();
-
-  // Real warehouse pipeline stage — distinct from fulfillment.status above
-  // (order_fulfillment_status = commercial layer: pending/processing/
-  // fulfilled/...). Nullable: order_warehouse_status rows only exist once
-  // an order is released into a pick batch (see wms.controller.ts, the
-  // insert on batch-picking transition) — an order sitting unconstrained
-  // in the pool legitimately has no row here yet.
-  const warehouseStatus = await db('order_warehouse_status')
-    .where('lasyncro_order_id', lasyncroOrderId)
-    .select('status', 'status_updated_at')
-    .first();
-
-  // Carrier tracking — most recent shipment for this order
-  const shipmentTracking = await db('order_shipment_tracking')
-    .where('lasyncro_order_id', lasyncroOrderId)
-    .orderBy('created_at', 'desc')
-    .select('tracking_number', 'tracking_url', 'carrier_code')
-    .first();
-
-  // Timeline — append-only history, ascending chronological order
-  const timeline = await db('order_fulfillment_history')
-    .where('lasyncro_order_id', lasyncroOrderId)
-    .orderBy('event_occurred_at', 'asc')
-    .select(
-      'lasyncro_fulfillment_event_id as id',
-      'status',
-      'event_occurred_at',
-    );
-
   /**
-   * External order identity is canonicalized outside `orders`.
-   * Do not read `orders.external_order_id`; that column is not part of
-   * the sovereign orders schema.
+   * RLS CONTEXT (VO-09, 2026-07-01)
+   * --------------------------------
+   * Previously ran against the global `db` client with no
+   * SET LOCAL "app.current_tenant" — under strict RLS (orders policy has
+   * no NULL/0 bypass, unlike `shops`), this silently returned 0 rows for
+   * every request, even with a correct shop_id in the WHERE clause.
+   * Confirmed live: order existed in DB, matched shop_id, still 404'd.
+   * Pattern copied from orders.constrained.controller.ts.
    */
-  const externalIdentity = await db('external_order_identity_map')
-    .where({
-      shop_id: shopId,
-      platform: 'shopify',
-      lasyncro_order_id: lasyncroOrderId,
-    })
-    .select('external_order_id')
-    .first();
+  return db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-  return {
-    id: order.lasyncro_order_id,
-    externalOrderId: externalIdentity?.external_order_id ?? null,
-    total: order.total_price,
-    currency: order.currency,
-    paymentState: order.payment_state,
-    createdAt: order.order_created_at,
-    lineItems,
-    fulfillment: fulfillment ?? null,
-    warehouseStatus: warehouseStatus?.status ?? null,
-    timeline,
-    tracking: shipmentTracking ?? null,
-  };
+    const order = await trx('orders')
+      .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+      .first();
+
+    if (!order) return null;
+
+    // Line items joined to variants for image_url
+    const lineItems = await trx('order_line_items as oli')
+      .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
+      .where('oli.lasyncro_order_id', lasyncroOrderId)
+      .select(
+        'oli.lasyncro_line_item_id as id',
+        'oli.sku',
+        'oli.title',
+        'oli.quantity',
+        'oli.unit_price',
+        'oli.line_total',
+        'v.image_url',
+      );
+
+    // Current fulfillment status + block context
+    const fulfillment = await trx('order_fulfillment_status')
+      .where('lasyncro_order_id', lasyncroOrderId)
+      .select(
+        'status',
+        'inventory_block_type',
+        'customer_block_type',
+        'operational_block_type',
+        'fulfilled_at',
+        'status_updated_at',
+      )
+      .first();
+
+    // Real warehouse pipeline stage — distinct from fulfillment.status above
+    // (order_fulfillment_status = commercial layer: pending/processing/
+    // fulfilled/...). Nullable: order_warehouse_status rows only exist once
+    // an order is released into a pick batch (see wms.controller.ts, the
+    // insert on batch-picking transition) — an order sitting unconstrained
+    // in the pool legitimately has no row here yet.
+    const warehouseStatus = await trx('order_warehouse_status')
+      .where('lasyncro_order_id', lasyncroOrderId)
+      .select('status', 'status_updated_at')
+      .first();
+
+    // Carrier tracking — most recent shipment for this order
+    const shipmentTracking = await trx('order_shipment_tracking')
+      .where('lasyncro_order_id', lasyncroOrderId)
+      .orderBy('created_at', 'desc')
+      .select('tracking_number', 'tracking_url', 'carrier_code')
+      .first();
+
+    // Timeline — append-only history, ascending chronological order
+    const timeline = await trx('order_fulfillment_history')
+      .where('lasyncro_order_id', lasyncroOrderId)
+      .orderBy('event_occurred_at', 'asc')
+      .select(
+        'lasyncro_fulfillment_event_id as id',
+        'status',
+        'event_occurred_at',
+      );
+
+    /**
+     * External order identity is canonicalized outside `orders`.
+     * Do not read `orders.external_order_id`; that column is not part of
+     * the sovereign orders schema.
+     */
+    const externalIdentity = await trx('external_order_identity_map')
+      .where({
+        shop_id: shopId,
+        platform: 'shopify',
+        lasyncro_order_id: lasyncroOrderId,
+      })
+      .select('external_order_id')
+      .first();
+
+    return {
+      id: order.lasyncro_order_id,
+      externalOrderId: externalIdentity?.external_order_id ?? null,
+      total: order.total_price,
+      /**
+       * SUBTOTAL/TAX (VO-11, 2026-07-01)
+       * ---------------------------------
+       * subtotal_price/total_tax exist on `orders` and populate
+       * correctly (confirmed live) but were never selected here.
+       *
+       * Deliberately NOT including a derived shippingCost field
+       * (total - subtotal - tax) — flagged live as unreliable (see
+       * GH-1032): no real shipping_line/carrier-rate data backs it,
+       * and the arithmetic silently hides cases where total_price
+       * already nets out a merchant-absorbed cost or promo. Do not
+       * re-add a derived shipping figure without GH-1032's carrier
+       * data audit first.
+       */
+      subtotal: order.subtotal_price,
+      tax: order.total_tax,
+      currency: order.currency,
+      paymentState: order.payment_state,
+      createdAt: order.order_created_at,
+      lineItems,
+      fulfillment: fulfillment ?? null,
+      warehouseStatus: warehouseStatus?.status ?? null,
+      timeline,
+      tracking: shipmentTracking ?? null,
+      /**
+       * SHIPPING IDENTITY (VO-01, 2026-07-01)
+       * --------------------------------------
+       * Deliberately NOT sourced from `customers.email`/`first_name` —
+       * confirmed live (audit VO-07) that Shopify's Protected Customer
+       * Data scope means customers.email/first_name/last_name are
+       * essentially always blank (0/2 populated in dev). orders.shipping_*
+       * is the reliable identity/address source and is what the Order
+       * Detail modal's customer card renders from. Do not swap this for
+       * a customers-table join without re-verifying PCD scope approval.
+       */
+      shipping: {
+        name: order.shipping_name,
+        address1: order.shipping_address1,
+        address2: order.shipping_address2,
+        city: order.shipping_city,
+        zip: order.shipping_zip,
+        phone: order.shipping_phone,
+        province: order.shipping_province,
+        countryCode: order.shipping_country_code,
+      },
+    };
+  });
 };

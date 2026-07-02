@@ -38,10 +38,30 @@ export interface OrderTracking {
   carrier_code: string | null;
 }
 
+export interface OrderShipping {
+  name: string | null;
+  address1: string | null;
+  address2: string | null;
+  city: string | null;
+  zip: string | null;
+  phone: string | null;
+  province: string | null;
+  countryCode: string | null;
+}
+
 export interface OrderDetail {
   id: string;
   externalOrderId: string | null;
   total: number;
+  /**
+   * SUBTOTAL/TAX (VO-11, 2026-07-01)
+   * ---------------------------------
+   * No `shippingCost` field — deliberately omitted, see GH-1032.
+   * Do not derive one client-side either (total - subtotal - tax) —
+   * same unreliability applies regardless of which layer computes it.
+   */
+  subtotal: number;
+  tax: number;
   currency: string;
   paymentState: string;
   createdAt: string;
@@ -54,6 +74,17 @@ export interface OrderDetail {
   warehouseStatus: string | null;
   timeline: OrderTimelineEvent[];
   tracking: OrderTracking | null;
+  /**
+   * SHIPPING IDENTITY (VO-01, 2026-07-01)
+   * --------------------------------------
+   * Source of customer identity/address for the Order Detail modal's
+   * customer card. Intentionally NOT the `customers` table — Shopify's
+   * Protected Customer Data scope means customers.email/first_name are
+   * almost always blank in practice (confirmed live: 0/2 populated).
+   * `name` here is the shipping recipient name, not a verified customer
+   * identity — display it as such, don't imply it's an account name.
+   */
+  shipping: OrderShipping;
 }
 
 export function useOrderDetail(orderId: string | null) {

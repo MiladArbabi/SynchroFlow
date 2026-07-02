@@ -83,7 +83,8 @@ router.post('/problem-center/:taskId/resolve', ...);
 
 ### 2.5 — ✅ all six steps done
 
-What shipped: `EntityDetailModal` for Orders merges `useOrderDecision` (constraint + recommended action, with the "Mark as Resolved" button ported from the now-deleted `OrderDetailPanel.tsx`), `usePickExceptionsForOrder`/`useResolvePickException` (new hook, per-exception audit-trail resolve — does NOT unblock the order, see §2.3), and `useOrderDetail` (line items, total, tracking — title and full content). ORD-03's four `navigate()` calls in `OrdersModuleFT2.tsx` now call `onOrderClick`, except the constraint-free "Release →" branch, which redirects to `/orders/flow` per explicit product decision (a clean SLA-breached pool order should be released, not inspected). The `['order-detail', orderId]` invalidation was added to `useExecuteOrderDecision`'s `onSettled`. ORD-01 fixed (`/orders` → `/orders/flow`).
+What shipped: `EntityDetailModal` for Orders merges `useOrderDecision` (constraint + recommended action, with the "Mark as Resolved" button ported from the now-deleted `OrderDetailPanel.tsx`), `usePickExceptionsForOrder`/`useResolvePickException` (new hook, per-exception audit-trail resolve — does NOT unblock the order, see §2.3), and `useOrderDetail` (line items, total, tracking — title and full content). 
+ORD-03's four `navigate()` calls in `OrdersModuleFT2.tsx` now call `onOrderClick`, except the constraint-free "Release →" branch, which redirects to `/orders/flow` per explicit product decision (a clean SLA-breached pool order should be released, not inspected). **Superseded 2026-07-01 — see §2.9**: the modal itself now offers in-place resolution for this exact state (constraint-free, unbatched orders), so this note describes the click-to-open behavior only, not the full resolution path. The `['order-detail', orderId]` invalidation was added to `useExecuteOrderDecision`'s `onSettled`. ORD-01 fixed (`/orders` → `/orders/flow`).
 
 ### 2.6 Cleanup, and two corrected assumptions
 
@@ -114,6 +115,7 @@ Zero existing detail page or panel of any kind (confirmed: `find` returned nothi
 **Root-cause fix, not a patch on the symptom:** rather than trusting `decision.status`/`isSuccess` (proven unreliable — both branches of `resolve_inventory_block.handler.ts` mark `decision_execution_queue` as `'success'` identically), the modal now reads ground truth directly: `hasActiveInventoryConstraint = constraints.some(c => c.constraint_type === 'inventory')`, sourced from the same `constraints[]` array the Issue section already renders. If still present after refetch → still short, shows "Go to sourcing." If gone → real success banner. Required adding `['orders','decision', orderId]` to `useExecuteOrderDecision`'s `onSettled` invalidation list (previously missing — the array would never have refreshed).
 
 **Shipped, matching the locked design:**
+
 - Stacked, independently-colored alert cards per active constraint type (severity: inventory/operational = critical, customer = warning), reusing the icon+color+label pattern from `AlertsModule.md`'s `BellAlertRow` — decision made in favor of the compact pattern, not the full `AlertCard`.
 - "Go to sourcing" replaces "Acknowledge Stock Issue" as the inventory-block CTA — direct link to `/suppliers-portal/sourcing`, clean redirect, no confirmation step.
 - Similar-orders inline list (same constraint type + block type), navigable in-modal via `selectedOrderId` swap — no new routing needed.
@@ -126,3 +128,50 @@ Zero existing detail page or panel of any kind (confirmed: `find` returned nothi
 DF-04 dependency is now moot — see `demand-velocity-reorder-playbook.md` §6, shipped same session.
 
 See also `docs/playbooks/sla_threshold_unification_2026_07_01.md` for the SLA/aging threshold bugs found during the same verification pass — unrelated to the modal itself, but surfaced by it.
+
+### 2.9 Order Detail redesign (in progress, 2026-07-01) — target design + audit findings
+
+**Trigger:** a target design was produced via claude.ai/design ("LaSyncro Order Details Modal") — customer card, itemized line items with images, multi-stage timeline, three-button footer (Release to floor / Open in Shopify / Print pick list). Full audit run against it before any code changes; findings below are why the shipped scope differs from the mockup.
+
+**Scope decision:** confirmed via `grep` that `EntityDetailModal` has exactly one real render site (`OrdersFT2Page.tsx`) — the `OrdersModuleFT2.tsx` hit was a stale comment, not a second consumer. No fork needed; `OrderDetailModalBody` (the children passed into the shell) is the only file in scope for this redesign.
+
+**Data audit findings (live DB + live endpoint verification, not assumption):**
+
+- **Customer PII (VO-07) — structurally thin, not a bug.** `customers.email`/`first_name`/`last_name` confirmed 0/2 populated in dev; the upsert at `orders.create.ts` only ever writes `external_customer_id` (hashed). Per Shopify's Protected Customer Data scope, this is expected and typically will not improve for most merchants — **do not build the customer card assuming name/email will be present.** Decision: use `orders.shipping_name`/`shipping_city`/etc. (reliably populated) as the customer-facing identity instead of `customers` table fields.
+- **Timeline (VO-02) — data model doesn't support the mockup's 4 stages.** Live DB has exactly two `order_fulfillment_history.status` values ever recorded: `pending`, `fulfilled`. No `order_placed`/`payment_captured`/`stock_reserved`/`in_release_pool` events exist. Render only real timeline entries; do not hardcode stages that aren't backed by data.
+- **"Open in Shopify" / "Print pick list" (VO-04) — no backend exists for either.** Deferred, out of scope for this pass.
+- **Line item images (VO-08)** — `image_url` null on live sample orders; needs a placeholder fallback whenever this is built, not yet handled.
+
+**Bugs found and fixed as a byproduct of this audit (unrelated to the redesign itself, but blocking verification):**
+
+- **VO-01 (shipped):** `getOrderDetailsById`'s return object omitted `orders.shipping_*` fields despite them being selected and populated — added a `shipping: {...}` block to the response. `useOrderDetail.ts`'s `OrderDetail` interface updated to match (`OrderShipping` type added).
+- **VO-09 (shipped, higher severity than VO-01):** `httpGetOrderDetails` (and, unfixed, its siblings `httpGetAllOrders`/`httpGetOrderProfitability` — see below) called the service layer against the global `db` client with **no `SET LOCAL "app.current_tenant"` and no transaction wrap**, unlike every other orders controller (`orders.constrained.controller.ts` etc.). Under RLS with `orders`' strict policy (no NULL/0 bypass, unlike `shops`), this silently returned 404/empty for every request regardless of a correct `shop_id` in the WHERE clause. Confirmed live: order existed, shop_id matched, still 404'd; fixed by wrapping `getOrderDetailsById` in `db.transaction()` + `SET LOCAL`, pattern copied from the constrained-orders controller.
+- **VO-10 (not a bug, logged as a process note):** my first pass at the "Prioritize" button used ad-hoc styling instead of consulting `modules-ux-playbook.md` first — that playbook already documents a `--confirm-ghost`/`--confirm-ink` state pattern (§10) specifically for this exact button's confirmed state, and §8's `--accent-ink` correction for on-accent text. Fixed to match documented pattern exactly. **Lesson restated for next engineer:** check the relevant playbook *before* writing UI code, not after — this file existed with the exact answer the whole time.
+
+**Shipped this session (2026-07-01):**
+
+- "Go to order flow →" — confirmed live, functional (pre-existing fromprior session, verified working via screenshot).
+- **"Prioritize" button** — new, primary action in the constraint-free/unbatched footer state. Reuses the exact same `onPriorityFlag` mutation as ORDM-02's list-row Prioritize action (bulk-set-priority endpoint) — not a new/parallel implementation. Explicit product decision: **kept alongside** "Go to order flow," not a replacement — Prioritize (primary, filled accent) + Go to order flow (secondary, ghost pill), both always available together, not a fallback relationship.
+
+**Shipped this session (2026-07-02) — visual pass against target design, live-verified via screenshots:**
+
+- **Modal width** — `EntityDetailModal`'s `maxWidth` prop set to `"md"` at the Orders call site (was defaulting to `"lg"`, read as a wide rectangle vs. target's more square proportions).
+- **Two-column top section** — items list (left) / customer identity + order summary (right), replacing the old single-column flat stack. Customer block renders from `order.shipping.*` (VO-01/VO-07 — NOT `customers.email`/`first_name`, which is structurally blank for most merchants per Shopify PCD scope). No "Returning · Nth order" badge — would require a join on a key we've confirmed is usually blank, not worth building on it.
+- **Summary block** — Subtotal/Tax/Total now rendered from real `orders.subtotal_price`/`total_tax` (VO-11, newly selected — existed on the table, was never returned by the API). **No Shipping line** — deliberately omitted, see GH-1032 (derived `total - subtotal - tax` was flagged live as unreliable, not backed by real carrier data; do not re-add without a carrier-data audit first).
+- **`EntityDetailModal` shared shell — new `footerActions` slot** (2026-07-02): the shell previously had no footer concept at all; CTAs lived inside the scrollable `children` body. Added a dedicated `footerActions?: ReactNode` prop + fixed footer region below `DialogContent`, styled `--bg-2` to match the header (both now visually frame the `--surface`-toned body, per target design — was uniformly `--surface` throughout). **This is a shared-shell change — affects Members/Products too if/when they adopt this modal, not just Orders.** Orders' Prioritize/Go-to-order-flow buttons were lifted out of `OrderDetailModalBody`'s JSX into a `useMemo`-computed `footerContent`, sent up via a new `onFooterReady` callback (same lift pattern as the existing `onTitleReady`/`onSubtitleReady`, but memoized + effect-driven since footer content depends on multiple pieces of local state — constraint status, `isPrioritizing`, `prioritized` — not a fire-once value).
+- **CTA sizing** — Prioritize/Go to order flow changed from `fullWidth` stretched-to-fill to compact, equal-width (`minWidth: 140`, `flex: '0 1 auto'`), matching target's button proportions.
+- **Timeline row** — timestamp moved from stacked-under-label to right-aligned, connected to the label via a dotted leader (`borderBottom: '1px dotted var(--rule)'` filling the flex gap) to close the empty-space gap flagged live, rather than leaving raw `justifyContent: 'space-between'` whitespace.
+
+**Two self-caught process notes from this pass, worth restating for the next engineer:**
+
+- Two separate `str_replace` applications silently landed partial (the `useEffect` firing `onFooterReady`, and the destructured `onFooterReady` param) — both caught only via live TS errors after the fact, not before. **Lesson: after any multi-part diff, grep for every distinct piece separately** (type declaration, destructured param, and usage are three different grep targets, not one) rather than trusting a single confirmation grep that only checked one of them.
+- Item images (VO-08) still render as a bordered placeholder box, not a real image — `image_url` is null on all live sample orders. Not fixed this pass, still open.
+
+**Not yet started (open):**
+
+- VO-02 (timeline stages — data model only supports 2 real statuses, `pending`/`fulfilled`, not the target design's 4-stage flow)
+- VO-04 (Open in Shopify / Print pick list — no backend exists for either)
+- VO-12 (warehouse/location subline — no `warehouses` table with name/city exists; dropped from header rather than fabricated)
+- GH-1032 (shipping cost — needs real carrier-rate data audit, see `shop_carrier_settings`)
+
+**NOTE, per explicit instruction (2026-07-01):** this codebase's docs are known to run stale in places — this conversation's approvals are the current source of truth where they conflict with anything written earlier in this file, including §2.5's now-superseded line above.
