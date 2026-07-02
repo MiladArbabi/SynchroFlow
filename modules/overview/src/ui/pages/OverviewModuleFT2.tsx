@@ -91,7 +91,7 @@ type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']
 
 // ─── CONSTANTS ────────────────────────────────────────────────
 
-const TRIAGE_PREVIEW_LIMIT = 4;
+const TRIAGE_PREVIEW_LIMIT = 3;
 
 // Baked severity palette — no alpha() needed
 const SEV = {

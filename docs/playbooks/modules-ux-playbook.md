@@ -112,7 +112,7 @@ Rules:
 - Keep the full source array, then derive:
   - `visibleItems = items.slice(0, TRIAGE_PREVIEW_LIMIT)`
   - `hiddenItems = items.slice(TRIAGE_PREVIEW_LIMIT)`
-- Use `TRIAGE_PREVIEW_LIMIT = 4`.
+- Use `TRIAGE_PREVIEW_LIMIT = 3`.
 - `Everything else` may remain a separate collapsed/on-track group, but should not be treated as an urgent decision category.
 
 Canonical reveal control:

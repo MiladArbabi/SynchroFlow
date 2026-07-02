@@ -50,7 +50,7 @@ type LedgerFilter = 'needs_action' | DateRange;
  * time is surfaced as operational risk, not hidden inside the ledger.
  */
 const OUTBOUND_SLA_BREACH_HOURS = 72;
-const TRIAGE_PREVIEW_LIMIT = 4;
+const TRIAGE_PREVIEW_LIMIT = 3;
 
 function useFulfilledOrders(page: number, perPage: number, sortField: SortField, sortDir: SortDir, dateRange: DateRange) {
   return useQuery<FulfilledOrdersResponse, Error, FulfilledOrdersResponse>({

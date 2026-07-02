@@ -47,7 +47,7 @@
 import { type ChangeEvent, useCallback, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from '@mui/material';
-import { Clock, Flag, ChevronDown } from 'lucide-react';
+import { Clock, Flag, ChevronDown, ChevronUp } from 'lucide-react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { getAgeLabel, getConstraintLabel, useConstrainedOrders } from '../orders/useConstrainedOrders';
@@ -189,15 +189,17 @@ export default function OrderFlowPage() {
     });
     setPage(1); // reset to page 1 on filter change, per §6
   }, []);
-  // ISSUE-15 — accordion state for Blocked Orders categories. Empty Set = all
-  // collapsed on load, regardless of which categories have items, EXCEPT a
-  // deep-linked ?constraint=<type> auto-expands its matching section.
+  // ISSUE-15 → OF-06 (2026-07-02): accordion state for Blocked Orders
+  // categories. Previously started fully collapsed by default (empty Set,
+  // except deep-linked ?constraint=<type>) — flagged live as leaving
+  // significant dead space on the Blocked Orders card when nothing is
+  // manually expanded. Now defaults to expanded for every category
+  // (bounded safely by OF-05's TRIAGE_PREVIEW_LIMIT=3 reveal cap, so this
+  // can't balloon into a huge list even with several blocked categories).
+  // constraintParam still works the same way — it's already covered by
+  // "start with everything expanded," no special-case needed anymore.
   const [expandedReasons, setExpandedReasons] = useState<Set<string>>(
-    () => new Set(
-      constraintParam === 'inventory' || constraintParam === 'customer' || constraintParam === 'operational'
-        ? [constraintParam]
-        : []
-    )
+    () => new Set(['operational', 'inventory', 'customer', 'unknown'])
   );
   const toggleReason = useCallback((key: string) => {
     setExpandedReasons((prev) => {
@@ -207,6 +209,23 @@ export default function OrderFlowPage() {
       } else {
         next.add(key);
       }
+      return next;
+    });
+  }, []);
+  /**
+   * OF-05 (2026-07-02) — See-more reveal for Blocked Orders groups.
+   * Separate state from expandedReasons (that toggles the whole
+   * accordion section open/closed) — this toggles preview-vs-full
+   * within an already-open section. TRIAGE_PREVIEW_LIMIT = 3 per
+   * updated app-wide standard (modules-ux-playbook.md, was 4).
+   */
+  const TRIAGE_PREVIEW_LIMIT = 3;
+  const [revealedGroups, setRevealedGroups] = useState<Set<string>>(new Set());
+  const toggleRevealed = useCallback((key: string) => {
+    setRevealedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, []);
@@ -565,8 +584,8 @@ export default function OrderFlowPage() {
                             />
                           </Box>
                           <Collapse in={expandedReasons.has(key)} timeout={200}>
-                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                              {blockedByReason[key].map((order) => (
+                            <Box sx={{ display: 'flex', flexDirection:'column', gap: 0.5 }}>
+                              {(revealedGroups.has(key) ? blockedByReason[key] : blockedByReason[key].slice(0, TRIAGE_PREVIEW_LIMIT)).map((order) => (
                                 <Box
                                   key={order.order_id}
                                   sx={{
@@ -607,6 +626,24 @@ export default function OrderFlowPage() {
                                 </Box>
                               ))}
                             </Box>
+                            {/*
+                              OF-05 (2026-07-02): See-more reveal, per
+                              modules-ux-playbook.md's FT2 Decision Group
+                              Reveal Pattern — TRIAGE_PREVIEW_LIMIT updated
+                              to 3 (new app-wide standard, was 4). Canonical
+                              control, reused verbatim from the playbook.
+                            */}
+                            {blockedByReason[key].length > TRIAGE_PREVIEW_LIMIT && (
+                              <Box
+                                onClick={() => toggleRevealed(key)}
+                                sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                              >
+                                <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                                  {revealedGroups.has(key) ? 'Show less' : `See ${blockedByReason[key].length - TRIAGE_PREVIEW_LIMIT} more`}
+                                </Typography>
+                                {revealedGroups.has(key) ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                              </Box>
+                            )}
                           </Collapse>
                         </Box>
                       )

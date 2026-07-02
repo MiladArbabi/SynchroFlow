@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OrdersInboundPage.tsx
 //
 // INBOUND TAB — inbound control tower (FT2 decision + pulse)
@@ -18,7 +19,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
 
-const TRIAGE_PREVIEW_LIMIT = 4;
+const TRIAGE_PREVIEW_LIMIT = 3;
 
 // ─── TYPES ────────────────────────────────────────────
 
