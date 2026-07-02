@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx
 //
 // ORDER FLOW
@@ -144,6 +145,50 @@ export default function OrderFlowPage() {
   // --- Cross-linking: pool cell → pool-table filter ------------------------
   // Clicking a POOL cell filters the pool table to that bucket.
   const [cptFilter, setCptFilter] = useState<{ bucket: CptBucket; stage: 'pool' } | null>(null);
+  /**
+   * OF-01/02/03 (2026-07-02) — Order Pool sort/filter/pagination
+   * ----------------------------------------------------------------
+   * Deliberately separate from cptFilter above — that's a cross-link
+   * mechanism driven by clicking a matrix cell elsewhere on the page
+   * (see cta-deeplink-playbook.md §5), not an in-table operator control.
+   * These are new, genuinely in-table controls, additive alongside it.
+   *
+   * Sort fields deliberately exclude is_priority_flagged/
+   * is_shipping_sla_breached — those are release-order flags already
+   * fixed server-side (pickBatch.service.ts's
+   * is_priority_flagged DESC, is_shipping_sla_breached DESC,
+   * order_created_at ASC — see cta-deeplink-playbook.md §6). Letting
+   * operators freely re-sort by that same dimension here would wrongly
+   * imply they can reorder release priority from this table. They're
+   * exposed as filter toggles instead (statusFilter below), consistent
+   * with how they already render as inline badges, not sortable data.
+   */
+  type PoolSortField = 'age' | 'value' | 'lines' | 'units';
+  const [sortField, setSortField] = useState<PoolSortField>('age');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [statusFilter, setStatusFilter] = useState<Set<'priority' | 'sla_breached'>>(new Set());
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const handleSort = useCallback((field: PoolSortField) => {
+    setSortField((prevField) => {
+      if (prevField === field) {
+        setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSortDir('asc');
+      }
+      return field;
+    });
+    setPage(1); // per modules-ux-playbook.md §6: always reset to page 1 on sort change
+  }, []);
+  const toggleStatusFilter = useCallback((key: 'priority' | 'sla_breached') => {
+    setStatusFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+    setPage(1); // reset to page 1 on filter change, per §6
+  }, []);
   // ISSUE-15 — accordion state for Blocked Orders categories. Empty Set = all
   // collapsed on load, regardless of which categories have items, EXCEPT a
   // deep-linked ?constraint=<type> auto-expands its matching section.
@@ -171,12 +216,43 @@ export default function OrderFlowPage() {
     [liveCapacityQuery.data],
   );
 
-  const visiblePool = useMemo(
+  const filteredPool = useMemo(
     () => poolOrders.filter(o =>
       (!cptFilter || poolBucket(o) === cptFilter.bucket) &&
-      (!urgencyFilter || o.is_shipping_sla_breached)
+      (!urgencyFilter || o.is_shipping_sla_breached) &&
+      (!statusFilter.has('priority') || o.is_priority_flagged) &&
+      (!statusFilter.has('sla_breached') || o.is_shipping_sla_breached)
     ),
-    [poolOrders, cptFilter, poolBucket, urgencyFilter],
+    [poolOrders, cptFilter, poolBucket, urgencyFilter, statusFilter],
+  );
+  const sortedPool = useMemo(() => {
+    const sorted = [...filteredPool].sort((a, b) => {
+      let cmp = 0;
+      switch (sortField) {
+        case 'age':
+          cmp = new Date(a.order_created_at).getTime() - new Date(b.order_created_at).getTime();
+          break;
+        case 'value':
+          cmp = Number(a.total_price) - Number(b.total_price);
+          break;
+        case 'lines':
+          cmp = a.line_item_count - b.line_item_count;
+          break;
+        case 'units':
+          cmp = a.unit_count - b.unit_count;
+          break;
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+    return sorted;
+  }, [filteredPool, sortField, sortDir]);
+  // OF-03: pagination — was fully unbounded (visiblePool.map with no
+  // slice), fine at today's low order volume but breaks at real scale.
+  // Follows modules-ux-playbook.md §6's canonical pattern exactly.
+  const poolTotalPages = Math.ceil(sortedPool.length / perPage);
+  const visiblePool = useMemo(
+    () => sortedPool.slice((page - 1) * perPage, page * perPage),
+    [sortedPool, page, perPage],
   );
 
   // --- Blocked column CPT-bucket indicator (overdue / today / ahead) -------
@@ -563,6 +639,37 @@ export default function OrderFlowPage() {
                     <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
                       paid · stock reserved
                     </Typography>
+                    {/*
+                      OF-02 (2026-07-02): in-table status filter chips —
+                      additive alongside cptFilter (that's a cross-link
+                      from clicking a matrix cell elsewhere, not an
+                      in-table control — see state comment above). These
+                      are simple operator-toggled filters on data already
+                      shown inline as row badges (Priority/SLA breached).
+                    */}
+                    <Box sx={{ display: 'flex', gap: 0.75, mt: 1 }}>
+                      {([
+                        { key: 'priority' as const, label: 'Priority' },
+                        { key: 'sla_breached' as const, label: 'SLA breached' },
+                      ]).map(({ key, label }) => {
+                        const active = statusFilter.has(key);
+                        return (
+                          <Box
+                            key={key}
+                            onClick={() => toggleStatusFilter(key)}
+                            sx={{
+                              px: 1.25, py: 0.375, fontSize: 10.5, fontWeight: 500,
+                              border: '0.5px solid', borderRadius: '999px', cursor: 'pointer',
+                              borderColor: active ? 'var(--accent)' : 'var(--rule)',
+                              bgcolor: active ? 'var(--accent-ghost)' : 'transparent',
+                              color: active ? 'var(--accent)' : 'var(--ink-4)',
+                            }}
+                          >
+                            {label}
+                          </Box>
+                        );
+                      })}
+                    </Box>
                   </Box>
 
                   <Box
@@ -585,19 +692,58 @@ export default function OrderFlowPage() {
                       onChange={toggleSelectAll}
                     />
                     <Box />
-                    {['Order / Value', 'Lines', 'Units', 'Age'].map((col) => (
-                      <Typography
-                        key={col}
-                        sx={{
-                          fontSize: 10,
-                          fontWeight: 500,
-                          letterSpacing: '0.12em',
-                          textTransform: 'uppercase',
-                          color: 'var(--ink-4)',
-                        }}
+                    {/*
+                      OF-01 (2026-07-02): sortable headers — was static
+                      Typography with no click handlers at all. 'Order /
+                      Value' maps to the 'value' sort field (total_price);
+                      the label itself doesn't change, only its behavior.
+                      Pattern matches modules-ux-playbook.md §6's Column
+                      Sorting Pattern exactly (uppercase label + ↑/↓
+                      indicator, accent color when active).
+                    */}
+                    {/*
+                      2026-07-02: 'Lines' → 'SKUs' per explicit product
+                      decision — 'line item' is standard WMS jargon
+                      ("1 line = 1 distinct product/variant") but not
+                      obvious outside that context. 'SKUs' is the more
+                      universally understood term for the same count.
+                      'Units' (total quantity across all SKUs) kept
+                      as-is deliberately — 'Items' was considered and
+                      rejected as a replacement since it's ambiguous
+                      with SKUs' own meaning (could read as "distinct
+                      products" too), while 'Units' unambiguously means
+                      physical quantity to pick. sortField key stays
+                      'lines' internally — only the display label changed,
+                      not the data/sort logic.
+                    */}
+                    {([
+                      { label: 'Order / Value', field: 'value' as const },
+                      { label: 'SKUs', field: 'lines' as const },
+                      { label: 'Units', field: 'units' as const },
+                      { label: 'Age', field: 'age' as const },
+                    ]).map(({ label, field }) => (
+                      <Box
+                        key={label}
+                        onClick={() => handleSort(field)}
+                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer' }}
                       >
-                        {col}
-                      </Typography>
+                        <Typography
+                          sx={{
+                            fontSize: 10,
+                            fontWeight: 500,
+                            letterSpacing: '0.12em',
+                            textTransform: 'uppercase',
+                            color: sortField === field ? 'var(--accent)' : 'var(--ink-4)',
+                          }}
+                        >
+                          {label}
+                        </Typography>
+                        {sortField === field && (
+                          <Typography sx={{ fontSize: 9, color: 'var(--accent)' }}>
+                            {sortDir === 'asc' ? '↑' : '↓'}
+                          </Typography>
+                        )}
+                      </Box>
                     ))}
                   </Box>
 
@@ -712,7 +858,51 @@ export default function OrderFlowPage() {
                       );
                     })}
                   </Box>
-
+                  {/*
+                    OF-03 (2026-07-02): pagination footer — was fully
+                    unbounded (no .slice(), rendered every filtered
+                    order regardless of count). Compact variant of
+                    modules-ux-playbook.md §6's canonical pattern —
+                    page-size selector omitted here (column is narrow,
+                    10/25/50/100 chips wouldn't fit; sortedPool.length
+                    is realistically small at real order-pool volumes
+                    compared to e.g. Catalog's product list). Prev/Next
+                    + page count only. Only renders when there's more
+                    than one page — avoids empty chrome at low volume.
+                  */}
+                  {poolTotalPages > 1 && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: '14px', py: 1, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg)' }}>
+                      <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                        Page {page} of {poolTotalPages}
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Box
+                          onClick={() => page > 1 && setPage((p) => p - 1)}
+                          sx={{
+                            px: 1.25, py: 0.375, borderRadius: '6px',
+                            cursor: page > 1 ? 'pointer' : 'not-allowed',
+                            border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+                            fontSize: 11, color: page > 1 ? 'var(--ink-3)' : 'var(--ink-4)',
+                            opacity: page > 1 ? 1 : 0.4,
+                          }}
+                        >
+                          ← Prev
+                        </Box>
+                        <Box
+                          onClick={() => page < poolTotalPages && setPage((p) => p + 1)}
+                          sx={{
+                            px: 1.25, py: 0.375, borderRadius: '6px',
+                            cursor: page < poolTotalPages ? 'pointer' : 'not-allowed',
+                            border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+                            fontSize: 11, color: page < poolTotalPages ? 'var(--ink-3)' : 'var(--ink-4)',
+                            opacity: page < poolTotalPages ? 1 : 0.4,
+                          }}
+                        >
+                          Next →
+                        </Box>
+                      </Box>
+                    </Box>
+                  )}
                   <Box sx={{ p: '12px 14px', borderTop: '1px solid var(--rule)' }}>
                     {selected.size > 0 && (
                       <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mb: 0.75 }}>

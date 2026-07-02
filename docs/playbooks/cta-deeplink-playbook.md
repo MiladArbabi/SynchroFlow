@@ -88,9 +88,9 @@ Got this wrong **twice** before landing on the truth above:
 | OV-06 | ✅ FIXED | `?focus=` → `?filter=` standardization (superseded — `revenue_at_risk` no longer uses Cashflow at all, see below). |
 | OV-07 | 🟡 OPEN | WMS alerts need entity-level params; `alerts.aggregator.ts` doesn't carry them. Blocked on ENTITY-01. |
 | OV-08 | ✅ FIXED (reframed) | Was never a duplicate — `aha.controller.ts` is a separate, correct pipeline. No fix needed there. |
-| ORD-01 | 🔴 **STILL OPEN** | `OrdersModuleFT2.tsx` "View all orders →" still points at bare `/orders`. Same fix as OV-04 (→ `/orders/flow`), never actually applied — tracked but not yet done. See `entity-detail-modal-playbook.md` §2 for ORD-02 (removed) and ORD-03 (the real entity-modal trigger work), found in the same file during the Orders modal investigation. |
+| ORD-01 | ✅ **CLOSED (2026-07-02)** | Re-verified live — `OrdersModuleFT2.tsx` line 824 already calls `navigate('/orders/flow')`. Doc status was stale; fix landed at some point without this table being updated. Closing out during the Order Flow module CTA audit kickoff. See `entity-detail-modal-playbook.md` §2 for ORD-02 (removed) and ORD-03 (the real entity-modal trigger work), found in the same file during the Orders modal investigation. |
 | AHA-01 | 🟡 OPEN, parked | `aha.controller.ts` Signal 3 "Revenue concentration" → `/orders?filter=revenue_concentration`, fully orphaned, different feature surface (customer analytics). |
-| **CASH-01** | 🔴 **NEW, OPEN** | `CashFlowModuleFT2.tsx`'s `atRiskRevenue` chip hardcodes `href="/orders?filter=blocked"` — a frontend-constructed link, violating §1's core principle. Doubly stale now: wrong route (`/orders`, not `/orders/flow`) and wrong param shape (`filter=blocked` isn't read by anything — Order Flow reads `constraint`/`urgency`). Same class of bug as OV-02/OV-04 (frontend hand-writing a path), found but not yet fixed. |
+| **CASH-01** | 🟡 **CONFIRMED, DEFERRED (2026-07-02)** | `CashFlowModuleFT2.tsx`'s `atRiskRevenue` chip hardcodes `href="/orders?filter=blocked"` — a frontend-constructed link, violating §1's core principle. Doubly stale: wrong route (`/orders`, not `/orders/flow`) and wrong param shape (`filter=blocked` isn't read by anything — Order Flow reads `constraint`/`urgency`). Re-confirmed live, bug still present. **Explicit product decision: not fixing now** — Cashflow module's future is uncertain (possible deprecation), not worth investing in a link fix that may be deleted entirely. Revisit if/when Cashflow's roadmap is confirmed. |
 | PHANTOM-01 | 🔴 OPEN | Phantom stock computed/scored/has a working CTA in `ProductsCatalogPage.tsx`, never reaches `alerts`. |
 | ENTITY-01 | 🔴 OPEN, foundational — **reframed 2026-06-28** | Originally framed as "build entity-aware alerts from scratch." **Wrong** — `demandIntelligence.service.ts` and `resolve_inventory_block.handler.ts` already correctly populate `entity_id`/`entity_type` (`'variant'`, real variant ID) on `stockout_risk` alerts. The real task is bringing `alerts.aggregator.ts` (AL-01's constraint/SLA/revenue/cogs alerts) up to the standard already met elsewhere in this codebase — not inventing the pattern. |
 | **CATALOG-GAP** | 🔴 **NEW, OPEN, future feature, not urgent** | `ProductsCatalogPage.tsx` / `ProductsOperatorFacts.service.ts` has no cost-completeness tracking at all — only `phantom`/`zeroStock`/`noSku`/`sellable` exist as states. `missing_cogs`'s "Fix in Catalog" CTA (on both Overview and Finances Intelligence) lands on Catalog with nothing to filter into. Not broken — just a real future feature (a `missingCost` status + filter) if this signal is ever expected to be actionable from Catalog directly rather than via Finances' own existing margin breakdown. |
@@ -153,6 +153,23 @@ Both joined via the same `DISTINCT ON ... aggregate_version DESC` CTE pattern al
 - **Phase 4** 🔴 — Promote phantom stock into `alerts` (PHANTOM-01).
 - **Phase 5** 🔴 — ENTITY-01, reframed as "match the existing standard," not greenfield.
 
-**Newly surfaced, not yet scheduled:** CASH-01 (hardcoded stale link), ORD-01 (still genuinely unfixed despite being tracked since 2026-05-28), CATALOG-GAP (future feature).
+**Newly surfaced, not yet scheduled:** CATALOG-GAP (future feature). CASH-01 confirmed still present but deliberately deferred pending Cashflow module roadmap decision (2026-07-02). ORD-01 closed 2026-07-02 — re-verified, already fixed.
 
 Parked, separate track: Alerts-in-sidenav placement (Option A/B/C).
+
+---
+
+## 9. Order Flow module — CTA/UX audit kickoff (2026-07-02)
+
+Opened as the next module audit after Orders module CTAs closed out (see `entity-detail-modal-playbook.md` §2.9 for that work). First findings, unrelated to the deep-link contract itself but caught in the same pass:
+
+| ID | Status | Description |
+|---|---|---|
+| OF-01 | ✅ FIXED | Order Pool table headers (`Order/Value`, `SKUs`, `Units`, `Age`) were static `<Typography>` with zero sort capability — no `sortField`/`sortDir` state existed at all. Added, following `modules-ux-playbook.md` §6's canonical Column Sorting Pattern exactly. Deliberately excludes `is_priority_flagged`/`is_shipping_sla_breached` from sortable fields — those are fixed release-order flags (`pickBatch.service.ts`'s `is_priority_flagged DESC, is_shipping_sla_breached DESC, order_created_at ASC`, §6 above), not operator-resortable data; exposed as filter toggles instead. |
+| OF-02 | ✅ FIXED | Added in-table Priority/SLA-breached filter chips. Deliberately **additive**, not a replacement for the existing `cptFilter` — that's a cross-link mechanism driven by clicking a pool-matrix cell elsewhere on the page (§5 above), a different interaction class from an in-table operator toggle. Both filters compose (AND'd together) in `filteredPool`. |
+| OF-03 | ✅ FIXED | Zero pagination previously — `visiblePool.map()` rendered every filtered order unbounded. Added `page`/`perPage` state + `poolTotalPages` derivation, compact Prev/Next footer (page-size selector intentionally omitted — column too narrow for §6's full 10/25/50/100 chip row, and pool volume is realistically smaller than e.g. Catalog's product list). Footer only renders when `poolTotalPages > 1`. |
+| — | note | `ReleaseQueuePage.tsx` shares the same `useOrderPool`/`PoolOrder` data shape and has the **identical** gap (confirmed via grep — no sort/pagination state there either). Not fixed as part of this pass — flagged for a future consistency pass, this file (`OrderFlowPage.tsx`) is now the reference implementation if/when that happens. |
+
+**Terminology fix, same pass:** "Lines" column renamed to "SKUs" — `line_item_count` is standard WMS jargon (1 line = 1 distinct product/variant row) but not self-evident outside that context. "Units" (total quantity, `SUM(oli.quantity)`) kept as-is — "Items" was considered and rejected as a replacement since it's ambiguous with SKUs' own meaning, while "Units" unambiguously means physical pick quantity. Internal `sortField` key remains `'lines'` — only the display label changed.
+
+**Audit continues** — this is the opening finding of the Order Flow module pass, not the full audit. Next: confirm whether the known §5 scoping gap (header totals not reflecting active deep-link filters, no visible filter-active chip) still reproduces, since it was logged but not fixed as of the 2026-06-28 revision.
