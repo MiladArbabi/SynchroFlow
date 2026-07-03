@@ -115,7 +115,8 @@ export default function ArticleLayout({
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw' }}>
         <article style={{ marginTop: '12px',padding: '12px 0 32px' }}>
           {children}
-          <ArticleCTA variant="inline" text={frontmatter.cta_text} />
+          {/* Use article-specific CTA destinations so SEO pages can match conversion intent. */}
+          <ArticleCTA variant="inline" text={frontmatter.cta_text} href={frontmatter.cta_url} />
         </article>
       </div>
 
@@ -131,7 +132,7 @@ export default function ArticleLayout({
 
       {/* End CTA */}
       <div style={{ maxWidth: '720px', margin: '0 auto', padding: '0 5vw 32px' }}>
-        <ArticleCTA variant="full" />
+        <ArticleCTA variant="full" href={frontmatter.cta_url} />
       </div>
 
       {/* Related */}

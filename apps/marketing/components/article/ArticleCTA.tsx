@@ -5,16 +5,19 @@ import { usePostHog } from 'posthog-js/react'
 interface ArticleCTAProps {
   variant?: 'inline' | 'full'
   text?: string
+  href?: string
 }
 
-export default function ArticleCTA({ variant = 'full', text }: ArticleCTAProps) {
+export default function ArticleCTA({ variant = 'full', text, href }: ArticleCTAProps) {
   const ph = usePostHog()
-  const href = 'https://app.lasyncro.com'
+  // Default keeps legacy CTAs safe; article frontmatter can override this per search intent.
+  const targetHref = href ?? 'https://app.lasyncro.com'
 
   function handleClick() {
     ph?.capture('blog_cta_clicked', {
       variant,
       cta_label: variant === 'inline' ? 'start_free' : 'get_early_access',
+      cta_href: targetHref,
       location: variant,
     })
   }
@@ -32,7 +35,7 @@ export default function ArticleCTA({ variant = 'full', text }: ArticleCTAProps) 
         }}>
           {text ?? 'LaSyncro handles this automatically — real-time, no manual work.'}
         </p>
-        <a href={href} onClick={handleClick} style={{
+        <a href={targetHref} onClick={handleClick} style={{
           flexShrink: 0, borderRadius: '6px', background: '#FF6B2B',
           padding: '8px 16px', fontSize: '13px', fontWeight: 500,
           color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap',
@@ -66,7 +69,7 @@ export default function ArticleCTA({ variant = 'full', text }: ArticleCTAProps) 
           Connect Shopify in 60 seconds. No credit card required.
         </p>
       </div>
-      <a href={href} onClick={handleClick} style={{
+      <a href={targetHref} onClick={handleClick} style={{
         display: 'inline-flex', alignItems: 'center', gap: '8px',
         padding: '12px 22px', background: '#FF6B2B', color: '#fff',
         fontFamily: "'DM Sans', system-ui, sans-serif",
