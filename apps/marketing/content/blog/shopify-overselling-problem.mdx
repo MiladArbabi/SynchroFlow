@@ -161,4 +161,20 @@ Every time a warehouse movement happens without a corresponding Shopify update �
 
 The permanent fix is closing the gap entirely: every physical stock movement updates Shopify in real time via a scan. When your warehouse team picks an item, Shopify decrements immediately. When a return is stowed, Shopify increments immediately. When a delivery arrives, Shopify updates as each unit is scanned in.
 
-This is what LaSyncro's warehouse scan layer does. Every scan — pick, pack, receive, stow — is a real-time Shopify inventory update. Overselling becomes structurally impossible because there is never a gap between physical stock and Shopify's count.
+This is what LaSyncro's warehouse scan layer does. Every scan — pick, pack, receive, stow — is a real-time Shopify inventory update. Overselling becomes structurally unlikely because your Shopify count no longer depends on delayed manual updates or disconnected spreadsheets.
+
+{/* SEO note: closing section gives problem-aware readers a clear next step after the diagnostic content. */}
+
+## What to Do Next
+
+If you are seeing oversold orders today, start with the configuration fixes first:
+
+1. Confirm inventory tracking is enabled on every stocked SKU
+2. Disable "Continue selling when out of stock" for products that are not pre-orders
+3. Review every app with inventory write access
+4. Count your top 20 fast-moving SKUs against Shopify's available inventory
+5. Add a safety stock buffer for low-stock, high-velocity products
+
+If those fixes do not stop the problem, the issue is no longer just Shopify configuration. It is warehouse drift. That means stock is moving physically before Shopify knows about it.
+
+At that point, the priority is simple: every receive, stow, pick, pack, return, and adjustment needs to update Shopify at the moment the work happens.
