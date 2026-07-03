@@ -6,17 +6,19 @@ interface ArticleCTAProps {
   variant?: 'inline' | 'full'
   text?: string
   href?: string
+  label?: string
 }
 
-export default function ArticleCTA({ variant = 'full', text, href }: ArticleCTAProps) {
+export default function ArticleCTA({ variant = 'full', text, href, label }: ArticleCTAProps) {
   const ph = usePostHog()
-  // Default keeps legacy CTAs safe; article frontmatter can override this per search intent.
+  // Defaults keep legacy CTAs safe; article frontmatter can override destination and label per search intent.
   const targetHref = href ?? 'https://app.lasyncro.com'
+  const targetLabel = label ?? 'Start free'
 
   function handleClick() {
     ph?.capture('blog_cta_clicked', {
       variant,
-      cta_label: variant === 'inline' ? 'start_free' : 'get_early_access',
+      cta_label: targetLabel,
       cta_href: targetHref,
       location: variant,
     })
@@ -41,7 +43,7 @@ export default function ArticleCTA({ variant = 'full', text, href }: ArticleCTAP
           color: '#fff', textDecoration: 'none', whiteSpace: 'nowrap',
           fontFamily: "'DM Sans', system-ui, sans-serif",
         }}>
-          Start free
+          {targetLabel}
         </a>
       </div>
     )
@@ -76,7 +78,7 @@ export default function ArticleCTA({ variant = 'full', text, href }: ArticleCTAP
         fontSize: '14px', fontWeight: 500,
         borderRadius: '8px', textDecoration: 'none', whiteSpace: 'nowrap',
       }}>
-        Start free
+        {targetLabel}
       </a>
     </div>
   )

@@ -28,6 +28,7 @@ export interface Frontmatter {
   vector: number
   cta_text: string
   cta_url: string
+  cta_label?: string
   faq: { question: string; answer: string }[]
   relatedLinks?: { href: string; title: string; description?: string }[]
 }
