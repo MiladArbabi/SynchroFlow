@@ -1,6 +1,7 @@
 ---
-title: "How to Stop Overselling on Shopify: Causes and Fixes"
-description: "Shopify overselling happens when inventory tracking is disabled, apps sync too slowly, or orders race past your stock count. Here is how to find the cause and fix it before your next customer does."
+title: "Shopify Overselling Problem: Causes and Fixes"
+seo_note: "Title leads with the primary keyword because this page is already earning GSC impressions for Shopify overselling queries."
+description: "The Shopify overselling problem usually comes from disabled inventory tracking, continue-selling settings, app sync delays, or fast orders racing past stock counts. Here is how to find the cause and fix it before your next customer does."
 date: "2026-05-08"
 lastReviewed: "2026-06-09"
 author: "LaSyncro"
@@ -102,6 +103,25 @@ This is a genuine limitation of Shopify's inventory model at high order velocity
 If you use multiple apps with inventory write permissions — a returns app, a marketplace connector, a forecasting tool, a fulfilment integration — they can each update inventory based on slightly stale data. App A sees 10 units, decrements to 8, writes 8 to Shopify. App B, running a sync 20 seconds later, also saw 10 units before the first update, decrements to 9, and writes 9 to Shopify — overwriting App A's correct count of 8. The result is an inflated inventory count that enables overselling.
 
 **Fix:** Audit every app with Shopify inventory write access. In Shopify admin → Apps → check permissions for each installed app. Designate one authoritative inventory writer and remove write access from all others.
+
+{/* SEO note: this section covers Shopify inventory-state and edge-case queries that appear around overselling searches. */}
+
+## What Shopify's Inventory Count Actually Means
+
+A Shopify product can look available to customers even when the operational picture is more complicated. The number that matters on the storefront is not just how many units exist in the building. Shopify separates inventory into states such as on hand, available, committed, and unavailable.
+
+For overselling, the important distinction is this:
+
+- **On hand** is the total quantity recorded at a location
+- **Committed** is stock already attached to existing orders
+- **Unavailable** is stock that exists but should not be sold
+- **Available** is what can still be sold online
+
+Overselling happens when the available number is higher than physical reality. That can happen because a return was counted too early, damaged stock was not removed, stock was moved between locations without being recorded, or an app wrote an old count back into Shopify.
+
+There are also edge cases. Draft orders, POS activity, marketplace connectors, and high-speed checkout flows can all create timing gaps if inventory is not updated from one reliable source. If you run flash sales or sell the same SKU across Shopify, Amazon, eBay, Etsy, or retail POS, treat low-stock SKUs as risk items before they hit zero.
+
+**Fix:** For any SKU with fewer than 5 units available, check the physical shelf count, committed orders, unavailable stock, and app sync history before trusting the storefront number.
 
 ## How to Audit Your Current Overselling Risk
 
