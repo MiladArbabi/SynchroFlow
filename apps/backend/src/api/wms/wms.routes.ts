@@ -49,6 +49,7 @@ import {
   httpResolvePackDecision,
   httpListPackDecisions,
   httpPackFreeScan,
+  httpBulkGenerateShippingLabels,
 } from './wms.controller.js';
 import {
   httpGetPickAnalytics,
@@ -80,6 +81,12 @@ import {
   httpRevokeCarrierWebhookToken,
   httpSetCarrierWebhookSecret,
 } from './carrierWebhookToken.controller.js';
+import {
+  httpListSenderAddresses,
+  httpCreateSenderAddress,
+  httpUpdateSenderAddress,
+  httpDeleteSenderAddress,
+} from './senderAddress.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -669,6 +676,36 @@ router.patch(
   requireTier('growth'),
   requireAction('wms:batch:release'),
   httpSetCarrierWebhookSecret
+);
+
+router.post(
+  '/orders/bulk-generate-label',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:pack:scan'),
+  httpBulkGenerateShippingLabels
+);
+
+router.get(
+  '/sender-addresses',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('wms:read'),
+  httpListSenderAddresses
+);
+router.post(
+  '/sender-addresses',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('wms:batch:release'),
+  httpCreateSenderAddress
+);
+router.patch(
+  '/sender-addresses/:id',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('wms:batch:release'),
+  httpUpdateSenderAddress
+);
+router.delete(
+  '/sender-addresses/:id',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('wms:batch:release'),
+  httpDeleteSenderAddress
 );
 
 export default router;

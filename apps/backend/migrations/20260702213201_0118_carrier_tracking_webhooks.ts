@@ -111,6 +111,11 @@ export async function up(knex: Knex): Promise<void> {
     { carrier_code: 'sendcloud', raw_status: 'lost', event_type: 'exception' },
     { carrier_code: 'sendcloud', raw_status: 'returned_to_sender', event_type: 'returned' },
     { carrier_code: 'sendcloud', raw_status: 'returned', event_type: 'returned' },
+    { carrier_code: 'shippo', raw_status: 'PRE_TRANSIT', event_type: 'announced' },
+    { carrier_code: 'shippo', raw_status: 'TRANSIT', event_type: 'in_transit' },
+    { carrier_code: 'shippo', raw_status: 'DELIVERED', event_type: 'delivered' },
+    { carrier_code: 'shippo', raw_status: 'FAILURE', event_type: 'exception' },
+    { carrier_code: 'shippo', raw_status: 'RETURNED', event_type: 'returned' },
   ]);
 
   await knex.schema.alterTable('shop_carrier_settings', (table) => {

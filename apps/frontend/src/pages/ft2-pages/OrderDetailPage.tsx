@@ -51,7 +51,7 @@ function StatusBadge({ label, color }: { label: string; color: 'success' | 'warn
     success: theme.palette.success.main,
     warning: theme.palette.warning.main,
     error:   theme.palette.error.main,
-    default: 'var(--ink-4)',
+    default: theme.palette.mode === 'dark' ? '#5A5F6E' : '#9CA3AF',
   }[color];
 
   return (

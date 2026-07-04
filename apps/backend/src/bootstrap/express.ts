@@ -52,6 +52,7 @@ import pilotRoutes from '../api/pilot/pilot.routes.js';
 
 import sendcloudTrackingRouter from '../api/webhooks/sendcloud.tracking.router.js';
 import { verifySendcloudTrackingWebhook } from '../api/webhooks/sendcloud.tracking.verify.middleware.js';
+import shippoTrackingRouter from '../api/webhooks/shippo.tracking.router.js';
 
 // Raw body capture for webhook verification
 // -----------------------------------------
@@ -134,6 +135,7 @@ export function createApp(): Express {
   app.use('/api/v1/exports', exportsRoutes);
 
   app.use('/api/v1/webhooks/carriers/sendcloud/tracking', sendcloudTrackingRouter);
+  app.use('/api/v1/webhooks/carriers/shippo/tracking', shippoTrackingRouter);
 
   registerActivationRoutes(app);
   registerLifecycleRoutes(app);

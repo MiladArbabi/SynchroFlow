@@ -3215,34 +3215,45 @@ export const httpUpsertCarrierSettings = async (req: Request, res: Response) => 
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { carrier_code, public_key, private_key } = req.body;
+  const { carrier_code, public_key, private_key, api_token } = req.body;
 
-  if (!carrier_code || !public_key || !private_key) {
-    return res.status(400).json({ error: 'carrier_code, public_key, private_key required' });
+  if (!carrier_code) {
+    return res.status(400).json({ error: 'carrier_code required' });
   }
 
-  const SUPPORTED = ['sendcloud'];
+  const SUPPORTED = ['sendcloud', 'shippo'];
   if (!SUPPORTED.includes(carrier_code)) {
     return res.status(400).json({ error: `Unsupported carrier: ${carrier_code}. Supported: ${SUPPORTED.join(', ')}` });
   }
 
+  const TWO_KEY_CARRIERS = ['sendcloud'];
+  const SINGLE_TOKEN_CARRIERS = ['shippo'];
+
+  if (TWO_KEY_CARRIERS.includes(carrier_code) && (!public_key || !private_key)) {
+    return res.status(400).json({ error: 'public_key and private_key required for this carrier' });
+  }
+  if (SINGLE_TOKEN_CARRIERS.includes(carrier_code) && !api_token) {
+    return res.status(400).json({ error: 'api_token required for this carrier' });
+  }
+
   try {
-    const encryptedPublic  = JSON.stringify(encrypt(String(public_key).trim()));
-    const encryptedPrivate = JSON.stringify(encrypt(String(private_key).trim()));
+    const updateFields: Record<string, any> = {
+      shop_id: shopId,
+      carrier_code,
+      is_active: true,
+      updated_at: new Date(),
+    };
+
+    if (public_key)  updateFields.public_key  = JSON.stringify(encrypt(String(public_key).trim()));
+    if (private_key) updateFields.private_key = JSON.stringify(encrypt(String(private_key).trim()));
+    if (api_token)    updateFields.api_token   = JSON.stringify(encrypt(String(api_token).trim()));
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       await trx('shop_carrier_settings')
-        .insert({
-          shop_id:      shopId,
-          carrier_code,
-          public_key:   encryptedPublic,
-          private_key:  encryptedPrivate,
-          is_active:    true,
-          updated_at:   new Date(),
-        })
+        .insert(updateFields)
         .onConflict(['shop_id', 'carrier_code'])
-        .merge(['public_key', 'private_key', 'is_active', 'updated_at']);
+        .merge(Object.keys(updateFields).filter(k => k !== 'shop_id' && k !== 'carrier_code'));
     });
 
     console.info('[CARRIER_SETTINGS_UPSERTED]', { shopId, carrier_code });
@@ -3353,7 +3364,9 @@ export const httpGenerateShippingLabel = async (req: Request, res: Response) => 
           'o.shipping_address1',
           'o.shipping_address2',
           'o.shipping_city',
+          'o.shipping_province',
           'o.shipping_zip',
+          'o.shipping_phone',
           'o.shipping_country_code',
         )
         .first();
@@ -3371,9 +3384,11 @@ export const httpGenerateShippingLabel = async (req: Request, res: Response) => 
         pickBatchId:     pick_batch_id ?? null,
         orderNumber:     String(order.external_order_id),
         recipientName:   order.shipping_name,
+        recipientPhone:  order.shipping_phone ?? null,
         address1:        order.shipping_address1,
         address2:        order.shipping_address2 ?? null,
         city:            order.shipping_city,
+        recipientState:  order.shipping_province ?? null,
         postalCode:      order.shipping_zip,
         countryCode:     order.shipping_country_code,
       });
@@ -3438,4 +3453,107 @@ export const httpGetUnitLabelCoverage = async (req: Request, res: Response) => {
     console.error('[UNIT_COVERAGE_FAILED]', { shopId, error: getErrorMessage(err) });
     return res.status(500).json({ error: `Failed to compute coverage: ${getErrorMessage(err)}` });
   }
+};
+
+/**
+ * BULK LABEL BACKFILL (WM-40 Outbound module)
+ * --------------------------------------------
+ * Generates labels for a list of orders missing tracking, one at a time.
+ * Each order gets its own transaction — a single bad address or carrier
+ * failure must not roll back labels already generated for other orders
+ * in the same batch. Synchronous: expected batch size is single digits
+ * to low tens (SMB missing-tracking backlog), well within a normal
+ * request timeout.
+ */
+export const httpBulkGenerateShippingLabels = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { order_ids } = req.body;
+  if (!Array.isArray(order_ids) || order_ids.length === 0) {
+    return res.status(400).json({ error: 'order_ids must be a non-empty array' });
+  }
+  if (order_ids.length > 50) {
+    return res.status(400).json({ error: 'Maximum 50 orders per batch' });
+  }
+
+  const results: Array<{
+    orderId: string;
+    success: boolean;
+    trackingNumber?: string;
+    alreadyExists?: boolean;
+    error?: string;
+  }> = [];
+
+  for (const orderId of order_ids) {
+    try {
+      const result = await db.transaction(async (trx) => {
+        await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+        const existing = await trx('order_shipment_tracking')
+          .where({ shop_id: shopId, lasyncro_order_id: orderId })
+          .orderBy('created_at', 'desc')
+          .first();
+
+        if (existing) {
+          return {
+            trackingNumber: existing.tracking_number,
+            alreadyExists: true,
+          };
+        }
+
+        const order = await trx('orders as o')
+          .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+          .where({ 'o.lasyncro_order_id': orderId, 'o.shop_id': shopId })
+          .select(
+            'eim.external_order_id',
+            'o.shipping_name',
+            'o.shipping_address1',
+            'o.shipping_address2',
+            'o.shipping_city',
+            'o.shipping_zip',
+            'o.shipping_country_code',
+          )
+          .first();
+
+        if (!order) {
+          throw new Error('Order not found');
+        }
+
+        if (!order.shipping_name || !order.shipping_address1 || !order.shipping_city ||
+            !order.shipping_zip || !order.shipping_country_code) {
+          throw new Error('Incomplete shipping address');
+        }
+
+        const labelResult = await generateAndPersistLabel(trx, {
+          shopId,
+          lasyncroOrderId: String(orderId),
+          pickBatchId: null,
+          orderNumber: String(order.external_order_id),
+          recipientName: order.shipping_name,
+          recipientPhone:  order.shipping_phone ?? null,
+          address1: order.shipping_address1,
+          address2: order.shipping_address2 ?? null,
+          city: order.shipping_city,
+          recipientState: order.shipping_province ?? null,
+          postalCode: order.shipping_zip,
+          countryCode: order.shipping_country_code,
+        });
+
+        return { trackingNumber: labelResult.trackingNumber, alreadyExists: false };
+      });
+
+      results.push({ orderId, success: true, ...result });
+    } catch (err: unknown) {
+      results.push({ orderId, success: false, error: getErrorMessage(err) });
+      console.error('[BULK_GENERATE_LABEL_ORDER_FAILED]', { shopId, orderId, error: getErrorMessage(err) });
+    }
+  }
+
+  const succeeded = results.filter(r => r.success).length;
+  const failed = results.length - succeeded;
+
+  console.info('[BULK_GENERATE_LABEL_COMPLETE]', { shopId, total: results.length, succeeded, failed });
+
+  return res.status(200).json({ results, summary: { total: results.length, succeeded, failed } });
 };

@@ -39,8 +39,9 @@ export async function up(knex: Knex): Promise<void> {
      * Raw values never stored. Decrypted only inside
      * sendcloud.carrier.service.ts via 'wms.carrier.sendcloud' context.
      */
-    table.text('public_key').notNullable();
-    table.text('private_key').notNullable();
+    table.text('public_key').nullable();
+    table.text('private_key').nullable();
+    table.text('api_token').nullable();
 
     table
       .boolean('is_active')

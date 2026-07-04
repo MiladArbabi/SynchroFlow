@@ -463,18 +463,21 @@ grep -rn "color: '#" modules/<name>/src/ --include="*.tsx"
 ## 8. Color Token Correction — 2026-06-29
 
 **`--accent-ink: #10151E`** added. WCAG contrast against `--accent` (#FF6B2B), computed directly from the hex values:
+
 - White text: 2.84:1 — **fails AA** (needs 4.5:1 at this text size)
 - `#10151E`: 6.44:1 — passes AA comfortably
 
 The Tier 1 spec's code example (§2) showing `color: theme.palette.common.white` is **wrong** and should read `color: 'var(--accent-ink)'`. The 7+ files already hardcoding `#10151E` independently (`WmsPage.tsx`, `FulfillmentQueuePage.tsx` ×2, `WmsAnalyticsPage.tsx`, `ReleaseQueuePage.tsx`, `BlockedOrdersPage.tsx`, `OrdersOutboundPage.tsx` ×2) were right by repeated convention; the doc's example was stale. CTA-001 (which moved a button toward white) should be re-verified — possible readability regression, not yet confirmed either way.
 
 **Manual edit needed** (one-line, in §2's Tier 1 code block):
+
 ```diff
 - bgcolor: 'var(--accent)', color: theme.palette.common.white,
 + bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
 ```
 
 **Manual edit needed** (Color Tokens list, after `--accent-border`):
+
 ```css
 --accent-ink:    #10151E   /* on-accent text — 6.44:1 vs --accent; white fails at 2.84:1 */
 ```
@@ -491,6 +494,7 @@ The Tier 1 spec's code example (§2) showing `color: theme.palette.common.white`
 ## 10. Confirm-Ghost Exception — 2026-06-30
 
 **New tokens, light + dark** (`apps/frontend/src/themes/index.tsx`):
+
 ```css
 --confirm-ghost:   #E8F5E9                    /* light */ / rgba(76,175,80,0.12)  /* dark */
 --confirm-border:  #A5D6A7                    /* light */ / rgba(76,175,80,0.35) /* dark */
@@ -514,6 +518,7 @@ different semantic category, anchored to the existing
 deltas, not an arbitrary new color choice.
 
 **Pattern, for the next engineer reaching for this:**
+
 ```tsx
 sx={{
   color: showConfirmed ? 'var(--confirm-ink)' : 'var(--accent-ink)',
@@ -537,3 +542,18 @@ still clickable or reversible, it stays orange per §2.
 **The fix — use `--bg-3` instead, not a new token.** `--bg-3` (`#243050` dark / `#E8E6E0` light) is already established elsewhere for exactly this "frame distinct from `--surface`" purpose — see `ModuleTabBar.tsx`'s `active ? 'var(--surface)' : 'var(--bg-3)'` tab treatment, and `OrderDetailPage.tsx`'s bordered footer. Reuse it rather than inventing `--surface-2` or similar.
 
 **Rule going forward:** `--bg-2` is a **hover-state / page-background-context** token only (confirmed via full-codebase audit — every one of its ~60 existing usages is either a `&:hover` state or a panel against `var(--bg)`, never against `var(--surface)`). If you need a shade that reads as distinct **from `var(--surface)` specifically**, reach for `--bg-3`, not `--bg-2`. Before introducing any new background token, check both light AND dark hex values for accidental collisions with tokens it will be paired against — don't assume parity across modes.
+
+## 12. Bulk Backfill Action — Orders Outbound, WM-40 — 2026-07-03
+
+**New pattern:** bulk commit action with inline confirm-then-result flow, no modal — extends the existing `Collapse`-based reveal pattern (§1, FT2 Decision Group Reveal) to a two-state panel: confirmation view → result view, same `Collapse` instance, state swapped via a local `backfillResult` flag rather than two separate collapses.
+
+**Tier correction caught during audit:** initial implementation styled the "Backfill labels" trigger as a muted gray control and used `color: 'white'` on the filled "Confirm" button — both violations of already-documented rules (§3 decision guide; §8's white-on-accent contrast correction). Fixed to `bgcolor: var(--accent)` / `color: var(--accent-ink)` on both, matching Tier 1 exactly. Recorded here so the same mistake isn't repeated when this pattern is copied to another bulk-action surface.
+
+**Rule going forward:** any button that triggers a bulk write (label generation, bulk status change, bulk export-and-mutate) is Tier 1 by the existing decision guide — do not default to a neutral/muted style for bulk actions just because they affect multiple rows. Multiplicity doesn't change the tier; committing an action does.
+
+| ID | Status | File | Line | Description |
+|---|---|---|---|---|
+| CTA-024 | ✅ | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ~420, ~445 | Bulk backfill trigger + confirm button — initially muted gray / `white` text, corrected to Tier 1 filled accent + `var(--accent-ink)` |
+And update §6's "Surfaces Standardised" table isn't affected (pagination unchanged), but §5's Modules Audited row for Orders should get a footnote matching the existing CTA-022 caveat pattern — append after the table:
+
+**Caveat, 2026-07-03:** Orders / Outbound gained a new bulk-action CTA (backfill labels, CTA-024) after the §5 "✅ Clean" audit closed — same caveat class as CTA-022 in §9. Audit status reflects a point in time, not an ongoing guarantee.

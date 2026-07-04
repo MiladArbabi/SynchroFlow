@@ -18,7 +18,7 @@
 // Testing: use Sendcloud's "Unstamped letter" shipping_method_id (8)
 // to generate labels without charge in sandbox.
 
-import type { ICarrierProvider, GenerateLabelInput, GenerateLabelResult } from './ICarrierProvider.js';
+import type { ICarrierProvider, GenerateLabelInput, GenerateLabelResult, CarrierCredentials } from './ICarrierProvider.js';
 
 const SENDCLOUD_API_BASE = 'https://panel.sendcloud.sc/api/v2';
 
@@ -26,9 +26,14 @@ export class SendcloudCarrierService implements ICarrierProvider {
   readonly carrierCode = 'sendcloud';
 
   async generateLabel(
-    input: GenerateLabelInput,
-    credentials: { publicKey: string; privateKey: string }
-  ): Promise<GenerateLabelResult> {
+  input: GenerateLabelInput,
+  credentials: CarrierCredentials
+): Promise<GenerateLabelResult> {
+  if (!credentials.publicKey || !credentials.privateKey) {
+    throw new Error('[SENDCLOUD] Missing public/private key credentials');
+  }
+  const { publicKey, privateKey } = credentials;
+  // narrowed to string by the guard above, same as before the edit.
     const {
       orderNumber,
       recipientName,

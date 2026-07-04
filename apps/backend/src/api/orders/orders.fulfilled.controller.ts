@@ -65,7 +65,7 @@ export const httpGetFulfilledOrders = async (
             .distinctOn('lasyncro_order_id')
             .orderBy('lasyncro_order_id')
             .orderBy('created_at', 'desc')
-            .select('lasyncro_order_id', 'tracking_number', 'tracking_url', 'carrier_code')
+            .select('lasyncro_order_id', 'tracking_number', 'tracking_url', 'carrier_code', 'latest_status', 'latest_location', 'latest_event_at', 'is_stalled')
             .as('ost'),
           'ost.lasyncro_order_id',
           'o.lasyncro_order_id'
@@ -89,6 +89,10 @@ export const httpGetFulfilledOrders = async (
           'ost.tracking_number',
           'ost.tracking_url',
           'ost.carrier_code',
+          'ost.latest_status',
+          'ost.latest_location',
+          'ost.latest_event_at',
+          'ost.is_stalled',
           db.raw(`
             ROUND(
               EXTRACT(EPOCH FROM (ofs.fulfilled_at - o.order_created_at)) / 3600.0,

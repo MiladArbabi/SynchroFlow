@@ -339,6 +339,24 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+
+  // start carrier stall detection worker (WM-40 hardening)
+  try {
+    const carrierStall = await import('../workers/carrier-stall-detection.worker.js');
+    if (typeof carrierStall.startCarrierStallDetectionWorker === 'function') {
+      void carrierStall.startCarrierStallDetectionWorker();
+      if (typeof carrierStall.stopCarrierStallDetectionWorker === 'function') {
+        workerStopFns.push(async () => carrierStall.stopCarrierStallDetectionWorker());
+      }
+      console.log('[bootstrap/workers] Carrier stall detection worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Carrier stall detection worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+  
   // start morning brief worker (OVR-02)
   try {
     const morningBrief = await import('../workers/morning-brief.worker.js');

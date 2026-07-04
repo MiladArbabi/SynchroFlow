@@ -95,6 +95,7 @@ const ALLOWED_CONTEXTS = [
   'shopify.webhook.registration',
   'wms.carrier.sendcloud',
   'wms.carrier.sendcloud.webhook', // WM-40 — decrypt webhook_secret for HMAC verification
+  'wms.carrier.shippo', // WM-40 Shippo integration — label generation decrypt context
 ];
 
 if (!ALLOWED_CONTEXTS.includes(context)) {

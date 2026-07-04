@@ -47,6 +47,16 @@ export const QUICK_REPORTS: QuickReport[] = [
     filename: 'lasyncro-blocked-orders',
   },
   {
+    id: 'orders-outbound',
+    title: 'Shipped Orders',
+    description: 'Fulfilled orders with carrier, tracking, and ship date.',
+    format: 'csv',
+    tier: 'core',
+    endpoint: '/api/v1/exports/orders',
+    body: { filters: { status: ['fulfilled'] } },
+    filename: 'lasyncro-outbound-orders',
+  },
+  {
     id: 'returns',
     title: 'Returns Analysis',
     description: 'Refunds, return reasons, and units returned per SKU.',

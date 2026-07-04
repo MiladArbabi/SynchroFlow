@@ -5,16 +5,17 @@
 //
 // RULES: No alpha(). No useTheme(). No fontFamily overrides. 1px borders. 12px inner cards, 14px table.
 import { useMemo, useState } from 'react';
+import { useEntitlements } from 'contexts/EntitlementsContext';
+import { ExportDrawer } from 'components/ExportDrawer';
 import { Box, Collapse, Typography, CircularProgress } from '@mui/material';
 import { ChevronDown, ChevronUp, Clock, Package } from 'lucide-react';
-import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
 import { useNavigate } from 'react-router-dom';
 
 // ─── TYPES ────────────────────────────────────────────
-
 interface FulfilledOrder {
   lasyncro_order_id: string;
   external_order_id: string | null;
@@ -25,6 +26,10 @@ interface FulfilledOrder {
   tracking_number: string | null;
   tracking_url: string | null;
   carrier_code: string | null;
+  latest_status: string | null;
+  latest_location: string | null;
+  latest_event_at: string | null;
+  is_stalled: boolean;
 }
 
 interface FulfilledOrdersResponse {
@@ -98,10 +103,43 @@ function useCarrierSettings() {
   });
 }
 
+function useBulkBackfillLabels() {
+  const queryClient = useQueryClient();
+  return useMutation<
+    { summary: { total: number; succeeded: number; failed: number }; results: Array<{ orderId: string; success: boolean; error?: string }> },
+    Error,
+    string[]
+  >({
+    mutationFn: async (orderIds) => {
+      const { data } = await axiosInstance.post('/api/v1/wms/orders/bulk-generate-label', { order_ids: orderIds });
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders', 'fulfilled'] });
+    },
+  });
+}
 // ─── HELPERS ──────────────────────────────────────────
 
 const fmt$ = (price: string): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(price));
+
+const fmtRelative = (iso: string): string => {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const h = Math.floor(diffMs / 3_600_000);
+  if (h < 1) return '<1h ago';
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  announced: 'Label created',
+  in_transit: 'In transit',
+  out_for_delivery: 'Out for delivery',
+  delivered: 'Delivered',
+  exception: 'Exception',
+  returned: 'Returned',
+};
 
 const fmtDate = (iso: string): string =>
   new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -122,38 +160,7 @@ const isThisWeek = (iso: string): boolean => {
   return date >= weekAgo;
 };
 
-// ─── STAT CARD ────────────────────────────────────────
-
-/* function StatCard({ label, value, sub, icon: Icon, valueColor, onSubClick }: {
-  label: string; value: string; sub?: string;
-  icon: React.ElementType; valueColor?: string;
-  onSubClick?: () => void;
-}) {
-  return (
-    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '12px', p: '14px 16px', flex: 1, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
-        <Icon size={12} color="var(--ink-4)" />
-        <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-          {label}
-        </Typography>
-      </Box>
-      <Typography sx={{ fontSize: 28, fontWeight: 700, color: valueColor ?? 'var(--ink)', lineHeight: 1.05, fontVariantNumeric: 'tabular-nums' }}>
-        {value}
-      </Typography>
-      {sub && (
-        <Typography
-          onClick={onSubClick}
-          sx={{ fontSize: 11, fontWeight: 300, color: onSubClick ? 'var(--accent)' : 'var(--ink-4)', cursor: onSubClick ? 'pointer' : 'default', '&:hover': onSubClick ? { opacity: 0.75 } : {} }}
-        >
-          {sub}
-        </Typography>
-      )}
-    </Box>
-  );
-} */
-
 // ─── MAIN ─────────────────────────────────────────────
-
 export default function OrdersOutboundPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
@@ -163,11 +170,24 @@ export default function OrdersOutboundPage() {
   const [dateRange, setDateRange] = useState<DateRange>('all');
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('needs_action');
   const [watchExpanded, setWatchExpanded] = useState(false);
+  const [backfillExpanded, setBackfillExpanded] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{
+    summary: { total: number; succeeded: number; failed: number };
+    results: Array<{ orderId: string; success: boolean; error?: string }>;
+  } | null>(null);
 
+  const { mutate: runBulkBackfill, isPending: backfillRunning } = useBulkBackfillLabels();
   const { data, isLoading, isError } = useFulfilledOrders(page, perPage, sortField, sortDir, dateRange);
   const { data: signalData } = useOutboundSignalOrders();
   const { data: carrierSettings } = useCarrierSettings();
   const carriersConfigured = (carrierSettings?.carriers?.length ?? 0) > 0;
+
+  const handleConfirmBackfill = () => {
+    const orderIds = outboundSignals.missingTracking.map(o => o.lasyncro_order_id);
+    runBulkBackfill(orderIds, {
+      onSuccess: (data) => setBackfillResult(data),
+    });
+  };
 
   const handleSort = (field: SortField) => {
     if (field === sortField) setSortDir(d => d === 'desc' ? 'asc' : 'desc');
@@ -176,39 +196,28 @@ export default function OrdersOutboundPage() {
   };
 
   // Date filters were removed from the Outbound UI. The shipped-orders list stays action-first.
+  // ISS-03 FIX: was a hardcoded blob-download bypassing the established
+  // ExportDrawer pattern (export_system_playbook.md §6) — same bug class
+  // as ORDM-01, never applied here. 'orders-outbound' report ID added to
+  // exportReports.ts to carry the fulfilled-status filter.
+  const { tier } = useEntitlements();
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
+  const handleExportOutbound = async () => setExportDrawerOpen(true);
+
+  const orders = useMemo(() => data?.orders ?? [], [data?.orders]);
+  const signalOrders = useMemo(() => signalData?.orders ?? orders, [signalData?.orders, orders]);
 
   /**
-   * Outbound export uses the shared orders export engine with fulfilled status.
-   * Keeps exports tenant-scoped and entitlement-gated by the backend.
-   */
-  const handleExportOutbound = async () => {
-    try {
-      const res = await axiosInstance.post('/api/v1/exports/orders', { filters: { status: ['fulfilled'] } }, { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `lasyncro-outbound-orders-${new Date().toISOString().split('T')[0]}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      console.error('[Outbound] export failed');
-    }
-  };
+    * Exception-first ledger filter. Backend currently supports date ranges only,
+    * so needs-action is derived from the loaded fulfilled ledger rows.
+    */
+  const visibleOrders = useMemo(() => {
+    if (ledgerFilter !== 'needs_action') return orders;
 
-    const orders = useMemo(() => data?.orders ?? [], [data?.orders]);
-    const signalOrders = useMemo(() => signalData?.orders ?? orders, [signalData?.orders, orders]);
-
-    /**
-     * Exception-first ledger filter. Backend currently supports date ranges only,
-     * so needs-action is derived from the loaded fulfilled ledger rows.
-     */
-    const visibleOrders = useMemo(() => {
-      if (ledgerFilter !== 'needs_action') return orders;
-
-      return signalOrders.filter(order =>
-        !order.tracking_number || Number(order.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS
-      );
-    }, [orders, signalOrders, ledgerFilter]);
+    return signalOrders.filter(order =>
+      !order.tracking_number || Number(order.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS
+    );
+  }, [orders, signalOrders, ledgerFilter]);
 
     const sortedLedgerSource = useMemo(() => {
   if (ledgerFilter !== 'needs_action') return visibleOrders;
@@ -244,18 +253,21 @@ export default function OrdersOutboundPage() {
     };
   }, [orders, data?.total]);
 
-    const outboundSignals = useMemo(() => {
-    const missingTracking = signalOrders.filter(o => !o.tracking_number);
-    const breachedSla = signalOrders.filter(o => Number(o.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS);
-    const needsAction = Array.from(
-      new Map([...missingTracking, ...breachedSla].map(order => [order.lasyncro_order_id, order])).values()
-    );
+  const outboundSignals = useMemo(() => {
+  const stalled = signalOrders.filter(o => o.is_stalled);
+  const missingTracking = signalOrders.filter(o => !o.tracking_number);
+  const breachedSla = signalOrders.filter(o => Number(o.hours_to_fulfil) > OUTBOUND_SLA_BREACH_HOURS);
+  const needsAction = Array.from(
+    new Map([...stalled, ...missingTracking, ...breachedSla].map(order => [order.lasyncro_order_id, order])).values()
+  );
 
     return {
+      stalled,
       missingTracking,
       breachedSla,
       needsAction,
       needsActionCount: needsAction.length,
+      stalledCount: stalled.length,
       missingTrackingCount: missingTracking.length,
       breachedSlaCount: breachedSla.length,
     };
@@ -325,6 +337,44 @@ export default function OrdersOutboundPage() {
               </Typography>
             </Box>
 
+            {outboundSignals.stalledCount > 0 && (
+              <>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.09)' }}>
+                  <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }}>
+                    Critical — stalled in transit
+                  </Typography>
+                  <Box sx={{ flex: 1 }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                    {outboundSignals.stalledCount} shipments
+                  </Typography>
+                </Box>
+
+                {outboundSignals.stalled.slice(0, TRIAGE_PREVIEW_LIMIT).map(order => (
+                  <Box
+                    key={order.lasyncro_order_id}
+                    sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}
+                  >
+                    <Box>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
+                        {order.external_order_id ? `#${order.external_order_id}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                      </Typography>
+                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                        No carrier update{order.latest_event_at ? ` since ${fmtRelative(order.latest_event_at)}` : ''}
+                      </Typography>
+                    </Box>
+                    <Box
+                      component="button"
+                      onClick={() => navigate(`/orders/${order.lasyncro_order_id}`)}
+                      sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                    >
+                      View order →
+                    </Box>
+                  </Box>
+                ))}
+              </>
+            )}
+
             {outboundSignals.missingTrackingCount > 0 && (
               <>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.07)' }}>
@@ -349,14 +399,81 @@ export default function OrdersOutboundPage() {
                         : 'Carrier settings are not configured, so fulfilled orders cannot receive customer-visible tracking yet.'}
                     </Typography>
                   </Box>
-                  <Box
-                    component="button"
-                    onClick={() => carriersConfigured ? setLedgerFilter('needs_action') : navigate('/settings/carriers')}
-                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
-                    {carriersConfigured ? 'Review orders →' : 'Configure →'}
+                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: 130 }}>
+                    <Box
+                      component="button"
+                      onClick={() => carriersConfigured ? setLedgerFilter('needs_action') : navigate('/settings/carriers')}
+                      sx={{ width: '100%', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                    >
+                      {carriersConfigured ? 'Review orders →' : 'Configure →'}
+                    </Box>
+                    {carriersConfigured && (
+                      <Box
+                        component="button"
+                        onClick={() => { setBackfillExpanded(v => !v); setBackfillResult(null); }}
+                        sx={{ width: '100%', boxSizing: 'border-box', border: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                      >
+                        Backfill labels
+                      </Box>
+                    )}
                   </Box>
                 </Box>
+                <Collapse in={backfillExpanded} timeout={180} unmountOnExit>
+                  <Box sx={{ px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
+                    {!backfillResult ? (
+                      <>
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
+                          Generate labels for {outboundSignals.missingTrackingCount} orders?
+                        </Typography>
+                        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)', mb: 1.25 }}>
+                          {outboundSignals.missingTracking.map(o =>
+                            o.external_order_id ? `#${o.external_order_id}` : o.lasyncro_order_id.slice(0, 8).toUpperCase()
+                          ).join(', ')}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Box
+                            component="button"
+                            onClick={handleConfirmBackfill}
+                            disabled={backfillRunning}
+                            sx={{ border: 'none', px: 1.5, py: 0.625, fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: backfillRunning ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 } }}
+                          >
+                            {backfillRunning ? 'Generating…' : `Confirm — generate ${outboundSignals.missingTrackingCount} labels`}
+                          </Box>
+                          <Box
+                            component="button"
+                            onClick={() => setBackfillExpanded(false)}
+                            sx={{ px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', bgcolor: 'transparent', border: '0.5px solid var(--rule)', borderRadius: '6px', cursor: 'pointer' }}
+                          >
+                            Cancel
+                          </Box>
+                        </Box>
+                      </>
+                    ) : (
+                      <>
+                        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', mb: 0.5 }}>
+                          {backfillResult.summary.succeeded} of {backfillResult.summary.total} labels generated
+                          {backfillResult.summary.failed > 0 ? `, ${backfillResult.summary.failed} failed` : ''}
+                        </Typography>
+                        {backfillResult.results.filter(r => !r.success).length > 0 && (
+                          <Box sx={{ mb: 1 }}>
+                            {backfillResult.results.filter(r => !r.success).map(r => (
+                              <Typography key={r.orderId} sx={{ fontSize: 11.5, fontWeight: 300, color: '#E5484D' }}>
+                                {r.orderId.slice(0, 8).toUpperCase()} — {r.error}
+                              </Typography>
+                            ))}
+                          </Box>
+                        )}
+                        <Box
+                          component="button"
+                          onClick={() => { setBackfillExpanded(false); setBackfillResult(null); }}
+                          sx={{ px: 1.5, py: 0.625, fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer' }}
+                        >
+                          Done
+                        </Box>
+                      </>
+                    )}
+                  </Box>
+                </Collapse>
               </>
             )}
 
@@ -568,7 +685,7 @@ export default function OrdersOutboundPage() {
                 { label: 'Shipped',  field: 'fulfilled_at' },
                 { label: 'Proof',    field: null },
                 { label: 'Carrier',  field: null },
-                { label: 'Tracking', field: null },
+                { label: 'Live status', field: null },
                 { label: 'Action',   field: null },
               ] as { label: string; field: SortField | null }[]).map(({ label, field }) => (
               <Box key={label} onClick={() => field && handleSort(field)} sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: field ? 'pointer' : 'default' }}>
@@ -647,14 +764,30 @@ export default function OrdersOutboundPage() {
                   {order.carrier_code ?? 'No carrier'}
                 </Typography>
 
-                {/* Customer tracking */}
-                {order.tracking_number ? (
+                {/* Live status */}
+                {order.is_stalled ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(229,72,77,0.1)', width: 'fit-content' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#E5484D' }}>
+                      No update{order.latest_event_at ? ` · ${fmtRelative(order.latest_event_at)}` : ''}
+                    </Typography>
+                  </Box>
+                ) : order.latest_status === 'delivered' ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(76,175,122,0.1)', width: 'fit-content' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#4CAF7A' }}>
+                      Delivered{order.latest_location ? ` · ${order.latest_location}` : ''}
+                    </Typography>
+                  </Box>
+                ) : order.latest_status ? (
+                  <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'rgba(217,162,59,0.1)', width: 'fit-content' }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: '#D9A23B' }}>
+                      {STATUS_LABEL[order.latest_status] ?? order.latest_status}
+                      {order.latest_location ? ` · ${order.latest_location}` : ''}
+                      {order.latest_event_at ? ` · ${fmtRelative(order.latest_event_at)}` : ''}
+                    </Typography>
+                  </Box>
+                ) : order.tracking_number ? (
                   order.tracking_url ? (
-                    <Box
-                      component="a"
-                      href={order.tracking_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <Box component="a" href={order.tracking_url} target="_blank" rel="noopener noreferrer"
                       sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.25, borderRadius: '4px', bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', width: 'fit-content', textDecoration: 'none', '&:hover': { opacity: 0.8 } }}
                     >
                       <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.04em' }}>
@@ -745,6 +878,12 @@ export default function OrdersOutboundPage() {
           )}
         </Box>
       </Box>
+      <ExportDrawer
+        open={exportDrawerOpen}
+        onClose={() => setExportDrawerOpen(false)}
+        userTier={tier}
+        reportIds={['orders-outbound']}
+      />
     </Box>
   );
 }

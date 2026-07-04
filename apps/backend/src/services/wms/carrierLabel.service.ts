@@ -13,15 +13,18 @@
 //
 // Callers: wms.controller.ts POST /orders/:orderId/generate-label
 // Consumed by: shopifyFulfillmentWriteback (trackingInfo),
-//              Outbound module tracking column (WEB-PACK-02)
+// Outbound module tracking column (WEB-PACK-02)
 
 import { Knex } from 'knex';
 import { decrypt } from '../../security/encryption.service.js';
 import { sendcloudCarrierService } from './carriers/sendcloud.carrier.service.js';
 import type { ICarrierProvider, GenerateLabelInput, GenerateLabelResult } from './carriers/ICarrierProvider.js';
+import { shippoCarrierService } from './carriers/shippo.carrier.service.js';
+import { email } from 'zod';
 
 const PROVIDERS: Record<string, ICarrierProvider> = {
   sendcloud: sendcloudCarrierService,
+  shippo: shippoCarrierService,
 };
 
 function resolveProvider(carrierCode: string): ICarrierProvider {
@@ -36,6 +39,8 @@ export interface GenerateAndPersistLabelInput {
   pickBatchId: string | null;
   orderNumber: string;
   recipientName: string;
+  recipientPhone: string | null;
+  recipientState: string | null;
   address1: string;
   address2: string | null;
   city: string;
@@ -65,12 +70,32 @@ export async function generateAndPersistLabel(
 
   // 2. Decrypt credentials
   const decryptContext = `wms.carrier.${settings.carrier_code}` as 'wms.carrier.sendcloud';
-  const publicKey  = decrypt(JSON.parse(settings.public_key),  decryptContext);
-  const privateKey = decrypt(JSON.parse(settings.private_key), decryptContext);
+  const publicKey  = settings.public_key  ? decrypt(JSON.parse(settings.public_key),  decryptContext) : null;
+  const privateKey = settings.private_key ? decrypt(JSON.parse(settings.private_key), decryptContext) : null;
+  const apiToken    = settings.api_token   ? decrypt(JSON.parse(settings.api_token),   decryptContext) : null;
+
+  // 2b. Look up sender address (only Shippo requires this today —
+  // Sendcloud infers it from the merchant's own Sendcloud account)
+  const senderAddressRow = await trx('shop_sender_addresses')
+    .where({ shop_id: shopId, is_default: true })
+    .first();
+
+  const senderAddress = senderAddressRow
+    ? {
+        name: senderAddressRow.name,
+        street1: senderAddressRow.street1,
+        street2: senderAddressRow.street2 ?? null,
+        city: senderAddressRow.city,
+        state: senderAddressRow.state ?? null,
+        postalCode: senderAddressRow.postal_code,
+        countryCode: senderAddressRow.country_code,
+        phone: senderAddressRow.phone,
+        email: senderAddressRow.email ?? null,
+      }
+    : null;
 
   // 3. Resolve provider
   const provider = resolveProvider(settings.carrier_code);
-
   // 4. Generate label
   const labelInput: GenerateLabelInput = {
     shopId,
@@ -82,11 +107,14 @@ export async function generateAndPersistLabel(
     address2:      input.address2,
     city:          input.city,
     postalCode:    input.postalCode,
+    recipientState: input.recipientState,
     countryCode:   input.countryCode,
     weightGrams:   input.weightGrams,
+    senderAddress,
+    recipientPhone: input.recipientPhone,
   };
 
-  const result = await provider.generateLabel(labelInput, { publicKey, privateKey });
+  const result = await provider.generateLabel(labelInput, { publicKey, privateKey, apiToken });
 
   // 5. Persist to order_shipment_tracking
   const [row] = await trx('order_shipment_tracking')

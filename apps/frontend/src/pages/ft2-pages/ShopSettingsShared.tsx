@@ -4,7 +4,6 @@
 // SettingsCard · SectionLabel · SaveButton
 
 import { Box, Typography, Button } from '@mui/material';
-import { useTheme } from '@mui/material/styles';
 import { useAppTheme } from '../../hooks/useAppTheme';
 
 export function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -111,3 +110,46 @@ export function PlaceholderTab({ title, description }: { title: string; descript
     </Box>
   );
 }
+
+// Inline confirm — replaces window.confirm() across Settings pages.
+// Renders inline below the trigger, not a modal — matches the
+// Collapse-based confirm pattern used for bulk backfill (Outbound).
+function InlineConfirm({
+  open,
+  message,
+  onConfirm,
+  onCancel,
+  confirmLabel = 'Confirm',
+  destructive = false,
+}: {
+  open: boolean;
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  confirmLabel?: string;
+  destructive?: boolean;
+}) {
+  if (!open) return null;
+  return (
+    <Box sx={{ p: 1.25, bgcolor: 'var(--bg-2)', border: '0.5px solid var(--rule)', borderRadius: '6px', mt: 1 }}>
+      <Typography sx={{ fontSize: 12, color: 'var(--ink)', mb: 1 }}>{message}</Typography>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box
+          onClick={onConfirm}
+          sx={{
+            px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, border: 'none', borderRadius: '6px', cursor: 'pointer',
+            bgcolor: destructive ? 'error.main' : 'var(--accent)',
+            color: destructive ? 'white' : 'var(--accent-ink)',
+          }}
+        >
+          {confirmLabel}
+        </Box>
+        <Box onClick={onCancel} sx={{ px: 1.25, py: 0.5, fontSize: 11, color: 'var(--ink-3)', border: '0.5px solid var(--rule)', borderRadius: '6px', cursor: 'pointer' }}>
+          Cancel
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+export { InlineConfirm };
