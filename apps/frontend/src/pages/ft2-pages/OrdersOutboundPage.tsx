@@ -1,10 +1,14 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx
 //
 // OUTBOUND TAB — Shipped orders
 // Route: /orders/outbound
 //
 // RULES: No alpha(). No useTheme(). No fontFamily overrides. 1px borders. 12px inner cards, 14px table.
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, useCallback, ReactNode } from 'react';
+import { EntityDetailModal } from '@lasyncro/shared/ui';
+import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
+import { useBulkSetPriority } from '../wms/useOrderPool';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { ExportDrawer } from 'components/ExportDrawer';
 import { Box, Collapse, Typography, CircularProgress } from '@mui/material';
@@ -169,6 +173,22 @@ export default function OrdersOutboundPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [dateRange, setDateRange] = useState<DateRange>('all');
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('needs_action');
+  const ledgerRef = useRef<HTMLDivElement>(null);
+  // ISS-05 FIX: replaces 4× navigate('/orders/:id') full-page routes with
+  // the standardized EntityDetailModal, matching OrdersFT2Page.tsx exactly
+  // (entity-detail-modal-playbook.md §2). OrderDetailPage.tsx route itself
+  // is untouched — kept per §2.6, just no longer linked to from here.
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [modalTitle, setModalTitle] = useState('');
+  const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
+  const [modalFooter, setModalFooter] = useState<ReactNode>(null);
+  const bulkSetPriority = useBulkSetPriority();
+  const onPriorityFlag = useCallback(
+  async (orderIds: string[], flagged: boolean) => {
+    await bulkSetPriority.mutateAsync(orderIds);
+  },
+  [bulkSetPriority]
+);
   const [watchExpanded, setWatchExpanded] = useState(false);
   const [backfillExpanded, setBackfillExpanded] = useState(false);
   const [backfillResult, setBackfillResult] = useState<{
@@ -365,7 +385,7 @@ export default function OrdersOutboundPage() {
                     </Box>
                     <Box
                       component="button"
-                      onClick={() => navigate(`/orders/${order.lasyncro_order_id}`)}
+                      onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
                       sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                     >
                       View order →
@@ -402,7 +422,9 @@ export default function OrdersOutboundPage() {
                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, width: 130 }}>
                     <Box
                       component="button"
-                      onClick={() => carriersConfigured ? setLedgerFilter('needs_action') : navigate('/settings/carriers')}
+                      onClick={() => carriersConfigured
+                        ? (setLedgerFilter('needs_action'), ledgerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+                        : navigate('/settings/carriers')}
                       sx={{ width: '100%', boxSizing: 'border-box', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                     >
                       {carriersConfigured ? 'Review orders →' : 'Configure →'}
@@ -411,9 +433,10 @@ export default function OrdersOutboundPage() {
                       <Box
                         component="button"
                         onClick={() => { setBackfillExpanded(v => !v); setBackfillResult(null); }}
-                        sx={{ width: '100%', boxSizing: 'border-box', border: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                        sx={{ width: '100%', boxSizing: 'border-box', border: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                       >
                         Backfill labels
+                        {backfillExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
                       </Box>
                     )}
                   </Box>
@@ -505,7 +528,7 @@ export default function OrdersOutboundPage() {
                     </Box>
                     <Box
                       component="button"
-                      onClick={() => navigate(`/orders/${order.lasyncro_order_id}`)}
+                      onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
                       sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                     >
                       View order →
@@ -531,7 +554,7 @@ export default function OrdersOutboundPage() {
                           </Box>
                           <Box
                             component="button"
-                            onClick={() => navigate(`/orders/${order.lasyncro_order_id}`)}
+                            onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
                             sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                           >
                             View order →
@@ -631,7 +654,7 @@ export default function OrdersOutboundPage() {
         </Box>
 
         {/* SHIPPED ORDERS FILTERS */}
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
+        <Box ref={ledgerRef} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2 }}>
           <Box>
             <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', mb: 0.25 }}>
               Shipped orders
@@ -808,7 +831,7 @@ export default function OrdersOutboundPage() {
                 {/* Action */}
                 <Box
                   component="button"
-                  onClick={() => navigate(`/orders/${order.lasyncro_order_id}`)}
+                  onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
                   sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                 >
                   View order →
@@ -884,6 +907,25 @@ export default function OrdersOutboundPage() {
         userTier={tier}
         reportIds={['orders-outbound']}
       />
+      <EntityDetailModal
+        entityId={selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
+        title={modalTitle}
+        subtitle={modalSubtitle}
+        maxWidth="md"
+        footerActions={modalFooter}
+      >
+        {selectedOrderId && (
+          <OrderDetailModalBody
+            orderId={selectedOrderId}
+            onTitleReady={setModalTitle}
+            onSubtitleReady={setModalSubtitle}
+            onNavigateToOrder={setSelectedOrderId}
+            onFooterReady={setModalFooter}
+            onPriorityFlag={onPriorityFlag}
+          />
+        )}
+      </EntityDetailModal>
     </Box>
   );
 }

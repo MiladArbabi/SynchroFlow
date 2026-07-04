@@ -28,7 +28,7 @@ type DecisionSignals = {
   is_operational_blocked: boolean;
 
   inventory_blocked_revenue?: number;
-
+  is_already_fulfilled: boolean;
   // optional future-safe fields
   [key: string]: unknown;
 };
@@ -306,8 +306,8 @@ function mapToDecisionSignals(input: any): DecisionSignals {
     is_inventory_blocked: input.is_inventory_blocked,
     is_customer_blocked: input.is_customer_blocked,
     is_operational_blocked: input.is_operational_blocked,
-
-    inventory_blocked_revenue: input.inventory_blocked_revenue
+    inventory_blocked_revenue: input.inventory_blocked_revenue,
+    is_already_fulfilled: input.is_already_fulfilled ?? false
   };
 }
 
@@ -325,7 +325,7 @@ export function generateDecisions({
   orderId,
   shopId,
   aggregateVersion,
-  riskSnapshot
+  riskSnapshot,
 }: {
   orderId: string;
   shopId: number,
@@ -458,7 +458,8 @@ if (decisions.length === 0) {
     signals.order_health_score >= 80 &&
     !signals.is_inventory_blocked &&
     !signals.is_customer_blocked &&
-    !signals.is_operational_blocked;
+    !signals.is_operational_blocked &&
+    !signals.is_already_fulfilled;
 
   if (!isSafeToFulfill) {
     console.warn('[FULFILLMENT_BLOCKED_UNSAFE_DEFAULT]', {

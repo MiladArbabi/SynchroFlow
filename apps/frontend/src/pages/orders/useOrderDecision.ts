@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/pages/orders/useOrderDecision.ts
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -59,6 +60,19 @@ export function useOrderDecision(orderId: string | null) {
       return data;
     },
     enabled: !!orderId,
+    staleTime: 30_000,
+    // FIX (2026-07-04): 404 here is a documented, correct, final answer
+    // ("no decision exists" — orders.decision-by-order.controller.ts's
+    // own doc comment), not a transient failure, and OrderDetailModalBody
+    // already has its own is404-aware handling (see isRealError there).
+    // The global retry:3 default was still retrying this guaranteed-
+    // permanent 404 three times per fetch regardless, compounding with
+    // LifecycleProvider's 3s poll cycle into the repeated spinner flicker.
+    // Retry genuine failures (5xx, network errors) up to 2x; never retry 404.
+    retry: (failureCount, err: any) => {
+      if (err?.response?.status === 404) return false;
+      return failureCount < 2;
+    },
   });
 }
 

@@ -50,6 +50,7 @@ type CommandRow = {
     aggregateVersion?: number;
     riskSnapshot?: any;
     decisionId?: string;
+    isAlreadyFulfilled?: boolean;
   };
   shop_id: number;
   status: string;
@@ -216,7 +217,7 @@ async function processCommand(command: CommandRow): Promise<void> {
     return;
   }
 
-  const { shopId, orderId, aggregateVersion, riskSnapshot } = command.payload;
+  const { shopId, orderId, aggregateVersion, riskSnapshot, isAlreadyFulfilled } = command.payload;
 
   if (!shopId || !orderId || aggregateVersion === undefined || !riskSnapshot) {
     console.error('[COMMANDS_CONSUMER_INVALID_PAYLOAD]', {
@@ -238,14 +239,18 @@ async function processCommand(command: CommandRow): Promise<void> {
     return;
   }
 
+  
   let decisions: Decision[];
-
   try {
     decisions = generateDecisions({
       orderId,
       shopId,
       aggregateVersion,
-      riskSnapshot,
+      // ISS-07 FIX: isAlreadyFulfilled travels in the command payload
+      // (set in reconciliation.handlers.ts) — merged onto riskSnapshot
+      // here since generateDecisions/mapToDecisionSignals only accept
+      // a single riskSnapshot object, not a separate parameter.
+      riskSnapshot: { ...riskSnapshot, is_already_fulfilled: isAlreadyFulfilled },
     });
   } catch (err) {
     console.error('[COMMANDS_CONSUMER_GENERATE_DECISIONS_FAILED]', {

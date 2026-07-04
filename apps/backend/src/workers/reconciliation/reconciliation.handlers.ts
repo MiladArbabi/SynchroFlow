@@ -491,6 +491,21 @@ export async function reconcileOrderFulfillment(
         `[PROJECTION_STATE_MISSING] order_risk_snapshot missing for order=${lasyncroOrderId}`
       );
   } else {
+    /**
+     * ISS-07 FIX (2026-07-04): order_risk_snapshot has no fulfillment
+     * awareness — the decision engine's safe-fulfillment gate was
+     * recommending proceed_fulfillment for orders already fulfilled
+     * (confirmed live via order #900008: fulfillment_status='fulfilled',
+     * decision engine still recommended "Proceed to Ship", which calls
+     * Shopify fulfillmentCreate directly with no tracking/pick/pack).
+     * Fetched separately — order_fulfillment_status is a distinct
+     * projection table, not part of the risk snapshot.
+     */
+    const fulfillmentStatus = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: lasyncroOrderId })
+      .first();
+    const isAlreadyFulfilled = fulfillmentStatus?.status === 'fulfilled';
+
     // Holds reused decisions ONLY (new decisions are created via Command Bus)
     let decisions: Decision[] | undefined;
     /**
@@ -629,7 +644,8 @@ export async function reconcileOrderFulfillment(
         orderId: lasyncroOrderId,
         shopId: order.shop_id,
         aggregateVersion,
-        riskSnapshot
+        riskSnapshot,
+        isAlreadyFulfilled
       },
       /**
        * Deterministic idempotency key (CRITICAL for replay safety)

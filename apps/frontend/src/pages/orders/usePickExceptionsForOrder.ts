@@ -51,6 +51,9 @@ export function usePickExceptionsForOrder(orderId: string | null) {
       return data;
     },
     enabled: !!orderId,
+    // FIX (2026-07-04): same staleTime=0 + refetchOnWindowFocus flicker
+    // as useOrderDecision.ts / useOrderDetail.ts.
+    staleTime: 30_000,
   });
 }
 

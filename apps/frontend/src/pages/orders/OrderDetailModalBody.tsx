@@ -480,16 +480,29 @@ export function OrderDetailModalBody({
     return <Alert severity="warning" sx={{ mb: 2 }}>Couldn't load this order's decision. Try reopening.</Alert>;
   }
 
-  // PIPELINE STATUS PILL — three real states, in priority order, per the
-  // documented flow in OrdersModule.md: constrained → /orders/blocked;
-  // unconstrained + unbatched → /orders/pool; batched → real
-  // order_warehouse_status. NOT verified: exact GET /decision query
-  // semantics for whether constraints[] always excludes resolved rows —
-  // flagged in entity-detail-modal-playbook.md §2.8, pending confirmation.
+  // ISS-07b FIX (2026-07-04): order_warehouse_status has no row for any
+  // order fulfilled outside LaSyncro's own pick/pack pipeline (confirmed
+  // live: 10/10 seeded "shipped" orders, likely also real Shopify-side-
+  // fulfilled orders in production) — formatWarehouseStatus(null) then
+  // fell back to a hardcoded 'In pool' string even though the order had
+  // already shipped, per order.fulfillment.status = 'fulfilled'. Adding
+  // the missing third tier: Blocked > Fulfilled > real warehouse stage >
+  // In pool. order.fulfillment was already fetched and returned by the
+  // backend (orders.service.ts) — no backend or type change needed, this
+  // field was simply never read here.
+  const isFulfilled = order?.fulfillment?.status === 'fulfilled';
   const pipelineLabel = hasAnyActiveConstraint
     ? 'Blocked'
+    : isFulfilled
+    ? 'Fulfilled'
     : formatWarehouseStatus(order?.warehouseStatus ?? null);
-  const pipelineColorKey = hasAnyActiveConstraint ? 'danger' : order?.warehouseStatus ? 'accent' : 'neutral';
+  const pipelineColorKey = hasAnyActiveConstraint
+    ? 'danger'
+    : isFulfilled
+    ? 'success'
+    : order?.warehouseStatus
+    ? 'accent'
+    : 'neutral';
 
   const timelineEvents = order?.timeline ?? [];
   const visibleTimeline = timelineExpanded ? timelineEvents : timelineEvents.slice(-TIMELINE_VISIBLE_COUNT).reverse();
@@ -594,8 +607,8 @@ export function OrderDetailModalBody({
                 <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Pipeline status</Typography>
                 <Box sx={{
                   px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500,
-                  bgcolor: pipelineColorKey === 'danger' ? 'rgba(226,75,74,0.12)' : pipelineColorKey === 'accent' ? 'var(--accent-ghost)' : 'var(--rule)',
-                  color: pipelineColorKey === 'danger' ? '#A32D2D' : pipelineColorKey === 'accent' ? 'var(--accent)' : 'var(--ink-3)',
+                  bgcolor: pipelineColorKey === 'danger' ? 'rgba(226,75,74,0.12)' : pipelineColorKey === 'accent' ? 'var(--accent-ghost)' : pipelineColorKey === 'success' ? 'var(--confirm-ghost)' : 'var(--rule)',
+                  color: pipelineColorKey === 'danger' ? '#A32D2D' : pipelineColorKey === 'accent' ? 'var(--accent)' : pipelineColorKey === 'success' ? 'var(--confirm-ink)' : 'var(--ink-3)',
                 }}>
                   {pipelineLabel}
                 </Box>
@@ -675,12 +688,12 @@ export function OrderDetailModalBody({
         </Box>
       )}
 
-      {!hasAnyActiveConstraint && !order?.warehouseStatus && (
+      {!hasAnyActiveConstraint && !order?.warehouseStatus && !isFulfilled && (
         <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', gap: 1.25, bgcolor: 'var(--bg-2)', borderRadius: '10px', p: 1.25 }}>
           <Box sx={{ display: 'flex', gap: 1.25 }}>
             <Clock size={16} color="var(--ink-3)" style={{ flexShrink: 0, marginTop: 1 }} />
             <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
-              No open issues. Order is in the pool, waiting to be released into a pick batch.
+              No open issues. Order is in the pool, waiting to be releasedinto a pick batch.
             </Typography>
           </Box>
         </Box>

@@ -96,5 +96,8 @@ export function useOrderDetail(orderId: string | null) {
     },
     // Only fetch when an orderId is provided
     enabled: !!orderId,
+    // FIX (2026-07-04): see useOrderDecision.ts — same staleTime=0 +
+    // refetchOnWindowFocus flicker, same fix.
+    staleTime: 30_000,
   });
 }
