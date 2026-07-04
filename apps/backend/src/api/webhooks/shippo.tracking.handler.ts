@@ -97,6 +97,27 @@ WebhookRouter.register({
       }
 
       if (eventType === 'returned') {
+        // RET-AUD-08 fix (2026-07-04): surface carrier_status_map's
+        // fault_category (0123_carrier_status_fault_category) in the
+        // alert message instead of a fixed generic string. No `metadata`
+        // column exists on `alerts` (confirmed via schema check before
+        // this edit) — the fault signal is carried in `message` text
+        // only, not stored structured, until/unless a future task adds
+        // one. Per 0123's documented limit, faultCategory is almost
+        // always 'unknown' today — raw carrier status strings don't
+        // encode true cause at this API tier — but saying so explicitly
+        // is still more honest than the previous message, which implied
+        // nothing either way.
+        const faultCategory = statusMap?.fault_category ?? 'unknown';
+        const faultLabel =
+          faultCategory === 'carrier_fault'
+            ? 'likely carrier mishandling'
+            : faultCategory === 'customer_fault'
+            ? 'likely customer-side cause'
+            : 'cause unknown from carrier data';
+
+        const returnMessage = `Order tracking ${trackingNumber} was reported as returned by the carrier (${faultLabel}).`;
+
         await trx('alerts')
           .insert({
             shop_id: shopId,
@@ -105,7 +126,7 @@ WebhookRouter.register({
             alert_type: 'carrier_return',
             severity: 'warning',
             title: 'Carrier reported a return',
-            message: `Order tracking ${trackingNumber} was reported as returned by the carrier.`,
+            message: returnMessage,
             entity_id: shipment.lasyncro_order_id,
             entity_type: 'order',
             category: 'supplier_inbound',
@@ -113,8 +134,13 @@ WebhookRouter.register({
             is_active: true,
           })
           .onConflict(['shop_id', 'alert_key'])
-          .merge({ is_active: true, resolved_at: null, updated_at: new Date() });
-      }
+          .merge({
+            is_active: true,
+            resolved_at: null,
+            updated_at: new Date(),
+            message: returnMessage,
+          });
+        }
     });
 
     console.log('[SHIPPO_TRACKING_EVENT_INGESTED]', { shopId, trackingNumber, eventType, shipmentTrackingId: shipment.id });

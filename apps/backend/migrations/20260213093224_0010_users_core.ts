@@ -288,7 +288,35 @@ export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('operator_audit_log', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.integer('shop_id').notNullable().references('id').inTable('shops').onDelete('CASCADE');
-    table.integer('operator_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
+
+    /**
+     * DECISION RECORD — operator_id nullability (2026-07-04, RET-AUD service-layer task)
+     * -----------------------------------------------------------------------
+     * Was: .notNullable() — every audited action assumed a human operator.
+     *
+     * Changed to nullable to support system/webhook-triggered actions
+     * that have no human operator at all (e.g. a carrier RTS webhook
+     * auto-creating a return_jobs row — see
+     * createReturnJobFromCarrierEvent in returnJobs.service.ts).
+     *
+     * REJECTED ALTERNATIVE: inventing a sentinel "system user" row in
+     * `users` to satisfy NOT NULL. Rejected because that manufactures a
+     * fake human identity purely to satisfy a type/schema constraint —
+     * it would misrepresent "the system did this" as "a specific user
+     * did this," which is worse than an honest NULL.
+     *
+     * SCOPE, DELIBERATELY NARROW: this column-level relaxation does NOT
+     * change the requirement for genuinely operator-triggered actions.
+     * CreateUndeliveredReturnJobInput.operatorId (returnJobs.service.ts)
+     * remains `number`, NOT `number | null` — every existing call site
+     * where a real operator claims/creates a job must keep providing
+     * real attribution. Only the NEW carrier-webhook path is allowed to
+     * pass null, via its own separate input type with no operatorId
+     * field at all — not by loosening the existing operator-facing
+     * contract.
+     */
+    table.integer('operator_id').nullable().references('id').inTable('users').onDelete('CASCADE');
+
     table.string('action_type', 50).notNullable();
     table.string('entity_type', 50).notNullable();
     table.string('entity_id', 255).notNullable();

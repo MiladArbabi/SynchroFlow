@@ -4,6 +4,7 @@
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookRouter } from './webhookRouter.js';
 import { WebhookEnvelope } from './types.js';
+import { createReturnJobFromCarrierEvent } from '../../services/returns/returnJobs.service.js';
 
 const STALL_THRESHOLD_DAYS = 3;
 
@@ -47,7 +48,13 @@ WebhookRouter.register({
       await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
 
       // Idempotent insert — unique on (shipment_tracking_id, event_type, event_timestamp)
-      await trx('parcel_tracking_events')
+      // .returning('id') added (RET-AUD service-layer task, 2026-07-04):
+      // needed to pass this specific event's id as
+      // triggering_parcel_tracking_event_id when a 'returned' event
+      // creates a return_jobs row (see below). On the .ignore() conflict
+      // path (a genuine duplicate delivery) this returns [] — handled
+      // below by falling back to a lookup rather than assuming a row.
+      const [insertedEvent] = await trx('parcel_tracking_events')
         .insert({
           shop_id: shopId,
           lasyncro_order_id: shipment.lasyncro_order_id,
@@ -60,7 +67,8 @@ WebhookRouter.register({
           raw_payload: payload,
         })
         .onConflict(['shipment_tracking_id', 'event_type', 'event_timestamp'])
-        .ignore();
+        .ignore()
+        .returning('id');
 
       const isStalled = eventType === 'exception';
 
@@ -99,7 +107,78 @@ WebhookRouter.register({
         // detected silence, indistinguishable here and don't need to be).
         await trx('alerts')
           .where({ shop_id: shopId, alert_key: `carrier_webhook:${shipment.id}:carrier_stalled` })
-          .update({ is_active: false, resolved_at: new Date(), updated_at: new Date() });
+          .update({ is_active: false, resolved_at: new Date(), updated_at:new Date() });
+      }
+
+      if (eventType === 'returned') {
+        const faultCategory = statusMap?.fault_category ?? 'unknown';
+        const faultLabel =
+          faultCategory === 'carrier_fault'
+            ? 'likely carrier mishandling'
+            : faultCategory === 'customer_fault'
+            ? 'likely customer-side cause'
+            : 'cause unknown from carrier data';
+
+        const returnMessage = `Order tracking ${trackingNumber} was reported as returned by the carrier (${faultLabel}).`;
+
+        await trx('alerts')
+          .insert({
+            shop_id: shopId,
+            alert_key: `carrier_webhook:${shipment.id}:carrier_return`,
+            source: 'carrier_webhook',
+            alert_type: 'carrier_return',
+            severity: 'warning',
+            title: 'Carrier reported a return',
+            message: returnMessage,
+            entity_id: shipment.lasyncro_order_id,
+            entity_type: 'order',
+            category: 'supplier_inbound',
+            audience: 'all',
+            is_active: true,
+          })
+          .onConflict(['shop_id', 'alert_key'])
+          .merge({
+            is_active: true,
+            resolved_at: null,
+            updated_at: new Date(),
+            message: returnMessage,
+          });
+
+        // RET-AUD service-layer task (2026-07-04): the alert alone was
+        // the only signal before today — nothing turned an RTS event
+        // into an actual return_jobs row. This closes that gap.
+        // insertedEvent may be [] on the .ignore() duplicate-delivery
+        // path (see insert comment above) — fall back to a lookup by
+        // the natural unique key rather than assuming a fresh row.
+        let triggeringEventId = insertedEvent?.id;
+        if (!triggeringEventId) {
+          const existingEvent = await trx('parcel_tracking_events')
+            .where({ shipment_tracking_id: shipment.id, event_type: eventType, event_timestamp: eventTimestamp })
+            .select('id')
+            .first();
+          triggeringEventId = existingEvent?.id;
+        }
+
+        if (triggeringEventId) {
+          await createReturnJobFromCarrierEvent(
+            {
+              shopId,
+              lasyncroOrderId: shipment.lasyncro_order_id,
+              triggeringParcelTrackingEventId: triggeringEventId,
+            },
+            trx
+          );
+        } else {
+          // Should not happen — the unique key above matches the
+          // insert's own conflict target exactly. Logged, not thrown:
+          // the alert above already fired, and a missing job here
+          // still leaves the alert as a fallback signal for the owner.
+          console.error('[SENDCLOUD_RETURN_JOB_SKIPPED_NO_EVENT_ID]', {
+            shopId,
+            shipmentId: shipment.id,
+            trackingNumber,
+          });
+        }
       }
 
       console.log('[SENDCLOUD_TRACKING_EVENT_INGESTED]', {

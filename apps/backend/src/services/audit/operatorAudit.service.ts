@@ -49,7 +49,20 @@ export type AuditEntityType =
 
 export interface WriteAuditLogInput {
   shopId: number;
-  operatorId: number;
+  /**
+   * DECISION RECORD (2026-07-04, RET-AUD service-layer task):
+   * Widened to `number | null`. NULL means "no human operator" —
+   * a system/webhook-triggered action (see
+   * createReturnJobFromCarrierEvent in returnJobs.service.ts).
+   * This mirrors the operator_audit_log.operator_id column being
+   * relaxed to nullable in migration 0010 — see that migration's
+   * inline comment for the full rationale and the deliberately
+   * narrow scope (existing operator-facing call sites, e.g.
+   * CreateUndeliveredReturnJobInput.operatorId, remain `number`,
+   * required — this widening is for genuinely system-only actions,
+   * not a general relaxation of operator attribution).
+   */
+  operatorId: number | null;
   actionType: AuditActionType;
   entityType: AuditEntityType;
   entityId: string;

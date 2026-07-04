@@ -313,6 +313,21 @@ on event_type = 'returned' → upserts an alerts row
 (category: supplier_inbound, alert_type: carrier_return —
 see "Why not receive_jobs" below)
 
+**Correction, 2026-07-04 (RET-AUD-52):** this alerts-row behavior was
+only ever implemented in shippo.tracking.handler.ts — sendcloud
+.tracking.handler.ts had no 'returned' branch at all until fixed this
+date. The two carrier handlers had diverged silently: a Sendcloud RTS
+event produced zero signal anywhere, while an identical Shippo event
+correctly alerted. Both handlers now share matching logic, and the
+alert additionally uses carrier_status_map.fault_category (new column,
+migration 0123 — see below) instead of a fixed generic message. Both
+handlers now also call createReturnJobFromCarrierEvent()
+(returnJobs.service.ts) — a 'returned' event creates an actual
+return_jobs row (source: 'carrier_webhook'), not just an alert. See
+ReturnsResolutionModule.md §2.5/§6 for the full schema and service
+detail — kept there since return_jobs is a Returns-module table, not a
+carrier-integration one.
+
 Proven end-to-end with a manually signed curl request: signature
 verified, shop resolved, `parcel_tracking_events` and
 `order_shipment_tracking` both updated with correct values, replay of
@@ -332,12 +347,17 @@ PO. The return signal instead goes through the existing
 source-agnostic `alerts` table (upsert on `(shop_id, alert_key)`,
 `alert_key = carrier_webhook:{shipment_id}:carrier_return`).
 
-**Real gap, not solved here:** there is currently no dedicated
-"inbound return, no PO" job type anywhere in the system. If carrier
-returns become a frequent flow, `receive_jobs` needs a schema change
-(nullable `po_id` + a `source` discriminator, or a parallel table)
-before this can become more than an alert. Filed conceptually here,
-not as a numbered issue yet.
+**Correction, 2026-07-04:** this was based on checking `receive_jobs`
+only. `return_jobs` (a separate table, owned by the Returns module —
+see ReturnsResolutionModule.md §2.5) already had no `po_id` at all and
+already supported a PO-less `undelivered_return` origin since its
+original migration (0008, Feb 2026) — months before this WM-40 section
+was written. The actual gap was narrower: nothing invoked that
+existing path from a webhook trigger, and there was no way to trace
+such a job back to its triggering scan. Both closed 2026-07-04 via
+migration 0122 (`source`, `triggering_parcel_tracking_event_id` columns)
+and `createReturnJobFromCarrierEvent()`. No `receive_jobs` schema
+change was needed or made.
 
 #### Settings UI
 

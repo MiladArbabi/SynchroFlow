@@ -191,9 +191,146 @@ export async function createUndeliveredReturnJob(
       entityId: returnJobId,
       metadata: { origin: 'undelivered_return', lasyncroOrderId, undeliveredReason },
     });
-
     return returnJobId;
   });
+}
+
+// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
+//
+// RET-AUD service-layer task (2026-07-04). Closes the gap between
+// carrier-integration.md's WM-40 return signal (parcel_tracking_events
+// event_type='returned' → alerts row, see sendcloud/shippo.tracking
+// .handler.ts) and an actual return_jobs row. Until this function, a
+// carrier RTS event only ever produced an alert — no return_jobs row,
+// no order block, no inventory/refund resolution path.
+//
+// Deliberately a SEPARATE function from createUndeliveredReturnJob, not
+// an added parameter on it — see migration 0122's comment for why:
+// this path has no human operator, and CreateUndeliveredReturnJobInput
+// .operatorId stays required (`number`) for every genuinely
+// operator-triggered call site. This function's own input type has no
+// operatorId field at all — the absence is the honest signal, not a
+// null passed where a real value was expected.
+export interface CreateReturnJobFromCarrierEventInput {
+  shopId: number;
+  lasyncroOrderId: string;
+  triggeringParcelTrackingEventId: string;
+  notes?: string;
+}
+
+// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
+//
+// RET-AUD service-layer task (2026-07-04). Closes the gap between
+// carrier-integration.md's WM-40 return signal (parcel_tracking_events
+// event_type='returned' → alerts row) and an actual return_jobs row.
+//
+// UNLIKE every other function in this file, this one accepts an
+// OPTIONAL external trx — following the qb = trx ?? db convention
+// already established across the codebase (e.g. FinancesFacts.service.ts,
+// ProductsWmsReadinessFacts.service.ts). This is necessary, not
+// stylistic: sendcloud/shippo.tracking.handler.ts already open their
+// own db.transaction() with correct SET LOCAL tenant context before
+// calling this function. Calling withTenant() unconditionally here
+// would open a SECOND, separate connection/transaction nested inside
+// the handler's own — no atomicity between the two, and a second
+// tenant-context SET on a possibly different pooled connection. See
+// RLS_blueprint.md §7 ("Shopify sync fails with products/orders RLS
+// violation") for the exact failure class this avoids.
+//
+// Still exported as a standalone-callable function (trx omitted) for
+// any future caller that isn't already inside a transaction.
+export interface CreateReturnJobFromCarrierEventInput {
+  shopId: number;
+  lasyncroOrderId: string;
+  triggeringParcelTrackingEventId: string;
+  notes?: string;
+}
+
+export async function createReturnJobFromCarrierEvent(
+  input: CreateReturnJobFromCarrierEventInput,
+  trx?: Knex | Knex.Transaction
+): Promise<string> {
+  const { shopId, lasyncroOrderId, triggeringParcelTrackingEventId, notes } = input;
+
+  const runWith = async (qb: Knex | Knex.Transaction): Promise<string> => {
+    const existing = await qb('return_jobs')
+      .where({ lasyncro_order_id: lasyncroOrderId, origin: 'undelivered_return' })
+      .whereNotIn('status', ['complete'])
+      .select('return_job_id')
+      .first();
+    if (existing) {
+      console.info('[RETURN_JOB_CARRIER_EVENT_SKIPPED_EXISTING]', {
+        shopId,
+        lasyncroOrderId,
+        existingReturnJobId: existing.return_job_id,
+        triggeringParcelTrackingEventId,
+      });
+      return existing.return_job_id;
+    }
+
+    const order = await qb('orders')
+      .where({ lasyncro_order_id: lasyncroOrderId, shop_id: shopId })
+      .select('lasyncro_order_id')
+      .first();
+    if (!order) throw new Error(`[RETURN_JOB_CREATE_CARRIER_EVENT] Order not found: ${lasyncroOrderId}`);
+
+    const now = new Date();
+    const [job] = await qb('return_jobs')
+      .insert({
+        shop_id: shopId,
+        origin: 'undelivered_return',
+        lasyncro_order_id: lasyncroOrderId,
+        lasyncro_refund_execution_id: null,
+        status: 'awaiting_decision',
+        // Closest fit of the existing UndeliveredReason enum — not
+        // necessarily accurate fault attribution (migration 0123
+        // usually can't say why), just the best available label.
+        undelivered_reason: 'carrier_error',
+        source: 'carrier_webhook',
+        triggering_parcel_tracking_event_id: triggeringParcelTrackingEventId,
+        claimed_by: null,
+        claimed_at: null,
+        notes: notes ?? null,
+      })
+      .returning('return_job_id');
+    const returnJobId = job.return_job_id ?? job;
+
+    await qb('order_constraints')
+      .insert({
+        shop_id: shopId,
+        lasyncro_order_id: lasyncroOrderId,
+        constraint_type: 'operational',
+        block_type: 'returned_undelivered',
+        target_id: returnJobId,
+        started_at: now,
+      })
+      .onConflict(['lasyncro_order_id', 'constraint_type', 'target_id'])
+      .ignore();
+
+    console.info('[RETURN_JOB_CARRIER_EVENT_CREATED]', {
+      returnJobId,
+      shopId,
+      lasyncroOrderId,
+      triggeringParcelTrackingEventId,
+    });
+
+    // operatorId: null — see WriteAuditLogInput's decision record.
+    await writeAuditLog(qb as Knex.Transaction, {
+      shopId,
+      operatorId: null,
+      actionType: 'return_job_create',
+      entityType: 'return_job',
+      entityId: returnJobId,
+      metadata: { origin: 'undelivered_return', source: 'carrier_webhook', lasyncroOrderId, triggeringParcelTrackingEventId },
+    });
+
+    return returnJobId;
+  };
+
+  if (trx) {
+    return runWith(trx);
+  }
+  return withTenant(shopId, (innerTrx) => runWith(innerTrx));
 }
 
 // ─── Process Line Item ────────────────────────────────────────────────────────

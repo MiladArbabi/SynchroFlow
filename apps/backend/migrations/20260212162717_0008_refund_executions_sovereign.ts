@@ -361,9 +361,27 @@ export async function up(knex: Knex): Promise<void> {
   await knex.raw(`ALTER TABLE return_jobs FORCE ROW LEVEL SECURITY;`);
   await knex.raw(`DROP POLICY IF EXISTS return_jobs_tenant_isolation ON return_jobs;`);
   await knex.raw(`
+    /**
+     * RET-AUD-46 FIX (2026-07-04)
+     * ---------------------------
+     * Original policy had USING only, no WITH CHECK — per
+     * RLS_blueprint.md §4/§5, this is the standard-table pattern
+     * and a bare USING-only policy is a known gap class (same
+     * category the blueprint flags as fixed on shop_sender_addresses,
+     * §"Sender address" note in carrier-integration.md). Without
+     * WITH CHECK, INSERT/UPDATE statements are NOT validated against
+     * shop_id — only SELECT/DELETE row visibility is enforced. A bug
+     * that INSERTs a return_job with the wrong shop_id would succeed
+     * silently instead of being rejected by Postgres.
+     * return_jobs carries financial write-off and refund-linkage
+     * data — same risk class RLS_blueprint.md §1 calls out explicitly
+     * ("one buggy API endpoint could expose merchant A's revenue
+     * data to merchant B").
+     */
     CREATE POLICY return_jobs_tenant_isolation
     ON return_jobs
-    USING (shop_id = current_setting('app.current_tenant')::int);
+    USING (shop_id = current_setting('app.current_tenant')::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant')::int);
   `);
 }
 

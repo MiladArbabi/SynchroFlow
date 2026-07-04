@@ -1,17 +1,25 @@
-name = "LaSyncro"
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
 client_id = "990bd1711ae1152021d12901d45a7951"
+name = "LaSyncro"
 application_url = "https://app.lasyncro.com"
 embedded = false
-
-[auth]
-redirect_urls = ["https://app.lasyncro.com/api/v1/integrations/oauth/callback/shopify"]
 
 [webhooks]
 api_version = "2026-01"
 
   [[webhooks.subscriptions]]
-  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
-  uri = "https://app.lasyncro.com/api/v1/shopify/webhooks"
+  uri = "/api/v1/shopify/webhooks"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
 
 [access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
 scopes = "read_customers,read_fulfillments,write_fulfillments,write_inventory,read_inventory,write_inventory_shipments,read_inventory_shipments,write_inventory_transfers,read_inventory_transfers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_orders,read_products"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://app.lasyncro.com/api/v1/integrations/oauth/callback/shopify",
+  "http://localhost:3000/api/v1/integrations/oauth/callback/shopify"
+]
