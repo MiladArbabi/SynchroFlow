@@ -1,6 +1,7 @@
 // apps/backend/seeds/dev_seed.ts
 import type { Knex } from 'knex';
 import bcrypt from 'bcrypt';
+import { encrypt } from '../src/security/encryption.service.js';
 
 /**
  * DEV SEED — IDENTITY-AWARE
@@ -880,6 +881,60 @@ export async function seed(knex: Knex): Promise<void> {
       updated_at: now,
     }).onConflict(['shop_id', 'platform']).ignore();
 
+    // ── SHOPIFY_APP_INSTALLATIONS (RET-AUD-24 fix, 2026-07-04) ────────────────
+    //
+    // Root cause this seeds around: shopify_app_installations.shop_id has
+    // ON DELETE CASCADE from shops (migration 0014). This seed's cleanup
+    // step deletes `shops` on every run — which silently wiped this table
+    // via cascade even though nothing here ever referenced its name
+    // directly. Every Shopify webhook handler (handleRefundCreated,
+    // handleOrderPaid, handleOrderFulfillment, etc. — see
+    // webhookRouter.ts) resolves the target shop via this table; with it
+    // empty, every inbound webhook was silently unroutable after any
+    // dev:full-reset / dev:full-seed cycle, with no error anywhere.
+    //
+    // This is a PLACEHOLDER row, exactly like `integrations` above —
+    // access_token is NOT a real Shopify token and cannot make real API
+    // calls. Its only job is to let local webhook testing (via ngrok +
+    // Shopify's legacy per-store webhook config, see
+    // docs/blueprints/carrier-integration.md for why the app's own OAuth
+    // can't point at localhost without touching the production app
+    // registration) reach past the shop-resolution step instead of
+    // failing at the very first lookup every handler makes.
+    //
+    // encrypt() used (not a raw string) because
+    // shopify_app_installations.access_token IS actively decrypt()-ed by
+    // every handler the moment a webhook arrives — unlike
+    // integrations.access_token_encrypted, which sits untouched while
+    // sync_status stays 'PENDING'. A non-JSON placeholder here would
+    // throw inside decrypt() on the very first webhook instead of the
+    // clean "no row found" skip this used to produce.
+    //
+    // If real Shopify API calls are needed in dev (not just receiving
+    // webhooks), this row must still be replaced by a real OAuth
+    // handshake — see RET-AUD-24/32 in the audit register for why a
+    // fully automated real-token seed isn't possible (Shopify's OAuth
+    // requires a live, signed, browser-interactive redirect; it cannot be
+    // scripted from a seed file).
+    await trx('shopify_app_installations')
+      .insert({
+        shop_id: shop.id,
+        shop_domain: 'development-store-15820042357.myshopify.com',
+        access_token: encrypt('dev_seed_placeholder_not_a_real_shopify_token'),
+        scopes:
+          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+        installed_at: now,
+      })
+      .onConflict(['shop_domain'])
+      .merge({
+        shop_id: shop.id,
+        access_token: encrypt('dev_seed_placeholder_not_a_real_shopify_token'),
+        scopes:
+          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+        updated_at: now,
+      });
+
+    console.log('[DEV_SEED] ✅ shopify_app_installations placeholder seeded (webhook shop-resolution will work; real API calls will not — see inline comment)');
     console.log('[DEV_SEED] ✅ Full operational data seeded');
     console.log('[DEV_SEED] → Trust gate will pass');
     console.log('[DEV_SEED] → Morning brief, cash flow, and FT2 surfaces ready');
