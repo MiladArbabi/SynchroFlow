@@ -556,4 +556,31 @@ still clickable or reversible, it stays orange per §2.
 | CTA-024 | ✅ | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ~420, ~445 | Bulk backfill trigger + confirm button — initially muted gray / `white` text, corrected to Tier 1 filled accent + `var(--accent-ink)` |
 And update §6's "Surfaces Standardised" table isn't affected (pagination unchanged), but §5's Modules Audited row for Orders should get a footnote matching the existing CTA-022 caveat pattern — append after the table:
 
-**Caveat, 2026-07-03:** Orders / Outbound gained a new bulk-action CTA (backfill labels, CTA-024) after the §5 "✅ Clean" audit closed — same caveat class as CTA-022 in §9. Audit status reflects a point in time, not an ongoing guarantee.
+**Caveat, 2026-07-03:** Orders / Outbound gained a new bulk-action CTA(backfill labels, CTA-024) after the §5 "✅ Clean" audit closed — same caveat class as CTA-022 in §9. Audit status reflects a point in time, not an ongoing guarantee.
+
+## 13. Outbound module audit fixes — 2026-07-04
+
+**ISS-04 — "Review orders →" no-op on default filter state.** Wired
+correctly (`onClick={() => setLedgerFilter('needs_action')}`), but
+`ledgerFilter` already defaults to `'needs_action'` on page load — so
+for a first-visit operator (the exact audience this CTA exists for),
+clicking it set state to the value it was already at. React bails on
+the no-op update; no re-render, no scroll, no visible feedback — the
+button *looked* dead despite correct underlying logic. Not a logic bug,
+a missing-feedback bug. Fixed: added a `ledgerRef` + `scrollIntoView`
+call alongside the existing `setLedgerFilter`, so the click always
+visibly does something (scrolls to the "Shipped orders" section) even
+when the filter value itself doesn't change.
+
+**ISS-06 — "Backfill labels" trigger gave no expand/collapse
+affordance.** The two-step confirm-then-result panel (§12 above) is the
+correct, intentional pattern for this bulk-write action — not removed.
+The actual gap: the trigger button carried the same visual weight as a
+direct-action button, so clicking it and having the confirm panel
+appear below the fold read as "nothing happened," not as "revealed."
+Fixed minimally: added `<ChevronDown />`/`<ChevronUp />` (already
+imported in this file, same icons used elsewhere for the canonical
+reveal-more pattern, §1) to the trigger, flipping based on
+`backfillExpanded` state. No layout change, no removed friction — same
+interaction, now visually legible as expand/collapse rather than a
+no-op-looking button.

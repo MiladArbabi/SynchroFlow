@@ -180,4 +180,98 @@ Frontend: raw status codes were leaking into the UI unlabeled (`'pending'` rende
 - GH-1034 (make `order_fulfillment_history` the single source of truth for timeline events, replacing today's query-side merge — deferred, touches `pickBatch.service.ts`'s write path)
 - GH-1033 (separate thread: `integrations.sync_status` never updates on successful sync, health pill stuck on "Syncing" — confirmed unrelated to this modal's timeline, audited and ruled out as a shared-engine candidate)
 
-**NOTE, per explicit instruction (2026-07-01):** this codebase's docs are known to run stale in places — this conversation's approvals are the current source of truth where they conflict with anything written earlier in this file, including §2.5's now-superseded line above.
+**NOTE, per explicit instruction (2026-07-01):** this codebase's docs are known to run stale in places — this conversation's approvals are the current source of truth where they conflict with anything written earlier in thisfile, including §2.5's now-superseded line above.
+
+## 2.10 Outbound module audit fixes (2026-07-04)
+
+**ISS-01 — `StatusBadge`'s `alpha('var(--ink-4)', ...)` MUI crash
+(`OrderDetailPage.tsx`, the full-page route, NOT the modal).** `alpha()`
+requires a resolvable color format (hex/rgb/hsl) — a raw CSS custom-
+property string throws `MUI: Unsupported "var(--ink-4)" color`. Triggered
+whenever `statusBadgeColor()` returns `'default'` (any order status
+outside `fulfilled`/`partially_fulfilled`/`processing`/`cancelled`).
+Fixed narrowly: `default: theme.palette.mode === 'dark' ? '#5A5F6E' :
+'#9CA3AF'` (the literal values `--ink-4` already resolves to per mode,
+confirmed against `themes/index.tsx`). **Scope decision, explicit:** did
+NOT extract these into a shared `tokens.ts` file or wire up
+`utils/colorUtils.ts`'s `withAlpha()` — that function's CSS-var branch
+turned out to be dead code (no `--*Channel` variables exist anywhere for
+it to consume; `extendPaletteWithChannels()` is defined but called
+nowhere). Wiring that up properly (adding `--ink-NChannel` RGB-triplet
+vars) was scoped as a separate, larger task and deliberately deferred —
+logged as ISS-02, still open. This file (`OrderDetailPage.tsx`) is
+distinct from `OrderDetailModalBody.tsx` and has no `StatusBadge`
+equivalent in the modal — confirmed via grep, not assumed from the two
+files' similar role.
+
+**ISS-05 — Outbound never migrated to `EntityDetailModal`.**
+`OrdersOutboundPage.tsx` had 4 separate `navigate(\`/orders/${id}\`)` calls
+(the full-page route from §2.6 above — correctly *kept*, not orphaned,
+but Outbound was simply never wired to the modal pattern when Overview/
+Order Flow were). Fixed to match `OrdersFT2Page.tsx`'s pattern exactly:
+`selectedOrderId`/`modalTitle`/`modalSubtitle`/`modalFooter` state +
+`useBulkSetPriority`-backed `onPriorityFlag` + `<EntityDetailModal>` /
+`<OrderDetailModalBody>` render block, same shape, same props. No new
+pattern invented — this closes the gap noted in §2.6 ("a plausible
+future 'Open full page →' link from inside the modal") in the opposite
+direction: the full page stays live at its route for anyone who lands
+there directly (e.g. a bookmarked/shared URL), but in-app clicks now
+correctly open the modal like everywhere else in Orders.
+
+**ISS-07b — stale "In pool" pipeline status + contradicting body text
+for fulfilled orders with no `order_warehouse_status` row.** Confirmed
+live: 10/10 seeded "shipped" orders have `order_fulfillment_status.status
+= 'fulfilled'` but zero `order_warehouse_status` row — legitimate for
+any order fulfilled outside LaSyncro's own pick/pack pipeline (Shopify-
+side fulfillment, pre-existing history, or seed data mimicking that
+shape; confirmed via write-path audit: `shipConfirmation.service.ts`
+writes both tables correctly for orders that go through the real
+pipeline, `orderFulfillmentIngestion.service.ts` — a Shopify-sync path —
+only ever touches `order_fulfillment_status`, by design). The bug was
+purely in the modal's display logic: `formatWarehouseStatus(null)`
+falls back to a hardcoded `'In pool'` string, and the pipeline-label
+derivation (§2.8's documented `Blocked → real warehouse stage → In pool`
+priority) was missing a tier — never checked `order.fulfillment.status`
+at all, despite that field already being fetched and returned by
+`getOrderDetailsById` (no backend/type change needed, just unread data).
+
+Fixed: added `isFulfilled = order?.fulfillment?.status === 'fulfilled'`,
+inserted as a new tier between Blocked and the warehouse-stage fallback:
+`Blocked → Fulfilled → real warehouse stage → In pool`. Pill color reuses
+the existing `--confirm-ghost`/`--confirm-ink` tokens (§10,
+`modules-ux-playbook.md`) — correct fit per that section's own scope
+rule ("confirmed/persisted state ONLY... nothing left to click"), not a
+new color invented for this. Second rendering site fixed in the same
+pass: the "No open issues... waiting to be released into a pick batch"
+info box (separate from the pill, same root cause) was gated on
+`!hasAnyActiveConstraint && !order?.warehouseStatus` with no fulfillment
+check either — added `&& !isFulfilled` to the same condition, reusing
+the one new variable rather than deriving it twice.
+
+**Loading spinner flicker, appears/disappears repeatedly while modal
+stays open (GitHub issue #1037) — root cause found and fixed.** Initial
+hypothesis (window-focus refetching, `refetchOnWindowFocus: true` in
+`main.tsx`) was wrong — `staleTime: 30_000` added to all three modal
+hooks (`useOrderDecision`, `useOrderDetail`, `usePickExceptionsForOrder`)
+did NOT resolve it, confirmed live. Real mechanism, found via Network
+tab: `useOrderDecision`'s `GET /orders/:id/decision` 404s for any order
+with no active decision (confirmed as *intentional* API behavior per
+that controller's own doc comment — "404 if no decision exists for this
+order," not a failure). The global React Query default (`retry: 3`,
+`main.tsx`) retried this guaranteed-permanent 404 three times per fetch
+regardless, and `LifecycleProvider.tsx`'s two independent 3-second
+`setInterval` polls (`loadReadiness`/`pollLifecycle`, both only stop once
+`phase === 'FT2_READY'`) were driving a steady stream of re-renders/
+refetches for this to compound against — matching the "appears and
+disappears regularly" symptom exactly.
+
+**Fix:** added a targeted `retry` function to `useOrderDecision` only —
+`retry: (failureCount, err) => err?.response?.status === 404 ? false :
+failureCount < 2` — never retries a 404, retries genuine failures
+(5xx/network) up to twice. Deliberately did NOT touch the query's
+`queryFn`/error-catching — `OrderDetailModalBody.tsx` already has its
+own correct `is404`/`isRealError` handling (added 2026-07-01, see that
+section) that depends on the 404 surfacing as a real `isError` state;
+converting it to a caught `null` return would have silently broken that
+existing, working logic. Confirmed live post-fix: modal opens
+immediately, no flicker, no unnecessary retry storm.

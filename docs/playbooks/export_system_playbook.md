@@ -129,6 +129,7 @@ blocked orders, SLA breaches, top alerts.
 | Finances | `Export →` | CSV | Core+ |
 | Inventory (Sprint 2) | `Export →` | CSV | Core+ |
 | WMS Analytics (Sprint 2) | `Export →` | CSV | Core+ |
+| Orders / Outbound | `Export →` | CSV | Core+ |
 
 ### CTA Placement Rule
 - Always a **Tier 2 ghost pill** (per CTA playbook §2)
@@ -236,3 +237,12 @@ apps/backend/src/api/exports/
   `reportIds={['orders-all', 'orders-blocked']}` — both report IDs
   already existed in `exportReports.ts`, unused until now. No backend
   work needed.
+- **2026-07-04** — Orders/Outbound's `Export →` CTA (ISS-03) fixed: same
+  bug class as ORDM-01, never applied here — `handleExportOutbound` was
+  a hardcoded `axiosInstance.post(..., { responseType: 'blob' })` +
+  synthetic `<a>` click, bypassing the drawer entirely. Added a new
+  `orders-outbound` report to `QUICK_REPORTS` (`exportReports.ts`) —
+  `{ filters: { status: ['fulfilled'] } }`, since no existing report ID
+  matched Outbound's fulfilled-only filter shape. Button's `onClick`
+  now just opens `ExportDrawer` with `reportIds={['orders-outbound']}`;
+  visual styling was already correct Tier 2 ghost pill, untouched.

@@ -205,4 +205,76 @@ the full relevant scope before editing, not incremental grep-and-guess.
 API (`GET /api/v1/orders/constrained`) confirmed zero duplicates,
 Order Flow UI screenshot confirmed correct (2 distinct orders in
 "Address issue" category, not 1 order duplicated). See GitHub issue
-#1035 (closed) for the full investigation trail.
+
+# 1035 (closed) for the full investigation trail.
+
+## 6. Session 5 (2026-07-04) — ISS-07: safe-fulfillment gate had zero fulfillment-status awareness
+
+**Trigger:** found live during the Outbound module audit — order #900008
+(confirmed `order_fulfillment_status.status = 'fulfilled'`) still showed
+a "Proceed to Ship" recommended action in its detail modal, wired to
+`proceed_fulfillment.handler.ts`, which calls Shopify's `fulfillmentCreate`
+mutation directly — no tracking, no pick/pack step, would have falsely
+triggered a customer shipping-notification email for an order already
+shipped.
+
+**Root cause:** the safe-fulfillment gate (`decision.engine.ts`,
+`isSafeToFulfill`) only checked `order_health_score` + the three
+constraint flags (`is_inventory_blocked`/`is_customer_blocked`/
+`is_operational_blocked`). It never checked whether the order was
+already fulfilled — `proceed_fulfillment` is generated whenever
+`decisions.length === 0` (no active blocker), which is exactly the state
+of an already-fulfilled order with nothing left to block it. Not a
+partial/edge-case bug — every constraint-free order, fulfilled or not,
+hit this gate with zero fulfillment awareness.
+
+**Fix, shipped:**
+- `DecisionSignals` type + `mapToDecisionSignals()` (`decision.engine.ts`)
+  gained a new `is_already_fulfilled: boolean` field.
+- Gate updated: `isSafeToFulfill` now also requires
+  `!signals.is_already_fulfilled`.
+- `reconciliation.handlers.ts` fetches `order_fulfillment_status` for the
+  order (separately from `order_risk_snapshot`, since fulfillment status
+  is a different projection table with its own lifecycle) and computes
+  `isAlreadyFulfilled`, threaded through the `RECONCILIATION_RUN` command
+  payload → `commands.consumer.ts` → merged onto `riskSnapshot` before
+  calling `generateDecisions()` (required because `generateDecisions`'s
+  signature only accepts a single `riskSnapshot` param, no separate
+  field).
+- `CommandRow.payload` type (`commands.consumer.ts`) updated to include
+  `isAlreadyFulfilled?: boolean` — missed on the first pass, caught by
+  a live TS error (same class of self-caught mistake as §5 above: grep
+  each piece of a multi-part diff separately, not one confirmation grep).
+
+**Cleanup (existing bad data, not prevented by the above):** 10 decision
+rows found live with `recommended_action.type = 'proceed_fulfillment'`,
+`status IN ('pending','in_progress')`, joined against
+`order_fulfillment_status.status = 'fulfilled'` — all 10 from the same
+seed batch (matches Outbound's "10 shipped" total exactly). Set to
+`status = 'dismissed'` (non-destructive, matches this table's append-
+only/audit-preserving convention elsewhere) rather than deleted. This
+fix only prevents *new* bad decisions — pre-existing ones needed this
+one-time cleanup query, documented here in case the same class of bad
+decision needs finding again later:
+
+```sql
+UPDATE decisions
+SET status = 'dismissed'
+WHERE id IN (
+  SELECT d.id
+  FROM decisions d
+  JOIN order_fulfillment_status ofs ON ofs.lasyncro_order_id = d.entity_id::uuid
+  WHERE d.recommended_action->>'type' = 'proceed_fulfillment'
+    AND d.status IN ('pending','in_progress')
+    AND ofs.status = 'fulfilled'
+);
+```
+
+**Separate, related, NOT the same bug — ISS-07b (documented in
+`entity-detail-modal-playbook.md`):** the modal's "Pipeline status" pill
+independently showed stale "In pool" for the same fulfilled orders, for
+an unrelated reason (`order_warehouse_status` has no row for orders
+fulfilled outside LaSyncro's own pick/pack pipeline — legitimate for
+Shopify-side-fulfilled/seed orders, not a data bug). Confirmed as two
+separate defects with two separate fixes, not one shared root cause —
+see that playbook's entry for the display-layer fix.
