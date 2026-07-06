@@ -30,6 +30,7 @@ import {
 } from '../../services/wms/packDecision.service.js';
 import { encrypt } from '../../security/encryption.service.js';
 import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service.js';
+import { resolveReturnScan, resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
 
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
@@ -3556,4 +3557,37 @@ export const httpBulkGenerateShippingLabels = async (req: Request, res: Response
   console.info('[BULK_GENERATE_LABEL_COMPLETE]', { shopId, total: results.length, succeeded, failed });
 
   return res.status(200).json({ results, summary: { total: results.length, succeeded, failed } });
+};
+
+// ─── POST /wms/returns/scan (WEB-RETURN-01, free-scan intake) ─────────────────
+
+export const httpReturnScan = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const operatorId = req.user?.userId;
+  if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { scanned_value } = req.body;
+  if (!scanned_value) return res.status(400).json({ error: 'scanned_value required' });
+
+  try {
+    const resolution = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return resolveReturnScan(trx, shopId, scanned_value);
+    });
+
+    if (!resolution) {
+      return res.status(404).json({ error: 'Could not resolve scanned code to an order. Try manual lookup.' });
+    }
+
+    const jobResult = await resolveOrCreateReturnJobForScan(shopId, resolution.lasyncroOrderId, operatorId);
+
+    return res.status(200).json({
+      ...resolution,
+      ...jobResult,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[RETURN_SCAN_FAILED]', { shopId, scanned_value, error: message });
+    return res.status(500).json({ error: `Failed to resolve return scan: ${message}` });
+  }
 };

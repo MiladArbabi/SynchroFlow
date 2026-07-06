@@ -189,6 +189,60 @@ export async function handleRefundsCreate({
       });
 
     /**
+     * RECONCILIATION GUARD (scan-intake linking)
+     * -------------------------------------------
+     * A return_job may already exist for this order with no refund
+     * linked yet (created via scan intake, resolveOrCreateReturnJobForScan)
+     * — the physical parcel arrived before this webhook did. Link the
+     * refund to that job instead of creating a duplicate.
+     */
+    const scanCreatedJob = await trx('return_jobs')
+      .where({
+        shop_id: domainEvent.shop_id,
+        lasyncro_order_id: lasyncroOrderId,
+        lasyncro_refund_execution_id: null,
+      })
+      .whereNotIn('status', ['complete'])
+      .orderBy('created_at', 'desc')
+      .first();
+
+    if (scanCreatedJob) {
+      await trx('return_jobs')
+        .where({ return_job_id: scanCreatedJob.return_job_id })
+        .update({
+          lasyncro_refund_execution_id: execution.lasyncro_refund_execution_id,
+          updated_at: canonicalEventTime,
+        });
+    } else {
+      const returnJobId = crypto
+        .createHash('sha1')
+        .update(
+          `${ORDER_UUID_NAMESPACE}:return_job:${execution.lasyncro_refund_execution_id}`
+        )
+        .digest('hex')
+        .slice(0, 32)
+        .replace(
+          /^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/,
+          '$1-$2-$3-$4-$5'
+        );
+
+      await trx('return_jobs')
+        .insert({
+          return_job_id: returnJobId,
+          shop_id: domainEvent.shop_id,
+          origin: 'customer_return',
+          lasyncro_refund_execution_id: execution.lasyncro_refund_execution_id,
+          lasyncro_order_id: lasyncroOrderId,
+          status: 'pending',
+          claimed_by: null,
+          source: 'system_auto',
+        })
+        .onConflict('lasyncro_refund_execution_id')
+        .ignore();
+    }
+    
+
+    /**
      * CURSOR ADVANCEMENT REMOVED
      * --------------------------
      * Projection engine centrally manages replay progress.

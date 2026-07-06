@@ -157,6 +157,34 @@ export async function up(knex: Knex): Promise<void> {
       ['device_event_id'],
       'inventory_movements_device_event_unique'
     );
+
+    /**
+     * REFERENCE DEDUP (RT2-AUD-22, corrected 2026-07-06, twice)
+     * -----------------------------------------------------
+     * Guards against duplicate movements from replayed webhook events
+     * (e.g. handleRefundCreated firing twice for one refund).
+     *
+     * Scoped per-variant AND per-location, not just per-reference:
+     * - A single reference_id legitimately produces multiple movements
+     *   spanning several variants (e.g. one receive_job closing 3
+     *   variant lines writes 3 movements sharing one reference_id) —
+     *   required lasyncro_variant_id in the key.
+     * - A single reference_id ALSO legitimately produces multiple
+     *   movements for the SAME variant at different locations (e.g.
+     *   one stow_task writes a debit at the source root location and
+     *   a credit at the destination bin, same variant, same task) —
+     *   required location_code in the key too.
+     *
+     * Originally added as (shop_id, reference_type, reference_id) only
+     * in a later patch migration (0124); broke multi-variant receive
+     * closes. First correction added lasyncro_variant_id; broke stow
+     * confirm (debit/credit pair, same variant, different location).
+     * Both folded in here corrected.
+     */
+    table.unique(
+      ['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code'],
+      'inventory_movements_shop_ref_unique'
+    );
   });
 
   /**

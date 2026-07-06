@@ -6,6 +6,7 @@ import ReturnsOverviewPage from './ReturnsOverviewPage';
 import ReturnsItemsPage from './ReturnsItemsPage';
 import ReturnsSuppliersPage from './ReturnsSuppliersPage';
 import { Box } from '@mui/material';
+import ReturnJobBriefPage from './ReturnJobBriefPage';
 export default function ReturnsFT2Page() {
   return (
     <>
@@ -20,6 +21,7 @@ export default function ReturnsFT2Page() {
         <Route path="/"          element={<ReturnsOverviewPage />} />
         <Route path="/items"     element={<ReturnsItemsPage />} />
         <Route path="/suppliers" element={<ReturnsSuppliersPage />} />
+        <Route path="/jobs/:id"  element={<ReturnJobBriefPage />} />
       </Routes>
     </>
   );

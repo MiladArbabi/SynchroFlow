@@ -25,10 +25,18 @@ export type ReturnsByVariant = {
   return_rate_pct: number;
   restock_rate_pct: number;
 };
-
+export type OrphanedReturnJob = {
+  return_job_id: string;
+  status: string;
+  created_at: string;
+  hours_since_refund: number;
+  refund_amount: number;
+  severity: 'warning' | 'critical';
+};
 export type ReturnsResponse = {
   summary: ReturnsSummary;
   by_variant: ReturnsByVariant[];
+  orphaned_jobs: OrphanedReturnJob[];
 };
 
 /**

@@ -57,6 +57,7 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:batch:claim':          ['owner', 'admin', 'operator'],
   'wms:pick:scan':            ['owner', 'admin', 'operator'],
   'wms:pack:scan':            ['owner', 'admin', 'operator'],
+  'wms:returns:scan':         ['owner', 'admin', 'operator'],
   'wms:stow:claim':           ['owner', 'admin', 'operator'],
   'wms:stow:confirm':         ['owner', 'admin', 'operator'],
   'wms:stow:location':        ['owner', 'admin', 'operator'],

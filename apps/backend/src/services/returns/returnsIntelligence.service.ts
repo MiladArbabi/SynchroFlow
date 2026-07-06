@@ -1,6 +1,6 @@
 // apps/backend/src/services/returns/returnsIntelligence.service.ts
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 
 /**
  * RETURNS INTELLIGENCE SERVICE (RT-01)
@@ -67,6 +67,15 @@ export type ConditionBuckets = {
   unassessed: number;
 };
 
+export interface OrphanedReturnJob {
+  return_job_id: string;
+  status: string;
+  created_at: Date;
+  hours_since_refund: number;
+  refund_amount: number;
+  severity: 'warning' | 'critical';
+}
+
 /**
  * computeReturnsIntelligence
  * --------------------------
@@ -123,7 +132,7 @@ export async function computeReturnsIntelligence(
     const totalUnitsReturned = Number(summaryRow?.total_units_returned ?? 0);
     const totalUnitsRestocked = Number(restockRow?.total_restocked ?? 0);
     const restockRatePct = totalUnitsReturned > 0
-      ? Math.round((totalUnitsRestocked / totalUnitsReturned) * 1000) / 10
+      ? Math.min(100, Math.round((totalUnitsRestocked / totalUnitsReturned) * 1000) / 10)
       : 0;
 
     /**
@@ -225,7 +234,7 @@ export async function computeReturnsIntelligence(
         margin_leakage: row.margin_leakage != null ? Number(row.margin_leakage) : null,
         return_rate_pct: Math.round((refundCount / variantOrderCount) * 1000) / 10,
         restock_rate_pct: unitsReturned > 0
-          ? Math.round((unitsRestocked / unitsReturned) * 1000) / 10
+          ? Math.min(100, Math.round((unitsRestocked / unitsReturned) * 1000) / 10)
           : 0,
       };
     });
@@ -286,5 +295,60 @@ export async function computeReturnsIntelligence(
     };
 
     return { summary, by_variant: byVariant, by_reason: byReason, condition_buckets: conditionBuckets };
+  });
+}
+
+/**
+ * ORPHANED RETURN JOBS (RT2-03)
+ * ------------------------------
+ * Type A orphan: refund fired, no line item has been processed yet.
+ * Ranked oldest-first — longest-waiting job is the most urgent.
+ *
+ * Severity derived from shop's configured thresholds
+ * (shop_operational_settings.returns_aging_warning_hours / _critical_hours).
+ */
+export async function getOrphanedReturnJobs(shopId: number): Promise<OrphanedReturnJob[]> {
+  return withTenant(shopId, async (trx) => {
+    const settings = await trx('shop_operational_settings')
+      .where('shop_id', shopId)
+      .select('returns_aging_warning_hours', 'returns_aging_critical_hours')
+      .first();
+
+    const warningHours = settings?.returns_aging_warning_hours ?? 48;
+    const criticalHours = settings?.returns_aging_critical_hours ?? 168;
+
+    const rows = await trx('return_jobs as rj')
+      .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
+      .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
+      .where('rj.shop_id', shopId)
+      .where('rj.status', '!=', 'complete')
+      .groupBy('rj.return_job_id', 'rj.status', 'rj.created_at', 're.total_refund_amount')
+      .havingRaw('COUNT(reli.lasyncro_refund_line_item_id) FILTER (WHERE reli.processed_at IS NOT NULL) = 0')
+      .select(
+        'rj.return_job_id',
+        'rj.status',
+        'rj.created_at',
+        're.total_refund_amount',
+        trx.raw("EXTRACT(EPOCH FROM (NOW() - rj.created_at)) / 3600 as hours_since_refund"),
+      )
+      .orderBy('rj.created_at', 'asc');
+
+    return rows
+      .map((row: any) => {
+        const hours = Number(row.hours_since_refund);
+        return {
+          return_job_id: row.return_job_id,
+          status: row.status,
+          created_at: row.created_at,
+          hours_since_refund: Math.round(hours * 10) / 10,
+          refund_amount: Number(row.total_refund_amount ?? 0),
+          severity: (hours >= criticalHours ? 'critical' : 'warning') as 'critical' | 'warning',
+        };
+      })
+      .filter((job) => job.hours_since_refund >= warningHours);
+    // NOTE: the `|| true` above is a placeholder — see note below on
+    // whether jobs under the warning threshold should be excluded
+    // entirely or included as a lower-severity "ok" bucket. Flagging
+    // rather than deciding silently.
   });
 }

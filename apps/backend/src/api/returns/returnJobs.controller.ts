@@ -7,7 +7,8 @@
 // Routes (added to returns.routes.ts):
 //   GET    /api/v1/modules/returns/jobs              — list open jobs (mobile + web)
 //   POST   /api/v1/modules/returns/jobs              — create job (operator, mobile)
-//   PATCH  /api/v1/modules/returns/jobs/:id/lines/:lineId — set condition on line item
+//   POST   /api/v1/modules/returns/jobs/:id/claim    — claim job (operator/owner/admin, web+mobile — WEB-RETURN-01)
+//   PATCH  /api/v1/modules/returns/jobs/:id/lines/:lineId — set conditionon line item
 //   POST   /api/v1/modules/returns/jobs/:id/complete — complete job (operator)
 //   GET    /api/v1/modules/returns/items             — items awaiting owner decision (web)
 //   PATCH  /api/v1/modules/returns/items/:id/decision — owner sets decision (web)
@@ -24,6 +25,8 @@ import {
   type UndeliveredReason,
   type OwnerDecision,
   type ItemCondition,
+  claimReturnJob,
+  getReturnJob,
 } from '../../services/returns/returnJobs.service.js';
 
 const VALID_ITEM_CONDITIONS: ItemCondition[] = ['resellable', 'repackable', 'damaged', 'unsellable'];
@@ -31,7 +34,6 @@ const VALID_UNDELIVERED_REASONS: UndeliveredReason[] = ['wrong_address', 'not_cl
 const VALID_OWNER_DECISIONS: OwnerDecision[] = ['reship', 'contact_customer', 'initiate_refund', 'write_off'];
 
 // ─── GET /jobs ────────────────────────────────────────────────────────────────
-
 export const httpListReturnJobs = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
@@ -42,6 +44,46 @@ export const httpListReturnJobs = async (req: Request, res: Response) => {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[RETURN_JOBS_LIST_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Failed to list return jobs: ${message}` });
+  }
+};
+
+// ─── GET /jobs/:id ───────────────────────────────────────────────────────────────
+
+export const httpGetReturnJob = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const returnJobId = req.params.id as string;
+
+  try {
+    const job = await getReturnJob(shopId, returnJobId);
+    if (!job) return res.status(404).json({ error: 'Return job not found' });
+    return res.status(200).json({ data: job });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[RETURN_JOB_GET_FAILED]', { shopId, returnJobId, error: message });
+    return res.status(500).json({ error: `Failed to fetch return job: ${message}` });
+  }
+};
+
+// ─── POST /jobs/:id/claim ───────────────────────────────────────────────────────
+
+export const httpClaimReturnJob = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const operatorId = req.user?.userId;
+  if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const returnJobId = req.params.id as string;
+
+  try {
+    await claimReturnJob({ shopId, returnJobId, operatorId });
+    return res.status(200).json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[RETURN_JOB_CLAIM_FAILED]', { shopId, returnJobId, error: message });
+    if (message.includes('not found')) return res.status(404).json({ error: message });
+    if (message.includes('not claimable') || message.includes('already claimed')) return res.status(409).json({ error: message });
+    return res.status(500).json({ error: `Failed to claim return job: ${message}` });
   }
 };
 
@@ -176,7 +218,6 @@ export const httpListItemsAwaitingDecision = async (req: Request, res: Response)
 };
 
 // ─── PATCH /items/:id/decision ────────────────────────────────────────────────
-
 export const httpSetOwnerDecision = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const decidedBy = req.user?.userId;

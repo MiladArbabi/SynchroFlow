@@ -187,25 +187,39 @@ export async function handleRefundCreated(
         continue;
       }
 
-      const { randomUUID } = await import('crypto');
+      const { randomUUID, createHash } = await import('crypto');
       const locationCode = `WH-${shopId}-ROOT`;
 
-      await db('inventory_movements').insert({
-        lasyncro_inventory_movement_id: randomUUID(),
-        lasyncro_variant_id: identityRow.lasyncro_variant_id,
-        shop_id: shopId,
-        movement_type: 'refund_return',
-        /**
-         * Positive delta — returned stock increases on-hand quantity.
-         */
-        quantity_delta: quantity,
-        location_code: locationCode,
-        reference_type: 'refund_execution',
-        reference_id: randomUUID(),
-        occurred_at: new Date(refundCreatedAt),
-        device_event_id: null,
-        triggered_by: 'shopify_webhook', // traceability: Shopify refund webhook
-      });
+      /**
+       * DETERMINISTIC REFERENCE ID (RT2-AUD-22)
+       * ----------------------------------------
+       * Previously randomUUID() — meant a replayed refund webhook could
+       * write duplicate movements with no way to detect it (confirmed:
+       * two 2-unit movements from one refund produced a 200% restock
+       * rate). Deterministic id + unique constraint makes replay safe.
+       */
+      const referenceId = createHash('sha1')
+        .update(`refund_return:${refundId}:${externalVariantId}:${quantity}`)
+        .digest('hex')
+        .slice(0, 32)
+        .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, '$1-$2-$3-$4-$5');
+
+      await db('inventory_movements')
+        .insert({
+          lasyncro_inventory_movement_id: randomUUID(),
+          lasyncro_variant_id: identityRow.lasyncro_variant_id,
+          shop_id: shopId,
+          movement_type: 'refund_return',
+          quantity_delta: quantity,
+          location_code: locationCode,
+          reference_type: 'refund_execution',
+          reference_id: referenceId,
+          occurred_at: new Date(refundCreatedAt),
+          device_event_id: null,
+          triggered_by: 'shopify_webhook',
+        })
+        .onConflict(['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code'])
+        .ignore();
 
       console.info('[REFUND_RETURN_MOVEMENT_WRITTEN]', {
         lasyncro_variant_id: identityRow.lasyncro_variant_id,

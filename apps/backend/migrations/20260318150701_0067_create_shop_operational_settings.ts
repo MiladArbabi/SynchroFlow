@@ -43,6 +43,14 @@ export async function up(knex: Knex): Promise<void> {
     table.decimal('monthly_overhead_amount', 14, 2).notNullable().defaultTo(0);
     table.decimal('starting_cash_balance', 14, 2).notNullable().defaultTo(0);
     table.timestamp('starting_cash_balance_set_at', { useTz: true }).nullable();
+    /**
+     * RETURNS AGING THRESHOLDS (HOURS)
+     * ---------------------------------
+     * When an unclaimed/unprocessed return job counts as "aging" vs
+     * "critical" for orphan-detection surfacing (Returns Sprint 2).
+     */
+    table.integer('returns_aging_warning_hours').notNullable().defaultTo(48);
+    table.integer('returns_aging_critical_hours').notNullable().defaultTo(168);
     table.timestamp('updated_at').notNullable().defaultTo(knex.fn.now());
   });
 

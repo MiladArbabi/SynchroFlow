@@ -53,8 +53,10 @@
 |---|---|---|
 | RET-SUP-01 | 🟡 P2, unblocked | Supplier linkage null — requires receive jobs completed via mobile `ReceiveJobScreen`. Confirmed 2026-07-04: `return_jobs`=0, `refund_executions`=0 on current dev DB — precondition never exercised, not a code defect. QA Test Supplier PO (arrived, 30 units, 3 lines) is ready to close this loop once a receive job is completed. |
 | RET-REASON-01 | 🟡 P2, **rescoped** | Was: "map Shopify's refund reason during sync." Corrected 2026-07-04: Shopify's dedicated Return/RMA object is gated by Protected Customer Data approval (separate from OAuth scope grants — `read_returns` is present in the granted scope string, but PCD approval for the Return object query itself is unconfirmed/likely unapproved). Fix path is no longer "map Shopify's field" — it's building LaSyncro's own intake-time reason taxonomy, decoupled from Shopify entirely, with a first-class `unclaimed/undeliverable` category distinct from customer-return reasons. Not started. |
-| RET-THEME-01 | 🟡 P2 | `ReturnsOverviewPage` still uses hardcoded hex in`useReturnsTheme()` — migration to CSS variables pending. Unchanged this pass. |
-| RET-PCD-01 | 🟢 **downgraded, resolved** | Was flagged as suspected PCD block. Confirmed 2026-07-04: `shopify_app_installations` was empty (0 rows) — a `dev:full-reset`/seed cycle recreates `shops`/`orders` directly from seed data but never creates an installation row, which only a real OAuth handshake produces. Every Shopify webhook handler resolves shop via that table; with it empty, all inbound webhooks (refunds included) were unroutable. This is an environmental/OAuth gap, not a PCD gate — `domain_events` had zero refund-type events ever recorded, confirming the deficit starts at ingestion, upstream of any PCD question. Live OAuth re-establishment attempted this session; blocked separately by the app's production `application_url`/redirect URLs being registered for App Store review — deferred, tracked outside this doc. |
+| RET-THEME-01 | 🟢 **mostly resolved 2026-07-05** | `useReturnsTheme()` migrated from hardcoded hex to CSS var tokens (`var(--surface)`, `var(--rule)`, etc.) during the Sprint 2 triage+pulse redesign — see §7. **Explicit exception retained:** `rateHigh`/`rateMid`/`rateOk` severity colors stay literal hex (`#DC2626`/`#F59E0B`/`#22C55E`) — no `--severity-*` tokens exist yet anywhere in the design system, matching the precedent already set in `FinancesIntelligencePage.tsx`'s `SignalRow`. `rateHigh` changed from `#EF4444` → `#DC2626` this session — the original red was visually indistinguishable from `--accent` orange on the dark theme at small sizes. |
+| RT2-04 | 🔴 **OPEN, blocking** | No web surface exists for owners to view, claim, or reassign unclaimed return jobs. `/returns/items` is scoped to items *already processed* and awaiting an owner decision — structurally different from the unclaimed-job queue. Confirmed via code: `ReturnsItemsPage.tsx` has zero references to job-listing/unclaimed logic. This blocks giving RT2-03's "Needs attention" orphan rows a working CTA — per `cta-deeplink-playbook.md` §7's own procedure ("check whether the destination even has the concept the alert describes" before wiring a link), the CTA was deliberately left off rather than pointed at a wrong destination. **Next planned work — see §7.** |
+| RT2-05 | 🔵 **BACKLOG, cross-module** | Pulse-card visual pattern (composition bar + legend + trend delta) differs across Overview, Orders, Finances, and Returns. Returns is now the best/most consistent implementation (§7) but the pattern was never backported to the other three. Deliberately deferred — not Returns-scoped. |
+| RET-PCD-01 | 🟢 **resolved, durably** | Was flagged as suspected PCD block; downgraded to an environmental/OAuth gap (see original note below); now durably fixed. Root cause: `shopify_app_installations.shop_id` has `ON DELETE CASCADE` from `shops` — every `dev:full-reset` deletes `shops` in its cleanup step, silently cascading away the installation row without ever referencing that table by name (hence it was invisible to a straightforward grep). Fixed 2026-07-04 in `dev_seed.ts` (`full_data` mode): a placeholder row is now (re)created on every seed run, using `encrypt()` so it's genuinely decryptable by every webhook handler's `decrypt(row.access_token, 'shopify.webhook.registration')` call — a bare placeholder string would have thrown on the first real webhook instead of the previous silent "no row" skip. **Explicit limitation, not a bug:** this placeholder token is real ciphertext but decrypts to a fake string — it unblocks webhook *shop-resolution* (refunds, order events, carrier tracking all now route correctly), but any code path that makes an actual outbound call to Shopify's API still requires a genuine OAuth handshake, which cannot be scripted from a seed file. Delivery path itself (webhooks reaching localhost at all) solved separately via Shopify's legacy per-store webhook config (Settings → Notifications → Webhooks) pointed at an ngrok tunnel — deliberately not via the app's own registered OAuth subscriptions, to avoid touching the production app's URLs while it's under Shopify App Store review. Original diagnosis retained below for the audit trail: |
 
 ---
 
@@ -138,6 +140,7 @@ Parent nav item carries no `requiredModuleId` because its two children depend on
 Full audit register (55 findings, RET-AUD-01 through RET-AUD-55) not reproduced here — see the AUDIT-mode session transcript. Returns-scoped outcomes:
 
 **Resolved this session:**
+
 - RET-AUD-06/10 → `return_jobs.source` + `triggering_parcel_tracking_event_id` (migration 0122)
 - RET-AUD-46 → `return_jobs_tenant_isolation` missing `WITH CHECK` (migration 0008 fix, pen-tested)
 - RET-AUD-08/52/53 → carrier fault-attribution: `carrier_status_map.fault_category` (migration 0123); Sendcloud handler was missing its `returned` branch entirely (Shippo had it, Sendcloud didn't — a real divergence between the two carrier handlers, not a documented feature gap); both now behave identically and surface fault category in the alert message
@@ -145,7 +148,132 @@ Full audit register (55 findings, RET-AUD-01 through RET-AUD-55) not reproduced 
 - RET-AUD-02 → closed by correction, not new code: `return_jobs` already had no `po_id` dependency (unlike `receive_jobs`) — the "no PO-less job type exists" claim in the WM-40 carrier-integration.md writeup was based on checking `receive_jobs` only and overlooking `return_jobs`
 
 **Still open:**
+
 - RET-REASON-01 (rescoped, see §2 table above) — not started
 - RET-AUD-03 — WM-41 carrier analytics aggregation (return rate by carrier/SKU); out of scope for this module, tracked in `carrier-integration.md`
-- RET-AUD-15 — every Shopify webhook handler is currently unroutable (empty `shopify_app_installations`); blocks live end-to-end verification of everything above. Verified instead via direct SQL simulation of the handler's write path (alert row) and clean TypeScript compilation (service layer) — logic confirmed sound, live webhook round-trip deferred.
 - RET-AUD-22 — `handleAppUninstalled` is an empty stub (no-op); unrelated to Returns directly but surfaced during this session's OAuth investigation
+
+**Resolved in follow-up session, same day (2026-07-04, OAuth/PCD unblock):**
+
+- RET-AUD-15 — was "every Shopify webhook handler unroutable." Root cause traced to `dev_seed.ts` never recreating `shopify_app_installations` after a reset (see RET-PCD-01 above for full detail). Fixed durably in the seed file itself — this table now self-heals on every `dev:full-data` seed run, so this class of failure should not recur. Webhook *delivery* to localhost solved separately via Shopify's legacy per-store webhook feature + ngrok, avoiding any change to the production app's registration mid-App-Store-review.
+- Live end-to-end verification of the RET-AUD-52 carrier-return logic (previously only SQL-simulated) is now actually possible for the first time — pending an actual test run.
+
+---
+
+## 7. Session Log — 2026-07-05 (Returns Sprint 2 — reconciliation loop foundation)
+
+Full audit register (RT2-AUD-01 through RT2-AUD-27) captured in the session transcript; key outcomes below.
+
+**Root finding, foundational:** confirmed via code trace (`handleRefundCreated.ts` → `returnJobs.service.ts`) that **no refund webhook ever auto-created a `return_jobs` row** — `createCustomerReturnJob`/`createUndeliveredReturnJob` existed only as operator-invoked API endpoints. Every refund was a silent, permanent orphan unless a human manually opened a job. This is the actual reason the module's core "reconciliation loop" thesis (§4, physical vs. data-fix framing) was unenforced in practice — RT-AUD-24's `shopify_app_installations` cascade bug (§6) meant this had likely never been tested with live traffic either.
+
+**Resolved this session:**
+
+- **RT2-01** — Auto-spawn a `return_jobs` row (`status: 'unclaimed'`, `claimed_by: null`, `source: 'system_auto'`) directly inside the projection handler `refunds.create.ts`, immediately after the `refund_executions` insert — not via the operator-facing service function, which assumes a human `operatorId` and opens its own `withTenant()` transaction (would have nested incorrectly inside the projection engine's own `trx`). Idempotent via the pre-existing `return_jobs_refund_execution_unique` constraint + deterministic sha1-derived `return_job_id` (same pattern as this file's existing `refund_execution_id`/`refund_line_item_id` generation) + `.onConflict().ignore()`. Verified live across three separate DB resets — jobs auto-spawn correctly every time.
+- **New `source` value** — `'system_auto'` added alongside existing `'operator'`/`'carrier_webhook'` (migration 0122). Backfill script (`apps/backend/src/scripts/backfill-return-jobs.ts`, `source: 'backfill_rt2_01'`) written for any refund predating this fix in a real environment — not needed on dev (fresh seeds have no orphans), kept in-repo for production use.
+- **RT2-AUD-21/22 — duplicate `inventory_movements` from webhook replay.** `handleRefundCreated.ts`'s `refund_return` movement insert used `randomUUID()` as `reference_id` with no idempotency guard — a genuine webhook replay (2 movements, 105ms apart, identical `occurred_at`) produced a 200% restock rate. Fixed: deterministic sha1 `reference_id` (from `refund_id:variant_id:quantity`) + new migration adding `UNIQUE (shop_id, reference_type, reference_id)` on `inventory_movements` + `.onConflict().ignore()`. Existing bad data corrected via a **compensating `reconciliation_correction` entry**, not a delete — `inventory_movements` is enforced append-only by a DB trigger (`prevent_inventory_movements_mutation`), confirmed the hard way after a `DELETE` was rejected. **Same pattern confirmed present in `handleInventoryLevelUpdate.ts`** (two `reconciliation_correction` rows, 300μs apart, same replay signature) — not fixed this session, logged as RT2-AUD-26 below.
+- **RT2-AUD-17** — Returns Overview subtitle read `total_units_returned` but labeled it "Total refunds," disagreeing with the correct stat box below it (`total_refunds`). Frontend-only bug, backend was always correct. Fixed + improved to show both numbers.
+- **RT2-AUD-18** — Restock rate uncapped, could exceed 100% (a logical impossibility — can't restock more than was returned) whenever duplicate movements existed. Fixed with `Math.min(100, ...)` at both the shop-level and per-variant calculation — two separate occurrences in `returnsIntelligence.service.ts`, both needed the same fix independently.
+- **RT2-03 — Orphan aging, full stack:**
+  - New columns `returns_aging_warning_hours` (default 48) / `returns_aging_critical_hours` (default 168) added directly to the base `shop_operational_settings` migration (`0067`) rather than a new patch migration — deliberate choice; the live dev DB's checksum-drift error on this approach was resolved via `dev:full-reset`, not by patching the checksum table directly (checksums hash file contents, not DB state — a live `ALTER TABLE` can never satisfy a file-content checksum).
+  - `getOrphanedReturnJobs(shopId)` — Type A orphans only (refunded, zero line items processed), joined against the shop's configured thresholds, oldest-first. Type B (item arrived, no refund on file) explicitly **not built** — no intake path exists today for a return with no `refund_execution` to attach to; that's Phase 2's tiered-matching-pipeline territory (§ referenced in the earlier PS-Returns-Sprint-1 roadmap), not retrofit here.
+  - `GET/PATCH /api/v1/modules/returns/settings` — new controller, mirrors `cashflow.settings.controller.ts`'s exact pattern (same table, same insert-or-merge shape), gated `requireAction('returns:decision:write')` on the PATCH (reusing the existing owner-only permission rather than inventing a new one).
+  - Settings UI — new "Returns Aging" card on Shop Settings → General, sibling to the existing Fulfillment SLA card, same `SettingsCard`/`SaveButton` shell, with client-side cross-field validation (critical > warning) mirroring the backend's own check.
+  - **Full page redesign** — `ReturnsOverviewPage.tsx` restructured from a flat stat-grid into the canonical FT2 triage+pulse layout (`modules-ux-playbook.md` §1), using a locally-defined `SignalRow` (mirrors `FinancesIntelligencePage.tsx`'s exactly) for the "Needs attention" card, and a new `CompositionBar` component for the Pulse rail (restocked-vs-pending), modeled on Overview's Business Pulse — confirmed during this session to be the strongest existing pulse-card implementation, now matched rather than left inconsistent (see RT2-05 above).
+  - `useReturnsTheme()` migrated to CSS var tokens as part of the same rewrite (RET-THEME-01, resolved above).
+
+**Still open, ordered as next work (session-end decision, 2026-07-05):**
+
+1. **RT2-04** — Build the missing web action surface for unclaimed return jobs (likely `/returns/jobs` or an extended `/returns/items`), so RT2-03's orphan signals get a real CTA per the deep-link playbook's "resolve or navigate to where resolution happens" principle — currently CTA-less by deliberate choice, not oversight.
+2. **Phase 1, completed properly** — the refund **sequencing policy engine** (hold-for-receipt / refund-on-carrier-scan / refund-on-request + value-threshold override) from the original Sprint 1 roadmap was never built this session; only the detection/orphan half was. Real architectural finding: Shopify refunds are typically already executed by the time our webhook fires — a true "hold-for-receipt" gate requires laSyncro to **originate** refunds via its own UI calling Shopify's refund API, not just react to `refunds/create` after the fact. Scoped as A1 (detection-only policy violations, smaller, buildable now) vs. A2 (true refund-initiation gate, larger, contingent on RT2-04's action-surface existing first).
+3. **RT2-05** — cross-module pulse-card unification (Orders, Finances, Overview) — explicitly deferred, not urgent.
+4. **RT2-AUD-26** — same webhook-replay duplicate-movement pattern likely present in other Shopify handlers beyond `handleRefundCreated.ts`/`handleInventoryLevelUpdate.ts`; never generalized into a full audit across all handlers under `apps/backend/src/api/shopify/handlers/`.
+5. **RET-SUP-01** (carried from §6, still unresolved) — supplier/batch correlation query is live and correct but has never returned a non-null result; needs a real receive job closed against the QA Test Supplier PO to activate.
+
+---
+
+## 8. Session Log — 2026-07-06 (WEB-RETURN-01 — physical return intake)
+
+Full workshop + build, closing the biggest gap identified in §7: no web
+surface existed for the physical side of a return arriving at the
+warehouse. Landed as a free-scan intake pattern, mirroring pack's own
+free-scan UX (WEB-PACK-02) rather than inventing a task-queue/batch
+concept — a returned parcel is worked one at a time, not batched.
+
+**Design, confirmed against real usage pattern:**
+Operator opens a parcel, finds the invoice (LSO-) and/or the original
+unit barcode (LSU-) still attached, scans whichever is present. Both
+resolve to the same order via two different paths:
+
+- LSO- → direct lookup against `orders.wms_barcode`
+- LSU- → `pick_scan_log.lasyncro_unit_id` → `order_line_items` join
+  (inventory_units carries no direct order linkage — the pick-time
+  scan log is the only durable bridge)
+
+**New endpoint:** `POST /api/v1/wms/returns/scan` (`wms:returns:scan`,
+owner/admin/operator) — `resolveReturnScan()` +
+`resolveOrCreateReturnJobForScan()` in `returnJobs.service.ts`. Three
+outcomes on one scan, no separate claim step:
+
+1. No return_job exists for the order → create one, immediately
+   claimed by the scanning operator, `source: 'scan_intake'`,
+   `lasyncro_refund_execution_id: NULL` — the parcel physically
+   arrived with no refund yet on file. This is genuinely new: the
+   first return-job creation path that doesn't originate from a
+   refund event.
+2. A `pending` job exists → claim it for the scanning operator.
+3. A job already `in_progress`/`awaiting_decision` exists → return
+   as-is, flag `claimedByOther` if held by someone else (no silent
+   reassignment).
+
+**Reconciliation guard (RT2-01 extended):** `refunds.create.ts` now
+checks for an existing refund-less job on the order *before* creating
+a new one — a refund webhook arriving after a scan-created job links
+to it via `lasyncro_refund_execution_id` UPDATE, rather than spawning
+a duplicate. Closes the loop the other direction.
+
+**Verified live, full chain, real data (not seed/simulated):**
+receive (PO → inspect → barcode-assign, generating real LSU-) → stow
+(debit/credit movements) → manual test order insert (Shopify has no
+API-side existence for dev_seed's local-only product catalog, so a
+real Shopify order couldn't reference these variants — confirmed via
+code read of `dev_seed.ts`'s product-seeding block) → release → pick
+(writes `pick_scan_log`, the LSU→order bridge) → pack (generates real
+LSO via `wms_barcode`, invoice PDF, shipping label) → both LSO- and
+LSU- scans against `/wms/returns/scan` correctly resolved to the same
+order and the same job (second scan found the first scan's job rather
+than duplicating).
+
+**Two unrelated bugs found and fixed during this verification, both
+affecting the RT2-AUD-22 constraint added in §7:**
+
+- **Multi-variant receive-close** broke immediately in production use
+  — `inventory_movements_shop_ref_unique` was `(shop_id,
+  reference_type, reference_id)` only; a receive job closing N variant
+  lines legitimately writes N movements sharing one `reference_id`,
+  all rejected as false duplicates. Fixed: added `lasyncro_variant_id`
+  to the constraint.
+- **Stow confirm** then broke on the *same* constraint for a different
+  reason — a stow task's debit (source root) and credit (destination
+  bin) movements share `reference_id` AND `lasyncro_variant_id` (same
+  unit, same task), differing only by `location_code`. Fixed: added
+  `location_code` too. Final tuple: `(shop_id, reference_type,
+  reference_id, lasyncro_variant_id, location_code)`.
+- Both fixes applied directly to the base migration (`0037`, per this
+  codebase's standing "fix base migrations, no patch files in active
+  development" rule) rather than as additional patch migrations —
+  `stow.service.ts`'s own `onConflict(['device_event_id'])` clauses
+  were untouched and didn't need editing; the failure was a *second*,
+  separate unique constraint firing underneath, unrelated to that
+  clause's own conflict target.
+
+**Backlog, logged not fixed:**
+
+| ID | Status | Description |
+|---|---|---|
+| WMS-PACK-VIZ-01 | 🔵 OPEN | Pack mode's free-scan panel shows no task/order identification before the first scan — operator scans blind. Stow's task cards (listing expected LSU- codes) are the reference pattern to mirror. |
+
+**Still open, unchanged from §7:** RT2-05 (pulse-card unification),
+RT2-AUD-26 (webhook-replay audit beyond the two handlers touched),
+RET-SUP-01 (supplier correlation activation — now genuinely
+unblockable, since a real receive job finally exists against a real
+PO in this environment; not yet exercised).

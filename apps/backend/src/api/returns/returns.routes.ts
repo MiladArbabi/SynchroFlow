@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { httpGetReturns } from './returns.controller.js';
 import { httpGetReturnsCorrelation } from './returns.correlation.controller.js';
+import { httpGetReturnsSettings, httpPatchReturnsSettings } from './returns.settings.controller.js';
 import {
   httpListReturnJobs,
   httpCreateReturnJob,
@@ -9,6 +10,8 @@ import {
   httpCompleteReturnJob,
   httpListItemsAwaitingDecision,
   httpSetOwnerDecision,
+  httpClaimReturnJob,
+  httpGetReturnJob,
 } from './returnJobs.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
@@ -29,6 +32,18 @@ router.get('/correlation',
   httpGetReturnsCorrelation
 );
 
+// ── Settings — aging thresholds (owner/admin) ─────────────────────────────────
+
+router.get('/settings',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:read'),
+  httpGetReturnsSettings
+);
+
+router.patch('/settings',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:decision:write'),
+  httpPatchReturnsSettings
+);
+
 // ── Return Jobs — operator workflow (mobile + web) ────────────────────────────
 
 router.get('/jobs',
@@ -39,6 +54,16 @@ router.get('/jobs',
 router.post('/jobs',
   authenticateToken, requireFt2, requireTier('core'), requireAction('returns:job:create'),
   httpCreateReturnJob
+);
+
+router.get('/jobs/:id',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:read'),
+  httpGetReturnJob
+);
+
+router.post('/jobs/:id/claim',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:job:claim'),
+  httpClaimReturnJob
 );
 
 router.patch('/jobs/:id/lines/:lineId',

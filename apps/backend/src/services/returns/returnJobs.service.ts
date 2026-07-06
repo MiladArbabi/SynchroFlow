@@ -50,6 +50,12 @@ export interface CreateUndeliveredReturnJobInput {
   notes?: string;
 }
 
+export interface ClaimReturnJobInput {
+  shopId: number;
+  returnJobId: string;
+  operatorId: number;
+}
+
 export interface ProcessReturnLineInput {
   shopId: number;
   returnJobId: string;
@@ -72,6 +78,64 @@ export interface SetOwnerDecisionInput {
   decision: OwnerDecision;
   decisionNotes?: string;
   decidedBy: number;
+}
+
+export interface ScanIntakeResult {
+  returnJobId: string;
+  status: string;
+  isNew: boolean;
+  claimedByOther: boolean;
+}
+
+// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
+//
+// RET-AUD service-layer task (2026-07-04). Closes the gap between
+// carrier-integration.md's WM-40 return signal (parcel_tracking_events
+// event_type='returned' → alerts row, see sendcloud/shippo.tracking
+// .handler.ts) and an actual return_jobs row. Until this function, a
+// carrier RTS event only ever produced an alert — no return_jobs row,
+// no order block, no inventory/refund resolution path.
+//
+// Deliberately a SEPARATE function from createUndeliveredReturnJob, not
+// an added parameter on it — see migration 0122's comment for why:
+// this path has no human operator, and CreateUndeliveredReturnJobInput
+// .operatorId stays required (`number`) for every genuinely
+// operator-triggered call site. This function's own input type has no
+// operatorId field at all — the absence is the honest signal, not a
+// null passed where a real value was expected.
+export interface CreateReturnJobFromCarrierEventInput {
+  shopId: number;
+  lasyncroOrderId: string;
+  triggeringParcelTrackingEventId: string;
+  notes?: string;
+}
+
+// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
+//
+// RET-AUD service-layer task (2026-07-04). Closes the gap between
+// carrier-integration.md's WM-40 return signal (parcel_tracking_events
+// event_type='returned' → alerts row) and an actual return_jobs row.
+//
+// UNLIKE every other function in this file, this one accepts an
+// OPTIONAL external trx — following the qb = trx ?? db convention
+// already established across the codebase (e.g. FinancesFacts.service.ts,
+// ProductsWmsReadinessFacts.service.ts). This is necessary, not
+// stylistic: sendcloud/shippo.tracking.handler.ts already open their
+// own db.transaction() with correct SET LOCAL tenant context before
+// calling this function. Calling withTenant() unconditionally here
+// would open a SECOND, separate connection/transaction nested inside
+// the handler's own — no atomicity between the two, and a second
+// tenant-context SET on a possibly different pooled connection. See
+// RLS_blueprint.md §7 ("Shopify sync fails with products/orders RLS
+// violation") for the exact failure class this avoids.
+//
+// Still exported as a standalone-callable function (trx omitted) for
+// any future caller that isn't already inside a transaction.
+export interface CreateReturnJobFromCarrierEventInput {
+  shopId: number;
+  lasyncroOrderId: string;
+  triggeringParcelTrackingEventId: string;
+  notes?: string;
 }
 
 // ─── Create: Customer Return ──────────────────────────────────────────────────
@@ -195,57 +259,6 @@ export async function createUndeliveredReturnJob(
   });
 }
 
-// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
-//
-// RET-AUD service-layer task (2026-07-04). Closes the gap between
-// carrier-integration.md's WM-40 return signal (parcel_tracking_events
-// event_type='returned' → alerts row, see sendcloud/shippo.tracking
-// .handler.ts) and an actual return_jobs row. Until this function, a
-// carrier RTS event only ever produced an alert — no return_jobs row,
-// no order block, no inventory/refund resolution path.
-//
-// Deliberately a SEPARATE function from createUndeliveredReturnJob, not
-// an added parameter on it — see migration 0122's comment for why:
-// this path has no human operator, and CreateUndeliveredReturnJobInput
-// .operatorId stays required (`number`) for every genuinely
-// operator-triggered call site. This function's own input type has no
-// operatorId field at all — the absence is the honest signal, not a
-// null passed where a real value was expected.
-export interface CreateReturnJobFromCarrierEventInput {
-  shopId: number;
-  lasyncroOrderId: string;
-  triggeringParcelTrackingEventId: string;
-  notes?: string;
-}
-
-// ─── Create: Undelivered Return, from Carrier Webhook ─────────────────────────
-//
-// RET-AUD service-layer task (2026-07-04). Closes the gap between
-// carrier-integration.md's WM-40 return signal (parcel_tracking_events
-// event_type='returned' → alerts row) and an actual return_jobs row.
-//
-// UNLIKE every other function in this file, this one accepts an
-// OPTIONAL external trx — following the qb = trx ?? db convention
-// already established across the codebase (e.g. FinancesFacts.service.ts,
-// ProductsWmsReadinessFacts.service.ts). This is necessary, not
-// stylistic: sendcloud/shippo.tracking.handler.ts already open their
-// own db.transaction() with correct SET LOCAL tenant context before
-// calling this function. Calling withTenant() unconditionally here
-// would open a SECOND, separate connection/transaction nested inside
-// the handler's own — no atomicity between the two, and a second
-// tenant-context SET on a possibly different pooled connection. See
-// RLS_blueprint.md §7 ("Shopify sync fails with products/orders RLS
-// violation") for the exact failure class this avoids.
-//
-// Still exported as a standalone-callable function (trx omitted) for
-// any future caller that isn't already inside a transaction.
-export interface CreateReturnJobFromCarrierEventInput {
-  shopId: number;
-  lasyncroOrderId: string;
-  triggeringParcelTrackingEventId: string;
-  notes?: string;
-}
-
 export async function createReturnJobFromCarrierEvent(
   input: CreateReturnJobFromCarrierEventInput,
   trx?: Knex | Knex.Transaction
@@ -334,7 +347,6 @@ export async function createReturnJobFromCarrierEvent(
 }
 
 // ─── Process Line Item ────────────────────────────────────────────────────────
-
 export async function processReturnLine(
   input: ProcessReturnLineInput
 ): Promise<void> {
@@ -460,7 +472,6 @@ export async function processReturnLine(
 }
 
 // ─── Complete Job ─────────────────────────────────────────────────────────────
-
 export async function completeReturnJob(
   input: CompleteReturnJobInput
 ): Promise<void> {
@@ -497,7 +508,6 @@ export async function completeReturnJob(
 }
 
 // ─── Owner Decision ───────────────────────────────────────────────────────────
-
 export async function setOwnerDecision(
   input: SetOwnerDecisionInput
 ): Promise<void> {
@@ -592,7 +602,6 @@ export async function setOwnerDecision(
 }
 
 // ─── List Jobs (mobile) ───────────────────────────────────────────────────────
-
 export async function listReturnJobs(shopId: number): Promise<unknown[]> {
   return withTenant(shopId, async (trx) => {
     return trx('return_jobs as rj')
@@ -617,8 +626,56 @@ export async function listReturnJobs(shopId: number): Promise<unknown[]> {
   });
 }
 
-// ─── List Items Awaiting Owner Decision (web) ─────────────────────────────────
+// ─── Get Single Job (web brief screen, WEB-RETURN-01) ─────────────────────────
+export async function getReturnJob(
+  shopId: number,
+  returnJobId: string
+): Promise<unknown | null> {
+  return withTenant(shopId, async (trx) => {
+    const job = await trx('return_jobs as rj')
+      .leftJoin('orders as o', 'o.lasyncro_order_id', 'rj.lasyncro_order_id')
+      .leftJoin('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'rj.lasyncro_order_id')
+      .leftJoin('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
+      .where('rj.shop_id', shopId)
+      .where('rj.return_job_id', returnJobId)
+      .select(
+        'rj.return_job_id',
+        'rj.lasyncro_refund_execution_id',
+        'rj.origin',
+        'rj.status',
+        'rj.undelivered_reason',
+        'rj.owner_decision',
+        'rj.notes',
+        'rj.claimed_by',
+        'rj.claimed_at',
+        'rj.created_at',
+        'eoim.external_order_id',
+        're.total_refund_amount',
+        're.executed_at as refund_executed_at',
+      )
+      .first();
 
+    if (!job) return null;
+
+    const lines = await trx('refund_execution_line_items as reli')
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
+      .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oru.lasyncro_variant_id')
+      .where('reli.lasyncro_refund_execution_id', job.lasyncro_refund_execution_id ?? null)
+      .select(
+        'reli.lasyncro_refund_line_item_id',
+        'reli.refunded_quantity',
+        'reli.item_condition',
+        'reli.quantity_received',
+        'reli.processed_at',
+        'v.title as variant_title',
+        'v.sku',
+      );
+
+    return { ...job, lines };
+  });
+}
+
+// ─── List Items Awaiting Owner Decision (web) ─────────────────────────────────
 export async function listItemsAwaitingDecision(shopId: number): Promise<unknown[]> {
   return withTenant(shopId, async (trx) => {
     return trx('return_jobs as rj')
@@ -645,5 +702,185 @@ export async function listItemsAwaitingDecision(shopId: number): Promise<unknown
         're.total_refund_amount',
       )
       .orderBy('rj.created_at', 'asc');
+  });
+}
+
+// ─── Claim: Return Job (WEB-RETURN-01) ────────────────────────────────────────
+export async function claimReturnJob(
+  input: ClaimReturnJobInput
+): Promise<void> {
+  const { shopId, returnJobId, operatorId } = input;
+
+  return withTenant(shopId, async (trx) => {
+    const job = await trx('return_jobs')
+      .where({ return_job_id: returnJobId, shop_id: shopId })
+      .select('status', 'claimed_by')
+      .first();
+
+    if (!job) throw new Error(`[RETURN_CLAIM] Job not found: ${returnJobId}`);
+
+    // Allow operator to re-claim their own in-progress job (e.g. after navigating back)
+    if (job.status === 'in_progress' && job.claimed_by === operatorId) return;
+
+    if (job.status !== 'pending') {
+      throw new Error(`[RETURN_CLAIM] Job not claimable: ${job.status}`);
+    }
+    if (job.claimed_by !== null) {
+      throw new Error('[RETURN_CLAIM] Job already claimed');
+    }
+
+    const now = new Date();
+    await trx('return_jobs')
+      .where({ return_job_id: returnJobId })
+      .update({
+        status: 'in_progress',
+        claimed_by: operatorId,
+        claimed_at: now,
+        updated_at: now,
+      });
+
+    console.info('[RETURN_JOB_CLAIMED]', { returnJobId, operatorId, shopId });
+
+    await writeAuditLog(trx as Knex.Transaction, {
+      shopId,
+      operatorId,
+      actionType: 'return_job_claim',
+      entityType: 'return_job',
+      entityId: returnJobId,
+      metadata: {},
+    });
+  });
+}
+
+// ─── Resolve Scan → Order (WEB-RETURN-01, free-scan intake) ───────────────────
+export async function resolveReturnScan(
+  trx: Knex.Transaction,
+  shopId: number,
+  scannedValue: string
+): Promise<{ lasyncroOrderId: string; externalOrderId: string | null; resolutionMethod: 'lso' | 'lsu' } | null> {
+  let lasyncroOrderId: string | null = null;
+  let resolutionMethod: 'lso' | 'lsu' | null = null;
+
+  // ── LSO- invoice barcode → direct order lookup ──────────────────────────
+  if (scannedValue.startsWith('LSO-')) {
+    const order = await trx('orders')
+      .where({ shop_id: shopId, wms_barcode: scannedValue })
+      .select('lasyncro_order_id')
+      .first();
+    if (order) {
+      lasyncroOrderId = order.lasyncro_order_id;
+      resolutionMethod = 'lso';
+    }
+  }
+
+  // ── LSU- unit barcode → order via pick_scan_log → order_line_items join ──
+  if (!lasyncroOrderId && scannedValue.startsWith('LSU-')) {
+    const scanRecord = await trx('pick_scan_log as psl')
+      .join('order_line_items as oli', 'oli.lasyncro_line_item_id', 'psl.lasyncro_line_item_id')
+      .where({ 'psl.shop_id': shopId, 'psl.lasyncro_unit_id': scannedValue })
+      .select('oli.lasyncro_order_id')
+      .orderBy('psl.scanned_at', 'desc')
+      .first();
+    if (scanRecord) {
+      lasyncroOrderId = scanRecord.lasyncro_order_id;
+      resolutionMethod = 'lsu';
+    }
+  }
+
+  if (!lasyncroOrderId) return null;
+
+  const identity = await trx('external_order_identity_map')
+    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+    .select('external_order_id')
+    .first();
+
+  return {
+    lasyncroOrderId,
+    externalOrderId: identity?.external_order_id ?? null,
+    resolutionMethod: resolutionMethod!,
+  };
+}
+
+/**
+ * RESOLVE-OR-CREATE-OR-CLAIM (scan intake)
+ * ------------------------------------------
+ * Unifies three cases behind one scan action, matching the pack free-scan
+ * UX: scan → session pops open ready to work, no separate claim step.
+ *
+ * 1. No return_job exists for this order → create one directly claimed
+ *    by the scanning operator. lasyncro_refund_execution_id is null —
+ *    this may predate any Shopify refund entirely (Type B intake).
+ * 2. A pending (unclaimed) job exists → claim it for this operator.
+ * 3. A job already in_progress/awaiting_decision exists → return as-is;
+ *    claimedByOther flags if a different operator holds it, so the UI
+ *    can warn rather than silently reassign.
+ */
+export async function resolveOrCreateReturnJobForScan(
+  shopId: number,
+  lasyncroOrderId: string,
+  operatorId: number
+): Promise<ScanIntakeResult> {
+  return withTenant(shopId, async (trx) => {
+    const existing = await trx('return_jobs')
+      .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
+      .whereNotIn('status', ['complete'])
+      .orderBy('created_at', 'desc')
+      .first();
+
+    const now = new Date();
+
+    if (!existing) {
+      const [job] = await trx('return_jobs')
+        .insert({
+          shop_id: shopId,
+          origin: 'customer_return',
+          lasyncro_refund_execution_id: null,
+          lasyncro_order_id: lasyncroOrderId,
+          status: 'in_progress',
+          claimed_by: operatorId,
+          claimed_at: now,
+          source: 'scan_intake',
+        })
+        .returning('return_job_id');
+
+      const returnJobId = job.return_job_id ?? job;
+
+      console.info('[RETURN_JOB_CREATED_FROM_SCAN]', { returnJobId, shopId, lasyncroOrderId, operatorId });
+
+      await writeAuditLog(trx as Knex.Transaction, {
+        shopId,
+        operatorId,
+        actionType: 'return_job_create',
+        entityType: 'return_job',
+        entityId: returnJobId,
+        metadata: { source: 'scan_intake', lasyncro_order_id: lasyncroOrderId },
+      });
+
+      return { returnJobId, status: 'in_progress', isNew: true, claimedByOther: false };
+    }
+
+    if (existing.status === 'pending') {
+      await trx('return_jobs')
+        .where({ return_job_id: existing.return_job_id })
+        .update({ status: 'in_progress', claimed_by: operatorId, claimed_at: now, updated_at: now });
+
+      await writeAuditLog(trx as Knex.Transaction, {
+        shopId,
+        operatorId,
+        actionType: 'return_job_claim',
+        entityType: 'return_job',
+        entityId: existing.return_job_id,
+        metadata: { via: 'scan_intake' },
+      });
+
+      return { returnJobId: existing.return_job_id, status: 'in_progress', isNew: false, claimedByOther: false };
+    }
+
+    return {
+      returnJobId: existing.return_job_id,
+      status: existing.status,
+      isNew: false,
+      claimedByOther: existing.claimed_by !== null && existing.claimed_by !== operatorId,
+    };
   });
 }

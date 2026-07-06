@@ -36,6 +36,7 @@ export type AuditActionType =
   | 'exception_report'
   // ── Returns ──────────────────────────────────────────────
   | 'return_job_create'
+  | 'return_job_claim'
   | 'return_line_process'
   | 'return_job_complete'
   | 'return_decision_set';
