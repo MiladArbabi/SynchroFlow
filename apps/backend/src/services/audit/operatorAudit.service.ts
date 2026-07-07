@@ -39,14 +39,16 @@ export type AuditActionType =
   | 'return_job_claim'
   | 'return_line_process'
   | 'return_job_complete'
-  | 'return_decision_set';
+  | 'return_decision_set'
+  | 'return_line_decision_set';
 export type AuditEntityType =
   | 'receive_job'
   | 'stow_task'
   | 'pick_batch'
   | 'order'
   | 'variant'
-  | 'return_job';
+  | 'return_job'
+  | 'refund_execution_line_item';
 
 export interface WriteAuditLogInput {
   shopId: number;

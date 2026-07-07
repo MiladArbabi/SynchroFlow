@@ -29,6 +29,7 @@ import {
   getReturnJob,
   CustomerReturnReason,
   createManualReturnLine,
+  setLineOwnerDecision,
 } from '../../services/returns/returnJobs.service.js';
 
 const VALID_ITEM_CONDITIONS: ItemCondition[] = ['resellable', 'repackable', 'damaged', 'unsellable'];
@@ -285,12 +286,14 @@ export const httpListItemsAwaitingDecision = async (req: Request, res: Response)
 };
 
 // ─── PATCH /items/:id/decision ────────────────────────────────────────────────
+// :id is the LINE ITEM id (lasyncro_refund_line_item_id), not the job id —
+// decisions are per-line as of the multi-line rework (2026-07-07).
 export const httpSetOwnerDecision = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const decidedBy = req.user?.userId;
   if (!shopId || !decidedBy) return res.status(401).json({ error: 'Unauthorized' });
 
-  const returnJobId = req.params.id as string;
+  const lineItemId = req.params.id as string;
   const { decision, decision_notes } = req.body;
 
   if (!decision || !VALID_OWNER_DECISIONS.includes(decision)) {
@@ -300,9 +303,9 @@ export const httpSetOwnerDecision = async (req: Request, res: Response) => {
   }
 
   try {
-    await setOwnerDecision({
+    await setLineOwnerDecision({
       shopId,
-      returnJobId,
+      lineItemId,
       decision,
       decisionNotes: decision_notes,
       decidedBy,
@@ -310,8 +313,9 @@ export const httpSetOwnerDecision = async (req: Request, res: Response) => {
     return res.status(200).json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[RETURN_DECISION_FAILED]', { shopId, returnJobId, decision, error: message });
+    console.error('[RETURN_LINE_DECISION_FAILED]', { shopId, lineItemId, decision, error: message });
     if (message.includes('not found')) return res.status(404).json({ error: message });
-    return res.status(500).json({ error: `Failed to set owner decision: ${message}` });
+    if (message.includes('does not require a decision')) return res.status(409).json({ error: message });
+    return res.status(500).json({ error: `Failed to set decision: ${message}` });
   }
 };

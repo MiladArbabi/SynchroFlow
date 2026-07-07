@@ -22,7 +22,13 @@ export async function up(knex: Knex): Promise<void> {
           'reservation_release',
           'reconciliation_correction',
           -- Owner-approved write-off from returns flow — distinct from damage for Finances traceability
-          'write_off_return'
+          'write_off_return',
+          -- Bin-to-bin/warehouse-to-warehouse move — negative at source row,
+          -- positive at destination row, same movement pair. Added to the
+          -- enum at creation rather than via a later ALTER TYPE ADD VALUE
+          -- (which required transaction:false and a two-step migration) —
+          -- folded in here since this is the base migration.
+          'location_transfer'
         );
       END IF;
     END$$;
@@ -216,7 +222,6 @@ export async function up(knex: Knex): Promise<void> {
           'inbound_purchase',
           'refund_return',
           'manual_adjustment',
-          'reconciliation_correction',
           'reservation_hold'
         )
         AND quantity_delta > 0
@@ -235,6 +240,22 @@ export async function up(knex: Knex): Promise<void> {
       OR
       (
         movement_type = 'opening_balance'
+      )
+      OR
+      (
+        -- reconciliation_correction can be either sign (Shopify reports
+        -- more or less stock than our ledger) — fix originally landed as
+        -- migration 0080, folded in here since this is the base migration.
+        movement_type = 'reconciliation_correction'
+        AND quantity_delta <> 0
+      )
+      OR
+      (
+        -- Bin-to-bin transfer — negative at source, positive at
+        -- destination, same movement pair. Fix originally landed as
+        -- migration 0116, folded in here.
+        movement_type = 'location_transfer'
+        AND quantity_delta <> 0
       )
     )
   `);

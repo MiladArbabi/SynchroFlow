@@ -89,6 +89,14 @@ export interface SetOwnerDecisionInput {
   decidedBy: number;
 }
 
+export interface SetLineOwnerDecisionInput {
+  shopId: number;
+  lineItemId: string; // lasyncro_refund_line_item_id
+  decision: OwnerDecision;
+  decisionNotes?: string;
+  decidedBy: number;
+}
+
 export interface ScanIntakeResult {
   returnJobId: string;
   status: string;
@@ -529,6 +537,12 @@ export async function completeReturnJob(
     }
     // Reason required for customer_return jobs only — undelivered_return
     // has no customer decision involved, nothing to attribute a reason to.
+    // Written to return_jobs unconditionally (WEB-RETURN-02 fix) — a
+    // scan-intake job can complete before its refund webhook ever
+    // arrives, so return_jobs is the only guaranteed-available target.
+    // Also mirrored onto refund_executions immediately when a link
+    // already exists, so existing readers of refund_executions.return_reason
+    // stay correct without waiting on the reconciliation step.
     if (job.origin === 'customer_return') {
       if (!returnReason) {
         throw new Error(`[RETURN_JOB_COMPLETE] return_reason required to complete a customer_return job`);
@@ -538,17 +552,21 @@ export async function completeReturnJob(
           .where('lasyncro_refund_execution_id', job.lasyncro_refund_execution_id)
           .update({ return_reason: returnReason, return_notes: returnNotes ?? null });
       }
-      // else: scan-intake job with no refund yet — reason has nowhere to
-      // write to today. Flagging, not solving: needs refunds.create.ts's
-      // reconciliation step to also backfill return_reason once it links
-      // the refund, same as it backfills lasyncro_refund_execution_id.
     }
+
     const now = new Date();
     await trx('return_jobs')
       .where({ return_job_id: returnJobId })
-      .update({ status: 'complete', completed_at: now, updated_at: now });
+      .update({
+        status: 'complete',
+        completed_at: now,
+        updated_at: now,
+        return_reason: job.origin === 'customer_return' ? returnReason : null,
+        return_notes: job.origin === 'customer_return' ? (returnNotes ?? null) : null,
+      });
+    
     console.info('[RETURN_JOB_COMPLETED]', { returnJobId, shopId, operatorId, returnReason });
-
+    
     await writeAuditLog(trx as Knex.Transaction, {
       shopId,
       operatorId,
@@ -654,6 +672,116 @@ export async function setOwnerDecision(
   });
 }
 
+// ─── Owner Decision — PER LINE (customer_return, damaged/unsellable) ─────────
+//
+// Replaces setOwnerDecision's per-JOB semantics for customer_return lines.
+// A multi-line order can have different lines dispositioned differently
+// (one reshipped, one written off) — setOwnerDecision incorrectly applied
+// one decision to every damaged/unsellable line on the order at once.
+// This scopes write-off (and any future per-line cascade) to exactly the
+// one line passed in. Job auto-completes once every damaged/unsellable
+// line on it has a decision — not on the first decision made.
+export async function setLineOwnerDecision(
+  input: SetLineOwnerDecisionInput
+): Promise<void> {
+  const { shopId, lineItemId, decision, decisionNotes, decidedBy } = input;
+
+  await withTenant(shopId, async (trx) => {
+    const line = await trx('refund_execution_line_items as reli')
+      .leftJoin('refund_executions as re', 're.lasyncro_refund_execution_id', 'reli.lasyncro_refund_execution_id')
+      .join('return_jobs as rj', function () {
+        this.on('rj.return_job_id', '=', 'reli.return_job_id')
+          .orOn('rj.lasyncro_refund_execution_id', '=', 'reli.lasyncro_refund_execution_id');
+      })
+      .where('reli.lasyncro_refund_line_item_id', lineItemId)
+      .where('rj.shop_id', shopId)
+      .select(
+        'reli.lasyncro_refund_line_item_id',
+        'reli.item_condition',
+        'reli.quantity_received',
+        'oru.lasyncro_variant_id',
+        'rj.return_job_id',
+        'rj.origin',
+      )
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
+      .first();
+
+    if (!line) throw new Error(`[LINE_DECISION] Line item not found: ${lineItemId}`);
+    if (!['damaged', 'unsellable'].includes(line.item_condition)) {
+      throw new Error(`[LINE_DECISION] Line item condition does not require a decision: ${line.item_condition}`);
+    }
+
+    const now = new Date();
+
+    await trx('refund_execution_line_items')
+      .where({ lasyncro_refund_line_item_id: lineItemId })
+      .update({
+        owner_decision: decision,
+        decision_notes: decisionNotes ?? null,
+        decision_by: decidedBy,
+        decision_at: now,
+      });
+
+    // ── CASCADE — scoped to THIS line only ──────────────────────────────────
+
+    if (decision === 'write_off' && line.quantity_received) {
+      const { randomUUID } = await import('crypto');
+      const wmsSettings = await trx('shop_wms_settings')
+        .where({ shop_id: shopId })
+        .select('problem_bin_location')
+        .first();
+      const writeOffLocation = wmsSettings?.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+      await trx('inventory_movements').insert({
+        lasyncro_inventory_movement_id: randomUUID(),
+        shop_id: shopId,
+        lasyncro_variant_id: line.lasyncro_variant_id,
+        location_code: writeOffLocation,
+        movement_type: 'write_off_return',
+        quantity_delta: -line.quantity_received,
+        reference_id: lineItemId, // line-scoped now, not the whole job
+        reference_type: 'return_line_item',
+        occurred_at: now,
+        operator_id: decidedBy,
+        triggered_by: 'manual',
+      });
+      console.info('[RETURN_LINE_WRITE_OFF]', { lineItemId, returnJobId: line.return_job_id, variantId: line.lasyncro_variant_id, qty: line.quantity_received });
+    }
+
+    if (decision === 'reship' && line.origin === 'undelivered_return') {
+      // Only undelivered_return jobs carry the returned_undelivered order
+      // constraint — a customer_return line has no such block to resolve.
+      await trx('order_constraints')
+        .where({ block_type: 'returned_undelivered', target_id: line.return_job_id })
+        .update({ resolved_at: now });
+    }
+
+    // ── JOB COMPLETION — only once every damaged/unsellable line is decided ──
+    const undecidedCount = await trx('refund_execution_line_items')
+      .where({ return_job_id: line.return_job_id })
+      .whereIn('item_condition', ['damaged', 'unsellable'])
+      .whereNull('owner_decision')
+      .count<{ count: string }>('lasyncro_refund_line_item_id as count')
+      .first();
+
+    if (Number(undecidedCount?.count ?? 0) === 0) {
+      await trx('return_jobs')
+        .where({ return_job_id: line.return_job_id })
+        .update({ status: 'complete', completed_at: now, updated_at: now });
+      console.info('[RETURN_JOB_ALL_LINES_DECIDED]', { returnJobId: line.return_job_id });
+    }
+
+    await writeAuditLog(trx as Knex.Transaction, {
+      shopId,
+      operatorId: decidedBy,
+      actionType: 'return_line_decision_set',
+      entityType: 'refund_execution_line_item',
+      entityId: lineItemId,
+      metadata: { decision, returnJobId: line.return_job_id, origin: line.origin },
+    });
+  });
+}
+
 // ─── List Jobs (mobile) ───────────────────────────────────────────────────────
 export async function listReturnJobs(shopId: number): Promise<unknown[]> {
   return withTenant(shopId, async (trx) => {
@@ -729,32 +857,85 @@ export async function getReturnJob(
 }
 
 // ─── List Items Awaiting Owner Decision (web) ─────────────────────────────────
-export async function listItemsAwaitingDecision(shopId: number): Promise<unknown[]> {
+export interface ReturnDecisionLine {
+  id: string; // lasyncro_refund_line_item_id
+  variant_title: string | null;
+  sku: string | null;
+  quantity: number | null;
+  item_condition: 'damaged' | 'unsellable';
+  condition_notes: string | null;
+  owner_decision: OwnerDecision | null;
+  decision_notes: string | null;
+  decided_at: string | null;
+}
+
+export interface ReturnDecisionGroup {
+  return_job_id: string;
+  external_order_id: string | null;
+  created_at: string;
+  total_refund_amount: number;
+  lines: ReturnDecisionLine[];
+}
+
+// Order-level groups, one per awaiting_decision job — replaces the old
+// flat per-line list. A job stays awaiting_decision until every
+// damaged/unsellable line has a decision (see setLineOwnerDecision),
+// so this returns ALL such lines per job, decided or not, so the modal
+// can show mixed state correctly rather than only ever showing pending
+// lines and hiding ones already resolved on a still-open job.
+export async function listItemsAwaitingDecision(shopId: number): Promise<ReturnDecisionGroup[]> {
   return withTenant(shopId, async (trx) => {
-    return trx('return_jobs as rj')
-      .leftJoin('orders as o', 'o.lasyncro_order_id', 'rj.lasyncro_order_id')
-      .leftJoin('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'rj.lasyncro_order_id')
-      .leftJoin('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
-      .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
-      .leftJoin('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
+    const rows = await trx('return_jobs as rj')
+      .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'rj.lasyncro_order_id')
+      .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
+      .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oru.lasyncro_variant_id')
       .where('rj.shop_id', shopId)
       .where('rj.status', 'awaiting_decision')
+      .where('rj.origin', 'customer_return')
+      .whereIn('reli.item_condition', ['damaged', 'unsellable'])
       .select(
         'rj.return_job_id',
-        'rj.origin',
-        'rj.undelivered_reason',
         'rj.created_at',
         'eoim.external_order_id',
-        'reli.lasyncro_refund_line_item_id',
-        'reli.item_condition',
+        're.total_refund_amount',
+        'reli.lasyncro_refund_line_item_id as line_id',
         'reli.quantity_received',
+        'reli.item_condition',
         'reli.condition_notes',
+        'reli.owner_decision',
+        'reli.decision_notes',
+        'reli.decision_at',
         'v.title as variant_title',
         'v.sku',
-        're.total_refund_amount',
       )
       .orderBy('rj.created_at', 'asc');
+
+    const groups = new Map<string, ReturnDecisionGroup>();
+    for (const row of rows) {
+      if (!groups.has(row.return_job_id)) {
+        groups.set(row.return_job_id, {
+          return_job_id: row.return_job_id,
+          external_order_id: row.external_order_id,
+          created_at: row.created_at,
+          total_refund_amount: Number(row.total_refund_amount ?? 0),
+          lines: [],
+        });
+      }
+      groups.get(row.return_job_id)!.lines.push({
+        id: row.line_id,
+        variant_title: row.variant_title,
+        sku: row.sku,
+        quantity: row.quantity_received,
+        item_condition: row.item_condition,
+        condition_notes: row.condition_notes,
+        owner_decision: row.owner_decision,
+        decision_notes: row.decision_notes,
+        decided_at: row.decision_at,
+      });
+    }
+    return Array.from(groups.values());
   });
 }
 

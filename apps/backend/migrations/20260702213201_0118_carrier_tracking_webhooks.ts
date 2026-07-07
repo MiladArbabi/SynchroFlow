@@ -86,18 +86,20 @@ export async function up(knex: Knex): Promise<void> {
     table
       .string('event_type', 64)
       .notNullable()
-      .checkIn([
-        'announced',
-        'in_transit',
-        'out_for_delivery',
-        'delivered',
-        'exception',
-        'returned',
-      ]);
+      .checkIn(['announced', 'in_transit', 'out_for_delivery', 'delivered', 'exception', 'returned']);
+    // Fault attribution — see original 0123 header comment for the honest
+    // limits here: neither Sendcloud nor Shippo's tracking webhook payload
+    // encodes *why* a parcel is returning at this granularity. Only the
+    // two unambiguous raw_status strings (damaged, lost) get backfilled
+    // below; everything else in 'exception'/'returned' is genuinely
+    // 'unknown' from this data alone, not an oversight.
+    table
+      .string('fault_category', 20)
+      .nullable()
+      .checkIn(['carrier_fault', 'customer_fault', 'unknown']);
     table.unique(['carrier_code', 'raw_status']);
   });
 
-  // Seed Sendcloud's known status codes → canonical event_type
   await knex('carrier_status_map').insert([
     { carrier_code: 'sendcloud', raw_status: 'announced', event_type: 'announced' },
     { carrier_code: 'sendcloud', raw_status: 'en_route_to_sorting_center', event_type: 'in_transit' },
@@ -107,15 +109,15 @@ export async function up(knex: Knex): Promise<void> {
     { carrier_code: 'sendcloud', raw_status: 'delivered', event_type: 'delivered' },
     { carrier_code: 'sendcloud', raw_status: 'delivery_attempt_failed', event_type: 'exception' },
     { carrier_code: 'sendcloud', raw_status: 'unable_to_deliver', event_type: 'exception' },
-    { carrier_code: 'sendcloud', raw_status: 'damaged', event_type: 'exception' },
-    { carrier_code: 'sendcloud', raw_status: 'lost', event_type: 'exception' },
-    { carrier_code: 'sendcloud', raw_status: 'returned_to_sender', event_type: 'returned' },
-    { carrier_code: 'sendcloud', raw_status: 'returned', event_type: 'returned' },
+    { carrier_code: 'sendcloud', raw_status: 'damaged', event_type: 'exception', fault_category: 'carrier_fault' },
+    { carrier_code: 'sendcloud', raw_status: 'lost', event_type: 'exception', fault_category: 'carrier_fault' },
+    { carrier_code: 'sendcloud', raw_status: 'returned_to_sender', event_type: 'returned', fault_category: 'unknown' },
+    { carrier_code: 'sendcloud', raw_status: 'returned', event_type: 'returned', fault_category: 'unknown' },
     { carrier_code: 'shippo', raw_status: 'PRE_TRANSIT', event_type: 'announced' },
     { carrier_code: 'shippo', raw_status: 'TRANSIT', event_type: 'in_transit' },
     { carrier_code: 'shippo', raw_status: 'DELIVERED', event_type: 'delivered' },
-    { carrier_code: 'shippo', raw_status: 'FAILURE', event_type: 'exception' },
-    { carrier_code: 'shippo', raw_status: 'RETURNED', event_type: 'returned' },
+    { carrier_code: 'shippo', raw_status: 'FAILURE', event_type: 'exception', fault_category: 'unknown' },
+    { carrier_code: 'shippo', raw_status: 'RETURNED', event_type: 'returned', fault_category: 'unknown' },
   ]);
 
   await knex.schema.alterTable('shop_carrier_settings', (table) => {

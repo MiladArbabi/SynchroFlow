@@ -620,4 +620,8 @@ presentational — no hooks, no `axiosInstance` calls directly. `modules/wms`'s
 `tsconfig.json` scopes `rootDir`/`include` to `src/ui/**/*` only, a hard
 compile boundary, not a convention — a module-side file cannot import from
 `apps/frontend/src/pages/`. All data access is threaded down as props from
-the owning app-side page (`WmsPage.tsx` for WMS), which alone
+the owning app-side page (`WmsPage.tsx` for WMS), which alone owns the actual
+API calls. `ReturnSessionPage` was initially written violating this (calling
+its data hooks directly) and had to be rebuilt presentational-only once the
+build failure surfaced it — check this before writing any new module-side
+session component, not after.

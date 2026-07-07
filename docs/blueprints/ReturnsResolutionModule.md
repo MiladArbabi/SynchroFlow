@@ -57,7 +57,7 @@
 | RT2-04 | 🔴 **OPEN, blocking** | No web surface exists for owners to view, claim, or reassign unclaimed return jobs. `/returns/items` is scoped to items *already processed* and awaiting an owner decision — structurally different from the unclaimed-job queue. Confirmed via code: `ReturnsItemsPage.tsx` has zero references to job-listing/unclaimed logic. This blocks giving RT2-03's "Needs attention" orphan rows a working CTA — per `cta-deeplink-playbook.md` §7's own procedure ("check whether the destination even has the concept the alert describes" before wiring a link), the CTA was deliberately left off rather than pointed at a wrong destination. **Next planned work — see §7.** |
 | RT2-05 | 🔵 **BACKLOG, cross-module** | Pulse-card visual pattern (composition bar + legend + trend delta) differs across Overview, Orders, Finances, and Returns. Returns is now the best/most consistent implementation (§7) but the pattern was never backported to the other three. Deliberately deferred — not Returns-scoped. |
 | RET-PCD-01 | 🟢 **resolved, durably** | Was flagged as suspected PCD block; downgraded to an environmental/OAuth gap (see original note below); now durably fixed. Root cause: `shopify_app_installations.shop_id` has `ON DELETE CASCADE` from `shops` — every `dev:full-reset` deletes `shops` in its cleanup step, silently cascading away the installation row without ever referencing that table by name (hence it was invisible to a straightforward grep). Fixed 2026-07-04 in `dev_seed.ts` (`full_data` mode): a placeholder row is now (re)created on every seed run, using `encrypt()` so it's genuinely decryptable by every webhook handler's `decrypt(row.access_token, 'shopify.webhook.registration')` call — a bare placeholder string would have thrown on the first real webhook instead of the previous silent "no row" skip. **Explicit limitation, not a bug:** this placeholder token is real ciphertext but decrypts to a fake string — it unblocks webhook *shop-resolution* (refunds, order events, carrier tracking all now route correctly), but any code path that makes an actual outbound call to Shopify's API still requires a genuine OAuth handshake, which cannot be scripted from a seed file. Delivery path itself (webhooks reaching localhost at all) solved separately via Shopify's legacy per-store webhook config (Settings → Notifications → Webhooks) pointed at an ngrok tunnel — deliberately not via the app's own registered OAuth subscriptions, to avoid touching the production app's URLs while it's under Shopify App Store review. Original diagnosis retained below for the audit trail: |
-| WEB-RETURN-02 | 🔴 **OPEN** | `refunds.create.ts`'s reconciliation guard (§8) links a late-arriving refund to an existing scan-intake job, but does not backfill `return_reason`/`return_notes` onto the newly-linked `refund_execution` if the job already completed with a reason captured pre-refund. Confirmed empirically via curl smoke test 2026-07-07 — reason sent, job completed successfully, `return_reason` column remained null since `lasyncro_refund_execution_id` was null at completion time. Not yet fixed. |
+| WEB-RETURN-02 | ✅ **RESOLVED, 2026-07-07** | Was three bugs, not one: (1) reconciliation guard excluded `complete` jobs from its lookup, so a scan-intake job completing before its refund arrived caused a **phantom duplicate** `return_jobs` row (zero lines) instead of linking the real one; (2) `return_reason` only ever lived on `refund_executions`, so a job completing pre-refund had nowhere to persist it at all; (3) the line-item loop ran before reconciliation, so it could insert a duplicate line for a revenue unit already covered by a manual scan-intake line. All three fixed: `return_reason`/`return_notes` added directly to `return_jobs` (§2.5); status filter removed from the reconciliation lookup; function reordered so line-items reconcile against manual lines instead of duplicating. Verified live via simulated `domain_events` replay — see §10. |
 
 ---
 
@@ -420,3 +420,129 @@ now-complete job correctly rejected `409` after the gate fix.
    owners to view/claim/reassign unclaimed jobs generally, distinct from
    the orphan aging list.
 4. **RT2-05, RT2-AUD-26, WMS-PACK-VIZ-01** (carried from §7/§8, unchanged).
+
+---
+
+## 10. Session Log — 2026-07-07, continued (Line-level decisions, seed data, WEB-RETURN-02)
+
+Second half of the same-day session (§9 covered the morning's fold-in and
+recovery-rate work). This half: a design correction to owner decisions, a
+reusable seed dataset, a migration cleanup pass, and closing WEB-RETURN-02.
+
+**Owner decisions moved from job-level to line-level — real bug, not a
+preference change.** `write_off`'s cascade (§2.5, originally) looped over
+*every* damaged/unsellable line on the whole order when a decision was made
+on any one of them — a multi-line order with one line needing `reship` and
+another needing `write_off` would have incorrectly written off both the
+moment either decision was confirmed. Caught by design review before it hit
+data, not by a test failure. Fixed:
+
+- `owner_decision`, `decision_notes`, `decision_by`, `decision_at` added to
+  `refund_execution_line_items` (folded into base migration 0008, per this
+  file's original design). `return_jobs`' own copies of these columns are
+  now legacy/summary-only — mobile's job-list view still reads them, but
+  nothing writes to them anymore.
+- New `setLineOwnerDecision()` — cascade scoped to exactly the one line
+  passed in. Job auto-completes only once every damaged/unsellable line on
+  it has a decision, checked via a live count query after each line
+  decision, not on the first one made.
+- `PATCH /items/:id/decision`'s `:id` now means the line item, not the job.
+- `listItemsAwaitingDecision()` reworked to return order-level groups
+  (`{ return_job_id, lines: [...] }`) rather than a flat per-line list —
+  necessary since a job can now have mixed state (one line decided,
+  one still pending) and the old flat shape couldn't represent that.
+- Frontend (`ReturnsItemsPage.tsx`) rebuilt: order cards in the list view,
+  `EntityDetailModal` (shared shell, matching Orders' pattern) on click,
+  one decision row per line inside.
+
+**Two live bugs found via this rework, both real, both fixed:**
+
+1. **`inventory_movement_sign_check` was missing `write_off_return`
+   entirely** — a pre-existing schema gap dating to migration 0037 (Feb
+   2026), never caught before because no write-off had ever actually been
+   attempted through the live API until this session (every prior
+   verification was DB-state inspection after direct SQL seeding). Traced
+   further: two *later* migrations (0080, April — fixing
+   `reconciliation_correction`'s sign; 0116, June — adding
+   `location_transfer`) each dropped and recreated this constraint, and
+   both times silently omitted `write_off_return` from the rewrite,
+   compounding the same regression twice. Fixed by merging all three
+   migrations' intent into 0037 directly (per this codebase's "fix base
+   migrations" convention) — 0080 and 0116 deleted as separate files.
+   `location_transfer` also moved into the enum's initial `CREATE TYPE`
+   list, eliminating 0116's `ALTER TYPE ADD VALUE` / `transaction: false`
+   workaround entirely, since the value now exists at creation. Verified
+   live: write-off through the UI now produces a correct negative
+   `quantity_delta` row with `reference_type: 'return_line_item'`
+   (line-scoped, confirming the new per-line cascade path, not a fallback
+   to the old job-scoped one).
+2. **Decision modal stayed open, fully empty, after the last line on a job
+   was decided.** The job disappears from `listItemsAwaitingDecision`'s
+   results the moment it's no longer `awaiting_decision`, but
+   `selectedJobId` state wasn't cleared — `selectedGroup` resolved to
+   `undefined` while the modal's `entityId` prop was still set. Fixed with
+   a `useEffect` that closes the modal once its selected job drops out of
+   the list (guarded on `!isLoading` to avoid a flash-close mid-refetch).
+
+**Migration consolidation, broader than the returns-decisions change
+above.** Per explicit preference — always fix base migrations, never leave
+patch files in active development — three additional patch migrations were
+folded back in while touching this schema:
+
+- `0122` (`return_jobs` carrier linkage: `source` column, FK to
+  `parcel_tracking_events`) → `source` merged into 0008; the FK itself
+  genuinely can't merge (predates `parcel_tracking_events`, created in
+  0118) — landed as one small, clearly-labeled migration
+  (`0118a_return_jobs_carrier_event_fk`) rather than left as a
+  same-named continuation of the old numbering.
+- `0123` (`carrier_status_map.fault_category`) → merged into 0118
+  (`carrier_status_map`'s actual owning migration — 0123 had incorrectly
+  targeted 0008 in spirit, since it's a carrier-integration concern, not
+  a returns one).
+- `0124` (scan-intake nullable FK relaxation on
+  `refund_execution_line_items`) → merged into 0008 directly.
+
+Net: five separate migration files (0122, 0123, 0124, 0080, 0116) reduced
+to zero new files plus one unavoidable small one, with 0008/0037/0118 each
+now reflecting their true, current, final shape rather than requiring a
+reader to trace forward through several later patches to understand what a
+table actually looks like today.
+
+**Seed data — `seed_returns_test_data.sql`, wired into `dev:full-seed`.**
+Built to give the Returns UI real, varied test data (orphan aging buckets
+at all three severities, damaged/repackable/resellable/unsellable
+conditions, Type A and Type B jobs, a multi-line mixed-decision scenario)
+without manual re-seeding after every reset. Went through two real
+failures before landing correctly, both informative:
+
+- **First version hardcoded UUIDs** captured from one live snapshot of the
+  dev DB — broke immediately on the next `db:reset`, since `orders`,
+  `variants`, etc. all get fresh UUIDs every reset. Rewritten to resolve
+  everything dynamically by `external_order_id` + `sku`.
+- **Second version still broke** — `dev_seed.ts` doesn't just regenerate
+  UUIDs, it generates entirely different SKU strings and order numbers
+  per run (`APP-82994-8018` etc., not stable business-like names).
+  Neither `external_order_id` nor `sku` is a stable anchor across resets
+  in this seed mode. Final version picks N distinct order/line-item pairs
+  by **position** (a temp table, `ROW_NUMBER()` over a stable sort) rather
+  than by identity — genuinely reset-safe, verified via a full
+  `npm run dev:full-seed` pass end-to-end.
+- The multi-line scenario (#12) is opportunistic by design — it only
+  creates a real two-line test case when that run's dataset happens to
+  contain an order with 2+ lines; safely no-ops (`INSERT 0 0`) otherwise,
+  confirmed both ways across different resets.
+
+**WEB-RETURN-02, closed — see §2's updated row above for the fix summary.**
+Verified live via a constructed test: a `return_jobs` row seeded directly
+to match exactly what the app produces (`source: 'scan_intake'`,
+`status: 'complete'`, `return_reason: 'changed_mind'`, no refund linked),
+then a real `domain_events` row of type `refunds/create` inserted and
+processed through an actual `npm run rebuild` pass — not a mocked call,
+the real projection replay pipeline. Confirmed after: exactly one
+`return_jobs` row for the order (no phantom duplicate), correctly linked
+to a real `refund_executions` row, `return_reason` present on both tables.
+
+**Still open, unchanged:** mobile returns UI does not exist — the entire
+free-scan fold-in (§9) and line-level decision rework (this section) are
+web-only, per the explicit web-first priority set earlier this session.
+No other open items remain from this session's original register.
