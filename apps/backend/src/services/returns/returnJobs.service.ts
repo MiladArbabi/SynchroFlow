@@ -26,11 +26,16 @@ import { Knex } from 'knex';
 import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { createStowTask } from '../wms/stow.service.js';
+import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type ReturnJobOrigin = 'customer_return' | 'undelivered_return';
 export type UndeliveredReason = 'wrong_address' | 'not_claimed' | 'customs' | 'carrier_error' | 'other';
+export type CustomerReturnReason =
+  | 'wrong_item' | 'damaged_in_transit' | 'damaged_on_arrival'
+  | 'not_as_described' | 'quality_issue' | 'changed_mind'
+  | 'duplicate_order' | 'other';
 export type OwnerDecision = 'reship' | 'contact_customer' | 'initiate_refund' | 'write_off';
 export type ItemCondition = 'resellable' | 'repackable' | 'damaged' | 'unsellable';
 
@@ -38,6 +43,8 @@ export interface CreateCustomerReturnJobInput {
   shopId: number;
   lasyncroRefundExecutionId: string;
   lasyncroOrderId: string;
+  returnReason: CustomerReturnReason;
+  returnNotes?: string;
   operatorId: number;
   notes?: string;
 }
@@ -70,6 +77,8 @@ export interface CompleteReturnJobInput {
   shopId: number;
   returnJobId: string;
   operatorId: number;
+  returnReason?: CustomerReturnReason;
+  returnNotes?: string;
 }
 
 export interface SetOwnerDecisionInput {
@@ -138,13 +147,24 @@ export interface CreateReturnJobFromCarrierEventInput {
   notes?: string;
 }
 
+export interface CreateManualReturnLineInput {
+  shopId: number;
+  returnJobId: string;
+  scannedValue: string; // product barcode, resolved via resolveBarcode
+  quantityReceived: number;
+  itemCondition: ItemCondition;
+  conditionNotes?: string;
+  operatorId: number;
+}
+
 // ─── Create: Customer Return ──────────────────────────────────────────────────
 
 export async function createCustomerReturnJob(
   input: CreateCustomerReturnJobInput
 ): Promise<string> {
-  const { shopId, lasyncroRefundExecutionId, lasyncroOrderId, operatorId, notes } = input;
-
+  
+  const { shopId, lasyncroRefundExecutionId, lasyncroOrderId, operatorId, notes, returnReason, returnNotes } = input;
+  
   return withTenant(shopId, async (trx) => {
     // Verify refund execution exists and belongs to this shop
     const refund = await trx('refund_executions as re')
@@ -155,6 +175,14 @@ export async function createCustomerReturnJob(
       .first();
 
     if (!refund) throw new Error(`[RETURN_JOB_CREATE] Refund execution not found: ${lasyncroRefundExecutionId}`);
+    // Reason captured at operator intake — writes back to refund_executions,
+    // the table of record for return_reason (RT2 reason taxonomy write path).
+    await trx('refund_executions')
+      .where('lasyncro_refund_execution_id', lasyncroRefundExecutionId)
+      .update({
+        return_reason: returnReason,
+        return_notes: returnNotes ?? null,
+      });
 
     const [job] = await trx('return_jobs')
       .insert({
@@ -346,6 +374,60 @@ export async function createReturnJobFromCarrierEvent(
   return withTenant(shopId, (innerTrx) => runWith(innerTrx));
 }
 
+// ─── Shared cascade — condition determines what happens next ─────────────────
+// Used by both processReturnLine (existing refund-linked lines) and
+// createManualReturnLine (scan-intake lines with no refund yet). Same
+// physical item, same cascade — condition doesn't care where the line
+// came from.
+async function applyReturnLineCascade(
+  trx: Knex | Knex.Transaction,
+  input: { shopId: number; returnJobId: string; lasyncroVariantId: string; quantityReceived: number; itemCondition: ItemCondition }
+): Promise<void> {
+  const { shopId, returnJobId, lasyncroVariantId, quantityReceived, itemCondition } = input;
+  const now = new Date();
+
+  if (itemCondition === 'resellable') {
+    await createStowTask(trx as Knex.Transaction, {
+      shopId,
+      lasyncroVariantId,
+      quantity: quantityReceived,
+      trigger: 'inbound_stock',
+    });
+    console.info('[RETURN_LINE_RESELLABLE]', { returnJobId, variantId: lasyncroVariantId, qty: quantityReceived });
+  }
+
+  if (itemCondition === 'repackable') {
+    const seqResult = await trx.raw(`
+      UPDATE shop_wms_settings
+      SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
+      WHERE shop_id = ?
+      RETURNING prob_label_sequence, problem_bin_location
+    `, [shopId]);
+    const seqRow = seqResult.rows[0];
+    const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
+    const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+    await trx('problem_center_tasks').insert({
+      shop_id: shopId,
+      status: 'open',
+      source: 'returns',
+      source_exception_id: returnJobId,
+      lasyncro_variant_id: lasyncroVariantId,
+      quantity: quantityReceived,
+      exception_type: 'repackaging_required',
+      problem_bin_location: problemBin,
+      notes: probLabel,
+    });
+    console.info('[RETURN_LINE_REPACKABLE]', { returnJobId, variantId: lasyncroVariantId, probLabel });
+  }
+
+  if (itemCondition === 'damaged' || itemCondition === 'unsellable') {
+    await trx('return_jobs')
+      .where({ return_job_id: returnJobId })
+      .update({ status: 'awaiting_decision', updated_at: now });
+    console.info('[RETURN_LINE_FLAGGED]', { returnJobId, itemCondition, variantId: lasyncroVariantId });
+  }
+}
+
 // ─── Process Line Item ────────────────────────────────────────────────────────
 export async function processReturnLine(
   input: ProcessReturnLineInput
@@ -396,53 +478,13 @@ export async function processReturnLine(
       .update({ status: 'in_progress', updated_at: now });
 
     // ── CASCADE ──────────────────────────────────────────────────────────────
-
-    if (itemCondition === 'resellable') {
-      // Auto-create stow task — inventory restored when stow completes
-      await createStowTask(trx as Knex.Transaction, {
-        shopId,
-        lasyncroVariantId: line.lasyncro_variant_id,
-        quantity: quantityReceived,
-        trigger: 'inbound_stock',
-      });
-      console.info('[RETURN_LINE_RESELLABLE]', { returnJobId, variantId: line.lasyncro_variant_id, qty: quantityReceived });
-    }
-
-    if (itemCondition === 'repackable') {
-      // Problem Center task — repackaging required before restow
-      // Uses existing httpCreateProblemTask pattern directly on DB
-      const seqResult = await trx.raw(`
-        UPDATE shop_wms_settings
-        SET prob_label_sequence = prob_label_sequence + 1, updated_at = NOW()
-        WHERE shop_id = ?
-        RETURNING prob_label_sequence, problem_bin_location
-      `, [shopId]);
-      const seqRow = seqResult.rows[0];
-      const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
-      const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
-
-      await trx('problem_center_tasks').insert({
-        shop_id: shopId,
-        status: 'open',
-        source: 'returns',
-        source_exception_id: returnJobId,
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        quantity: quantityReceived,
-        exception_type: 'repackaging_required',
-        problem_bin_location: problemBin,
-        notes: probLabel,
-      });
-      console.info('[RETURN_LINE_REPACKABLE]', { returnJobId, variantId: line.lasyncro_variant_id, probLabel });
-    }
-
-    if (itemCondition === 'damaged' || itemCondition === 'unsellable') {
-      // Mark job as awaiting owner decision
-      await trx('return_jobs')
-        .where({ return_job_id: returnJobId })
-        .update({ status: 'awaiting_decision', updated_at: now });
-      console.info('[RETURN_LINE_FLAGGED]', { returnJobId, itemCondition, variantId: line.lasyncro_variant_id });
-      // Alert fires via separate alert worker — job status change is the trigger signal
-    }
+    await applyReturnLineCascade(trx, {
+      shopId,
+      returnJobId,
+      lasyncroVariantId: line.lasyncro_variant_id,
+      quantityReceived,
+      itemCondition,
+    });
 
     // Shortfall detection — customer claimed more units than arrived
     if (quantityReceived < line.refunded_quantity) {
@@ -475,26 +517,37 @@ export async function processReturnLine(
 export async function completeReturnJob(
   input: CompleteReturnJobInput
 ): Promise<void> {
-  const { shopId, returnJobId, operatorId } = input;
-
+  const { shopId, returnJobId, operatorId, returnReason, returnNotes } = input;
   await withTenant(shopId, async (trx) => {
     const job = await trx('return_jobs')
       .where({ return_job_id: returnJobId, shop_id: shopId })
-      .select('status')
+      .select('status', 'origin', 'lasyncro_refund_execution_id')
       .first();
-
     if (!job) throw new Error(`[RETURN_JOB_COMPLETE] Job not found: ${returnJobId}`);
-    // Allow complete only when no lines are awaiting decision
     if (job.status === 'awaiting_decision') {
       throw new Error(`[RETURN_JOB_COMPLETE] Job has items awaiting owner decision — cannot complete`);
     }
-
+    // Reason required for customer_return jobs only — undelivered_return
+    // has no customer decision involved, nothing to attribute a reason to.
+    if (job.origin === 'customer_return') {
+      if (!returnReason) {
+        throw new Error(`[RETURN_JOB_COMPLETE] return_reason required to complete a customer_return job`);
+      }
+      if (job.lasyncro_refund_execution_id) {
+        await trx('refund_executions')
+          .where('lasyncro_refund_execution_id', job.lasyncro_refund_execution_id)
+          .update({ return_reason: returnReason, return_notes: returnNotes ?? null });
+      }
+      // else: scan-intake job with no refund yet — reason has nowhere to
+      // write to today. Flagging, not solving: needs refunds.create.ts's
+      // reconciliation step to also backfill return_reason once it links
+      // the refund, same as it backfills lasyncro_refund_execution_id.
+    }
     const now = new Date();
     await trx('return_jobs')
       .where({ return_job_id: returnJobId })
       .update({ status: 'complete', completed_at: now, updated_at: now });
-
-    console.info('[RETURN_JOB_COMPLETED]', { returnJobId, shopId, operatorId });
+    console.info('[RETURN_JOB_COMPLETED]', { returnJobId, shopId, operatorId, returnReason });
 
     await writeAuditLog(trx as Knex.Transaction, {
       shopId,
@@ -752,55 +805,6 @@ export async function claimReturnJob(
   });
 }
 
-// ─── Resolve Scan → Order (WEB-RETURN-01, free-scan intake) ───────────────────
-export async function resolveReturnScan(
-  trx: Knex.Transaction,
-  shopId: number,
-  scannedValue: string
-): Promise<{ lasyncroOrderId: string; externalOrderId: string | null; resolutionMethod: 'lso' | 'lsu' } | null> {
-  let lasyncroOrderId: string | null = null;
-  let resolutionMethod: 'lso' | 'lsu' | null = null;
-
-  // ── LSO- invoice barcode → direct order lookup ──────────────────────────
-  if (scannedValue.startsWith('LSO-')) {
-    const order = await trx('orders')
-      .where({ shop_id: shopId, wms_barcode: scannedValue })
-      .select('lasyncro_order_id')
-      .first();
-    if (order) {
-      lasyncroOrderId = order.lasyncro_order_id;
-      resolutionMethod = 'lso';
-    }
-  }
-
-  // ── LSU- unit barcode → order via pick_scan_log → order_line_items join ──
-  if (!lasyncroOrderId && scannedValue.startsWith('LSU-')) {
-    const scanRecord = await trx('pick_scan_log as psl')
-      .join('order_line_items as oli', 'oli.lasyncro_line_item_id', 'psl.lasyncro_line_item_id')
-      .where({ 'psl.shop_id': shopId, 'psl.lasyncro_unit_id': scannedValue })
-      .select('oli.lasyncro_order_id')
-      .orderBy('psl.scanned_at', 'desc')
-      .first();
-    if (scanRecord) {
-      lasyncroOrderId = scanRecord.lasyncro_order_id;
-      resolutionMethod = 'lsu';
-    }
-  }
-
-  if (!lasyncroOrderId) return null;
-
-  const identity = await trx('external_order_identity_map')
-    .where({ shop_id: shopId, lasyncro_order_id: lasyncroOrderId })
-    .select('external_order_id')
-    .first();
-
-  return {
-    lasyncroOrderId,
-    externalOrderId: identity?.external_order_id ?? null,
-    resolutionMethod: resolutionMethod!,
-  };
-}
-
 /**
  * RESOLVE-OR-CREATE-OR-CLAIM (scan intake)
  * ------------------------------------------
@@ -882,5 +886,58 @@ export async function resolveOrCreateReturnJobForScan(
       isNew: false,
       claimedByOther: existing.claimed_by !== null && existing.claimed_by !== operatorId,
     };
+  });
+}
+
+export async function createManualReturnLine(
+  input: CreateManualReturnLineInput
+): Promise<string> {
+  const { shopId, returnJobId, scannedValue, quantityReceived, itemCondition, conditionNotes, operatorId } = input;
+  return withTenant(shopId, async (trx) => {
+    const resolved = await resolveBarcode(trx, shopId, scannedValue);
+    if (!resolved) throw new Error(`[RETURN_LINE_MANUAL] Barcode not recognised: ${scannedValue}`);
+
+    // Reuse order_revenue_units if this variant/order combo already has one
+    // (it usually will — the order was fulfilled through us); otherwise this
+    // is an edge case needing its own resolution, flagged not solved here.
+    const job = await trx('return_jobs').where({ return_job_id: returnJobId, shop_id: shopId }).first();
+    if (!job) throw new Error(`[RETURN_LINE_MANUAL] Return job not found: ${returnJobId}`);
+    if (!['pending', 'in_progress'].includes(job.status)) {
+      throw new Error(`[RETURN_LINE_MANUAL] Job not processable: ${job.status}`);
+    }
+    
+    const revenueUnit = await trx('order_revenue_units')
+      .where({ lasyncro_order_id: job.lasyncro_order_id, lasyncro_variant_id: resolved.lasyncro_variant_id })
+      .select('lasyncro_revenue_unit_id')
+      .first();
+    if (!revenueUnit) throw new Error(`[RETURN_LINE_MANUAL] No matching order line for this variant — scan the order barcode first`);
+
+    const [line] = await trx('refund_execution_line_items')
+      .insert({
+        lasyncro_refund_line_item_id: trx.raw('gen_random_uuid()'),
+        lasyncro_refund_execution_id: null,
+        lasyncro_revenue_unit_id: revenueUnit.lasyncro_revenue_unit_id,
+        return_job_id: returnJobId,
+        refunded_quantity: quantityReceived,
+        quantity_received: quantityReceived,
+        item_condition: itemCondition,
+        condition_notes: conditionNotes ?? null,
+        processed_by: operatorId,
+        processed_at: new Date(),
+        source: 'scan_intake_manual',
+      })
+      .returning('lasyncro_refund_line_item_id');
+
+    console.info('[RETURN_LINE_MANUAL_CREATED]', { returnJobId, variantId: resolved.lasyncro_variant_id, shopId });
+
+    await applyReturnLineCascade(trx, {
+      shopId,
+      returnJobId,
+      lasyncroVariantId: resolved.lasyncro_variant_id,
+      quantityReceived,
+      itemCondition,
+    });
+
+    return line.lasyncro_refund_line_item_id;
   });
 }

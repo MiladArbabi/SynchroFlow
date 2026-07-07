@@ -30,8 +30,7 @@ import {
 } from '../../services/wms/packDecision.service.js';
 import { encrypt } from '../../security/encryption.service.js';
 import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service.js';
-import { resolveReturnScan, resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
-
+import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
 // ─────────────────────────────────────────
@@ -740,6 +739,16 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           .first();
 
         if (!batchOrder) {
+          // No active packing batch — check if this order already shipped
+          // entirely, which means the invoice scan is a return, not an error.
+          const shipStatus = await trx('order_warehouse_status')
+            .where({ lasyncro_order_id: order.lasyncro_order_id })
+            .select('status')
+            .first();
+          if (shipStatus?.status === 'shipped' || shipStatus?.status === 'partially_shipped') {
+            const jobResult = await resolveOrCreateReturnJobForScan(shopId, order.lasyncro_order_id, userId);
+            return { type: 'return', lasyncro_order_id: order.lasyncro_order_id, ...jobResult };
+          }
           return { error: 'batch_not_packing', message: 'No active packing batch found for this order' };
         }
 
@@ -863,8 +872,28 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           .first();
 
         if (!unit) return { error: 'unit_not_found', message: 'Unit barcode not recognised' };
-        if (unit.status === 'packed' || unit.status === 'shipped') {
-          return { error: 'already_packed', message: `Unit is already ${unit.status}` };
+        if (unit.status === 'shipped') {
+          // Already left the building — this scan is a return, not a
+          // duplicate pack. Fold into the same free-scan surface rather
+          // than sending the operator to a separate screen.
+          const pickLogForReturn = await trx('pick_scan_log')
+            .where({ shop_id: shopId, lasyncro_unit_id: scanned_value, status: 'confirmed' })
+            .select('lasyncro_line_item_id')
+            .first();
+          const lineItemForReturn = pickLogForReturn
+            ? await trx('order_line_items')
+                .where({ lasyncro_line_item_id: pickLogForReturn.lasyncro_line_item_id })
+                .select('lasyncro_order_id')
+                .first()
+            : null;
+          if (!lineItemForReturn) {
+            return { error: 'return_order_unresolved', message: 'Item is shipped but its order could not be resolved for return intake' };
+          }
+          const jobResult = await resolveOrCreateReturnJobForScan(shopId, lineItemForReturn.lasyncro_order_id, userId);
+          return { type: 'return', lasyncro_order_id: lineItemForReturn.lasyncro_order_id, ...jobResult };
+        }
+        if (unit.status === 'packed') {
+          return { error: 'already_packed', message: 'Unit is already packed' };
         }
         if (unit.status !== 'picked') {
           return { error: 'not_picked', message: `Unit cannot be packed — current status: ${unit.status}` };
@@ -3557,37 +3586,4 @@ export const httpBulkGenerateShippingLabels = async (req: Request, res: Response
   console.info('[BULK_GENERATE_LABEL_COMPLETE]', { shopId, total: results.length, succeeded, failed });
 
   return res.status(200).json({ results, summary: { total: results.length, succeeded, failed } });
-};
-
-// ─── POST /wms/returns/scan (WEB-RETURN-01, free-scan intake) ─────────────────
-
-export const httpReturnScan = async (req: Request, res: Response) => {
-  const shopId = req.user?.shopId;
-  const operatorId = req.user?.userId;
-  if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
-
-  const { scanned_value } = req.body;
-  if (!scanned_value) return res.status(400).json({ error: 'scanned_value required' });
-
-  try {
-    const resolution = await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return resolveReturnScan(trx, shopId, scanned_value);
-    });
-
-    if (!resolution) {
-      return res.status(404).json({ error: 'Could not resolve scanned code to an order. Try manual lookup.' });
-    }
-
-    const jobResult = await resolveOrCreateReturnJobForScan(shopId, resolution.lasyncroOrderId, operatorId);
-
-    return res.status(200).json({
-      ...resolution,
-      ...jobResult,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[RETURN_SCAN_FAILED]', { shopId, scanned_value, error: message });
-    return res.status(500).json({ error: `Failed to resolve return scan: ${message}` });
-  }
 };

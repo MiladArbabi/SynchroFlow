@@ -24,6 +24,7 @@ type ReceiveJobLine,
 import StowSessionPage from './StowSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
+import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -151,6 +152,11 @@ export type WmsModuleFT2Props = {
   pendingPackBatchId?: string | null;
   /** Called when operator enters a pack session — parent sets URL param for refresh recovery. */
   onPackSessionEnter?: (batchId: string) => void;
+
+  onFetchReturnJob: (returnJobId: string) => Promise<ReturnJobDetail>;
+  onAddReturnLine: (returnJobId: string, input: AddReturnLineInput) => Promise<void>;
+  onProcessReturnLine: (returnJobId: string, input: UpdateReturnLineInput) => Promise<void>;
+  onCompleteReturnJob: (returnJobId: string, input: CompleteReturnJobInput) => Promise<void>;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -456,6 +462,7 @@ export interface PackFreeScanResult {
 export type PackFreeScanApiResponse =
   | PackFreeScanResult
   | { type: 'shipped'; lasyncro_order_id: string; external_order_id: string; pick_batch_id: string; batch_complete: boolean }
+  | { type: 'return'; lasyncro_order_id: string; returnJobId: string; status: string; isNew: boolean; claimedByOther: boolean }
   | { error: string; message: string };
 
 type ActiveSession =
@@ -463,6 +470,7 @@ type ActiveSession =
   | { type: 'pack'; freeScanResult: PackFreeScanResult }
   | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
   | { type: 'stow'; taskId: string }
+  | { type: 'return'; returnJobId: string }
   | null;
 
 function WmsModuleFT2Inner({
@@ -514,6 +522,11 @@ function WmsModuleFT2Inner({
   onPackSessionEnter,
   onRaisePackDecision,
   onPollPackDecision,
+
+  onFetchReturnJob,
+  onAddReturnLine,
+  onProcessReturnLine,
+  onCompleteReturnJob,
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -585,6 +598,14 @@ function WmsModuleFT2Inner({
       }
       if (result.type === 'unit_resolved') {
         setActiveSession({ type: 'pack', freeScanResult: result });
+      }
+      if (result.type === 'return') {
+        if (result.claimedByOther) {
+          setPackScanError('This return is already claimed by another operator.');
+          packErrorTimerRef.current = setTimeout(() => setPackScanError(null), 3500);
+          return;
+        }
+        setActiveSession({ type: 'return', returnJobId: result.returnJobId });
       }
     } catch (err: any) {
       const msg: string = err?.response?.data?.message ?? err?.message ?? 'Scan failed — try again';
@@ -663,6 +684,19 @@ function WmsModuleFT2Inner({
         onResolveBarcode={onResolveBarcode}
         onConfirmStow={(taskId, qty, lasyncroUnitId) => onConfirmStow?.(taskId, qty, lasyncroUnitId) ?? Promise.resolve()}
         onReportException={(taskId, params) => onReportStowException?.(taskId, params) ?? Promise.resolve({})}
+      />
+    );
+  }
+
+  if (activeSession?.type === 'return') {
+    return (
+      <ReturnSessionPage
+        returnJobId={activeSession.returnJobId}
+        onFetchReturnJob={onFetchReturnJob}
+        onAddReturnLine={onAddReturnLine}
+        onProcessReturnLine={onProcessReturnLine}
+        onCompleteReturnJob={onCompleteReturnJob}
+        onComplete={exitSession}
       />
     );
   }

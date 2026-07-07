@@ -27,10 +27,13 @@ import {
   type ItemCondition,
   claimReturnJob,
   getReturnJob,
+  CustomerReturnReason,
+  createManualReturnLine,
 } from '../../services/returns/returnJobs.service.js';
 
 const VALID_ITEM_CONDITIONS: ItemCondition[] = ['resellable', 'repackable', 'damaged', 'unsellable'];
 const VALID_UNDELIVERED_REASONS: UndeliveredReason[] = ['wrong_address', 'not_claimed', 'customs', 'carrier_error', 'other'];
+const VALID_RETURN_REASONS: CustomerReturnReason[] = ['wrong_item', 'damaged_in_transit', 'damaged_on_arrival', 'not_as_described', 'quality_issue', 'changed_mind', 'duplicate_order', 'other'];
 const VALID_OWNER_DECISIONS: OwnerDecision[] = ['reship', 'contact_customer', 'initiate_refund', 'write_off'];
 
 // ─── GET /jobs ────────────────────────────────────────────────────────────────
@@ -93,9 +96,8 @@ export const httpCreateReturnJob = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const operatorId = req.user?.userId;
   if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
-
-  const { origin, lasyncro_refund_execution_id, lasyncro_order_id, undelivered_reason, notes } = req.body;
-
+  
+  const { origin, lasyncro_refund_execution_id, lasyncro_order_id, undelivered_reason, return_reason, return_notes, notes } = req.body;
   if (!origin || !lasyncro_order_id) {
     return res.status(400).json({ error: 'origin and lasyncro_order_id are required' });
   }
@@ -107,13 +109,24 @@ export const httpCreateReturnJob = async (req: Request, res: Response) => {
       if (!lasyncro_refund_execution_id) {
         return res.status(400).json({ error: 'lasyncro_refund_execution_id required for customer_return' });
       }
+      if (!return_reason || !VALID_RETURN_REASONS.includes(return_reason)) {
+        return res.status(400).json({
+          error: `return_reason required for customer_return. Valid values: ${VALID_RETURN_REASONS.join(', ')}`,
+        });
+      }
+      if (return_reason === 'other' && !return_notes) {
+        return res.status(400).json({ error: 'return_notes required when return_reason is "other"' });
+      }
       returnJobId = await createCustomerReturnJob({
         shopId,
         lasyncroRefundExecutionId: lasyncro_refund_execution_id,
         lasyncroOrderId: lasyncro_order_id,
         operatorId,
         notes,
+        returnReason: return_reason,
+        returnNotes: return_notes,
       });
+      
     } else if (origin === 'undelivered_return') {
       if (!undelivered_reason || !VALID_UNDELIVERED_REASONS.includes(undelivered_reason)) {
         return res.status(400).json({
@@ -181,23 +194,77 @@ export const httpProcessReturnLine = async (req: Request, res: Response) => {
   }
 };
 
-// ─── POST /jobs/:id/complete ──────────────────────────────────────────────────
+// ─── POST /jobs/:id/lines (manual line add — scan_intake, pre-refund) ────────
+export const httpAddManualReturnLine = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const operatorId = req.user?.userId;
+  if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
 
+  const returnJobId = req.params.id as string;
+  const { scanned_value, quantity_received, item_condition, condition_notes } = req.body;
+
+  if (!scanned_value) return res.status(400).json({ error: 'scanned_value required' });
+  if (!quantity_received || quantity_received < 1) return res.status(400).json({ error: 'quantity_received must be at least 1' });
+  if (!item_condition || !VALID_ITEM_CONDITIONS.includes(item_condition)) {
+    return res.status(400).json({
+      error: `item_condition required. Valid values: ${VALID_ITEM_CONDITIONS.join(', ')}`,
+    });
+  }
+  if ((item_condition === 'damaged' || item_condition === 'unsellable') && !condition_notes) {
+    return res.status(400).json({ error: 'condition_notes required when item_condition is damaged or unsellable' });
+  }
+
+  try {
+    const lineId = await createManualReturnLine({
+      shopId,
+      returnJobId,
+      scannedValue: scanned_value,
+      quantityReceived: quantity_received,
+      itemCondition: item_condition,
+      conditionNotes: condition_notes,
+      operatorId,
+    });
+    return res.status(201).json({ lasyncro_refund_line_item_id: lineId });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[RETURN_LINE_MANUAL_ADD_FAILED]', { shopId, returnJobId, error: message });
+    if (message.includes('not recognised') || message.includes('not found') || message.includes('No matching order line')) {
+      return res.status(404).json({ error: message });
+    }
+    if (message.includes('not processable')) {
+      return res.status(409).json({ error: message });
+    }
+    return res.status(500).json({ error: `Failed to add return line: ${message}` });
+  }
+};
+
+// ─── POST /jobs/:id/complete ──────────────────────────────────────────────────
 export const httpCompleteReturnJob = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const operatorId = req.user?.userId;
   if (!shopId || !operatorId) return res.status(401).json({ error: 'Unauthorized' });
 
   const returnJobId = req.params.id as string;
+  const { return_reason, return_notes } = req.body;
+
+  if (return_reason && !VALID_RETURN_REASONS.includes(return_reason)) {
+    return res.status(400).json({
+      error: `Invalid return_reason. Valid values: ${VALID_RETURN_REASONS.join(', ')}`,
+    });
+  }
+  if (return_reason === 'other' && !return_notes) {
+    return res.status(400).json({ error: 'return_notes required when return_reason is "other"' });
+  }
 
   try {
-    await completeReturnJob({ shopId, returnJobId, operatorId });
+    await completeReturnJob({ shopId, returnJobId, operatorId, returnReason: return_reason, returnNotes: return_notes });
     return res.status(200).json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('[RETURN_JOB_COMPLETE_FAILED]', { shopId, returnJobId, error: message });
     if (message.includes('not found')) return res.status(404).json({ error: message });
     if (message.includes('awaiting owner decision')) return res.status(409).json({ error: message });
+    if (message.includes('return_reason required')) return res.status(400).json({ error: message });
     return res.status(500).json({ error: `Failed to complete return job: ${message}` });
   }
 };

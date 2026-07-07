@@ -27,6 +27,12 @@ export type ReturnsSummary = {
   total_units_returned: number;
   total_units_restocked: number;
   restock_rate_pct: number;
+  // Money-based headline KPI: of refund $ tied to a return_job, how much
+  // reached job.status = 'complete'? Scoped to jobs with a known refund
+  // (Type A always, Type B once/if a refund is initiated).
+  recovery_rate_pct: number;
+  recovery_jobs_complete: number;
+  recovery_jobs_total: number;
 };
 
 export type ReturnsByVariant = {
@@ -69,11 +75,12 @@ export type ConditionBuckets = {
 
 export interface OrphanedReturnJob {
   return_job_id: string;
+  origin: 'customer_return' | 'undelivered_return';
   status: string;
   created_at: Date;
-  hours_since_refund: number;
+  hours_since_event: number;
   refund_amount: number;
-  severity: 'warning' | 'critical';
+  severity: 'ok' | 'warning' | 'critical';
 }
 
 /**
@@ -145,6 +152,32 @@ export async function computeReturnsIntelligence(
     const totalOrders = Number(totalOrdersRow?.total ?? 1);
     const avgReturnRatePct = Math.round((totalRefunds / totalOrders) * 1000) / 10;
 
+    /**
+     * RECOVERY RATE (headline KPI, money-based)
+     * ------------------------------------------
+     * Scoped to return_jobs with a known refund_execution_id — Type A
+     * always, Type B only once a refund is issued. Jobs with no refund
+     * yet aren't "unrecovered money," they're simply not money-tracked yet.
+     */
+    const recoveryRow = await trx('return_jobs as rj')
+      .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
+      .where('rj.shop_id', shopId)
+      .select(
+        trx.raw(`COALESCE(SUM(re.total_refund_amount) FILTER (WHERE rj.status = 'complete'), 0) as recovered_amount`),
+        trx.raw('COALESCE(SUM(re.total_refund_amount), 0) as total_trackable_amount'),
+        trx.raw(`COUNT(*) FILTER (WHERE rj.status = 'complete') as jobs_complete`),
+        trx.raw('COUNT(*) as jobs_total'),
+      )
+      .first();
+
+    const recoveredAmount = Number(recoveryRow?.recovered_amount ?? 0);
+    const totalTrackableAmount = Number(recoveryRow?.total_trackable_amount ?? 0);
+    const recoveryRatePct = totalTrackableAmount > 0
+      ? Math.round((recoveredAmount / totalTrackableAmount) * 1000) / 10
+      : 100;
+    const jobsComplete = Number(recoveryRow?.jobs_complete ?? 0);
+    const jobsTotal = Number(recoveryRow?.jobs_total ?? 0);
+
     const summary: ReturnsSummary = {
       total_refunds: totalRefunds,
       total_revenue_refunded: totalRevenueRefunded,
@@ -153,6 +186,9 @@ export async function computeReturnsIntelligence(
       total_units_returned: totalUnitsReturned,
       total_units_restocked: totalUnitsRestocked,
       restock_rate_pct: restockRatePct,
+      recovery_rate_pct: recoveryRatePct,
+      recovery_jobs_complete: jobsComplete,
+      recovery_jobs_total: jobsTotal,
     };
 
     /**
@@ -299,13 +335,18 @@ export async function computeReturnsIntelligence(
 }
 
 /**
- * ORPHANED RETURN JOBS (RT2-03)
+ * ORPHANED RETURN JOBS (RT2-03, extended)
  * ------------------------------
  * Type A orphan: refund fired, no line item has been processed yet.
- * Ranked oldest-first — longest-waiting job is the most urgent.
+ * Ages off hours since refund/job creation.
  *
- * Severity derived from shop's configured thresholds
- * (shop_operational_settings.returns_aging_warning_hours / _critical_hours).
+ * Type B orphan: carrier reported undelivered/RTS, no owner decision
+ * made yet. No refund exists to measure from — ages off job creation.
+ * Previously invisible entirely (excluded by the Type-A-only inner join).
+ *
+ * Severity: 'ok' (below warning threshold, collapsed by default in UI),
+ * 'warning', or 'critical' — thresholds from shop_operational_settings.
+ * Sub-threshold jobs are now included, not silently dropped.
  */
 export async function getOrphanedReturnJobs(shopId: number): Promise<OrphanedReturnJob[]> {
   return withTenant(shopId, async (trx) => {
@@ -317,10 +358,14 @@ export async function getOrphanedReturnJobs(shopId: number): Promise<OrphanedRet
     const warningHours = settings?.returns_aging_warning_hours ?? 48;
     const criticalHours = settings?.returns_aging_critical_hours ?? 168;
 
-    const rows = await trx('return_jobs as rj')
+    const severityFor = (hours: number): 'ok' | 'warning' | 'critical' =>
+      hours >= criticalHours ? 'critical' : hours >= warningHours ? 'warning' : 'ok';
+
+    const typeARows = await trx('return_jobs as rj')
       .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
       .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
       .where('rj.shop_id', shopId)
+      .where('rj.origin', 'customer_return')
       .where('rj.status', '!=', 'complete')
       .groupBy('rj.return_job_id', 'rj.status', 'rj.created_at', 're.total_refund_amount')
       .havingRaw('COUNT(reli.lasyncro_refund_line_item_id) FILTER (WHERE reli.processed_at IS NOT NULL) = 0')
@@ -329,26 +374,46 @@ export async function getOrphanedReturnJobs(shopId: number): Promise<OrphanedRet
         'rj.status',
         'rj.created_at',
         're.total_refund_amount',
-        trx.raw("EXTRACT(EPOCH FROM (NOW() - rj.created_at)) / 3600 as hours_since_refund"),
-      )
-      .orderBy('rj.created_at', 'asc');
+        trx.raw("EXTRACT(EPOCH FROM (NOW() - rj.created_at)) / 3600 as hours_since_event"),
+      );
 
-    return rows
+    const typeBRows = await trx('return_jobs as rj')
+      .where('rj.shop_id', shopId)
+      .where('rj.origin', 'undelivered_return')
+      .where('rj.status', '!=', 'complete')
+      .select(
+        'rj.return_job_id',
+        'rj.status',
+        'rj.created_at',
+        trx.raw("EXTRACT(EPOCH FROM (NOW() - rj.created_at)) / 3600 as hours_since_event"),
+      );
+
+    const combined = [
+      ...typeARows.map((row: any) => ({
+        ...row,
+        origin: 'customer_return' as const,
+        refund_amount: Number(row.total_refund_amount ?? 0),
+      })),
+      ...typeBRows.map((row: any) => ({
+        ...row,
+        origin: 'undelivered_return' as const,
+        refund_amount: 0,
+      })),
+    ];
+
+    return combined
       .map((row: any) => {
-        const hours = Number(row.hours_since_refund);
+        const hours = Number(row.hours_since_event);
         return {
           return_job_id: row.return_job_id,
+          origin: row.origin,
           status: row.status,
           created_at: row.created_at,
-          hours_since_refund: Math.round(hours * 10) / 10,
-          refund_amount: Number(row.total_refund_amount ?? 0),
-          severity: (hours >= criticalHours ? 'critical' : 'warning') as 'critical' | 'warning',
+          hours_since_event: Math.round(hours * 10) / 10,
+          refund_amount: row.refund_amount,
+          severity: severityFor(hours),
         };
       })
-      .filter((job) => job.hours_since_refund >= warningHours);
-    // NOTE: the `|| true` above is a placeholder — see note below on
-    // whether jobs under the warning threshold should be excluded
-    // entirely or included as a lower-severity "ok" bucket. Flagging
-    // rather than deciding silently.
+      .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
   });
 }

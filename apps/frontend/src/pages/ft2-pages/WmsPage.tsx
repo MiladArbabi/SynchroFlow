@@ -459,6 +459,35 @@ export default function WmsPage() {
     }
   };
 
+  const handleFetchReturnJob = async (returnJobId: string) => {
+    const { data } = await axiosInstance.get(`/api/v1/modules/returns/jobs/${returnJobId}`);
+    return data.data;
+  };
+
+  const handleAddReturnLine = async (returnJobId: string, input: { scannedValue: string; quantityReceived: number; itemCondition: string; conditionNotes?: string }) => {
+    await axiosInstance.post(`/api/v1/modules/returns/jobs/${returnJobId}/lines`, {
+      scanned_value: input.scannedValue,
+      quantity_received: input.quantityReceived,
+      item_condition: input.itemCondition,
+      condition_notes: input.conditionNotes,
+    });
+  };
+
+  const handleProcessReturnLine = async (returnJobId: string, input: { lineId: string; itemCondition: string; quantityReceived: number; conditionNotes?: string }) => {
+    await axiosInstance.patch(`/api/v1/modules/returns/jobs/${returnJobId}/lines/${input.lineId}`, {
+      item_condition: input.itemCondition,
+      quantity_received: input.quantityReceived,
+      condition_notes: input.conditionNotes,
+    });
+  };
+
+  const handleCompleteReturnJob = async (returnJobId: string, input: { returnReason?: string; returnNotes?: string }) => {
+    await axiosInstance.post(`/api/v1/modules/returns/jobs/${returnJobId}/complete`, {
+      return_reason: input.returnReason,
+      return_notes: input.returnNotes,
+    });
+  };
+
   return (
     <>
     <PlanGate feature="wms.pick_batches">
@@ -521,6 +550,10 @@ export default function WmsPage() {
       onResolveLocation={handleResolveLocation}
       onAssignStowLocation={handleAssignStowLocation}
       onReportStowException={handleReportStowException}
+      onFetchReturnJob={handleFetchReturnJob}
+      onAddReturnLine={handleAddReturnLine}
+      onProcessReturnLine={handleProcessReturnLine}
+      onCompleteReturnJob={handleCompleteReturnJob}
     />
    </PlanGate>
    { showQzPrompt && (

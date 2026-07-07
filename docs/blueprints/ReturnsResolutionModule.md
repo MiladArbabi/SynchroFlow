@@ -51,12 +51,13 @@
 **Known issues** *(migrated from `OrdersModule.md`, June 2026 — Returns left that module's ownership; updated 2026-07-04 audit/implementation pass)*:
 | ID | Priority | Description |
 |---|---|---|
-| RET-SUP-01 | 🟡 P2, unblocked | Supplier linkage null — requires receive jobs completed via mobile `ReceiveJobScreen`. Confirmed 2026-07-04: `return_jobs`=0, `refund_executions`=0 on current dev DB — precondition never exercised, not a code defect. QA Test Supplier PO (arrived, 30 units, 3 lines) is ready to close this loop once a receive job is completed. |
-| RET-REASON-01 | 🟡 P2, **rescoped** | Was: "map Shopify's refund reason during sync." Corrected 2026-07-04: Shopify's dedicated Return/RMA object is gated by Protected Customer Data approval (separate from OAuth scope grants — `read_returns` is present in the granted scope string, but PCD approval for the Return object query itself is unconfirmed/likely unapproved). Fix path is no longer "map Shopify's field" — it's building LaSyncro's own intake-time reason taxonomy, decoupled from Shopify entirely, with a first-class `unclaimed/undeliverable` category distinct from customer-return reasons. Not started. |
+| RET-SUP-01 | ✅ **ACTIVATED, 2026-07-06 — UI-confirmed 2026-07-07** | Confirmed live via `GET /api/v1/modules/returns/correlation` — `LINEN-GRY-S` row returned real `supplier_name: "laSyncro"`, `receive_job_id`, `batch_received_at`, and correct `return_rate_pct: 33.3` (1 returned / 3 received). First confirmed non-null result in this chain's history. Verified against real receive→stow→pick→pack→return data (see §8), not simulated. Three other test variants in the same response correctly show `null` supplier/receive fields — confirms the query's fallback behavior is also correct, not just its happy path. **2026-07-07:** same result independently confirmed via screenshot of the live Supplier Ratings UI (Overview/Items/Supplier Ratings tabs) — "1 suspect batch detected" banner firing correctly off the ≥15%/1.5× threshold, matching the API payload exactly. |
+| RET-REASON-01 | ✅ **RESOLVED, 2026-07-07** | Own intake-time reason taxonomy built and wired, per the rescoped 2026-07-04 direction. `return_reason`/`return_notes` (on `refund_executions`, migration 0008 — dormant schema, unused since creation) now has a real write path: captured at job **completion**, not creation — a deliberate design decision (§9) since the operator has maximum context (every line assessed, any enclosed note read) only by that point, and Reamaze/support-platform context is unavailable to us entirely, making the operator's on-screen input the sole record. `undelivered_reason` (Type B, carrier-caused) already had its own cleaner, separate enum — correctly never conflated with customer-declared reasons. **Known gap, not yet fixed (see §9):** reason is silently dropped if a scan-intake job (no refund yet) completes before its refund links — nowhere to persist until `refunds.create.ts`'s reconciliation extends to backfill it. |
 | RET-THEME-01 | 🟢 **mostly resolved 2026-07-05** | `useReturnsTheme()` migrated from hardcoded hex to CSS var tokens (`var(--surface)`, `var(--rule)`, etc.) during the Sprint 2 triage+pulse redesign — see §7. **Explicit exception retained:** `rateHigh`/`rateMid`/`rateOk` severity colors stay literal hex (`#DC2626`/`#F59E0B`/`#22C55E`) — no `--severity-*` tokens exist yet anywhere in the design system, matching the precedent already set in `FinancesIntelligencePage.tsx`'s `SignalRow`. `rateHigh` changed from `#EF4444` → `#DC2626` this session — the original red was visually indistinguishable from `--accent` orange on the dark theme at small sizes. |
 | RT2-04 | 🔴 **OPEN, blocking** | No web surface exists for owners to view, claim, or reassign unclaimed return jobs. `/returns/items` is scoped to items *already processed* and awaiting an owner decision — structurally different from the unclaimed-job queue. Confirmed via code: `ReturnsItemsPage.tsx` has zero references to job-listing/unclaimed logic. This blocks giving RT2-03's "Needs attention" orphan rows a working CTA — per `cta-deeplink-playbook.md` §7's own procedure ("check whether the destination even has the concept the alert describes" before wiring a link), the CTA was deliberately left off rather than pointed at a wrong destination. **Next planned work — see §7.** |
 | RT2-05 | 🔵 **BACKLOG, cross-module** | Pulse-card visual pattern (composition bar + legend + trend delta) differs across Overview, Orders, Finances, and Returns. Returns is now the best/most consistent implementation (§7) but the pattern was never backported to the other three. Deliberately deferred — not Returns-scoped. |
 | RET-PCD-01 | 🟢 **resolved, durably** | Was flagged as suspected PCD block; downgraded to an environmental/OAuth gap (see original note below); now durably fixed. Root cause: `shopify_app_installations.shop_id` has `ON DELETE CASCADE` from `shops` — every `dev:full-reset` deletes `shops` in its cleanup step, silently cascading away the installation row without ever referencing that table by name (hence it was invisible to a straightforward grep). Fixed 2026-07-04 in `dev_seed.ts` (`full_data` mode): a placeholder row is now (re)created on every seed run, using `encrypt()` so it's genuinely decryptable by every webhook handler's `decrypt(row.access_token, 'shopify.webhook.registration')` call — a bare placeholder string would have thrown on the first real webhook instead of the previous silent "no row" skip. **Explicit limitation, not a bug:** this placeholder token is real ciphertext but decrypts to a fake string — it unblocks webhook *shop-resolution* (refunds, order events, carrier tracking all now route correctly), but any code path that makes an actual outbound call to Shopify's API still requires a genuine OAuth handshake, which cannot be scripted from a seed file. Delivery path itself (webhooks reaching localhost at all) solved separately via Shopify's legacy per-store webhook config (Settings → Notifications → Webhooks) pointed at an ngrok tunnel — deliberately not via the app's own registered OAuth subscriptions, to avoid touching the production app's URLs while it's under Shopify App Store review. Original diagnosis retained below for the audit trail: |
+| WEB-RETURN-02 | 🔴 **OPEN** | `refunds.create.ts`'s reconciliation guard (§8) links a late-arriving refund to an existing scan-intake job, but does not backfill `return_reason`/`return_notes` onto the newly-linked `refund_execution` if the job already completed with a reason captured pre-refund. Confirmed empirically via curl smoke test 2026-07-07 — reason sent, job completed successfully, `return_reason` column remained null since `lasyncro_refund_execution_id` was null at completion time. Not yet fixed. |
 
 ---
 
@@ -91,6 +92,8 @@ One row per physical return event. Two origins, different required FK:
 Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `WriteAuditLogInput.operatorId` were both `NOT NULL`/`number` — too strict for a system-triggered action with no human operator. Both widened to nullable/`number | null`, with the change scoped narrowly (see migration 0010's inline comment) so every existing operator-facing call site is unaffected.
 
 **Related, extended (not newly created) by this migration:** `refund_execution_line_items` gains `item_condition`, `quantity_received`, `condition_notes`, `processed_by`, `processed_at` — these are the per-line-item resolution fields `processReturnLine()` writes to.
+
+**Further extended, 2026-07-07 (§9):** `lasyncro_refund_execution_id` relaxed from `NOT NULL` to nullable (new migration, mirrors `return_jobs`' existing nullable-FK pattern) — required for `createManualReturnLine()`, which creates a line item for a scan-intake job with no refund yet on file. New columns: `return_job_id` (uuid, nullable, FK → `return_jobs`, CASCADE — the only link back to anything when no refund exists) and `source` (varchar(50), default `'refund_webhook'`, values `'refund_webhook'` \| `'scan_intake_manual'`). `refunded_amount` also relaxed to nullable for the same reason — a manually-created line has no refund amount to derive from yet.
 
 ### Resolution cascade (confirmed from `returnJobs.service.ts`, not inferred)
 
@@ -277,3 +280,143 @@ RT2-AUD-26 (webhook-replay audit beyond the two handlers touched),
 RET-SUP-01 (supplier correlation activation — now genuinely
 unblockable, since a real receive job finally exists against a real
 PO in this environment; not yet exercised).
+
+---
+
+## 9. Session Log — 2026-07-07 (Recovery rate, orphan completeness, reason capture, WMS fold-in)
+
+Closed the remaining Phase 1 gaps from §7 (recovery rate, Type B orphans,
+reason taxonomy) and resolved the redundant-scan-surface problem WEB-RETURN-01
+(§8) introduced by launching alongside WMS's existing pack free-scan.
+
+**Recovery rate (headline KPI, money-based):** `SUM(refund_amount WHERE
+job.status = 'complete') / SUM(refund_amount)` across all `return_jobs` with a
+known refund link, Type A and Type B alike. Deliberately money-based over
+job-count-based — a $10 return and a $2,000 return are not equally
+significant to margin. Scoped only to jobs with a refund on file; jobs with
+none aren't "unrecovered," they're simply not money-tracked yet, which is
+correct, not a gap. Replaces "$X lost to returns" as the Overview headline;
+margin lost moves to a secondary `PulseStat`.
+
+**Type B orphans — closed the gap flagged in §7.** `getOrphanedReturnJobs()`
+previously inner-joined `refund_executions`, silently excluding every
+`undelivered_return` job by construction (their refund FK is null until/if a
+refund is ever issued) — meaning a stale RTS package could age indefinitely
+with zero visibility. Rewritten as two separate queries (Type A ages off
+`hours_since_refund`, Type B off `created_at`) unioned together. Also closed
+the sub-threshold question left open in the code as an unresolved comment
+(§7): jobs below the warning threshold are no longer dropped, they're
+returned with `severity: 'ok'` and collapsed by default in the UI.
+
+**Reason taxonomy — write path finally built (RET-REASON-01, resolved above).**
+Captured at job **completion**, not creation or per-line — a deliberate
+design decision after clarifying what `return_reason` actually represents:
+why the *customer* returned the item, assigned by the *operator's* judgment
+at physical intake (enclosed note, visible damage, or `other` + required
+free text), since Shopify's Return object is deliberately never relied upon
+(§2, PCD gating) and support-platform context (Reamaze etc.) is entirely
+unavailable to us. Completion-time capture gives the operator maximum
+context — every line assessed, any note read — before committing to one
+answer. Known gap: silently dropped if a scan-intake job completes before
+its refund links (WEB-RETURN-02, new row in §2).
+
+**Redundant scan surface, identified and corrected.** WEB-RETURN-01 (§8)
+shipped its own standalone `/returns/scan` entry point and session route —
+reasonable in isolation, but redundant against WMS operations' existing
+unified free-scan surface (`WmsModuleFT2`'s `activeSession` discriminated
+union: `pick` \| `pack` \| `receive` \| `stow`), which already auto-detects
+session type per scan rather than requiring the operator to pick a screen
+first. Corrected by folding return detection into `httpPackFreeScan` itself:
+
+- **LSU- path:** `unit.status === 'shipped'` (previously a hard
+  `already_packed` error) now resolves the unit's order and calls
+  `resolveOrCreateReturnJobForScan()` instead of erroring.
+- **LSO- path:** `batch_not_packing` (no active packing batch) now checks
+  `order_warehouse_status.status` — if `shipped`/`partially_shipped`, same
+  fall-through to return-job resolution rather than a dead-end error.
+- `PackFreeScanApiResponse` gains a `{ type: 'return', ... }` case;
+  `WmsModuleFT2`'s `ActiveSession` gains a matching `{ type: 'return' }` case,
+  rendering `ReturnSessionPage` exactly like `stow`/`pack` do, exiting via the
+  same `exitSession` → scan-ready state, not a navigation to `/returns`.
+- **Retired:** `POST /wms/returns/scan` (`httpReturnScan`), `resolveReturnScan`
+  (both fully dead — confirmed zero remaining callers before deletion),
+  `ReturnScanEntryPage.tsx`, the `/returns/scan` and `/returns/session/:id`
+  routes. The Overview page's "Scan a return" CTA now points at `/wms`.
+- **Module boundary correction:** `ReturnSessionPage` was initially written
+  with hooks/axios calls directly (`apps/frontend/src/pages/ft2-pages/`
+  pattern) — violated `modules/wms`'s hard compile boundary (`tsconfig.json`'s
+  `rootDir`/`include` scope apps' pages out entirely, not just convention).
+  Rebuilt as a pure presentational component living in
+  `modules/wms/src/ui/pages/`, matching `PackSessionPage`/`StowSessionPage`
+  exactly — all data access threaded down as props from `WmsPage.tsx`, which
+  owns every `axiosInstance` call.
+
+**Manual line creation (`createManualReturnLine`) — new capability, closes a
+real hole in scan-intake.** A scan-intake job (`lasyncro_refund_execution_id:
+NULL`) has zero line items until a refund links — meaning an operator
+physically holding a returned item, scanning it, would previously have
+nothing to assess against. New function resolves the scanned product barcode
+via the existing `barcodeResolution.service.ts` (reused, not duplicated),
+matches it against `order_revenue_units` for that order, and inserts a line
+with `source: 'scan_intake_manual'`. Known edge case, not solved: throws if
+no matching `order_revenue_units` row exists for the variant/order pair
+(e.g. item added post-order) — surfaces as a 404, no fallback UI built yet.
+
+**Two real bugs found via live smoke test (SQL + curl), both fixed same
+session — recorded because they were genuine defects in shipped code, not
+hypotheticals:**
+
+1. **Missing cascade on manual lines.** `createManualReturnLine` wrote
+   `item_condition` but never invoked the resellable→stow /
+   repackable→Problem-Center / damaged→`awaiting_decision` cascade —
+   `processReturnLine`'s cascade logic lived only inside that function.
+   A manually-added "resellable" line was marked fine on paper but never
+   actually queued to restock — a real violation of the module's own
+   "no orphans" thesis (§4), caught by verifying `stow_tasks` directly
+   rather than trusting the API's 200 response. Fixed by extracting the
+   cascade into a shared `applyReturnLineCascade()`, called by both
+   `processReturnLine` and `createManualReturnLine`.
+2. **Missing job-status gate on manual line-add.** Unlike
+   `processReturnLine` (`['pending','in_progress'].includes(job.status)`),
+   `createManualReturnLine` had no status check at all — confirmed via
+   curl that a line could be added to an already-`complete` job, silently
+   re-triggering a stow task without the job ever reflecting that it had
+   reopened. Fixed with the same gate, same error message pattern
+   (`'not processable'`), and the controller's error-to-HTTP-status mapping
+   updated to return `409` for it (previously fell through to a generic
+   `500` — also a real gap, not just the missing gate itself).
+3. Also closed while touching this code: `createManualReturnLine`'s job
+   lookup was missing `shop_id` in its `where()` — no tenant scoping on
+   that particular query. Minor, fixed alongside the status gate.
+4. **Missing route entirely, caught first.** `POST
+   /jobs/:id/lines` (the manual-add endpoint) was designed at the service
+   layer and called from the frontend hook, but the controller handler and
+   route registration were never actually written — a 404 on first curl
+   attempt. This is the first defect the smoke test caught, before either
+   of the two above.
+
+**Verified live, full chain (SQL + curl, not simulated):** shipped order
+(`LSO-TBX4U68U`) with no active packing batch → LSO- scan correctly resolved
+to `type: 'return'` (not the old `batch_not_packing` error) → job fetch →
+manual line add against a real unit on that order → cascade fired
+(`stow_tasks` row confirmed via direct query) → job completion → reason
+correctly dropped per the known WEB-RETURN-02 gap → manual-add against the
+now-complete job correctly rejected `409` after the gate fix.
+
+**Still open, ordered:**
+
+1. **WEB-RETURN-02** — reason silently drops when a scan-intake job
+   completes before its refund links. Needs `refunds.create.ts`'s existing
+   reconciliation guard (§8) extended to also backfill `return_reason`/
+   `return_notes` onto the linked `refund_execution`, not just
+   `lasyncro_refund_execution_id` itself.
+2. **Mobile has zero returns UI.** Entire session's build (§8 and §9) is
+   web-only, per explicit priority — mobile's `ScannerScreen.tsx` is a
+   read-only lookup surface (its own header comment: "no session, no
+   workflow state"), not a workflow-scan entry point; folding returns into
+   mobile would need its own equivalent of this session's WMS fold-in,
+   not a port of the web code.
+3. **RT2-04** (carried from §7, still unaddressed) — no web surface for
+   owners to view/claim/reassign unclaimed jobs generally, distinct from
+   the orphan aging list.
+4. **RT2-05, RT2-AUD-26, WMS-PACK-VIZ-01** (carried from §7/§8, unchanged).

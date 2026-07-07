@@ -26,6 +26,7 @@ import { RotateCcw, TrendingDown, Clock, CheckCircle } from 'lucide-react';
 import { useReturns, type ReturnsByVariant, type OrphanedReturnJob } from '../finances/useReturns';
 import { useReturnsCorrelation } from '../returns/useReturnsCorrelation';
 import { PlanGate } from '../../components/PlanGate';
+import { useState } from 'react';
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
 // RT2-AUD-27: replaced hardcoded hex with CSS var tokens per the modules
@@ -209,29 +210,42 @@ export default function ReturnsOverviewPage() {
 
   const criticalOrphans = orphanedJobs.filter(j => j.severity === 'critical');
   const warningOrphans  = orphanedJobs.filter(j => j.severity === 'warning');
-  const hasOrphans = orphanedJobs.length > 0;
-
+  const okOrphans       = orphanedJobs.filter(j => j.severity === 'ok');
+  const hasOrphans = criticalOrphans.length > 0 || warningOrphans.length > 0;
   const highReturnRateSkus = byVariant.filter(v => v.return_rate_pct >= 20);
-  const missingSupplierData = hasCorrelation && correlationRows.every(r => !r.supplier_name);
-
+  const missingSupplierData = hasCorrelation && correlationRows.every(r =>!r.supplier_name);
   const allClear = !hasOrphans && highReturnRateSkus.length === 0;
-
+  const [showOkOrphans, setShowOkOrphans] = useState(false);
   const formatAge = (hours: number) => {
     if (hours < 24) return `${Math.round(hours)}h`;
     return `${Math.round(hours / 24)}d`;
   };
+  const orphanTitle = (job: OrphanedReturnJob) =>
+    job.origin === 'undelivered_return'
+      ? `Returned by carrier ${formatAge(job.hours_since_event)} ago — awaiting decision`
+      : `Refunded ${formatAge(job.hours_since_event)} ago — item never received`;
 
   return (
     <Box sx={{ background: pal.pageBg, minHeight: '100%', p: 3 }}>
 
       {/* HEADER */}
-      <Box sx={{ mb: 3 }}>
-        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
+      <Box sx={{ mb: 3, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, flexWrap: 'wrap' }}>
+        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           Returns
         </Typography>
-        <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-          {isLoading ? '—' : `${summary?.total_refunds ?? 0} total ${summary?.total_refunds === 1 ? 'refund' : 'refunds'} (${summary?.total_units_returned ?? 0} units), resulting in ${fmt(summary?.total_margin_leakage ?? 0)} total margin loss`}
-        </Typography>
+        <Box
+          onClick={() => navigate('/wms')}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', gap: 0.75,
+            px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600,
+            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
+            borderRadius: '6px', cursor: 'pointer',
+            '&:hover': { opacity: 0.88 },
+          }}
+        >
+          <RotateCcw size={13} />
+          Scan a return
+        </Box>
       </Box>
 
       {isLoading && (
@@ -276,24 +290,44 @@ export default function ReturnsOverviewPage() {
                   key={job.return_job_id}
                   severity="critical"
                   icon={<Clock size={16} />}
-                  title={`Refunded ${formatAge(job.hours_since_refund)} ago — item never received`}
+                  title={orphanTitle(job)}
                   detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
                   cta="Claim"
                   onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
                 />
               ))}
-
               {warningOrphans.map(job => (
                 <SignalRow
                   key={job.return_job_id}
                   severity="warning"
                   icon={<Clock size={16} />}
-                  title={`Refunded ${formatAge(job.hours_since_refund)} ago — awaiting receipt`}
+                  title={orphanTitle(job)}
                   detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
                   cta="Claim"
                   onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
                 />
               ))}
+              {okOrphans.length > 0 && (
+                <Box sx={{ px: 2.5, py: 1 }}>
+                  <Box
+                    onClick={() => setShowOkOrphans(v => !v)}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, cursor: 'pointer', fontSize: 12, color: pal.textSecond }}
+                  >
+                    {showOkOrphans ? '▾' : '▸'} {okOrphans.length} job{okOrphans.length === 1 ? '' : 's'} within normal aging window
+                  </Box>
+                  {showOkOrphans && okOrphans.map(job => (
+                    <SignalRow
+                      key={job.return_job_id}
+                      severity="ok"
+                      icon={<Clock size={16} />}
+                      title={orphanTitle(job)}
+                      detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
+                      cta="Claim"
+                      onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
+                    />
+                  ))}
+                </Box>
+              )}
 
               {highReturnRateSkus.length > 0 && (
                 <SignalRow
@@ -322,27 +356,26 @@ export default function ReturnsOverviewPage() {
                 Returns Pulse
               </Typography>
 
-              {/* HEADLINE — margin leakage, colored like Orders' "11 breached" */}
+              {/* HEADLINE — recovery rate is now primary. Money-based:
+                  of refund $ tied to a return_job, how much reached
+                  status = 'complete'. Margin leakage moves to a PulseStat. */}
               <Typography sx={{
                 fontSize: 26, fontWeight: 700, mt: 0.5,
-                color: summary.total_margin_leakage > 0 ? pal.rateHigh : pal.textPrimary,
+                color: summary.recovery_rate_pct >= 90 ? pal.rateOk
+                     : summary.recovery_rate_pct >= 70 ? pal.rateMid
+                     : pal.rateHigh,
               }}>
-                {fmt(summary.total_margin_leakage)}
+                {summary.recovery_rate_pct}%
               </Typography>
-              <Typography sx={{ fontSize: 12, color: pal.textSecond, mb: 1 }}>
-                lost to returns this period
+              <Typography sx={{ fontSize: 12, color: pal.textSecond, mb: 1}}>
+                recovered — {summary.recovery_jobs_complete} of {summary.recovery_jobs_total} return jobs resolved
               </Typography>
-
-              {/* COMPOSITION — restocked vs pending, out of units returned */}
-              <CompositionBar segments={[
-                { label: 'Restocked', value: summary.total_units_restocked, color: pal.rateOk },
-                { label: 'Pending',   value: Math.max(0, summary.total_units_returned - summary.total_units_restocked), color: pal.rateMid },
-              ]} />
-
+...
+              <PulseStat label="Margin lost"      value={fmt(summary.total_margin_leakage)} />
               <PulseStat label="Total refunds"    value={String(summary.total_refunds)} />
               <PulseStat label="Revenue refunded" value={fmt(summary.total_revenue_refunded)} />
               <PulseStat label="Restock rate"     value={`${summary.restock_rate_pct}%`} />
-
+              
               {hasCorrelation && (
                 <Box
                   onClick={() => navigate('/returns/suppliers')}

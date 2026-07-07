@@ -359,6 +359,35 @@ migration 0122 (`source`, `triggering_parcel_tracking_event_id` columns)
 and `createReturnJobFromCarrierEvent()`. No `receive_jobs` schema
 change was needed or made.
 
+#### What happens to the `return_jobs` row after creation (2026-07-07 update)
+
+At the time this section was written (2026-07-04), `createReturnJobFromCarrierEvent()`
+closed the creation gap, but two things a Type B job needed afterward were
+still missing — both closed in a later Returns-module session (see
+`ReturnsResolutionModule.md` §9 for full detail, summarized here since it
+directly completes this WM-40 story):
+
+- **Visibility.** `getOrphanedReturnJobs()` (RT2-03, §7 of the Returns
+  blueprint) originally inner-joined `refund_executions` to compute aging —
+  which silently excluded every Type B job, since a carrier-returned parcel
+  has no refund on file by definition. A stale `undelivered_return` job could
+  age indefinitely with zero signal beyond the one-time `alerts` row this
+  section describes. Fixed: the orphan query now ages Type B jobs off
+  `created_at` directly, alongside Type A's refund-based aging.
+- **Resolution path.** No operator-facing screen previously existed to work
+  a Type B job at all — the `alerts` row pointed nowhere actionable. Returns
+  processing (originally its own standalone free-scan endpoint,
+  `WEB-RETURN-01`) was folded directly into WMS operations' existing pack
+  free-scan surface (`POST /wms/pack/free-scan`) rather than kept separate —
+  an already-shipped unit or order scanned there now resolves to the same
+  return job this section's webhook path creates, whichever came first.
+  Carrier-initiated and operator-scanned intake converge on one job, one
+  screen, no duplicate paths.
+
+This doesn't change anything in this file's data model or webhook pipeline —
+both remain exactly as documented above. It closes the "then what?" question
+this section left open.
+
 #### Settings UI
 
 Settings → Carriers, inside the connected-carrier card:
@@ -785,7 +814,7 @@ would explain the root cause.
 | WM-38 | P1 | ✅ RESOLVED June 3, 2026 | Adapter pattern (ICarrierProvider). Sendcloud implementation. shop_carrier_settings + order_shipment_tracking. include_return_label toggle. Tracking → Shopify writeback. 4 endpoints. Settings UI. |
 | WM-39 | P1 | ✅ RESOLVED June 3, 2026 | Shipping cost ingestion — migration 0114. shipping_cost_excl_vat + currency + carrier_zone on order_shipment_tracking. carrier_shipping_cost + true_margin + true_margin_pct on order_margin_snapshot. Sendcloud parcel.price captured at label generation. computeOrderMargin extended — true_margin = gross_margin − carrier_shipping_cost. order_revenue_units immutability preserved. |
 | WM-40 | P1 | ✅ RESOLVED July 2, 2026 | Carrier tracking webhooks — parcel_tracking_events + denormalized columns on order_shipment_tracking. Per-shop webhook token (shop_carrier_webhook_tokens, split RLS policy) + webhook_secret for HMAC verification. Adapter/handler registered on shared WebhookRouter (required a shopId-resolution fix in shared infra — see §4 gotchas). Return detection → alerts row (not receive_jobs — schema mismatch, see §4). Settings UI: generate/rotate/revoke webhook URL, secret input. Proven end-to-end via signed curl test, idempotency confirmed. |
-| WM-40 | P1 | ✅ RESOLVED July 2-3, 2026 | Carrier tracking webhooks — Sendcloud (July 2) + Shippo (July 3). Sendcloud: path-token + HMAC. Shippo: query-param token, no HMAC (per Shippo's own webhook security model). Both share parcel_tracking_events, denormalized order_shipment_tracking columns, carrier_status_map, stall detection, WebhookRouter dispatch. Shippo webhook delivery unconfirmed live — registration/config fully proven, delivery mechanism failing on Shippo's side (see WM-40b writeup). |
+| WM-40 | P1 | ✅ RESOLVED July 2-3, 2026 | Carrier tracking webhooks — Sendcloud (July 2) + Shippo (July 3). Sendcloud: path-token + HMAC. Shippo: query-param token, no HMAC (per Shippo's own webhook security model). Both share parcel_tracking_events, denormalized order_shipment_tracking columns, carrier_status_map, stall detection, WebhookRouter dispatch. Shippo webhookdelivery unconfirmed live — registration/config fully proven, delivery mechanism failing on Shippo's side (see WM-40b writeup). Type B `return_jobs` created here are now aging-visible and resolvable through a real operator UI as of 2026-07-07 — see §4's "What happens after creation" note and `ReturnsResolutionModule.md` §9. |
 | WM-40b | P1 | ✅ RESOLVED July 3, 2026 | Shippo carrier provider — second ICarrierProvider implementation for US/UK market segment. Single-token auth (api_token column). New shop_sender_addresses table (own PK, multi-warehouse-ready, RLS correct from first migration). Multi-rate purchase resilience (cheapest-first, fall through on carrier-account rejection). Real test-mode label purchased and confirmed in Shippo's own dashboard: USPS Ground Advantage, $7.95, tracking 9334620845500000708101. |
 | WM-41 | P2 | 📋 PLANNED | Carrier performance analytics — delivery rate, transit time, exception rate, return rate, cost per delivery. Carrier Performance tab in Warehouse Analytics. |
 | WM-42 | P2 | 📋 PLANNED | CPT pressure indicator — orders remaining × UPH × active packers → projected completion vs CPT. Alert on projected miss. |
@@ -861,3 +890,4 @@ Five surfaces wired across the platform. All changes are additive — no existin
 ### Deep-link convention
 
 All "not configured" states deep-link to the relevant settings tab rather than showing a dead end. Established pattern: `useNavigate` + `/settings/carriers`. Apply this to all future "requires setup" states across the platform.
+

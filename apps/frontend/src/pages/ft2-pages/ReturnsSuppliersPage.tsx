@@ -110,7 +110,7 @@ export default function ReturnsSuppliersPage() {
 
       {/* Header */}
       <Box sx={{ mb: 3 }}>
-        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', mb: 0.25 }}>
+        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           Supplier Ratings
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>

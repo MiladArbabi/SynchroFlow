@@ -208,7 +208,7 @@ function ProblemCenterModuleFT2Inner({
       {/* ── HEADER ───────────────────────────────────────────── */}
       <Box sx={{ mb: 2.5 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.25 }}>
-          <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)' }}>
+          <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Problem Center
           </Typography>
           {(data?.total_unresolved ?? 0) > 0 && (

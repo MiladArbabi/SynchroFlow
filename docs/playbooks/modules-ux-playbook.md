@@ -584,3 +584,40 @@ reveal-more pattern, §1) to the trigger, flipping based on
 `backfillExpanded` state. No layout change, no removed friction — same
 interaction, now visually legible as expand/collapse rather than a
 no-op-looking button.
+
+## 14. Unified Free-Scan Session Pattern — Returns fold-in, 2026-07-07
+
+**The problem this corrects:** Returns processing (WEB-RETURN-01, see
+`ReturnsResolutionModule.md` §8) initially shipped as its own standalone
+scan entry point and session route (`/returns/scan`, `/returns/session/:id`)
+— reasonable in isolation, but redundant against WMS operations' existing
+unified free-scan surface, which already auto-detects session type from a
+single scan rather than making the operator choose a screen first.
+
+**The existing pattern, now confirmed canonical:** `WmsModuleFT2`'s
+`activeSession` is a discriminated union (`pick` | `pack` | `receive` |
+`stow`), resolved from one scan box (`handlePackFreeScan`) on the WMS
+operations home page. The operator never picks a mode — they scan whatever
+they're holding, and the backend response's `type` field decides which
+session renders. Returns now joins this union as a fourth case rather than
+living outside it: an already-shipped unit or order scanned there resolves
+to `{ type: 'return', returnJobId }` instead of the old hard error
+(`already_packed` / `batch_not_packing`), and `ReturnSessionPage` renders
+exactly like `StowSessionPage`/`PackSessionPage` do, exiting via the same
+`exitSession()` back to scan-ready state — not a navigation elsewhere.
+
+**Rule going forward:** before adding a new scan-driven workflow anywhere in
+WMS operations, check whether it can extend `activeSession`'s union rather
+than shipping a separate entry route. A new standalone scan screen is the
+wrong default whenever WMS operations' free-scan surface already exists and
+the new workflow shares the same LSO-/LSU- barcode vocabulary — one scan box,
+one set of muscle memory, decided by backend response type rather than a
+picker the operator has to navigate first.
+
+**Module boundary, worth restating for any future session-type addition:**
+session page components under `modules/wms/src/ui/pages/` must stay purely
+presentational — no hooks, no `axiosInstance` calls directly. `modules/wms`'s
+`tsconfig.json` scopes `rootDir`/`include` to `src/ui/**/*` only, a hard
+compile boundary, not a convention — a module-side file cannot import from
+`apps/frontend/src/pages/`. All data access is threaded down as props from
+the owning app-side page (`WmsPage.tsx` for WMS), which alone

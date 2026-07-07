@@ -749,7 +749,9 @@ function FloorPlanningModuleFT2Inner({
         </>;
       })()}
       {tab === 'setup' && <>
-        <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Build your warehouse.</Typography>
+        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
+          Build your warehouse.
+        </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Configure aisles, shelves, and bins. Your layout is the foundation of every pick.</Typography>
       </>}
       {tab === 'barcodes' && (() => {
@@ -762,8 +764,8 @@ function FloorPlanningModuleFT2Inner({
           ? `Location codes: ${barcodedLocs}/${zones.length} labelled${missingLocs > 0 ? ` · ${missingLocs} missing` : ''}  —  Product barcodes: ${barcodedProducts}/${productBarcodes.length}${missingProducts > 0 ? ` · ${missingProducts} missing` : ''}. Generate or import to clear.`
           : 'No locations or products found. Add zones in Setup and sync products.';
         return <>
-          <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, color: 'var(--ink)', lineHeight: 1.15, display: 'inline' }}>Every location, every product.{' '}</Typography>
-          <Typography sx={{ fontFamily: '"DM Serif Display", serif', fontSize: 36, fontWeight: 400, fontStyle: 'italic', color: 'var(--accent)', lineHeight: 1.15, display: 'inline' }}>Scannable in one pass.</Typography>
+        <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>            Every location, every product.
+          </Typography>
           <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>{subLine}</Typography>
         </>;
       })()}

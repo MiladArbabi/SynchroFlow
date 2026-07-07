@@ -12,6 +12,7 @@ import {
   httpSetOwnerDecision,
   httpClaimReturnJob,
   httpGetReturnJob,
+  httpAddManualReturnLine,
 } from './returnJobs.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
@@ -64,6 +65,11 @@ router.get('/jobs/:id',
 router.post('/jobs/:id/claim',
   authenticateToken, requireFt2, requireTier('core'), requireAction('returns:job:claim'),
   httpClaimReturnJob
+);
+
+router.post('/jobs/:id/lines',
+  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:job:process'),
+  httpAddManualReturnLine
 );
 
 router.patch('/jobs/:id/lines/:lineId',

@@ -11,6 +11,9 @@ export type ReturnsSummary = {
   total_units_returned: number;
   total_units_restocked: number;
   restock_rate_pct: number;
+  recovery_rate_pct: number;
+  recovery_jobs_complete: number;
+  recovery_jobs_total: number;
 };
 
 export type ReturnsByVariant = {
@@ -27,11 +30,12 @@ export type ReturnsByVariant = {
 };
 export type OrphanedReturnJob = {
   return_job_id: string;
+  origin: 'customer_return' | 'undelivered_return';
   status: string;
   created_at: string;
-  hours_since_refund: number;
+  hours_since_event: number;
   refund_amount: number;
-  severity: 'warning' | 'critical';
+  severity: 'ok' | 'warning' | 'critical';
 };
 export type ReturnsResponse = {
   summary: ReturnsSummary;
