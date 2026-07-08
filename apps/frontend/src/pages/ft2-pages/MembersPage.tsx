@@ -2,6 +2,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from 'contexts/AuthContext';
+import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { SETTINGS_TABS } from './settingsTabs';
+// ISS-051: Team lives outside ShopSettingsPage's <Routes> subtree (route
+// owned by LifecycleRouteHost.tsx at /team, not /settings/team — see
+// ISS-048). Rendering the shared ModuleTabBar here keeps the tab row
+// visible when navigating Settings → Team instead of it disappearing.
 import {
   Box, Typography, CircularProgress, Alert as MuiAlert,
   Table, TableBody, TableCell, TableHead, TableRow,
@@ -17,6 +23,7 @@ import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import { LinearProgress } from '@mui/material';
 import { TIER_SEAT_LIMIT, type Tier } from '../../config/tiers';
+import { SettingsShellHeader } from './SettingsShellHeader';
 
 /**
  * MEMBERS PAGE (WM-31)
@@ -136,6 +143,9 @@ export default function MembersPage() {
   };
 
   return (
+    <>
+    <SettingsShellHeader />
+    <ModuleTabBar tabs={SETTINGS_TABS} />
     <Box sx={{ p: 3 }}>
 
       {/* HEADER */}
@@ -354,5 +364,6 @@ export default function MembersPage() {
       </Dialog>
 
     </Box>
+    </>
   );
 }

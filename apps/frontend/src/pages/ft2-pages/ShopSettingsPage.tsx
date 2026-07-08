@@ -15,7 +15,7 @@
 //   /settings/integrations → Integrations  (📋 placeholder — non-carrier third-party)
 
 import { Routes, Route } from 'react-router-dom';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import ShopSettingsGeneralPage      from './ShopSettingsGeneralPage';
 import ShopSettingsCarriersPage     from './ShopSettingsCarriersPage';
@@ -24,31 +24,13 @@ import ShopSettingsFinancePage      from './ShopSettingsFinancePage';
 import BillingSettings              from '../account-settings/BillingSettings';
 import ShopSettingsReportsPage      from './ShopSettingsReportsPage';
 import { PlaceholderTab }           from './ShopSettingsShared';
-
-const SETTINGS_TABS = [
-  { id: 'general',       label: 'General',       path: '/settings'               },
-  { id: 'carriers',      label: 'Carriers',       path: '/settings/carriers'      },
-  { id: 'warehouse',     label: 'Warehouse',      path: '/settings/warehouse'     },
-  { id: 'finance',       label: 'Finance',        path: '/settings/finance'       },
-  { id: 'localization',  label: 'Localization',   path: '/settings/localization'  },
-  { id: 'notifications', label: 'Notifications',  path: '/settings/notifications' },
-  { id: 'integrations',  label: 'Integrations',   path: '/settings/integrations'  },
-  { id: 'billing',       label: 'Billing',        path: '/settings/billing'       },
-  { id: 'reports',       label: 'Reports',        path: '/settings/reports'       },
-];
+import { SETTINGS_TABS } from './settingsTabs';
+import { SettingsShellHeader } from './SettingsShellHeader';
 
 export default function ShopSettingsPage() {
   return (
     <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-      <Box sx={{ px: 2.5, pt: 2.5, pb: 0 }}>
-        <Typography sx={{ fontSize: 22, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.2 }}>
-          Shop Settings
-        </Typography>
-        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: '2px', mb: 1.5 }}>
-          Operational configuration for your shop.
-        </Typography>
-      </Box>
-
+      <SettingsShellHeader />
       <ModuleTabBar tabs={SETTINGS_TABS} />
 
       <Routes>

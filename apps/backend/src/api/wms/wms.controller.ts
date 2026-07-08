@@ -1850,7 +1850,7 @@ export const httpResolveException = async (req: Request, res: Response) => {
 
       const exception = await trx('pick_exceptions')
         .where({ pick_exception_id: exceptionId, shop_id: shopId })
-        .select('resolved')
+        .select('resolved', 'pick_batch_id')
         .first();
 
       if (!exception) throw new Error('EXCEPTION_NOT_FOUND');
@@ -1866,10 +1866,33 @@ export const httpResolveException = async (req: Request, res: Response) => {
           updated_at: new Date(),
         });
 
+      // ISS-065: this handler previously never cleared the alert fired by
+      // firePickExceptionAlert (wmsAlerts.service.ts) on exception report,
+      // which is keyed on entity_id = pick_batch_id. Unlike the
+      // problem_center_tasks resolve path (ISS-030), this handler already
+      // has pick_batch_id directly — no join needed.
+      // NOTE: a batch can have multiple concurrent pick exceptions sharing
+      // one alert_key (wms:exception:pick:{batchId}/wms:exception:pack:
+      // {batchId}) — deactivating here on a single exception's resolve is
+      // correct only when it's the last unresolved exception for that
+      // batch+stage. Checked explicitly below rather than assumed.
+      const remainingUnresolved = await trx('pick_exceptions')
+        .where({ pick_batch_id: exception.pick_batch_id, shop_id: shopId, resolved: false })
+        .count('* as count')
+        .first();
+
+      if (Number(remainingUnresolved?.count ?? 0) === 0) {
+        await trx('alerts')
+          .where({ shop_id: shopId, entity_id: exception.pick_batch_id, is_active: true })
+          .andWhere('alert_type', 'in', ['wms_pick_exception', 'wms_pack_exception'])
+          .update({ is_active: false, updated_at: new Date() });
+      }
+
       console.info('[WMS_EXCEPTION_RESOLVED]', {
         pick_exception_id: exceptionId,
         resolved_by: userId,
         shopId,
+        remaining_unresolved: Number(remainingUnresolved?.count ?? 0),
       });
     });
 
@@ -2012,9 +2035,36 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       }
 
       // ── Deactivate linked alerts ────────────────────────────
+      // ISS-030: alerts.entity_id is keyed on the PARENT batch/job id
+      // (pick_batch_id / receive_job_id — see wmsAlerts.service.ts
+      // firePickExceptionAlert / fireReceiveExceptionAlert), not on the
+      // exception record's own id. problem_center_tasks.source_exception_id
+      // for pick/receive sources is the exception record's own id
+      // (pick_exceptions.pick_exception_id / receive_exceptions.
+      // receive_exception_id — confirmed via frontend call sites
+      // PickBriefScreen.tsx, ReceiveJobScreen.tsx, WmsPage.tsx).
+      // Resolve one level of indirection before matching, per source.
+      // stow/returns are unaffected — those flows already store the
+      // matching parent id directly in source_exception_id.
       if (task.source_exception_id) {
+        let alertEntityId = task.source_exception_id;
+
+        if (task.source === 'pick' || task.source === 'pack') {
+          const pickException = await trx('pick_exceptions')
+            .where({ pick_exception_id: task.source_exception_id, shop_id: shopId })
+            .select('pick_batch_id')
+            .first();
+          if (pickException) alertEntityId = pickException.pick_batch_id;
+        } else if (task.source === 'receive') {
+          const receiveException = await trx('receive_exceptions')
+            .where({ receive_exception_id: task.source_exception_id, shop_id: shopId })
+            .select('receive_job_id')
+            .first();
+          if (receiveException) alertEntityId = receiveException.receive_job_id;
+        }
+
         await trx('alerts')
-          .where({ shop_id: shopId, entity_id: task.source_exception_id, is_active: true })
+          .where({ shop_id: shopId, entity_id: alertEntityId, is_active: true })
           .update({ is_active: false, updated_at: new Date() });
       }
 
@@ -2780,11 +2830,32 @@ export const httpGetWmsSettings = async (req: Request, res: Response) => {
 // ─────────────────────────────────────────
 // POST /api/v1/wms/problem-center
 // ─────────────────────────────────────────
+// ISS-054: source_exception_id was previously trusted from the client with
+// zero verification — the resolve-time alert-deactivation logic (ISS-030,
+// ISS-065) depends entirely on this value being a real row in the correct
+// source table. An unvalidated/stale/foreign-shop id here silently breaks
+// alert clearing downstream with no error surfaced at creation time.
+// Also confirmed (2026-07-08 audit) this endpoint is the PRIMARY creation
+// path for 5+ call sites across web+mobile (WmsPage, PickBriefScreen,
+// StowScreen ×3, ReceiveJobScreen ×2) — not a rare manual escape hatch.
+const VALID_PROBLEM_SOURCES = ['pick', 'stow', 'receive', 'pack', 'returns'] as const;
+type ProblemSource = typeof VALID_PROBLEM_SOURCES[number];
+
+// Maps each source to the table + PK column that source_exception_id
+// must reference, scoped to this shop. 'stow' and 'returns' already have
+// dedicated server-side insert paths (stow.service.ts, returnJobs.service.ts)
+// that don't go through this endpoint, but are included here for
+// completeness in case a client ever calls this generic path for them too.
+const SOURCE_EXCEPTION_TABLE: Partial<Record<ProblemSource, { table: string; pk: string }>> = {
+  pick:    { table: 'pick_exceptions',    pk: 'pick_exception_id' },
+  pack:    { table: 'pick_exceptions',    pk: 'pick_exception_id' },
+  receive: { table: 'receive_exceptions', pk: 'receive_exception_id' },
+};
+
 export const httpCreateProblemTask = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   const userId = req.user?.userId;
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
-
   const {
     lasyncro_variant_id,
     quantity,
@@ -2792,14 +2863,29 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
     source,
     source_exception_id,
   } = req.body;
-
   if (!lasyncro_variant_id || !quantity || !exception_type || !source) {
     return res.status(400).json({ error: 'lasyncro_variant_id, quantity, exception_type, source required' });
   }
-
+  if (!VALID_PROBLEM_SOURCES.includes(source)) {
+    return res.status(400).json({ error: `source must be one of: ${VALID_PROBLEM_SOURCES.join(', ')}` });
+  }
   try {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // Verify source_exception_id references a real, shop-scoped row
+      // before it becomes the anchor for future alert-clearing logic.
+      if (source_exception_id) {
+        const lookup = SOURCE_EXCEPTION_TABLE[source as ProblemSource];
+        if (lookup) {
+          const exists = await trx(lookup.table)
+            .where({ [lookup.pk]: source_exception_id, shop_id: shopId })
+            .first(lookup.pk);
+          if (!exists) {
+            throw new Error('SOURCE_EXCEPTION_NOT_FOUND');
+          }
+        }
+      }
 
       // Atomically increment prob_label_sequence and return new value
       const seqResult = await trx.raw(`
@@ -2847,8 +2933,12 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
 
     return res.status(201).json(result);
   } catch (err: unknown) {
-    console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: getErrorMessage(err), stack: err instanceof Error ? err.stack : undefined });
-    return res.status(500).json({ error: `Failed to create problem task: ${getErrorMessage(err)}` });
+    const message = getErrorMessage(err);
+    if (message === 'SOURCE_EXCEPTION_NOT_FOUND') {
+      return res.status(404).json({ error: 'source_exception_id does not reference a valid exception for this shop' });
+    }
+    console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: message, stack: err instanceof Error ? err.stack : undefined });
+    return res.status(500).json({ error: `Failed to create problem task: ${message}` });
   }
 };
 

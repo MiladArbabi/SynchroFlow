@@ -54,8 +54,8 @@ const AhaMomentPage = lazy(() => import('pages/ft1-pages/AhaMomentPage'));
 const OrdersPage = lazy(() => import('pages/ft1-pages/OrdersPage'));
 const ProductsPage = lazy(() => import('pages/ft1-pages/ProductsPage'));
 const CustomersPage = lazy(() => import('pages/ft1-pages/CustomersPage'));
-const FinancesPage = lazy(() => import('pages/ft1-pages/FinancesPage'));
-
+/* const FinancesPage = lazy(() => import('pages/ft1-pages/FinancesPage'));
+ */
 // FT2 pages
 const AlertsPage = lazy(() => import('pages/ft2-pages/AlertsPage'));
 const OrdersFT2Page = lazy(() => import('pages/ft2-pages/OrdersFT2Page'));
@@ -74,7 +74,6 @@ const WmsPage = lazy(() => import('pages/ft2-pages/WmsPage'));
 const SuppliersPortalPage = lazy(() => import('pages/ft2-pages/SuppliersPortalPage'));
 const FloorPlanningPage = lazy(() => import('pages/ft2-pages/FloorPlanningPage'));
 const WmsAnalyticsPage = lazy(() => import('pages/ft2-pages/WmsAnalyticsPage'));
-const ProductsWmsReadinessPage = lazy(() => import('pages/ft2-pages/ProductsWmsReadinessPage'));
 const ShopSettingsPage = lazy(() => import('pages/ft2-pages/ShopSettingsPage'));
 const MembersPage = lazy(() => import('pages/ft2-pages/MembersPage'));
 const MemberDetailPage = lazy(() => import('pages/ft2-pages/MemberDetailPage'));
@@ -203,7 +202,7 @@ export function LifecycleRouteHost() {
       <Route path="/customers/*" element={<CustomersPage />} />
 
       {/* FINANCES */}
-      <Route path="/finances/*" element={<FinancesPage />} />
+      {/* <Route path="/finances/*" element={<FinancesPage />} /> */}
 
       {/* Catch-all → Overview */}
       <Route path="*" element={<Navigate to="/overview" replace />} />
@@ -269,7 +268,8 @@ export function LifecycleRouteHost() {
       {/* WMS */}
       {/* /wms/analytics and /wms/readiness must precede /wms/* — wildcard would shadow them otherwise */}
       <Route path="/wms/analytics" element={<WmsAnalyticsPage />} />
-      <Route path="/wms/readiness" element={<ProductsWmsReadinessPage />} />
+      {/* ISS-070: redirect old top-level route to new nested location */}
+      <Route path="/wms/readiness" element={<Navigate to="/inventory/data-quality" replace />} />
       <Route path="/wms/*" element={<WmsPage />} />
 
       {/* SUPPLIERS PORTAL */}

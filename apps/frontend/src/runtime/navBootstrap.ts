@@ -21,8 +21,7 @@ import {
   RotateCcw,
   Box,
   Truck,
-  DollarSign,
-  Users,
+  /* DollarSign, */
 } from 'lucide-react';
 import { registerNavGroup, registerNavItem } from './registerNav';
 
@@ -104,7 +103,7 @@ export function bootstrapNavGroups() {
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
       { id: 'demand',                 title: 'Demand',         path: '/demand',  requiredTier: 'growth' },
       { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
-      { id: 'data-quality',           title: 'Data Quality',   path: '/wms/readiness'           },
+      { id: 'data-quality',           title: 'Data Quality',   path: '/inventory/data-quality'  },    
     ],
   });
 
@@ -123,7 +122,7 @@ export function bootstrapNavGroups() {
     ],
   });
 
-  registerNavItem({
+  /* registerNavItem({
     id: 'finances',
     title: 'Finances',
     path: '/finances',
@@ -137,16 +136,5 @@ export function bootstrapNavGroups() {
       { id: 'cashflow',        title: 'Cash Flow', path: '/cashflow'        },
       { id: 'finances-margin', title: 'Margin',    path: '/finances/margin' },
     ],
-  });
-
-  registerNavItem({
-    id: 'team',
-    title: 'Team',
-    path: '/team',
-    group: 'workspace',
-    order: 80,
-    icon: Users,
-    // No requiredModuleId — team management is platform-level, not module-gated.
-    // Settings accessed via profile avatar popper, not sidenav.
-  });
+  }); */
 }

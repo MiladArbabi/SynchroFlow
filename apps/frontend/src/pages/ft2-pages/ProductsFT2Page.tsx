@@ -26,6 +26,7 @@ import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ProductsModuleFT2 } from '@lasyncro/products';
 import ProductsCatalogPage from './ProductsCatalogPage';
 import ProductsCostsPage from './ProductsCostsPage';
+import ProductsWmsReadinessPage from './ProductsWmsReadinessPage';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -75,6 +76,7 @@ export default function ProductsFT2Page() {
         })()} />
         <Route path="/catalog"        element={<ProductsCatalogPage range={range} />} />
         <Route path="/costs"          element={<ProductsCostsPage />} />
+        <Route path="/data-quality"   element={<ProductsWmsReadinessPage />} />
         <Route path="*"               element={<Navigate to="/inventory" replace />} />
       </Routes>
     </>

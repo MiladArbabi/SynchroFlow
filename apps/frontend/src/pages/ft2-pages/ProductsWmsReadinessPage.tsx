@@ -10,9 +10,8 @@
 // - 4-card stat row at top: not pickable, no bin, variance, last eval
 // - INV-04: variance_count now returns 0 (not null) when data exists
 // - Read-only — never mutates
+
 import { Box, Typography, Divider, useTheme } from '@mui/material';
-import { ModuleTabBar } from '../../components/ModuleTabBar';
-import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 import { AlertTriangle, ScanBarcode, MapPin, Scale, PackageOpen } from 'lucide-react';
 import { useProductsWmsReadiness } from '../products/useProductsWmsReadiness';
 import { navigate } from 'runtime';
@@ -61,7 +60,9 @@ export default function ProductsWmsReadinessPage() {
 
   return (
     <>
-    <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
+    {/* ISS-073: ModuleTabBar removed — this page now renders nested inside
+        ProductsFT2Page.tsx (ISS-070), which already provides the tab bar.
+        Rendering it here too caused a duplicate tab row. */}
     <Box sx={{ p: '24px 40px', bgcolor: 'var(--bg)', minHeight: '100%' }}>
       
       {/* ── HEADER ───────────────────────────────────────────── */}
