@@ -208,7 +208,9 @@ export default function PackSessionPage({
   };
 
   const scanHint = allScanned
-    ? 'Scan invoice barcode (LSO-) to confirm shipment'
+    ? currentResult.order?.wms_barcode
+      ? `Scan invoice barcode (LSO-) to confirm shipment — code: ${currentResult.order.wms_barcode}`
+      : 'Scan invoice barcode (LSO-) to confirm shipment'
     : `Scan next LSU- barcode · ${scannedCount} of ${totalCount} confirmed`;
 
   return (
@@ -328,7 +330,10 @@ export default function PackSessionPage({
           color={printState === 'failed' ? 'warning.dark' : 'success.dark'}>
           {printState === 'printing' && 'Sending invoice + label to printer…'}
           {printState === 'printed' && 'Invoice + shipping label sent to printer'}
-          {printState === 'failed' && 'Printer offline — re-queued. You can still proceed.'}
+          {printState === 'failed' && currentResult.order?.wms_barcode &&
+            `Printer offline — re-queued. Invoice code: ${currentResult.order.wms_barcode}`}
+          {printState === 'failed' && !currentResult.order?.wms_barcode &&
+            'Printer offline — re-queued. You can still proceed.'}
         </Typography>
       </Box>
 

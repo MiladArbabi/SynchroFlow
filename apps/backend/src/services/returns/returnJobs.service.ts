@@ -57,12 +57,6 @@ export interface CreateUndeliveredReturnJobInput {
   notes?: string;
 }
 
-export interface ClaimReturnJobInput {
-  shopId: number;
-  returnJobId: string;
-  operatorId: number;
-}
-
 export interface ProcessReturnLineInput {
   shopId: number;
   returnJobId: string;
@@ -936,53 +930,6 @@ export async function listItemsAwaitingDecision(shopId: number): Promise<ReturnD
       });
     }
     return Array.from(groups.values());
-  });
-}
-
-// ─── Claim: Return Job (WEB-RETURN-01) ────────────────────────────────────────
-export async function claimReturnJob(
-  input: ClaimReturnJobInput
-): Promise<void> {
-  const { shopId, returnJobId, operatorId } = input;
-
-  return withTenant(shopId, async (trx) => {
-    const job = await trx('return_jobs')
-      .where({ return_job_id: returnJobId, shop_id: shopId })
-      .select('status', 'claimed_by')
-      .first();
-
-    if (!job) throw new Error(`[RETURN_CLAIM] Job not found: ${returnJobId}`);
-
-    // Allow operator to re-claim their own in-progress job (e.g. after navigating back)
-    if (job.status === 'in_progress' && job.claimed_by === operatorId) return;
-
-    if (job.status !== 'pending') {
-      throw new Error(`[RETURN_CLAIM] Job not claimable: ${job.status}`);
-    }
-    if (job.claimed_by !== null) {
-      throw new Error('[RETURN_CLAIM] Job already claimed');
-    }
-
-    const now = new Date();
-    await trx('return_jobs')
-      .where({ return_job_id: returnJobId })
-      .update({
-        status: 'in_progress',
-        claimed_by: operatorId,
-        claimed_at: now,
-        updated_at: now,
-      });
-
-    console.info('[RETURN_JOB_CLAIMED]', { returnJobId, operatorId, shopId });
-
-    await writeAuditLog(trx as Knex.Transaction, {
-      shopId,
-      operatorId,
-      actionType: 'return_job_claim',
-      entityType: 'return_job',
-      entityId: returnJobId,
-      metadata: {},
-    });
   });
 }
 

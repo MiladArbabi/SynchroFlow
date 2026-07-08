@@ -620,6 +620,11 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
             .on('psl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
             .andOnVal('psl.status', 'confirmed');
         })
+        .leftJoin('pick_scan_log as pskl', (join) => {
+          join
+            .on('pskl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+            .andOnVal('pskl.status', 'confirmed');
+        })
         .whereIn('oli.lasyncro_order_id', orderIds)
         .select(
           'oli.lasyncro_line_item_id',
@@ -629,7 +634,8 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
           trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
           trx.raw(`oli.title as variant_title`),
           'oli.quantity',
-          trx.raw('CASE WHEN psl.scan_id IS NOT NULL THEN true ELSE false END as pack_scanned')
+          trx.raw('CASE WHEN psl.scan_id IS NOT NULL THEN true ELSE false END as pack_scanned'),
+          trx.raw('CASE WHEN pskl.lasyncro_unit_id IS NOT NULL THEN true ELSE false END as has_tracked_unit')
         );
 
       // Group line items by order
@@ -2053,7 +2059,7 @@ export const httpGetPackingSlipUrl = async (req: Request, res: Response) => {
         .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'ows.lasyncro_order_id')
         .join('shopify_app_installations as sai', 'sai.shop_id', trx.raw('?', [shopId]))
         .where('ows.lasyncro_order_id', orderId)
-        .where('ows.shop_id', shopId)
+        .where('eoim.shop_id', shopId)
         .select(
           'ows.shopify_fulfillment_id',
           'eoim.external_order_id',

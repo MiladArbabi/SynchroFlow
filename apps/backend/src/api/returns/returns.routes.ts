@@ -10,7 +10,6 @@ import {
   httpCompleteReturnJob,
   httpListItemsAwaitingDecision,
   httpSetOwnerDecision,
-  httpClaimReturnJob,
   httpGetReturnJob,
   httpAddManualReturnLine,
 } from './returnJobs.controller.js';
@@ -60,11 +59,6 @@ router.post('/jobs',
 router.get('/jobs/:id',
   authenticateToken, requireFt2, requireTier('core'), requireAction('returns:read'),
   httpGetReturnJob
-);
-
-router.post('/jobs/:id/claim',
-  authenticateToken, requireFt2, requireTier('core'), requireAction('returns:job:claim'),
-  httpClaimReturnJob
 );
 
 router.post('/jobs/:id/lines',

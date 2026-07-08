@@ -293,7 +293,7 @@ export default function ReturnsOverviewPage() {
                   title={orphanTitle(job)}
                   detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
                   cta="Claim"
-                  onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
+                  onClick={() => navigate('/wms')}
                 />
               ))}
               {warningOrphans.map(job => (
@@ -304,7 +304,7 @@ export default function ReturnsOverviewPage() {
                   title={orphanTitle(job)}
                   detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
                   cta="Claim"
-                  onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
+                  onClick={() => navigate('/wms')}
                 />
               ))}
               {okOrphans.length > 0 && (
@@ -323,7 +323,7 @@ export default function ReturnsOverviewPage() {
                       title={orphanTitle(job)}
                       detail={job.refund_amount > 0 ? `${fmt(job.refund_amount)} refunded, still unclaimed` : 'Unclaimed — no item logged'}
                       cta="Claim"
-                      onClick={() => navigate(`/returns/jobs/${job.return_job_id}`)}
+                      onClick={() => navigate('/wms')}
                     />
                   ))}
                 </Box>
