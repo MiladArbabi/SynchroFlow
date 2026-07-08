@@ -87,13 +87,28 @@ export async function confirmShipment(
   const lineItems = await trx('order_line_items')
     .where({ lasyncro_order_id: lasyncroOrderId })
     .select('lasyncro_variant_id');
-
   for (const li of lineItems) {
     await trx('inventory_unit_status')
       .where({ shop_id: shopId, lasyncro_variant_id: li.lasyncro_variant_id })
       .update({
         status: 'shipped',
         status_updated_at: shippedAt,
+        updated_at: shippedAt,
+      });
+  }
+  // 4b. Transition inventory_units.status → shipped for units actually
+  //     picked for this order (via pick_scan_log), not all units of the variant.
+  const pickedUnitIds = await trx('pick_scan_log as psl')
+    .join('order_line_items as oli', 'oli.lasyncro_line_item_id', 'psl.lasyncro_line_item_id')
+    .where({ 'oli.lasyncro_order_id': lasyncroOrderId, 'psl.status': 'confirmed' })
+    .whereNotNull('psl.lasyncro_unit_id')
+    .pluck('psl.lasyncro_unit_id');
+  if (pickedUnitIds.length > 0) {
+    await trx('inventory_units')
+      .whereIn('lasyncro_unit_id', pickedUnitIds)
+      .where({ shop_id: shopId })
+      .update({
+        status: 'shipped',
         updated_at: shippedAt,
       });
   }

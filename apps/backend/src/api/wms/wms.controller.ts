@@ -1031,6 +1031,11 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
                 .andOn('psl.pick_batch_id', trx.raw('?', [pickLog.pick_batch_id]))
                 .andOnVal('psl.status', 'confirmed');
             })
+            .leftJoin('pick_scan_log as pskl', function () {
+              this.on('pskl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+                .andOn('pskl.pick_batch_id', trx.raw('?', [pickLog.pick_batch_id]))
+                .andOnVal('pskl.status', 'confirmed');
+            })
             .where({ 'oli.lasyncro_order_id': lasyncroOrderId })
             .select(
               'oli.lasyncro_line_item_id',
@@ -1040,6 +1045,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
               'v.image_url',
               'v.sku',
               trx.raw(`(psl.scan_id IS NOT NULL) as pack_scanned`),
+              trx.raw(`(pskl.lasyncro_unit_id IS NOT NULL) as has_tracked_unit`),
             ),
 
           trx('order_shipment_tracking')

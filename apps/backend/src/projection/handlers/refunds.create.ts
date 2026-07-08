@@ -251,6 +251,24 @@ export async function handleRefundsCreate({
       .ignore();
   }
 
+  /**
+   * RET-S4-10 FIX (2026-07-08): total_refund_amount was hardcoded to 0
+   * at row creation and never updated. Recovery-rate KPI silently
+   * fell back to a false 100% because total_trackable_amount was
+   * always 0. Aggregate the just-written line items back onto the
+   * parent row so total_refund_amount reflects reality.
+   */
+  const lineItemSumRow = await trx('refund_execution_line_items')
+    .where({ lasyncro_refund_execution_id: execution.lasyncro_refund_execution_id })
+    .sum({ total: 'refunded_amount' })
+    .first();
+
+  const aggregatedRefundAmount = Number(lineItemSumRow?.total ?? 0);
+
+  await trx('refund_executions')
+    .where({ lasyncro_refund_execution_id: execution.lasyncro_refund_execution_id })
+    .update({ total_refund_amount: aggregatedRefundAmount });
+
   await trx('orders')
     .where({ lasyncro_order_id: lasyncroOrderId })
     .update({

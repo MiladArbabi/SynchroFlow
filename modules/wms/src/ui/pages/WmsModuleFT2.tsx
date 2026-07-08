@@ -424,6 +424,7 @@ export interface PackFreeScanLineItem {
   image_url: string | null;
   sku: string | null;
   pack_scanned: boolean;
+  has_tracked_unit: boolean;
 }
 
 /** Shape of POST /wms/pack/free-scan LSU- happy-path response (WEB-PACK-02). */
@@ -456,6 +457,7 @@ export interface PackFreeScanResult {
     image_url: string | null;
     sku: string | null;
     pack_scanned: boolean;
+    has_tracked_unit: boolean;
   }[];
 }
 
@@ -645,6 +647,12 @@ function WmsModuleFT2Inner({
       <PackSessionPage
         initialFreeScanResult={activeSession.freeScanResult}
         onPackFreeScan={onPackFreeScan}
+        onPackCountConfirm={async (params) => {
+          await onConfirmPackScan(activeSession.freeScanResult.pick_batch_id, {
+            lasyncro_order_id: activeSession.freeScanResult.lasyncro_order_id,
+            ...params,
+          });
+        }}
         onPrintInvoice={onPrintInvoice}
         onPrintLabel={onPrintLabel}
         onCreateProblemTask={onCreateProblemTask}

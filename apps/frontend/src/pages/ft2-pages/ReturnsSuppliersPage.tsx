@@ -74,7 +74,10 @@ export default function ReturnsSuppliersPage() {
   const suppliers = useMemo<SupplierScore[]>(() => {
     const map = new Map<string, SupplierScore>();
     for (const row of rows) {
-      const name = row.supplier_name ?? 'Unknown supplier';
+      // RET-S4-07 fix: "Unknown supplier" read as a system error to
+      // merchants. Correct fallback state is "no receive job on record" —
+      // matches the "No batch data" copy already used at line 304.
+      const name = row.supplier_name ?? 'No supplier linked';
       const entry = map.get(name) ?? {
         name,
         returned: 0,
@@ -298,7 +301,7 @@ export default function ReturnsSuppliersPage() {
                       )}
                     </Box>
                     <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                      {row.supplier_name ?? 'Unknown'}
+                      {row.supplier_name ?? 'No supplier linked'}
                     </Typography>
                     <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
                       {fmtDate(row.batch_received_at) ?? (row.receive_job_id ? 'Unknown date' : 'No batch data')}

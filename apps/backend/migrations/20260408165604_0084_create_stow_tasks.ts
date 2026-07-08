@@ -42,7 +42,8 @@ export async function up(knex: Knex): Promise<void> {
         CREATE TYPE stow_task_trigger AS ENUM (
           'order_cancelled_mid_pick',
           'inbound_stock',
-          'problem_center'
+          'problem_center',
+          'return_restock'
         );
       END IF;
     END$$;

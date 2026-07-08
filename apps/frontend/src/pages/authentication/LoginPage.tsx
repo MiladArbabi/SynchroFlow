@@ -106,7 +106,8 @@ export default function Login() {
             {/* AUTH-014: system status pill — top-right */}
             <SystemStatusPill />
           </Box>
-          <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
+
+          <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0, backgroundColor: 'var(--bg)' }}>
             <AuthCardWrapper>
               <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
                 <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>

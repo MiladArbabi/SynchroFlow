@@ -393,7 +393,7 @@ async function applyReturnLineCascade(
       shopId,
       lasyncroVariantId,
       quantity: quantityReceived,
-      trigger: 'inbound_stock',
+      trigger: 'return_restock',
     });
     console.info('[RETURN_LINE_RESELLABLE]', { returnJobId, variantId: lasyncroVariantId, qty: quantityReceived });
   }
@@ -835,7 +835,13 @@ export async function getReturnJob(
     const lines = await trx('refund_execution_line_items as reli')
       .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oru.lasyncro_variant_id')
-      .where('reli.lasyncro_refund_execution_id', job.lasyncro_refund_execution_id ?? null)
+      .where((qb) => {
+        if (job.lasyncro_refund_execution_id) {
+          qb.where('reli.lasyncro_refund_execution_id', job.lasyncro_refund_execution_id);
+        } else {
+          qb.where('reli.return_job_id', returnJobId);
+        }
+      })
       .select(
         'reli.lasyncro_refund_line_item_id',
         'reli.refunded_quantity',

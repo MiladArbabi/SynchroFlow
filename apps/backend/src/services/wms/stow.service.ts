@@ -39,7 +39,7 @@ export interface CreateStowTaskInput {
   lasyncroVariantId: string;
   quantity: number;
   locationCode?: string;        // nullable — assigned after WM-36 suggestion
-  trigger: 'order_cancelled_mid_pick' | 'inbound_stock';
+  trigger: 'order_cancelled_mid_pick' | 'inbound_stock' | 'return_restock' | 'problem_center';
   pickBatchId?: string;
   lasyncroOrderId?: string;
   poId?: string;                // populated when trigger = inbound_stock (FEAT-004)
@@ -145,7 +145,7 @@ export async function confirmStow(
   // 1. Validate task
   const task = await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId, shop_id: shopId })
-    .select('status', 'claimed_by', 'lasyncro_variant_id', 'quantity', 'location_code')
+    .select('status', 'claimed_by', 'lasyncro_variant_id', 'quantity', 'location_code', 'trigger')
     .first();
 
   if (!task) throw new Error(`[STOW_CONFIRM] Task not found: ${stowTaskId}`);
@@ -241,12 +241,14 @@ export async function confirmStow(
     .ignore();
 
   // 3b. Credit — stock arrives at destination bin
+  //     return_restock trigger → refund_return movement so restock rate
+  //     query in returnsIntelligence.service.ts can count it correctly.
   await trx('inventory_movements')
     .insert({
       lasyncro_inventory_movement_id: creditMovementId,
       lasyncro_variant_id: task.lasyncro_variant_id,
       shop_id: shopId,
-      movement_type: 'location_transfer',
+      movement_type: task.trigger === 'return_restock' ? 'refund_return' : 'location_transfer',
       quantity_delta: qty,
       location_code: task.location_code,
       reference_type: 'stow_task',

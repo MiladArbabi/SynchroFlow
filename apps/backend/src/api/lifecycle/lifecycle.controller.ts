@@ -29,6 +29,7 @@ export async function getLifecycle(req: Request, res: Response) {
 
     const userId = req.user.userId;
     const rawPhase = await LifecycleService.resolveForUser(userId);
+    let lifecycleLogCount = 0;
 
     /**
      * Normalize lifecycle phase (backend → frontend contract)
@@ -37,9 +38,12 @@ export async function getLifecycle(req: Request, res: Response) {
     const phase = rawPhase === 'FT2' ? 'FT2_READY' : rawPhase;
 
     if (rawPhase === 'FT2') {
-      console.error('[LIFECYCLE][LEGACY_FT2_NORMALIZED_AT_SOURCE]', {
+      lifecycleLogCount ++;
+      if (lifecycleLogCount < 1) {
+        console.error('[LIFECYCLE][LEGACY_FT2_NORMALIZED_AT_SOURCE]', {
         rawPhase,
       });
+      }
     }
 
     /**

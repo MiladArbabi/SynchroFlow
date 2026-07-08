@@ -42,6 +42,7 @@ export interface PackLineItem {
   variant_title: string | null;
   quantity: number;
   pack_scanned: boolean;
+  has_tracked_unit: boolean;
 }
 
 export interface PackOrder {
@@ -99,6 +100,7 @@ function ScanInput({
 export interface PackSessionPageProps {
   initialFreeScanResult: PackFreeScanResult;
   onPackFreeScan: (scannedValue: string) => Promise<PackFreeScanApiResponse>;
+  onPackCountConfirm: (params: { lasyncro_line_item_id: string; lasyncro_variant_id: string; quantity_confirmed: number }) => Promise<void>;
   onPrintInvoice: (orderId: string) => Promise<void>;
   onPrintLabel: (orderId: string) => Promise<void>;
   onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
@@ -108,6 +110,7 @@ export interface PackSessionPageProps {
 export default function PackSessionPage({
   initialFreeScanResult,
   onPackFreeScan,
+  onPackCountConfirm,
   onPrintInvoice,
   onPrintLabel,
   onCreateProblemTask,
@@ -128,6 +131,10 @@ export default function PackSessionPage({
   const scannedCount = currentResult.line_items.filter((i) => i.pack_scanned).length;
   const totalCount = currentResult.line_items.length;
   const allScanned = scannedCount >= totalCount;
+  // Per-line mode: lines without a tracked LSU- unit auto-use count mode
+  const currentLine = currentResult.line_items.find((i) => !i.pack_scanned) ?? null;
+  const currentLineNeedsCount = currentLine ? !currentLine.has_tracked_unit : false;
+  const [countQty, setCountQty] = useState(1);
 
   // Auto-print invoice + carrier label on mount
   useEffect(() => {
@@ -211,7 +218,9 @@ export default function PackSessionPage({
     ? currentResult.order?.wms_barcode
       ? `Scan invoice barcode (LSO-) to confirm shipment — code: ${currentResult.order.wms_barcode}`
       : 'Scan invoice barcode (LSO-) to confirm shipment'
-    : `Scan next LSU- barcode · ${scannedCount} of ${totalCount} confirmed`;
+    : currentLineNeedsCount
+      ? `Confirm quantity · ${scannedCount} of ${totalCount} confirmed`
+      : `Scan next LSU- barcode · ${scannedCount} of ${totalCount} confirmed`;
 
   return (
     <Box sx={{ p: 2, maxWidth: 600, mx: 'auto' }}>
@@ -344,9 +353,69 @@ export default function PackSessionPage({
         </Alert>
       )}
 
-      {/* SCAN INPUT */}
+      {/* SCAN INPUT — scan mode (LSU-tracked) or count mode (legacy) */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 2 }}>
-        <ScanInput hint={scanHint} onSubmit={handleScan} disabled={scanLoading} />
+        {!allScanned && currentLineNeedsCount ? (
+          <Box>
+            <Typography variant="overline" color="text.secondary" sx={{ fontSize: 10 }}>
+              Inspection count
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: 1 }}>
+              <Typography variant="body2" sx={{ flex: 1, minWidth: 0 }} noWrap>
+                {currentLine?.product_title ?? 'Unknown product'}
+                {currentLine?.sku ? ` · ${currentLine.sku}` : ''}
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Button size="small" variant="outlined"
+                  onClick={() => setCountQty((q) => Math.max(1, q - 1))}
+                  sx={{ minWidth: 32, px: 0.5 }}>−</Button>
+                <Typography variant="body2" fontWeight={600} sx={{ minWidth: 24, textAlign: 'center' }}>
+                  {countQty}
+                </Typography>
+                <Button size="small" variant="outlined"
+                  onClick={() => setCountQty((q) => q + 1)}
+                  sx={{ minWidth: 32, px: 0.5 }}>+</Button>
+              </Box>
+              <Button size="small" variant="contained"
+                disabled={scanLoading}
+                sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: '6px', fontWeight: 600, '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+                onClick={async () => {
+                  if (!currentLine) return;
+                  setScanLoading(true);
+                  setScanError(null);
+                  try {
+                    await onPackCountConfirm({
+                      lasyncro_line_item_id: currentLine.lasyncro_line_item_id,
+                      lasyncro_variant_id: currentLine.lasyncro_variant_id,
+                      quantity_confirmed: countQty,
+                    });
+                    setCurrentResult((prev) => ({
+                      ...prev,
+                      line_items: prev.line_items.map((li) =>
+                        li.lasyncro_line_item_id === currentLine.lasyncro_line_item_id
+                          ? { ...li, pack_scanned: true }
+                          : li
+                      ),
+                    }));
+                    setCountQty(1);
+                  } catch (err: any) {
+                    const msg = err?.response?.data?.message ?? err?.message ?? 'Confirm failed — try again';
+                    setScanError(msg);
+                    errorTimerRef.current = setTimeout(() => setScanError(null), 3500);
+                  } finally {
+                    setScanLoading(false);
+                  }
+                }}>
+                Confirm
+              </Button>
+            </Box>
+            {scanError && (
+              <Alert severity="error" sx={{ mt: 1, py: 0.5, fontSize: 12 }}>{scanError}</Alert>
+            )}
+          </Box>
+        ) : (
+          <ScanInput hint={scanHint} onSubmit={handleScan} disabled={scanLoading} />
+        )}
       </Paper>
 
       {/* PROBLEM CENTER */}

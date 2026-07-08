@@ -188,7 +188,7 @@ export async function up(knex: Knex): Promise<void> {
      * Both folded in here corrected.
      */
     table.unique(
-      ['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code'],
+      ['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code', 'movement_type'],
       'inventory_movements_shop_ref_unique'
     );
   });
