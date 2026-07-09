@@ -188,11 +188,6 @@ root.render(
             </BrowserRouter>
            </UserProvider>
           
-          {ReactQueryDevtools ? (
-            <Suspense fallback={null}>
-              <ReactQueryDevtools initialIsOpen={false} />
-            </Suspense>
-          ) : null}
         </QueryClientProvider>
       </ConfigProvider>
     </PostHogProvider>

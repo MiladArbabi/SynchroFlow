@@ -15,6 +15,7 @@ import { Bell, Home, AlertCircle, AlertTriangle, Info, ArrowRight, CheckCircle2 
 import { useNavigate } from 'react-router-dom';
 import { useAlerts, useAcknowledgeAlert, type Alert } from '../../pages/alerts/useAlerts';
 import { useAppTheme } from '../../hooks/useAppTheme';
+import { useCurrency } from '../../hooks/useCurrency';
 import { useShopLifecycle } from 'lifecycle/ShopLifecycleContext';
 import { useIntegration } from '../../contexts/integration/useIntegration';
 import { axiosInstance } from "api/axiosConfig";
@@ -57,7 +58,7 @@ const BELL_ROUTE_MAP: Record<string, { route: string; label: string }> = {
   // reorder signal — see MVP Roadmap, still 🔴 OPEN). When built, this
   // is where it should land.
   reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
-  revenue_at_risk:         { route: '/cashflow',      label: 'Cash Flow' },
+  revenue_at_risk:         { route: '/overview',      label: 'Overview' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
   missing_cogs:            { route: '/products',       label: 'Products' },
@@ -93,6 +94,7 @@ function BellAlertRow({ alert, onClose }: { alert: Alert; onClose: () => void })
 
   const deepLink = bellDeepLink(alert);
   const revenue  = alert.revenue_impact ? Number(alert.revenue_impact) : null;
+  const { format } = useCurrency();
   const acked    = alert.acknowledged_at !== null;
 
   const sevColor = acked ? pal.ink4
@@ -146,7 +148,7 @@ function BellAlertRow({ alert, onClose }: { alert: Alert; onClose: () => void })
               color: alert.severity === 'critical' ? theme.palette.error.main : pal.ink3,
               fontVariantNumeric: 'tabular-nums',
             }}>
-              ${Math.round(revenue).toLocaleString()}
+              {format(revenue)}
             </Typography>
           )}
         </Box>

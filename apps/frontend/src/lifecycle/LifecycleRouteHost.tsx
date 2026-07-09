@@ -60,15 +60,15 @@ const CustomersPage = lazy(() => import('pages/ft1-pages/CustomersPage'));
 const AlertsPage = lazy(() => import('pages/ft2-pages/AlertsPage'));
 const OrdersFT2Page = lazy(() => import('pages/ft2-pages/OrdersFT2Page'));
 const OrderDetailPage = lazy(() => import('pages/ft2-pages/OrderDetailPage'));
-const CustomersFT2Page = lazy(() => import('pages/ft2-pages/CustomersFT2Page'));
+/* const CustomersFT2Page = lazy(() => import('pages/ft2-pages/CustomersFT2Page')); */
 const ProductsFT2Page = lazy(() => import('pages/ft2-pages/ProductsFT2Page'));
-const FinancesFT2Page = lazy(() => import('pages/ft2-pages/FinancesFT2Page'));
+/* const FinancesFT2Page = lazy(() => import('pages/ft2-pages/FinancesFT2Page')); */
 const OverviewFT2Page = lazy(() => import('pages/ft2-pages/OverviewFT2Page'));
 const OrderFlowPage = lazy(() => import('pages/ft2-pages/OrderFlowPage'));
 const ReturnsFT2Page = lazy(() => import('pages/ft2-pages/ReturnsFT2Page'));
 const OrdersOutboundPage = lazy(() => import('pages/ft2-pages/OrdersOutboundPage'));
 const OrdersInboundPage = lazy(() => import('pages/ft2-pages/OrdersInboundPage'));
-const CashFlowPage = lazy(() => import('pages/ft2-pages/CashFlowPage'));
+/* const CashFlowPage = lazy(() => import('pages/ft2-pages/CashFlowPage')); */
 const DemandPage = lazy(() => import('pages/ft2-pages/DemandPage'));
 const WmsPage = lazy(() => import('pages/ft2-pages/WmsPage'));
 const SuppliersPortalPage = lazy(() => import('pages/ft2-pages/SuppliersPortalPage'));
@@ -245,10 +245,10 @@ export function LifecycleRouteHost() {
       <Route path="/inventory/*" element={<ProductsFT2Page />} />
 
       {/* CUSTOMERS */}
-      <Route path="/customers/*" element={<CustomersFT2Page />} />
+      {/* <Route path="/customers/*" element={<CustomersFT2Page />} /> */}
 
       {/* FINANCES */}
-      <Route path="/finances/*" element={<FinancesFT2Page />} />
+      {/* <Route path="/finances/*" element={<FinancesFT2Page />} /> */}
 
       {/* FULFILLMENT QUEUE */}
       <Route path="/fulfillment/*" element={<Navigate to="/orders/flow" replace />} />
@@ -260,7 +260,7 @@ export function LifecycleRouteHost() {
       <Route path="/returns/*" element={<ReturnsFT2Page />} />
 
       {/* CASH FLOW */}
-      <Route path="/cashflow/*" element={<CashFlowPage />} />
+      {/* <Route path="/cashflow/*" element={<CashFlowPage />} /> */}
 
       {/* DEMAND */}
       <Route path="/demand/*" element={<DemandPage />} />

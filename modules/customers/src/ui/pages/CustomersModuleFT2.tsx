@@ -296,7 +296,7 @@ function CustomersModuleFT2Inner({ ltv, currency }: CustomersModuleFT2Props) {
           {customers.length > 0 && (
             <Box>
               <Typography variant="overline" color="text.secondary" sx={{ mb: 1.5, display: 'block' }}>
-                Customer Intelligence — ranked by lifetime value
+                Customers — ranked by lifetime value
               </Typography>
 
               <Box

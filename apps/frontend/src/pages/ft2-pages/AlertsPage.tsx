@@ -98,7 +98,7 @@ const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> = {
   // reorder signal — see MVP Roadmap, still 🔴 OPEN). When built, this
   // is where it should land.
   reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
-  revenue_at_risk:         { route: '/cash-flow',      label: 'Cash Flow' },
+  revenue_at_risk:         { route: '/overview',      label: 'Overview' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
   missing_cogs:            { route: '/products',       label: 'Products' },
