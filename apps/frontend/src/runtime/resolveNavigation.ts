@@ -12,8 +12,8 @@ export interface ResolvedNavItem {
   icon?: ElementType;
   disabled: boolean;
   requiredTier?: string;
-  /** Submodule children — passed through from NavItem. Tier gating applied per child. */
-  children?: { id: string; title: string; path: string; requiredTier?: string }[];
+  /** Submodule children — tier gating resolved per child (ISS-069/082). */
+  children?: { id: string; title: string; path: string; requiredTier?: string; disabled: boolean }[];
 }
 
 export interface ResolvedNavGroup {
@@ -104,6 +104,27 @@ export function resolveNavigation({
 
             if (visibility === 'hidden') continue;
 
+            // ISS-069/082: tier gating was previously only computed for the
+            // parent item — children silently passed through ungated, which
+            // let the sidebar navigate straight into tier-locked pages that
+            // ModuleTabBar correctly blocks. Resolve each child's visibility
+            // the same way the parent is resolved above.
+            const resolvedChildren = (item.children ?? [])
+              .map((child) => {
+                const childVisibility = resolveNavVisibility({
+                  requiredModuleId: item.requiredModuleId,
+                  modules: entitlements ? Array.from(entitlements.modules) : [],
+                  requiredTier: child.requiredTier,
+                  currentTier,
+                });
+                return { ...child, visibility: childVisibility };
+              })
+              .filter((child) => child.visibility !== 'hidden')
+              .map(({ visibility, ...child }) => ({
+                ...child,
+                disabled: visibility === 'locked',
+              }));
+
             resolvedItems.push({
             id: item.id,
             title: item.title ?? item.id,
@@ -111,7 +132,7 @@ export function resolveNavigation({
             icon: item.icon,
             disabled: visibility === 'locked',
             requiredTier: item.requiredTier,
-            children: item.children,
+            children: resolvedChildren,
         });
     }
 

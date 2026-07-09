@@ -458,7 +458,8 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                   onClick={() => navigate('/wms/readiness')}
                   sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', ml: 2, '&:hover': { opacity: 0.75 } }}
                 >
-                  Fix in WMS →
+                  {/* ISS-084/DEC-02: was "Fix in WMS" — module renamed to Warehouse */}
+                  Fix in Warehouse →
                 </Box>
               </Box>
             )}
@@ -601,15 +602,12 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   {os.inbound.total_committed_value_cents != null && (
                     <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                      {fmt$(os.inbound.total_committed_value_cents / 100)} committed
+                      {fmt$(os.inbound.total_committed_value_cents / 100)}committed
                     </Typography>
                   )}
-                  <Box
-                    onClick={() => navigate('/cashflow')}
-                    sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
-                    Cash Flow →
-                  </Box>
+                  {/* ISS-054/ISS-105: Cash Flow CTA removed — Finances/Cashflow module
+                      deliberately unwired from nav (2026-07-08). No route path exists
+                      to reach here; restore this button if/when Finances scope returns. */}
                 </Box>
               </Box>
               {os.inbound.overdue_pos.map(po => (

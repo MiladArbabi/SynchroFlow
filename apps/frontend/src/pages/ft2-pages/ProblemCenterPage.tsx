@@ -12,7 +12,6 @@ import { usePackDecisions, useResolvePackDecision } from '../problem-center/useP
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { axiosInstance } from 'api/axiosConfig';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
-import { RETURNS_RESOLUTION_MODULE_TABS } from './returnsResolutionModuleTabs';
 
 function relativeAge(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -203,7 +202,12 @@ export default function ProblemCenterPage() {
 
   return (
     <>
-      <ModuleTabBar tabs={RETURNS_RESOLUTION_MODULE_TABS} />
+       <ModuleTabBar tabs={[
+        { id: 'operations',    label: 'Operations',     path: '/wms'    },
+        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
+        { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
+        { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'scale' },
+      ]} />
       {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
       <Box sx={{ px: '40px', pt: '24px' }}>
         <PendingDecisionsStrip />

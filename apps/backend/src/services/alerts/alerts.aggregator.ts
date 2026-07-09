@@ -328,6 +328,13 @@ async function aggregateRevenueAlerts(
   trx: Knex.Transaction,
   shopId: number
 ): Promise<AlertUpsert[]> {
+  // ISS-055 fix #2: this alert's own contract is "revenue blocked by
+  // constraints" (see doc comment above) — it must pair constrained_orders
+  // with blocked_revenue, not at_risk_revenue. at_risk_revenue is a
+  // different, unrelated population (orders approaching SLA breach that
+  // have NOT breached yet) and does not describe the same orders as
+  // constrained_orders. The two were previously conflated into one
+  // sentence that stated a false causal relationship.
   const snapshot = await systemQuery(
     trx('orders_operational_control_snapshot')
       .where({ shop_id: shopId })
@@ -335,14 +342,13 @@ async function aggregateRevenueAlerts(
         { column: 'snapshot_date',      order: 'desc' },
         { column: 'aggregate_version',  order: 'desc' },
       ])
-      .select('at_risk_revenue', 'constrained_orders')
+      .select('blocked_revenue', 'constrained_orders')
       .first()
   );
+  const blocked      = Number(snapshot?.blocked_revenue ?? 0);
+  const constrained  = Number(snapshot?.constrained_orders ?? 0);
 
-  const atRisk      = Number(snapshot?.at_risk_revenue ?? 0);
-  const constrained = Number(snapshot?.constrained_orders ?? 0);
-
-  if (atRisk < 100 || constrained === 0) {
+  if (blocked < 100 || constrained === 0) {
     return [{
       shop_id:     shopId,
       alert_key:   `revenue:shop-${shopId}:at_risk`,
@@ -363,12 +369,12 @@ async function aggregateRevenueAlerts(
     alert_key:      `revenue:shop-${shopId}:at_risk`,
     source:         'snapshot',
     alert_type:     'revenue_at_risk',
-    severity:       atRisk > 5000 ? 'critical' : 'warning',
-    title:          `$${Math.round(atRisk).toLocaleString()} revenue at risk`,
-    message:        `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(atRisk).toLocaleString()} in revenue.`,
+    severity:       blocked > 5000 ? 'critical' : 'warning',
+    title:          `$${Math.round(blocked).toLocaleString()} revenue blocked`,
+    message:        `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(blocked).toLocaleString()} in revenue.`,
     entity_id:      null,
     entity_type:    'shop',
-    revenue_impact: atRisk,
+    revenue_impact: blocked,
     is_active:      true,
     category:       'revenue_at_risk',
     audience:       'all',

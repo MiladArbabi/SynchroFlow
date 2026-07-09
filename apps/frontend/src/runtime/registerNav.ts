@@ -15,7 +15,7 @@ export interface NavItem {
   /** Minimum subscription tier required to show this nav item (MON-06) */
   requiredTier?: string;
   /** Submodule children — compact mode: hover popover right. Expanded mode: inline accordion. */
-  children?: { id: string; title: string; path: string; requiredTier?: string }[];
+  children?: { id: string; title: string; path: string; requiredTier?: string; parentId?: string }[];
   meta?: Record<string, unknown>;
 }
 
@@ -107,6 +107,27 @@ export function getNavigation(): NavGroup[] {
 
   cachedNav = groups;
   return groups;
+}
+
+export function getBreadcrumbLabel(pathname: string): { label: string; parentLabel?: string } | null {
+  // ISS-107: check children first — a child sharing its parent's path
+  // (e.g. Returns' "order-issues" child at /returns, same as its parent
+  // "returns-resolution") must win the match, since it's the more specific,
+  // user-facing label. Falling through to the parent-only match below
+  // handles items with no path-colliding child (Warehouse, Inventory, etc).
+  for (const item of Object.values(navItems)) {
+    const child = item.children?.find(c => c.path === pathname);
+    if (child) {
+      const parentTitle = child.parentId
+        ? navItems[child.parentId]?.title ?? item.title
+        : item.title;
+      return { label: child.title, parentLabel: parentTitle };
+    }
+  }
+  for (const item of Object.values(navItems)) {
+    if (item.path === pathname) return { label: item.title };
+  }
+  return null;
 }
 
 // For debugging & tests

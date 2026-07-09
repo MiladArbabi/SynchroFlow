@@ -85,8 +85,12 @@ export async function httpGetNeverOrderedVariants(req: Request, res: Response) {
       // first_order_at. A variant with zero matching PO line item rows has
       // never been ordered. See playbook §6a.
       result = await trx('variants as v')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .where('v.shop_id', shopId)
         .andWhere('v.status', 'active')
+        // ISS-088/DEC-06: gift cards aren't stockable/purchasable inventory —
+        // exclude from sourcing/never-ordered entirely, not just display-side.
+        .andWhereNot('p.product_type', 'gift_card')
         .whereNotExists(
           trx('purchase_order_line_items as poli')
             .whereRaw('poli.lasyncro_variant_id = v.lasyncro_variant_id')

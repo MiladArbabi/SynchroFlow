@@ -2,6 +2,7 @@
 // apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx
 import React, { useState } from "react";
 import { useLocation, Link as RouterLink } from "react-router-dom";
+import { getBreadcrumbLabel } from "runtime/registerNav";
 import {
   Box, IconButton, Typography, Breadcrumbs as MuiBreadcrumbs,
   Link, Tooltip, Badge, Popover,
@@ -56,7 +57,7 @@ const BELL_ROUTE_MAP: Record<string, { route: string; label: string }> = {
   // reorder signal — see MVP Roadmap, still 🔴 OPEN). When built, this
   // is where it should land.
   reorder_warning:         { route: '/suppliers-portal/sourcing', label: 'Sourcing' },
-  revenue_at_risk:         { route: '/cash-flow',      label: 'Cash Flow' },
+  revenue_at_risk:         { route: '/cashflow',      label: 'Cash Flow' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
   missing_cogs:            { route: '/products',       label: 'Products' },
@@ -261,9 +262,12 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
 
   const [bellAnchor, setBellAnchor] = useState<null | HTMLElement>(null);
   const sheetOpen = Boolean(bellAnchor);
-
-  const pathnames    = location.pathname.split("/").filter((x) => x);
-  const capitalize   = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  // ISS-095/DEC-04: breadcrumb resolves against the registered nav tree
+  // (title + optional parentId), not by splitting/capitalizing the URL.
+  // Falls back to the raw path segment if a route isn't registered in nav.
+  const crumb = getBreadcrumbLabel(location.pathname);
+  const fallbackLabel = location.pathname.split("/").filter(Boolean).pop() ?? "";
+  const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
   return (
     <Box sx={{
@@ -288,21 +292,14 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
           }}>
             <Home size={14} strokeWidth={1.75} />
           </Link>
-          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Workspace</Typography>
-          {pathnames.map((value, index) => {
-            const last  = index === pathnames.length - 1;
-            const to    = `/${pathnames.slice(0, index + 1).join("/")}`;
-            const label = capitalize(value.replace(/-/g, " "));
-            return last ? (
-              <Typography key={to} sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent)' }}>
-                {label}
-              </Typography>
-            ) : (
-              <Link key={to} component={RouterLink} to={to} underline="hover" sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                {label}
-              </Link>
-            );
-          })}
+          {crumb?.parentLabel && (
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
+              {crumb.parentLabel}
+            </Typography>
+          )}
+          <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--accent)' }}>
+            {crumb?.label ?? capitalize(fallbackLabel.replace(/-/g, " "))}
+          </Typography>
         </MuiBreadcrumbs>
       </Box>
 

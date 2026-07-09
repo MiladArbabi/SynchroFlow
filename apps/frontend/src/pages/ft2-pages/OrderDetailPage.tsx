@@ -19,12 +19,9 @@ import { useOrderDetail } from '../orders/useOrderDetail';
 import type { OrderTimelineEvent, OrderLineItem } from '../orders/useOrderDetail';
 import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { CheckCircle2, XCircle, Clock, AlertTriangle } from 'lucide-react';
+import { useCurrency } from '../../hooks/useCurrency';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-const fmt$ = (n: number | null | undefined, currency = 'GBP') =>
-  n == null ? '—' : new Intl.NumberFormat('en-GB', { style: 'currency', currency }).format(n);
-
 const statusPhrase = (status: string | undefined): string => {
   switch (status) {
     case 'fulfilled':          return 'out the door.';
@@ -94,7 +91,8 @@ function TimelineRow({ event, isLast }: { event: OrderTimelineEvent; isLast: boo
 // ─── LINE ITEM ROW ────────────────────────────────────────────────────────────
 
 function LineItemRow({ item, currency }: { item: OrderLineItem; currency: string }) {
-  return (
+  const { format } = useCurrency();
+    return (
     <Box sx={{
       display: 'grid', gridTemplateColumns: '40px 1fr auto',
       gap: 1.5, alignItems: 'center',
@@ -123,8 +121,8 @@ function LineItemRow({ item, currency }: { item: OrderLineItem; currency: string
       </Box>
 
       {/* Line total */}
-      <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-        {fmt$(item.line_total, currency)}
+      <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)'}}>
+        {format(item.line_total, { currency })}
       </Typography>
     </Box>
   );
@@ -237,8 +235,14 @@ export default function OrderDetailPage() {
   const navigate = useNavigate();
   const { data: order, isLoading, isError } = useOrderDetail(orderId ?? null);
 
+  const { format } = useCurrency();
   const fulfillmentStatus = order?.fulfillment?.status ?? 'pending';
-  const currency = order?.currency ?? 'GBP';
+  // ISS-109: fallback was hardcoded 'GBP' with no justification — order.currency
+  // should always be populated by the time this page renders (order already
+  // fetched successfully); 'USD' matches formatCurrency.ts's own documented
+  // default and EntitlementsContext's shop-wide default, for consistency
+  // if this ever does hit the fallback path.
+  const currency = order?.currency ?? 'USD';
 
   const cardSx = {
     bgcolor: 'var(--surface)',
@@ -328,7 +332,7 @@ export default function OrderDetailPage() {
                   {/* Order total footer */}
                   <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid var(--rule)', display: 'flex', justifyContent: 'space-between', bgcolor: 'var(--bg-2)' }}>
                     <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total</Typography>
-                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{fmt$(order.total, currency)}</Typography>
+                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{format(order.total, { currency })}</Typography>
                   </Box>
                 </Box>
               </Box>
@@ -342,7 +346,7 @@ export default function OrderDetailPage() {
                 </Typography>
                 <Box sx={cardSx}>
                   {[
-                    { label: 'Order total', value: fmt$(order.total, currency) },
+                    { label: 'Order total', value: format(order.total, { currency }) },
                     { label: 'Payment state', value: order.paymentState.replace(/_/g, ' ') },
                     { label: 'Currency', value: order.currency },
                     { label: 'Order date', value: new Date(order.createdAt).toLocaleDateString('en-GB', { dateStyle: 'medium' }) },

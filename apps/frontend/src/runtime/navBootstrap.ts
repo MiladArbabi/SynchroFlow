@@ -59,51 +59,56 @@ export function bootstrapNavGroups() {
     ],
   });
 
-  registerNavItem({
-    id: 'warehouse',
-    title: 'Warehouse',
-    path: '/wms',
-    group: 'workspace',
-    order: 30,
-    icon: Warehouse,
-    requiredModuleId: 'wms-lite',
-    children: [
-      { id: 'wms-operations',  title: 'Operations',     path: '/wms'             },
-      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale' },
-      { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
-    ],
-  });
-
-  registerNavItem({
-    id: 'returns-resolution',
-    title: 'Returns & Resolution',
-    path: '/returns',
-    group: 'workspace',
-    order: 40,
-    icon: RotateCcw,
-    requiredTier: 'core',
-    // No requiredModuleId: children enforce independently server-side
-    // under different module gates (returns:*, wms:read). See #38/#39.
-    children: [
-      { id: 'order-issues',   title: 'Returns',   path: '/returns'        },
-      { id: 'product-issues', title: 'Product Issues', path: '/problem-center' },
-    ],
-  });
-
-  registerNavItem({
+    registerNavItem({
     id: 'inventory',
     title: 'Inventory',
     path: '/inventory',
     group: 'workspace',
-    order: 50,
+    order: 30,
     icon: Box,
     requiredModuleId: 'products',
     children: [
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
-      { id: 'demand',                 title: 'Demand',         path: '/demand',  requiredTier: 'growth' },
+      // parentId set explicitly: path (/demand) is not URL-nested under /inventory — see ISS-095/DEC-04
+      { id: 'demand',                 title: 'Demand',         path: '/demand',  requiredTier: 'growth', parentId: 'inventory' },
       { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
       { id: 'data-quality',           title: 'Data Quality',   path: '/inventory/data-quality'  },    
+    ],
+  });
+
+  registerNavItem({
+    id: 'warehouse',
+    title: 'Warehouse',
+    path: '/wms',
+    group: 'workspace',
+    order: 40,
+    icon: Warehouse,
+    requiredModuleId: 'wms-lite',
+    children: [
+      { id: 'wms-operations',  title: 'Operations',     path: '/wms'      },
+      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale', parentId: 'warehouse' },
+      { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
+      // DEC-01/DEC-03: relocated from returns-resolution — Problem Center is a warehouse-floor exception queue (pick/pack/stow/receive), not a customer-returns screen. parentId set explicitly since path (/problem-center) is not URL-nested under /wms.
+      { id: 'product-issues', title: 'Problem Center', path: '/problem-center', parentId: 'warehouse' },
+    ],
+  });
+
+  registerNavItem({
+    id: 'returns-resolution',
+    title: 'Returns',
+    path: '/returns',
+    group: 'workspace',
+    order: 50,
+    icon: RotateCcw,
+    requiredTier: 'core',
+    // No requiredModuleId: children enforce independently server-side
+    // under different module gates (returns:*, wms:read). See #38/#39.
+    children: [
+      // product-issues moved to warehouse.children[] — DEC-01/DEC-03 (2026-07-08)
+      { id: 'returns',   title: 'Overview',   path: '/returns'        },
+      { id: 'return-items',   title: 'Items',   path: '/returns/items'        },
+      { id: 'supplier-ratings',   title: 'Supplier Ratings',   path: '/returns/suppliers'        },
     ],
   });
 

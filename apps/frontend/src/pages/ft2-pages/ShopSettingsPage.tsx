@@ -10,7 +10,7 @@
 //   /settings/carriers     → Carriers      (CPT + Carrier Integration WM-38)
 //   /settings/warehouse    → Warehouse     (Floor Display; future: batch/auto-release WM-35)
 //   /settings/finance      → Finance       (Cash Flow Inputs)
-//   /settings/localization → Localization  (📋 placeholder — display currency, locale)
+//   /settings/localization → Localization  (display currency preference — ISS-124, 2026-07-09)
 //   /settings/notifications→ Notifications (📋 placeholder — push prefs, alert routing)
 //   /settings/integrations → Integrations  (📋 placeholder — non-carrier third-party)
 
@@ -24,6 +24,7 @@ import ShopSettingsFinancePage      from './ShopSettingsFinancePage';
 import BillingSettings              from '../account-settings/BillingSettings';
 import ShopSettingsReportsPage      from './ShopSettingsReportsPage';
 import { PlaceholderTab }           from './ShopSettingsShared';
+import LocalizationSettings         from '../account-settings/LocalizationSettings';
 import { SETTINGS_TABS } from './settingsTabs';
 import { SettingsShellHeader } from './SettingsShellHeader';
 
@@ -38,12 +39,7 @@ export default function ShopSettingsPage() {
         <Route path="/carriers"      element={<ShopSettingsCarriersPage />}  />
         <Route path="/warehouse"     element={<ShopSettingsWarehousePage />} />
         <Route path="/finance"       element={<ShopSettingsFinancePage />}   />
-        <Route path="/localization"  element={
-          <PlaceholderTab
-            title="Localization"
-            description="Display currency, date format, and locale preferences — coming soon."
-          />
-        } />
+        <Route path="/localization"  element={<LocalizationSettings />} />
         <Route path="/notifications" element={
           <PlaceholderTab
             title="Notifications"

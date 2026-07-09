@@ -14,7 +14,7 @@
 import { useState } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
-import { ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ModuleErrorBoundary } from '@lasyncro/shared/ui';
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -150,9 +150,13 @@ function moduleLabel(m: string): string { return MODULE_LABELS[m] ?? m; }
 function actionLabel(signal: Signal): string {
   return signal.actionLabel ?? DEFAULT_ACTIONS[signal.module] ?? 'Review ›';
 }
-function fmtCurrency(n: number, currency = 'GBP'): string {
-  return new Intl.NumberFormat('en', { style: 'currency', currency, maximumFractionDigits: 0 }).format(Math.round(n));
-}
+
+/* # ISS-056: local fmtCurrency removed. Used locale 'en' (no region), which
+# renders currency as a code prefix (e.g. "USD180") instead of a symbol
+# ("$180") — inconsistent with every other screen in the app, which uses
+# the shared formatCurrencyCompact('en-US', ...). All call sites below
+# now import and use the shared formatter directly. */
+
 function timeOfDay(): string {
   const h = new Date().getHours();
   if (h < 12) return 'morning';
@@ -224,7 +228,7 @@ function TriageRow({
         <Box sx={{ textAlign: 'right' }}>
           {signal.revenueImpact != null && (
             <Typography sx={{ fontSize: 14, fontWeight: 700, color: isCritical ? '#E5484D' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
-              {fmtCurrency(signal.revenueImpact, currency)}
+              {formatCurrencyCompact(signal.revenueImpact, currency)}
             </Typography>
           )}
           {signal.ageLabel && (
@@ -296,8 +300,7 @@ function BusinessPulse({
 }) {
   if (!pulse) return null;
 
-  const fmt = (v: number | null) =>
-    v == null ? '—' : `${currency}${Math.round(v).toLocaleString()}`;
+  const fmt = (v: number | null) => formatCurrencyCompact(v, currency);
 
   const delta = pulse.revenueDeltaVsYesterday;
   const deltaLabel =
@@ -305,7 +308,7 @@ function BusinessPulse({
       ? undefined
       : delta === 0
         ? 'flat vs yesterday'
-        : `${delta > 0 ? '▲' : '▼'} ${currency}${Math.abs(Math.round(delta)).toLocaleString()} vs yesterday`;
+        : `${delta > 0 ? '▲' : '▼'} ${formatCurrencyCompact(Math.abs(Math.round(delta)), currency)} vs yesterday`;
 
   const deltaColor =
     delta == null || delta === 0
@@ -464,7 +467,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     const urgent = criticalSignals.length + watchSignals.length;
     if (!urgent) return summaryLine ?? 'All operations are on track.';
     const atStake = pulse?.blockedRevenue
-      ? ` · ${fmtCurrency(Number(pulse.blockedRevenue), currency)} at stake`
+      ? ` · ${formatCurrencyCompact(Number(pulse.blockedRevenue), currency)} at stake`
       : '';
     return `${urgent} decision${urgent !== 1 ? 's' : ''} pending ${atStake} — everything else is on track.`;
   })();

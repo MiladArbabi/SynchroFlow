@@ -129,19 +129,29 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     );
   };
 
-  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string }) => {
-    // Children are leaf routes — exact match only. startsWith would cause /wms to match /wms/analytics.
+  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string; disabled: boolean }) => {
+    // Children are leaf routes — exact match only. startsWith would cause/wms to match /wms/analytics.
     const isActive = pathname === child.path || pathname.startsWith(child.path + '?');
+    const isLocked = child.disabled;
+    // ISS-069/082: children previously navigated unconditionally regardless
+    // of requiredTier — now mirrors renderItem's gate exactly (upgrade
+    // prompt on click, dimmed styling) instead of letting the sidebar
+    // bypass the same tier restriction ModuleTabBar already enforces.
+    const handleChildClick = () => {
+      if (isLocked) { setUpgradeFeature(child.title); setUpgradeOpen(true); return; }
+      navigate(child.path);
+    };
     return (
       <ListItemButton
         key={child.id}
         selected={isActive}
-        onClick={() => navigate(child.path)}
+        onClick={handleChildClick}
         sx={{
           borderRadius: '6px',
           pl: 4.5, pr: 1.5, py: 0.625,
           mb: 0.125,
           fontSize: 12,
+          opacity: isLocked ? 0.6 : 1,
           color: isActive ? 'var(--accent)' : 'var(--ink-3)',
           bgcolor: isActive ? 'var(--accent-ghost)' : 'transparent',
           '&:hover': { bgcolor: 'var(--bg-2)', color: 'var(--ink)' },

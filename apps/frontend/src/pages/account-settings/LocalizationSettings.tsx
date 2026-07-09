@@ -7,14 +7,19 @@ import {
   MenuItem,
   Select,
   FormControl,
-  InputLabel,
-  Button,
   Alert,
   SelectChangeEvent,
 } from '@mui/material';
+import { Globe } from 'lucide-react';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { updateCurrencyPreference } from 'api/members';
 import { useAuth } from 'contexts/AuthContext';
+import {
+  SettingsCard,
+  SectionLabel,
+  SaveButton,
+  SettingsPageWrapper,
+} from '../ft2-pages/ShopSettingsShared';
 
 /**
  * SUPPORTED CURRENCIES
@@ -78,59 +83,53 @@ const LocalizationSettings: React.FC = () => {
 
   if (!canEdit) {
     return (
-      <Box sx={{ p: 2 }}>
+      <SettingsPageWrapper>
         <Alert severity="info">
           Currency settings can only be changed by shop owners and admins.
         </Alert>
-      </Box>
+      </SettingsPageWrapper>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Display Currency
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          All monetary values across the dashboard will be displayed in this currency.
-          Your shop's base currency is stored in the database — this setting controls display only.
-        </Typography>
-
-        <FormControl fullWidth>
-          <InputLabel id="currency-select-label">Currency</InputLabel>
-          <Select
-            labelId="currency-select-label"
-            value={selected}
-            label="Currency"
-            onChange={handleChange}
-          >
-            {SUPPORTED_CURRENCIES.map((c) => (
-              <MenuItem key={c.code} value={c.code}>
-                {c.code} — {c.label}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
-
-      {success && (
-        <Alert severity="success">
-          Currency preference updated. All monetary values now display in {selected}.
-        </Alert>
-      )}
-
-      {error && <Alert severity="error">{error}</Alert>}
-
-      <Button
-        variant="contained"
-        disabled={!isDirty || saving}
-        onClick={handleSave}
-        sx={{ alignSelf: 'flex-start' }}
+    <SettingsPageWrapper>
+      <SettingsCard
+        icon={<Globe size={16} />}
+        title="Display Currency"
+        description="All monetary values across the dashboard will be displayed in this currency. Your shop's base currency is stored in the database — this setting controls display only."
       >
-        {saving ? 'Saving…' : 'Save Preference'}
-      </Button>
-    </Box>
+        <Box>
+          <SectionLabel>Currency</SectionLabel>
+          <FormControl size="small" sx={{ width: 240 }}>
+            <Select
+              value={selected}
+              onChange={handleChange}
+              sx={{ fontSize: 13 }}
+            >
+              {SUPPORTED_CURRENCIES.map((c) => (
+                <MenuItem key={c.code} value={c.code} sx={{ fontSize: 13 }}>
+                  {c.code} — {c.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {success && (
+          <Alert severity="success" sx={{ mt: 1.5 }}>
+            Currency preference updated. All monetary values now display in {selected}.
+          </Alert>
+        )}
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 1.5 }}>
+            {error}
+          </Alert>
+        )}
+
+        <SaveButton dirty={isDirty} saving={saving} onSave={handleSave} />
+      </SettingsCard>
+    </SettingsPageWrapper>
   );
 };
 

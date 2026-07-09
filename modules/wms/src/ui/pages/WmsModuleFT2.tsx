@@ -723,8 +723,8 @@ function WmsModuleFT2Inner({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
-          <WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} />
-          {isOnline && (
+          {/*<WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} /> */}
+          {/* {isOnline && (
             <Box sx={{
               display: 'flex', alignItems: 'center', gap: 0.875,
               border: '1px solid rgba(76,175,122,0.3)',
@@ -737,7 +737,7 @@ function WmsModuleFT2Inner({
               }} />
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: '#4CAF7A' }}>Online</Typography>
             </Box>
-          )}
+          )} */}
         </Box>
       </Box>
 
