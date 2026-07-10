@@ -45,9 +45,10 @@
 //     per-batch deadlines exist.
 
 import { type ChangeEvent, type ReactNode, useCallback, useMemo, useState } from 'react';
+import { SpotlightCoachMark } from '../../components/SpotlightCoachMark';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from '@mui/material';
-import { Clock, Flag, ChevronDown, ChevronUp } from 'lucide-react';
+import { Clock, Flag, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
 import { OrderDetailModalBody } from '../orders/OrderDetailModalBody';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -165,6 +166,8 @@ export default function OrderFlowPage() {
   const [searchParams] = useSearchParams();
   const constraintParam = searchParams.get('constraint');
   const urgencyFilter = searchParams.get('urgency') === 'sla_breach';
+  // ISS-RQ-02: revenue_at_risk deep-link context — no order filtering, banner only.
+  const revenueBlockedContext = searchParams.get('context') === 'revenue_blocked';
 
   // --- Cross-linking: pool cell → pool-table filter ------------------------
   // Clicking a POOL cell filters the pool table to that bucket.
@@ -191,6 +194,10 @@ export default function OrderFlowPage() {
   const [sortField, setSortField] = useState<PoolSortField>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [statusFilter, setStatusFilter] = useState<Set<'priority' | 'sla_breached'>>(new Set());
+  // ISS-RQ-05: dismissible intent banner — shown only on deep-linked urgency/constraint landings.
+  const [intentBannerDismissed, setIntentBannerDismissed] = useState(false);
+  // ISS-OP-02: order pool search — wired into filteredPool chain below.
+  const [poolSearch, setPoolSearch] = useState('');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const handleSort = useCallback((field: PoolSortField) => {
@@ -205,6 +212,7 @@ export default function OrderFlowPage() {
     setPage(1); // per modules-ux-playbook.md §6: always reset to page 1 on sort change
   }, []);
   const toggleStatusFilter = useCallback((key: 'priority' | 'sla_breached') => {
+    setPage(1);
     setStatusFilter((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
@@ -260,14 +268,24 @@ export default function OrderFlowPage() {
   );
 
   const filteredPool = useMemo(
-    () => poolOrders.filter(o =>
-      (!cptFilter || poolBucket(o) === cptFilter.bucket) &&
-      (!urgencyFilter || o.is_shipping_sla_breached) &&
-      (!statusFilter.has('priority') || o.is_priority_flagged) &&
-      (!statusFilter.has('sla_breached') || o.is_shipping_sla_breached)
-    ),
-    [poolOrders, cptFilter, poolBucket, urgencyFilter, statusFilter],
+    () => poolOrders.filter(o => {
+      // ISS-OP-02: search filter — matches external order id or internal id prefix.
+      if (poolSearch.trim()) {
+        const q = poolSearch.toLowerCase();
+        const matchesId = (o.external_order_id ?? '').toLowerCase().includes(q) ||
+                          o.lasyncro_order_id.toLowerCase().includes(q);
+        if (!matchesId) return false;
+      }
+      return (
+        (!cptFilter || poolBucket(o) === cptFilter.bucket) &&
+        (!urgencyFilter || o.is_shipping_sla_breached) &&
+        (!statusFilter.has('priority') || o.is_priority_flagged) &&
+        (!statusFilter.has('sla_breached') || o.is_shipping_sla_breached)
+      );
+    }),
+    [poolOrders, cptFilter, poolBucket, urgencyFilter, statusFilter, poolSearch],
   );
+
   const sortedPool = useMemo(() => {
     const sorted = [...filteredPool].sort((a, b) => {
       let cmp = 0;
@@ -289,6 +307,7 @@ export default function OrderFlowPage() {
     });
     return sorted;
   }, [filteredPool, sortField, sortDir]);
+
   // OF-03: pagination — was fully unbounded (visiblePool.map with no
   // slice), fine at today's low order volume but breaks at real scale.
   // Follows modules-ux-playbook.md §6's canonical pattern exactly.
@@ -382,7 +401,6 @@ export default function OrderFlowPage() {
   const waveLineItems = waveSource.reduce((sum, order) => sum + order.line_item_count, 0);
   const waveUnits = waveSource.reduce((sum, order) => sum + order.unit_count, 0);
   const maxLineItems = orderPoolQuery.data?.max_batch_line_items ?? 108;
-  // Keep the floor-release action tied to the visible wave preview.
   const releaseDisabled = waveOrders === 0 || releaseBatch.isPending;
 
   // --- Selection + release handlers ----------------------------------------
@@ -529,7 +547,49 @@ export default function OrderFlowPage() {
           </Box>
         )}
 
-        {/* ---------- Working body: top overview + bottom work area ---------- */}
+{/* ---------- ISS-RQ-05: Intent banner — deep-link context bridge ----------
+            Rendered only when ?urgency=sla_breach or ?constraint=* is present.
+            Tells the first-time user what they are seeing and what the one action is.
+            Dismissible per-session via local state (no persistence needed). */}
+          {!isLoading && !intentBannerDismissed && (urgencyFilter || !!constraintParam || revenueBlockedContext) && (          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 2,
+              px: 2,
+              py: 1.5,
+              mb: 2,
+              bgcolor: 'var(--surface)',
+              border: '1px solid var(--rule)',
+              borderRadius: '10px',
+            }}
+          >
+            <Box>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', mb: 0.375 }}>
+                {urgencyFilter
+                  ? 'These orders have missed their shipping window.'
+                  : revenueBlockedContext
+                  ? 'Revenue is being held by constrained orders.'
+                  : 'These orders are blocked by a constraint.'}
+              </Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                {urgencyFilter
+                  ? 'Select them in the Order Pool and release a wave — operators will pick and ship today. This clears the SLA alert.'
+                  : revenueBlockedContext
+                  ? 'Resolve each order\'s constraint in the Blocked column — fixing the address, restocking, or clearing the exception releases the revenue immediately.'
+                  : 'Resolve each order\'s constraint in the Blocked column, then release a wave from the Order Pool to ship them.'}
+              </Typography>
+            </Box>
+            <Box
+              onClick={() => setIntentBannerDismissed(true)}
+              sx={{ flexShrink: 0, cursor: 'pointer', color: 'var(--ink-3)', '&:hover': { color: 'var(--ink)' }, mt: 0.25 }}
+            >
+              <X size={14} />
+            </Box>
+          </Box>
+        )}
+        {/* ---------- Working body: top overview + bottom work area---------- */}
           {!isLoading && (
             <Box
               sx={{
@@ -768,6 +828,95 @@ export default function OrderFlowPage() {
                         );
                       })}
                     </Box>
+
+                    {/* ISS-OP-02: order search input */}
+                    <Box
+                      component="input"
+                      placeholder="Search by order number…"
+                      value={poolSearch}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                        setPoolSearch(e.target.value);
+                        setPage(1);
+                      }}
+                      sx={{
+                        mt: 1, width: '100%', px: 1.25, py: 0.625,
+                        bgcolor: 'var(--bg)', border: '1px solid var(--rule)',
+                        borderRadius: '8px', color: 'var(--ink)',
+                        fontSize: 12, fontFamily: 'inherit', outline: 'none',
+                        '&::placeholder': { color: 'var(--ink-4)' },
+                      }}
+                    />
+                  </Box>
+
+                  {/* ISS-OP-01 + T9: top action bar — release all or release selected.
+                      Spotlight coaches selection when nothing is selected.
+                      Bar always visible at top of list — no scrolling required. */}
+                  <Box sx={{
+                    px: '14px', py: '10px',
+                    borderBottom: '1px solid var(--rule)',
+                    bgcolor: selected.size > 0 ? 'var(--accent-ghost)' : 'var(--bg-2)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
+                  }}>
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      {selected.size === 0 ? (
+                        <SpotlightCoachMark
+                          spotlightKey="order_flow_wave"
+                          title="Select orders to release"
+                          body="Check orders below to choose what goes to the floor, or release all at once."
+                          step={1}
+                          totalSteps={2}
+                        />
+                      ) : (
+                        <Box>
+                          <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
+                            {selected.size} selected · {waveLineItems} line items · {waveUnits} units
+                          </Typography>
+                          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <Box
+                              component="select"
+                              value={operatorId}
+                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setOperatorId(e.target.value)}
+                              sx={{
+                                px: 1, py: 0.375, bgcolor: 'var(--bg)',
+                                border: '1px solid var(--rule)', borderRadius: '6px',
+                                color: operatorId ? 'var(--ink)' : 'var(--ink-3)',
+                                fontSize: 11, fontFamily: 'inherit', outline: 'none',
+                              }}
+                            >
+                              <option value="">All operators</option>
+                              {operators.map(op => (
+                                <option key={op.user_id} value={op.user_id}>
+                                  {`${op.first_name} ${op.last_name}`.trim()}
+                                </option>
+                              ))}
+                            </Box>
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                    <Box
+                      component="button"
+                      type="button"
+                      disabled={releaseBatch.isPending}
+                      onClick={handleRelease}
+                      sx={{
+                        flexShrink: 0, px: '14px', py: '7px',
+                        border: 0, borderRadius: '8px',
+                        bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
+                        fontSize: 12, fontWeight: 600,
+                        cursor: releaseBatch.isPending ? 'wait' : 'pointer',
+                        opacity: releaseBatch.isPending ? 0.6 : 1,
+                        transition: 'opacity 0.12s',
+                        '&:hover': { opacity: 0.88 },
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {releaseBatch.isPending
+                        ? 'Releasing…'
+                        : selected.size > 0
+                        ? `Release ${selected.size} order${selected.size !== 1 ? 's' : ''}`
+                        : `Release all ${poolOrders.length}`}
+                    </Box>
                   </Box>
 
                   <Box
@@ -845,7 +994,7 @@ export default function OrderFlowPage() {
                     ))}
                   </Box>
 
-                  <Box>
+                  <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                     {poolOrders.length === 0 && (
                         <Box sx={{ px: 3, py: 5, textAlign: 'center' }}>
                           {orderPoolQuery.data?.empty_reason === 'ALL_ELIGIBLE_ORDERS_ALREADY_BATCHED' ? (
@@ -1035,72 +1184,6 @@ export default function OrderFlowPage() {
                       </Box>
                     </Box>
                   )}
-                  <Box sx={{ p: '12px 14px', borderTop: '1px solid var(--rule)' }}>
-                    {selected.size > 0 && (
-                      <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', mb: 0.75 }}>
-                        {selected.size} selected · only selected orders will be released
-                      </Typography>
-                    )}
-
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mb: 1 }}>
-                      {waveLineItems} of {maxLineItems} line items · {waveUnits} units to pick
-                    </Typography>
-
-                    <Box
-                      component="select"
-                      value={operatorId}
-                      onChange={(event: ChangeEvent<HTMLSelectElement>) => setOperatorId(event.target.value)}
-                      sx={{
-                        width: '100%',
-                        mb: 1,
-                        px: 1.5,
-                        py: 1,
-                        bgcolor: 'var(--bg)',
-                        border: '1px solid var(--rule)',
-                        borderRadius: '8px',
-                        color: operatorId ? 'var(--ink)' : 'var(--ink-3)',
-                        fontSize: 13,
-                        fontFamily: 'inherit',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="">Dispatch to all operators</option>
-                      {operators.map((operator) => (
-                        <option key={operator.user_id} value={operator.user_id}>
-                          {`${operator.first_name} ${operator.last_name}`.trim()}
-                        </option>
-                      ))}
-                    </Box>
-
-                    <Box
-                      component="button"
-                      type="button"
-                      disabled={releaseDisabled}
-                      onClick={handleRelease}
-                      sx={{
-                        width: '100%',
-                        py: 1.1,
-                        border: 0,
-                        borderRadius: '10px',
-                        bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent)',
-                        color: theme.palette.common.white,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: releaseDisabled ? 'not-allowed' : 'pointer',
-                        opacity: releaseDisabled ? 0.45 : 1,
-                        transition: 'background 0.12s, opacity 0.12s',
-                        '&:hover': {
-                          bgcolor: releaseDisabled ? 'var(--rule)' : 'var(--accent-hover)',
-                        },
-                      }}
-                    >
-                      {releaseBatch.isPending ? 'Releasing…' : 'Release wave to floor'}
-                    </Box>
-
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', textAlign: 'center', mt: 1 }}>
-                      Pickers see it on their mobile instantly.
-                    </Typography>
-                  </Box>
                 </Box>
 
                 {/* Phase 3a of target-IA rebuild: read-only Fulfillment monitoring

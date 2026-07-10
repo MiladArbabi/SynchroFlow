@@ -71,6 +71,36 @@ Key fields: `lasyncro_variant_id`, `quantity_ordered`, `quantity_received`, `uni
 
 No receive jobs initiated — WMS receive pipeline not started.
 
+### `supplier_product_preferences` (0 rows — table not yet created)
+
+> **Added 2026-07-10.** Full design in `sourcing-recommendation-playbook.md §7`.
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | uuid PK | `gen_random_uuid()` |
+| `shop_id` | int FK | RLS tenant key |
+| `supplier_id` | int FK | References `suppliers.id`, `ON DELETE CASCADE` |
+| `scope_type` | text | `'variant' \| 'product' \| 'product_type'` — most specific wins |
+| `scope_id` | text | Variant ID, product ID, or product_type string per scope_type |
+| `priority` | smallint | 1 = primary, 2 = backup. Lower wins within same scope |
+| `note` | text | Merchant's free-text reasoning. No structured conditions in v1 |
+| `created_by` | int FK | User who created — traceability |
+| `created_at` | timestamptz | — |
+| `updated_at` | timestamptz | — |
+
+**Unique constraint:** `(shop_id, scope_type, scope_id, supplier_id)` — one preference
+row per supplier+scope combination.
+
+**RLS:** tenant isolation policy on `shop_id`.
+
+**Resolution specificity (enforced in backend, not DB):**
+`variant` > `product` > `product_type`. When multiple rows match a variant,
+the most specific scope_type wins; ties broken by `priority ASC`.
+
+**Status:** Migration not yet written. Table does not exist in DB as of 2026-07-10.
+Depends on: nothing new (FKs reference existing `shops` and `suppliers` tables).
+Blocks: MOQ accumulation system (`sourcing-recommendation-playbook.md §8`).
+
 ---
 
 ## 4. Frontend — File Map

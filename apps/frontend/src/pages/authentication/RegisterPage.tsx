@@ -85,10 +85,11 @@ export default function Register() {
             {/* AUTH-014: system status pill — top-right */}
             <SystemStatusPill />
           </Box>
-          <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0 }}>
-            <AuthCardWrapper>
-              <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 2, width: '100%' }}>
 
+          <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+            <AuthCardWrapper>
+              <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 2.25, width: '100%' }}>
+                
                 {/* AUTH-005: step 1 of 2 stepper — matches target A2 */}
                 <Stack direction="row" alignItems="center" spacing={1.5} sx={{ width: '100%' }}>
                   <Stack direction="row" alignItems="center" spacing={0.75}>

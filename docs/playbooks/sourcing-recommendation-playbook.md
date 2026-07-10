@@ -21,6 +21,7 @@ A popup-based MOQ check was designed, then abandoned in favor of a **dedicated p
 ## 3. Structural Plumbing (confirmed mechanical, not yet executed)
 
 Three files, three small additions — routing is not the hard part:
+
 - `apps/frontend/src/runtime/navBootstrap.ts` — new sidenav child under Purchasing (`id: 'suppliers'` duplicate between parent and child also needs fixing in this same edit, per explicit decision).
 - `apps/frontend/src/pages/ft2-pages/purchasingSubTabs.ts` — new `ModuleTab` entry (can carry the count badge from §2).
 - `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx` — new `<Route>` + new `view` value passed to `SuppliersPortalModuleFT2`. **Not yet confirmed:** whether `view`'s prop type is a strict union needing a code change to extend, or already permissive — pending verification.
@@ -58,6 +59,7 @@ Every Sourcing recommendation falls into exactly one of two cases —
 **no third case, no silent gap**:
 
 **Branch A — variant has PO history.**
+
 1. Find every supplier who has ever shipped this variant, via
    `purchase_order_line_items.lasyncro_variant_id → purchase_orders.supplier_id`
    (confirmed real FK relationship, not inferred).
@@ -80,6 +82,7 @@ Every Sourcing recommendation falls into exactly one of two cases —
 **Branch B — variant has zero PO history (the question this session
 raised).** Resolved by the 2026-06-29 workshop, not newly decided
 tonight — re-stated here for implementation:
+
 - **No `default_supplier_id` ever** — confirmed twice (workshop +
   tonight, independently, same conclusion). A variant's supplier is
   never a stored property; it is always derived fresh from real order
@@ -110,11 +113,13 @@ tonight — re-stated here for implementation:
 ### 6b. What ships in v1 vs. explicitly deferred
 
 **v1 (this design, ready to build):**
+
 - Branch A ranking (equal-weighted composite, MOQ hard filter)
 - Branch B empty-state group with live count + assign-supplier action
 - Pre-filled Create PO action from either branch
 
 **Explicitly deferred, not silently dropped:**
+
 - Tuning the composite weights from real usage data (stated above)
 - Re-routing the `stockout_risk` alert from `/demand` to Sourcing
   (separate, small, tracked fix)
@@ -122,3 +127,229 @@ tonight — re-stated here for implementation:
   composite — current dataset has zero variants with >1 historical
   supplier (§2), so this can't be meaningfully designed or tested yet;
   revisit once real multi-sourcing data exists.
+
+## 7. Supplier-Product Preference System — 2026-07-10
+
+> **Status:** Design approved. Implementation pending.
+> **Unblocks:** ISS-SR-03, ISS-SR-04, ISS-SR-05, ISS-SR-06.
+> **Prerequisite for:** MOQ accumulation system (§8, not yet written).
+
+---
+
+### 7.1 Design Principle
+
+**Preference is advice, not law.**
+
+The §2 and §6a decision to reject a hard `default_supplier_id` FK stands. But
+deriving supplier *only* from PO history fails the never-ordered case and forces
+repetitive decisions on merchants with stable supplier relationships. The robust
+middle: a preference layer that *informs ranking but never bypasses it*.
+
+A preference pins the preferred supplier to the top of the ranked list with a
+"Preferred" badge — scorecard-ranked alternatives remain visible below. The
+merchant sees their explicit choice AND the data. If a preferred supplier's defect
+rate climbs, it shows every time. The system informs without overriding.
+
+**No auto-selection. Ever.** A preference pre-selects the supplier in the Create PO
+dialog. No PO is created toward a supplier without a human click. This is enforced
+in UI and must never be relaxed in the backend.
+
+---
+
+### 7.2 Three-Tier Supplier Resolution
+
+Every sourcing recommendation resolves through this cascade:
+
+```
+Tier 1 — Explicit preference      (merchant said so)
+         ↓ if none found
+Tier 2 — PO history + scorecard   (data says so, Branch A logic §6a)
+         ↓ if no PO history
+Tier 3 — Never ordered            (nobody knows yet → assign flow)
+```
+
+Tier precedence is strict. A variant with a Tier 1 preference still shows Tier 2
+candidates below it — the preference doesn't *hide* alternatives, it *orders* them.
+Tier 3 variants are always in a visually distinct group (see §6a, Branch B), never
+mixed into the ranked list.
+
+---
+
+### 7.3 Schema — `supplier_product_preferences`
+
+```sql
+CREATE TABLE supplier_product_preferences (
+  id            UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id       INTEGER       NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  supplier_id   INTEGER       NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+
+  -- Scope: what this preference applies to.
+  -- 'variant'      → lasyncro_variant_id
+  -- 'product'      → lasyncro_product_id
+  -- 'product_type' → Shopify product_type string (e.g. "Knitwear")
+  scope_type    TEXT          NOT NULL CHECK (scope_type IN ('variant', 'product', 'product_type')),
+  scope_id      TEXT          NOT NULL,
+
+  -- Priority within the same scope: 1 = primary, 2 = backup, etc.
+  -- Allows "primary supplier + fallback supplier" per product without
+  -- a new table — the merchant never needs to think about this as a
+  -- concept, just as "first choice" and "backup".
+  priority      SMALLINT      NOT NULL DEFAULT 1 CHECK (priority > 0),
+
+  -- Merchant's own reasoning — free text, never structured.
+  -- Conditions engine (min qty, price breaks, seasonal rules) is
+  -- explicitly deferred — see §7.5.
+  note          TEXT,
+
+  created_by    INTEGER       REFERENCES users(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+
+  -- One row per supplier+scope combination per shop.
+  -- Multiple priorities (primary/backup) are allowed on the same scope.
+  UNIQUE (shop_id, scope_type, scope_id, supplier_id)
+);
+
+-- RLS: tenant isolation
+CREATE POLICY supplier_product_preferences_tenant_isolation
+  ON supplier_product_preferences
+  USING (shop_id = current_setting('app.current_tenant')::integer);
+
+ALTER TABLE supplier_product_preferences ENABLE ROW LEVEL SECURITY;
+```
+
+**Resolution specificity rule (enforced in backend resolver, not DB):**
+`variant` beats `product` beats `product_type`. Most specific scope wins.
+When two rows share scope and scope_id, lower `priority` number wins (1 before 2).
+
+---
+
+### 7.4 Scope Types — ICP Coverage
+
+| Scope | Use case | Example |
+|---|---|---|
+| `product_type` | Micro merchant, one supplier per category | "All knitwear → Wool & Co" — one rule covers 40 variants |
+| `product` | Growing merchant, mixed sourcing | "Wool Sweater → Wool & Co, Linen Shirt → Linen House" |
+| `variant` | Complex merchant, per-colorway sourcing | "WOOL-NVY → Factory A, WOOL-RED → Factory B (different dye supplier)" |
+
+The merchant never needs to understand "scope" as a concept. The UI presents it as:
+
+- "Apply to this variant only"
+- "Apply to all variants of this product"
+- "Apply to all [product type] products"
+
+A radio group at assignment time — three options, plain language, no jargon.
+
+---
+
+### 7.5 What This Deliberately Does NOT Do (v1)
+
+These are explicit deferrals, not oversights:
+
+**No conditions engine.** Min qty triggers, price break tiers, seasonal supplier
+switching — this is ERP territory. SMBs will not maintain a conditions config surface.
+The `note` field carries merchant reasoning as free text. Structured conditions only
+if usage data proves demand.
+
+**No auto-PO creation.** The preference pre-selects; the human always confirms.
+This is a hard product constraint, not a UX nicety — incorrect POs destroy supplier
+relationships and waste capital.
+
+**No multi-currency preference weighting.** Supplier ranking (§6a) uses operational
+scorecards (on_time, fill, defect). Price comparison across currencies requires
+exchange rate snapshots and adds a config surface. Deferred.
+
+**No conditional routing.** "Use Wool & Co unless MOQ not met, then use Linen House"
+requires reading the MOQ accumulator state during preference resolution. The MOQ
+system (§8) must be designed and built first; conditional routing is a v2 feature
+once both systems are live and stable.
+
+---
+
+### 7.6 How Preference Resolution Changes the Sourcing Page
+
+**ISS-SR-06 (browse mode):** The Sourcing page gains a default state when reached
+directly (no `?variantId` param). Instead of the current "No active stockout selected"
+empty state, it shows:
+
+- A "Preferences" section listing all existing `supplier_product_preferences` rows,
+  grouped by scope_type, with edit/remove inline actions.
+- The "Never ordered before" group below (Branch B, §6a).
+
+This makes Sourcing a useful surface at all times, not just when reached from an alert.
+
+**ISS-SR-03 (dead CTA fixed):** "Assign a supplier →" in the never-ordered group
+opens an inline assignment drawer. The drawer shows the supplier list, the three scope
+options (variant / product / product_type), an optional `note` field, and a
+priority selector (Primary / Backup). On save, it writes a `supplier_product_preferences`
+row and moves the variant out of the "Never ordered" group.
+
+---
+
+### 7.7 API Contracts (new endpoints required)
+
+```
+GET    /api/v1/suppliers/preferences
+       → { preferences: PreferenceRow[] }
+       Reads all preferences for the shop, grouped by scope_type.
+
+POST   /api/v1/suppliers/preferences
+       body: { supplier_id, scope_type, scope_id, priority?, note? }
+       → { preference: PreferenceRow }
+
+PATCH  /api/v1/suppliers/preferences/:id
+       body: { priority?, note? }
+       → { preference: PreferenceRow }
+
+DELETE /api/v1/suppliers/preferences/:id
+       → 204
+
+GET    /api/v1/suppliers/sourcing-recommendations/:variantId
+       (existing — extend to include preference tier in response)
+       Add to each recommendation: { preference_tier: 1 | 2 | 3, is_preferred: boolean }
+```
+
+---
+
+### 7.8 Preference Resolution in the Recommendation Endpoint
+
+Extend `httpGetSourcingRecommendations` (§6a) with a pre-step:
+
+```
+1. Resolve preference for variantId:
+   a. Look up supplier_product_preferences WHERE scope_type='variant' AND scope_id=variantId
+   b. If none, look up WHERE scope_type='product' AND scope_id=(product of variant)
+   c. If none, look up WHERE scope_type='product_type' AND scope_id=(product_type of variant)
+   d. If none → no preference, proceed to Tier 2 as today
+
+2. If preference found:
+   - Add { is_preferred: true, preference_tier: 1, priority: row.priority } to that supplier's
+     recommendation object
+   - Sort: preferred suppliers first (by priority ASC), then scorecard-ranked remainder
+
+3. Response shape unchanged — is_preferred is additive, not a breaking change.
+```
+
+---
+
+### 7.9 MOQ Accumulation — Dependency Note
+
+The MOQ accumulation system (§8, not yet designed) depends on this preference system
+being in place first. When a reorder request is raised for a variant, the accumulator
+needs to know *which supplier* to route it to before it can group requests toward that
+supplier's MOQ threshold. Preference resolution (§7.2) answers that question.
+
+**Build order is therefore fixed:**
+
+1. `supplier_product_preferences` table + preference endpoints (§7.7) ← this design
+2. Assignment UI on Sourcing page (ISS-SR-03, ISS-SR-06)
+3. MOQ accumulation system (§8)
+4. Reorder request → accumulator → PO portal flow
+
+Do not start §8 until §7 endpoints and UI are live and verified.
+
+---
+
+*Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
+`onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),
+`product-structure.md` §6 (The Three Must-Have Loops).*

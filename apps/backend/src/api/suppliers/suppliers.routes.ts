@@ -21,6 +21,12 @@ import {
   httpGetNeverOrderedVariants,
 } from './sourcingRecommendations.controller.js';
 import {
+  httpListPreferences,
+  httpCreatePreference,
+  httpUpdatePreference,
+  httpDeletePreference,
+} from './supplierPreferences.controller.js';
+import {
   httpListReceiveJobs,
   httpCreateReceiveJob,
   httpGetReceiveJob,
@@ -197,6 +203,28 @@ router.get(
   requireFt2,
   requireAction('suppliers:read'),
   httpGetSourcingRecommendations
+);
+
+// ── SUPPLIER-PRODUCT PREFERENCES (sourcing-recommendation-playbook.md §7) ──
+router.get(
+  '/preferences',
+  authenticateToken, requireFt2, requireAction('suppliers:read'),
+  httpListPreferences
+);
+router.post(
+  '/preferences',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpCreatePreference
+);
+router.patch(
+  '/preferences/:id',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpUpdatePreference
+);
+router.delete(
+  '/preferences/:id',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpDeletePreference
 );
 
 export default router;

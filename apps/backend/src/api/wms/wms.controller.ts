@@ -1,6 +1,7 @@
 // apps/backend/src/api/wms/wms.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import crypto from 'crypto';
 import { getErrorMessage } from '@lasyncro/backend-core';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
@@ -230,9 +231,24 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
       );
     });
 
-    if (!result) {
+     if (!result) {
       return res.status(200).json({ message: 'No eligible orders available for batching' });
     }
+
+    // T1 — onboarding activation audit: first wave released.
+    //    — tenant context required for RLS on activation_audit_events.
+    // Fire-and-forget — audit failure must never block the batch release.
+    db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      await trx('activation_audit_events').insert({
+        event_id:    crypto.randomUUID(),
+        event_type:  'wave_released',
+        shop_id:     shopId,
+        user_id:     userId,
+        occurred_at: new Date(),
+        payload:     JSON.stringify({ schema: 'activation_audit.v1', event: 'wave_released', occurredAt: new Date().toISOString() }),
+      });
+    }).catch((err: unknown) => console.error('[ACTIVATION_AUDIT] wave_released failed', err));
 
     return res.status(201).json(result);
   } catch (error) {

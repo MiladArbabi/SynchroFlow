@@ -27,11 +27,47 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
   }
 
   try {
-    let candidates: any[] = [];
+    let candidates: any[]   = [];
+    let preferences: any[]  = [];
+    let productId: string | null = null;
+    let productType: string | null = null;
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+      // §7.8 Step 0: resolve product_id + product_type for scope fallback
+      const variant = await trx('variants as v')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .where('v.lasyncro_variant_id', variantId)
+        .andWhere('v.shop_id', shopId)
+        .select('v.lasyncro_product_id as product_id', 'p.product_type')
+        .first();
+
+      productId   = variant?.product_id   ?? null;
+      productType = variant?.product_type ?? null;
+
+      // §7.8 Step 1: resolve preference — most specific scope wins.
+      // variant > product > product_type (specificity order per playbook §7.3)
+      const prefRows = await trx('supplier_product_preferences')
+        .where('shop_id', shopId)
+        .where(function () {
+          this.where({ scope_type: 'variant',      scope_id: variantId })
+            .orWhere({ scope_type: 'product',      scope_id: productId ?? '' })
+            .orWhere({ scope_type: 'product_type', scope_id: productType ?? '' });
+        })
+        .orderByRaw(`
+          CASE scope_type
+            WHEN 'variant'       THEN 1
+            WHEN 'product'       THEN 2
+            WHEN 'product_type'  THEN 3
+          END ASC,
+          priority ASC
+        `)
+        .select('supplier_id', 'scope_type', 'priority', 'note');
+
+      preferences = prefRows;
+
+      // §6a Branch A: suppliers with PO history for this variant
       candidates = await trx('purchase_order_line_items as poli')
         .join('purchase_orders as po', 'po.id', 'poli.po_id')
         .join('suppliers as s', 's.id', 'po.supplier_id')
@@ -46,25 +82,55 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
         );
     });
 
-    // BRANCH A: has history. Hard-filter MOQ, then composite rank.
-    // Equal weighting v1 — see playbook §6a, deferred tuning is a known gap.
+    // §7.8 Step 2: build preference lookup — keyed by supplier_id.
+    // Most specific scope already sorted first by the ORDER BY above.
+    const prefBySupplierId = new Map<number, { scope_type: string; priority: number; note: string | null }>();
+    for (const p of preferences) {
+      if (!prefBySupplierId.has(p.supplier_id)) {
+        // First match wins (most specific scope, lowest priority number)
+        prefBySupplierId.set(p.supplier_id, { scope_type: p.scope_type, priority: p.priority, note: p.note });
+      }
+    }
+
+    // §6a scoring + §7.8 Step 2: annotate with preference tier
     const scored = candidates.map((c: any) => {
-      const onTime = Number(c.on_time_rate ?? 0);
-      const fill = Number(c.fill_rate ?? 0);
-      const defect = Number(c.defect_rate ?? 0);
-      const exceedsMoq = neededQty > 0 && Number(c.moq ?? 0) > neededQty;
-      // Equal-weighted composite: on_time + fill rewarded, defect penalized.
-      const score = onTime + fill - defect;
-      return { ...c, score, exceeds_moq: exceedsMoq };
+      const onTime      = Number(c.on_time_rate ?? 0);
+      const fill        = Number(c.fill_rate    ?? 0);
+      const defect      = Number(c.defect_rate  ?? 0);
+      const exceedsMoq  = neededQty > 0 && Number(c.moq ?? 0) > neededQty;
+      const score       = onTime + fill - defect;
+      const pref        = prefBySupplierId.get(c.id);
+
+      return {
+        ...c,
+        score,
+        exceeds_moq:        exceedsMoq,
+        // §7.8 preference fields — additive, not breaking
+        is_preferred:       !!pref,
+        preference_tier:    pref ? 1 : 2,
+        preference_priority: pref?.priority ?? null,
+        preference_scope:   pref?.scope_type ?? null,
+        preference_note:    pref?.note ?? null,
+      };
     });
 
-    // Survivors first (sorted by score desc), MOQ-exceeders last, clearly flagged.
-    const ranked = [
-      ...scored.filter((c) => !c.exceeds_moq).sort((a, b) => b.score - a.score),
-      ...scored.filter((c) => c.exceeds_moq).sort((a, b) => b.score - a.score),
-    ];
+    // §7.8 Step 2 sort: preferred first (by preference_priority ASC),
+    // then scorecard-ranked remainder, MOQ-exceeders always last.
+    const preferred    = scored.filter(c => c.is_preferred && !c.exceeds_moq)
+                               .sort((a, b) => (a.preference_priority ?? 99) - (b.preference_priority ?? 99));
+    const nonPreferred = scored.filter(c => !c.is_preferred && !c.exceeds_moq)
+                               .sort((a, b) => b.score - a.score);
+    const exceedsMoq   = scored.filter(c => c.exceeds_moq)
+                               .sort((a, b) => b.score - a.score);
 
-    return res.json({ variant_id: variantId, recommendations: ranked });
+    const ranked = [...preferred, ...nonPreferred, ...exceedsMoq];
+
+    return res.json({
+      variant_id:   variantId,
+      recommendations: ranked,
+      // Surface whether any preference was resolved — useful for UI badge
+      has_preference: prefBySupplierId.size > 0,
+    });
   } catch (err) {
     console.error('[sourcing] httpGetSourcingRecommendations failed', err);
     return res.status(500).json({ error: 'Failed to fetch sourcing recommendations' });

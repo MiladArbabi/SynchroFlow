@@ -123,18 +123,22 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
             .required('First name is required')
             .min(2, 'First name must be at least 2 characters')
             .max(50, 'First name must not exceed 50 characters')
-            .matches(/^[A-Za-z\s]+$/, 'First name can only contain letters and spaces'),
+            // Names must support international users: Åsa, O'Connor, Anne-Marie.
+            .matches(/^[\p{L}\p{M}]+(?:[\p{L}\p{M}\s'’-]*[\p{L}\p{M}])?$/u, 'First name can only contain letters, spaces, apostrophes, or hyphens'),
           lastName: Yup.string()
             .trim()
             .required('Last name is required')
             .min(2, 'Last name must be at least 2 characters')
             .max(50, 'Last name must not exceed 50 characters')
-            .matches(/^[A-Za-z\s]+$/, 'Last name can only contain letters and spaces'),
+            // Names must support international users: Åsa, O'Connor, Anne-Marie.
+            .matches(/^[\p{L}\p{M}]+(?:[\p{L}\p{M}\s'’-]*[\p{L}\p{M}])?$/u, 'Last name can only contain letters, spaces, apostrophes, or hyphens'),
           email: Yup.string().email('Must be a valid email').max(255).required('Email is required'),
           password: Yup.string()
             .required('Password is required')
             .test('no-leading-trailing-whitespace', 'Password can not start or end with spaces', (value) => value === value.trim())
-            .max(25, 'Password must be less than 25 characters'),
+            // Creation policy: strong enough for merchants, still password-manager friendly.
+            .min(8, 'Password must be at least 8 characters')
+            .max(72, 'Password must be 72 characters or fewer'),
           agreed: Yup.boolean()
             .oneOf([true], 'You must agree to the Terms and Privacy policy.')
             .required(),

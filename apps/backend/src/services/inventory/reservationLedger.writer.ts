@@ -90,7 +90,10 @@ export async function writeReservationHold(
       occurred_at: occurredAt ?? new Date(),
       triggered_by: 'system', // traceability: system-managed reservation
     })
-    .onConflict(['device_event_id'])
+    // Primary guard: device_event_id (deterministic uuidv5 — same inputs = same id).
+    // Secondary guard: shop_ref_unique composite constraint — catches retries where
+    // device_event_id differs but the logical reservation already exists.
+    .onConflict(['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code', 'movement_type'])
     .ignore();
   }
 
@@ -136,6 +139,7 @@ export async function writeReservationRelease(
       occurred_at: occurredAt ?? new Date(),
       triggered_by: 'system', // traceability: system-managed reservation release
     })
-    .onConflict(['device_event_id'])
+     // Same dual-guard pattern as writeReservationHold — see comment above.
+    .onConflict(['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code', 'movement_type'])
     .ignore();
 }

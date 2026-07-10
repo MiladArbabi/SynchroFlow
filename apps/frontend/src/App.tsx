@@ -183,7 +183,14 @@ export default function App() {
           {/* AUTH-018: forgot-password is public — no auth required */}
           <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           {/* AUTH-005/006: A3 connect-store step — auth-protected post-registration */}
-          <Route path="/connect-store" element={<ConnectStorePage />} />
+          <Route
+            path="/connect-store"
+            element={
+              <ProtectedRoute>
+                <ConnectStorePage />
+              </ProtectedRoute>
+            }
+          />
           {/* AUTH-007: A5 email verification inbox screen */}
           <Route path="/check-inbox" element={<CheckInboxPage />} />
           {/* AUTH-007: verify-email token handler — verifies then redirects to /connect-store */}

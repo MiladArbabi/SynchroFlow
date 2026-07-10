@@ -308,7 +308,9 @@ async function aggregateSlaAlerts(
     alert_type:     'sla_breach',
     severity:       'critical',
     title:          `${count} order${count > 1 ? 's' : ''} past shipping SLA`,
-    message:        `${count} order${count > 1 ? 's have' : ' has'} breached the shipping SLA window and ${count > 1 ? 'are' : 'is'} at risk of customer complaints.`,
+    // Resolution hint: tells owner the job-to-be-done, not just the problem.
+    // "Fulfil these orders" is the one action that clears this alert.
+    message: `${count} order${count > 1 ? 's have' : ' has'} breached the shipping SLA — fulfil ${count > 1 ? 'them' : 'it'} now to prevent customer complaints.`,
     entity_id:      null,
     entity_type:    'shop',
     revenue_impact: Number(row?.total_revenue ?? 0),
@@ -371,7 +373,9 @@ async function aggregateRevenueAlerts(
     alert_type:     'revenue_at_risk',
     severity:       blocked > 5000 ? 'critical' : 'warning',
     title:          `$${Math.round(blocked).toLocaleString()} revenue blocked`,
-    message:        `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(blocked).toLocaleString()} in revenue.`,
+    // Resolution hint: resolving each order's constraint (address, stock, payment)
+    // directly unblocks the revenue — owner needs to know the action, not just the symptom.
+    message: `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(blocked).toLocaleString()} in revenue — resolve each constraint to release it.`,
     entity_id:      null,
     entity_type:    'shop',
     revenue_impact: blocked,

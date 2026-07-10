@@ -100,11 +100,24 @@ export interface MorningBriefSnapshot {
   summaryLine: string;
 }
 
+// Action label map — communicates the job-to-be-done, not just the destination.
+// Keyed by alert_type. Omit an entry to fall back to the frontend module default.
+const ACTION_LABEL_MAP: Record<string, string> = {
+  sla_breach:            'Fulfil orders',
+  revenue_at_risk:       'Unblock orders',
+  inventory:             'Review stock',
+  customer:              'Fix addresses',
+  operational:           'Inspect orders',
+  stockout_risk:         'Reorder now',
+  missing_cogs:          'Add costs',
+};
+
 // --- Deep link map ---
 // Maps alert_type to frontend route with pre-applied filter.
 // Must stay in sync with frontend router.
 const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
-  // Order signals
+
+// Order signals
   sla_breach:               { module: 'order-nexus',      deepLink: '/orders/flow?urgency=sla_breach' },
   operational:              { module: 'order-nexus',      deepLink: '/orders/flow?constraint=operational' },
   inventory:                { module: 'order-nexus',      deepLink: '/orders/flow?constraint=inventory' },
@@ -113,7 +126,8 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   // revenue_at_risk: CashFlowModuleFT2 has no constrained-orders list to
   // filter into — the page's own UI already deep-links this exact signal
   // to /orders/flow (see its atRiskRevenue chip). Route there directly.
-  revenue_at_risk:          { module: 'order-nexus',      deepLink: '/orders/flow' },
+  // ?context=revenue_blocked triggers the intent banner in OrderFlowPage (ISS-RQ-02).
+  revenue_at_risk:          { module: 'order-nexus',      deepLink: '/orders/flow?context=revenue_blocked' },
   // No missing-cost concept exists on ProductsCatalogPage today (confirmed
   // by reading the full file — phantom/zeroStock/noSku only). Matches the
   // existing precedent: FinancesIntelligencePage's own CTA for this same
@@ -217,6 +231,9 @@ const alerts = await db.transaction(async (trx): Promise<any[]> => {
       module: destination.module,
       deepLink: destination.deepLink,
       revenueImpact: alert.revenue_impact != null ? Number(alert.revenue_impact) : null,
+      // Differentiated CTA per alert type — consumed by OverviewModuleFT2 TriageRow.
+      // Falls back to DEFAULT_ACTIONS[module] in the frontend when undefined.
+      actionLabel: ACTION_LABEL_MAP[alert.alert_type] ?? undefined,
     };
   });
 

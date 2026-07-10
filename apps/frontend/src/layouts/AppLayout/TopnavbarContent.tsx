@@ -12,6 +12,7 @@ import { useTheme } from "@mui/material/styles";
 import IconComponent from "../../components/Icon";
 import { TrialCountdownChip } from 'components/TrialCountdownChip';
 import { Bell, Home, AlertCircle, AlertTriangle, Info, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { ActivationChecklistButton } from '../../components/ActivationChecklist';
 import { useNavigate } from 'react-router-dom';
 import { useAlerts, useAcknowledgeAlert, type Alert } from '../../pages/alerts/useAlerts';
 import { useAppTheme } from '../../hooks/useAppTheme';
@@ -311,6 +312,9 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
       <Box display="flex" alignItems="center" gap={1} sx={{ flexShrink: 0, whiteSpace: "nowrap", ml: "auto" }}>
         {isFt2 && (
           <>
+            {/* CHECKLIST — activation progress, left of bell */}
+            <ActivationChecklistButton />
+
             {/* BELL — opens dropdown sheet */}
             <Tooltip title={sheetOpen ? '' : 'Alerts'}>
               <IconButton

@@ -1,91 +1,85 @@
 // apps/frontend/src/themes/overrides/OutlinedInput.ts
 import { Theme } from '@mui/material/styles';
 import { Components } from '@mui/material/styles';
-import { outlinedInputClasses } from '@mui/material/OutlinedInput'; // Import class keys if needed for specific selectors
-import { inputBaseClasses } from '@mui/material/InputBase'; // Import InputBase classes
-import { withAlpha } from 'utils/colorUtils'; // Ensure typed later
+import { outlinedInputClasses } from '@mui/material/OutlinedInput';
+import { inputBaseClasses } from '@mui/material/InputBase';
 
-// Type for the config entry
 type OutlinedInputComponentConfig = Components<Theme>['MuiOutlinedInput'];
 
-// ==============================|| OVERRIDES - OUTLINED INPUT ||============================== //
-
-export default function OutlinedInput(theme: Theme, borderRadius: number, outlinedFilled: boolean): OutlinedInputComponentConfig {
-    const isDark = theme.palette.mode === 'dark';
-
-    // Define conditional background colors
-    const lightBg = outlinedFilled ? theme.palette.grey[50] || '#f8fafc' : 'transparent';
-    const darkBg = outlinedFilled ? theme.palette.dark?.[800] || '#1a223f' : 'transparent'; // Use augmented dark or fallback
+export default function OutlinedInput(_theme: Theme, borderRadius: number, outlinedFilled: boolean): OutlinedInputComponentConfig {
+    const fieldBackground = outlinedFilled ? 'var(--bg-2)' : 'transparent';
 
     return {
         styleOverrides: {
             root: {
-                background: isDark ? darkBg : lightBg,
+                background: fieldBackground,
                 borderRadius: `${borderRadius}px`,
-                // Use standard pseudo-class for hover on root
+                color: 'var(--ink)',
+
                 '&:hover': {
-                    [`& .${outlinedInputClasses.notchedOutline}`]: { // Target notchedOutline on hover
-                        borderColor: theme.palette.primary.light // Keep light primary on hover
+                    [`& .${outlinedInputClasses.notchedOutline}`]: {
+                        borderColor: 'var(--accent)'
                     }
                 },
-                // Style when focused
+
                 [`&.${outlinedInputClasses.focused}`]: {
                     [`& .${outlinedInputClasses.notchedOutline}`]: {
-                         borderColor: theme.palette.primary.main // Standard focus color
+                        borderColor: 'var(--accent)'
                     }
                 },
-                // Style when disabled
+
+                [`&.${outlinedInputClasses.error}`]: {
+                    [`& .${outlinedInputClasses.notchedOutline}`]: {
+                        borderColor: 'var(--danger, #EF4444)'
+                    }
+                },
+
                 [`&.${outlinedInputClasses.disabled}`]: {
-                     background: isDark ? theme.palette.divider : theme.palette.grey[100], // Example disabled background
-                     [`& .${outlinedInputClasses.notchedOutline}`]: {
-                        borderColor: theme.palette.action.disabledBackground
-                     }
+                    background: 'var(--bg-2)',
+                    opacity: 0.62,
+                    [`& .${outlinedInputClasses.notchedOutline}`]: {
+                        borderColor: 'var(--rule)'
+                    },
+                    [`& .${inputBaseClasses.input}`]: {
+                        WebkitTextFillColor: 'var(--ink-4)'
+                    }
                 },
-                // Style multiline variant
+
                 [`&.${inputBaseClasses.multiline}`]: {
-                    padding: 1 // Keep padding override (might need units '1px'?)
-                },
+                    padding: 1
+                }
             },
-            // Style the input element itself
+
             input: {
                 fontWeight: 500,
-                background: isDark ? darkBg : lightBg, // Apply background here too? Check visual effect
-                padding: '15.5px 14px', // Keep padding
-                borderRadius: `${borderRadius}px`, // Apply borderRadius here too
+                background: fieldBackground,
+                padding: '15.5px 14px',
+                borderRadius: `${borderRadius}px`,
+                color: 'var(--ink)',
 
-                // Style placeholder within input
                 '&::placeholder': {
-                    color: theme.palette.text.secondary,
+                    color: 'var(--ink-4)',
                     fontSize: '0.875rem',
-                    opacity: 0.75
+                    opacity: 0.85
                 },
 
-                // Style adjustments for small size
                 [`&.${inputBaseClasses.inputSizeSmall}`]: {
                     padding: '10px 14px',
                     [`&.${inputBaseClasses.inputAdornedStart}`]: {
-                        paddingLeft: 0 // Remove left padding when start adornment is present
+                        paddingLeft: 0
                     }
                 }
             },
-            // Style when there's a start adornment
+
             inputAdornedStart: {
-                paddingLeft: 4 // Keep padding override
+                paddingLeft: 4
             },
-             // Style when there's an end adornment
-             inputAdornedEnd: {
-                 // Add styles if needed, e.g., paddingRight: 4
-             },
-            // Style the notched outline element
+
+            inputAdornedEnd: {},
+
             notchedOutline: {
                 borderRadius: `${borderRadius}px`,
-                borderColor: isDark
-                    ? withAlpha(theme.palette.text.primary || '#bdc8f0', 0.28) // Dark mode border
-                    : theme.palette.grey[400] || '#cdd5df', // Light mode border
-                // Ensure border color changes on error state
-                [`&.${outlinedInputClasses.error}`]: {
-                     borderColor: theme.palette.error.main
-                }
+                borderColor: 'var(--rule-2)'
             }
         }
     };

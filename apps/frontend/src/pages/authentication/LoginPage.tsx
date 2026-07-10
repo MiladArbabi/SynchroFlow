@@ -107,9 +107,9 @@ export default function Login() {
             <SystemStatusPill />
           </Box>
 
-          <Box sx={{ m: { xs: 1, sm: 3 }, mb: 0, backgroundColor: 'var(--bg)' }}>
+          <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
             <AuthCardWrapper>
-              <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+              <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2.25 }}>
                 <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>
                   {/* Target A1: "SIGN IN" orange uppercase label */}
                   <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>

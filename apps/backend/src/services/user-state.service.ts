@@ -456,4 +456,57 @@ export class UserStateService {
       userState,
     };
   }
+
+  // T3 — onboarding: dismiss a spotlight coach mark permanently per user.
+  // Key format: spotlight:dismissed:<spotlightKey>
+  static async dismissSpotlight(userId: number, spotlightKey: string): Promise<void> {
+    await db('user_states')
+      .insert({
+        user_id:    userId,
+        key:        `spotlight:dismissed:${spotlightKey}`,
+        value:      '1',
+        updated_at: db.fn.now(),
+      })
+      .onConflict(['user_id', 'key'])
+      .merge({ value: '1', updated_at: db.fn.now() });
+  }
+
+  // T4 — onboarding: check which activation audit events exist for this shop.
+  // Returns booleans only — no timestamps, no counts.
+   static async getActivationEvents(shopId: number): Promise<{ wave_released: boolean; brief_exported: boolean }> {
+    const rows = (await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return trx('activation_audit_events')
+        .where({ shop_id: shopId })
+        .whereIn('event_type', ['wave_released', 'brief_exported'])
+        .select('event_type');
+    })) as { event_type: string }[];
+
+    const types = new Set(rows.map((r: { event_type: string }) => r.event_type));
+    return {
+      wave_released:  types.has('wave_released'),
+      brief_exported: types.has('brief_exported'),
+    };
+  }
+
+  // T6 — returns all onboarding-related user_states flags in one query.
+  // Covers checklist:completed + all spotlight:dismissed:* keys.
+  static async getOnboardingFlags(userId: number): Promise<Record<string, boolean>> {
+    const rows = await db('user_states')
+      .where({ user_id: userId })
+      .where(function () {
+        this.where('key', 'like', 'checklist:%').orWhere('key', 'like', 'spotlight:%');
+      })
+      .select('key', 'value');
+
+    return Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value === '1']));
+  }
+
+  // T6 — permanently dismiss the activation checklist for this user.
+  static async dismissChecklist(userId: number): Promise<void> {
+    await db('user_states')
+      .insert({ user_id: userId, key: 'checklist:completed', value: '1', updated_at: db.fn.now() })
+      .onConflict(['user_id', 'key'])
+      .merge({ value: '1', updated_at: db.fn.now() });
+  }
 };

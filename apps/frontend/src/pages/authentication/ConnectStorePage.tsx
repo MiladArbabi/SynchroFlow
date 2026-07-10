@@ -15,8 +15,10 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import AuthWrapper1 from './AuthWrapper1';
+import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { SHOPIFY_APP_STORE_URL } from 'lib/appStoreUrl';
+import { AuthLogo } from './AuthLogo'; // Shared auth chrome logo; keeps connect-store consistent with other auth pages.
 
 const SCOPES = [
   'Products & variants',
@@ -31,15 +33,17 @@ export default function ConnectStorePage() {
 
   return (
     <AuthWrapper1>
-      <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
+      <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
 
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
-          <Link to="/" aria-label="LaSyncro home"></Link>
+          <Link to="/" aria-label="LaSyncro home">
+            <AuthLogo />
+          </Link>
           <SystemStatusPill />
         </Box>
 
-        <Box sx={{ width: '100%', maxWidth: 520, mx: 'auto', px: { xs:2, sm: 3 } }}>
-          <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 3, p: { xs: 3, sm: 4 } }}>
+        <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+          <AuthCardWrapper>
 
             <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
               <Stack direction="row" alignItems="center" spacing={0.75}>
@@ -115,7 +119,7 @@ export default function ConnectStorePage() {
               )}
             </Box>
 
-          </Box>
+          </AuthCardWrapper>
         </Box>
 
         <SocialProofTicker />

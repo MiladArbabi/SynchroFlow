@@ -21,6 +21,7 @@ import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 import * as Yup from 'yup';
 import { Formik } from 'formik';
 import AuthWrapper1 from './AuthWrapper1';
+import AuthCardWrapper from './AuthCardWrapper';
 import AnimateButton from 'ui-component/extended/AnimateButton';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { AuthLogo } from './AuthLogo';
@@ -38,11 +39,39 @@ export default function ResetPasswordPage() {
   if (!token) {
     return (
       <AuthWrapper1>
-        <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
-          <Typography sx={{ color: 'var(--ink-3)' }}>Invalid reset link.</Typography>
-          <Box component={Link} to="/forgot-password" sx={{ color: 'var(--accent)', mt: 1 }}>
-            Request a new one
+        <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
+          <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
+            <Link to="/" aria-label="LaSyncro home">
+              <AuthLogo />
+            </Link>
+            <SystemStatusPill />
           </Box>
+
+          <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
+            <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+              <AuthCardWrapper>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
+                    Reset link problem
+                  </Typography>
+
+                  <Typography variant="h2" sx={{ color: 'var(--ink)', fontWeight: 700, mb: 1 }}>
+                    Invalid reset link.
+                  </Typography>
+
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)', mb: 3 }}>
+                    This link is missing its reset token. Request a new password reset email to continue.
+                  </Typography>
+
+                  <Box component={Link} to="/forgot-password" sx={{ color: 'var(--accent)', fontWeight: 700, textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                    Request a new link →
+                  </Box>
+                </Box>
+              </AuthCardWrapper>
+            </Box>
+          </Stack>
+
+          <SocialProofTicker />
         </Stack>
       </AuthWrapper1>
     );
@@ -61,8 +90,8 @@ export default function ResetPasswordPage() {
         </Box>
 
         <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
-          <Box sx={{ width: '100%', maxWidth: 480, mx: 'auto', px: { xs: 2, sm: 3 } }}>
-            <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 3, p: { xs: 3, sm: 4 }, borderColor: 'var(--rule) !important' }}>
+          <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+            <AuthCardWrapper>
 
               <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 1 }}>
                 Reset password
@@ -72,7 +101,7 @@ export default function ResetPasswordPage() {
                 Choose a new password.
               </Typography>
               <Typography variant="body2" sx={{ color: 'var(--ink-3)', mb: 3 }}>
-                Must be less than 25 characters.
+                Use 8–72 characters.
               </Typography>
 
               {submitState === 'success' ? (
@@ -97,7 +126,9 @@ export default function ResetPasswordPage() {
                   validationSchema={Yup.object().shape({
                     password: Yup.string()
                       .required('Password is required')
-                      .max(25, 'Password must be less than 25 characters')
+                      // Creation policy: strong enough for merchants, still password-manager friendly.
+                      .min(8, 'Password must be at least 8 characters')
+                      .max(72, 'Password must be 72 characters or fewer')
                       .test('no-spaces', 'Password cannot start or end with spaces', (v) => v === v?.trim()),
                     confirmPassword: Yup.string()
                       .required('Please confirm your password')
@@ -197,7 +228,7 @@ export default function ResetPasswordPage() {
                   )}
                 </Formik>
               )}
-            </Box>
+            </AuthCardWrapper>
           </Box>
         </Stack>
 

@@ -15,6 +15,7 @@ import Typography from '@mui/material/Typography';
 import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
 import AuthWrapper1 from './AuthWrapper1';
+import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { Link } from 'react-router-dom';
 import { AuthLogo } from './AuthLogo';
@@ -35,29 +36,39 @@ export default function VerifyEmailPage() {
 
     // Call backend directly — backend will redirect on success
     // but since we're a SPA, we handle it here instead
-    axiosInstance.get(`/api/v1/auth/verify-email`, { params: { token } })
-      .then(() => {
-        setState('success');
-        // #982: broadcast verification success to other tabs (e.g. check-inbox)
-              try {
-                const bc = new BroadcastChannel('lasyncro_auth');
-                bc.postMessage({ type: 'EMAIL_VERIFIED' });
-                bc.close();
-              } catch { /* BroadcastChannel not supported */ }
-        setTimeout(() => navigate('/connect-store?verified=true'), 1500);
-      })
-      .catch((err) => {
-        const msg = err.response?.data?.error ?? '';
-        if (msg.includes('expired')) {
-          setState('expired');
-        } else if (msg.includes('Invalid') || msg.includes('already')) {
-          // Already verified — just proceed
-          setState('success');
-          setTimeout(() => navigate('/connect-store?verified=already'), 1500);
-        } else {
-          setState('error');
-        }
-      });
+  axiosInstance.get(`/api/v1/auth/verify-email`, { params: { token } })
+    .then((response) => {
+      const alreadyVerified = Boolean(response.data?.alreadyVerified);
+
+      setState('success');
+
+      // Only confirmed 2xx verification responses may unblock connect-store.
+      try {
+        const bc = new BroadcastChannel('lasyncro_auth');
+        bc.postMessage({ type: 'EMAIL_VERIFIED' });
+        bc.close();
+      } catch {
+        /* BroadcastChannel not supported */
+      }
+
+      setTimeout(
+        () => navigate(alreadyVerified ? '/connect-store?verified=already' : '/connect-store?verified=true'),
+        1500
+      );
+    })
+    .catch((err) => {
+      const status = err.response?.status;
+      const msg = String(err.response?.data?.error ?? '').toLowerCase();
+
+      // Invalid tokens must never be treated as verified.
+      if (msg.includes('expired')) {
+        setState('expired');
+      } else if (status === 400 || msg.includes('invalid')) {
+        setState('invalid');
+      } else {
+        setState('error');
+      }
+    });
   }, [navigate, token]);
 
   return (
@@ -72,72 +83,72 @@ export default function VerifyEmailPage() {
           <SystemStatusPill />
         </Box>
 
-        <Box sx={{ width: '100%', maxWidth: 480, mx: 'auto', px: { xs: 2, sm: 3 } }}>
-          <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 3, p: { xs: 3, sm: 4 }, textAlign: 'center' }}>
+        <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+          <AuthCardWrapper>
+            <Box sx={{ textAlign: 'center' }}>
+              {state === 'verifying' && (
+                <Stack spacing={2} alignItems="center">
+                  <CircularProgress sx={{ color: 'var(--accent)' }} />
+                  <Typography variant="body1" sx={{ color: 'var(--ink-2)' }}>
+                    Verifying your email...
+                  </Typography>
+                </Stack>
+              )}
 
-            {state === 'verifying' && (
-              <Stack spacing={2} alignItems="center">
-                <CircularProgress sx={{ color: 'var(--accent)' }} />
-                <Typography variant="body1" sx={{ color: 'var(--ink-2)' }}>
-                  Verifying your email...
-                </Typography>
-              </Stack>
-            )}
+              {state === 'success' && (
+                <Stack spacing={2} alignItems="center">
+                  <Box sx={{ width: 48, height: 48, borderRadius: '50%', bgcolor: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography sx={{ fontSize: '1.5rem' }}>✓</Typography>
+                  </Box>
+                  <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
+                    Email verified!
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
+                    Taking you to connect your store...
+                  </Typography>
+                  <CircularProgress size={20} sx={{ color: 'var(--accent)' }} />
+                </Stack>
+              )}
 
-            {state === 'success' && (
-              <Stack spacing={2} alignItems="center">
-                <Box sx={{ width: 48, height: 48, borderRadius: '50%', bgcolor: 'rgba(74,222,128,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Typography sx={{ fontSize: '1.5rem' }}>✓</Typography>
-                </Box>
-                <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
-                  Email verified!
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
-                  Taking you to connect your store...
-                </Typography>
-                <CircularProgress size={20} sx={{ color: 'var(--accent)' }} />
-              </Stack>
-            )}
+              {state === 'expired' && (
+                <Stack spacing={2} alignItems="center">
+                  <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
+                    Link expired
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
+                    This verification link has expired. Go back to request a new one.
+                  </Typography>
+                  <Button
+                    component={Link}
+                    to="/check-inbox"
+                    variant="contained"
+                    sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                  >
+                    Back to inbox check
+                  </Button>
+                </Stack>
+              )}
 
-            {state === 'expired' && (
-              <Stack spacing={2} alignItems="center">
-                <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
-                  Link expired
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
-                  This verification link has expired. Go back to request a new one.
-                </Typography>
-                <Button
-                  component={Link}
-                  to="/check-inbox"
-                  variant="contained"
-                  sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
-                >
-                  Back to inbox check
-                </Button>
-              </Stack>
-            )}
-
-            {(state === 'invalid' || state === 'error') && (
-              <Stack spacing={2} alignItems="center">
-                <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
-                  Invalid link
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
-                  This verification link is invalid or has already been used.
-                </Typography>
-                <Button
-                  component={Link}
-                  to="/login"
-                  variant="contained"
-                  sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
-                >
-                  Go to sign in
-                </Button>
-              </Stack>
-            )}
-
-          </Box>
+              {(state === 'invalid' || state === 'error') && (
+                <Stack spacing={2} alignItems="center">
+                  <Typography variant="h3" sx={{ color: 'var(--ink)', fontWeight: 700 }}>
+                    Invalid link
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)' }}>
+                    This verification link is invalid or has already been used.
+                  </Typography>
+                  <Button
+                    component={Link}
+                    to="/login"
+                    variant="contained"
+                    sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                  >
+                    Go to sign in
+                  </Button>
+                </Stack>
+              )}
+            </Box>
+          </AuthCardWrapper>
         </Box>
 
         <SocialProofTicker />

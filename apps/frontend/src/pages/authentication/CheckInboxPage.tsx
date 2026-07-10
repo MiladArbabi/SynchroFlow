@@ -21,6 +21,7 @@ import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import Button from '@mui/material/Button';
 import AuthWrapper1 from './AuthWrapper1';
+import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -43,7 +44,7 @@ export default function CheckInboxPage() {
   const [resendCooldown, setResendCooldown] = useState(false);
 
   const handleResend = async () => {
-    if (resendCooldown) return;
+    if (!accessToken || resendCooldown) return;
     setResendState('sending');
     try {
       await axiosInstance.post('/api/v1/auth/resend-verification', {}, {
@@ -92,9 +93,10 @@ export default function CheckInboxPage() {
           <SystemStatusPill />
         </Box>
 
-        {/* Card */}
-        <Box sx={{ width: '100%', maxWidth: 480, mx: 'auto', px: { xs: 2, sm: 3 } }}>
-          <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: 3, p: { xs: 3, sm: 4 }, textAlign: 'center' }}>
+        {/* Card — shared shell keeps auth pages visually consistent. */}
+        <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
+          <AuthCardWrapper>
+            <Box sx={{ textAlign: 'center' }}>
 
             {/* Envelope icon */}
             <Box sx={{
@@ -130,8 +132,10 @@ export default function CheckInboxPage() {
                 <Typography variant="body2" sx={{ color: 'var(--ink)', fontWeight: 600 }}>
                   The link expires in 30 minutes
                 </Typography>
-                <Typography variant="caption" sx={{ color: 'var(--ink-3)' }}>
-                  Don't see it? Check spam, or resend below.
+                <Typography variant="caption" sx={{ color:'var(--ink-3)' }}>
+                  {accessToken
+                    ? "Don't see it? Check spam, or resend below."
+                    : "Don't see it? Check spam, then sign in to request another link."}
                 </Typography>
               </Box>
             </Box>
@@ -140,17 +144,27 @@ export default function CheckInboxPage() {
             {(() => {
               const domain = email.split('@')[1]?.toLowerCase() ?? '';
               const providerMap: Record<string, { label: string; url: string }> = {
-                'gmail.com':       { label: 'Open Gmail',   url: 'https://mail.google.com' },
-                'googlemail.com':  { label: 'Open Gmail',   url: 'https://mail.google.com' },
-                'outlook.com':     { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
-                'hotmail.com':     { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
-                'live.com':        { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
-                'yahoo.com':       { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
-                'ymail.com':       { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
-                'icloud.com':      { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
-                'me.com':          { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
+                'gmail.com': { label: 'Open Gmail', url: 'https://mail.google.com' },
+                'googlemail.com': { label: 'Open Gmail', url: 'https://mail.google.com' },
+                'outlook.com': { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'hotmail.com': { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'live.com': { label: 'Open Outlook', url: 'https://outlook.live.com/mail' },
+                'yahoo.com': { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
+                'ymail.com': { label: 'Open Yahoo Mail', url: 'https://mail.yahoo.com' },
+                'icloud.com': { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
+                'me.com': { label: 'Open iCloud Mail', url: 'https://www.icloud.com/mail' },
               };
-              const provider = providerMap[domain] ?? { label: 'Open email app', url: `https://${domain}` };
+              const provider = providerMap[domain];
+
+              // Only link to known mailbox providers. Custom domains do not reliably map to a webmail URL.
+              if (!provider) {
+                return (
+                  <Typography variant="body2" sx={{ color: 'var(--ink-3)', mb: 1.5 }}>
+                    Open your email inbox in a separate tab, then return here.
+                  </Typography>
+                );
+              }
+
               return (
                 <Button
                   fullWidth
@@ -174,52 +188,83 @@ export default function CheckInboxPage() {
                 </Button>
               );
             })()}
-            <Stack direction="row" spacing={1.5} sx={{ mb: 2 }}>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={handleResend}
-                disabled={resendState === 'sending' || resendCooldown}
-                sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
-              >
-                <Stack direction="row" alignItems="center" spacing={0.75}>
-                  <RefreshIcon sx={{ fontSize: 16 }} />
-                  <span>{resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? 'Sent ✓' : 'Resend email'}</span>
+            {accessToken ? (
+              <Stack direction="row" spacing={1.5} sx={{ mb:2 }}>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  onClick={handleResend}
+                  disabled={resendState === 'sending' || resendCooldown}
+                  sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
+                >
+                  <Stack direction="row" alignItems="center"spacing={0.75}>
+                    <RefreshIcon sx={{ fontSize: 16 }} />
+                    <span>{resendState === 'sending' ? 'Sending...' : resendState === 'sent' ? 'Sent ✓' : 'Resend email'}</span>
+                  </Stack>
+                </Button>
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  component={Link}
+                  to="/login"
+                  sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
+                >
+                  <Stack direction="row" alignItems="center"spacing={0.75}>
+                    <MailOutlineIcon sx={{ fontSize: 16 }} />
+                    <span>Change address</span>
+                  </Stack>
+                </Button>
+              </Stack>
+            ) : (
+              <>
+                <Typography variant="body2" sx={{ color:'var(--ink-3)', mb: 1.5 }}>
+                  Sign in to resend the verification email, or register again with the correct address.
+                </Typography>
+                <Stack direction="row" spacing={1.5} sx={{ mb:2 }}>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    component={Link}
+                    to="/login"
+                    sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
+                  >
+                    Sign in
+                  </Button>
+                  <Button
+                    fullWidth
+                    variant="outlined"
+                    component={Link}
+                    to="/register"
+                    sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
+                  >
+                    Register
+                  </Button>
                 </Stack>
-              </Button>
-              <Button
-                fullWidth
-                variant="outlined"
-                component={Link}
-                to="/login"
-                sx={{ border: '1px solid var(--rule-2)', color: 'var(--ink-2)', '&:hover': { bgcolor: 'var(--bg-2)' }, textTransform: 'none' }}
-              >
-                <Stack direction="row" alignItems="center" spacing={0.75}>
-                  <MailOutlineIcon sx={{ fontSize: 16 }} />
-                  <span>Change address</span>
-                </Stack>
-              </Button>
-            </Stack>
+              </>
+            )}
 
-            {resendState === 'error' && (
+            {accessToken && resendState === 'error' && (
               <Typography variant="caption" sx={{ color: 'error.main', display: 'block', mb: 1 }}>
                 Failed to resend. Please try again.
               </Typography>
             )}
 
             {/* Wrong account escape — matches target A5 */}
-            <Typography variant="caption" sx={{ color: 'var(--ink-4)' }}>
-              Wrong account?{' '}
-              <Box
-                component="span"
-                onClick={handleSignOut}
-                sx={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}
-              >
-                Sign out
-              </Box>
-            </Typography>
+            {accessToken && (
+              <Typography variant="caption" sx={{ color: 'var(--ink-4)' }}>
+                Wrong account?{' '}
+                <Box
+                  component="span"
+                  onClick={handleSignOut}
+                  sx={{ color: 'var(--accent)', cursor: 'pointer', fontWeight: 600, '&:hover': { textDecoration: 'underline' } }}
+                >
+                  Sign out
+                </Box>
+              </Typography>
+            )}
 
-          </Box>
+           </Box>
+          </AuthCardWrapper>
         </Box>
 
         <SocialProofTicker />

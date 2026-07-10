@@ -21,6 +21,7 @@ import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import InputAdornment from '@mui/material/InputAdornment';
 import { SocialProofTicker, SystemStatusPill } from './AuthPageChrome';
 import FormControl from '@mui/material/FormControl';
+import { AuthLogo } from './AuthLogo'; // Shared auth chrome logo used by the fixed nav.
 
 type SubmitState = 'idle' | 'success' | 'error';
 
@@ -53,7 +54,7 @@ export default function ForgotPasswordPage() {
           {/* AUTH-014: system status pill — top-right */}
           <SystemStatusPill />
         </Box>
-        <Box sx={{ m: { xs: 1, sm: 3 } }}>
+        <Box sx={{ width: '100%', boxSizing: 'border-box', px: { xs: 3, sm: 0 } }}>
           <AuthCardWrapper>
             <Stack spacing={2}>
 

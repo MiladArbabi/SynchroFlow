@@ -28,6 +28,11 @@ export const registerUser = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Email and password are required.' });
   }
 
+  if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
+    // Creation policy is enforced server-side so bypassing the UI cannot create weak passwords.
+    return res.status(400).json({ error: 'Password must be 8–72 characters.' });
+  }
+
   try {
     // --- Check if user already exists ---
     const existingUser = await db<User>('users')
@@ -741,8 +746,9 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Token and new password are required.' });
   }
 
-  if (password.length > 25) {
-    return res.status(400).json({ error: 'Password must be less than 25 characters.' });
+  if (typeof password !== 'string' || password.length < 8 || password.length > 72) {
+    // Keep reset-password aligned with register policy and bcrypt-safe password length.
+    return res.status(400).json({ error: 'Password must be 8–72 characters.' });
   }
 
   const user = await systemDb<User>('users')

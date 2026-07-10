@@ -125,14 +125,15 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
         password: Yup.string()
           .required('Password is required')
           .test('no-leading-trailing-whitespace', 'Password cannot start or end with spaces', (value) => value === value.trim())
-          .max(25, 'Password must be less than 25 characters'),
+          // Password managers commonly generate >25 chars; keep a bcrypt-safe upper bound.
+          .max(72, 'Password must be 72 characters or fewer'),
       })}
       onSubmit={async (values, { setSubmitting }) => {
         setSubmitError(null);
         clearToken();
         try {
           console.info('[AUTH][LOGIN_ATTEMPT]', {
-            email: values.email.trim(),
+            has_email: Boolean(values.email.trim()), // Auth instrumentation must not log PII.
           });
           // --- Call the backend API ---
           const response = await axiosInstance.post('/api/v1/auth/login', {

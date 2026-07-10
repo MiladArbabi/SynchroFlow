@@ -625,3 +625,44 @@ API calls. `ReturnSessionPage` was initially written violating this (calling
 its data hooks directly) and had to be rebuilt presentational-only once the
 build failure surfaced it — check this before writing any new module-side
 session component, not after.
+
+## 15. Intent Banner Pattern — deep-link context bridge, ISS-RQ-05, 2026-07-09.
+
+When a page is reached via a signal deep-link (?urgency= or ?constraint=), render a dismissible banner that names what the user is seeing and states the one action that resolves the alert. Condition on the URL param, dismiss via local useState (no persistence). Follows §1 card shell tokens. First use: OrderFlowPage.tsx.
+
+## 16. Contextual Action Bar Pattern — selection-triggered wave builder, ISS-OP-01/02, 2026-07-10
+
+**The problem this corrects:** a primary action (Release wave to floor) was permanently
+rendered at the bottom of a long scrollable list. Users had to scroll past all orders to
+reach it, and it had no spatial relationship to the orders it acted on.
+
+**The pattern — show the action bar only when it has earned its place:**
+
+When nothing is selected: hide the action bar entirely. Show a `SpotlightCoachMark`
+at the top of the list coaching the user to select. The list takes full column height.
+
+When 1+ items are selected: render a compact action bar pinned between the filter row
+and the order list. It shows selection count, line items, units, an inline operator
+dropdown, and a context-aware CTA label:
+
+- 0 selected → `Release all N` (releases entire pool)
+- N selected → `Release N order(s)` (releases subset)
+
+The bar uses `bgcolor: var(--accent-ghost)` when orders are selected to signal "ready
+to act" without being as heavy as a filled button.
+
+**Search + pagination on the same surface:** when a list can grow unbounded, add a
+search input directly below the filter pills (not in a separate header section) and
+wire it into the existing filter chain (`filteredPool` in Order Flow). Always reset
+`page` to 1 on search change. Never create a parallel pagination system — wire into
+the existing `sortedPool → visiblePool` chain instead.
+
+**Rule going forward:** any list with a primary bulk action (release, assign, export)
+should use this pattern rather than a fixed bottom panel. The action bar appears when
+selections exist; the list owns the space otherwise. First and canonical use:
+`OrderFlowPage.tsx` Order Pool column.
+
+**Spotlight coexistence:** the `SpotlightCoachMark` component renders inline (not
+`position: absolute`) when used inside a contextual action bar. It sits above the
+order list, coaches selection, and disappears once dismissed. After dismissal the
+space collapses — no empty placeholder.

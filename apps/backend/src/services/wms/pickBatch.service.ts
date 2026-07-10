@@ -319,16 +319,20 @@ export async function releaseBatch(
         lasyncro_variant_id: li.lasyncro_variant_id,
         shop_id: shopId,
         movement_type: 'reservation_hold',
-        quantity_delta: li.quantity, // positive per check constraint
-        location_code: `WH-${shopId}-ROOT`, // reserved from available pool
+        quantity_delta: li.quantity,
+        location_code: `WH-${shopId}-ROOT`,
         reference_type: 'pick_batch',
         reference_id: pickBatchId,
         platform: 'wms',
         occurred_at: new Date(),
         device_event_id: deviceEventId,
-        operator_id: releasedBy,        // traceability: admin/owner who released batch
-        triggered_by: 'pick_scan',      // traceability: part of pick workflow
+        operator_id: releasedBy,
+        triggered_by: 'pick_scan',
       })
+      // Idempotency guard: batch release may be retried; ignore if this
+      // reservation_hold already exists for this batch + variant combination.
+      .onConflict(['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code', 'movement_type'])
+      .ignore()
 
     // Decrement available, increment reserved on inventory_truth
     await trx('inventory_truth')
