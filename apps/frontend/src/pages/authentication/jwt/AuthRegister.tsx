@@ -10,7 +10,6 @@ import { useUiEvents } from '../../../analytics/useUiEvents';
 import { identifyUser, groupByShop } from '../../../analytics/adapter';
 
 // -- AUTH
-import OAuthButtons from '../OAuthButtons';
 
 // material-ui
 import Button from '@mui/material/Button';
@@ -105,8 +104,6 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
 
   return (
     <>
-      {/* AUTH-002: OAuth buttons above email form — matches target A2 */}
-      <OAuthButtons mode="register" />
 
       <Formik
         initialValues={{

@@ -113,6 +113,7 @@ export default function Login() {
                 <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>
                   {/* AUTH-003: concise branded sign-in headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
+                    Hello.{' '}
                     {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
                     <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       Let's sync up.

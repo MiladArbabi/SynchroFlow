@@ -45,12 +45,13 @@ function GoogleIcon() {
 }
 
 export default function OAuthButtons({ mode }: OAuthButtonsProps) {
+  if (mode === 'login') return null;
   return (
     <Stack spacing={1.5} width="100%">
       <Stack direction="row" alignItems="center" spacing={1.5} sx={{ py: 0.5 }}>
         <Divider sx={{ flex: 1, borderColor: 'var(--rule)' }} />
         <Typography variant="caption" sx={{ color: 'var(--ink-4)', whiteSpace: 'nowrap', letterSpacing: '0.06em' }}>
-          {mode === 'login' ? 'EMAIL' : 'SIGN UP WITH EMAIL'}
+          SIGN UP WITH EMAIL
         </Typography>
         <Divider sx={{ flex: 1, borderColor: 'var(--rule)' }} />
       </Stack>

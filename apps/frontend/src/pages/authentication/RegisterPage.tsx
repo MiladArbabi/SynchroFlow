@@ -116,7 +116,7 @@ export default function Register() {
                     </Box>
                   </Typography>
                   <Typography variant="caption" sx={{ fontSize: '16px', color: 'var(--ink-3)' }}>
-                    You'll connect Shopify in the next step. We never store your password.
+                    Next, connect Shopify to sync your products, orders, and inventory.
                   </Typography>
                 </Stack>
                 <Box sx={{ width: '100%' }}>

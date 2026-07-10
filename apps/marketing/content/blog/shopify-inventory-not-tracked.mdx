@@ -1,0 +1,177 @@
+---
+title: "Shopify \"Inventory Not Tracked\": What It Means and How to Fix It"
+titleAccent: "The error, the fix, and the reason it keeps coming back."
+description: "Seeing \"Inventory not tracked\" or \"not stocked at this location\" in Shopify? Here is exactly what each message means, the step-by-step fix for single products and bulk catalogues, and why the error keeps returning for growing warehouses."
+date: "2026-07-10"
+lastReviewed: "2026-07-10"
+author: "LaSyncro"
+image: "shopify-inventory-not-tracked-error.png"
+ogImage: "shopify-inventory-not-tracked-error.png"
+imageAlt: "Shopify admin showing the inventory not tracked error message with a warehouse operator reviewing stock settings"
+tags: ["shopify", "inventory", "troubleshooting", "operations"]
+primaryKeyword: "shopify inventory not tracked"
+secondaryKeywords: ["inventory not tracked shopify", "how to fix inventory not tracked shopify", "why is my inventory not tracked on shopify", "inventory is not stocked at this location shopify", "inventory is not tracked at any location", "how to change inventory not tracked on shopify", "shopify track quantity", "shopify inventory not stocked at this location"]
+vector: 1
+cta_text: "Tired of chasing inventory settings product by product? LaSyncro keeps every SKU tracked, located, and accurate — synced with Shopify from every warehouse scan."
+cta_url: "https://app.lasyncro.com/register"
+faq:
+  - question: "What does \"Inventory not tracked\" mean in Shopify?"
+    answer: "It means the \"Track quantity\" setting is turned off for that product variant. Shopify is not counting stock for it: the product can be purchased indefinitely, no quantity is decremented on sale, and no stock level appears in your admin. It is a per-variant setting, so one product can have tracked and untracked variants at the same time."
+  - question: "How do I fix \"Inventory not tracked\" in Shopify?"
+    answer: "Open the product in Shopify admin, select the variant, and in the Inventory section enable \"Track quantity\", then set the on-hand count for each location. For many products at once, use the Products bulk editor to add the \"Track quantity\" column and enable it across all rows, or export the product CSV, set the inventory tracker column to \"shopify\", and re-import."
+  - question: "What does \"not stocked at this location\" mean in Shopify?"
+    answer: "It is a different problem from \"not tracked\". The variant is tracked, but it has not been assigned to the location trying to fulfill it. Shopify only allows a location to fulfill items that are stocked there. The fix is to edit the variant's Inventory section, tick the missing location under \"Locations\", and enter its quantity."
+  - question: "What does \"Inventory is not tracked at any location\" mean?"
+    answer: "The variant has inventory tracking fully disabled, so no location holds a count for it. Enable \"Track quantity\" on the variant and Shopify will then ask you to assign quantities per location. Until you do, reports, low-stock alerts, and overselling protection ignore that variant completely."
+  - question: "Why does Shopify inventory keep switching to not tracked?"
+    answer: "Common causes are new products created without tracking enabled (the default in some import flows), CSV imports where the inventory tracker column is blank, apps that create or duplicate products without setting tracking, and multi-variant products where only some variants were configured. If it keeps happening, the root cause is usually the process that creates products, not the setting itself."
+  - question: "Does untracked inventory cause overselling on Shopify?"
+    answer: "Yes, directly. An untracked variant can be purchased without limit because Shopify has no count to enforce. If the shelf runs out while orders keep arriving, you cancel and refund. Untracked variants are one of the most common hidden causes of overselling for merchants running their own warehouse."
+relatedLinks:
+  - href: "/blog/how-to-fix-inventory-drift-shopify"
+    title: "How to Fix Inventory Drift in Shopify"
+    description: "When tracking is on but the numbers are still wrong."
+  - href: "/blog/why-shopify-inventory-not-syncing"
+    title: "Why Is My Shopify Inventory Not Syncing?"
+    description: "The four root causes of inventory sync failures in Shopify."
+  - href: "/blog/shopify-overselling-problem"
+    title: "How to Stop Overselling on Shopify"
+    description: "What untracked and inaccurate inventory eventually costs you."
+  - href: "/blog/shopify-warehouse-management"
+    title: "Shopify Warehouse Management: Where Shopify Ends and a WMS Begins"
+    description: "What Shopify tracks natively — and the operational layer it leaves out."
+---
+
+import QuickAnswer from '@/components/article/QuickAnswer'
+import ArticleImage from '@/components/article/ArticleImage'
+import HeroVisual from '@/components/article/HeroVisual'
+import ProductVisual from '@/components/article/ProductVisual'
+import NumberedH3 from '@/components/article/NumberedH3'
+import Checklist from '@/components/article/Checklist'
+
+<QuickAnswer>
+"Inventory not tracked" means the "Track quantity" setting is off for that product variant — Shopify is not counting its stock at all. To fix it: open the product in Shopify admin, select the variant, enable "Track quantity" in the Inventory section, and set the on-hand quantity for each location. "Not stocked at this location" is a different error: the variant is tracked but not assigned to the location trying to fulfill it — tick the missing location in the variant's Inventory settings and add its quantity.
+</QuickAnswer>
+
+<HeroVisual
+  leftLabel="What Shopify is telling you"
+  leftHeading="Two different errors"
+  leftItems="Inventory not tracked — counting is off|Not stocked at this location — location not assigned|Not tracked at any location — tracking fully disabled|Each has a different fix"
+  rightLabel="What it costs you"
+  rightHeading="Silent operational damage"
+  rightItems="Unlimited purchases on empty shelves|No low-stock alerts|Inventory reports with holes|Overselling you discover from complaints"
+  caption="The error message is small. The consequences are not."
+/>
+
+You searched for this error for one of two reasons. Either Shopify is showing **"Inventory not tracked"** on a product and you want stock counting turned on — or an order failed to fulfill with **"not stocked at this location"** and you need it moving again.
+
+They look similar. They are not the same problem, and they have different fixes. This guide covers both, the bulk fix for catalogues with hundreds of affected variants, and — the part most guides skip — why the error keeps coming back for merchants running their own warehouse.
+
+## The Three Messages and What Each One Means
+
+Shopify uses close variations of this wording in different places, and merchants understandably mix them up.
+
+<NumberedH3 n="1" title="Inventory not tracked" />
+
+The variant's **Track quantity** setting is off. Shopify holds no count for it: customers can buy unlimited units, nothing is decremented on sale, and the variant is invisible to inventory reports and low-stock alerts. This is a **per-variant** setting — a product with five sizes can have three tracked and two untracked, which is exactly why the error often goes unnoticed.
+
+<NumberedH3 n="2" title="Inventory is not stocked at this location" />
+
+Tracking is on — but the variant has not been **assigned to the location** that is trying to fulfill the order. Shopify only lets a location fulfill items stocked there. You typically hit this during fulfillment, after adding a new location, or after switching fulfillment priority between locations.
+
+<NumberedH3 n="3" title="Inventory is not tracked at any location" />
+
+The full-disable state: tracking is off and consequently no location holds a quantity. Fixing it is a two-step: enable tracking first, then assign per-location quantities.
+
+<ArticleImage
+  src="shopify-inventory-not-tracked-error.png"
+  alt="Illustration of a warehouse operator comparing a Shopify admin screen showing inventory not tracked against physical stock on a shelf"
+  caption="Untracked inventory means Shopify and your shelf are not even having the same conversation."
+/>
+
+## How to Fix "Inventory Not Tracked" — Single Product
+
+1. In Shopify admin, go to **Products** and open the affected product.
+2. Select the variant (or scroll to the Inventory section for single-variant products).
+3. Enable **Track quantity**.
+4. Under **Quantity**, enter the on-hand count for each location that stocks it.
+5. Save. The variant now decrements on every sale and appears in inventory reports.
+
+One decision to make while you are there: **"Continue selling when out of stock."** Leave it off unless you deliberately sell on backorder — with it on, a tracked product can still oversell.
+
+<ArticleImage
+  src="track-quantity-toggle.png"
+  alt="Shopify Track quantity toggle being enabled on a product variant with per-location quantity fields for warehouse and storefront"
+  caption="One toggle, two steps: enable tracking, then give every location a real count."
+/>
+
+## How to Fix It in Bulk
+
+If the audit below turns up dozens or hundreds of untracked variants, fixing them one by one is not realistic. Two bulk paths:
+
+**Bulk editor.** Products → select all affected products → **Bulk edit**. Add the **Track quantity** column, enable it across every row, then add per-location quantity columns and fill in counts. Fast for up to a few hundred variants.
+
+**CSV round-trip.** Export your products, set the **Variant Inventory Tracker** column to `shopify` on every row, set **Variant Inventory Qty**, and re-import with overwrite enabled. The right path for large catalogues — and the same file doubles as a record of what you changed.
+
+To find every affected variant in the first place: **Products → Inventory view**, then filter or sort by quantity — untracked variants show no count at all. Walk that list before assuming you only have one or two.
+
+## How to Fix "Not Stocked at This Location"
+
+1. Open the product and select the variant.
+2. In the Inventory section, find **Locations** (or **Edit locations**).
+3. Tick the location that needs to fulfill it.
+4. Enter the quantity actually held there — do not guess; a wrong number here is instant inventory drift.
+5. Save, then retry the fulfillment.
+
+If this appears across many orders at once, the usual trigger is structural: a location was added, an app changed fulfillment priority, or order routing was reconfigured — and the catalogue never got assigned to the new location. The bulk-editor path above works here too: add location columns and assign in one pass.
+
+<ArticleImage
+  src="ba-scan-locations.png"
+  alt="LaSyncro location barcode scanning showing warehouse locations assigned to products"
+  caption="A location assignment problem in Shopify is a location visibility problem in the warehouse."
+/>
+
+## Why This Error Keeps Coming Back
+
+Flipping the setting takes thirty seconds. The reason you are reading a full guide is that for most growing merchants, it comes back. Untracked variants are almost never a settings problem — they are a **product-creation process** problem. The usual sources:
+
+<Checklist items="New products created in a hurry without tracking enabled|CSV imports with a blank inventory tracker column|Apps that create or duplicate products and skip inventory settings|Multi-variant products where only the first variant was configured|New locations added without assigning the existing catalogue|Staff creating draft products that go live before inventory setup" />
+
+Fix the setting today and one of these will quietly recreate the error next month. The durable fix is a receiving and product-onboarding workflow where no product reaches sellable status until it is tracked, located, and counted — which is an operations discipline, not a Shopify checkbox.
+
+## When the Setting Is On and the Numbers Are Still Wrong
+
+Enabling tracking tells Shopify to count. It does not make the count **correct**. Merchants often fix "not tracked", watch the numbers for a few weeks, and discover a different problem: Shopify says 23, the shelf says 19.
+
+That is [inventory drift](/blog/how-to-fix-inventory-drift-shopify) — the gap between recorded and physical stock, accumulated through unscanned movements: returns stowed without a restock, pick errors never corrected, damaged units removed without an adjustment. Tracking makes drift *visible*; it does not prevent it. And drift left alone matures into the error customers feel: [overselling](/blog/shopify-overselling-problem).
+
+The sequence is worth naming, because it is the same story on every growing Shopify operation:
+
+1. **Untracked inventory** — Shopify is not counting (this page)
+2. **Inventory drift** — Shopify is counting, but wrong
+3. **Overselling** — the wrong count meets a real customer
+
+<ArticleImage
+  src="untracked-to-oversold-sequence.png"
+  alt="Three-stage progression from untracked Shopify inventory to inventory drift to an oversold order cancellation"
+  caption="Untracked becomes drift, drift becomes overselling — the same story on every growing Shopify operation."
+/>
+
+Each stage has its own fix, and each fix holds only as long as the physical operation records what actually happens on the floor.
+
+<ProductVisual
+  badge="Product · Inventory Accuracy"
+  title="Every receive, stow, pick, pack, and return recorded by scan — with Shopify inventory updated in real time from each movement"
+  caption="When every movement is a scan, 'not tracked' stops being possible and drift stops accumulating."
+/>
+
+## The Warehouse-Grade Version of "Tracked"
+
+Shopify's Track quantity gives you one number per variant per location. For a store fulfilled by a 3PL or a single shelf unit, that is enough. For a merchant running their own warehouse, "tracked" needs to mean more:
+
+- **Where** the units are — bin and shelf level, not just "Warehouse 1"
+- **How** the count got there — an event history you can replay, not a snapshot you have to trust
+- **Who** moved stock last — scan-level accountability per operator
+- **What** is incoming — PO receiving that updates counts at the point of delivery
+
+That layer is what a warehouse management system adds on top of Shopify's native tracking — covered in full in [where Shopify ends and a WMS begins](/blog/shopify-warehouse-management). If "inventory not tracked" was your error today, Shopify's setting is your fix today. If it is the third inventory fire this quarter, the setting was never the real problem.
