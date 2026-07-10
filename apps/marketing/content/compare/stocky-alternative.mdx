@@ -2,7 +2,7 @@
 title: "Stocky Alternative for Shopify Merchants Before August 2026"
 description: "Stocky is shutting down after August 31, 2026. Here is what Shopify merchants using Stocky for inventory, purchase orders, receiving, forecasting, and warehouse workflows should use instead."
 date: "2026-06-16"
-lastReviewed: "2026-06-16"
+lastReviewed: "2026-07-10"
 author: "LaSyncro"
 tags: ["compare", "stocky", "shopify", "inventory", "warehouse operations"]
 primaryKeyword: "stocky alternative"
@@ -72,6 +72,18 @@ For Shopify merchants who used it lightly, that may be inconvenient. For merchan
 Shopify has confirmed that Stocky will no longer be available after August 31, 2026. After that date, merchants need to manage inventory through Shopify admin and Shopify POS, or move to another system before Stocky disappears.
 
 This guide explains what Stocky users need to replace, where Shopify native inventory is enough, where it is not enough, and when LaSyncro is the right Stocky alternative.
+
+## Stocky Shutdown Timeline: The Key Dates
+
+The shutdown is not a single event. It has been rolling out in phases, and two of the three dates have already passed:
+
+**July 7, 2025** — Stocky stopped supporting inventory transfers between locations and min/max forecasting. Merchants who relied on those features to trigger reorders or move stock have been working with a stripped-down app for over a year.
+
+**February 2, 2026** — Stocky was removed from the Shopify App Store. No new installations, no reinstalls. If you uninstall it now, you cannot get it back.
+
+**August 31, 2026** — Complete shutdown. The app stops working and all Stocky APIs cease, which means any third-party tools connected to Stocky will break at the same time. Shopify has indicated a period of read-only access to help with the transition, but no workflows will run.
+
+Why is Shopify doing this? It is consolidating inventory management into Shopify Admin's built-in features rather than maintaining a separate app. That works for simple retail stores — but it leaves merchants who used Stocky for purchase orders, forecasting, and receiving workflows without a native replacement for those capabilities.
 
 ## What Is Stocky?
 
@@ -290,16 +302,9 @@ A practical migration looks like this:
 
 ### 1. Export the Stocky data you want to keep
 
-Before Stocky becomes unavailable, export any data your team may need later.
+Before Stocky becomes unavailable, export any data your team may need later. Purchase order history, product cost information, inventory reports, and stock count records can be exported as CSV files.
 
-That includes:
-
-- Supplier records
-- Purchase order history
-- Product cost information
-- Inventory reports
-- Stock count records
-- Transfer history
+One critical exception: supplier records cannot be exported from Stocky at all. Supplier contacts, lead times, minimum order quantities, and payment terms must be documented manually while you can still open the app. After August 31, 2026, any supplier data left inside Stocky is permanently gone.
 
 ### 2. Clean your Shopify product catalogue
 

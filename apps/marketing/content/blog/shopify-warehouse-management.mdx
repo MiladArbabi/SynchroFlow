@@ -107,27 +107,27 @@ Shopify's tools are inventory visibility — they tell you what you have. Wareho
 
 A true warehouse management system provides five core capabilities that Shopify does not.
 
-<NumberedH3 num="01">Receiving workflows</NumberedH3>
+<NumberedH3 n="01" title="Receiving workflows" />
 
 When a supplier delivery arrives, a WMS provides a structured receiving process: scan items in against the purchase order, record discrepancies immediately, assign received stock to specific warehouse locations, and update inventory in real time. Every delivery becomes a verified, timestamped event — not a manual quantity adjustment made after counting.
 
 This matters because a single PO miscount creates a cascade: false stock levels, overselling, emergency reorders, stockouts, refund spikes, and wasted time recounting. Scan-based receiving prevents the cascade at the source.
 
-<NumberedH3 num="02">Bin and location tracking</NumberedH3>
+<NumberedH3 n="02" title="Bin and location tracking" />
 
 A WMS knows that SKU-103 is in Aisle 2, Shelf B, Bin 14 — not just "Warehouse 1." This enables directed putaway (telling operators exactly where to stow incoming stock), directed picking (routing pickers to the right location without searching), and cycle counting (auditing specific locations rather than the entire warehouse).
 
 Without bin tracking, a warehouse with 500+ SKUs becomes increasingly difficult to operate accurately as it grows.
 
-<NumberedH3 num="03">Barcode and scan-driven operations</NumberedH3>
+<NumberedH3 n="03" title="Barcode and scan-driven operations" />
 
 Every physical movement — receive, stow, pick, pack, return — is confirmed by a scan. The scan is the record. This eliminates the gap between physical reality and system state that causes inventory drift. It also creates an immutable audit trail: every movement has a timestamp, an operator ID, and a location.
 
-<NumberedH3 num="04">Pick path optimisation</NumberedH3>
+<NumberedH3 n="04" title="Pick path optimisation" />
 
 A WMS routes pickers through the warehouse efficiently — grouping items by location, sequencing picks to minimise travel, and batching multiple orders where possible. At 20 orders a day, this is nice to have. At 200 orders a day, it is the difference between a warehouse that runs on time and one that doesn't.
 
-<NumberedH3 num="05">Immutable event ledger</NumberedH3>
+<NumberedH3 n="05" title="Immutable event ledger" />
 
 A WMS records every stock movement as an event — not just a snapshot of the current count. This means you can replay exactly what happened to any SKU at any point in time. When stock is wrong, you do not have to guess — you can trace every movement back to its source. Shopify stores the current number. A WMS stores the history that produced it.
 
