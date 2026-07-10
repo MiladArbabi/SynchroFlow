@@ -350,6 +350,181 @@ Do not start §8 until §7 endpoints and UI are live and verified.
 
 ---
 
+## §8 MOQ Accumulation System — Design Draft
+
+### 8.1 Design Principle
+
+The accumulator is a **staging area between intent and commitment**. A merchant knows they need to reorder a variant but can't justify a PO yet — MOQ isn't met, or they want to bundle multiple variants into one shipment. The accumulator holds those requests, groups them by resolved supplier, and shows MOQ progress so the merchant knows exactly when to pull the trigger.
+
+**Supplier is locked at queue time, not at convert time.** If a preference changes after a request is queued, the request keeps its original supplier. Silent re-routing between queue and PO creation would be a trust violation — the merchant selected a supplier deliberately.
+
+**MOQ is advisory, not blocking.** "Create PO anyway →" is always available. The system informs; the merchant decides. Same principle as the existing `exceeds_moq` pattern in §6a.
+
+---
+
+### 8.2 Entry Points (Decision 1C)
+
+**Alert-driven:** `stockout_risk` alert deep-links to Sourcing with `?variantId=X&needed=N`. The recommendation row gains an "Add to queue →" button alongside "Create PO →". Needed qty is pre-filled from the alert param. Supplier is pre-resolved via §7 Tier 1 preference, or merchant picks from the ranked Tier 2 list.
+
+**Manual:** Merchant visits Sourcing directly (no alert). Any recommendation row or never-ordered variant can be queued. Supplier must be selected before queuing — never-ordered variants with no preference go through the existing "Assign a supplier →" flow (§7, ISS-SR-03) first.
+
+**Supplier required at queue time in both cases.** A request without a supplier cannot be created — there is nothing to accumulate toward.
+
+---
+
+### 8.3 Schema — `reorder_requests`
+
+```sql
+CREATE TABLE reorder_requests (
+  id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id               INTEGER       NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+
+  -- The variant being requested — string ID, matches lasyncro_variant_id convention
+  lasyncro_variant_id   TEXT          NOT NULL,
+
+  -- Resolved supplier — locked at queue time, never re-resolved
+  supplier_id           INTEGER       NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+
+  -- Quantity the merchant wants to order for this variant
+  qty_requested         INTEGER       NOT NULL CHECK (qty_requested > 0),
+
+  -- How this request was created
+  source                TEXT          NOT NULL CHECK (source IN ('alert', 'manual')),
+
+  -- Lifecycle
+  -- pending   → in accumulator, not yet on a PO
+  -- converted → PO was created, request fulfilled
+  -- dismissed → merchant removed it without converting
+  status                TEXT          NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending', 'converted', 'dismissed')),
+
+  -- Set when status → converted. Soft reference — text to avoid FK type dependency.
+  converted_po_id       TEXT,
+  converted_at          TIMESTAMPTZ,
+
+  created_by            INTEGER       REFERENCES users(id) ON DELETE SET NULL,
+  created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+
+-- RLS: tenant isolation
+CREATE POLICY reorder_requests_tenant_isolation
+  ON reorder_requests
+  USING (shop_id = current_setting('app.current_tenant')::integer);
+
+ALTER TABLE reorder_requests ENABLE ROW LEVEL SECURITY;
+
+-- Primary query pattern: all pending for a shop, grouped by supplier
+CREATE INDEX reorder_requests_shop_supplier_status_idx
+  ON reorder_requests (shop_id, supplier_id, status);
+
+-- Secondary: check existing pending requests per variant
+CREATE INDEX reorder_requests_shop_variant_status_idx
+  ON reorder_requests (shop_id, lasyncro_variant_id, status);
+```
+
+**No unique constraint on `(shop_id, supplier_id, lasyncro_variant_id)`** — multiple alerts for the same variant are allowed as separate rows. The API groups them by variant+supplier in the response. This preserves per-request traceability (which alert triggered which request).
+
+---
+
+### 8.4 API Contracts
+
+```
+GET    /api/v1/suppliers/reorder-requests
+       → { by_supplier: SupplierAccumulation[] }
+
+       SupplierAccumulation: {
+         supplier_id:    number
+         supplier_name:  string
+         moq:            number | null
+         total_qty:      number          -- sum of all pending qty for this supplier
+         moq_met:        boolean         -- total_qty >= moq (false if moq is null)
+         requests: [{
+           id:                   string
+           lasyncro_variant_id:  string
+           sku:                  string | null
+           title:                string | null
+           qty_requested:        number
+           source:               'alert' | 'manual'
+           created_at:           string
+         }]
+       }
+
+POST   /api/v1/suppliers/reorder-requests
+       body: { lasyncro_variant_id, supplier_id, qty_requested, source }
+       → { request: ReorderRequest }
+       -- 400 if supplier not active or not belonging to shop
+       -- 400 if variant not found in shop's catalog
+
+DELETE /api/v1/suppliers/reorder-requests/:id
+       → 204
+       -- 404 if not found or wrong shop
+       -- 400 if status !== 'pending'
+
+POST   /api/v1/suppliers/reorder-requests/convert
+       body: { supplier_id, expected_delivery_date?, notes? }
+       → { po_id: string }
+       -- Finds all pending requests for supplier_id in this shop
+       -- Creates PO via existing httpCreatePurchaseOrder logic (reuse, not duplicate)
+       -- Line items: one per unique lasyncro_variant_id, qty = sum of requests for that variant
+       -- Marks all converted requests: status='converted', converted_po_id, converted_at
+       -- 400 if no pending requests found for this supplier
+```
+
+---
+
+### 8.5 How This Changes the Sourcing Page (Decision 3A)
+
+The main decision card gains a **Pending Reorders section** between Preferences and Never Ordered. It only renders when `by_supplier.length > 0`.
+
+```
+PENDING REORDERS · 2 suppliers
+
+┌─────────────────────────────────────────────────┐
+│ Wool & Co                                       │
+│ ████████░░  80 / 100 units MOQ                 │
+│ WOOL-NVY-M  10u · WOOL-RED-L  15u · +3 more   │
+│                          [Create PO →]          │
+├─────────────────────────────────────────────────┤
+│ Linen House                                     │
+│ ███░░░░░░░  30 / 100 units MOQ  (MOQ not met)  │
+│ LINEN-GRY-S  25u · LINEN-NVY-M  5u            │
+│   [Create PO anyway →]          [Remove all]   │
+└─────────────────────────────────────────────────┘
+```
+
+MOQ progress bar: `var(--accent)` fill when met, `var(--ink-3)` when not. "Create PO →" is Tier 1 (filled accent) when MOQ is met; "Create PO anyway →" is Tier 2 (ghost) when not — same pattern as §6a `exceeds_moq`.
+
+Pulse card gains a third row: **Queued for reorder** showing total pending request count.
+
+Recommendation rows (when `activeVariantId` is set) gain a secondary "Add to queue →" ghost button alongside "Create PO →", only when a preferred or ranked supplier is available.
+
+---
+
+### 8.6 What This Deliberately Does NOT Do (v1)
+
+**No auto-convert.** MOQ being met never automatically creates a PO. Always a human click.
+
+**No qty editing after queue.** Remove the request and re-add with the correct qty. Keeps the audit trail clean — no silent mutations.
+
+**No cross-supplier accumulation.** Requests for the same variant but different suppliers are tracked independently. Merging would require re-routing logic that belongs in a future conditional routing feature (§7.5).
+
+**No alert linkage FK.** `source` field records provenance as `'alert'` or `'manual'` without a hard FK to the alerts table. Avoids coupling the accumulator lifecycle to alert deletion.
+
+---
+
+### 8.7 Build Order
+
+1. `reorder_requests` migration
+2. `reorderRequests.controller.ts` — GET, POST, DELETE, convert
+3. Wire routes into `suppliers.routes.ts`
+4. Sourcing view: Pending Reorders section + "Add to queue →" on rec rows
+5. Pulse card: Queued for reorder stat row
+
+Do not start step 3 until step 2 endpoints are verified via curl. Do not start step 4 until step 3 is confirmed routing correctly.
+
+---
+
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
 `onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),
 `product-structure.md` §6 (The Three Must-Have Loops).*

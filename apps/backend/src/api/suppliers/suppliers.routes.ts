@@ -35,6 +35,12 @@ import {
   httpCloseReceiveJob,
   httpReportReceiveException,
 } from './receiveJob.controller.js';
+import { 
+  httpConvertReorderRequests, 
+  httpListReorderRequests, 
+  httpCreateReorderRequest, 
+  httpDeleteReorderRequest 
+} from './reorderRequests.controller.js';
 
 /**
  * SUPPLIERS PORTAL ROUTES
@@ -225,6 +231,29 @@ router.delete(
   '/preferences/:id',
   authenticateToken, requireFt2, requireAction('suppliers:write'),
   httpDeletePreference
+);
+
+// ── REORDER REQUESTS / MOQ ACCUMULATOR (sourcing-recommendation-playbook.md §8) ──
+// convert must be registered before :id to avoid route shadowing
+router.post(
+  '/reorder-requests/convert',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpConvertReorderRequests
+);
+router.get(
+  '/reorder-requests',
+  authenticateToken, requireFt2, requireAction('suppliers:read'),
+  httpListReorderRequests
+);
+router.post(
+  '/reorder-requests',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpCreateReorderRequest
+);
+router.delete(
+  '/reorder-requests/:id',
+  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  httpDeleteReorderRequest
 );
 
 export default router;

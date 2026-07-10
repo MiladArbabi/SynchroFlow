@@ -1,5 +1,5 @@
 // apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Route, Routes, useSearchParams } from 'react-router-dom';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -10,7 +10,10 @@ import type {
   CreateSupplierInput, 
   CreatePoInput, 
   Supplier,
-  SourcingRecommendation
+  SourcingRecommendation,
+  PreferenceRow,
+  ReorderRequest,
+  SupplierAccumulation,
 } from '@lasyncro/suppliers-portal';
 import { useSuppliersPortal } from '../suppliers-portal/useSuppliersPortal';
 import { axiosInstance } from 'api/axiosConfig';
@@ -27,6 +30,8 @@ export default function SuppliersPortalPage() {
   const { data, isLoading, isError, refetch } = useSuppliersPortal();
   const [searchParams, setSearchParams] = useSearchParams();
   const autoOpenRef = useRef(false);
+  // §8: lives here so it survives the refetch re-render triggered by convert
+  const [lastConvertedPoId, setLastConvertedPoId] = useState<string | null>(null);
 
   // Read demand module handoff params — pre-open PO dialog with variant pre-filled
   const demandAction = searchParams.get('action');
@@ -101,6 +106,62 @@ export default function SuppliersPortalPage() {
     return data.recommendations ?? [];
   }, []);
 
+  const handleFetchPreferences = useCallback(async (): Promise<PreferenceRow[]> => {
+  const { data } = await axiosInstance.get('/api/v1/suppliers/preferences');
+  return data.preferences ?? [];
+}, []);
+
+const handleCreatePreference = useCallback(async (input: {
+  supplier_id: number;
+  scope_type: string;
+  scope_id: string;
+  priority?: number;
+  note?: string;
+}): Promise<PreferenceRow> => {
+  const { data } = await axiosInstance.post('/api/v1/suppliers/preferences', input);
+  return data.preference;
+}, []);
+
+const handleUpdatePreference = useCallback(async (
+  id: string,
+  input: { priority?: number; note?: string }
+): Promise<PreferenceRow> => {
+  const { data } = await axiosInstance.patch(`/api/v1/suppliers/preferences/${id}`, input);
+  return data.preference;
+}, []);
+
+const handleDeletePreference = useCallback(async (id: string): Promise<void> => {
+    await axiosInstance.delete(`/api/v1/suppliers/preferences/${id}`);
+  }, []);
+
+  // §8 MOQ Accumulation — sourcing-recommendation-playbook.md §8
+  const handleFetchReorderRequests = useCallback(async (): Promise<SupplierAccumulation[]> => {
+    const { data } = await axiosInstance.get('/api/v1/suppliers/reorder-requests');
+    return data.by_supplier ?? [];
+  }, []);
+
+  const handleCreateReorderRequest = useCallback(async (input: {
+    lasyncro_variant_id: string;
+    supplier_id: number;
+    qty_requested: number;
+    source: 'alert' | 'manual';
+  }): Promise<ReorderRequest> => {
+    const { data } = await axiosInstance.post('/api/v1/suppliers/reorder-requests', input);
+    return data.request;
+  }, []);
+
+  const handleDeleteReorderRequest = useCallback(async (id: string): Promise<void> => {
+    await axiosInstance.delete(`/api/v1/suppliers/reorder-requests/${id}`);
+  }, []);
+
+  const handleConvertReorderRequests = useCallback(async (supplierId: number): Promise<{ po_id: string }> => {
+    const { data } = await axiosInstance.post('/api/v1/suppliers/reorder-requests/convert', { supplier_id: supplierId });
+    // Set banner BEFORE refetch so it survives the re-render
+    setLastConvertedPoId(data.po_id);
+    refetch();
+    return data;
+  }, [refetch]);
+
   /**
    * RECEIVE VIA WMS
    * ---------------
@@ -138,6 +199,17 @@ export default function SuppliersPortalPage() {
     onCreateReceiveJob: handleCreateReceiveJob,
     onSearchVariants: handleSearchVariants,
     onFetchSourcingRecommendations: handleFetchSourcingRecommendations,
+    onFetchPreferences: handleFetchPreferences,
+    onCreatePreference: handleCreatePreference,
+    onUpdatePreference: handleUpdatePreference,
+    onDeletePreference: handleDeletePreference,
+    // §8 MOQ Accumulation
+    onFetchReorderRequests: handleFetchReorderRequests,
+    onCreateReorderRequest: handleCreateReorderRequest,
+    onDeleteReorderRequest: handleDeleteReorderRequest,
+    onConvertReorderRequests: handleConvertReorderRequests,
+    lastConvertedPoId,
+    onDismissConvertedPo: () => setLastConvertedPoId(null),
     autoOpenCreatePo: demandAction === 'create-po',
     prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
       description: demandDescription ?? demandSku ?? '',

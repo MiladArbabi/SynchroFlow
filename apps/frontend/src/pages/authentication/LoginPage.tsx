@@ -115,16 +115,16 @@ export default function Login() {
                   <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                     Sign in
                   </Typography>
-                  {/* AUTH-003: target headline "Welcome back. Let's sync up." */}
+                  {/* AUTH-003: neutral headline for first-time and returning users */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
-                    Welcome back.{' '}
+                    See what needs attention.{' '}
                     {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
                     <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       Let's sync up.
                     </Box>
                   </Typography>
                   <Typography variant="caption" sx={{ fontSize: '16px', textAlign: { xs: 'center', md: 'inherit' } }}>
-                    Enter your credentials to open today's brief.
+                    Sign in to continue to today's brief.
                   </Typography>
                 </Stack>
                 <Box sx={{ width: 1 }}>

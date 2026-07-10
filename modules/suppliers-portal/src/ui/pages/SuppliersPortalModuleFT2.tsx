@@ -130,12 +130,50 @@ export type SourcingRecommendation = {
   lead_time_days: number | null;
   score: number;
   exceeds_moq: boolean;
+  // §7.8 preference fields
+  is_preferred: boolean;
+  preference_tier: 1 | 2 | null;
+  preference_priority: number | null;
+  preference_scope: string | null;
+  preference_note: string | null;
+};
+
+export type PreferenceRow = {
+  id: string;
+  supplier_id: number;
+  supplier_name: string;
+  scope_type: 'variant' | 'product' | 'product_type';
+  scope_id: string;
+  priority: number;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+// §8 MOQ Accumulation System — sourcing-recommendation-playbook.md §8
+export type ReorderRequest = {
+  id: string;
+  lasyncro_variant_id: string;
+  sku: string | null;
+  title: string | null;
+  qty_requested: number;
+  source: 'alert' | 'manual';
+  created_at: string;
+};
+
+export type SupplierAccumulation = {
+  supplier_id: number;
+  supplier_name: string;
+  moq: number | null;
+  total_qty: number;
+  moq_met: boolean;
+  requests: ReorderRequest[];
 };
 
 export type SuppliersPortalData = {
   purchase_orders: PurchaseOrder[];
   suppliers: Supplier[];
-  never_ordered: { lasyncro_variant_id: string; sku: string | null; title: string }[];
+  never_ordered: { lasyncro_variant_id: string; sku: string | null; title: string; product_id: string | null; product_type: string | null }[];
   never_ordered_count: number;
 } | null;
 
@@ -155,9 +193,22 @@ export type SuppliersPortalPageProps = {
   /** Creates a WMS receive job for a shipped PO. Navigates operator to receive session. */
   onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
-  /** Sourcing (Thread C): ranked supplier recommendations for one variant, fetched on demand. */
+  /** Sourcing (Thread C): ranked supplier recommendations for onevariant, fetched on demand. */
   onFetchSourcingRecommendations: (variantId: string, neededQty?: number) => Promise<SourcingRecommendation[]>;
-  /** When true, auto-opens the Create PO dialog on mount (from demand module handoff) */
+  // §7.7 Preference CRUD
+  onFetchPreferences: () => Promise<PreferenceRow[]>;
+  onCreatePreference: (input: { supplier_id: number; scope_type: string; scope_id: string; priority?: number; note?: string }) => Promise<PreferenceRow>;
+  onUpdatePreference: (id: string, input: { priority?: number; note?: string }) => Promise<PreferenceRow>;
+  onDeletePreference: (id: string) => Promise<void>;
+  // §8 MOQ Accumulation — sourcing-recommendation-playbook.md §8
+  onFetchReorderRequests: () => Promise<SupplierAccumulation[]>;
+  onCreateReorderRequest: (input: { lasyncro_variant_id: string; supplier_id: number; qty_requested: number; source: 'alert' | 'manual' }) => Promise<ReorderRequest>;
+  onDeleteReorderRequest: (id: string) => Promise<void>;
+  onConvertReorderRequests: (supplierId: number) => Promise<{ po_id: string }>;
+  /** §8: set by page after convert survives refetch re-render — cleared by dismiss */
+  lastConvertedPoId?: string | null;
+  onDismissConvertedPo?: () => void;
+  /** When true, auto-opens the Create PO dialog on mount */
   autoOpenCreatePo?: boolean;
   /** Pre-filled line item from demand module handoff */
   prefilledLineItem?: { description: string; quantity_ordered: number; lasyncro_variant_id?: string };
@@ -1369,7 +1420,124 @@ function PurchasingSuppliersView({
       />
     </Box>
   );
-}
+};
+
+// ─────────────────────────────────────────────
+// ASSIGN SUPPLIER DIALOG (§7.6 ISS-SR-03)
+// ─────────────────────────────────────────────
+type AssignSupplierTarget = {
+  lasyncro_variant_id: string;
+  title: string;
+  sku: string | null;
+  product_id: string | null;
+  product_type: string | null;
+};
+
+function AssignSupplierDialog({
+  open, target, suppliers, onClose, onSubmit,
+}: {
+  open: boolean;
+  target: AssignSupplierTarget | null;
+  suppliers: Supplier[];
+  onClose: () => void;
+  onSubmit: (input: { supplier_id: number; scope_type: string; scope_id: string; priority: number; note?: string }) => Promise<void>;
+}) {
+  const [supplierId, setSupplierId] = useState<string>('');
+  const [scopeType, setScopeType] = useState<'variant' | 'product' | 'product_type'>('variant');
+  const [priority, setPriority] = useState<1 | 2>(1);
+  const [note, setNote] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setSupplierId(''); setScopeType('variant'); setPriority(1); setNote(''); setError(null); }
+  }, [open]);
+
+  const scopeId =
+    scopeType === 'variant' ? (target?.lasyncro_variant_id ?? '') :
+    scopeType === 'product' ? (target?.product_id ?? '') :
+    (target?.product_type ?? '');
+
+  const scopeOptions: { value: 'variant' | 'product' | 'product_type'; label: string }[] = [
+    { value: 'variant', label: 'Apply to this variant only' },
+    ...(target?.product_id ? [{ value: 'product' as const, label: 'Apply to all variants of this product' }] : []),
+    ...(target?.product_type ? [{ value: 'product_type' as const, label: `Apply to all "${target.product_type}" products` }] : []),
+  ];
+
+  const handleSubmit = async () => {
+    if (!supplierId) return setError('Please select a supplier.');
+    if (!scopeId) return setError('Scope ID could not be resolved. Try "this variant only".');
+    setSubmitting(true);
+    try {
+      await onSubmit({ supplier_id: Number(supplierId), scope_type: scopeType, scope_id: scopeId, priority, note: note.trim() || undefined });
+      onClose();
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to assign supplier.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>
+        Assign supplier
+        {target && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+            {target.title}{target.sku ? ` · ${target.sku}` : ''}
+          </Typography>
+        )}
+      </DialogTitle>
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1.5 }}>
+        {error && <Alert severity="error">{error}</Alert>}
+
+        <TextField select label="Supplier" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} fullWidth size="small">
+          {suppliers.filter((s) => s.active).map((s) => (
+            <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
+          ))}
+        </TextField>
+
+        <Box>
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>APPLY TO</Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            {scopeOptions.map((opt) => (
+              <Box key={opt.value} onClick={() => setScopeType(opt.value)}
+                sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 1.5, py: 1, borderRadius: 1.5, border: '1px solid', borderColor: scopeType === opt.value ? 'var(--accent)' : 'divider', cursor: 'pointer', bgcolor: scopeType === opt.value ? 'var(--accent-ghost)' : 'transparent', transition: 'all 0.15s' }}>
+                <Box sx={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid', borderColor: scopeType === opt.value ? 'var(--accent)' : 'action.disabled', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {scopeType === opt.value && <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'var(--accent)' }} />}
+                </Box>
+                <Typography variant="body2">{opt.label}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        <Box>
+          <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>PRIORITY</Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {([{ v: 1, label: 'Primary' }, { v: 2, label: 'Backup' }] as { v: 1 | 2; label: string }[]).map(({ v, label }) => (
+              <Box key={v} onClick={() => setPriority(v)}
+                sx={{ flex: 1, textAlign: 'center', px: 1.5, py: 1, borderRadius: 1.5, border: '1px solid', borderColor: priority === v ? 'var(--accent)' : 'divider', cursor: 'pointer', bgcolor: priority === v ? 'var(--accent-ghost)' : 'transparent', transition: 'all 0.15s' }}>
+                <Typography variant="body2" fontWeight={priority === v ? 600 : 400}>{label}</Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        <TextField label="Note (optional)" size="small" fullWidth multiline rows={2}
+          value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="Why this supplier for this product..." />
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={submitting} color="inherit">Cancel</Button>
+        <Button variant="contained" onClick={() => void handleSubmit()} disabled={submitting || !supplierId}
+          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
+          {submitting ? 'Saving...' : 'Assign supplier'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+};
 
 function PurchasingSourcingView({
   data,
@@ -1377,20 +1545,74 @@ function PurchasingSourcingView({
   onCreateSupplier,
   onSearchVariants,
   onFetchSourcingRecommendations,
+  onFetchPreferences,
+  onCreatePreference,
+  onDeletePreference,
+  onFetchReorderRequests,
+  onCreateReorderRequest,
+  onDeleteReorderRequest,
+  onConvertReorderRequests,
+  lastConvertedPoId,
+  onDismissConvertedPo,
 }: SuppliersPortalPageProps) {
   const neverOrdered = data?.never_ordered ?? [];
   const neverOrderedCount = data?.never_ordered_count ?? 0;
+  const suppliers = data?.suppliers ?? [];
 
   const [searchParams] = useSearchParams();
   const triggerVariantId = searchParams.get('variantId');
+  // §8: needed qty from alert deep-link — used for "Add to queue" pre-fill
+  const neededQty = Number(searchParams.get('needed') ?? 1) || 1;
 
   const [activeVariantId, setActiveVariantId] = useState<string | null>(triggerVariantId);
   const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
+  const [preferences, setPreferences] = useState<PreferenceRow[]>([]);
+  const [isLoadingPrefs, setIsLoadingPrefs] = useState(false);
+
+  // §8 reorder accumulator state
+  const [reorderRequests, setReorderRequests] = useState<SupplierAccumulation[]>([]);
+  const [convertingSupplierIds, setConvertingSupplierIds] = useState<Set<number>>(new Set());
+
   const [createPoOpen, setCreatePoOpen] = useState(false);
   const [poVariantId, setPoVariantId] = useState<string | undefined>(undefined);
   const [poSupplierId, setPoSupplierId] = useState<number | undefined>(undefined);
+
+  const [assignTarget, setAssignTarget] = useState<AssignSupplierTarget | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+
+  // §7.6: fetch preferences for default/no-variantId state
+  useEffect(() => {
+    setIsLoadingPrefs(true);
+    onFetchPreferences().then(setPreferences).finally(() => setIsLoadingPrefs(false));
+  }, [onFetchPreferences]);
+
+  // §8: fetch pending reorder requests on mount
+  useEffect(() => {
+    onFetchReorderRequests().then(setReorderRequests);
+  }, [onFetchReorderRequests]);
+
+  // §8: add variant+supplier to accumulator — uses alert qty when available
+  const handleAddToQueue = async (variantId: string, supplierId: number) => {
+    await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: neededQty, source: triggerVariantId ? 'alert' : 'manual' });
+    const updated = await onFetchReorderRequests();
+    setReorderRequests(updated);
+  };
+
+  // §8: convert all pending for a supplier → draft PO, then clear from accumulator
+  const handleConvert = async (supplierId: number) => {
+    setConvertingSupplierIds((prev) => new Set(prev).add(supplierId));
+    try {
+      // onConvertReorderRequests sets lastConvertedPoId at page level
+      // before refetch so banner survives the re-render
+      await onConvertReorderRequests(supplierId);
+      const updated = await onFetchReorderRequests();
+      setReorderRequests(updated);
+    } finally {
+      setConvertingSupplierIds((prev) => { const s = new Set(prev); s.delete(supplierId); return s; });
+    }
+  };
 
   useEffect(() => {
     if (!activeVariantId) return;
@@ -1406,8 +1628,31 @@ function PurchasingSourcingView({
     setCreatePoOpen(true);
   };
 
+  const handleAssignOpen = (v: typeof neverOrdered[0]) => {
+    setAssignTarget({ lasyncro_variant_id: v.lasyncro_variant_id, title: v.title, sku: v.sku, product_id: v.product_id, product_type: v.product_type });
+    setAssignOpen(true);
+  };
+
+  const handleAssignSave = async (input: { supplier_id: number; scope_type: string; scope_id: string; priority: number; note?: string }) => {
+    await onCreatePreference(input);
+    const updated = await onFetchPreferences();
+    setPreferences(updated);
+  };
+
+  const handleDeletePreference = async (id: string) => {
+    await onDeletePreference(id);
+    setPreferences((prev) => prev.filter((p) => p.id !== id));
+  };
+
   const goodMatches = recommendations.filter(r => !r.exceeds_moq);
   const exceedsMoqMatches = recommendations.filter(r => r.exceeds_moq);
+
+  const prefsByScope = {
+    variant:      preferences.filter(p => p.scope_type === 'variant'),
+    product:      preferences.filter(p => p.scope_type === 'product'),
+    product_type: preferences.filter(p => p.scope_type === 'product_type'),
+  };
+  const scopeLabels: Record<string, string> = { variant: 'Variant', product: 'Product', product_type: 'Product Type' };
 
   return (
     <Box sx={{ p: 2 }}>
@@ -1416,21 +1661,58 @@ function PurchasingSourcingView({
         {/* DECISION CARD */}
         <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
           <Box sx={{ p: '18px 20px', borderBottom: '1px solid var(--rule)' }}>
-            <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>
-              Sourcing recommendations
-            </Typography>
+            <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>Sourcing recommendations</Typography>
             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }}>
-              {activeVariantId
-                ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate'
-                : 'Select a stockout alert to see ranked supplier options'}
+              {activeVariantId ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate' : 'Select a stockout alert to see ranked supplier options'}
             </Typography>
           </Box>
 
+          {/* §7.6 ISS-SR-06: no variantId → show preferences + never-ordered instead of empty state */}
           {!activeVariantId && (
-            <Box sx={{ p: 4, textAlign: 'center' }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-                No active stockout selected. Recommendations appear here when reached from a stock alert.
-              </Typography>
+            <Box sx={{ borderBottom: '1px solid var(--rule)' }}>
+              <Box sx={{ px: 2.5, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  Supplier preferences
+                </Typography>
+                {!isLoadingPrefs && preferences.length === 0 && (
+                  <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>None set</Typography>
+                )}
+              </Box>
+              {isLoadingPrefs && <Box sx={{ px: 2.5, pb: 2 }}><ModuleLoadingSkeleton rows={1} height={16} /></Box>}
+              {!isLoadingPrefs && preferences.length > 0 && (
+                <>
+                  {(['variant', 'product', 'product_type'] as const).map((scope) => {
+                    const rows = prefsByScope[scope];
+                    if (!rows.length) return null;
+                    return (
+                      <Box key={scope}>
+                        <Box sx={{ px: 2.5, py: 0.75, bgcolor: 'var(--bg-2)' }}>
+                          <Typography sx={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                            {scopeLabels[scope]}
+                          </Typography>
+                        </Box>
+                        {rows.map((pref) => (
+                          <Box key={pref.id} sx={{ display: 'flex', alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', gap: 1.5 }}>
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{pref.supplier_name}</Typography>
+                                <Chip label={pref.priority === 1 ? 'Primary' : 'Backup'} size="small"
+                                  sx={{ fontSize: 10, height: 18, bgcolor: pref.priority === 1 ? 'rgba(255,107,43,0.12)' : 'action.hover', color: pref.priority === 1 ? 'var(--accent)' : 'text.secondary' }} />
+                              </Box>
+                              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace', mt: 0.25 }}>{pref.scope_id}</Typography>
+                              {pref.note && <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: 0.25, fontStyle: 'italic' }}>{pref.note}</Typography>}
+                            </Box>
+                            <IconButton size="small" onClick={() => void handleDeletePreference(pref.id)}
+                              sx={{ color: 'text.disabled', '&:hover': { color: 'error.main' } }}>
+                              <Trash2 size={14} />
+                            </IconButton>
+                          </Box>
+                        ))}
+                      </Box>
+                    );
+                  })}
+                </>
+              )}
             </Box>
           )}
 
@@ -1442,26 +1724,34 @@ function PurchasingSourcingView({
 
           {activeVariantId && !isLoadingRecs && recommendations.length === 0 && (
             <Box sx={{ p: 4, textAlign: 'center' }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-                No supplier history for this product yet.
-              </Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>No supplier history for this product yet.</Typography>
             </Box>
           )}
 
           {goodMatches.map((rec) => (
             <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
               <Box>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
+                  {rec.is_preferred && (
+                    <Chip label="★ Preferred" size="small"
+                      sx={{ fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' }} />
+                  )}
+                </Box>
                 <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
                   On-time {rec.on_time_rate ?? '—'}% · Fill {rec.fill_rate ?? '—'}% · Lead {rec.lead_time_days ?? '—'}d
                 </Typography>
               </Box>
-              <Box
-                component="button"
-                onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
-                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-              >
-                Create PO →
+              <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
+                {/* §8: queue to accumulator instead of creating PO immediately */}
+                <Box component="button" onClick={() => activeVariantId && void handleAddToQueue(activeVariantId, rec.id)}
+                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                  Add to queue →
+                </Box>
+                <Box component="button" onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
+                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
+                  Create PO →
+                </Box>
               </Box>
             </Box>
           ))}
@@ -1470,20 +1760,79 @@ function PurchasingSourcingView({
             <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', opacity: 0.7 }}>
               <Box>
                 <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: '#C62828' }}>
-                  Exceeds MOQ ({rec.moq} units)
-                </Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: '#C62828' }}>Exceeds MOQ ({rec.moq} units)</Typography>
               </Box>
-              <Box
-                component="button"
-                onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
-                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-              >
+              <Box component="button" onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
+                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                 Create PO anyway →
               </Box>
             </Box>
           ))}
 
+          {/* §8 post-convert confirmation — state lives at page level to survive refetch */}
+          {lastConvertedPoId && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', bgcolor: 'var(--accent-ghost)' }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500 }}>
+                Draft PO created — check Open POs to review and send.
+              </Typography>
+              <Box component="button" onClick={() => onDismissConvertedPo?.()}
+                sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                Dismiss
+              </Box>
+            </Box>
+          )}
+
+          {/* §8 Pending Reorders — always visible when accumulator has items */}
+          {reorderRequests.length > 0 && (
+            <Box sx={{ borderTop: '1px solid var(--rule)' }}>
+              <Box sx={{ px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
+                <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                  Pending reorders · {reorderRequests.length} supplier{reorderRequests.length > 1 ? 's' : ''}
+                </Typography>
+              </Box>
+              {reorderRequests.map((group) => {
+                const moqPct = group.moq ? Math.min(100, Math.round((group.total_qty / group.moq) * 100)) : null;
+                const converting = convertingSupplierIds.has(group.supplier_id);
+                return (
+                  <Box key={group.supplier_id} sx={{ px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+                      <Box sx={{ minWidth: 0, flex: 1 }}>
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{group.supplier_name}</Typography>
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+                          {group.requests.slice(0, 3).map(r => `${r.sku ?? r.title ?? '?'} ${r.qty_requested}u`).join(' · ')}
+                          {group.requests.length > 3 ? ` · +${group.requests.length - 3} more` : ''}
+                        </Typography>
+                      </Box>
+                      {group.moq_met ? (
+                        <Box component="button" onClick={() => !converting && void handleConvert(group.supplier_id)}
+                          sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 }, flexShrink: 0 }}>
+                          {converting ? 'Creating…' : 'Create PO →'}
+                        </Box>
+                      ) : (
+                        <Box component="button" onClick={() => !converting && void handleConvert(group.supplier_id)}
+                          sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 }, flexShrink: 0 }}>
+                          {converting ? 'Creating…' : 'Create PO anyway →'}
+                        </Box>
+                      )}
+                    </Box>
+                    {/* MOQ progress bar — only when supplier has a set MOQ */}
+                    {group.moq !== null && (
+                      <Box>
+                        <Box sx={{ height: 4, borderRadius: 2, bgcolor: 'var(--bg-3)', overflow: 'hidden', mb: 0.5 }}>
+                          <Box sx={{ height: '100%', width: `${moqPct}%`, bgcolor: group.moq_met ? 'var(--accent)' : 'var(--ink-3)', borderRadius: 2, transition: 'width 0.3s' }} />
+                        </Box>
+                        <Typography sx={{ fontSize: 10, color: group.moq_met ? 'var(--accent)' : 'var(--ink-4)' }}>
+                          {group.total_qty} / {group.moq} units{group.moq_met ? ' — MOQ met' : ' — MOQ not met'}
+                        </Typography>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+
+          {/* §6a Branch B: never-ordered group — always visible */}
           {neverOrderedCount > 0 && (
             <Box sx={{ borderTop: '1px solid var(--rule)' }}>
               <Box sx={{ px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
@@ -1496,10 +1845,9 @@ function PurchasingSourcingView({
                   <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
                     {v.title} {v.sku ? `(${v.sku})` : ''}
                   </Typography>
-                  <Box
-                    component="button"
-                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-                  >
+                  {/* §7.6 ISS-SR-03: wired — opens AssignSupplierDialog */}
+                  <Box component="button" onClick={() => handleAssignOpen(v)}
+                    sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
                     Assign a supplier →
                   </Box>
                 </Box>
@@ -1517,22 +1865,40 @@ function PurchasingSourcingView({
             <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Never ordered before</Typography>
             <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{neverOrderedCount}</Typography>
           </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Ready to order</Typography>
             <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{goodMatches.length}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Preferences set</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{preferences.length}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Queued for reorder</Typography>
+            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+              {reorderRequests.reduce((sum, g) => sum + g.requests.length, 0)}
+            </Typography>
           </Box>
         </Box>
       </Box>
 
       <CreatePoDialog
         open={createPoOpen}
-        suppliers={[]}
+        suppliers={suppliers}
         onClose={() => setCreatePoOpen(false)}
         onCreateSupplier={onCreateSupplier}
         onCreatePo={onCreatePo}
         onSearchVariants={onSearchVariants}
         prefilledLineItem={poVariantId ? { description: '', quantity_ordered: 1, lasyncro_variant_id: poVariantId } : undefined}
         prefilledSupplierId={poSupplierId}
+      />
+
+      <AssignSupplierDialog
+        open={assignOpen}
+        target={assignTarget}
+        suppliers={suppliers}
+        onClose={() => setAssignOpen(false)}
+        onSubmit={handleAssignSave}
       />
     </Box>
   );

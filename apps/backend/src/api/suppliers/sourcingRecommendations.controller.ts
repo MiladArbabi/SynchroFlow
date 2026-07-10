@@ -68,6 +68,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       preferences = prefRows;
 
       // §6a Branch A: suppliers with PO history for this variant
+      // §6a Branch A: suppliers with PO history for this variant
       candidates = await trx('purchase_order_line_items as poli')
         .join('purchase_orders as po', 'po.id', 'poli.po_id')
         .join('suppliers as s', 's.id', 'po.supplier_id')
@@ -80,6 +81,29 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
           's.on_time_rate', 's.fill_rate', 's.defect_rate',
           's.avg_delivery_days', 's.moq', 's.lead_time_days'
         );
+
+      // §7.8 Tier 1 injection: a preferred supplier with no PO history for this
+      // variant won't appear in candidates above — PO history is empty so the join
+      // returns nothing, leaving has_preference:true but recommendations:[].
+      // Fix: fetch any preferred supplier missing from candidates directly from the
+      // suppliers table. Tenant safety is guaranteed — missingPreferredIds come from
+      // supplier_product_preferences already scoped to shopId above.
+      const candidateIds = new Set(candidates.map((c: any) => c.id));
+      const missingPreferredIds = preferences
+        .map((p: any) => p.supplier_id)
+        .filter((id: number) => !candidateIds.has(id));
+
+      if (missingPreferredIds.length > 0) {
+        const injected = await trx('suppliers as s')
+          .whereIn('s.id', missingPreferredIds)
+          .andWhere('s.active', true)
+          .select(
+            's.id', 's.name', 's.contact_name', 's.contact_email',
+            's.on_time_rate', 's.fill_rate', 's.defect_rate',
+            's.avg_delivery_days', 's.moq', 's.lead_time_days'
+          );
+        candidates = [...candidates, ...injected];
+      }
     });
 
     // §7.8 Step 2: build preference lookup — keyed by supplier_id.
@@ -161,7 +185,13 @@ export async function httpGetNeverOrderedVariants(req: Request, res: Response) {
           trx('purchase_order_line_items as poli')
             .whereRaw('poli.lasyncro_variant_id = v.lasyncro_variant_id')
         )
-        .select('v.lasyncro_variant_id', 'v.sku', 'v.title');
+        .select(
+            'v.lasyncro_variant_id',
+            'v.sku',
+            'v.title',
+            'p.lasyncro_product_id as product_id',
+            'p.product_type'
+          );
     });
 
     return res.json({ count: result.length, variants: result });
