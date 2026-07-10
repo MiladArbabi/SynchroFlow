@@ -111,10 +111,6 @@ export default function Login() {
             <AuthCardWrapper>
               <Stack sx={{ alignItems: 'center', justifyContent: 'center', gap: 2.25 }}>
                 <Stack sx={{ alignItems: 'flex-start', justifyContent: 'center', gap: 1, width: '100%' }}>
-                  {/* Target A1: "SIGN IN" orange uppercase label */}
-                  <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                    Sign in
-                  </Typography>
                   {/* AUTH-003: concise branded sign-in headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
                     {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
