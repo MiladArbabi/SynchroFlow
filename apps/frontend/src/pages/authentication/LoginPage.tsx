@@ -115,9 +115,8 @@ export default function Login() {
                   <Typography sx={{ color: 'var(--accent)', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                     Sign in
                   </Typography>
-                  {/* AUTH-003: neutral headline for first-time and returning users */}
+                  {/* AUTH-003: concise branded sign-in headline */}
                   <Typography variant={downMD ? 'h3' : 'h2'} sx={{ color: 'var(--ink)', fontWeight: 700 }}>
-                    See what needs attention.{' '}
                     {/* Plus Jakarta Sans italic — consistent font across all LaSyncro surfaces */}
                     <Box component="span" sx={{ color: 'var(--accent)', fontStyle: 'italic', fontWeight: 600 }}>
                       Let's sync up.
