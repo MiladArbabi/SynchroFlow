@@ -166,7 +166,7 @@ The 15-minute morning ritual. **This page IS the alert inbox.**
 - **Suppliers** — unified scorecard: on-time, fill rate, **return rate, suspect batches** — one card per supplier. MOQ + lead-time inline nudges deep-link to Edit dialog. ✅ 2026-07-11
 - **Sourcing** — three-tier supplier resolution (explicit preference → PO history scorecard → never-ordered assign flow), MOQ accumulation system, ranked recommendations with "Add to queue" + "Create PO" dual-path, onboarding spotlights. Step 2 of the Reorder Loop. ✅ 2026-07-11
 
-Remaining: PO send flow (Gap 2), `total_pos` label fix (Gap 3). Gap 1 closed 2026-07-11.
+Remaining: none. All gaps closed 2026-07-11.
 
 ### $ Finances `/finances`
 
@@ -197,7 +197,7 @@ Requires: spine unification, number reconciliation. *Currently ~80%.*
 
 **Loop 2 — The Reorder Loop** *(weekly · owner · the Excel-killer for high-SKU merchants)*
 `Stockout signal → Demand (recommended qty) → Sourcing (pick supplier) → PO → inbound ETA → received → sellable`
-One guided flow replacing today's four disconnected entry points (#45, 56). *Currently ~85%.*
+*Currently 100%. ✅ All gaps closed 2026-07-11.*
 
 Completed 2026-07-11: three-tier supplier preference system (§7), MOQ accumulation system (§8),
 never-ordered assign flow, preference CRUD, ranked recommendations, onboarding spotlights,
@@ -206,8 +206,8 @@ PO first-line preview, supplier MOQ/lead-time nudges, data quality filtering (IS
 Remaining gaps to reach 100%:
 
 - **Gap 1 (✅ closed 2026-07-11):** Signal→queue wired — `?needed=N` from alert flows into accumulator. "Add to queue →" has loading + success flash states. Scorecard shows only populated fields; "No order history yet" when all null.
-- **Gap 2 (🔴):** PO send not wired — "Mark as sent" tracks state but merchant re-types PO into email/WhatsApp to actually send it. The Excel re-entry problem lives here.
-- **Gap 3 (🟡):** "Lifetime POs: 0" while "6 open POs" badge shows — `total_pos` only counts received POs, label is misleading. Data trust issue.
+- **Gap 2 (✅ closed 2026-07-11):** PO send flow — copy-only `SendPoModal`, "Mark as sent" ghost button, `poSendFlow` spotlight wired end-to-end. Status never auto-transitions.
+- **Gap 3 (✅ closed 2026-07-11):** "Lifetime POs" label corrected to "Received POs" — matches `total_pos` counter semantics.
 
 **Loop 3 — The Floor Loop** *(hourly · operator + supervisor)*
 `Task assigned → scan-execute → exception? → Problem Center → supervisor resolves → owner never interrupted`
