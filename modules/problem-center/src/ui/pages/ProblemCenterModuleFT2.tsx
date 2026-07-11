@@ -276,12 +276,14 @@ function ProblemCenterModuleFT2Inner({
               <ColHeader label="Action" />
             </Box>
 
-            {/* Empty state */}
+           {/* Distinguish a true-zero queue from filters hiding existing tasks. */}
             {filtered.length === 0 && (
               <Box sx={{ textAlign: 'center', py: 8 }}>
                 <PackageX size={36} style={{ opacity: 0.25, margin: '0 auto' }} />
                 <Typography sx={{ fontSize: 13, color: 'var(--ink-4)', mt: 2 }}>
-                  No exceptions match the current filters.
+                  {tasks.length === 0
+                    ? 'No open exceptions'
+                    : 'No exceptions match the current filters.'}
                 </Typography>
               </Box>
             )}

@@ -582,7 +582,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-244 | W3 | Wh Analytics | Time control 7d/30d/90d — missing Today/Custom, wrong position; third variant app-wide |
 | ISS-245 | W5 | Wh Analytics | Unregistered "Cast" button in header |
 | ISS-246 | P1 | Wh Analytics | n=1-aware states inconsistent: dashes beside confident "11.3h avg turnaround" with no small-sample caveat |
-| ISS-247 | W5 | Problem Center | True-zero renders filter-flavored copy — §5 spec: "No open exceptions" |
+| ISS-247 | W5 | Problem Center | ✅ CLOSED 2026-07-11 — True-zero now renders "No open exceptions"; filter-result copy remains for hidden existing tasks. API, DB, module build, and live UI verified. |
 | ISS-248 | W1 | Problem Center | Type enum (Item Missing + Short Pick coexist) vs §3 spine categories — verify 1:1 mapping to alerts |
 | ISS-249 | W5 | Operations | "Scan any LSU- barcode" — internal jargon + stray hyphen in operator copy |
 | ISS-250 | K | Operations | Pack Mode on Console page — Floor split pending (Loop 3), placement logged |
