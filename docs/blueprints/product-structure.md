@@ -1,6 +1,6 @@
 # LaSyncro — Product Structure
 >
-> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 (2026-07-08) + Warehouse context contract v1.2 (2026-07-11).
+> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 (2026-07-08) + Warehouse context contract v1.2 (2026-07-11) + Full-screen audit v2 register v1.3 (2026-07-11, §12).
 > **Source:** Full-app screen audit (33 screens, 68 logged findings) workshopped against ICP → v1. AUDIT-mode codebase verification (53 issues, ISS-001–053) against live code/DB → v1.1 reconciliation (§10, §11, §8 corrections, §9 additions). Multi-warehouse schema and write-path implementation audit → v1.2 warehouse identity, routing, selection, settings, and tier contract.
 > **Purpose:** The canonical reference for IA, naming, routing, warehouse context, and the signal system. All refactors converge on this document.
 > **Reading order for new contributors:** §1–9 defines the target product design. §10–11 records code-verified ground truth and migration constraints. Read §10–11 before proposing changes to §4/§5. Where target and live implementation differ, the live-system sections describe the current constraint while the target sections define the intended destination.
@@ -315,6 +315,11 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
      (`ReceiveJobScreen.tsx`) that may partially close the gap, pending
      live verification.
 2. Number reconciliation: Sellable badge vs sidebar (#21); margin period labeling (#43); refunded/leaked split (#42); $3,800-vs-$4k rounding rule (#60); "reorder 0 units" (#59); "$0/wk lost" criticals (#25); "+48% vs prior" on first period (#44).
+   **EXPANDED 2026-07-11 (§12 audit v2):** 14 further cross-surface contradictions
+   confirmed on live screens (ISS-201–204, 208, 217–219, 232, 238–241, 248, 253–254).
+   Root cause per §12.3: surfaces aggregate from raw tables independently — adopt the
+   morning-brief resolver's "never query raw tables" policy app-wide before fixing
+   individual counts. This item is now workstream **W1**.
 3. Routing + naming sweep per §4 conventions (~12 findings in one pass). **Confirmed exact sites, 2026-07-08 (§10.2):** `floor-planning` → `/floor-planning` (not `/wms/floor-planning`); `data-quality` → `/wms/readiness` (not`/inventory/*`); `cashflow` → `/cashflow` (not `/finances/cashflow`).
    **Outcome (2026-07-08):** split into three independent items on
    implementation — the three sites did
@@ -332,21 +337,19 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 
 ## 9. Open Questions (pressure-test before locking)
 
-- **Multi-warehouse** at the $50M end: Warehouse module assumes one floor — does `/warehouse` become `/warehouse/:location`? Decide before Floor Planrefactor.
-- **B2B / wholesale orders:** does Orders need order-type segmentation, ora separate surface?
-- **Additional channels** (Amazon, retail POS): Data Trust sync-health is designed per-channel — confirm Orders/Inventory views are channel-aware.
-- **Mobile owner experience:** Today is desktop-designed; owners check phones constantly. Mobile Today = P1 or P2?
-- **Notifications delivery:** push toggle exists with no destination defined (#65) — mobile app push? email digest? Decide in Settings › Notifications spec.
-- **Data Trust promotion — slot is free, unused (added 2026-07-08):** the 8th top-level nav slot freed by the Team relocation (§8 item 3a) is currently empty. §4/§5 propose Data Trust as its occupant, but that work has not started. Decide: promote now, or hold the slot for something else surfaced by §10 (e.g. a consolidated Warehouse entry if Floor Planning/Problem Center formally merge)?
-- **Module-package consolidation plan — does not yet exist (added 2026-07-08, see §10.3):** §4's 7-module target presumes merges (`wms`+`floor-planning`+`problem-center` → Warehouse; `cashflow`+`finances` → Finances) that have only been actioned at the nav-routing level, never scoped as module-package work. Needs its own plan before §4 can be called complete.
-- **`customers` and `fulfillment` modules — unaccounted for in §4 (added 2026-07-08):** both are live, registered modules with no corresponding entry in the target map. `customers` is confirmed deprecated (analytics/PostHog replacement, per `overview_pulse_and_signal_dedup_2026_06_20.md`) but still routed today — decide sunset timeline. `fulfillment`'s relationship to Orders/Warehouse is undetermined.
-- ~~`problem_center_tasks` ↔ `alerts` FK hardening (added 2026-07-08, see §10.4)~~ **✅ RESOLVED (2026-07-08) — see §8 item 1.** Was not FK hardening alone: the audit found three separate, live bugs in this seam (wrong ID namespace, a fully alert-blind resolve path, and an unvalidated client-supplied ID), fixed and verified live via curl/psql. One related gap remains open — receive-exception resolution has no dedicated path — tracked as **GitHub #1039**.
-- **Finances product refinement — blocks §8 item 3d and #1040 overlap (added 2026-07-08):** Cash Flow's current content (60-day projection, plan-a-stock-order) was judged during this session as not yet effectively resolving the ICP's core data-fragmentation/Excel-chaos pain. Finances, Cash Flow, and Margin are **frozen** pending a content/product pass — no further routing, nesting, or structural work should land on any of the three until that's decided. This blocks §8 item 3d (the `/cashflow` route nest) indefinitely, and should be resolved before revisiting whether Cash Flow deserves its own module at all vs folding into Finances/Margin.
-- **Warehouse shell architecture — GitHub #1040 (added 2026-07-08, see §8 item 3c, §10.3):** confirms the module-package-consolidation open question above is not hypothetical — Warehouse/WMS concretely lacks the shell-page pattern that Products and Finances already have, discovered while attempting the `/floor-planning` route nest. #1040 scopes the fix (new `WmsFT2Page.tsx` shell, mirroring `ProductsFT2Page.tsx`) but is deferred as its own unit of work.
 - **Warehouse access model:** warehouse identity and route context are locked, but user access is still shop-wide. Define warehouse membership, assignment, and supervisor/operator access before multi-warehouse isolation is considered complete.
 - **External-channel location mapping:** decide whether one warehouse maps to exactly one Shopify location or whether a warehouse may contain multiple external fulfillment locations.
 - **Remembered selection storage:** decide whether the user's last-selected warehouse belongs in server-side user state, local client state, or both. The fallback order is already locked: valid remembered selection → active default → not-configured state.
 - **B2B / wholesale orders:** does Orders need order-type segmentation, or a separate surface?
+- **Additional channels** (Amazon, retail POS): Data Trust sync-health is designed per-channel — confirm Orders/Inventory views are channel-aware.
+- **Mobile owner experience:** Today is desktop-designed; owners check phones constantly. Mobile Today = P1 or P2?
+- **Notifications delivery:** push toggle exists with no destination defined (#65) — mobile app push? email digest? Decide in Settings › Notifications spec.
+- **Data Trust promotion — slot is free, unused (added 2026-07-08):** the 8th top-level nav slot freed by the Team relocation (§8 item 3a) is currently empty. §4/§5 propose Data Trust as its occupant, but that work has not started. Decide: promote now, or hold the slot for something else surfaced by §10 (e.g. a consolidated Warehouse entry if Floor Planning/Problem Center formally merge)?
+- **Module-package consolidation plan — does not yet exist (added 2026-07-08, see §10.3):** §4's 7-module target presumes merges (`wms` + `floor-planning` + `problem-center` → Warehouse; `cashflow` + `finances` → Finances) that have only been actioned at the nav-routing level, never scoped as module-package work. Needs its own plan before §4 can be called complete.
+- **`customers` and `fulfillment` modules — unaccounted for in §4 (added 2026-07-08):** both are live, registered modules with no corresponding entry in the target map. `customers` is confirmed deprecated (analytics/PostHog replacement, per `overview_pulse_and_signal_dedup_2026_06_20.md`) but still routed today — decide sunset timeline. `fulfillment`'s relationship to Orders/Warehouse is undetermined.
+- ~~`problem_center_tasks` ↔ `alerts` FK hardening (added 2026-07-08, see §10.4)~~ **✅ RESOLVED (2026-07-08) — see §8 item 1.** Was not FK hardening alone: the audit found three separate, live bugs in this seam (wrong ID namespace, a fully alert-blind resolve path, and an unvalidated client-supplied ID), fixed and verified live via curl/psql. One related gap remains open — receive-exception resolution has no dedicated path — tracked as **GitHub #1039**.
+- **Finances product refinement — blocks §8 item 3d and #1040 overlap (added 2026-07-08):** Cash Flow's current content (60-day projection, plan-a-stock-order) was judged during this session as not yet effectively resolving the ICP's core data-fragmentation/Excel-chaos pain. Finances, Cash Flow, and Margin are **frozen** pending a content/product pass — no further routing, nesting, or structural work should land on any of the three until that's decided. This blocks §8 item 3d (the `/cashflow` route nest) indefinitely, and should be resolved before revisiting whether Cash Flow deserves its own module at all vs folding into Finances/Margin.
+- **Warehouse shell architecture — GitHub #1040 (added 2026-07-08, see §8 item 3c, §10.3):** confirms the module-package-consolidation open question above is not hypothetical — Warehouse/WMS concretely lacks the shell-page pattern that Products and Finances already have, discovered while attempting the `/floor-planning` route nest. #1040 scopes the fix (new `WmsFT2Page.tsx` shell, mirroring `ProductsFT2Page.tsx`) but is deferred as its own unit of work.
 
 ---
 
@@ -514,3 +517,124 @@ capabilities, not to the existence of stable warehouse identity.
 ---
 
 *Appendix: full 68-item findings log lives in the audit thread; item numbers referenced above (#N) map to that log.*
+
+---
+
+## 12. Full-Screen Audit v2 Register (2026-07-11 evening)
+
+> **Status:** AUDIT — screenshot evidence only (33 screens, dev seed data). Items are NOT
+> code-verified. Each item must be reproduced against live code/DB before Implementation
+> Mode, per standard audit rules. Numbering: ISS-201–265 (200-series reserved for this audit).
+>
+> **Workstream tags:**
+> **W1** number reconciliation (P0, §8 item 2) · **W2** warehouse contract + #1040 ·
+> **W3** vocabulary/format sweep (§7) · **W4** naming/route hygiene (§4) ·
+> **W5** standalone quick fix · **K** known migration, logged for record ·
+> **P1** loop spec gap (§5/§6) · **R** product ruling required · **V** verify before classifying
+
+### 12.1 Register
+
+| ID | WS | Screen(s) | Finding |
+|---|---|---|---|
+| ISS-201 | W1 | Overview vs Orders | SLA breach count: "8 orders past SLA · $3,800" vs "19 breached"; top 3 rows alone sum $7,758 |
+| ISS-202 | W1 | Overview vs Orders | "2 decisions pending" vs "16 need a decision" — module count exceeds global spine count |
+| ISS-203 | W1 | Orders | Same screen: header "16 need a decision" vs Critical section "19 items" |
+| ISS-204 | W1 | Global header | Bell badge 4 vs greeting "2 decisions pending" — §3 says these query one table |
+| ISS-205 | W3 | Overview | One figure, three labels: $23,524 as "at stake" (greeting), "Blocked" (Pulse); separate "At risk $8,977" |
+| ISS-206 | W3 | Order Flow | Fourth synonym: "$23,524.00 held" |
+| ISS-207 | W3 | Overview/Orders | Currency mix on one screen: USD1,230 prefix style vs $3,800 symbol style (#27, cross-check #1041) |
+| ISS-208 | W1 | Orders vs Flow | Rounding drift: $2,629.95 vs $2,630; $23,524.00 vs $23,524 — no canonical rule (#60) |
+| ISS-209 | W4 | Orders/Outbound | Panel title drift: "Needs a decision" vs "Needs attention" — §3 canonical is "Needs attention" |
+| ISS-210 | W3 | Outbound | "SHIPPING HEALTH" sidebar — all sidebars are "X Pulse" (#49) |
+| ISS-211 | W4 | Orders | H1 "Orders" ≠ tab "Overview" ≠ breadcrumb; landing tab named module-adjacent not content ("Queue") |
+| ISS-212 | W4 | Sidenav | Nav "Purchasing" — target name "Suppliers" |
+| ISS-213 | K | Global | Sync trio still live: Live pill + CHANNELS LIVE + Just synced chips — one model, Data Trust owns (§8 item 7) |
+| ISS-214 | W5 | Outbound | Export drawer copy promises PDF; only CSV card offered |
+| ISS-215 | R | Outbound | Table pills Needs action/This week/This month/All time — status+range hybrid vs canonical time control; ruling needed |
+| ISS-216 | W4 | Demand | Route /demand escapes /inventory/demand — last known escapee in module |
+| ISS-217 | W1 | Intelligence/Catalog vs Data Quality | Missing-SKU: 26 vs 29; Barcodes page also says 29 — suspect 26 is stale source |
+| ISS-218 | W1 | Intelligence vs Data Quality | Unbinned: "24 SKUs no pick bin" vs "No bin location: 6" — one concept or two, copy must differentiate |
+| ISS-219 | W1 | Intelligence vs Catalog | Entity counts: 35 SKUs vs 32 variants with no explainable delta on screen |
+| ISS-220 | W3 | Catalog/Demand | Deprecated vocab live: "4 zero stock", "stockout risk" — canonical: Stocked out |
+| ISS-221 | W3 | Catalog | "CATALOG HEALTH" sidebar (#49) |
+| ISS-222 | W3 | Catalog vs Intelligence | "Sellable 2" vs "Ready to sell 2 of 32" — numbers agree, label drifts |
+| ISS-223 | W3 | Catalog | Bare "Blocked 30" — must read "Blocked stock" (#22); collides with blocked revenue |
+| ISS-224 | W3 | Intelligence | One number, two names on one screen: "non-moving stock" vs "Dead capital $29,527"; neither in glossary |
+| ISS-225 | W3 | Intelligence | "$2,400 lost" — canonical term is Leaked (#42) |
+| ISS-226 | W5 | Intelligence | "Cash Flow →" CTA on Inbound Pipeline — Finances frozen, deep-links redirected (ISS-110/111 escapee) |
+| ISS-227 | W3 | Catalog | Time control: 6 overlapping options, rendered above H1 — canonical Today/7d/30d/90d/Custom below H1 (#29, #51) |
+| ISS-228 | W3 | Costs | "$ 0,00" inputs — literal #27 violation; cross-check #1041 file list |
+| ISS-229 | W5 | Demand | Rows show "Default Title"/"—" as identity — extend ISS-SR-07 title/SKU treatment |
+| ISS-230 | P1 | Demand | No recommended reorder qty column at all on criticals — §5 requires it, never 0 (#59) |
+| ISS-231 | W5 | Intelligence | "No SKU" rendered in title slot of action queue rows — product identity unrecoverable |
+| ISS-232 | W1 | Overview vs Costs | "1 product missing cost data" vs "9 missing" — scoping real but unstated on both surfaces |
+| ISS-233 | K | Inventory | Intelligence still lead tab — target: Demand & Reorder leads, Intelligence folds (#20, #45) |
+| ISS-234 | K | Warehouse | Route fragmentation /wms + /floor-planning + /problem-center — #1040 shell prerequisite, confirmed |
+| ISS-235 | W2 | Floor Planning | WH-1-ROOT exposed as user-facing warehouse identity on Map/Setup/Barcodes — §10.5 contract violation |
+| ISS-236 | W5 | Floor Planning Setup | Root warehouse row carries delete/hide affordances — data-loss risk; lifecycle belongs to Settings › Warehouse |
+| ISS-237 | W2 | Floor Planning | Setup/Barcodes own warehouse-identity objects — v1.2 split: identity→Settings, topology→Floor Plan |
+| ISS-238 | W1 | Order Flow vs Operations | "0 batches active" vs "ACTIVE BATCHES 1 in progress" — one batch object, two answers |
+| ISS-239 | W1 | Orders vs Wh Analytics | Picking 22/Ready 12 vs Awaiting 4/Picking 0/Packing 0; Analytics claims no pick activity mid-batch |
+| ISS-240 | W1 | Floor Planning | "13 bins" header vs Barcodes "Total locations 17 / Barcoded 13" — barcoded count labeled as bin total |
+| ISS-241 | W1 | Intelligence vs Floor Planning | "0% occupancy · 0 of 12 bins" vs "13 bins · 1 with stock" — two bin-stat sources |
+| ISS-242 | W4 | Operations | H1 "Warehouse" = module name; tab/breadcrumb say Operations |
+| ISS-243 | W4 | Floor Planning | Three H1s across tabs, two aspirational sentences on populated screens — register is empty-state-only (#15, #50) |
+| ISS-244 | W3 | Wh Analytics | Time control 7d/30d/90d — missing Today/Custom, wrong position; third variant app-wide |
+| ISS-245 | W5 | Wh Analytics | Unregistered "Cast" button in header |
+| ISS-246 | P1 | Wh Analytics | n=1-aware states inconsistent: dashes beside confident "11.3h avg turnaround" with no small-sample caveat |
+| ISS-247 | W5 | Problem Center | True-zero renders filter-flavored copy — §5 spec: "No open exceptions" |
+| ISS-248 | W1 | Problem Center | Type enum (Item Missing + Short Pick coexist) vs §3 spine categories — verify 1:1 mapping to alerts |
+| ISS-249 | W5 | Operations | "Scan any LSU- barcode" — internal jargon + stray hyphen in operator copy |
+| ISS-250 | K | Operations | Pack Mode on Console page — Floor split pending (Loop 3), placement logged |
+| ISS-251 | W5 | Wh Analytics | "Add hourly costs in Team" — Team relocated to Settings 2026-07-08; stale pointer |
+| ISS-252 | P1 | Returns | Queue "Ranked oldest-first" — must be consequence-ranked with canonical sentence (§2.4, §5) |
+| ISS-253 | W1 | Returns Pulse | "39.8% recovered" vs subtitle "3 of 8 jobs resolved" (=37.5%) — money-based fix vs job-count narration |
+| ISS-254 | W1 | Returns vs Intelligence | Same $2,400 labeled "Revenue refunded" and "lost"(=Leaked) — Refunded−Recovered math contradicts one of them |
+| ISS-255 | W3 | Returns | "Claim →" primary CTA — verb absent from §7 actions and dispositions |
+| ISS-256 | K | Returns | "Scan a return" scan surface on Console decision page — Loop 3 placement, logged |
+| ISS-257 | R | Returns Items | Restock disposition absent from decision card (damaged line) — condition-gated by design, or never shipped? |
+| ISS-258 | W5 | Returns Items | "Initiate refund" offered on already-refunded line — suppress or relabel post-refund |
+| ISS-259 | W4 | Returns Items | H1 "Returned items" ≠ tab "Items" |
+| ISS-260 | K | Returns | Tabs Overview/Items/Supplier Ratings vs target Recovery Queue/Items; Ratings duplicates supplier table (#17, #38) |
+| ISS-261 | W3 | Cross-module | Date formats ×4: 7/11/2026, 9 Jul 2026, Due 11 Jul, ~Jul 11 (#52) |
+| ISS-262 | W3 | Open POs | "Receive Via WMS" — WMS jargon post-rename (#1, #62), mid-cap Via |
+| ISS-263 | W3 | Open POs vs Intelligence | PO lifecycle vocab ×3: Created/On the way/Arrived vs "shipped" vs §7 Received/Stowed/Sellable |
+| ISS-264 | V | Suppliers | Scorecard shows no §5 metrics and no "No order history yet" fallback — verify vs Gap 1 closure before classifying |
+| ISS-265 | W3 | Returns | "Revenue Lost / Margin Lost" headers (Leaked, #42) + Default Title identity rows (ISS-SR-07 parity) |
+
+### 12.2 Verified working (selected)
+
+- RET-S4-04 **CLOSED by observation:** owner-decision queue renders on Items for a completed
+  damaged-line job — condition badge, operator note, decision CTAs live.
+- Sprint 1 Sourcing deliverables all visible in UI: spotlights, MOQ/lead-time nudges,
+  assign-supplier flow, "No SKU" nudges, Sourcing Pulse. Gap 3 label ("Received POs") live.
+- Reorder Loop traversable end-to-end on screen: stockout signal → Demand → Sourcing →
+  PO → Inbound → Receive CTA.
+- Breadcrumb rewrite holding everywhere, including escaped routes. `/inventory/data-quality`
+  correctly nested. Ranking sentence verbatim on all Orders/Overview queues. Demand and
+  Floor Planning tier badges match §11.
+- Counts that DO agree: Blocked $23,524 and Collected $43,588 across Overview↔Orders;
+  stocked-out 4 across three Inventory surfaces; PO 30 units·3 lines internal math;
+  product-barcodes 29 agrees between Floor Planning and Data Quality.
+
+### 12.3 Structural diagnosis (W1)
+
+Every W1 item shares one root cause: surfaces compute their own aggregates from raw tables.
+The morning-brief resolver's policy — "Never query raw tables here — always read from
+`alerts`" — is the only surface honoring a shared-read rule. W1's fix is architectural:
+promote that policy app-wide (spine for signals; a shared stats resolver for floor/bin/
+pipeline aggregates), then reconcile per-surface labels. Fixing counts surface-by-surface
+without this will regress.
+
+### 12.4 Rulings required before implementation
+
+1. ISS-257 — is Restock condition-gated (damaged ≠ restockable) by design? If yes, document
+   the gating rule in §5; if no, ship the disposition.
+2. ISS-215 — is Outbound's status+range hybrid a sanctioned exception to the canonical
+   time-range control?
+
+### 12.5 Sequencing
+
+W5 quick fixes → W1 (P0, with 12.3 architecture decision first) → W2 (already queued:
+contract layer + #1040; pull ISS-236 forward as standalone) → W3+W4 combined sweep.
+K items ride their existing migrations. V items enter Audit Mode before classification.
