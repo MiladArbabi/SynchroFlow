@@ -1,6 +1,14 @@
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookRouter } from './webhookRouter.js';
 import { WebhookEnvelope } from './types.js';
+import { confirmShipmentFromCarrierHandoff } from '../../services/wms/shipConfirmation.service.js';
+
+const CARRIER_HANDOFF_EVENTS = new Set([
+  'in_transit',
+  'out_for_delivery',
+  'delivered',
+  'returned',
+]);
 
 WebhookRouter.register({
   integration: 'shippo',
@@ -71,6 +79,16 @@ WebhookRouter.register({
           latest_event_at: eventTimestamp,
           is_stalled: isStalled,
         });
+
+      // Only explicitly mapped physical-movement statuses prove carrier handoff.
+      if (statusMap && CARRIER_HANDOFF_EVENTS.has(eventType)) {
+        await confirmShipmentFromCarrierHandoff(trx, {
+          lasyncroOrderId: shipment.lasyncro_order_id,
+          shopId,
+          partialShipment: false,
+          shippedAt: eventTimestamp,
+        });
+      }
 
       if (eventType === 'exception') {
         await trx('alerts')

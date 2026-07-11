@@ -162,3 +162,50 @@ export async function confirmShipment(
     shippedAt,
   });
 }
+
+export type CarrierHandoffResult = 'shipped' | 'already_shipped' | 'not_packed';
+
+/**
+ * Converts the first physical carrier-movement event into shipment truth.
+ * The row lock makes repeated or concurrent carrier webhooks idempotent.
+ */
+export async function confirmShipmentFromCarrierHandoff(
+  trx: Knex.Transaction,
+  input: ShipConfirmationInput
+): Promise<CarrierHandoffResult> {
+  const warehouseStatus = await trx('order_warehouse_status')
+    .where({ lasyncro_order_id: input.lasyncroOrderId })
+    .select('status')
+    .forUpdate()
+    .first();
+
+  if (!warehouseStatus) {
+    throw new Error(
+      `[CARRIER_HANDOFF] No warehouse status found for order: ${input.lasyncroOrderId}`
+    );
+  }
+
+  if (['shipped', 'partially_shipped'].includes(warehouseStatus.status)) {
+    return 'already_shipped';
+  }
+
+  if (warehouseStatus.status !== 'packed') {
+    console.warn('[CARRIER_HANDOFF_SKIPPED_NOT_PACKED]', {
+      lasyncroOrderId: input.lasyncroOrderId,
+      shopId: input.shopId,
+      warehouseStatus: warehouseStatus.status,
+    });
+    return 'not_packed';
+  }
+
+  await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+  await confirmShipment(trx, input);
+
+  console.info('[CARRIER_HANDOFF_SHIPMENT_CONFIRMED]', {
+    lasyncroOrderId: input.lasyncroOrderId,
+    shopId: input.shopId,
+    shippedAt: input.shippedAt,
+  });
+
+  return 'shipped';
+}

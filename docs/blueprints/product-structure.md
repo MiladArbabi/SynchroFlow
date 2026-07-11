@@ -604,7 +604,7 @@ capabilities, not to the existence of stable warehouse identity.
 # Lines 603–608 (replaced)
 | ISS-265 | W3 | Returns | "Revenue Lost / Margin Lost" headers (Leaked, #42) + Default Title identity rows (ISS-SR-07 parity) |
 | ISS-266 | W5 | Pack Session | ✅ CLOSED 2026-07-11 — Shipping-label generation failures now propagate into a truthful, non-blocking warning instead of reporting successful printing. Verified with no carrier configured: API returned explicit 500, backend logged the failure, and WMS module build passed. |
-| ISS-267 | P0 | Pack → Outbound | 🚧 IN PROGRESS — LSO previously marked orders shipped before carrier handoff. Step 1 complete: LSU scans verify contents while the order remains packing; LSO confirms packed and completes the pack batch. Carrier-webhook shipment transition and manual handoff fallback remain. Code/build verified; live transition blocked by no packable dev data. |
+| ISS-267 | P0 | Pack → Outbound | 🚧 IN PROGRESS — LSO previously marked orders shipped before carrier handoff. Steps 1–2 complete: LSU scans verify contents, LSO confirms packed, and explicitly mapped carrier movement events transition packed → shipped through an idempotent row-locked service. Manual handoff fallback remains. Code/build verified; live transition blocked by no packable orders or tracking fixtures. |
 
 ### 12.2 Verified working (selected)
 
