@@ -38,6 +38,7 @@ export default function SuppliersPortalPage() {
   const spotlightNeverOrdered   = useSpotlight('sourcing_never_ordered');
   const spotlightAlertTriggered = useSpotlight('sourcing_alert_triggered');
   const spotlightAccumulator    = useSpotlight('sourcing_accumulator');
+  const spotlightPoSendFlow     = useSpotlight('po_send_flow');
   // Read demand module handoff params — pre-open PO dialog with variant pre-filled
   const demandAction = searchParams.get('action');
   const demandVariantId = searchParams.get('variantId');
@@ -219,6 +220,7 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
       neverOrdered:   { isDismissed: spotlightNeverOrdered.isDismissed,   dismiss: spotlightNeverOrdered.dismiss },
       alertTriggered: { isDismissed: spotlightAlertTriggered.isDismissed, dismiss: spotlightAlertTriggered.dismiss },
       accumulator:    { isDismissed: spotlightAccumulator.isDismissed,    dismiss: spotlightAccumulator.dismiss },
+      poSendFlow:     { isDismissed: spotlightPoSendFlow.isDismissed,     dismiss: spotlightPoSendFlow.dismiss },
     },
     autoOpenCreatePo: demandAction === 'create-po',
     prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {

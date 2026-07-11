@@ -650,16 +650,40 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
       // New install — create ghost shop + user atomically via systemDb (bypasses RLS)
       const result = await systemDb.transaction(async (trx) => {
         const [newShop] = await trx('shops')
-          .insert({ name: shopDomain })
-          .returning('*');
+         .insert({ name: shopDomain })
+         .returning('*');
 
-        await trx('warehouse_locations').insert({
-          shop_id: newShop.id,
-          location_code: `WH-${newShop.id}-ROOT`,
-          type: 'warehouse',
-          parent_location_code: null,
-          active: true,
-        });
+       const rootLocationCode = `WH-${newShop.id}-ROOT`;
+
+       const [warehouse] = await trx('warehouses')
+         .insert({
+           shop_id: newShop.id,
+           name: 'Main warehouse',
+           root_location_code: rootLocationCode,
+           is_default: true,
+           active: true,
+         })
+         .returning(['warehouse_id']);
+
+       if (!warehouse?.warehouse_id) {
+         throw new Error('WAREHOUSE_BOOTSTRAP_FAILED');
+       }
+
+       await trx('warehouse_locations').insert({
+         shop_id: newShop.id,
+         warehouse_id: warehouse.warehouse_id,
+         location_code: rootLocationCode,
+         type: 'warehouse',
+         parent_location_code: null,
+         active: true,
+       });
+
+       console.info('[shopify-install] Warehouse bootstrapped', {
+         shopDomain,
+         shopId: newShop.id,
+         warehouseId: warehouse.warehouse_id,
+         rootLocationCode,
+       });
 
         // ISSUE-12: shop_wms_settings was never provisioned at install time —
         // every shop hit "No WMS settings found" on first batch release.

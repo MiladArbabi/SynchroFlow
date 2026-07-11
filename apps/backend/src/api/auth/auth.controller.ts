@@ -50,19 +50,42 @@ export const registerUser = async (req: Request, res: Response) => {
     const { user: newUser, shopId } = await systemDb.transaction<{ user: User; shopId: number }>(async trx => {
     
     // 1️⃣ Create shop
+    
     const [newShop] = await trx('shops')
       .insert({
         name: `${firstName || email}'s Shop`,
       })
       .returning('*');
 
-    // 2️⃣ Bootstrap root warehouse
+    const rootLocationCode = `WH-${newShop.id}-ROOT`;
+
+    const [warehouse] = await trx('warehouses')
+      .insert({
+        shop_id: newShop.id,
+        name: 'Main warehouse',
+        root_location_code: rootLocationCode,
+        is_default: true,
+        active: true,
+      })
+      .returning(['warehouse_id']);
+
+    if (!warehouse?.warehouse_id) {
+      throw new Error('WAREHOUSE_BOOTSTRAP_FAILED');
+    }
+
     await trx('warehouse_locations').insert({
       shop_id: newShop.id,
-      location_code: `WH-${newShop.id}-ROOT`,
+      warehouse_id: warehouse.warehouse_id,
+      location_code: rootLocationCode,
       type: 'warehouse',
       parent_location_code: null,
       active: true,
+    });
+
+    console.info('[AUTH_WAREHOUSE_BOOTSTRAPPED]', {
+      shopId: newShop.id,
+      warehouseId: warehouse.warehouse_id,
+      rootLocationCode,
     });
 
     // 3️⃣ Create user

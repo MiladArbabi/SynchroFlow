@@ -19,7 +19,91 @@ export async function up(knex: Knex): Promise<void> {
     END$$;
   `);
 
-  // 2️⃣ Create warehouse_locations table
+  /**
+   * FIRST-CLASS WAREHOUSE IDENTITY
+   * ------------------------------
+   * warehouse_id is the stable internal identity.
+   * name is user-facing and may be edited without changing location codes.
+   * root_location_code temporarily bridges the existing location hierarchy
+   * until warehouse_id is propagated to warehouse_locations in Phase 1B.
+   */
+  await knex.schema.createTable('warehouses', (table) => {
+    table
+      .uuid('warehouse_id')
+      .primary()
+      .notNullable()
+      .defaultTo(knex.raw('gen_random_uuid()'));
+
+    table
+      .integer('shop_id')
+      .notNullable()
+      .references('id')
+      .inTable('shops')
+      .onDelete('CASCADE');
+
+    table.string('name', 255).notNullable();
+
+    table
+      .string('root_location_code', 255)
+      .notNullable();
+
+    table
+      .boolean('is_default')
+      .notNullable()
+      .defaultTo(false);
+
+    table
+      .boolean('active')
+      .notNullable()
+      .defaultTo(true);
+
+    table.timestamp('created_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.timestamp('updated_at', { useTz: true })
+      .notNullable()
+      .defaultTo(knex.fn.now());
+
+    table.unique(
+      ['shop_id', 'name'],
+      'warehouses_shop_name_unique'
+    );
+
+    table.unique(
+      ['shop_id', 'root_location_code'],
+      'warehouses_shop_root_unique'
+    );
+
+    table.index(
+      ['shop_id', 'active'],
+      'warehouses_shop_active_idx'
+    );
+  });
+
+  await knex.raw(`
+    CREATE UNIQUE INDEX warehouses_one_default_per_shop_idx
+    ON warehouses (shop_id)
+    WHERE is_default = true;
+  `);
+
+  await knex.raw(`
+    ALTER TABLE warehouses ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE warehouses FORCE ROW LEVEL SECURITY;
+  `);
+
+  await knex.raw(`
+    CREATE POLICY warehouses_tenant_isolation_policy
+    ON warehouses
+    USING (
+      shop_id = current_setting('app.current_tenant')::int
+    )
+    WITH CHECK (
+      shop_id = current_setting('app.current_tenant')::int
+    );
+  `);
+
+  // Create the existing location hierarchy after its warehouse identity.
   await knex.schema.createTable('warehouse_locations', (table) => {
     table
       .string('location_code', 255)
@@ -32,6 +116,19 @@ export async function up(knex: Knex): Promise<void> {
       .inTable('shops')
       .onDelete('CASCADE');
 
+    /**
+     * Stable warehouse ownership.
+     *
+     * location_code remains the operator-facing compatibility key during
+     * migration, but warehouse_id is now the authoritative physical boundary.
+     */
+    table
+      .uuid('warehouse_id')
+      .notNullable()
+      .references('warehouse_id')
+      .inTable('warehouses')
+      .onDelete('RESTRICT');
+
     table
       .string('parent_location_code', 255)
       .nullable()
@@ -41,7 +138,8 @@ export async function up(knex: Knex): Promise<void> {
 
     table
       .string('external_location_id', 255)
-      .nullable(); // Shopify location_id mapping
+      .nullable(); // Shopify location mapping remains transitional until warehouse-level mapping is wired.
+ // Shopify location_id mapping
 
     table
       .specificType('type', 'warehouse_location_type')
@@ -78,8 +176,22 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'barcode'], 'warehouse_locations_barcode_unique');
 
     table.unique(['shop_id', 'location_code']);
-    table.unique(['shop_id', 'external_location_id'], 'warehouse_external_location_unique');
+
+    table.unique(
+      ['shop_id', 'warehouse_id', 'location_code'],
+      'warehouse_locations_warehouse_code_unique'
+    );
+
+    table.unique(
+      ['shop_id', 'external_location_id'],
+      'warehouse_external_location_unique'
+    );
+
     table.index(['shop_id']);
+    table.index(
+      ['shop_id', 'warehouse_id', 'active'],
+      'warehouse_locations_shop_warehouse_active_idx'
+    );
   });
 
   /**
@@ -118,6 +230,7 @@ export async function up(knex: Knex): Promise<void> {
 
 export async function down(knex: Knex): Promise<void> {
   await knex.schema.dropTableIfExists('warehouse_locations');
+  await knex.schema.dropTableIfExists('warehouses');
 
   await knex.schema.raw(`
     DROP TYPE IF EXISTS warehouse_location_type;

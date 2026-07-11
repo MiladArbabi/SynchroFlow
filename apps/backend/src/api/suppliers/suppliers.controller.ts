@@ -188,12 +188,15 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
               .andOn('li.shop_id', trx.raw('?', [shopId]));
         })
         .where('po.shop_id', shopId)
-        .groupBy('po.id', 's.name', 's.on_time_rate', 's.fill_rate', 's.avg_delivery_days')
+        .groupBy('po.id', 's.name', 's.on_time_rate', 's.fill_rate', 's.avg_delivery_days', 's.contact_email', 's.contact_name', 's.moq')
         .orderBy('po.created_at', 'desc')
         .select(
           'po.id', 'po.status', 'po.expected_delivery_date', 'po.actual_delivery_date',
           'po.notes', 'po.receive_notes', 'po.document_url', 'po.created_at',
           's.name as supplier_name',
+          's.contact_email as supplier_contact_email',
+          's.contact_name as supplier_contact_name',
+          's.moq as supplier_moq',
           's.on_time_rate as supplier_on_time_rate',
           's.fill_rate as supplier_fill_rate',
           's.avg_delivery_days as supplier_avg_delivery_days',

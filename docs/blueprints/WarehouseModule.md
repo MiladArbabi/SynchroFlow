@@ -1,7 +1,7 @@
 # Warehouse Module — Audit Blueprint
 
 **LaSyncro | Sprint 4 Audit | May 25, 2026**
-**Status: Audited — Production-ready infrastructure, DS cleanup needed**
+**Status: Multi-warehouse foundation implementation in progress**
 
 ---
 
@@ -47,28 +47,34 @@ All routes require `Authorization: Bearer $TOKEN`.
 
 ## 3. Schema — Warehouse Tables
 
-| Table | Rows (shop_id=1) | Purpose |
-|---|---|---|
-| `warehouse_locations` | 17 | Zone hierarchy: WH-1-ROOT → A/B/C lanes → 12 pick bins + PROBLEM quarantine |
-| `shop_wms_settings` | 1 | max_batch: 108, auto_release: false, idle_alert: 20min, problem_bin_location: '' (empty — bug) |
-| `pick_batches` | 0 | Active pick batches |
+### Multi-warehouse implementation status — July 11, 2026
+
+Phase 1A and Phase 1B establish the warehouse identity boundary.
+
+- `warehouse_id` is the stable internal UUID.
+- `name` is the editable user-facing warehouse name.
+- `root_location_code` bridges the existing location hierarchy during migration.
+- One default warehouse is bootstrapped for every new or seeded shop.
+- Every `warehouse_locations` row now has mandatory `warehouse_id` ownership.
+- Parent and child locations are constrained to the same warehouse.
+- New child zones inherit warehouse ownership from their parent.
+- Root-level zones temporarily use the default warehouse until explicit warehouse context is added to the API.
+- The standard `dev:full-reset` path provisions both owner and operator identities.
+- Both `full_identity` and `full_data` seed one shop-scoped confirmed FT2 lifecycle snapshot, allowing authenticated warehouse endpoints to be verified immediately after reset.
+- Location codes remain unique across the shop during this compatibility phase; warehouse-scoped duplicate codes are not enabled yet.
+
+| Table | Rows after clean seed | Purpose |
+|---|---:|---|
+| `warehouses` | 1 | Stable warehouse identity, editable name, default status, and legacy root mapping |
+| `warehouse_locations` | 17 | Physical hierarchy beneath the default warehouse root |
+| `shop_wms_settings` | 1 | Current shop-wide WMS configuration; warehouse scoping pending |
+| `pick_batches` | 0 | Active pick batches; warehouse scoping pending |
 | `pick_batch_orders` | 0 | Orders per batch |
-| `stow_tasks` | 0 | Post-receive stow jobs |
+| `stow_tasks` | 0 | Post-receive stow jobs; warehouse scoping pending |
 | `operator_availability` | 0 | Operator shift availability |
 | `operator_task_log` | 0 | Per-operator task activity |
 
-**Warehouse location hierarchy (seeded):**
-WH-1-ROOT (warehouse/storage)
-├── A (lane/pick) — 5 children
-│   ├── A-1 (bin/pick) — barcoded ✅
-│   ├── A-2 (bin/pick) — barcoded ✅
-│   ├── A-3 (bin/pick) — barcoded ✅
-│   ├── A-4 (bin/pick) — barcoded ✅
-│   └── PROBLEM (bin/quarantine) — barcoded ✅
-├── B (lane/pick) — 4 children
-│   ├── B-1 through B-4 (bin/pick) — all barcoded ✅
-└── C (lane/pick) — 4 children
-└── C-1 through C-4 (bin/pick) — all barcoded ✅
+The generated root code remains an internal compatibility key. Users will manage and select warehouses by `warehouse_id` and editable `name`, not by changing `WH-{shopId}-ROOT`.
 
 ---
 

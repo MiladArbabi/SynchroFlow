@@ -467,24 +467,53 @@ export async function httpCreateZone(req: Request, res: Response) {
   }
 
   try {
-    await db.transaction(async (trx) => {
+    const warehouseId = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      // Validate parent exists if provided
+      let resolvedWarehouseId: string;
+
       if (parent_location_code) {
+        const normalizedParentCode = parent_location_code.trim().toUpperCase();
+
         const parent = await trx('warehouse_locations')
-          .where({ shop_id: shopId, location_code: parent_location_code })
+          .where({
+            shop_id: shopId,
+            location_code: normalizedParentCode,
+          })
+          .select('warehouse_id')
           .first();
-        if (!parent) {
+
+        if (!parent?.warehouse_id) {
           throw new Error(`Parent location not found: ${parent_location_code}`);
         }
+
+        // Child ownership is inherited from its physical parent.
+        resolvedWarehouseId = parent.warehouse_id;
+      } else {
+        const defaultWarehouse = await trx('warehouses')
+          .where({
+            shop_id: shopId,
+            is_default: true,
+            active: true,
+          })
+          .select('warehouse_id')
+          .first();
+
+        if (!defaultWarehouse?.warehouse_id) {
+          throw new Error('Default warehouse not found');
+        }
+
+        // Root-level zones remain attached to the current default warehouse
+        // until the warehouse selector supplies explicit context.
+        resolvedWarehouseId = defaultWarehouse.warehouse_id;
       }
 
       await trx('warehouse_locations').insert({
         shop_id: shopId,
+        warehouse_id: resolvedWarehouseId,
         location_code: location_code.trim().toUpperCase(),
         type,
-        parent_location_code: parent_location_code?.trim() ?? null,
+        parent_location_code: parent_location_code?.trim().toUpperCase() ?? null,
         barcode: barcode?.trim() ?? null,
         active: true,
         position_x: position_x ?? null,
@@ -495,18 +524,35 @@ export async function httpCreateZone(req: Request, res: Response) {
         rack_levels: rack_levels ?? null,
         zone_type: zone_type ?? 'storage',
       });
+
+      return resolvedWarehouseId;
     });
 
-    console.info('[floor-planning] zone created', { shopId, location_code, type });
+    console.info('[floor-planning] zone created', {
+      shopId,
+      warehouseId,
+      locationCode: location_code.trim().toUpperCase(),
+      type,
+    });
     return res.status(201).json({ success: true, location_code: location_code.trim().toUpperCase() });
   } catch (err: any) {
     if (err.code === '23505') {
       return res.status(409).json({ error: `Location code already exists: ${location_code}` });
     }
+    
     if (err.message?.includes('Parent location not found')) {
       return res.status(400).json({ error: err.message });
     }
-    console.error('[floor-planning] httpCreateZone failed', err);
+
+    if (err.message === 'Default warehouse not found') {
+      return res.status(409).json({ error: 'WAREHOUSE_NOT_CONFIGURED' });
+    }
+
+    console.error('[floor-planning] httpCreateZone failed', {
+      shopId,
+      locationCode: location_code,
+      error: err instanceof Error ? err.message : err,
+    });
     return res.status(500).json({ error: 'Failed to create zone' });
   }
 }

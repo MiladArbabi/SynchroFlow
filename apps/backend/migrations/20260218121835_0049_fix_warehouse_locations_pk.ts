@@ -1,41 +1,48 @@
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
-
-  // 1️⃣ Drop self-referencing FK first
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table.dropForeign(['parent_location_code']);
   });
 
-  // 2️⃣ Drop old PK
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table.dropPrimary();
   });
 
-  // 3️⃣ Drop redundant unique constraint
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table.dropUnique(['shop_id', 'location_code']);
   });
 
-  // 4️⃣ Add composite PK
+  // Transitional compatibility key. Operational readers still address
+  // locations by shop_id + location_code until warehouse-aware APIs land.
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table.primary(['shop_id', 'location_code']);
   });
 
-  // 5️⃣ Recreate self-referencing FK (composite-safe)
+  /**
+   * Parent and child must belong to the same warehouse.
+   *
+   * RESTRICT is intentional: deleting a parent with active children must fail
+   * clearly rather than attempting to null non-null tenant/warehouse columns.
+   */
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table
-      .foreign(['shop_id', 'parent_location_code'])
-      .references(['shop_id', 'location_code'])
+      .foreign(
+        ['shop_id', 'warehouse_id', 'parent_location_code'],
+        'warehouse_locations_parent_same_warehouse_fk'
+      )
+      .references(['shop_id', 'warehouse_id', 'location_code'])
       .inTable('warehouse_locations')
-      .onDelete('SET NULL');
+      .onDelete('RESTRICT');
   });
 }
 
 export async function down(knex: Knex): Promise<void> {
-
   await knex.schema.alterTable('warehouse_locations', (table) => {
-    table.dropForeign(['shop_id', 'parent_location_code']);
+    table.dropForeign(
+      ['shop_id', 'warehouse_id', 'parent_location_code'],
+      'warehouse_locations_parent_same_warehouse_fk'
+    );
   });
 
   await knex.schema.alterTable('warehouse_locations', (table) => {

@@ -31,7 +31,8 @@ import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, T
 import { 
   ModuleErrorBoundary, 
   ModuleLoadingSkeleton, 
-  SpotlightCoachMark
+  SpotlightCoachMark,
+  EntityDetailModal,
  } from '@lasyncro/shared/ui';
 /**
  * SUPPLIERS PORTAL MODULE — FT2 SURFACE
@@ -58,6 +59,9 @@ export type PurchaseOrderStatus =
 export type PurchaseOrder = {
   id: string;
   supplier_name: string;
+  supplier_contact_email: string | null;
+  supplier_contact_name: string | null;
+  supplier_moq: number | null;
   supplier_on_time_rate: number | null;
   supplier_fill_rate: number | null;
   status: PurchaseOrderStatus;
@@ -69,7 +73,6 @@ export type PurchaseOrder = {
   notes: string | null;
   document_url: string | null;
   created_at: string;
-  // First line item description — shown in collapsed summary row for at-a-glance identification
   first_line_description: string | null;
 };
 
@@ -213,11 +216,12 @@ export type SuppliersPortalPageProps = {
   /** §8: set by page after convert survives refetch re-render — cleared by dismiss */
   lastConvertedPoId?: string | null;
   onDismissConvertedPo?: () => void;
-  /** Sourcing onboarding spotlights — resolved via useSpotlight() at page level */
+  /** Onboarding spotlights — resolved via useSpotlight() at page level */
   spotlights?: {
     neverOrdered:   { isDismissed: boolean; dismiss: () => void };
     alertTriggered: { isDismissed: boolean; dismiss: () => void };
     accumulator:    { isDismissed: boolean; dismiss: () => void };
+    poSendFlow:     { isDismissed: boolean; dismiss: () => void };
   };
   /** When true, auto-opens the Create PO dialog on mount */
   autoOpenCreatePo?: boolean;
@@ -703,6 +707,90 @@ function CreatePoDialog({
 }
 
 // ─────────────────────────────────────────────
+// SEND PO MODAL (Gap 2 — sourcing-recommendation-playbook.md §9.2)
+// Preview PO before sending. Status only transitions after merchant confirms.
+// Two channels: email (mailto) and copy as message (clipboard).
+// ─────────────────────────────────────────────
+function SendPoModal({
+  po, lineItems, onClose,
+}: {
+  po: PurchaseOrder;
+  lineItems: PoLineItem[];
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const [copying, setCopying] = useState(false);
+
+  const buildPoText = () => {
+    const eta = po.expected_delivery_date
+      ? new Date(po.expected_delivery_date).toLocaleDateString() : 'TBD';
+    const lines = lineItems.map((i) =>
+      `  - ${i.product_title ?? i.description}${i.sku ? ` (${i.sku})` : ''}: ${i.quantity_ordered} units`
+    ).join('\n');
+    return [
+      `Purchase Order — ${po.supplier_name}`, '',
+      'Items:', lines, '',
+      `Expected delivery: ${eta}`,
+      po.notes ? `Notes: ${po.notes}` : null,
+      '', 'Sent via LaSyncro',
+    ].filter((l) => l !== null).join('\n');
+  };
+
+  const handleCopy = async () => {
+    setCopying(true);
+    try {
+      await navigator.clipboard.writeText(buildPoText());
+      setCopied(true);
+      // Close after flash so merchant can go paste it
+      setTimeout(() => { setCopied(false); onClose(); }, 1500);
+    } finally { setCopying(false); }
+  };
+
+  return (
+    <EntityDetailModal
+      entityId={po.id}
+      onClose={onClose}
+      title="Copy and send to supplier"
+      subtitle={po.supplier_name}
+      maxWidth="md"
+      footerActions={
+        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          <Box component="button" onClick={() => void handleCopy()} disabled={copying}
+            sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600,
+              color: copied ? 'var(--confirm-ink)' : 'var(--accent-ink)',
+              bgcolor: copied ? 'var(--confirm-ghost)' : copying ? 'var(--bg-3)' : 'var(--accent)',
+              border: copied ? '1px solid var(--confirm-border)' : 'none',
+              borderRadius: '6px', px: 1.5, py: 0.875,
+              cursor: copying ? 'wait' : 'pointer',
+              transition: 'all 0.2s',
+              '&:hover': { opacity: copying ? 1 : 0.88 } }}>
+            {copied ? 'Copied ✓' : copying ? 'Copying…' : 'Copy order →'}
+          </Box>
+          <Box component="button" onClick={onClose} disabled={copying}
+            sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', bgcolor: 'transparent', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1.5, py: 0.875, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+            Cancel
+          </Box>
+        </Box>
+      }
+    >
+      <Box sx={{ p: 2.5 }}>
+        <Box component="pre" sx={{ fontFamily: 'monospace', fontSize: 12.5, lineHeight: 1.7, color: 'var(--ink)', bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', borderRadius: '8px', p: '14px 16px', whiteSpace: 'pre-wrap', wordBreak: 'break-word', m: 0 }}>
+          {buildPoText()}
+        </Box>
+        <Box sx={{ mt: 1.5, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            Click <strong>Copy order →</strong> to copy this text, then paste it into your email, WhatsApp, WeChat, or any app you use to contact this supplier.
+          </Typography>
+          <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.5 }}>
+            Once you've sent it, come back and click <strong>Mark as sent</strong> on the PO card to update its status.
+          </Typography>
+        </Box>
+      </Box>
+    </EntityDetailModal>
+  );
+}
+
+// ─────────────────────────────────────────────
 // PO ACCORDION
 // ─────────────────────────────────────────────
 
@@ -916,6 +1004,23 @@ function PoAccordion({
   const [loadingItems, setLoadingItems] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // §Gap2: controls PO send preview modal — status only transitions after merchant confirms
+  const [sendPreviewOpen, setSendPreviewOpen] = useState(false);
+  const [loadingSend, setLoadingSend] = useState(false);
+
+  // §Gap2: load line items if not yet fetched, then open preview modal
+  const handleOpenSendPreview = async () => {
+    if (!lineItems) {
+      setLoadingSend(true);
+      try {
+        const items = await onFetchLineItems(po.id);
+        setLineItems(items);
+      } finally {
+        setLoadingSend(false);
+      }
+    }
+    setSendPreviewOpen(true);
+  };
 
   const navigate = useNavigate();
 
@@ -1054,12 +1159,20 @@ function PoAccordion({
 
         {OPEN_STATUSES.includes(po.status) && (
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {/* Draft → mark as sent to supplier */}
+            {/* Draft: copy PO content, then manually confirm sent */}
             {po.status === 'draft' && (
-              <Button size="small" variant="outlined" color="info" disabled={updatingStatus}
-                onClick={() => void handleStatusUpdate('ordered')}>
-                Mark as sent
-              </Button>
+              <>
+                {/* Tier 1 — opens copy preview */}
+                <Box component="button" onClick={() => void handleOpenSendPreview()} disabled={updatingStatus || loadingSend}
+                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: updatingStatus || loadingSend ? 'var(--bg-3)' : 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: updatingStatus || loadingSend ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 } }}>
+                  {loadingSend ? 'Loading…' : 'Prepare to send →'}
+                </Box>
+                {/* Tier 2 — merchant confirms after actually sending it */}
+                <Box component="button" onClick={() => void handleStatusUpdate('ordered')} disabled={updatingStatus}
+                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: updatingStatus ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 } }}>
+                  Mark as sent
+                </Box>
+              </>
             )}
             {/* On the way → mark as arrived at dock */}
             {(po.status === 'ordered' || po.status === 'confirmed' || po.status === 'in_production') && (
@@ -1091,6 +1204,15 @@ function PoAccordion({
           <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
             Notes: {po.notes}
           </Typography>
+        )}
+
+        {/* §Gap2: PO send preview modal — copy-only, no status transition inside */}
+        {sendPreviewOpen && lineItems && (
+          <SendPoModal
+            po={po}
+            lineItems={lineItems}
+            onClose={() => setSendPreviewOpen(false)}
+          />
         )}
       </AccordionDetails>
     </Accordion>
@@ -1218,7 +1340,7 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
           {supplier.contact_phone && (
             <Typography variant="caption" color="text.secondary">Phone: {supplier.contact_phone}</Typography>
           )}
-          <Typography variant="caption" color="text.secondary">Lifetime POs: {supplier.total_pos}</Typography>
+          <Typography variant="caption" color="text.secondary">Received POs: {supplier.total_pos}</Typography>
           {supplier.defect_rate !== null && (
             <Typography variant="caption" color="text.secondary">Defect rate: {supplier.defect_rate}%</Typography>
           )}
@@ -1262,6 +1384,7 @@ function PurchasingPosView({
   data, isLoading, isError, onRefresh,
   onFetchLineItems, onUpdatePoStatus, onCreateSupplier, onCreatePo,
   onCreateReceiveJob, onSearchVariants, autoOpenCreatePo = false, prefilledLineItem,
+  spotlights,
 }: SuppliersPortalPageProps) {
   const [createPoOpen, setCreatePoOpen] = useState(autoOpenCreatePo);
   const [showClosed, setShowClosed] = useState(false);
@@ -1316,7 +1439,19 @@ function PurchasingPosView({
               <Typography variant="subtitle1" fontWeight={700}>Open Purchase Orders</Typography>
               <Chip label={openPos.length} size="small" color={openPos.length > 0 ? 'primary' : 'default'} />
             </Box>
-
+            {/* §Gap2 spotlight — fires once when a draft PO exists; nudges merchant to use "Prepare to send →" */}
+            {openPos.some((po) => po.status === 'draft') && spotlights && !spotlights.poSendFlow.isDismissed && (
+              <Box sx={{ mb: 2 }}>
+                <SpotlightCoachMark
+                  title="Ready to order? Copy and send to your supplier"
+                   body={'Open any draft PO, click "Prepare to send \u2192" to copy the order details, then paste into email, WhatsApp, or however you contact this supplier. Once sent, click "Mark as sent" to update the status.'}
+                  isDismissed={spotlights.poSendFlow.isDismissed}
+                  onDismiss={spotlights.poSendFlow.dismiss}
+                  step={1}
+                  totalSteps={1}
+                />
+              </Box>
+            )}
             {openPos.length === 0 ? (
               <Paper variant="outlined" sx={{ textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }}>
                 <Truck size={36} style={{ opacity: 0.3 }} />
