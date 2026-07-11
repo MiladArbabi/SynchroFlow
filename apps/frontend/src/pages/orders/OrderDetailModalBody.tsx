@@ -28,7 +28,7 @@ import { useState, useEffect, ReactNode, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography, Button, CircularProgress, Alert, TextField } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { AlertCircle, AlertTriangle, ArrowRight, Clock } from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowRight, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useOrderDecision, useExecuteOrderDecision } from './useOrderDecision';
 import { useOrderDetail } from './useOrderDetail';
@@ -41,6 +41,7 @@ import {
   type ConstrainedOrdersResponse,
 } from './useConstrainedOrders';
 import { usePickExceptionsForOrder, useResolvePickException } from './usePickExceptionsForOrder';
+import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { useUpdateShippingAddress } from './useShippingAddress';
 import type { OrderShipping } from './useOrderDetail';
 
@@ -182,6 +183,64 @@ function ConstraintAlertCard({
             {detail ?? blockType?.replace(/_/g, ' ')}
           </Typography>
         )}
+      </Box>
+    </Box>
+  );
+}
+
+// §ISS-OD-02: PackDecisionHistory merged from OrderDetailPage (removed 2026-07-11)
+// Shows pack decision requests (pending/approved/rejected) per order.
+// Returns null when no requests exist — no empty state needed here.
+function PackDecisionHistory({ lasyncroOrderId }: { lasyncroOrderId: string }) {
+  const { data, isLoading } = useOrderPackDecisions(lasyncroOrderId);
+  const theme = useTheme();
+  const requests = data?.requests ?? [];
+  if (isLoading || requests.length === 0) return null;
+  const statusConfig = {
+    pending:  { icon: Clock,        color: theme.palette.warning.main, label: 'Pending' },
+    approved: { icon: CheckCircle2, color: theme.palette.success.main, label: 'Approved' },
+    rejected: { icon: XCircle,      color: theme.palette.error.main,   label: 'Rejected' },
+  };
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
+        Pack decisions
+      </Typography>
+      <Box sx={{ bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+        {requests.map((req, idx) => {
+          const cfg = statusConfig[req.status] ?? statusConfig.pending;
+          const Icon = cfg.icon;
+          const itemLabel = req.variant_title ?? req.sku ?? req.lasyncro_line_item_id.slice(0, 8).toUpperCase();
+          const exLabel = req.exception_type.replace(/_/g, ' ');
+          const batchShort = req.pick_batch_id.slice(0, 8).toUpperCase();
+          return (
+            <Box key={req.id} sx={{ px: 2, py: 1.5, borderTop: idx > 0 ? '1px solid var(--rule)' : 'none', display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Icon size={13} color={cfg.color} />
+                <Typography sx={{ fontSize: 12, fontWeight: 500, color: cfg.color }}>{cfg.label}</Typography>
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', ml: 'auto' }}>Batch {batchShort}</Typography>
+              </Box>
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{exLabel} — {itemLabel}</Typography>
+              {req.status !== 'pending' && (
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  {req.partial_shipment !== null && req.status === 'approved' && (
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.4, px: 1, py: 0.25, borderRadius: '4px', fontSize: 11,
+                      bgcolor: req.partial_shipment ? `${theme.palette.warning.main}1A` : `${theme.palette.success.main}1A`,
+                      color: req.partial_shipment ? theme.palette.warning.main : theme.palette.success.main }}>
+                      <AlertTriangle size={10} />
+                      {req.partial_shipment ? 'Shipped partial' : 'Full shipment'}
+                    </Box>
+                  )}
+                  {req.note && <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', fontStyle: 'italic' }}>"{req.note}"</Typography>}
+                </Box>
+              )}
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-4)' }}>
+                Raised {new Date(req.raised_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
+                {req.resolved_at && ` · Resolved ${new Date(req.resolved_at).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}`}
+              </Typography>
+            </Box>
+          );
+        })}
       </Box>
     </Box>
   );
@@ -790,6 +849,8 @@ export function OrderDetailModalBody({
           </Box>
         </Box>
       )}
+      {/* §ISS-OD-02: pack decision history — merged from OrderDetailPage */}
+      {order && <PackDecisionHistory lasyncroOrderId={order.id} />}
     </Box>
   );
 }

@@ -59,7 +59,6 @@ const CustomersPage = lazy(() => import('pages/ft1-pages/CustomersPage'));
 // FT2 pages
 const AlertsPage = lazy(() => import('pages/ft2-pages/AlertsPage'));
 const OrdersFT2Page = lazy(() => import('pages/ft2-pages/OrdersFT2Page'));
-const OrderDetailPage = lazy(() => import('pages/ft2-pages/OrderDetailPage'));
 /* const CustomersFT2Page = lazy(() => import('pages/ft2-pages/CustomersFT2Page')); */
 const ProductsFT2Page = lazy(() => import('pages/ft2-pages/ProductsFT2Page'));
 /* const FinancesFT2Page = lazy(() => import('pages/ft2-pages/FinancesFT2Page')); */
@@ -238,7 +237,6 @@ export function LifecycleRouteHost() {
       <Route path="/orders/pool" element={<Navigate to="/orders/flow" replace />} />
       <Route path="/orders/outbound" element={<OrdersOutboundPage />} />
       <Route path="/orders/inbound" element={<OrdersInboundPage />} />
-      <Route path="/orders/:orderId" element={<OrderDetailPage />} />
       <Route path="/orders/*" element={<OrdersFT2Page />} />
 
       {/* PRODUCTS */}

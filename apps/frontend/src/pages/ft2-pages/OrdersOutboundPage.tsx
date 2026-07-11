@@ -176,8 +176,8 @@ export default function OrdersOutboundPage() {
   const ledgerRef = useRef<HTMLDivElement>(null);
   // ISS-05 FIX: replaces 4× navigate('/orders/:id') full-page routes with
   // the standardized EntityDetailModal, matching OrdersFT2Page.tsx exactly
-  // (entity-detail-modal-playbook.md §2). OrderDetailPage.tsx route itself
-  // is untouched — kept per §2.6, just no longer linked to from here.
+  // (entity-detail-modal-playbook.md §2). OrderDetailPage.tsx removed 2026-07-11
+  // (ISS-OD-01) — modal is now the single order detail surface.
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);

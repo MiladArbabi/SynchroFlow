@@ -21,16 +21,14 @@
 // - Opens EntityDetailModal for the clicked order. Replaces the previous
 //   OrderDetailPanel import, which was confirmed dead (its open trigger was
 //   never wired anywhere — setSelectedOrderId was only ever called with
-//   null). OrderDetailPanel.tsx and OrderDetailPage.tsx are now orphaned —
-//   not deleted yet, flagging for a decision rather than removing unasked.
+//   null). OrderDetailPanel.tsx was removed. OrderDetailPage.tsx removed 2026-07-11
+//   (ISS-OD-01) — modal is now primary; PackDecisionHistory merged into modal body.
 // - Modal merges useOrderDecision (constraint + recommended action) and
 //   usePickExceptionsForOrder (NEW — per-exception audit trail, separate
 //   concern from the order-level block, see that hook's file header).
-// - DEFERRED, NOT YET MERGED: useOrderDetail's content (line items, payment,
-//   fulfillment, tracking, timeline, pack decisions) — see
-//   entity-detail-modal-playbook.md §2.5 step 3. Until merged, the modal
-//   title shows a truncated order ID rather than externalOrderId, since
-//   that field isn't fetched at this layer yet.
+// - MERGED (2026-07-11, ISS-OD-02): useOrderDetail content (line items, payment,
+//   fulfillment, tracking, timeline, pack decisions) fully in modal body.
+//   OrderDetailPage.tsx removed — modal is the single order detail surface.
 import { useState, useCallback, ReactNode } from 'react';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
 import { useBulkSetPriority } from '../wms/useOrderPool';

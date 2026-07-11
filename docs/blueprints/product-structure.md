@@ -1,9 +1,9 @@
 # LaSyncro — Product Structure
 >
-> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 (2026-07-08).
-> **Source:** Full-app screen audit (33 screens, 68 logged findings) workshopped against ICP → v1. AUDIT-mode codebase verification (53 issues, ISS-001–053) against live code/DB → v1.1 reconciliation (§10, §11, §8 corrections, §9 additions).
-> **Purpose:** The canonical reference for IA, naming, routing, and the signal system. All refactors converge on this document.
-> **Reading order for new contributors:** §1-9 = target design (v1, screen-audit-derived). §10-11 = ground truth (v1.1, code-verified) — read these BEFORE proposing any change to §4/§5, since several v1 assumptions (e.g. "delete /alerts") were corrected here. Where §1-9 and §10-11 conflict, §10-11 wins until §1-9 is explicitly updated.
+> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 (2026-07-08) + Warehouse context contract v1.2 (2026-07-11).
+> **Source:** Full-app screen audit (33 screens, 68 logged findings) workshopped against ICP → v1. AUDIT-mode codebase verification (53 issues, ISS-001–053) against live code/DB → v1.1 reconciliation (§10, §11, §8 corrections, §9 additions). Multi-warehouse schema and write-path implementation audit → v1.2 warehouse identity, routing, selection, settings, and tier contract.
+> **Purpose:** The canonical reference for IA, naming, routing, warehouse context, and the signal system. All refactors converge on this document.
+> **Reading order for new contributors:** §1–9 defines the target product design. §10–11 records code-verified ground truth and migration constraints. Read §10–11 before proposing changes to §4/§5. Where target and live implementation differ, the live-system sections describe the current constraint while the target sections define the intended destination.
 
 ---
 
@@ -30,8 +30,8 @@
 
 Same skeleton at $100K and $50M — **progressive disclosure, not two products.**
 
-- $100K: owner *is* the operator → Floor reachable from Console, supervisor surfaces quiet.
-- $50M: shifts, multiple supervisors, multiple floors → role-based routing, Problem Center prominent.
+- $100K: owner *is* the operator → Floor reachable from Console, one default warehouse selected automatically, supervisor surfaces quiet.
+- $50M: shifts, multiple supervisors, multiple warehouses and floors → role-based routing, explicit warehouse context, Problem Center prominent.
 
 ---
 
@@ -86,7 +86,7 @@ Signal {
 ◱   Today          /today
 🛍   Orders         /orders            · Queue | Flow | Outbound | detail: /orders/:id
 📦   Inventory      /inventory         · Demand & Reorder | Catalog | Costs
-🏭   Warehouse      /warehouse         · Operations | Floor Plan | Problem Center | Analytics
+🏭   Warehouse      /warehouse         · Warehouse selector → Operations | Floor Plan | Problem Center | Analytics
 ↩    Returns        /returns           · Recovery Queue | Items
 🚚   Suppliers      /suppliers         · Purchase Orders | Suppliers | Sourcing
 $    Finances       /finances          · Margin | Cash Flow
@@ -97,8 +97,16 @@ $    Finances       /finances          · Margin | Cash Flow
 
 ### Routing convention (hard rules)
 
-- Every sub-surface nests under its module: `/warehouse/floor-plan`, `/finances/cashflow`, `/inventory/demand`. **No sub-tab escapes its parent route.**
-- Breadcrumb always shows full path: `Workspace / Warehouse / Floor Plan`.
+- Every sub-surface nests under its module: `/warehouse/:warehouseId/floor-plan`, `/finances/cashflow`, `/inventory/demand`. **No sub-tab escapes its parent route.**
+- `warehouseId` is the stable warehouse UUID. Editable names and compatibility location codes are display values, never route identities.
+- `/warehouse` is the module entry route. It resolves to the user's last valid warehouse selection, then the shop's active default warehouse.
+- If neither selection can be resolved, `/warehouse` renders a clear warehouse-not-configured state. It must not silently select an arbitrary warehouse.
+- Warehouse operational routes use:
+  - `/warehouse/:warehouseId/operations`
+  - `/warehouse/:warehouseId/floor-plan`
+  - `/warehouse/:warehouseId/problem-center`
+  - `/warehouse/:warehouseId/analytics`
+- Breadcrumb always shows the display name while retaining the UUID route: `Workspace / Main warehouse / Floor Plan`.
 - **Tab label = breadcrumb segment = page H1.** One name per surface, everywhere.
 - Module landing tab is always named after its content (e.g. "Queue"), never the module name repeated.
 
@@ -149,10 +157,21 @@ The 15-minute morning ritual. **This page IS the alert inbox.**
 
 ### 🏭 Warehouse `/warehouse`
 
-- **Operations** — active batches, station status. Reads Orders' batch object.
-- **Floor Plan** — Map | Setup | Barcodes (badge semantics unified: badges = open problems, counts live in-page, kills #8, 9).
-- **Problem Center** — supervisor spine view: short pick, damage, wrong item, stow failure, receive rejection. True-zero empty state ("No open exceptions"), not "no match for filters" (#31).
-- **Analytics** — operator performance, stage velocity, stuck-on-floor. n=1-aware empty/small states (#14, 44). One pipeline vocabulary (§7).
+The Warehouse shell always operates within one explicit `warehouse_id` context.
+
+- **Warehouse selector** — displays the editable warehouse `name`, stores the last valid selection, and changes every child tab and query together. UUIDs and root location codes are never shown as the primary label.
+- **Operations** `/warehouse/:warehouseId/operations` — active batches and station status for the selected warehouse. Reads Orders' batch object rather than creating a second batch state.
+- **Floor Plan** `/warehouse/:warehouseId/floor-plan` — Map | Setup | Barcodes for the selected warehouse. Owns physical zones, lanes, shelves, bins, coordinates, location barcodes, and capacity. Badge semantics remain unified: badges represent open problems; counts live in-page.
+- **Problem Center** `/warehouse/:warehouseId/problem-center` — supervisor spine view scoped to the selected warehouse: short pick, damage, wrong item, stow failure, receive rejection. True-zero empty state ("No open exceptions"), not "no match for filters."
+- **Analytics** `/warehouse/:warehouseId/analytics` — operator performance, stage velocity, and stuck-on-floor signals for the selected warehouse. Small-sample states remain n=1-aware and use the canonical pipeline vocabulary (§7).
+- Every request must validate that the warehouse belongs to the authenticated shop. Once warehouse membership is introduced, the same resolution layer must also validate user access.
+- Missing, inactive, or inaccessible warehouse IDs fail explicitly. APIs must not fall back to another warehouse behind the user's request.
+- The active default warehouse is used only when the user enters through `/warehouse` without a valid remembered selection.
+
+Warehouse management and floor topology are separate responsibilities:
+
+- Warehouse identity, name, default status, activation, external-channel mapping, stations, printers, and warehouse-level defaults belong in **Settings › Warehouse**.
+- Physical location hierarchy and floor layout belong in **Warehouse › Floor Plan**.
 
 ### ↩ Returns `/returns`
 
@@ -183,7 +202,17 @@ Remaining: none. All gaps closed 2026-07-11.
 
 ### ⚙ Settings `/settings`
 
-Workspace · Warehouse (locations, stations, label printing) · Data & Sync (channels, credentials) · Notifications (alert rules, push/email, per-role) · Team (seats, roles — moves in from nav).
+Workspace · Warehouse · Data & Sync · Notifications · Team.
+
+**Settings › Warehouse** owns:
+
+- Create and rename warehouses
+- Set the active default warehouse
+- Activate or deactivate warehouses
+- Manage external-channel location mappings
+- Configure warehouse-level stations, printers, labels, and defaults
+
+Renaming a warehouse changes only its user-facing `name`. It never changes `warehouse_id`, `root_location_code`, location codes, or operational references.
 
 ---
 
@@ -314,6 +343,10 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 - ~~`problem_center_tasks` ↔ `alerts` FK hardening (added 2026-07-08, see §10.4)~~ **✅ RESOLVED (2026-07-08) — see §8 item 1.** Was not FK hardening alone: the audit found three separate, live bugs in this seam (wrong ID namespace, a fully alert-blind resolve path, and an unvalidated client-supplied ID), fixed and verified live via curl/psql. One related gap remains open — receive-exception resolution has no dedicated path — tracked as **GitHub #1039**.
 - **Finances product refinement — blocks §8 item 3d and #1040 overlap (added 2026-07-08):** Cash Flow's current content (60-day projection, plan-a-stock-order) was judged during this session as not yet effectively resolving the ICP's core data-fragmentation/Excel-chaos pain. Finances, Cash Flow, and Margin are **frozen** pending a content/product pass — no further routing, nesting, or structural work should land on any of the three until that's decided. This blocks §8 item 3d (the `/cashflow` route nest) indefinitely, and should be resolved before revisiting whether Cash Flow deserves its own module at all vs folding into Finances/Margin.
 - **Warehouse shell architecture — GitHub #1040 (added 2026-07-08, see §8 item 3c, §10.3):** confirms the module-package-consolidation open question above is not hypothetical — Warehouse/WMS concretely lacks the shell-page pattern that Products and Finances already have, discovered while attempting the `/floor-planning` route nest. #1040 scopes the fix (new `WmsFT2Page.tsx` shell, mirroring `ProductsFT2Page.tsx`) but is deferred as its own unit of work.
+- **Warehouse access model:** warehouse identity and route context are locked, but user access is still shop-wide. Define warehouse membership, assignment, and supervisor/operator access before multi-warehouse isolation is considered complete.
+- **External-channel location mapping:** decide whether one warehouse maps to exactly one Shopify location or whether a warehouse may contain multiple external fulfillment locations.
+- **Remembered selection storage:** decide whether the user's last-selected warehouse belongs in server-side user state, local client state, or both. The fallback order is already locked: valid remembered selection → active default → not-configured state.
+- **B2B / wholesale orders:** does Orders need order-type segmentation, or a separate surface?
 
 ---
 
@@ -418,28 +451,65 @@ problem_center_tasks.source_exception_id`), not FK-enforced. A drift
 between the two services' ID assignment would silently orphan or
 mis-clear alerts. Candidate for a follow-up implementation task.
 
+### 10.5 Warehouse identity foundation — implemented 2026-07-11
+
+The backend now has a first-class warehouse identity boundary:
+
+- `warehouses.warehouse_id` is the stable UUID primary key.
+- `warehouses.name` is the editable user-facing label.
+- `root_location_code` bridges the existing root location hierarchy during migration.
+- One active default warehouse is bootstrapped during registration, Shopify installation, and development seeding.
+- `warehouse_locations.warehouse_id` is mandatory.
+- Parent and child locations are constrained to the same shop and warehouse.
+- New child zones inherit `warehouse_id` from their parent.
+- Root-level zone creation temporarily resolves the shop's active default warehouse.
+- Authentication, Shopify-install bootstrap, seed paths, and floor-planning zone creation all write warehouse ownership explicitly.
+- RLS remains shop-scoped. Warehouse-specific user permissions are not yet implemented.
+
+Current compatibility constraints:
+
+- Location codes remain unique across the shop, not only within a warehouse.
+- Most warehouse readers still query by `shop_id + location_code`.
+- The frontend has no warehouse selector or UUID-scoped query keys.
+- Operational entities such as orders, pick batches, receive jobs, stow tasks, printers, and WMS settings are not yet consistently warehouse-scoped.
+- `root_location_code` remains an internal compatibility bridge and must not become the user-facing warehouse identity.
+
+The next contract layer is:
+
+1. List warehouses available to the authenticated shop/user.
+2. Rename a warehouse without changing its UUID or location hierarchy.
+3. Resolve and persist selected warehouse context.
+4. Scope Warehouse routes, API queries, and cache keys by `warehouse_id`.
+
 ---
 
-## 11. Tier Gating Map (added 2026-07-08 — absent from original doc)
+## 11. Tier Gating Map (updated 2026-07-11)
 
-> §4/§5 propose IA changes with zero mention of tier gating, which is a
-> live monetization mechanism in `navBootstrap.ts`. Any module
-> consolidation, rename, or promotion **must preserve or deliberately
-> redesign** this map — it is not cosmetic.
+> IA changes must preserve or deliberately redesign live monetization gates.
+> Warehouse identity and selection are foundational context, while advanced
+> floor design and additional warehouse capacity remain product capabilities.
 
 | Gate | Scope | Tier required |
 |---|---|---|
 | `returns-resolution` (whole nav item) | Returns & Resolution | `core` |
-| `floor-planning` (Warehouse child) | Floor Plan | `scale` |
+| Warehouse list, selection, and rename | Existing warehouses available to the shop | Same tier as Warehouse access |
+| Additional warehouse creation and activation | Multi-warehouse capability | `scale` |
+| `floor-planning` (Warehouse child) | Floor Plan for the selected warehouse | `scale` |
 | `demand` (Inventory child) | Demand & Reorder | `growth` |
 | `finances` (whole nav item) | Finances | `growth` |
 
-Confirmed from `ShopSettingsPage.tsx` / Billing tab: live plan tiers are
-**Growth ($349/mo shown as upgrade target from current plan) and Scale**,
-consistent with `core → growth → scale` ordering above. §5's Data Trust
-spec (Coverage as "onboarding/activation spine") and §4's proposed
-Warehouse consolidation (folding Floor Plan in) should state explicitly
-which tier gates apply post-consolidation — currently unstated.
+Warehouse tier contract:
+
+- Every shop with Warehouse access can view, select, and rename its existing warehouse.
+- Renaming the default warehouse is not an upsell boundary.
+- Creating or activating additional warehouses requires Scale.
+- Floor Plan retains its existing Scale gate.
+- A user with access to only one warehouse does not need a prominent selector; the shell still carries that warehouse's UUID context internally.
+- Once warehouse membership is implemented, selectors and APIs expose only warehouses the authenticated user may access.
+
+Confirmed from `ShopSettingsPage.tsx` / Billing tab: live plan ordering is
+`core → growth → scale`. The Warehouse shell must apply these gates to
+capabilities, not to the existence of stable warehouse identity.
 
 ---
 
