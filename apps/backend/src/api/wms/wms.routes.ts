@@ -51,6 +51,7 @@ import {
   httpPackFreeScan,
   httpBulkGenerateShippingLabels,
 } from './wms.controller.js';
+import { httpGetPackedHandoffQueue } from './wms.handoff.controller.js';
 import {
   httpGetPickAnalytics,
   httpGetLiveCapacity,
@@ -243,6 +244,15 @@ router.post(
   requireTier('core'),
   requireAction('wms:exception:report'),
   httpResolveProblemTask
+);
+
+router.get(
+  '/outbound/handoff-queue',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:read'),
+  httpGetPackedHandoffQueue
 );
 
 router.post(

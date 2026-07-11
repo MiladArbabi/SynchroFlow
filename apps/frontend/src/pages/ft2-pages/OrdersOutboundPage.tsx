@@ -47,8 +47,24 @@ interface CarrierSettingsResponse {
   carriers: unknown[];
 }
 
-// ─── HOOK ─────────────────────────────────────────────
+interface PackedHandoffOrder {
+  lasyncro_order_id: string;
+  external_order_id: string | null;
+  pick_batch_id: string | null;
+  packed_at: string;
+  total_price: string;
+  currency: string;
+  carrier_code: string | null;
+  tracking_number: string | null;
+  latest_status: string | null;
+}
 
+interface PackedHandoffResponse {
+  orders: PackedHandoffOrder[];
+  total: number;
+}
+
+// ─── HOOK ─────────────────────────────────────────────
 type SortField = 'fulfilled_at' | 'order_created_at' | 'total_price' | 'hours_to_fulfil';
 type SortDir   = 'asc' | 'desc';
 type DateRange = 'week' | 'month' | 'all';
@@ -104,6 +120,42 @@ function useCarrierSettings() {
     },
     refetchInterval: 60_000,
     placeholderData: keepPreviousData,
+  });
+}
+
+function usePackedHandoffQueue() {
+  return useQuery<PackedHandoffResponse>({
+    queryKey: ['outbound', 'handoff-queue'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get<PackedHandoffResponse>(
+        '/api/v1/wms/outbound/handoff-queue'
+      );
+      return data;
+    },
+    refetchInterval: 30_000,
+  });
+}
+
+function useConfirmCarrierHandoff() {
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    void,
+    Error,
+    { pickBatchId: string; orderId: string }
+  >({
+    mutationFn: async ({ pickBatchId, orderId }) => {
+      await axiosInstance.post(`/api/v1/wms/batch/${pickBatchId}/ship`, {
+        lasyncro_order_id: orderId,
+        partial_shipment: false,
+      });
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['outbound', 'handoff-queue'] }),
+        queryClient.invalidateQueries({ queryKey: ['orders', 'fulfilled'] }),
+      ]);
+    },
   });
 }
 
@@ -200,7 +252,15 @@ export default function OrdersOutboundPage() {
   const { data, isLoading, isError } = useFulfilledOrders(page, perPage, sortField, sortDir, dateRange);
   const { data: signalData } = useOutboundSignalOrders();
   const { data: carrierSettings } = useCarrierSettings();
+  const {
+    data: handoffData,
+    isLoading: handoffLoading,
+    isError: handoffError,
+  } = usePackedHandoffQueue();
+  const confirmCarrierHandoff = useConfirmCarrierHandoff();
+
   const carriersConfigured = (carrierSettings?.carriers?.length ?? 0) > 0;
+  const packedHandoffOrders = handoffData?.orders ?? [];
 
   const handleConfirmBackfill = () => {
     const orderIds = outboundSignals.missingTracking.map(o => o.lasyncro_order_id);
@@ -333,6 +393,116 @@ export default function OrdersOutboundPage() {
             Export →
           </Box>
         </Box>
+
+        {(handoffLoading || handoffError || packedHandoffOrders.length > 0) && (
+          <Box sx={{
+            mb: 3,
+            bgcolor: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '14px',
+            overflow: 'hidden',
+          }}>
+            <Box sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: 2,
+              px: 2.5,
+              py: 1.75,
+              borderBottom: '1px solid var(--rule)',
+            }}>
+              <Box>
+                <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
+                  Awaiting carrier handoff
+                </Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  {carriersConfigured
+                    ? 'Carrier movement clears this queue automatically. Confirm manually only after physical pickup.'
+                    : 'Confirm only after parcels physically leave the warehouse.'}
+                </Typography>
+              </Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink-4)', flexShrink: 0 }}>
+                {handoffLoading ? 'Loading…' : `${packedHandoffOrders.length} packed`}
+              </Typography>
+            </Box>
+
+            {handoffError && (
+              <Typography sx={{ px: 2.5, py: 1.5, fontSize: 12, color: '#E5484D' }}>
+                Failed to load packed orders.
+              </Typography>
+            )}
+
+            {confirmCarrierHandoff.isError && (
+              <Typography sx={{ px: 2.5, py: 1.5, fontSize: 12, color: '#E5484D', borderTop: '1px solid var(--rule)' }}>
+                Handoff confirmation failed. The order was not marked shipped.
+              </Typography>
+            )}
+
+            {packedHandoffOrders.map(order => {
+              const isConfirming =
+                confirmCarrierHandoff.isPending &&
+                confirmCarrierHandoff.variables?.orderId === order.lasyncro_order_id;
+
+              return (
+                <Box
+                  key={order.lasyncro_order_id}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0,1fr) 150px',
+                    gap: 2,
+                    alignItems: 'center',
+                    px: 2.5,
+                    py: 1.5,
+                    borderTop: '1px solid var(--rule)',
+                  }}
+                >
+                  <Box>
+                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
+                      {order.external_order_id
+                        ? `#${order.external_order_id}`
+                        : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                      Packed {fmtRelative(order.packed_at)}
+                      {order.tracking_number ? ` · ${order.tracking_number}` : ' · tracking pending'}
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    component="button"
+                    type="button"
+                    disabled={!order.pick_batch_id || isConfirming}
+                    onClick={() => {
+                      if (!order.pick_batch_id) return;
+                      confirmCarrierHandoff.mutate({
+                        pickBatchId: order.pick_batch_id,
+                        orderId: order.lasyncro_order_id,
+                      });
+                    }}
+                    sx={{
+                      border: '1px solid var(--accent-border)',
+                      bgcolor: 'transparent',
+                      color: 'var(--accent)',
+                      borderRadius: '6px',
+                      px: 1.5,
+                      py: 0.75,
+                      fontSize: 12,
+                      fontWeight: 500,
+                      cursor: order.pick_batch_id && !isConfirming ? 'pointer' : 'not-allowed',
+                      opacity: order.pick_batch_id && !isConfirming ? 1 : 0.5,
+                    }}
+                  >
+                    {!order.pick_batch_id
+                      ? 'Batch unavailable'
+                      : isConfirming
+                        ? 'Confirming…'
+                        : 'Confirm handoff'}
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
 
         {isError && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1.25, mb: 3, bgcolor: 'rgba(229,72,77,0.07)', border: '1px solid rgba(229,72,77,0.2)', borderRadius: '10px' }}>
