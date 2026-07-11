@@ -549,7 +549,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-211 | W4 | Orders | H1 "Orders" ≠ tab "Overview" ≠ breadcrumb; landing tab named module-adjacent not content ("Queue") |
 | ISS-212 | W4 | Sidenav | Nav "Purchasing" — target name "Suppliers" |
 | ISS-213 | K | Global | Sync trio still live: Live pill + CHANNELS LIVE + Just synced chips — one model, Data Trust owns (§8 item 7) |
-| ISS-214 | W5 | Outbound | Export drawer copy promises PDF; only CSV card offered |
+| ISS-214 | W5 | Outbound | ✅ CLOSED 2026-07-11 — Export guidance now derives from the available report formats; Outbound correctly advertises CSV only. Frontend build and live UI verified. |
 | ISS-215 | R | Outbound | Table pills Needs action/This week/This month/All time — status+range hybrid vs canonical time control; ruling needed |
 | ISS-216 | W4 | Demand | Route /demand escapes /inventory/demand — last known escapee in module |
 | ISS-217 | W1 | Intelligence/Catalog vs Data Quality | Missing-SKU: 26 vs 29; Barcodes page also says 29 — suspect 26 is stale source |

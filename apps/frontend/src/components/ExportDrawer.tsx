@@ -94,6 +94,15 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
 
 export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawerProps) {
   const reports = reportIds ? QUICK_REPORTS.filter(r => reportIds.includes(r.id)) : QUICK_REPORTS;
+
+  // Keep guidance truthful when a module exposes only a subset of report formats.
+  const formats = new Set(reports.map(report => report.format));
+  const guidance = formats.has('csv') && formats.has('pdf')
+    ? 'Choose a report to download. CSV gives raw rows; PDF gives a formatted summary.'
+    : formats.has('pdf')
+      ? 'Choose a formatted PDF summary to download.'
+      : 'Choose a CSV report to download as raw rows.';
+
   return (
     <>
       <Box
@@ -120,7 +129,7 @@ export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawe
         </Box>
         <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mb: 0.5 }}>
-            Choose a report to download. CSV gives raw rows; PDF gives a formatted summary.
+            {guidance}  
           </Typography>
           {reports.map(report => <ExportRow key={report.id} report={report} userTier={userTier} />)}
         </Box>
