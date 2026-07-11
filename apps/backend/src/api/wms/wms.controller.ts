@@ -798,65 +798,53 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           };
         }
 
-        await confirmShipment(trx, {
-          lasyncroOrderId: order.lasyncro_order_id,
-          shopId,
-          partialShipment: false,
-          shippedAt: new Date(),
-        });
+        const packedAt = new Date();
 
-        // Auto-complete batch if all orders are now shipped
-        const unshippedCount = await trx('order_warehouse_status as ows')
+        // The invoice scan closes the physical parcel; carrier handoff ships it later.
+        await trx('order_warehouse_status')
+          .where({ lasyncro_order_id: order.lasyncro_order_id })
+          .update({
+            status: 'packed',
+            packed_at: packedAt,
+            status_updated_at: packedAt,
+            updated_at: packedAt,
+          });
+
+        // Complete the pack batch only after every order has had its invoice scanned.
+        const unpackedCount = await trx('order_warehouse_status as ows')
           .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'ows.lasyncro_order_id')
           .where({ 'pbo.pick_batch_id': batchOrder.pick_batch_id })
-          .whereNotIn('ows.status', ['shipped', 'partially_shipped'])
+          .whereNotIn('ows.status', ['packed', 'shipped', 'partially_shipped'])
           .count<{ count: string }>('ows.lasyncro_order_id as count')
           .first();
 
-        const batchComplete = Number(unshippedCount?.count ?? 0) === 0;
+        const batchComplete = Number(unpackedCount?.count ?? 0) === 0;
 
         if (batchComplete) {
-          const now = new Date();
           await trx('pick_batches')
             .where({ pick_batch_id: batchOrder.pick_batch_id })
-            .update({ status: 'pack_complete', pack_completed_at: now, updated_at: now });
+            .update({
+              status: 'pack_complete',
+              pack_completed_at: packedAt,
+              updated_at: packedAt,
+            });
 
-          const billableOrders = await trx('pick_batch_orders as pbo')
-            .join('order_fulfillment_status as ofs', 'pbo.lasyncro_order_id', 'ofs.lasyncro_order_id')
-            .where({ 'pbo.pick_batch_id': batchOrder.pick_batch_id, 'pbo.shop_id': shopId })
-            .whereNot('ofs.status', 'cancelled')
-            .count<{ count: string }>('pbo.lasyncro_order_id as count')
-            .first();
-
-          const billableCount = parseInt(billableOrders?.count ?? '0', 10);
-
-          if (billableCount > 0) {
-            const updated = await trx('shop_usage_metrics')
-              .where({ shop_id: shopId })
-              .whereNull('period_ends_at')
-              .increment('shipped_orders', billableCount);
-
-            if (updated === 0) {
-              console.warn('[WMS_FREE_SCAN_BATCH_COMPLETE][USAGE] no open billing period', {
-                shopId,
-                batchId: batchOrder.pick_batch_id,
-                billableCount,
-              });
-            }
-          }
-
-          console.info('[WMS_FREE_SCAN_BATCH_AUTOCOMPLETE]', { pick_batch_id: batchOrder.pick_batch_id, shopId });
+          console.info('[WMS_FREE_SCAN_BATCH_PACK_COMPLETE]', {
+            pick_batch_id: batchOrder.pick_batch_id,
+            shopId,
+          });
         }
 
-        console.info('[WMS_FREE_SCAN_SHIPPED]', {
+        console.info('[WMS_FREE_SCAN_PACKED]', {
           lasyncro_order_id: order.lasyncro_order_id,
           pick_batch_id: batchOrder.pick_batch_id,
+          batch_complete: batchComplete,
           shopId,
           userId,
         });
 
         return {
-          type: 'shipped',
+          type: 'packed',
           lasyncro_order_id: order.lasyncro_order_id,
           external_order_id: order.external_order_id,
           pick_batch_id: batchOrder.pick_batch_id,

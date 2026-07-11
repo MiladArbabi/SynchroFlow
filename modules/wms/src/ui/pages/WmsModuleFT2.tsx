@@ -463,7 +463,7 @@ export interface PackFreeScanResult {
 
 export type PackFreeScanApiResponse =
   | PackFreeScanResult
-  | { type: 'shipped'; lasyncro_order_id: string; external_order_id: string; pick_batch_id: string; batch_complete: boolean }
+  | { type: 'packed'; lasyncro_order_id: string; external_order_id: string; pick_batch_id: string; batch_complete: boolean }
   | { type: 'return'; lasyncro_order_id: string; returnJobId: string; status: string; isNew: boolean; claimedByOther: boolean }
   | { error: string; message: string };
 

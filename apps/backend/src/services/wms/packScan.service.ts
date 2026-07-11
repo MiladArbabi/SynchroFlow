@@ -164,18 +164,7 @@ export async function confirmPackScan(
   const orderComplete =
     Number(scannedLineItems?.count ?? 0) >= Number(totalLineItems?.count ?? 0);
 
-  // 10. If order complete → transition order warehouse status → packed
-  if (orderComplete) {
-    await trx('order_warehouse_status')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .update({
-        status: 'packed',
-        packed_at: scannedAt,
-        status_updated_at: scannedAt,
-        updated_at: scannedAt,
-      });
-  }
-
+  // All contents are verified, but the order remains packing until its LSO is scanned.
   console.info('[PACK_SCAN_CONFIRMED]', {
     scan_id: scanId,
     pickBatchId,

@@ -160,8 +160,8 @@ export default function PackSessionPage({
         return;
       }
 
-      if (result.type === 'shipped') {
-        // LSO- mismatch guard — wrong invoice scanned
+      if (result.type === 'packed') {
+        // LSO mismatch guard — only the active order may close this pack session.
         if (result.lasyncro_order_id !== currentResult.lasyncro_order_id) {
           setScanError(`Wrong invoice — this barcode belongs to order ${result.external_order_id}. Scan the correct invoice.`);
           errorTimerRef.current = setTimeout(() => setScanError(null), 3500);
