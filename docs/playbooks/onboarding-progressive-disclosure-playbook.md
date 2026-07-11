@@ -372,5 +372,89 @@ and client-side order search wired into the existing `filteredPool` → `sortedP
 
 ---
 
+---
 *Adjacent docs: `lifecycle_playbook.md` (activation phases), `modules-ux-playbook.md`
 (§15 intent banner pattern), `product-structure.md` (§5 module specs, §7 vocabulary).*
+
+---
+
+## 17. Sourcing Module Spotlights — 2026-07-11
+
+> **Surface:** `/suppliers-portal/sourcing`
+> **Component:** `SpotlightCoachMark` (now in `modules/shared/src/ui/` — portable,
+> no app-layer dependencies)
+> **Hook:** `useSpotlight(key)` in `apps/frontend/src/hooks/useSpotlight.ts`
+> **Wired in:** `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx`
+> **Rendered in:** `PurchasingSourcingView` in `modules/suppliers-portal`
+
+Three spotlights cover the three distinct states a new user encounters on the
+Sourcing surface, in the order they naturally appear. Each fires once, dismisses
+permanently via `user_states`, and never returns.
+
+### Spotlight 1 — `sourcing_never_ordered`
+
+| Field | Value |
+|---|---|
+| Key | `sourcing_never_ordered` |
+| Trigger | `!activeVariantId && neverOrderedCount > 0` |
+| Anchor | Inline, inside the Never Ordered Before section, above the variant rows |
+| Step | 1 of 3 |
+| Title | These products have no supplier yet |
+| Body | Assign a supplier to each one — so when stock runs low, you already know who to order from. |
+| Teaches | The Never Ordered group is an action queue. "Assign a supplier →" is the primary action. |
+
+### Spotlight 2 — `sourcing_alert_triggered`
+
+| Field | Value |
+|---|---|
+| Key | `sourcing_alert_triggered` |
+| Trigger | `activeVariantId && !isLoadingRecs && goodMatches.length > 0` |
+| Anchor | Inline, above the first ranked recommendation row |
+| Step | 2 of 3 |
+| Title | Your best supplier, ranked automatically |
+| Body | Rankings are based on delivery speed, order accuracy, and quality from your real orders. Order now, or add to queue to combine with other products before sending. |
+| Teaches | The ranked list is data-driven. Two paths exist: immediate PO or queue for accumulation. |
+
+### Spotlight 3 — `sourcing_accumulator`
+
+| Field | Value |
+|---|---|
+| Key | `sourcing_accumulator` |
+| Trigger | `reorderRequests.length > 0` |
+| Anchor | Inline, inside the Pending Reorders section, above the supplier rows |
+| Step | 3 of 3 |
+| Title | Building up your order before sending |
+| Body | Products queue here by supplier. Once you've added enough to meet their minimum order, Create PO lights up. You can always send early if you need to. |
+| Teaches | The accumulator is a staging area, not a dead end. MOQ progress is visible. Merchant controls when to convert. |
+
+### Props pattern (for future Sourcing-adjacent spotlights)
+
+Spotlights on module surfaces cannot call `useSpotlight()` directly —
+the hook lives in `apps/frontend/src/` and the module boundary blocks that import.
+Resolution is always at page level:
+
+```typescript
+// SuppliersPortalPage.tsx
+const spotlightNeverOrdered = useSpotlight('sourcing_never_ordered');
+
+// passed into module via sharedProps:
+spotlights: {
+  neverOrdered: { isDismissed: spotlightNeverOrdered.isDismissed, dismiss: spotlightNeverOrdered.dismiss },
+  ...
+}
+```
+
+The module receives spotlight state as plain props and renders
+`<SpotlightCoachMark isDismissed={...} onDismiss={...} />` — purely presentational,
+zero business logic in the module. This is the canonical pattern for all future
+module-level spotlights.
+
+### Moving `SpotlightCoachMark` to shared
+
+`SpotlightCoachMark` was originally app-local
+(`apps/frontend/src/components/SpotlightCoachMark.tsx`). It was moved to
+`modules/shared/src/ui/SpotlightCoachMark.tsx` on 2026-07-11 to make it
+importable from any module. The original file in `apps/frontend/src/components/`
+remains for the Order Flow spotlight — it uses `useAppTheme()` internally
+and has not been migrated. Do not remove it until Order Flow is refactored
+to use the shared version with the controlled `isDismissed` / `onDismiss` props pattern.

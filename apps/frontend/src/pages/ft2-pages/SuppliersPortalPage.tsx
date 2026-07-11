@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Route, Routes, useSearchParams } from 'react-router-dom';
+import { useSpotlight } from '../../hooks/useSpotlight';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { PURCHASING_SUB_TABS } from './purchasingSubTabs';
@@ -33,6 +34,10 @@ export default function SuppliersPortalPage() {
   // §8: lives here so it survives the refetch re-render triggered by convert
   const [lastConvertedPoId, setLastConvertedPoId] = useState<string | null>(null);
 
+  // Sourcing onboarding spotlights — per-user, permanent dismissal via user-state
+  const spotlightNeverOrdered   = useSpotlight('sourcing_never_ordered');
+  const spotlightAlertTriggered = useSpotlight('sourcing_alert_triggered');
+  const spotlightAccumulator    = useSpotlight('sourcing_accumulator');
   // Read demand module handoff params — pre-open PO dialog with variant pre-filled
   const demandAction = searchParams.get('action');
   const demandVariantId = searchParams.get('variantId');
@@ -210,6 +215,11 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onConvertReorderRequests: handleConvertReorderRequests,
     lastConvertedPoId,
     onDismissConvertedPo: () => setLastConvertedPoId(null),
+    spotlights: {
+      neverOrdered:   { isDismissed: spotlightNeverOrdered.isDismissed,   dismiss: spotlightNeverOrdered.dismiss },
+      alertTriggered: { isDismissed: spotlightAlertTriggered.isDismissed, dismiss: spotlightAlertTriggered.dismiss },
+      accumulator:    { isDismissed: spotlightAccumulator.isDismissed,    dismiss: spotlightAccumulator.dismiss },
+    },
     autoOpenCreatePo: demandAction === 'create-po',
     prefilledLineItem: demandAction === 'create-po' && (demandDescription ?? demandSku) ? {
       description: demandDescription ?? demandSku ?? '',

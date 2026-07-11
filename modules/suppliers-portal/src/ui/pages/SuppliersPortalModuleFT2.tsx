@@ -28,8 +28,11 @@ import {
   IconButton,
 } from '@mui/material';
 import { Truck, Star, Clock, ChevronDown, Package, CheckCircle, XCircle, Plus, Trash2 } from 'lucide-react';
-import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
-
+import { 
+  ModuleErrorBoundary, 
+  ModuleLoadingSkeleton, 
+  SpotlightCoachMark
+ } from '@lasyncro/shared/ui';
 /**
  * SUPPLIERS PORTAL MODULE — FT2 SURFACE
  * ---------------------------------------
@@ -66,6 +69,8 @@ export type PurchaseOrder = {
   notes: string | null;
   document_url: string | null;
   created_at: string;
+  // First line item description — shown in collapsed summary row for at-a-glance identification
+  first_line_description: string | null;
 };
 
 export type PoLineItem = {
@@ -173,7 +178,7 @@ export type SupplierAccumulation = {
 export type SuppliersPortalData = {
   purchase_orders: PurchaseOrder[];
   suppliers: Supplier[];
-  never_ordered: { lasyncro_variant_id: string; sku: string | null; title: string; product_id: string | null; product_type: string | null }[];
+  never_ordered: { lasyncro_variant_id: string; sku: string | null; title: string; product_title: string | null; product_id: string | null; product_type: string | null; has_sku: boolean }[];
   never_ordered_count: number;
 } | null;
 
@@ -208,6 +213,12 @@ export type SuppliersPortalPageProps = {
   /** §8: set by page after convert survives refetch re-render — cleared by dismiss */
   lastConvertedPoId?: string | null;
   onDismissConvertedPo?: () => void;
+  /** Sourcing onboarding spotlights — resolved via useSpotlight() at page level */
+  spotlights?: {
+    neverOrdered:   { isDismissed: boolean; dismiss: () => void };
+    alertTriggered: { isDismissed: boolean; dismiss: () => void };
+    accumulator:    { isDismissed: boolean; dismiss: () => void };
+  };
   /** When true, auto-opens the Create PO dialog on mount */
   autoOpenCreatePo?: boolean;
   /** Pre-filled line item from demand module handoff */
@@ -846,11 +857,11 @@ function PoProgressTrack({ status }: { status: PurchaseOrderStatus }) {
               width: 40, height: 40, borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               bgcolor: node.state === 'confirmed'
-                ? theme.palette.success.main
-                : node.state === 'active'
-                  ? 'var(--accent)'
-                  : theme.palette.action.disabledBackground,
-              color: node.state === 'pending' ? theme.palette.text.disabled : '#fff',
+                    ? theme.palette.success.main
+                    : node.state === 'active'
+                      ? 'var(--accent)'
+                      : 'var(--bg-3)',
+                  color: node.state === 'pending' ? 'var(--ink-3)' : '#fff',
               ...(node.state === 'active' && {
                 '@keyframes poNodePulse': {
                   '0%':   { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
@@ -975,16 +986,21 @@ function PoAccordion({
               <Chip label={status.label} size="small" color={status.color} />
             </Box>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Clock size={12} />
-                <Typography variant="caption" color="text.secondary">ETA: {eta}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <Package size={12} />
-                <Typography variant="caption" color="text.secondary">
-                  {po.total_units_ordered} units · {po.line_items_count} lines
-                </Typography>
-              </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Clock size={12} />
+                  <Typography variant="caption" color="text.secondary">ETA: {eta}</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <Package size={12} />
+                  <Typography variant="caption" color="text.secondary">
+                    {po.total_units_ordered} units · {po.line_items_count} lines
+                  </Typography>
+                </Box>
+                {po.first_line_description && (
+                  <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    {po.first_line_description}{Number(po.line_items_count) > 1 ? ` +${Number(po.line_items_count) - 1} more` : ''}
+                  </Typography>
+                )}
             </Box>
           </Box>
         </Box>
@@ -1206,8 +1222,28 @@ function SupplierAccordion({ supplier, onEdit, onDelete }: {
           {supplier.defect_rate !== null && (
             <Typography variant="caption" color="text.secondary">Defect rate: {supplier.defect_rate}%</Typography>
           )}
-          <Typography variant="caption" color="text.secondary">MOQ: {supplier.moq != null ? `${supplier.moq} units` : '—'}</Typography>
-          <Typography variant="caption" color="text.secondary">Lead time: {supplier.lead_time_days != null ? `${supplier.lead_time_days} days` : '—'}</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              MOQ: {supplier.moq != null ? `${supplier.moq} units` : '—'}
+            </Typography>
+            {supplier.moq == null && (
+              <Box component="span" onClick={() => onEdit(supplier)}
+                sx={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                Set minimum order →
+              </Box>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Lead time: {supplier.lead_time_days != null ? `${supplier.lead_time_days} days` : '—'}
+            </Typography>
+            {supplier.lead_time_days == null && (
+              <Box component="span" onClick={() => onEdit(supplier)}
+                sx={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
+                Set delivery time →
+              </Box>
+            )}
+          </Box>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, mt: 1.5 }}>
           <Button size="small" variant="outlined" onClick={() => onEdit(supplier)}>Edit</Button>
@@ -1554,6 +1590,7 @@ function PurchasingSourcingView({
   onConvertReorderRequests,
   lastConvertedPoId,
   onDismissConvertedPo,
+  spotlights,
 }: SuppliersPortalPageProps) {
   const neverOrdered = data?.never_ordered ?? [];
   const neverOrderedCount = data?.never_ordered_count ?? 0;
@@ -1728,6 +1765,20 @@ function PurchasingSourcingView({
             </Box>
           )}
 
+          {/* Spotlight 2 — fires first time recommendations load from an alert */}
+          {activeVariantId && !isLoadingRecs && goodMatches.length > 0 && spotlights && !spotlights.alertTriggered.isDismissed && (
+            <Box sx={{ px: 2.5, pt: 1.5, borderTop: '1px solid var(--rule)' }}>
+              <SpotlightCoachMark
+                title="Your best supplier, ranked automatically"
+                body="Rankings are based on delivery speed, order accuracy, and quality from your real orders. Order now, or add to queue to combine with other products before sending."
+                isDismissed={spotlights.alertTriggered.isDismissed}
+                onDismiss={spotlights.alertTriggered.dismiss}
+                step={2}
+                totalSteps={3}
+              />
+            </Box>
+          )}
+
           {goodMatches.map((rec) => (
             <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
               <Box>
@@ -1790,6 +1841,19 @@ function PurchasingSourcingView({
                   Pending reorders · {reorderRequests.length} supplier{reorderRequests.length > 1 ? 's' : ''}
                 </Typography>
               </Box>
+              {/* Spotlight 3 — fires first time accumulator has items */}
+              {spotlights && !spotlights.accumulator.isDismissed && (
+                <Box sx={{ px: 2.5, pt: 1.5 }}>
+                  <SpotlightCoachMark
+                    title="Building up your order before sending"
+                    body="Products queue here by supplier. Once you've added enough to meet their minimum order, Create PO lights up. You can always send early if you need to."
+                    isDismissed={spotlights.accumulator.isDismissed}
+                    onDismiss={spotlights.accumulator.dismiss}
+                    step={3}
+                    totalSteps={3}
+                  />
+                </Box>
+              )}
               {reorderRequests.map((group) => {
                 const moqPct = group.moq ? Math.min(100, Math.round((group.total_qty / group.moq) * 100)) : null;
                 const converting = convertingSupplierIds.has(group.supplier_id);
@@ -1840,11 +1904,31 @@ function PurchasingSourcingView({
                   Never ordered before · {neverOrderedCount}
                 </Typography>
               </Box>
+              {/* Spotlight 1 — fires on first visit when never-ordered list is non-empty */}
+              {spotlights && !spotlights.neverOrdered.isDismissed && (
+                <Box sx={{ px: 2.5, pt: 1.5 }}>
+                  <SpotlightCoachMark
+                    title="These products have no supplier yet"
+                    body="Assign a supplier to each one — so when stock runs low, you already know who to order from."
+                    isDismissed={spotlights.neverOrdered.isDismissed}
+                    onDismiss={spotlights.neverOrdered.dismiss}
+                    step={1}
+                    totalSteps={3}
+                  />
+                </Box>
+              )}
               {neverOrdered.slice(0, 4).map((v) => (
                 <Box key={v.lasyncro_variant_id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
-                    {v.title} {v.sku ? `(${v.sku})` : ''}
-                  </Typography>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
+                      {v.product_title ?? v.title} {v.sku ? `· ${v.sku}` : ''}
+                    </Typography>
+                    {!v.has_sku && (
+                      <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+                        No SKU — add one in Shopify to enable ordering
+                      </Typography>
+                    )}
+                  </Box>
                   {/* §7.6 ISS-SR-03: wired — opens AssignSupplierDialog */}
                   <Box component="button" onClick={() => handleAssignOpen(v)}
                     sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>

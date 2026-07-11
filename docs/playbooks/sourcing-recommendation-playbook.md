@@ -525,6 +525,95 @@ Do not start step 3 until step 2 endpoints are verified via curl. Do not start s
 
 ---
 
+## 9. Post-Sprint Workshop Findings — 2026-07-11
+
+> **Status:** Gaps identified, ranked, and approved for implementation.
+> **Context:** Full Suppliers Portal module review after completing §7 + §8.
+> **ICP:** SMB commerce, 1–20 operators, own-warehouse fulfillment, high SKU complexity,
+> $100K–$50M revenue, suffering from data fragmentation + daily firefighting.
+
+### 9.1 What Shipped (Loop 2 at ~85%)
+
+The Reorder Loop is now structurally complete end-to-end:
+Stockout alert → Sourcing (ranked supplier) → Preference assignment → MOQ accumulator → Convert → Draft PO → Mark as sent → Receive via WMS → Sellable
+
+Specifically shipped in this sprint:
+- Three-tier supplier preference resolution (§7) — explicit → scorecard → never-ordered
+- MOQ accumulation system (§8) — queue, group by supplier, convert to PO
+- Never-ordered assign flow with scope selector (variant / product / product_type)
+- Preference CRUD endpoints + browse mode on Sourcing default state
+- Ranked recommendations with dual-path CTAs (Create PO / Add to queue)
+- 3 onboarding spotlights with plain-language copy (§17 of onboarding playbook)
+- PO first-line description preview in collapsed accordion rows
+- Supplier MOQ + lead-time inline nudges with deep-link to Edit dialog
+- Never-ordered data quality: `product_title` label, `has_sku` flag + "No SKU" nudge
+- Dark mode fix: PO progress track pending nodes now use `var(--bg-3)` / `var(--ink-3)`
+
+### 9.2 Gaps to Reach 100% (ranked by impact)
+
+#### Gap 1 — Signal → accumulator not wired 🔴
+**What's missing:** `stockout_risk` alert carries `?variantId=X&needed=N` in its deep-link.
+`neededQty` is read from the URL param in `PurchasingSourcingView` but "Add to queue →"
+on recommendation rows doesn't pre-fill with the alert's qty — it defaults to 1.
+The merchant still has to manually type the right quantity.
+
+**Why it matters:** The accumulator was designed to receive real shortfall quantities from
+the demand signal. Without this wiring, the "no Excel step" promise breaks — the merchant
+must cross-reference the alert to know how much to queue.
+
+**Fix:** In `handleAddToQueue`, use `neededQty` (already computed from `?needed=` param)
+as `qty_requested` instead of hardcoding 1. One-line change; already staged in the
+`PurchasingSourcingView` state.
+
+**Approved for implementation: next.**
+
+---
+
+#### Gap 2 — PO send is manual re-entry 🔴
+**What's missing:** "Mark as sent" transitions status to `ordered` but the merchant still
+re-types the PO into an email or WhatsApp message to actually notify the supplier.
+This is the exact Excel-chaos / double-entry problem laSyncro claims to eliminate.
+It sits in the middle of the core loop — every draft PO from the accumulator hits this wall.
+
+**Fix (v1 — highest leverage, smallest scope):**
+A "Send to supplier" action on draft POs that:
+1. Generates a clean, human-readable PO summary (supplier name, line items, quantities,
+   expected delivery date, notes).
+2. Pre-fills a `mailto:` link addressed to `supplier.contact_email` with the PO as the
+   email body — one click opens the merchant's own email client, ready to send.
+3. Transitions status to `ordered` on click (same as "Mark as sent" today).
+
+No backend email infrastructure needed for v1 — `mailto:` is a browser primitive.
+The merchant sends from their own email account, maintaining the supplier relationship.
+A future v2 can add SMTP/SendGrid for in-app sending once the pattern is validated.
+
+**Approved for implementation: after Gap 1.**
+
+---
+
+#### Gap 3 — "Lifetime POs: 0" vs "6 open POs" contradiction 🟡
+**What's missing:** `total_pos` in the suppliers query only counts received/completed POs.
+The "open POs" badge counts active POs. When a supplier has 6 open POs but 0 received,
+the UI shows contradictory data — trust-destroying for a data-integrity product.
+
+**Fix:** Either rename the label to "Completed POs" (accurate to what it counts) or
+change the count to include all non-cancelled POs. Needs a one-line query audit first.
+
+**Approved for implementation: after Gap 2.**
+
+---
+
+### 9.3 Deferred (not this sprint)
+
+- **Spend visibility per supplier** — total spend this quarter per supplier. Requires
+  Finances module integration; that module is frozen pending product content decision.
+- **Supplier portal / confirmation flow** — supplier receives and confirms PO via a link.
+  Depends on Gap 2 (send flow) being live and validated first.
+- **Conditional routing in accumulator** — "use Wool & Co unless MOQ not met, then use
+  Linen House." Requires MOQ system (§8) to be live and stable; deferred per §7.5.
+
+---
+
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
 `onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),
 `product-structure.md` §6 (The Three Must-Have Loops).*

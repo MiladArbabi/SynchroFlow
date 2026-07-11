@@ -162,9 +162,11 @@ The 15-minute morning ritual. **This page IS the alert inbox.**
 
 ### 🚚 Suppliers `/suppliers`
 
-- **Purchase Orders** — open POs, ETAs, receiving status (web inbound visibility — NEW).
-- **Suppliers** — unified scorecard: on-time, fill rate, **return rate, suspect batches** — one card per supplier.
-- **Sourcing** — assign suppliers, ranked options for stockouts. Step 2 of the Reorder Loop.
+- **Purchase Orders** — open POs, ETAs, receiving status (web inbound visibility). First-line item preview in collapsed row for at-a-glance identification. ✅ 2026-07-11
+- **Suppliers** — unified scorecard: on-time, fill rate, **return rate, suspect batches** — one card per supplier. MOQ + lead-time inline nudges deep-link to Edit dialog. ✅ 2026-07-11
+- **Sourcing** — three-tier supplier resolution (explicit preference → PO history scorecard → never-ordered assign flow), MOQ accumulation system, ranked recommendations with "Add to queue" + "Create PO" dual-path, onboarding spotlights. Step 2 of the Reorder Loop. ✅ 2026-07-11
+
+Remaining: PO send flow (Gap 2), signal→accumulator wiring (Gap 1), `total_pos` label fix (Gap 3).
 
 ### $ Finances `/finances`
 
@@ -195,7 +197,16 @@ Requires: spine unification, number reconciliation. *Currently ~80%.*
 
 **Loop 2 — The Reorder Loop** *(weekly · owner · the Excel-killer for high-SKU merchants)*
 `Stockout signal → Demand (recommended qty) → Sourcing (pick supplier) → PO → inbound ETA → received → sellable`
-One guided flow replacing today's four disconnected entry points (#45, 56). *Currently ~50%.*
+One guided flow replacing today's four disconnected entry points (#45, 56). *Currently ~85%.*
+
+Completed 2026-07-11: three-tier supplier preference system (§7), MOQ accumulation system (§8),
+never-ordered assign flow, preference CRUD, ranked recommendations, onboarding spotlights,
+PO first-line preview, supplier MOQ/lead-time nudges, data quality filtering (ISS-SR-07).
+
+Remaining gaps to reach 100%:
+- **Gap 1 (🔴):** Signal→queue not wired — `stockout_risk` alert `needed` qty doesn't auto-fill accumulator. Merchant must visit Sourcing manually.
+- **Gap 2 (🔴):** PO send not wired — "Mark as sent" tracks state but merchant re-types PO into email/WhatsApp to actually send it. The Excel re-entry problem lives here.
+- **Gap 3 (🟡):** "Lifetime POs: 0" while "6 open POs" badge shows — `total_pos` only counts received POs, label is misleading. Data trust issue.
 
 **Loop 3 — The Floor Loop** *(hourly · operator + supervisor)*
 `Task assigned → scan-execute → exception? → Problem Center → supervisor resolves → owner never interrupted`

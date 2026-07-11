@@ -197,6 +197,8 @@ export async function httpGetPurchaseOrders(req: Request, res: Response) {
           's.on_time_rate as supplier_on_time_rate',
           's.fill_rate as supplier_fill_rate',
           's.avg_delivery_days as supplier_avg_delivery_days',
+          // First line item name for PO summary row — avoids expanding to identify PO
+          trx.raw('(SELECT description FROM purchase_order_line_items WHERE po_id = po.id LIMIT 1) as first_line_description'),
           trx.raw('COUNT(li.id) as line_items_count'),
           trx.raw('COALESCE(SUM(li.quantity_ordered), 0) as total_units_ordered'),
           trx.raw('COALESCE(SUM(li.quantity_received), 0) as total_units_received'),

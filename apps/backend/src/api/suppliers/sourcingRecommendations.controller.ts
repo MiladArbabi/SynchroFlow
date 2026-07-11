@@ -189,12 +189,19 @@ export async function httpGetNeverOrderedVariants(req: Request, res: Response) {
             'v.lasyncro_variant_id',
             'v.sku',
             'v.title',
+            'p.title as product_title',
             'p.lasyncro_product_id as product_id',
             'p.product_type'
           );
     });
 
-    return res.json({ count: result.length, variants: result });
+    // ISS-SR-07: annotate has_sku so UI can surface data quality nudge
+    // without hiding sku-less variants (Decision B — merchant must fix in Shopify)
+    const annotated = result.map((v: any) => ({
+      ...v,
+      has_sku: v.sku !== null && v.sku !== '',
+    }));
+    return res.json({ count: annotated.length, variants: annotated });
   } catch (err) {
     console.error('[sourcing] httpGetNeverOrderedVariants failed', err);
     return res.status(500).json({ error: 'Failed to fetch never-ordered variants' });
