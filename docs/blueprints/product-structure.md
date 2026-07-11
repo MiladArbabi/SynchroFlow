@@ -166,7 +166,7 @@ The 15-minute morning ritual. **This page IS the alert inbox.**
 - **Suppliers** — unified scorecard: on-time, fill rate, **return rate, suspect batches** — one card per supplier. MOQ + lead-time inline nudges deep-link to Edit dialog. ✅ 2026-07-11
 - **Sourcing** — three-tier supplier resolution (explicit preference → PO history scorecard → never-ordered assign flow), MOQ accumulation system, ranked recommendations with "Add to queue" + "Create PO" dual-path, onboarding spotlights. Step 2 of the Reorder Loop. ✅ 2026-07-11
 
-Remaining: PO send flow (Gap 2), signal→accumulator wiring (Gap 1), `total_pos` label fix (Gap 3).
+Remaining: PO send flow (Gap 2), `total_pos` label fix (Gap 3). Gap 1 closed 2026-07-11.
 
 ### $ Finances `/finances`
 
@@ -204,7 +204,8 @@ never-ordered assign flow, preference CRUD, ranked recommendations, onboarding s
 PO first-line preview, supplier MOQ/lead-time nudges, data quality filtering (ISS-SR-07).
 
 Remaining gaps to reach 100%:
-- **Gap 1 (🔴):** Signal→queue not wired — `stockout_risk` alert `needed` qty doesn't auto-fill accumulator. Merchant must visit Sourcing manually.
+
+- **Gap 1 (✅ closed 2026-07-11):** Signal→queue wired — `?needed=N` from alert flows into accumulator. "Add to queue →" has loading + success flash states. Scorecard shows only populated fields; "No order history yet" when all null.
 - **Gap 2 (🔴):** PO send not wired — "Mark as sent" tracks state but merchant re-types PO into email/WhatsApp to actually send it. The Excel re-entry problem lives here.
 - **Gap 3 (🟡):** "Lifetime POs: 0" while "6 open POs" badge shows — `total_pos` only counts received POs, label is misleading. Data trust issue.
 

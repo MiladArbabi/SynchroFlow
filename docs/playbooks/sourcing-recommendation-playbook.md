@@ -612,6 +612,15 @@ change the count to include all non-cancelled POs. Needs a one-line query audit 
 - **Conditional routing in accumulator** — "use Wool & Co unless MOQ not met, then use
   Linen House." Requires MOQ system (§8) to be live and stable; deferred per §7.5.
 
+### 9.4 Gap 1 — Closed 2026-07-11
+
+Signal→accumulator wiring confirmed working end-to-end:
+- `?needed=N` URL param read into `neededQty` state in `PurchasingSourcingView`
+- `handleAddToQueue` passes `neededQty` as `qty_requested` — real shortfall qty from alert flows into accumulator
+- "Add to queue →" button: idle → adding (disabled) → "Added ✓" green flash (1.5s) → idle — eliminates ghost clicks
+- Scorecard row: only populated fields rendered inline; "No order history yet" shown when all scorecard fields null
+- Ghost-click root cause: zero visual feedback on async action; fixed with per-supplier `queueButtonState` map
+
 ---
 
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
