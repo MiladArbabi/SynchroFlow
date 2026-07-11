@@ -147,7 +147,7 @@ The 15-minute morning ritual. **This page IS the alert inbox.**
 - **Queue** — SLA breaches + at-risk orders (spine view), Today's pipeline pulse.
 - **Flow** — order pool, batching, fulfillment stages. **Single owner of batch state**; Warehouse Operations reads the same object (kills #3, 5, 6).
 - **Outbound** — shipping health, tracking coverage, carrier setup.
-- **Order detail `/orders/:id`** — *(NEW, required)* timeline from the ledger: placed → picked (by whom) → packed → shipped → tracking → delivered/returned. Answers the #1 firefight: "where is order X."
+- **Order detail** — `EntityDetailModal` on order click. Shows line items, customer, payment summary, pipeline status, timeline, constraints, pick exceptions, pack decisions, shipping address correction. ✅ 2026-07-11
 
 ### 📦 Inventory `/inventory`
 
@@ -320,7 +320,7 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
    implementation — the three sites did
 
 **P1 — must-have loops**
-4. Order detail page.
+4. ~~Order detail page.~~ **✅ CLOSED 2026-07-11 (ISS-OD-01, ISS-OD-02):** Modal is primary order detail surface. `PackDecisionHistory` merged into `OrderDetailModalBody`. `OrderDetailPage.tsx` removed, route deleted.
 5. Reorder Loop wiring (Demand → Sourcing → PO → inbound).
 6. Persona routing + Floor split; Problem Center → Warehouse; Restock disposition in Returns.
 7. Data Trust consolidation (+ audit trail v1: read-only ledger view).
