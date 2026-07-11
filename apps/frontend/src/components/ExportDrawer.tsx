@@ -129,7 +129,7 @@ export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawe
         </Box>
         <Box sx={{ flex: 1, overflowY: 'auto', px: 3, py: 2.5, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mb: 0.5 }}>
-            {guidance}  
+            {guidance}
           </Typography>
           {reports.map(report => <ExportRow key={report.id} report={report} userTier={userTier} />)}
         </Box>
