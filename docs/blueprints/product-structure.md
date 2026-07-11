@@ -601,6 +601,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-263 | W3 | Open POs vs Intelligence | PO lifecycle vocab ×3: Created/On the way/Arrived vs "shipped" vs §7 Received/Stowed/Sellable |
 | ISS-264 | V | Suppliers | Scorecard shows no §5 metrics and no "No order history yet" fallback — verify vs Gap 1 closure before classifying |
 | ISS-265 | W3 | Returns | "Revenue Lost / Margin Lost" headers (Leaked, #42) + Default Title identity rows (ISS-SR-07 parity) |
+| ISS-266 | W5 | Pack Session | ✅ CLOSED 2026-07-11 — Shipping-label generation failures now propagate into a truthful, non-blocking warning instead of reporting successful printing. Verified with no carrier configured: API returned explicit 500, backend logged the failure, and WMS module build passed. |
 
 ### 12.2 Verified working (selected)
 

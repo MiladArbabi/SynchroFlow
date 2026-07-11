@@ -337,12 +337,10 @@ export default function PackSessionPage({
             : <PrinterCheck size={14} color={theme.palette.warning.main} />}
         <Typography variant="caption" fontWeight={500}
           color={printState === 'failed' ? 'warning.dark' : 'success.dark'}>
-          {printState === 'printing' && 'Sending invoice + label to printer…'}
-          {printState === 'printed' && 'Invoice + shipping label sent to printer'}
-          {printState === 'failed' && currentResult.order?.wms_barcode &&
-            `Printer offline — re-queued. Invoice code: ${currentResult.order.wms_barcode}`}
-          {printState === 'failed' && !currentResult.order?.wms_barcode &&
-            'Printer offline — re-queued. You can still proceed.'}
+          {printState === 'printing' && 'Preparing invoice + shipping label…'}
+          {printState === 'printed' && 'Invoice sent to printer · shipping label opened'}
+          {printState === 'failed' &&
+            'Printing incomplete — check the invoice printer and carrier setup. You can still proceed.'}
         </Typography>
       </Box>
 

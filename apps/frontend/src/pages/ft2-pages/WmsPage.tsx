@@ -276,39 +276,26 @@ export default function WmsPage() {
 
   const handlePrintLabel = useCallback(async (orderId: string) => {
     /**
-     * LABEL GENERATION (WM-38)
-     * ------------------------
-     * 1. Call POST /orders/:orderId/generate-label — idempotent,
-     *    returns existing tracking row if label already generated.
-     * 2. If labelUrl returned → open carrier-hosted PDF in new tab.
-     * 3. Fallback: if no carrier configured (500 / no labelUrl) →
-     *    fall back to Shopify packing slip so operator is never blocked.
+     * Generate the carrier label before shipment.
+     * Failure must reject so Pack Session shows a truthful, non-blocking warning.
      */
     try {
       const { data } = await axiosInstance.post(
         `/api/v1/wms/orders/${orderId}/generate-label`,
         {}
       );
-      if (data?.labelUrl) {
-        window.open(data.labelUrl, '_blank', 'noopener,noreferrer');
-        return;
-      }
-    } catch {
-      // No carrier configured or label generation failed — fall through to packing slip
-      console.info('[WMS] Label generation unavailable — falling back to packing slip', { orderId });
-    }
 
-    // Fallback: Shopify packing slip
-    try {
-      const { data } = await axiosInstance.get(`/api/v1/wms/orders/${orderId}/packing-slip`);
-      if (data?.packing_slip_url) {
-        window.open(data.packing_slip_url, '_blank', 'noopener,noreferrer');
+      if (!data?.labelUrl) {
+        throw new Error('Carrier returned no printable shipping-label URL');
       }
-    } catch (err) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status !== 409) {
-        console.error('[WMS] Packing slip fallback failed', { orderId, error: (err as Error)?.message });
-      }
+
+      window.open(data.labelUrl, '_blank', 'noopener,noreferrer');
+    } catch (error) {
+      console.error('[WMS] Shipping label generation failed', {
+        orderId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      throw error;
     }
   }, []);
 
