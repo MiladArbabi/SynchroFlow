@@ -1618,6 +1618,8 @@ function PurchasingSourcingView({
 
   const [assignTarget, setAssignTarget] = useState<AssignSupplierTarget | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  // §8: per-supplier queue button state — 'idle' | 'adding' | 'added'
+  const [queueButtonState, setQueueButtonState] = useState<Record<number, 'idle' | 'adding' | 'added'>>({});
 
   // §7.6: fetch preferences for default/no-variantId state
   useEffect(() => {
@@ -1632,9 +1634,17 @@ function PurchasingSourcingView({
 
   // §8: add variant+supplier to accumulator — uses alert qty when available
   const handleAddToQueue = async (variantId: string, supplierId: number) => {
-    await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: neededQty, source: triggerVariantId ? 'alert' : 'manual' });
-    const updated = await onFetchReorderRequests();
-    setReorderRequests(updated);
+    setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'adding' }));
+    try {
+      await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: neededQty, source: triggerVariantId ? 'alert' : 'manual' });
+      const updated = await onFetchReorderRequests();
+      setReorderRequests(updated);
+      // Flash "Added ✓" for 1.5s so merchant knows the click registered
+      setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'added' }));
+      setTimeout(() => setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'idle' })), 1500);
+    } catch {
+      setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'idle' }));
+    }
   };
 
   // §8: convert all pending for a supplier → draft PO, then clear from accumulator
@@ -1790,15 +1800,37 @@ function PurchasingSourcingView({
                   )}
                 </Box>
                 <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  On-time {rec.on_time_rate ?? '—'}% · Fill {rec.fill_rate ?? '—'}% · Lead {rec.lead_time_days ?? '—'}d
+                  {(() => {
+                    const parts = [
+                      rec.on_time_rate != null && `On-time ${rec.on_time_rate}%`,
+                      rec.fill_rate != null && `Fill ${rec.fill_rate}%`,
+                      rec.lead_time_days != null && `Lead ${rec.lead_time_days}d`,
+                    ].filter(Boolean);
+                    return parts.length > 0 ? parts.join(' · ') : 'No order history yet';
+                  })()}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', gap: 1, flexShrink: 0 }}>
-                {/* §8: queue to accumulator instead of creating PO immediately */}
-                <Box component="button" onClick={() => activeVariantId && void handleAddToQueue(activeVariantId, rec.id)}
-                  sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-                  Add to queue →
-                </Box>
+                {/* §8: queue to accumulator — loading + added flash states prevent ghost clicks */}
+                {(() => {
+                  const btnState = queueButtonState[rec.id] ?? 'idle';
+                  const isAdding = btnState === 'adding';
+                  const isAdded  = btnState === 'added';
+                  return (
+                    <Box component="button"
+                      onClick={() => activeVariantId && btnState === 'idle' && void handleAddToQueue(activeVariantId, rec.id)}
+                      sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500,
+                        color: isAdded ? 'var(--confirm-ink)' : 'var(--accent)',
+                        bgcolor: isAdded ? 'var(--confirm-ghost)' : 'transparent',
+                        border: `0.5px solid ${isAdded ? 'var(--confirm-border)' : 'var(--accent)'}`,
+                        borderRadius: '6px', px: 1.25, py: 0.75,
+                        cursor: btnState === 'idle' ? 'pointer' : 'default',
+                        transition: 'all 0.2s',
+                        '&:hover': { opacity: btnState === 'idle' ? 0.75 : 1 } }}>
+                      {isAdding ? 'Adding…' : isAdded ? 'Added ✓' : 'Add to queue →'}
+                    </Box>
+                  );
+                })()}
                 <Box component="button" onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
                   sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }}>
                   Create PO →
