@@ -811,7 +811,7 @@ function WmsModuleFT2Inner({
             inputRef={packInputRef}
             fullWidth
             variant="standard"
-            placeholder="Scan any LSU- barcode to begin packing"
+            placeholder="Scan an item or invoice barcode to begin packing"
             disabled={packScanLoading}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {

@@ -584,7 +584,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-246 | P1 | Wh Analytics | n=1-aware states inconsistent: dashes beside confident "11.3h avg turnaround" with no small-sample caveat |
 | ISS-247 | W5 | Problem Center | ✅ CLOSED 2026-07-11 — True-zero now renders "No open exceptions"; filter-result copy remains for hidden existing tasks. API, DB, module build, and live UI verified. |
 | ISS-248 | W1 | Problem Center | Type enum (Item Missing + Short Pick coexist) vs §3 spine categories — verify 1:1 mapping to alerts |
-| ISS-249 | W5 | Operations | "Scan any LSU- barcode" — internal jargon + stray hyphen in operator copy |
+| ISS-249 | W5 | Operations | ✅ CLOSED 2026-07-11 — Pack Mode now asks operators to scan an item or invoice barcode instead of exposing the internal LSU prefix. Existing item, shipment, and return routing behavior is unchanged. |
 | ISS-250 | K | Operations | Pack Mode on Console page — Floor split pending (Loop 3), placement logged |
 | ISS-251 | W5 | Wh Analytics | "Add hourly costs in Team" — Team relocated to Settings 2026-07-08; stale pointer |
 | ISS-252 | P1 | Returns | Queue "Ranked oldest-first" — must be consequence-ranked with canonical sentence (§2.4, §5) |
