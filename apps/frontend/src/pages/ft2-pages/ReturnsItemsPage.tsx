@@ -107,7 +107,7 @@ const fmt = (n: number) =>
 
 // ─── LINE ROW (inside modal) ──────────────────────────
 
-function LineDecisionRow({ line }: { line: ReturnDecisionLine }) {
+function LineDecisionRow({ line, isRefunded }: { line: ReturnDecisionLine; isRefunded: boolean }) {
   const theme = useTheme();
   const setDecision = useSetLineDecision();
   const [pendingDecision, setPendingDecision] = useState<OwnerDecision | null>(null);
@@ -117,6 +117,8 @@ function LineDecisionRow({ line }: { line: ReturnDecisionLine }) {
   const conditionCfg = CONDITION_CONFIG[line.item_condition];
   const isDecided = line.owner_decision !== null;
   const decidedCfg = isDecided ? DECISIONS.find(d => d.value === line.owner_decision) : null;
+  // Suppress initiate_refund when job already has a refund execution (ISS-258)
+  const availableDecisions = isRefunded ? DECISIONS.filter(d => d.value !== 'initiate_refund') : DECISIONS;
 
   const handleConfirm = async () => {
     if (!pendingDecision) return;
@@ -189,7 +191,7 @@ function LineDecisionRow({ line }: { line: ReturnDecisionLine }) {
       {!isDecided && (
         <>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-            {DECISIONS.map(d => (
+            {availableDecisions.map(d => (
               <Box
                 key={d.value}
                 onClick={() => setPendingDecision(pendingDecision === d.value ? null : d.value)}
@@ -383,7 +385,7 @@ export default function ReturnsItemsPage() {
         {selectedGroup && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
             {selectedGroup.lines.map(line => (
-              <LineDecisionRow key={line.id} line={line} />
+              <LineDecisionRow key={line.id} line={line} isRefunded={(selectedGroup.total_refund_amount ?? 0) > 0} />
             ))}
           </Box>
         )}
