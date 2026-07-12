@@ -177,6 +177,7 @@ Warehouse management and floor topology are separate responsibilities:
 
 - **Recovery Queue** — spine view: unclaimed refunds, aging return jobs, high-return-rate SKUs. Ranked by consequence (aging expressed AS consequence).
 - **Items** — return jobs → line detail with dispositions: **Restock | Reship | Contact customer | Refund | Write off** (Restock added — closes the "Fix in Returns" promise, #33, 47).
+  Restock is condition-gated: available only when inspected condition permits resale. When gated, renders disabled with inline reason ("Unavailable — item marked damaged at receiving") — never hidden. Gate keys off operator's inspection condition, not customer-reported return reason (ISS-257, resolved 2026-07-12).
 - Supplier return-rate → link to Suppliers, not a duplicate table (#38).
 
 ### 🚚 Suppliers `/suppliers`
@@ -269,6 +270,8 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 **Sidebars:** all named **"X Pulse"** (no "Health") (#49).
 
 **Formats:** one currency system (symbol + locale decimals — no "USD260" vs "$600" vs "0,00" mix, #27); one date format app-wide + ISO only in inputs with a hint (#52); one time-range control: `Today | 7d | 30d | 90d | Custom`, fixed position below H1 (#29, 51).
+
+**Queue segmentation control** (named exception to time-range control, ISS-215 resolved 2026-07-12): operational work-queue surfaces use a separate segmentation pill pattern — first pill is always the action state (e.g. "Needs action"), remaining pills are scope expanders, last pill is "All" (not "All time" — it is a scope, not a range). Rule: time-range control = analytics surfaces (Pulse sidebars, Analytics tabs, Margin); queue segmentation control = operational queues whose rows are actionable work items. Never both on one surface — if a screen needs both, it is two surfaces fused together and must be split.
 
 **Voice registers (three, fixed):**
 
@@ -550,7 +553,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-212 | W4 | Sidenav | Nav "Purchasing" — target name "Suppliers" |
 | ISS-213 | K | Global | Sync trio still live: Live pill + CHANNELS LIVE + Just synced chips — one model, Data Trust owns (§8 item 7) |
 | ISS-214 | W5 | Outbound | ✅ CLOSED 2026-07-11 — Export guidance now derives from the available report formats; Outbound correctly advertises CSV only. Frontend build and live UI verified. |
-| ISS-215 | R | Outbound | Table pills Needs action/This week/This month/All time — status+range hybrid vs canonical time control; ruling needed |
+| ISS-215 | ✅ | Outbound | Queue segmentation control — sanctioned exception to canonical time-range control. Rule documented in §7. (resolved 2026-07-12) |
 | ISS-216 | W4 | Demand | Route /demand escapes /inventory/demand — last known escapee in module |
 | ISS-217 | W1 | Intelligence/Catalog vs Data Quality | Missing-SKU: 26 vs 29; Barcodes page also says 29 — suspect 26 is stale source |
 | ISS-218 | W1 | Intelligence vs Data Quality | Unbinned: "24 SKUs no pick bin" vs "No bin location: 6" — one concept or two, copy must differentiate |
@@ -580,7 +583,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-242 | W4 | Operations | H1 "Warehouse" = module name; tab/breadcrumb say Operations |
 | ISS-243 | W4 | Floor Planning | Three H1s across tabs, two aspirational sentences on populated screens — register is empty-state-only (#15, #50) |
 | ISS-244 | W3 | Wh Analytics | Time control 7d/30d/90d — missing Today/Custom, wrong position; third variant app-wide |
-| ISS-245 | W5 | Wh Analytics | Unregistered "Cast" button in header |
+| ISS-245 | ✅ | Wh Analytics | Cast is a sanctioned feature — floor display token system (shop_display_tokens, /api/v1/wms/analytics/display-tokens). Broadcasts analytics to warehouse screens. No change needed. (resolved 2026-07-12) |
 | ISS-246 | P1 | Wh Analytics | n=1-aware states inconsistent: dashes beside confident "11.3h avg turnaround" with no small-sample caveat |
 | ISS-247 | W5 | Problem Center | ✅ CLOSED 2026-07-11 — True-zero now renders "No open exceptions"; filter-result copy remains for hidden existing tasks. API, DB, module build, and live UI verified. |
 | ISS-248 | W1 | Problem Center | Type enum (Item Missing + Short Pick coexist) vs §3 spine categories — verify 1:1 mapping to alerts |
@@ -592,7 +595,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-254 | W1 | Returns vs Intelligence | Same $2,400 labeled "Revenue refunded" and "lost"(=Leaked) — Refunded−Recovered math contradicts one of them |
 | ISS-255 | W3 | Returns | "Claim →" primary CTA — verb absent from §7 actions and dispositions |
 | ISS-256 | K | Returns | "Scan a return" scan surface on Console decision page — Loop 3 placement, logged |
-| ISS-257 | R | Returns Items | Restock disposition absent from decision card (damaged line) — condition-gated by design, or never shipped? |
+| ISS-257 | ✅ | Returns Items | Restock condition-gated by design — disabled with inline reason when inspected condition blocks resale. Rule in §5. (resolved 2026-07-12) |
 | ISS-258 | W5 | Returns Items | "Initiate refund" offered on already-refunded line — suppress or relabel post-refund |
 | ISS-259 | W4 | Returns Items | H1 "Returned items" ≠ tab "Items" |
 | ISS-260 | K | Returns | Tabs Overview/Items/Supplier Ratings vs target Recovery Queue/Items; Ratings duplicates supplier table (#17, #38) |
@@ -631,10 +634,11 @@ without this will regress.
 
 ### 12.4 Rulings required before implementation
 
-1. ISS-257 — is Restock condition-gated (damaged ≠ restockable) by design? If yes, document
-   the gating rule in §5; if no, ship the disposition.
-2. ISS-215 — is Outbound's status+range hybrid a sanctioned exception to the canonical
-   time-range control?
+1. ISS-257 ✅ RESOLVED 2026-07-12 — Restock is condition-gated by design. Gate renders
+   disabled with inline reason, never hidden. Rule documented in §5 Returns.
+2. ISS-215 ✅ RESOLVED 2026-07-12 — Outbound's pills are a sanctioned queue segmentation
+   control (operational work queue, not analytics time-range). Documented as named exception
+   in §7 Formats.
 
 ### 12.5 Sequencing
 
