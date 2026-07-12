@@ -30,6 +30,7 @@ export type DemandVelocity = {
   lasyncro_variant_id: string;
   title: string | null;
   sku: string | null;
+  product_title: string | null;
   unit_cost: number | null;
   available_quantity: number;
   units_sold_30d: number;
@@ -171,6 +172,7 @@ export async function computeDemandIntelligence(
      */
     const inventoryRows = await trx('inventory_truth as it')
       .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+      .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .where('it.shop_id', shopId)
       .select(
         'it.lasyncro_variant_id',
@@ -178,6 +180,7 @@ export async function computeDemandIntelligence(
         'v.title',
         'v.unit_cost',
         trx.raw('COALESCE(v.sku, NULL) as sku'),
+        'p.title as product_title',
       );
 
     /**
@@ -225,6 +228,7 @@ export async function computeDemandIntelligence(
           lasyncro_variant_id: row.lasyncro_variant_id,
           title: row.title ?? null,
           sku: row.sku ?? null,
+          product_title: row.product_title ?? null,
           unit_cost: row.unit_cost != null ? Number(row.unit_cost) : null,
           available_quantity: availableQty,
           units_sold_30d: units30d,

@@ -22,6 +22,7 @@ export type DemandVelocity = {
   lasyncro_variant_id: string;
   title: string | null;
   sku: string | null;
+  product_title: string | null;
   unit_cost: number | null;
   available_quantity: number;
   units_sold_30d: number;
@@ -175,10 +176,13 @@ function VariantRow({ variant, currency, pal }: {
       {/* Product */}
       <Box>
         <Typography sx={{ fontSize: 13, fontWeight: 500, color: pal.textPrimary, lineHeight: 1.3 }}>
-          {variant.title ?? 'Unknown'}
+          {/* ISS-229: prefer product_title; fall back to title only if meaningfully different */}
+          {variant.product_title ?? variant.title ?? 'Unknown product'}
         </Typography>
         <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
-          {variant.sku ?? '—'}
+          {variant.sku
+            ? variant.sku
+            : <span style={{ color: 'var(--ink-4)' }}>No SKU</span>}
         </Typography>
       </Box>
 
