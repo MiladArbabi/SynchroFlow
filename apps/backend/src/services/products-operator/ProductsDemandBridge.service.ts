@@ -35,6 +35,8 @@ export type ProductsDemandSignals = {
   reorder_now: Array<{
     lasyncro_variant_id: string;
     sku: string | null;
+    title: string | null;
+    product_title: string | null;
     days_of_stock_remaining: number | null;
     estimated_stockout_date: string | null;
     velocity_per_day: number;
@@ -71,6 +73,8 @@ export async function getProductsDemandSignals(
       .map((v: DemandVelocity) => ({
         lasyncro_variant_id: v.lasyncro_variant_id,
         sku: v.sku,
+        title: v.title,
+        product_title: v.product_title,
         days_of_stock_remaining: v.days_of_stock_remaining,
         estimated_stockout_date: v.estimated_stockout_date,
         velocity_per_day: v.velocity_per_day,

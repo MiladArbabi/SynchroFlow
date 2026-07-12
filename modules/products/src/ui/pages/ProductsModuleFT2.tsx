@@ -70,6 +70,8 @@ export interface ProductsModuleFT2DataProps {
       reorder_now: Array<{
         lasyncro_variant_id: string;
         sku: string | null;
+        title: string | null;
+        product_title: string | null;
         days_of_stock_remaining: number | null;
         estimated_stockout_date: string | null;
         velocity_per_day: number;
@@ -500,7 +502,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                     <ActionRow
                       key={v.lasyncro_variant_id}
                       dot="critical"
-                      label={v.sku ?? 'No SKU'}
+                      label={v.product_title ?? v.title ?? v.sku ?? 'Unknown product'}
                       meta={`Stocked out · no inbound PO · ${v.velocity_per_day.toFixed(2)} units/day`}
                       impact={fin ? `${fmt$(fin.margin_lost_per_week)}/wk lost` : undefined}
                       cta="Order"
