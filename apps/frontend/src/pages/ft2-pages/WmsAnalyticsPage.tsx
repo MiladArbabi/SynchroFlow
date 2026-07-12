@@ -479,7 +479,7 @@ function Zone5CostStory({ cost, loading, fmt }: {
         <ZoneCardHeader><SectionLabel>Cost & Throughput</SectionLabel></ZoneCardHeader>
         <Box sx={{ px: 2, py: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.5 }}>
-            Add hourly costs in Team to unlock cost-per-order, cost-per-unit, and exception cost.
+            Add hourly costs in Settings › Team to unlock cost-per-order, cost-per-unit, and exception cost.
           </Typography>
           <CtaButton onClick={() => navigate('/team')}>
             Set hourly costs →
