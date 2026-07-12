@@ -144,14 +144,17 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
           >
             {zone.active ? <EyeOff size={14} /> : <Eye size={14} />}
           </IconButton>
-          <IconButton
-            size="small"
-            title="Delete zone"
-            onClick={() => onDelete?.(zone.location_code)}
-            sx={{ color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }}
-          >
-            <Trash2 size={14} />
-          </IconButton>
+          {/* Root row delete suppressed — lifecycle belongs to Settings › Warehouse (ISS-236) */}
+          {zone.parent_location_code !== null && (
+            <IconButton
+              size="small"
+              title="Delete zone"
+              onClick={() => onDelete?.(zone.location_code)}
+              sx={{ color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }}
+            >
+              <Trash2 size={14} />
+            </IconButton>
+          )}
         </Box>
       </Box>
 

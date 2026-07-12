@@ -618,8 +618,9 @@ export async function httpUpdateZone(req: Request, res: Response) {
 /**
  * DELETE /api/v1/floor-planning/zones/:locationCode
  * --------------------------------------------------
- * Deletes a zone. Children's parent_location_code is SET NULL (FK cascade).
- * Blocked if zone has inventory (on_hand_quantity > 0).
+ * Deletes a zone. Blocked if zone is a warehouse root (parent_location_code IS NULL)
+ * or has inventory. Children deletion is blocked by ON DELETE RESTRICT — parent must be
+ * emptied before removal. Root lifecycle belongs to Settings › Warehouse (ISS-236).
  */
 export async function httpDeleteZone(req: Request, res: Response) {
   const shopId = req.user?.shopId;
@@ -630,7 +631,15 @@ export async function httpDeleteZone(req: Request, res: Response) {
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
+      // Block delete of warehouse root — lifecycle belongs to Settings › Warehouse (ISS-236)
+      const location = await trx('warehouse_locations')
+        .where({ shop_id: shopId, location_code: locationCode })
+        .select('parent_location_code')
+        .first();
+      if (!location) throw new Error('Zone not found');
+      if (location.parent_location_code === null) {
+        throw new Error('Cannot delete the warehouse root. Manage warehouses in Settings › Warehouse.');
+      }
       // Block delete if bin has stock
       const stock = await trx('inventory_truth')
         .where({ shop_id: shopId, location_code: locationCode })
