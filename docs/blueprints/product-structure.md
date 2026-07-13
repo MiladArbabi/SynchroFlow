@@ -539,7 +539,7 @@ capabilities, not to the existence of stable warehouse identity.
 
 | ID | WS | Screen(s) | Finding |
 |---|---|---|---|
-| ISS-201 | W1 | Overview vs Orders | SLA breach count: "8 orders past SLA · $3,800" vs "19 breached"; top 3 rows alone sum $7,758 — scoping difference, pending label reconciliation |
+| ISS-201 | ✅ | Overview vs Orders | Intentional scope difference: Overview signal = is_shipping_sla_breached=true only (alerts.aggregator); Orders Critical = all aging orders past 48h watch floor (OrdersOperatorFacts, cap 20). Different views, not a contradiction. No code change needed (2026-07-13) |
 | ISS-202 | ✅ | Overview vs Orders | "2 decisions pending" (revenue_at_risk alerts) vs "N constrained" (order_constraints) — semantically different layers, not a contradiction. Orders header relabelled to "N orders constrained" (2026-07-13) |
 | ISS-203 | ✅ | Orders | Header "N constrained" vs Critical section "N SLA-breached" — two different operational signals, correctly distinct after ISS-202 label fix (2026-07-13) |
 | ISS-204 | ✅ | Global header | Bell (all active alerts) vs greeting (revenue_at_risk alerts only) — intentional spine views, not a contradiction. Verified live: 4 active alerts, 2 revenue_at_risk (2026-07-13) |
