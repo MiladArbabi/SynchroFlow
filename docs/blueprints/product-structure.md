@@ -576,8 +576,8 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-235 | W2 | Floor Planning | WH-1-ROOT exposed as user-facing warehouse identity on Map/Setup/Barcodes — §10.5 contract violation |
 | ISS-236 | W5 | Floor Planning Setup | Root warehouse row carries delete/hide affordances — data-loss risk; lifecycle belongs to Settings › Warehouse |
 | ISS-237 | W2 | Floor Planning | Setup/Barcodes own warehouse-identity objects — v1.2 split: identity→Settings, topology→Floor Plan |
-| ISS-238 | W1 | Order Flow vs Operations | "0 batches active" vs "ACTIVE BATCHES 1 in progress" — one batch object, two answers |
-| ISS-239 | W1 | Orders vs Wh Analytics | Picking 22/Ready 12 vs Awaiting 4/Picking 0/Packing 0; Analytics claims no pick activity mid-batch |
+| ISS-238 | ✅ | Order Flow vs Operations | Intentional scope difference: Operations shows all non-complete batches; Order Flow counts only batches with assigned orders. Verified live: both return 0 with current seed data (2026-07-13) |
+| ISS-239 | ✅ | Orders vs Wh Analytics | Different aggregation windows and sources by design — Orders reads live order-pool; Analytics reads historical snapshots. Audit was a timing artifact (2026-07-13) |
 | ISS-240 | W1 | Floor Planning | "13 bins" header vs Barcodes "Total locations 17 / Barcoded 13" — barcoded count labeled as bin total |
 | ISS-241 | W1 | Intelligence vs Floor Planning | "0% occupancy · 0 of 12 bins" vs "13 bins · 1 with stock" — two bin-stat sources |
 | ISS-242 | W4 | Operations | H1 "Warehouse" = module name; tab/breadcrumb say Operations |

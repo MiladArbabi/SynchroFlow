@@ -245,8 +245,8 @@ export async function seed(knex: Knex): Promise<void> {
     { location_code: 'C-2',       barcode: 'LOC-C-2',     type: 'bin',       parent_location_code: 'C',          position_x: 2.1,  position_y: 9.0,  width: 1.0,  depth: 0.5,  orientation: 0, rack_levels: 3, zone_type: 'pick' },
     { location_code: 'C-3',       barcode: 'LOC-C-3',     type: 'bin',       parent_location_code: 'C',          position_x: 3.2,  position_y: 9.0,  width: 1.0,  depth: 0.5,  orientation: 0, rack_levels: 3, zone_type: 'pick' },
     { location_code: 'C-4',       barcode: 'LOC-C-4',     type: 'bin',       parent_location_code: 'C',          position_x: 4.3,  position_y: 9.0,  width: 1.0,  depth: 0.5,  orientation: 0, rack_levels: 3, zone_type: 'pick' },
-    // Problem bin — quarantine zone
-    { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM',  type: 'bin',       parent_location_code: 'A',          position_x: 8.0,  position_y: 1.0,  width: 1.0,  depth: 0.5,  orientation: 0, rack_levels: 1, zone_type: 'quarantine' },
+    // Problem bin
+    { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM',  type: 'bin',       parent_location_code: 'A',       position_x: 8.0,  position_y: 1.0,  width: 1.0,  depth: 0.5,  orientation: 0, rack_levels: 1, zone_type: 'problem' },
   ];
 
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shop.id}'`);
@@ -661,7 +661,7 @@ export async function seed(knex: Knex): Promise<void> {
       { location_code: 'C-2',       barcode: 'LOC-C-2',    type: 'bin',       parent_location_code: 'C',           position_x: 2.1, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
       { location_code: 'C-3',       barcode: 'LOC-C-3',    type: 'bin',       parent_location_code: 'C',           position_x: 3.2, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
       { location_code: 'C-4',       barcode: 'LOC-C-4',    type: 'bin',       parent_location_code: 'C',           position_x: 4.3, position_y: 9.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 3, zone_type: 'pick' },
-      { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A',           position_x: 8.0, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 1, zone_type: 'quarantine' },
+      { location_code: 'PROBLEM',   barcode: 'LOC-PROBLEM', type: 'bin',       parent_location_code: 'A',           position_x: 8.0, position_y: 1.0, width: 1.0, depth: 0.5, orientation: 0, rack_levels: 1, zone_type: 'problem' },
     ];
     
     for (const loc of fdLocationRows) {
