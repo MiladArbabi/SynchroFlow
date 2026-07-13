@@ -436,7 +436,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
             {constrained > 0
-              ? `${constrained} need a decision · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
+            ? `${constrained} order${constrained === 1 ? '' : 's'} constrained · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
               // FIX (2026-07-01): previously only checked `constrained`
               // (order_constraints-based count) — completely blind to
               // SLA-breached aging orders, which are a separate signal
