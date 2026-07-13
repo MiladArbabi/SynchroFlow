@@ -3690,6 +3690,68 @@ export const httpBulkGenerateShippingLabels = async (req: Request, res: Response
   const failed = results.length - succeeded;
 
   console.info('[BULK_GENERATE_LABEL_COMPLETE]', { shopId, total: results.length, succeeded, failed });
-
   return res.status(200).json({ results, summary: { total: results.length, succeeded, failed } });
+};
+
+// GET /api/v1/wms/live-activity
+// Derives real-time floor state from existing tables — no new writers.
+// picker_positions: last scan per operator within 4h window.
+// active_batches: pick_batches in picking/packing status + line progress.
+// stow_pressure: pending stow_tasks count anchored to RECEIVE-1.
+// Closes WG-11. See overview-live-map-playbook.md §6.
+export const httpGetLiveActivity = async (req: Request, res: Response): Promise<void> => {
+  const shopId = req.user?.shopId;
+  if (!shopId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+  await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+    const [pickerRows, batchRows, stowRow] = await Promise.all([
+      // Last scan location per operator — within 4-hour recency window only.
+      trx('pick_scan_log as psl')
+        .select('psl.scanned_by as operator_id', 'psl.location_code', 'psl.scanned_at', 'psl.pick_batch_id')
+        .where('psl.shop_id', shopId)
+        .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
+        .whereNotNull('psl.location_code')
+        .orderBy('psl.scanned_by')
+        .orderBy('psl.scanned_at', 'desc')
+        .distinctOn('psl.scanned_by'),
+
+      // Active batches with line-level progress.
+      trx('pick_batches as pb')
+        .select(
+          'pb.pick_batch_id',
+          'pb.status',
+          trx.raw('COALESCE(pb.units_picked, 0) AS picked_lines'),
+          'pb.total_line_items'
+        )
+        .where('pb.shop_id', shopId)
+        .whereIn('pb.status', ['picking', 'packing']),
+
+      // Stow pressure — pending tasks only.
+      trx('stow_tasks')
+        .where('shop_id', shopId)
+        .where('status', 'pending')
+        .count('stow_task_id as pending_count')
+        .first(),
+    ]);
+
+    return res.status(200).json({
+      pickerPositions: pickerRows.map(r => ({
+        operator_id: String(r.operator_id),
+        location_code: r.location_code,
+        last_scan_at: r.scanned_at,
+        batch_id: r.pick_batch_id,
+      })),
+      activeBatches: batchRows.map(r => ({
+        batch_id: r.pick_batch_id,
+        status: r.status,
+        picked_lines: Number(r.picked_lines),
+        total_lines: Number(r.total_line_items),
+      })),
+      stowPressure: {
+        pending_count: Number(stowRow?.pending_count ?? 0),
+        anchor_location: 'RECEIVE-1',
+      },
+    });
+  });
 };

@@ -50,6 +50,7 @@ import {
   httpListPackDecisions,
   httpPackFreeScan,
   httpBulkGenerateShippingLabels,
+  httpGetLiveActivity,
 } from './wms.controller.js';
 import { httpGetPackedHandoffQueue } from './wms.handoff.controller.js';
 import {
@@ -716,6 +717,12 @@ router.delete(
   '/sender-addresses/:id',
   authenticateToken, requireFt2, requireTier('core'), requireAction('wms:batch:release'),
   httpDeleteSenderAddress
+);
+
+router.get(
+  '/live-activity',
+  authenticateToken, requireFt2, requireAction('wms:read'),
+  httpGetLiveActivity
 );
 
 export default router;

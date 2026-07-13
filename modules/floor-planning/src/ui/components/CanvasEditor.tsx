@@ -30,41 +30,39 @@ const CANVAS_W   = 20;
 const CANVAS_H   = 15;
 const RULER_SIZE = 24;
 
-// Zone fills — higher opacity for visual distinction; stroke is the saturated anchor colour.
-// Palette: indigo=pick, amber=pack, emerald=receive, sky=ship, rose=returns, red=quarantine, violet=kitting, slate=storage
-// Zone fills — higher opacity for visual distinction; stroke is the saturated anchor colour.
-// Palette: indigo=pick, amber=pack, emerald=receive, sky=ship, rose=returns, red=quarantine, violet=kitting, slate=storage
-// Frame types (lane/warehouse) use faded gold — visually distinct as territory containers.
+// Setup and Map share the same live semantic tokens; only face opacity differs.
+function zoneRGBA(type: string, alpha: number): string {
+  return `rgba(var(--zone-${type}, 100,116,139),${alpha})`;
+}
+
 const ZONE_COLORS: Record<string, string> = {
-  // Frame types — gold/amber faded, reads as "territory"
-  lane:       'rgba(217,179,83,0.12)',
-  warehouse:  'rgba(217,179,83,0.08)',
-  shelf:      'rgba(217,179,83,0.10)',
-  // Operational zone types
-  pick:       'rgba(99,102,241,0.22)',
-  pack:       'rgba(245,158,11,0.25)',
-  receive:    'rgba(16,185,129,0.22)',
-  ship:       'rgba(14,165,233,0.22)',
-  returns:    'rgba(251,113,133,0.25)',
-  quarantine: 'rgba(239,68,68,0.35)',
-  kitting:    'rgba(139,92,246,0.25)',
-  storage:    'rgba(100,116,139,0.18)',
+  lane:       zoneRGBA('lane', 0.12),
+  warehouse:  zoneRGBA('warehouse', 0.08),
+  shelf:      zoneRGBA('shelf', 0.10),
+  pick:       zoneRGBA('pick', 0.22),
+  pack:       zoneRGBA('pack', 0.25),
+  receive:    zoneRGBA('receive', 0.22),
+  ship:       zoneRGBA('ship', 0.22),
+  returns:    zoneRGBA('returns', 0.25),
+  problem:    zoneRGBA('problem', 0.30),
+  quarantine: zoneRGBA('quarantine', 0.35),
+  kitting:    zoneRGBA('kitting', 0.25),
+  storage:    zoneRGBA('storage', 0.18),
 };
 
 const ZONE_STROKE: Record<string, string> = {
-  // Frame types — muted gold border
-  lane:       'rgba(217,179,83,0.5)',
-  warehouse:  'rgba(217,179,83,0.35)',
-  shelf:      'rgba(217,179,83,0.45)',
-  // Operational zone types
-  pick:       'rgba(99,102,241,0.85)',
-  pack:       'rgba(245,158,11,0.85)',
-  receive:    'rgba(16,185,129,0.85)',
-  ship:       'rgba(14,165,233,0.85)',
-  returns:    'rgba(251,113,133,0.85)',
-  quarantine: 'rgba(239,68,68,1.0)',
-  kitting:    'rgba(139,92,246,0.85)',
-  storage:    'rgba(100,116,139,0.6)',
+  lane:       zoneRGBA('lane', 0.50),
+  warehouse:  zoneRGBA('warehouse', 0.35),
+  shelf:      zoneRGBA('shelf', 0.45),
+  pick:       zoneRGBA('pick', 0.85),
+  pack:       zoneRGBA('pack', 0.85),
+  receive:    zoneRGBA('receive', 0.85),
+  ship:       zoneRGBA('ship', 0.85),
+  returns:    zoneRGBA('returns', 0.85),
+  problem:    zoneRGBA('problem', 1.00),
+  quarantine: zoneRGBA('quarantine', 1.00),
+  kitting:    zoneRGBA('kitting', 0.85),
+  storage:    zoneRGBA('storage', 0.60),
 };
 
 // Palette items — frame zones (lane) have no collision, operational zones (bin) are clamped

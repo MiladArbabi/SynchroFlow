@@ -28,8 +28,9 @@ All routes require `Authorization: Bearer $TOKEN`.
 | Method | Path | Status | Notes |
 |---|---|---|---|
 | GET | `/api/v1/floor-planning/layout` | ✅ Live | Returns `{zones: [], product_barcodes: []}` |
-| GET | `/api/v1/floor-planning/grid` | ✅ Live | Returns `{locations: [17 items]}` |
-| GET | `/api/v1/floor-planning/grid/occupancy` | ✅ Live | Returns `{occupancy: []}` |
+| GET | `/api/v1/floor-planning/grid` | ✅ Live | Returns 23 active locations, including 19 bin locations |
+| GET | `/api/v1/floor-planning/grid/occupancy` | ✅ Live | Returns occupancy grouped by location code; verified with stock in 12 pick bins |
+
 | GET | `/api/v1/floor-planning/bin/:code/stats` | ✅ Live | picks_7d, last_pick_at, reorder_in_days |
 | GET | `/api/v1/floor-planning/bin/:code/log` | ✅ Live | `{location_code, events: []}` |
 | GET | `/api/v1/floor-planning/variant/:id/bins` | ✅ Live | Variant focus bins |
@@ -66,7 +67,7 @@ Phase 1A and Phase 1B establish the warehouse identity boundary.
 | Table | Rows after clean seed | Purpose |
 |---|---:|---|
 | `warehouses` | 1 | Stable warehouse identity, editable name, default status, and legacy root mapping |
-| `warehouse_locations` | 17 | Physical hierarchy beneath the default warehouse root |
+| `warehouse_locations` | 23 | Physical hierarchy, lane frames, pick bins, and operational zones beneath the default warehouse root |
 | `shop_wms_settings` | 1 | Current shop-wide WMS configuration; warehouse scoping pending |
 | `pick_batches` | 0 | Active pick batches; warehouse scoping pending |
 | `pick_batch_orders` | 0 | Orders per batch |
@@ -95,7 +96,7 @@ The generated root code remains an internal compatibility key. Users will manage
 | `apps/frontend/src/pages/wms/useWmsOperators.ts` | Fetches operators — likely broken (404) |
 | `modules/wms/src/ui/pages/WmsModuleFT2.tsx` | Main WMS module — 613 lines |
 | `modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx` | Floor planning module — 1,254 lines |
-| `modules/floor-planning/src/ui/components/IsometricCanvas.tsx` | 3D isometric renderer — 429 lines |
+| `modules/shared/src/ui/IsometricCanvas.tsx` | Shared SVG isometric renderer for Floor Planning Map, Setup 3D, and compact zone embeds |
 | `modules/floor-planning/src/ui/components/CanvasEditor.tsx` | 2D canvas drag-drop editor |
 | `modules/floor-planning/src/ui/components/BinLogDrawer.tsx` | Per-bin activity drawer |
 | `modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx` | Barcode print preview |

@@ -20,7 +20,7 @@
  * Render order: painter's algorithm — sort by (x + y) ascending so
  * back zones render first and front zones paint over them correctly.
  */
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 import type { WarehouseZone } from './IsometricCanvas.types.js';
 
@@ -48,33 +48,32 @@ const LEVEL_H      = ISO_SCALE * 0.6; // screen px per rack level height
 
 // Zone colours — sourced from --zone-* brand tokens (themes/index.tsx) so the
 // canvas, landing page, and OAuth scene stay in lockstep. Alpha math unchanged.
-const ZONE_KEYS = ['lane','shelf','warehouse','storage','pick','pack','receive','ship','returns','kitting','quarantine'] as const;
+const ZONE_KEYS = ['lane','shelf','warehouse','storage','pick','pack','receive','ship','returns','problem','kitting','quarantine'] as const;
 
 const FILL_A: Record<string, number> = {
   warehouse: 0.15, shelf: 0.20, lane: 0.25, storage: 0.30,
   pick: 0.35, receive: 0.35, ship: 0.35, pack: 0.40,
-  returns: 0.40, kitting: 0.40, quarantine: 0.50,
+  returns: 0.40, problem: 0.48, kitting: 0.40, quarantine: 0.50,
 };
 
 const STROKE_A: Record<string, number> = {
   warehouse: 0.4, shelf: 0.5, lane: 0.6, storage: 0.7,
   pick: 0.9, pack: 0.9, receive: 0.9, ship: 0.9,
-  returns: 0.9, kitting: 0.9, quarantine: 1.0,
+  returns: 0.9, problem: 1.0, kitting: 0.9, quarantine: 1.0,
 };
 
-function readZoneRGB(key: string): string {
-  if (typeof window === 'undefined') return '100,116,139';
-  const v = getComputedStyle(document.documentElement)
-    .getPropertyValue(`--zone-${key}`).trim();
-  return v || '100,116,139';
+// Keep zone colours as live CSS references so theme availability and mode changes
+// are reflected without rebuilding module-level constants.
+function zoneRGBVar(key: string): string {
+  return `var(--zone-${key}, 100,116,139)`;
 }
 
 const ZONE_COLORS: Record<string, string> = Object.fromEntries(
-  ZONE_KEYS.map(k => [k, `rgba(${readZoneRGB(k)},${FILL_A[k] ?? 0.30})`])
+  ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${FILL_A[k] ?? 0.30})`])
 );
 
 const ZONE_STROKE: Record<string, string> = Object.fromEntries(
-  ZONE_KEYS.map(k => [k, `rgba(${readZoneRGB(k)},${STROKE_A[k] ?? 0.7})`])
+  ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${STROKE_A[k] ?? 0.7})`])
 );
 
 // ── Isometric projection ──────────────────────────────────────────────────────
@@ -102,16 +101,19 @@ function pts(...coords: { sx: number; sy: number }[]): string {
 }
 
 // ── IsometricBox ──────────────────────────────────────────────────────────────
+type FocusTone = 'empty' | 'risk';
+
 interface BoxProps {
-  wx: number; wy: number;       // world position (metres)
-  ww: number; wd: number;       // world width/depth (metres)
-  wh: number;                   // world height (metres, = rack_levels * LEVEL_HEIGHT)
+  wx: number; wy: number;
+  ww: number; wd: number;
+  wh: number;
   colorKey: string;
   isSelected: boolean;
-  /** Occupancy 0-1 fraction — overrides fill for bin zones when provided */
+  /** Occupancy 0–1 fraction overrides the normal zone fill. */
   occupancyFraction?: number;
+  /** Explicit semantic emphasis used by empty and stock-out overlays. */
+  focusTone?: FocusTone;
   isFrame: boolean;
-  /** Dimmed when a highlight set is active and this zone is not in it */
   isDimmed?: boolean;
   label: string;
   rackLevels: number | null;
@@ -120,29 +122,35 @@ interface BoxProps {
   onClick: () => void;
 }
 
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, label, rackLevels, zoom, onClick, flipped, occupancyFraction }: BoxProps) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }: BoxProps) {
   const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
   const selStroke  = 'var(--accent)';
-  // Occupancy overlay: interpolate from empty (blue) → full (accent red) for bins.
+
+  // Occupancy heatmap: empty grey → low green → medium orange → high red.
   const fillOverride = occupancyFraction != null
-    ? occupancyFraction >= 0.85 ? `rgba(${readZoneRGB('quarantine')},0.75)`
-    : occupancyFraction >= 0.5  ? `rgba(${readZoneRGB('pack')},0.65)`
-    : occupancyFraction > 0     ? `rgba(${readZoneRGB('receive')},0.55)`
+    ? occupancyFraction >= 0.85 ? `rgba(${zoneRGBVar('quarantine')},0.75)`
+    : occupancyFraction >= 0.5  ? `rgba(${zoneRGBVar('pack')},0.65)`
+    : occupancyFraction > 0     ? `rgba(${zoneRGBVar('receive')},0.55)`
     : 'rgba(100,116,139,0.25)'
     : null;
 
-  // Per-level fill: cycle dark→light→default repeating every 3 levels.
-  // Achieved by modulating the alpha of the base rgba color.
-  // Pattern: level 0 (bottom) = 0.85×, level 1 = 0.55×, level 2 = 1.0× (default), repeat.
+  // Focus overlays use explicit semantics instead of relying only on dimming.
+  const focusFill = focusTone === 'risk'
+    ? `rgba(${zoneRGBVar('quarantine')},0.72)`
+    : focusTone === 'empty'
+      ? 'rgba(100,116,139,0.55)'
+      : null;
+
+  // Apply the active overlay colour to the complete bin.
+  const fill = focusFill ?? fillOverride ?? baseFill;
+
+  // Per-level fill cycles dark → light → default every three levels.
   const LEVEL_ALPHA_FACTORS = [0.85, 0.55, 1.0];
   function levelFill(levelIndex: number): string {
     const factor = LEVEL_ALPHA_FACTORS[levelIndex % 3];
-    return baseFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * factor * 2.5)})`);
+    return fill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * factor * 2.5)})`);
   }
-
-  // Apply occupancy overlay for bins; fall back to zone-type color otherwise.
-  const fill = fillOverride ?? baseFill;
 
   // 8 corners of the box in world space → projected
   // Bottom face corners
@@ -163,7 +171,8 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
   const isFlat = wh < 0.01;
 
   return (
-    <g onClick={onClick} style={{ cursor: 'pointer' }}>
+    /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
+    <g onClick={onClick} style={{ cursor: 'pointer' }} opacity={isDimmed ? 0.25 : 1}>
       {/* Left and right faces are now rendered as per-level slices below.
           Full-height polygons removed to avoid double-painting over level bands. */}
       {/* Top face */}
@@ -172,7 +181,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
         fill={fill}
         stroke={isSelected ? selStroke : stroke}
         strokeWidth={isSelected ? 2 : 1}
-        opacity={isDimmed ? 0.25 : isFlat ? 0.6 : 1}
+        opacity={isFlat ? 0.6 : 1}
       />
       {/* Selection highlight */}
       {isSelected && (
@@ -195,7 +204,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
             textAnchor="middle" dominantBaseline="middle"
             fontSize={fontSize}
             fontFamily="monospace" fontWeight={isSelected ? 700 : 600}
-            fill={isSelected ? 'var(--accent)' : isFrame ? `rgba(${readZoneRGB('lane')},0.9)` : 'var(--ink)'}
+            fill={isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)'}
             style={{ pointerEvents: 'none', userSelect: 'none' }}>
             {label}
           </text>
@@ -235,6 +244,10 @@ export interface IsometricCanvasProps {
   onSelect?: (locationCode: string | null) => void;
   filteredCodes?: Set<string>;
   highlightZoneTypes?: Set<string>;
+  /** Bin location codes to emphasize; an empty array means focus mode has zero matches. */
+  focusedBins?: string[];
+  /** Semantic colour applied to bins contained in focusedBins. */
+  focusTone?: FocusTone;
   occupancy?: Record<string, { on_hand_quantity: number }>;
   showFloor?: boolean;
   showBins?: boolean;
@@ -244,22 +257,36 @@ export interface IsometricCanvasProps {
   initialOffset?: { x: number; y: number };
   /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
   autoFit?: boolean;
-  /** Auto-fit density multiplier. Higher = less internal deadspace. Default preserves existing canvas behavior. */
   fitPadding?: number;
+  /**
+   * Synthetic apron stations — order pool (inbound) and shipped-today (outbound).
+   * Not backed by warehouse_locations. See overview-live-map-playbook.md §5.
+   */
+  stations?: import('./IsometricCanvas.types.js').SyntheticStation[];
+  /**
+   * Live picker activity keyed by location_code.
+   * Renders operator dot markers on active bins.
+   * Populated by useWmsLiveActivity — absent until v2 is wired at page level.
+   */
+  liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
 }
 export function IsometricCanvas({ 
     zones, 
     onSelect, 
     filteredCodes, 
-    highlightZoneTypes, 
-    occupancy, 
+    highlightZoneTypes,
+    focusedBins,
+    focusTone,
+    occupancy,
     showFloor = true, 
     showBins = true, 
     initialZoom = 0.9, 
     initialOffset = { x: 420, y: 120 },
     autoFit = true,
-    fitPadding = 0.85  }: 
-  IsometricCanvasProps) {
+    fitPadding = 0.85,
+    stations,
+    liveActivity,
+  }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
   const [offset, setOffset]     = useState(initialOffset);
@@ -283,8 +310,25 @@ export function IsometricCanvas({
     (isFrame(z) ? showFloor : showBins)
   );
 
+  const worldBounds = useMemo(() => {
+    if (positionedZones.length === 0) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const z of positionedZones) {
+      const wx = parseFloat(String(z.position_x ?? 0));
+      const wy = parseFloat(String(z.position_y ?? 0));
+      const ww = parseFloat(String(z.width ?? 1));
+      const wd = parseFloat(String(z.depth ?? 0.5));
+      if (wx < minX) minX = wx;
+      if (wx + ww > maxX) maxX = wx + ww;
+      if (wy < minY) minY = wy;
+      if (wy + wd > maxY) maxY = wy + wd;
+    }
+    return { minX, maxX, minY, maxY };
+  }, [positionedZones]);
+
   // Signature of what's drawn — refit only when the layout actually changes,
   // never on every render (so manual pan/zoom survives between changes).
+  // World-space bounding box — used to anchor synthetic apron stations.
   const zoneSig = positionedZones
     .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth},${z.rack_levels ?? ''}`)
     .join('|');
@@ -452,27 +496,124 @@ export function IsometricCanvas({
             // Occupancy fraction: bins only. Capacity = rack_levels × 10 units (fallback 10).
             const occ = !isFrame && occupancy ? occupancy[zone.location_code] : undefined;
             const capacity = (zone.rack_levels ?? 1) * 10;
-            const occupancyFraction = occ != null ? Math.min(1, occ.on_hand_quantity / capacity) : undefined;
+            const occupancyFraction = !isFrame && occupancy
+              ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
+              : undefined;
+            const activity = liveActivity?.[zone.location_code];
+            const dotPt = activity?.hasActivePick
+              ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
+              : null;
+
             return (
-              <IsometricBox
-                key={zone.location_code}
-                wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
-                colorKey={colorKey}
-                isSelected={selected === zone.location_code}
-                isDimmed={
-                  highlightZoneTypes != null &&
-                  highlightZoneTypes.size > 0 &&
-                  !isFrame &&
-                  !highlightZoneTypes.has(zone.zone_type ?? '')
-                }
-                isFrame={isFrame}
-                label={zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code}
-                rackLevels={rackLevels}
-                zoom={zoom}
-                flipped={flipped}
-                onClick={() => handleSelect(zone.location_code)}
-                occupancyFraction={occupancyFraction}
-              />
+              <g key={zone.location_code}>
+                <IsometricBox
+                  key={zone.location_code}
+                  wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
+                  colorKey={colorKey}
+                  isSelected={selected === zone.location_code}
+                  isDimmed={
+                    !isFrame && (
+                      (highlightZoneTypes != null &&
+                        highlightZoneTypes.size > 0 &&
+                        !highlightZoneTypes.has(zone.zone_type ?? '')) ||
+                      (focusedBins != null &&
+                        zone.type === 'bin' &&
+                        !focusedBins.includes(zone.location_code))
+                    )
+                  }
+                  focusTone={
+                    !isFrame &&
+                    zone.type === 'bin' &&
+                    focusedBins?.includes(zone.location_code)
+                      ? focusTone
+                      : undefined
+                  }
+                  isFrame={isFrame}
+                  label={zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code}
+                  rackLevels={rackLevels}
+                  zoom={zoom}
+                  flipped={flipped}
+                  onClick={() => handleSelect(zone.location_code)}
+                  occupancyFraction={occupancyFraction}
+                />
+                {/* Picker activity dot — rendered above bin top face when operator is active */}
+                {dotPt && (
+                  <g>
+                    <circle cx={dotPt.sx} cy={dotPt.sy} r={5 * zoom} fill="#4CAF7A" opacity={0.9} />
+                    {(activity?.operatorCount ?? 0) > 1 && (
+                      <text x={dotPt.sx} y={dotPt.sy + 1} textAnchor="middle"
+                        dominantBaseline="middle"
+                        fontSize={Math.round(6 * zoom)} fontWeight="600"
+                        fill="var(--bg)" fontFamily="monospace">
+                        {activity!.operatorCount}
+                      </text>
+                    )}
+                  </g>
+                )}
+              </g>
+            );
+          })}
+
+          {/* ── SYNTHETIC APRON STATIONS ── */}
+          {stations && worldBounds && stations.map(station => {
+            if (station.count === 0) return null;
+            const midY  = (worldBounds.minY + worldBounds.maxY) / 2;
+            // Inbound apron: left of warehouse; outbound: right.
+            const wx = station.side === 'inbound'
+              ? worldBounds.minX - 4.0
+              : worldBounds.maxX + 2.0;
+            const wy = midY - 0.75;
+            const tw = 1.5, td = 0.75, stackH = 0.28, gap = 0.08;
+            const urgentCount  = station.urgentCount ?? 0;
+            const normalCount  = Math.max(0, station.count - urgentCount);
+            const capTokens    = 5;
+            const urgentVisible = Math.min(urgentCount, capTokens);
+            const normalVisible = Math.min(normalCount, Math.max(0, capTokens - urgentVisible));
+            const totalVisible  = urgentVisible + normalVisible;
+
+            const renderToken = (idx: number, isUrgent: boolean) => {
+              const z0   = idx * (stackH + gap);
+              const z1   = z0 + stackH;
+              const fill = isUrgent ? '#E5484D' : 'var(--accent)';
+              const b00  = project(wx,      wy,      z0, zoom, flipped);
+              const b10  = project(wx + tw, wy,      z0, zoom, flipped);
+              const b11  = project(wx + tw, wy + td, z0, zoom, flipped);
+              const b01  = project(wx,      wy + td, z0, zoom, flipped);
+              const t00  = project(wx,      wy,      z1, zoom, flipped);
+              const t10  = project(wx + tw, wy,      z1, zoom, flipped);
+              const t11  = project(wx + tw, wy + td, z1, zoom, flipped);
+              const t01  = project(wx,      wy + td, z1, zoom, flipped);
+              return (
+                <g key={idx}>
+                  <polygon points={pts(t00, t10, t11, t01)} fill={fill} fillOpacity={0.75} />
+                  <polygon points={pts(t00, b00, b01, t01)} fill={fill} fillOpacity={0.45} />
+                  <polygon points={pts(t10, b10, b11, t11)} fill={fill} fillOpacity={0.32} />
+                </g>
+              );
+            };
+
+            const topZ      = totalVisible * (stackH + gap) + stackH;
+            const countPt   = project(wx + tw / 2, wy + td / 2, topZ + 0.55, zoom, flipped);
+            const labelPt   = project(wx + tw / 2, wy + td / 2, topZ + 0.18, zoom, flipped);
+            const countColor = urgentCount > 0 ? '#E5484D' : 'var(--accent)';
+
+            return (
+              <g
+                key={station.id}
+                style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
+                onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
+              >
+                {Array.from({ length: urgentVisible  }).map((_, i) => renderToken(i, true))}
+                {Array.from({ length: normalVisible  }).map((_, i) => renderToken(urgentVisible + i, false))}
+                <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
+                  fontSize={Math.round(11 * zoom)} fontWeight="600" fill={countColor} fontFamily="monospace">
+                  {station.count}
+                </text>
+                <text x={labelPt.sx} y={labelPt.sy} textAnchor="middle"
+                  fontSize={Math.round(8 * zoom)} fontWeight="400" fill="var(--ink-3)" fontFamily="monospace">
+                  {station.label}
+                </text>
+              </g>
             );
           })}
         </g>
@@ -514,7 +655,7 @@ export function IsometricCanvas({
         <Typography sx={{ fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }}>FACES</Typography>
         {[{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (
           <Box key={f.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Box sx={{ width: 10, height: 6, bgcolor: `rgba(${readZoneRGB('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 }} />
+            <Box sx={{ width: 10, height: 6, bgcolor: `rgba(${zoneRGBVar('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 }} />
             <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>{f.label} · {f.opacity}</Typography>
           </Box>
         ))}

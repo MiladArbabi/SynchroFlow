@@ -1,7 +1,7 @@
 # WarehouseGrid — Blueprint & Integration Spec
 
-**Last updated: May 2026**
-**Status: Phase 1 complete — Phase 2 complete — Phase 3 interface locked**
+**Last updated: July 13, 2026**  
+**Status: 2D grid and SVG isometric renderers implemented — overlay contract verified**
 
 ---
 
@@ -13,7 +13,7 @@ modules/shared/src/ui/WarehouseGrid/
   WarehouseGrid.types.ts    ← all interfaces, exported from @lasyncro/shared/ui
   BinCell.tsx               ← single bin renderer (4 states + live pulse)
   AisleColumn.tsx           ← vertical aisle grouping
-  PickPathOverlay.tsx        ← SVG polyline with numbered stops (Phase 2 — COMPLETE)
+  PickPathOverlay.tsx       ← SVG polyline with numbered stops (Phase 2 — COMPLETE)
 
 modules/floor-planning/src/ui/components/
   CanvasEditor.tsx          ← 2D SVG floor plan editor (Phase 2 — COMPLETE)
@@ -85,34 +85,30 @@ interface WarehouseLocation {
 modules/floor-planning/src/ui/components/CanvasEditor.tsx
 ```
 
-SVG floor plan editor rendered in the Setup tab. Reads `position_x/y`, `width`, `depth` from `WarehouseZone`.
+SVG floor-plan editor rendered in the Setup tab. It reads `position_x/y`, `width`, `depth`, and `rack_levels` from `WarehouseZone`.
 
 | Feature | Detail |
 |---|---|
 | Scale | 60px per metre |
-| Snap grid | 0.5m |
-| Canvas size | 20m × 15m virtual, pan + zoom |
+| Snap grid | 0.1m, supporting standard 0.5m bin depth |
+| Canvas size | 20m × 15m virtual workspace with pan and zoom |
 | Zoom range | 40%–300% |
-| Drag reposition | writes `position_x/y` via `PATCH /zones/:locationCode` on drag-end |
-| Resize handles | east / south / SE corner handles — writes `width/depth` on resize-end |
-| Collision clamping | bins clamp to nearest non-overlapping edge during drag and resize — multi-pass, ref-based |
-| Frame zones | warehouse/lane/shelf are containers — no collision, resize freely, gold label bar always visible |
-| Click to select | opens `RackInspector` right panel with editable fields |
-| Unpositioned list | palette shows zones with null coordinates — click to place at canvas centre |
-| 2D/3D toggle | stub in toolbar — 3D greyed, activates `renderer='three'` in Phase 3 |
-| Saved X ago | toolbar timestamp — updates after every successful drag-end or resize-end commit |
-| Snap grid | 0.1m — allows fine positioning including 0.5m standard bin depth |
-| Zone colour coding | bins by `zone_type`, frames by `zone.type` (gold for lane/warehouse/shelf) |
-| Zone colour coding | by `zone_type` — 8 colours, all via rgba tokens |
-| Toggle | List/Canvas toggle in Setup tab header |
-| Palette click-to-create | click tile → enter location code → creates zone via POST + places at canvas centre |
-| Pan/Select mode toggle | toolbar — pan pans canvas, select allows marquee (issue #961) |
-| Scroll to pan | vertical scroll pans Y, shift+scroll pans X — zoom is toolbar-only |
-| Zone render order | warehouse back, lanes middle, bins front — SVG painters model |
-| Frame colour | warehouse/lane/shelf render gold — visually distinct from operational zones |
-| Palette simplified | 8 tiles: Aisle (frame) + Pick/Pack/Receive/Ship/Returns/Quarantine/Materials (operational) |
+| Drag reposition | Writes `position_x/y` through `PATCH /zones/:locationCode` on drag-end |
+| Resize handles | East, south, and SE handles write `width/depth` on resize-end |
+| Collision clamping | Bins clamp to the nearest non-overlapping edge during drag and resize |
+| Frame zones | Warehouse, lane, and shelf frames do not participate in bin collision clamping |
+| Selection | Opens the `RackInspector` panel |
+| Unpositioned zones | Zones with null coordinates can be placed from the palette |
+| 2D/3D toggle | Switches between the editable 2D canvas and the live SVG isometric view |
+| Saved state | Toolbar timestamp updates after successful position or dimension writes |
+| Zone colours | Operational bins use shared `--zone-*` tokens; warehouse/lane/shelf frames use gold territory styling |
+| Supported semantic zones | Pick, pack, receive, ship, returns, problem, quarantine, kitting, and storage |
+| Creation palette | Eight creation tiles: Aisle, Pick, Pack, Receive, Ship, Returns, Quarantine, and Materials |
+| Pan/Select modes | Pan moves the canvas; Select supports zone selection and marquee interaction |
+| Scroll behavior | Vertical scroll pans Y; Shift+scroll pans X; zoom remains toolbar-controlled |
+| Render order | Warehouse frames render behind lanes, with operational bins in front |
 
-**Phase 3 note:** `CanvasEditor` is a separate renderer from `WarehouseGrid`. The same `WarehouseLocation` data model feeds both — `position_x/y`, `width`, `depth`, `rack_levels` feed Three.js geometry unchanged.
+`CanvasEditor` and `IsometricCanvas` are separate SVG renderers over the same `WarehouseLocation` geometry. The 2D view owns drag and resize editing; the isometric view provides spatial inspection without geometry editing.
 
 ---
 
@@ -126,14 +122,29 @@ SVG floor plan editor rendered in the Setup tab. Reads `position_x/y`, `width`, 
 
 ---
 
-## Mode Behaviour
+## Renderer and Overlay Behaviour
 
-| mode | Fill logic | Border logic | Use case |
-|---|---|---|---|
-| `map` | green alpha if stock, var(--bg-3) if empty | accent if selected/highlighted | Floor Planning |
-| `heatmap` | 3-band green→amber→red by qty | accent if selected | WMS overview, Demand |
-| `focus` | bright if in focusedBins, dimmed otherwise | accent if focused | Product detail, PO receiving |
-| `pick` | same as map | accent on highlightedBins | WMS batch detail |
+`WarehouseGrid` remains the shared 2D renderer for compact WMS, Demand, product, and receiving contexts. The main Floor Planning Map uses the shared SVG `IsometricCanvas`.
+
+### Shared WarehouseGrid modes
+
+| Mode | Behaviour | Use case |
+|---|---|---|
+| `map` | Standard 2D bin layout | Compact warehouse views |
+| `heatmap` | Quantity-driven bin heatmap | Demand and WMS summaries |
+| `focus` | Emphasizes `focusedBins` and dims other bins | Product and receiving context |
+| `pick` | Shows highlighted bins and ordered pick routes | WMS batch detail |
+
+### Floor Planning IsometricCanvas overlays
+
+| Overlay | Visual contract |
+|---|---|
+| Occupancy | Calculates each bin’s fill from `on_hand_quantity` relative to `rack_levels × 10`; missing occupancy entries are treated as empty. Empty bins are grey, followed by green, orange, and red occupancy bands. |
+| Stock-out risk | Bins with stock between 1 and 3 units are emphasized in red. Every face, label, and stroke belonging to non-matching bins is dimmed as one visual group. |
+| Empty bins | Bins with zero units, including bins absent from the occupancy map, receive an explicit empty-grey emphasis. Stocked bins are dimmed. |
+| No overlay | Displays the physical layout using semantic zone colours without occupancy or focus overrides. |
+
+Only the Occupancy overlay receives occupancy heatmap data. Stock-out and Empty use semantic focus props, while No overlay receives neither.
 
 ---
 
@@ -156,9 +167,6 @@ All require: `authenticateToken` + `requireFt2` + `requireAction('floor-planning
 
 ### Known bug fixed (May 2026)
 `httpGetBinStats` previously ran two sequential transactions — the first was dead code. Now single transaction. The `order_revenue_units` subquery omits `shop_id` filter and relies on RLS `SET LOCAL` tenant isolation.
-
-### Known bug fixed (June 2026) — WMS-FP-01 / WMS-FP-02
-Map header aisle count diverged from Barcodes card ("4 aisles" vs "0/3"). Root cause: header derived aisle via `location_code.split('-')[0]`, which counted the `PROBLEM` quarantine bin (no aisle prefix) as a phantom aisle. Fixed in `FloorPlanningModuleFT2.tsx` to derive aisle from `parent_location_code` of non-quarantine bins, matching the lane-based Barcodes count. Both now report 3 (A,B,C).
 
 ---
 
@@ -199,19 +207,30 @@ onUpdateProductBarcode — PATCH /products/:lasyncroVariantId/barcode
 
 ---
 
-## Dev Seed — Floor Coordinates
+## Development Seed — Layout and Occupancy
 
-All 16 dev warehouse locations have real floor coordinates seeded in `apps/backend/seeds/dev_seed.ts`:
+The development seed creates 23 active floor locations:
 
-- `WH-1-ROOT` — 12m × 10m warehouse envelope
-- Lanes A/B/C — 4.4m × 1m, spaced 3m apart on Y axis
-- Bins — 1.0m × 0.8m, 0.1m gap between bins, 3 rack levels
-- `PROBLEM` bin — quarantine zone at (8, 1)
+- One 12m × 12m warehouse envelope: `WH-1-ROOT`
+- Three lane frames: A, B, and C
+- Twelve pick bins: A-1 through C-4
+- Six operational zones: `PACK-1`, `RECEIVE-1`, `SHIP-1`, `RETURNS-1`, `QUARANTINE-1`, and `KITTING-1`
+- One separate problem zone: `PROBLEM`
 
-Run after `dev:full-reset` if coordinates are missing (issue #960):
+Pick bins are 1m × 0.5m with three rack levels. Operational zones use their own dimensions and semantic `zone_type`. PROBLEM uses `zone_type='problem'`; it is not a quarantine zone.
+
+`seed_overview_products.sql`, executed by the full development seed workflow, inserts deterministic `inventory_truth` rows across A-1 through C-4. The verified fixture contains:
+
+- 14 inventory rows
+- 197 total units
+- Stock in all 12 pick bins
+- Two stock-out-risk bins at 3 units: A-1 and B-1
+- Quantities spanning the green, orange, and red occupancy bands
+
+Verify the seeded layout and occupancy with:
 
 ```zsh
-PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SET app.current_tenant='1'; SELECT location_code, position_x, position_y FROM warehouse_locations ORDER BY location_code;"
+PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\pset pager off" -c "SELECT COUNT(*) AS locations, COUNT(*) FILTER (WHERE type = 'bin') AS bins FROM warehouse_locations WHERE shop_id = 1 AND active = true; SELECT location_code, SUM(on_hand_quantity) AS units FROM inventory_truth WHERE shop_id = 1 GROUP BY location_code ORDER BY location_code;"
 ```
 
 ---
@@ -225,6 +244,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 | Demand `/demand` | `mini` | `heatmap` | `occupancy` |
 | Product Detail | `inline` | `focus` | `focusedBins` (page not built yet) |
 | PO Receiving | `mini` | `focus` | `focusedBins` |
+| Overview `/overview` | `IsometricCanvas` (direct) | `map` + occupancy | `occupancy`, `stations` (aprons), `liveActivity` (picker dots) — scale tier only |
 
 ---
 
@@ -258,6 +278,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - ✅ `useUpdateProductBarcode` — inline barcode edit in Products tab, writes `external_product_identity_map`
 - ✅ `children_count` — live subquery (was hardcoded 0)
 - ✅ Dev seed floor coordinates — all 16 locations positioned
+- ✅ Development seed floor coordinates — all 23 locations positioned
 - [x] Palette click-to-create — click tile, enter code, POST /zones with position, placed immediately on canvas
 - [x] Scroll to pan — removed zoom-on-scroll, native wheel listener pans canvas; shift+scroll pans horizontally
 - [x] Pan/Select mode toggle — toolbar icon buttons, modeRef pattern for stale closure safety
@@ -274,7 +295,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - [ ] Marquee fill invisible — --accent-ghost CSS var undefined, issue #967
 - [ ] Responsive collapsible side panels — issue #962  
 - [ ] Multi-warehouse tab navigation — issue #963
-- [ ] `GET /api/v1/wms/live-activity` — feeds `liveActivity` prop (no writers — issue WG-11)
+- [x] `GET /api/v1/wms/live-activity` — closed WG-11 (July 2026). Endpoint live, `useWmsLiveActivity` hook polling 15s, picker dots on `IsometricCanvas`. See `overview-live-map-playbook.md` §6.
 - [ ] Wire `inline/focus` into Product detail page (page doesn't exist yet)
 - [ ] Surfaced Today panel — left rail live intelligence (GitHub issue #958)
 - [ ] Velocity + Open orders overlays
@@ -286,6 +307,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 - ✅ Resize handles — east/south/SE corner, writes `width/depth` via `onUpdateZone` on drag-end
 - ✅ Unpositioned zone list in palette — click to place at canvas centre
 - ✅ 2D/3D toggle button stub — 3D greyed out, Phase 3 placeholder
+- ✅ Live 2D/3D toggle — switches between editable Canvas and shared SVG isometric inspection
 - ✅ Map tab filter rail — zone type filters (pick/pack/receive/ship/returns/quarantine/kitting/storage)
 - ✅ Map tab — Layers section (Floor & grid / Bins / Tote markers / Pick path stubs)
 - ✅ Map tab — bin panel actions (Print bin label / Replenish / Move stubs)
@@ -304,139 +326,121 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "SE
 
 ---
 
-## Phase 3 Engineer Checklist
+## Isometric 2.5D Renderer
 
-- [ ] Implement `renderers/ThreeRenderer.tsx` — Three.js isometric drop-in
-- [ ] `renderer="three"` prop activates it — no other prop changes needed
-- [ ] `position_x/y`, `width`, `depth` → Three.js XZ plane geometry
-- [ ] `rack_levels` → vertical rack height
-- [ ] `zone_type` → material colour
-- [ ] Add 2D/3D toggle button inside `variant="full"` toolbar
-- [ ] Never couple business logic to renderer — props contract is frozen
+### Status
 
-## Phase 3 — Isometric 2.5D Renderer
+The pure SVG isometric renderer is implemented and verified in:
 
-### Overview
+- Floor Planning → Map
+- Floor Planning → Setup → Canvas → 3D
+- `IsometricZoneView` embeds
 
-Isometric SVG renderer activated by the 2D/3D toolbar toggle in `CanvasEditor`.
-No Three.js — pure SVG isometric projection. Same data, different visual surface.
-Read-only — editing remains in 2D mode only.
-
-### Design Goals
-
-- Show rack_levels as vertical height — operators can see how tall a rack is
-- Colour-coded by zone_type — same ZONE_COLORS palette as 2D
-- Embeddable as standalone `<IsometricZoneView />` in product/order detail pages
-- Onboarding tool — new operators can visualise the warehouse in 3D before their first shift
-
-### Coordinate System
-
-Isometric projection from 3D (x, y, z) to 2D screen (sx, sy):
-```tsx
-sx = (x - y) * cos(30°) * SCALE
-sy = (x + y) * sin(30°) * SCALE - z * SCALE
-```
-Where:
-
-- `x` = position_x (metres, rightward)
-- `y` = position_y (metres, downward in 2D = depth in 3D)
-- `z` = rack height (rack_levels × LEVEL_HEIGHT, default 0.5m per level)
-- `SCALE` = 60px/metre (same as 2D)
-
-### Zone Rendering
-
-Each zone renders as an isometric box with 3 visible faces:
-
-- **Top face** — fill at 100% opacity, zone_type colour
-- **Left face** — fill at 70% opacity (darker)
-- **Right face** — fill at 50% opacity (darkest)
-- **Label** — location_code on top face
-- **Level markers** — L1/L2/L3 on front face at each rack_levels interval
-
-Frame zones (warehouse/lane) render as flat floor tiles (z=0, no height).
-
-### Render Order
-
-Zones sorted by `position_x + position_y` descending — painter's algorithm,
-back zones render first so front zones appear on top correctly.
-
-### Interaction
-
-- Click zone → select → opens RackInspector (read-only, no edit fields)
-- Pan → same offset/zoom system as 2D (mouse drag on canvas)
-- Scroll → pan (same native wheel listener)
-- No drag/resize handles in isometric mode
-- No marquee select in isometric mode
+Editing remains in the 2D Canvas view. The isometric view is the read-only spatial and operational surface.
 
 ### Component Structure
 
-```typescript
-modules/floor-planning/src/ui/components/
-  IsometricCanvas.tsx     — main isometric SVG renderer; also exports IsometricZoneView (embeddable single-zone, no interaction)
+```text
+modules/shared/src/ui/
+  IsometricCanvas.tsx        — shared interactive isometric renderer
+  IsometricCanvas.types.ts   — WarehouseZone contract
 ```
 
-### Props
+`IsometricCanvas.tsx` also exports `IsometricZoneView`, the non-interactive single-zone renderer used by compact embeds.
+
+### Geometry
+
+The renderer projects warehouse coordinates into SVG screen coordinates:
+
+```
+sx = (x - y) * TILE_W / 2
+sy = (x + y) * TILE_H / 2 - z * LEVEL_H
+```
+
+Where:
+
+- `x` and `y` come from `position_x` and `position_y`
+- `width` and `depth` come from `width` and `depth`
+- rack height is `rack_levels × 0.5m`
+- one world metre uses a 60px base scale
+
+Warehouse, lane, and shelf frames render as flat territory surfaces. Bin locations render with height derived from rack levels.
+
+### Rendering
+
+- Operational fills and strokes use shared `--zone-*` theme tokens.
+- Rack levels render as individual side-face bands.
+- Standard and mirrored views reverse painter sorting as required.
+- Auto-fit recalculates when the visible layout changes.
+- Overlay fills apply to the complete bin, including the top and rack-level side faces.
+- Focus dimming applies at the SVG group level so faces, strokes, and labels remain visually consistent.
+
+### Props Contract
 
 ```typescript
 interface IsometricCanvasProps {
   zones: WarehouseZone[];
-  selected?: string | null;
   onSelect?: (locationCode: string | null) => void;
-  offset?: { x: number; y: number };
-  zoom?: number;
+  filteredCodes?: Set<string>;
+  highlightZoneTypes?: Set<string>;
+  focusedBins?: string[];
+  focusTone?: 'empty' | 'risk';
+  occupancy?: Record<string, { on_hand_quantity: number }>;
+  showFloor?: boolean;
+  showBins?: boolean;
+  initialZoom?: number;
+  initialOffset?: { x: number; y: number };
+  autoFit?: boolean;
+  fitPadding?: number;
 }
 
 interface IsometricZoneViewProps {
   zone: WarehouseZone;
-  width?: number;   // container width px, default 200
-  height?: number;  // container height px, default 160
+  width?: number;
+  height?: number;
 }
 ```
 
-### Constants
+### Interaction
 
-```tsx
-LEVEL_HEIGHT = 0.5    // metres per rack level
-ISO_ANGLE    = 30     // degrees
-ISO_SCALE    = 60     // px/metre (same as 2D SCALE)
-```
+- Click selects a location and opens its relevant detail or inspector context.
+- Pan and zoom operate without modifying warehouse geometry.
+- The mirrored-angle control changes projection and painter order.
+- Floor and bin layers can be shown or hidden.
+- Dragging, resizing, and marquee editing remain exclusive to the 2D Canvas view.
 
-### Toolbar Toggle
+### Overlay Integration
 
-The existing 2D/3D stub in `CanvasEditor` toolbar activates `IsometricCanvas`
-in place of the flat SVG canvas. Left palette and right inspector panels remain.
-Inspector fields are read-only in 3D mode (no onUpdateZone calls).
+The Floor Planning Map passes exactly one overlay contract at a time:
 
-### Embeddable Usage (future)
+- Occupancy passes `occupancy`.
+- Stock-out risk passes `focusedBins` with `focusTone='risk'`.
+- Empty bins passes `focusedBins` with `focusTone='empty'`.
+- No overlay passes none of these props.
 
-```tsx
-// Product detail page — show where this product is stocked
-<IsometricZoneView zone={primaryBin} width={240} height={180} />
+Zone filters are supplied through `filteredCodes`. All supported operational types—including problem and quarantine—are enabled by default and can be independently filtered.
 
-// Order detail page — show all line item locations
-{lineItemBins.map(bin => <IsometricZoneView key={bin.location_code} zone={bin} />)}
-```
+### Completed
 
-### Phase 3 — Completed
+- Shared SVG isometric renderer
+- Map integration
+- Setup 2D/3D toggle
+- Standard and mirrored painter ordering
+- Rack-level height and side-face bands
+- Semantic zone colours from shared theme tokens
+- Occupancy heatmap across complete bin geometry
+- Stock-out and empty-bin semantic focus
+- Group-level dimming for complete objects
+- Floor and bin layer controls
+- Auto-fit, pan, zoom, and reset controls
+- IsometricZoneView shared export
 
-- [x] `IsometricCanvas.tsx` — pure SVG isometric renderer, no Three.js
-- [x] 2D/3D toggle wired — swaps SVG canvas for isometric in-place
-- [x] Palette hidden in 3D mode — editing is 2D only
-- [x] Read-only RackInspector in 3D mode — onUpdateZone/onDeleteZone disabled
-- [x] Painter's algorithm sort — back zones render first, correct z-order
-- [x] Level markers on front face — dashed lines at each rack_levels interval
-- [x] Angle presets — standard (↗) and mirrored (↙) toggle
-- [x] `rack_levels` editable in inspector — zone height updates in 3D
-et/angle controls
-- [x] Per-level colour banding — each rack level renders as a distinct shade (dark→light→default cycling every 3 levels) on left and right faces; full-height face polygons replaced by per-level slices
+### Planned Consumers
 
-### Phase 3 — Remaining
-
-- [x] `IsometricZoneView` — embeddable single-zone component, exported from module index
-- [x] Flipped painter sort — sort reverses when flipped=true for correct z-order
-- [ ] Embed in product detail page — show where product is stocked
-- [ ] Embed in order detail page — show line item bin locations
+- Product detail: show the product’s stocked bins
+- Order detail: show line-item pick locations
 
 ### Cross-references
 
-**Cross-references:** OrderPool.md — pick route sort uses position_x/y from warehouse_locations. WMS_process_blueprint.md — pick session consumes spatially-sorted line items.
+- `OrderPool.md` — pick-route ordering uses warehouse coordinates.
+- `WMS_process_blueprint.md` — pick sessions consume spatially ordered line items.

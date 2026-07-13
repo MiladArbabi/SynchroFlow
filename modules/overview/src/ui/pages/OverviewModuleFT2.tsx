@@ -11,7 +11,7 @@
 //        CSS vars for adaptive colors; direct hex only for severity tokens.
 //        Severity palette: #E5484D critical · #D9A23B watch · #4CAF7A on-track.
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrencyCompact, ModuleErrorBoundary } from '@lasyncro/shared/ui';
@@ -85,6 +85,12 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   onRefreshBrief?: () => void;
   onExportBrief?: () => void;
   onResolveAll?: () => void;
+  /**
+   * Rendered in the 75% map slot.
+   * When absent the module falls back to the triage-first layout.
+   * Tier gate and zone guard are resolved by the page layer — module is layout-only.
+   */
+  mapContent?: ReactNode;
 };
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
@@ -293,10 +299,13 @@ function BusinessPulse({
   pulse,
   currency,
   onNavigate,
+  noCard = false,
 }: {
   pulse: OverviewModuleFT2DataProps['pulse'];
   currency: string;
   onNavigate?: (path: string) => void;
+  /** Suppresses outer card Box — for use inside MergedPulseCard. */
+  noCard?: boolean;
 }) {
   if (!pulse) return null;
 
@@ -364,9 +373,12 @@ function BusinessPulse({
 
   const activeStages = pulseStages.filter(s => s.count > 0);
   const stageTotal = activeStages.reduce((s, d) => s + d.count, 0) || 1;
+  const cardSx = noCard
+    ? {}
+    : { flex: '0 0 280px', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', p: '18px 20px' };
 
   return (
-    <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+    <Box sx={cardSx}>
       <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
         Business pulse
       </Typography>
@@ -425,10 +437,113 @@ function BusinessPulse({
   );
 }
 
+// ─── MERGED PULSE CARD ────────────────────────────────────────
+// Right-hand 25% card for the map layout. Combines ranked decisions
+// (top 3, +N more → /order-flow) with the BusinessPulse stats strip.
+// Decisions section self-hides when signals are empty (calm state).
+
+function MergedPulseCard({
+  criticalSignals,
+  watchSignals,
+  pulse,
+  currency,
+  onNavigate,
+  generatedTime,
+  trustWarning,
+  onRefreshBrief,
+}: {
+  criticalSignals: Signal[];
+  watchSignals: Signal[];
+  pulse: OverviewModuleFT2DataProps['pulse'];
+  currency: string;
+  onNavigate?: (path: string) => void;
+  generatedTime: string | null;
+  trustWarning: boolean;
+  onRefreshBrief?: () => void;
+}) {
+  const urgentSignals = [...criticalSignals, ...watchSignals];
+  const visibleSignals = urgentSignals.slice(0, 3);
+  const hiddenCount = Math.max(0, urgentSignals.length - 3);
+
+  return (
+    <Box sx={{ flex: '0 0 280px', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+      {/* ── DECISIONS ── */}
+      {urgentSignals.length > 0 && (
+        <Box sx={{ px: '1.25rem', pt: '1rem', pb: '0.75rem' }}>
+          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '0.625rem' }}>
+            Needs a decision
+          </Typography>
+          {visibleSignals.map(s => (
+            <Box
+              key={s.id}
+              onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
+              sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+            >
+              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
+                  {s.title}
+                </Typography>
+                {s.revenueImpact != null && (
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                    {formatCurrencyCompact(s.revenueImpact, currency)}
+                  </Typography>
+                )}
+              </Box>
+            </Box>
+          ))}
+          {hiddenCount > 0 && (
+            <Box
+              onClick={() => onNavigate?.('/order-flow')}
+              sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+            >
+              +{hiddenCount} more →
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* Divider — only when both sections populated */}
+      {urgentSignals.length > 0 && pulse && (
+        <Box sx={{ height: '0.5px', bgcolor: 'var(--rule)' }} />
+      )}
+
+      {/* ── BUSINESS PULSE (inline, no card wrapper) ── */}
+      {pulse && (
+        <Box sx={{ px: '18px', py: '14px', flex: 1 }}>
+          <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} noCard />
+        </Box>
+      )}
+
+      {/* ── FOOTER ── */}
+      <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {trustWarning && (
+          <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
+            Data may be stale ·
+          </Typography>
+        )}
+        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+          {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
+        </Typography>
+        {onRefreshBrief && (
+          <Box
+            component="button"
+            onClick={onRefreshBrief}
+            sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
+          >
+            <RefreshCw size={11} />
+          </Box>
+        )}
+      </Box>
+    </Box>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 
 function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
-  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief } = props;
+  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief, mapContent } = props;
 
   const isLoading    = morningBrief === undefined;
   const isTrustGated = morningBrief === null;
@@ -437,7 +552,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
   const summaryLine  = morningBrief?.summaryLine ?? null;
   const generatedAt  = morningBrief?.generatedAt ?? null;
   const trustWarning = morningBrief?.trustWarning ?? false;
-  const currency     = props.currency ?? 'GBP';
+  const currency     = props.currency ?? 'USD';
 
   const criticalSignals = signals.filter(s => s.priority <= 2);
   const watchSignals    = signals.filter(s => s.priority === 3 || s.priority === 4);
@@ -519,146 +634,156 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
         )}
       </Box>
 
-      {/* ── BODY: two-column ── */}
+      {/* ── BODY ── */}
       {!isLoading && (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
-          {/* LEFT: Needs a decision */}
-          <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
-            {/* Card header */}
-            <Box sx={{ px: '1.25rem', py: '0.9rem', borderBottom: '1px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-              <Box>
-                <Typography sx={{ fontSize: 14, fontWeight: 700, color: 'var(--ink)', lineHeight: 1 }}>
-                  {isTrustGated ? 'Getting ready' : 'Needs a decision'}
-                </Typography>
-                {!isTrustGated && (
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '3px' }}>
-                    Ranked by commercial consequence
+        mapContent ? (
+          /* MAP LAYOUT — 75% live map + 25% merged pulse card */
+          <Box sx={{ display: 'flex', gap: 2.25, alignItems: 'start' }}>
+            {/* LEFT: live map slot */}
+            <Box sx={{ flex: '1 1 0', minWidth: 0 }}>
+              {mapContent}
+            </Box>
+            {/* RIGHT: merged pulse card (fixed 280px) */}
+            <MergedPulseCard
+              criticalSignals={criticalSignals}
+              watchSignals={watchSignals}
+              pulse={pulse ?? null}
+              currency={currency}
+              onNavigate={onNavigate}
+              generatedTime={generatedTime}
+              trustWarning={trustWarning}
+              onRefreshBrief={onRefreshBrief}
+            />
+          </Box>
+        ) : (
+          /* TRIAGE LAYOUT — fallback for non-scale tier and zero-zone tenants */
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+            {/* LEFT: Needs a decision */}
+            <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+              {/* Card header */}
+              <Box sx={{ px: '1.25rem', py: '0.9rem', borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1 }}>
+                    {isTrustGated ? 'Getting ready' : 'Needs a decision'}
+                  </Typography>
+                  {!isTrustGated && (
+                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '3px' }}>
+                      Ranked by commercial consequence
+                    </Typography>
+                  )}
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                    {generatedTime ? `Updated ${generatedTime}` : 'Updating…'}
+                  </Typography>
+                  {onRefreshBrief && (
+                    <Box
+                      component="button"
+                      onClick={onRefreshBrief}
+                      sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
+                    >
+                      <RefreshCw size={11} />
+                    </Box>
+                  )}
+                </Box>
+              </Box>
+
+              {/* Trust-gated state */}
+              {isTrustGated && (
+                <Box sx={{ px: '1.25rem', py: '2rem', textAlign: 'center' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
+                    Waiting for your first data sync. This usually takes a few minutes.
+                  </Typography>
+                </Box>
+              )}
+
+              {/* No signals */}
+              {!isTrustGated && signals.length === 0 && (
+                <Box sx={{ px: '1.25rem', py: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                    All operations are on track — no decisions required
+                  </Typography>
+                </Box>
+              )}
+
+              {/* CRITICAL group */}
+              {criticalSignals.length > 0 && (
+                <>
+                  <GroupBand sevK="critical" count={criticalSignals.length} />
+                  {visibleCriticalSignals.map(s => (
+                    <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                  ))}
+                  {hiddenCriticalSignals.length > 0 && (
+                    <>
+                      <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
+                        {hiddenCriticalSignals.map(s => (
+                          <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
+                        ))}
+                      </Collapse>
+                      <Box
+                        onClick={() => setCriticalExpanded(v => !v)}
+                        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '0.5px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                      >
+                        <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                          {criticalExpanded ? 'Show less' : `See ${hiddenCriticalSignals.length} more`}
+                        </Typography>
+                        {criticalExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </Box>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* WATCH group */}
+              {watchSignals.length > 0 && (
+                <>
+                  <GroupBand sevK="watch" count={watchSignals.length} />
+                  {visibleWatchSignals.map(s => (
+                    <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                  ))}
+                  {hiddenWatchSignals.length > 0 && (
+                    <>
+                      <Collapse in={watchExpanded} timeout={180} unmountOnExit>
+                        {hiddenWatchSignals.map(s => (
+                          <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
+                        ))}
+                      </Collapse>
+                      <Box
+                        onClick={() => setWatchExpanded(v => !v)}
+                        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '0.5px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
+                      >
+                        <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                          {watchExpanded ? 'Show less' : `See ${hiddenWatchSignals.length} more`}
+                        </Typography>
+                        {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                      </Box>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* EVERYTHING ELSE — on-track signals collapsed */}
+              {onTrackSignals.length > 0 && (
+                <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
+              )}
+
+              {/* Footer */}
+              <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {trustWarning && (
+                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
+                    Data may be stale ·
                   </Typography>
                 )}
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  {generatedTime ? `Updated ${generatedTime}` : 'Updating…'}
+                  {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
                 </Typography>
-                {onRefreshBrief && (
-                  <Box
-                    component="button"
-                    onClick={onRefreshBrief}
-                    sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
-                  >
-                    <RefreshCw size={11} />
-                  </Box>
-                )}
               </Box>
             </Box>
 
-            {/* Trust-gated state */}
-            {isTrustGated && (
-              <Box sx={{ px: '1.25rem', py: '2rem', textAlign: 'center' }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }}>
-                  Waiting for your first data sync. This usually takes a few minutes.
-                </Typography>
-              </Box>
-            )}
-
-            {/* No signals */}
-            {!isTrustGated && signals.length === 0 && (
-              <Box sx={{ px: '1.25rem', py: '1.5rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 }} />
-                <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-                  All operations are on track — no decisions required
-                </Typography>
-              </Box>
-            )}
-
-            {/* CRITICAL group */}
-            {criticalSignals.length > 0 && (
-              <>
-                <GroupBand sevK="critical" count={criticalSignals.length} />
-                {visibleCriticalSignals.map(s => (
-                  <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
-                ))}
-
-                {hiddenCriticalSignals.length > 0 && (
-                  <>
-                    <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
-                      {hiddenCriticalSignals.map(s => (
-                        <TriageRow key={s.id} signal={s} isCritical onNavigate={onNavigate} currency={currency} />
-                      ))}
-                    </Collapse>
-
-                    <Box
-                      onClick={() => setCriticalExpanded(v => !v)}
-                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
-                    >
-                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
-                        {criticalExpanded ? 'Show less' : `See ${hiddenCriticalSignals.length} more`}
-                      </Typography>
-                      {criticalExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </Box>
-                  </>
-                )}
-              </>
-            )}
-
-            {/* WATCH group */}
-            {watchSignals.length > 0 && (
-              <>
-                <GroupBand sevK="watch" count={watchSignals.length} />
-                {visibleWatchSignals.map(s => (
-                  <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
-                ))}
-
-                {hiddenWatchSignals.length > 0 && (
-                  <>
-                    <Collapse in={watchExpanded} timeout={180} unmountOnExit>
-                      {hiddenWatchSignals.map(s => (
-                        <TriageRow key={s.id} signal={s} isCritical={false} onNavigate={onNavigate} currency={currency} />
-                      ))}
-                    </Collapse>
-
-                    <Box
-                      onClick={() => setWatchExpanded(v => !v)}
-                      sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: '1.25rem', py: '10px', borderBottom: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
-                    >
-                      <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
-                        {watchExpanded ? 'Show less' : `See ${hiddenWatchSignals.length} more`}
-                      </Typography>
-                      {watchExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                    </Box>
-                  </>
-                )}
-              </>
-            )}
-
-            {/* EVERYTHING ELSE — on-track signals collapsed */}
-            {onTrackSignals.length > 0 && (
-              <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
-            )}
-
-            {/* Footer */}
-            <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '1px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {trustWarning && (
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
-                  Data may be stale ·
-                </Typography>
-              )}
-              <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
-              </Typography>
-            </Box>
+            {pulse && <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} />}
           </Box>
-
-        {/*
-            RIGHT: BUSINESS PULSE (cross-domain financial outcomes)
-            ------------------------------------------------------
-            Replaces the removed Today's Flow rail (ISSUE-002 / ISSUE-003).
-            Reports business OUTCOMES (revenue today, collected, at-risk,
-            blocked) — NOT order queues, which remain owned by the Orders
-            module. Self-hides when no pulse is provided.
-          */}
-          {pulse && <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} />}
-        </Box>
+        )
       )}
 
       {/* Loading state for body */}

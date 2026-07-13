@@ -640,8 +640,9 @@ function FloorPlanningModuleFT2Inner({
   const [selectedBin, setSelectedBin] = useState<string | undefined>();
   type OverlayId = 'occupancy' | 'stockout' | 'empty' | 'none';
   const [overlay, setOverlay]         = useState<OverlayId>('occupancy');
-  // Filter by zone_type (operational) not location type — matches target design filter rail
-  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'quarantine', 'kitting', 'storage']));
+
+  // Default to every supported operational zone so active locations never disappear silently.
+  const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'problem', 'quarantine', 'kitting', 'storage']));
   const [canvasView, setCanvasView] = useState(activeView === 'canvas');
   // Layer visibility — wired to Layers rail in Map tab.
   const [showFloor, setShowFloor] = useState(true);
@@ -718,7 +719,7 @@ function FloorPlanningModuleFT2Inner({
   };
   
   return (
-    <Box sx={{ p: '32px 40px', minHeight: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'var(--bg)' }}>
+    <Box sx={{ p: '32px 40px', height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'var(--bg)' }}>
 
       {/* Per-tab header — serif pattern matches Overview/Orders modules */}
       {(() => {
@@ -843,6 +844,7 @@ function FloorPlanningModuleFT2Inner({
                     { type: 'receive',    label: 'Receiving'    },
                     { type: 'ship',       label: 'Shipping'     },
                     { type: 'returns',    label: 'Returns'      },
+                    { type: 'problem',    label: 'Problem area' },
                     { type: 'quarantine', label: 'Quarantine'   },
                     { type: 'kitting',    label: 'Kitting'      },
                     { type: 'storage',    label: 'Storage'      },
@@ -945,11 +947,14 @@ function FloorPlanningModuleFT2Inner({
                 </Box>
               </Box>
               {/* MAP TAB — isometric 2.5D view (read-only). 2D editing stays in Setup → Canvas. */}
-              <IsometricCanvas
+               <IsometricCanvas
                 zones={zones}
                 onSelect={(code) => code && handleBinSelect(code)}
                 filteredCodes={new Set(filteredGridLocations.map(l => l.location_code))}
-                occupancy={overlay === 'none' ? undefined : gridOccupancy ?? undefined}
+                /* Each overlay owns one visual language: heatmap or semantic focus. */
+                occupancy={overlay === 'occupancy' ? gridOccupancy : undefined}
+                focusedBins={overlayFocusedBins}
+                focusTone={overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined}
                 showFloor={showFloor}
                 showBins={showBins}
               />
