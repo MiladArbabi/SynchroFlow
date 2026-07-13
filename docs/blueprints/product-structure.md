@@ -570,7 +570,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-229 | W5 | Demand | Rows show "Default Title"/"—" as identity — extend ISS-SR-07 title/SKU treatment |
 | ISS-230 | P1 | Demand | No recommended reorder qty column at all on criticals — §5 requires it, never 0 (#59) |
 | ISS-231 | W5 | Intelligence | "No SKU" rendered in title slot of action queue rows — product identity unrecoverable |
-| ISS-232 | W1 | Overview vs Costs | "1 product missing cost data" vs "9 missing" — scoping real but unstated on both surfaces |
+| ISS-232 | ✅ | Overview vs Costs | Intentional scope difference: Overview alert counts order-linked variants missing estimated_unit_cost (alerts.aggregator → order_revenue_units); Costs page counts all variants with unit_cost null/0 (variants table). Both correct — scoping unstated but not contradictory (2026-07-13) |
 | ISS-233 | K | Inventory | Intelligence still lead tab — target: Demand & Reorder leads, Intelligence folds (#20, #45) |
 | ISS-234 | K | Warehouse | Route fragmentation /wms + /floor-planning + /problem-center — #1040 shell prerequisite, confirmed |
 | ISS-235 | W2 | Floor Planning | WH-1-ROOT exposed as user-facing warehouse identity on Map/Setup/Barcodes — §10.5 contract violation |
