@@ -607,6 +607,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-265 | W3 | Returns | "Revenue Lost / Margin Lost" headers (Leaked, #42) + Default Title identity rows (ISS-SR-07 parity) |
 | ISS-266 | W5 | Pack Session | ✅ CLOSED 2026-07-11 — Shipping-label generation failures now propagate into a truthful, non-blocking warning instead of reporting successful printing. Verified with no carrier configured: API returned explicit 500, backend logged the failure, and WMS module build passed. |
 | ISS-267 | P0 | Pack → Outbound | 🧪 CARRIER VALIDATION PENDING — Live-verified through a legitimate seeded order: final item confirmation left the order packing; LSO changed it to packed and completed the pack batch; Outbound displayed the handoff queue; manual handoff changed packed → shipped, set fulfillment to fulfilled, removed the queue row, and added the order to the shipped ledger. Carrier-webhook transition is code/build verified but still requires a signed live webhook fixture before closure. |
+| ISS-268 | ✅ | Floor Planning Map | Root box made flex column; map container changed from minHeight:400 to flex:1,minHeight:0 — canvas fills viewport on load (2026-07-13) |
 
 ### 12.2 Verified working (selected)
 

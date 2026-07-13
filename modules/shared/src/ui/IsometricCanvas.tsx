@@ -269,16 +269,56 @@ export function IsometricCanvas({
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
   const zoomRef   = useRef(zoom);
   const offsetRef = useRef(offset);
+  const sizeRef   = useRef(size);
+  const bboxRef   = useRef<{ minX: number; maxX: number; minY: number; maxY: number } | null>(null);
   zoomRef.current   = zoom;
   offsetRef.current = offset;
+  sizeRef.current   = size;
 
-  // Apply zone filter rail selection; if no filter provided, show all positioned zones.
+   // Apply zone filter rail selection; if no filter provided, show all positioned zones.
   const isFrame = (z: WarehouseZone) => z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf';
   const positionedZones = zones.filter(z =>
     z.position_x != null && z.position_y != null &&
     (filteredCodes == null || filteredCodes.has(z.location_code)) &&
     (isFrame(z) ? showFloor : showBins)
   );
+
+  // Signature of what's drawn — refit only when the layout actually changes,
+  // never on every render (so manual pan/zoom survives between changes).
+  const zoneSig = positionedZones
+    .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth},${z.rack_levels ?? ''}`)
+    .join('|');
+
+  // Auto-fit: centre + contain the whole warehouse in the current container.
+  // Projection scales linearly with zoom and has no additive origin, so we
+  // project all corners at zoom 1, take the screen-space bbox, then solve for
+  // the zoom + offset that fits it with a margin.
+
+  // Recompute projected bbox at zoom=1 whenever layout or flip changes.
+  // Stored in ref so the pan event handler can read it without stale closure.
+  useEffect(() => {
+    if (positionedZones.length === 0) { bboxRef.current = null; return; }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const z of positionedZones) {
+      const wx = parseFloat(String(z.position_x ?? 0));
+      const wy = parseFloat(String(z.position_y ?? 0));
+      const ww = parseFloat(String(z.width  ?? 1));
+      const wd = parseFloat(String(z.depth  ?? 0.5));
+      const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
+      const corners: Array<[number, number, number]> = [
+        [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
+        [wx, wy, wh], [wx + ww, wy, wh], [wx + wh, wy + wd, wh], [wx, wy + wd, wh],
+      ];
+      for (const [px, py, pz] of corners) {
+        const { sx, sy } = project(px, py, pz, 1, flipped);
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
+      }
+    }
+    bboxRef.current = { minX, maxX, minY, maxY };
+  }, [zoneSig, flipped]);
 
   // Painter's algorithm: sort by (position_x + position_y) ascending — back zones first
   // Painter's algorithm: ascending = back-to-front for standard view.
@@ -297,6 +337,22 @@ export function IsometricCanvas({
     onSelect?.(next);
   }
 
+  // Clamp pan offset so at least one quarter of the active floor bbox remains visible.
+  // Allows generous panning for large warehouses while preventing total content loss.
+  function clampOffset(x: number, y: number, z: number): { x: number; y: number } {
+    const bbox = bboxRef.current;
+    const { w, h } = sizeRef.current;
+    if (!bbox || w === 0 || h === 0) return { x, y };
+    const margin = 80; // px — minimum visible strip at each edge
+    const scaledMinX = bbox.minX * z;
+    const scaledMaxX = bbox.maxX * z;
+    const scaledMinY = bbox.minY * z;
+    const scaledMaxY = bbox.maxY * z;
+    const clampedX = Math.min(w - margin - scaledMinX, Math.max(margin - scaledMaxX, x));
+    const clampedY = Math.min(h - margin - scaledMinY, Math.max(margin - scaledMaxY, y));
+    return { x: clampedX, y: clampedY };
+  }
+
   function onCanvasMouseDown(e: React.MouseEvent) {
     panRef.current = { startX: e.clientX, startY: e.clientY, startOX: offset.x, startOY: offset.y };
   }
@@ -304,18 +360,18 @@ export function IsometricCanvas({
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       if (!panRef.current) return;
-      setOffset({
-        x: panRef.current.startOX + (e.clientX - panRef.current.startX),
-        y: panRef.current.startOY + (e.clientY - panRef.current.startY),
-      });
+      const rawX = panRef.current.startOX + (e.clientX - panRef.current.startX);
+      const rawY = panRef.current.startOY + (e.clientY - panRef.current.startY);
+      setOffset(clampOffset(rawX, rawY, zoomRef.current));
     }
     function onMouseUp() { panRef.current = null; }
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      setOffset(prev => ({
-        x: prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8,
-        y: prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8,
-      }));
+      setOffset(prev => {
+        const rawX = prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8;
+        const rawY = prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8;
+        return clampOffset(rawX, rawY, zoomRef.current);
+      });
     }
     const svgEl = svgRef.current;
     if (svgEl) svgEl.addEventListener('wheel', onWheel, { passive: false });
@@ -344,16 +400,6 @@ export function IsometricCanvas({
     return () => ro.disconnect();
   }, []);
 
-  // Signature of what's drawn — refit only when the layout actually changes,
-  // never on every render (so manual pan/zoom survives between changes).
-  const zoneSig = positionedZones
-    .map(z => `${z.location_code}:${z.position_x},${z.position_y},${z.width},${z.depth},${z.rack_levels ?? ''}`)
-    .join('|');
-
-  // Auto-fit: centre + contain the whole warehouse in the current container.
-  // Projection scales linearly with zoom and has no additive origin, so we
-  // project all corners at zoom 1, take the screen-space bbox, then solve for
-  // the zoom + offset that fits it with a margin.
   useEffect(() => {
     if (!autoFit || size.w === 0 || size.h === 0 || positionedZones.length === 0) return;
 
