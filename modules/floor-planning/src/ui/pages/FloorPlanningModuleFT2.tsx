@@ -718,7 +718,7 @@ function FloorPlanningModuleFT2Inner({
   };
   
   return (
-    <Box sx={{ p: '32px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
+    <Box sx={{ p: '32px 40px', minHeight: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'var(--bg)' }}>
 
       {/* Per-tab header — serif pattern matches Overview/Orders modules */}
       {(() => {
@@ -791,7 +791,7 @@ function FloorPlanningModuleFT2Inner({
 
       {/* MAP TAB — 2D warehouse grid */}
       {tab === 'map' && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: 400 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
           {isGridLoading && <ModuleLoadingSkeleton />}
           {!isGridLoading && (
             <Box sx={{ display: 'flex', gap: 2, flex: 1, position: 'relative', overflow: 'hidden' }}>

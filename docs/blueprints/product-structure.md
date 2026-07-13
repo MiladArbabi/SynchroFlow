@@ -573,7 +573,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-232 | ✅ | Overview vs Costs | Intentional scope difference: Overview alert counts order-linked variants missing estimated_unit_cost (alerts.aggregator → order_revenue_units); Costs page counts all variants with unit_cost null/0 (variants table). Both correct — scoping unstated but not contradictory (2026-07-13) |
 | ISS-233 | K | Inventory | Intelligence still lead tab — target: Demand & Reorder leads, Intelligence folds (#20, #45) |
 | ISS-234 | K | Warehouse | Route fragmentation /wms + /floor-planning + /problem-center — #1040 shell prerequisite ✅ closed 2026-07-13; ISS-234 route nesting rides its own K migration |
-| ISS-235 | W2 | Floor Planning | WH-1-ROOT exposed as user-facing warehouse identity on Map/Setup/Barcodes — §10.5 contract violation |
+| ISS-235 | ✅ | Floor Planning | WH-1-ROOT replaced by warehouses.name via join in /layout endpoint; WarehouseZone type extended with warehouse_name; canvas label uses name for type='warehouse' nodes. Verified live: "Main warehouse" (2026-07-13) |
 | ISS-236 | W5 | Floor Planning Setup | Root warehouse row carries delete/hide affordances — data-loss risk; lifecycle belongs to Settings › Warehouse |
 | ISS-237 | W2 | Floor Planning | Setup/Barcodes own warehouse-identity objects — v1.2 split: identity→Settings, topology→Floor Plan |
 | ISS-238 | ✅ | Order Flow vs Operations | Intentional scope difference: Operations shows all non-complete batches; Order Flow counts only batches with assigned orders. Verified live: both return 0 with current seed data (2026-07-13) |
