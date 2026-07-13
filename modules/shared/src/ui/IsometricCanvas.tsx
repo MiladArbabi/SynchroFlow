@@ -420,7 +420,7 @@ export function IsometricCanvas({
                   !highlightZoneTypes.has(zone.zone_type ?? '')
                 }
                 isFrame={isFrame}
-                label={zone.location_code}
+                label={zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code}
                 rackLevels={rackLevels}
                 zoom={zoom}
                 flipped={flipped}

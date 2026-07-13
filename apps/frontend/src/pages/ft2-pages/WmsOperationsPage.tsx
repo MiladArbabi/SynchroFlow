@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// apps/frontend/src/pages/ft2-pages/WmsPage.tsx
+// apps/frontend/src/pages/ft2-pages/WmsOperationsPage.tsx
 import { useCallback, useEffect, useState } from 'react';
 import { 
   WmsModuleFT2, 
@@ -19,8 +19,6 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useSearchParams } from 'react-router-dom';
-import PlanGate from '../../components/PlanGate';
-import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { Box, Typography, TextField } from '@mui/material';
 import { AlertTriangle } from 'lucide-react';
 import { printViaQz } from 'utils/qzPrint';
@@ -102,7 +100,7 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
  * All HTTP calls live here — module stays decoupled.
  */
 
-export default function WmsPage() {
+export default function WmsOperationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, isError, refetch, stowTasks, settings } = useWms();
   const { data: gridData } = useWarehouseGrid();
@@ -151,7 +149,7 @@ export default function WmsPage() {
         });
       })
       .catch(() => {
-        console.error('[WmsPage] Failed to auto-enter receive session', { receiveJobId });
+        console.error('[WmsOperationsPage] Failed to auto-enter receive session', { receiveJobId });
       });
   }, [searchParams, setSearchParams, handleFetchReceiveJob]);
 
@@ -477,13 +475,6 @@ export default function WmsPage() {
 
   return (
     <>
-    <PlanGate feature="wms.pick_batches">
-    <ModuleTabBar tabs={[
-      { id: 'operations',    label: 'Operations',     path: '/wms'    },
-      { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
-      { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
-      { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'scale' },
-    ]} />
     {problemBinMissing && <ProblemBinPrompt
       binInput={binInput}
       setBinInput={setBinInput}
@@ -543,7 +534,6 @@ export default function WmsPage() {
       onProcessReturnLine={handleProcessReturnLine}
       onCompleteReturnJob={handleCompleteReturnJob}
     />
-   </PlanGate>
    { showQzPrompt && (
     <QzTrayOnboardingPrompt
       onDismiss={() => {

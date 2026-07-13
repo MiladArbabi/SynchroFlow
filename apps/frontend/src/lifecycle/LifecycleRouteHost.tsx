@@ -69,10 +69,9 @@ const OrdersOutboundPage = lazy(() => import('pages/ft2-pages/OrdersOutboundPage
 const OrdersInboundPage = lazy(() => import('pages/ft2-pages/OrdersInboundPage'));
 /* const CashFlowPage = lazy(() => import('pages/ft2-pages/CashFlowPage')); */
 const DemandPage = lazy(() => import('pages/ft2-pages/DemandPage'));
-const WmsPage = lazy(() => import('pages/ft2-pages/WmsPage'));
+const WmsFT2Page = lazy(() => import('pages/ft2-pages/WmsFT2Page'));
 const SuppliersPortalPage = lazy(() => import('pages/ft2-pages/SuppliersPortalPage'));
 const FloorPlanningPage = lazy(() => import('pages/ft2-pages/FloorPlanningPage'));
-const WmsAnalyticsPage = lazy(() => import('pages/ft2-pages/WmsAnalyticsPage'));
 const ShopSettingsPage = lazy(() => import('pages/ft2-pages/ShopSettingsPage'));
 const MembersPage = lazy(() => import('pages/ft2-pages/MembersPage'));
 const MemberDetailPage = lazy(() => import('pages/ft2-pages/MemberDetailPage'));
@@ -265,10 +264,9 @@ export function LifecycleRouteHost() {
 
       {/* WMS */}
       {/* /wms/analytics and /wms/readiness must precede /wms/* — wildcard would shadow them otherwise */}
-      <Route path="/wms/analytics" element={<WmsAnalyticsPage />} />
       {/* ISS-070: redirect old top-level route to new nested location */}
       <Route path="/wms/readiness" element={<Navigate to="/inventory/data-quality" replace />} />
-      <Route path="/wms/*" element={<WmsPage />} />
+      <Route path="/wms/*" element={<WmsFT2Page />} />
 
       {/* SUPPLIERS PORTAL */}
       <Route path="/suppliers-portal/*" element={<SuppliersPortalPage />} />

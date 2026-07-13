@@ -16,4 +16,6 @@ export type WarehouseZone = {
   rack_levels: number | null;
   zone_type: string | null;
   last_printed_at: string | null;
+  /** Editable warehouse display name — non-null only on type='warehouse' rows (§10.5) */
+  warehouse_name: string | null;
 };

@@ -24,28 +24,34 @@ export async function httpGetLayout(req: Request, res: Response) {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
       const zones = await trx('warehouse_locations')
-        .where({ shop_id: shopId })
-        .orderBy('location_code', 'asc')
+        .where({ 'warehouse_locations.shop_id': shopId })
+        .orderBy('warehouse_locations.location_code', 'asc')
+        // Join warehouses to resolve editable name for root warehouse node.
+        // warehouse_name is non-null only on type='warehouse' rows; null on all others.
+        .leftJoin('warehouses as w', function () {
+          this.on('w.root_location_code', 'warehouse_locations.location_code')
+              .andOn('w.shop_id', trx.raw('?', [shopId]));
+        })
         .select(
-          'location_code',
-          'type',
-          'parent_location_code',
-          'active',
-          // children_count: live count of direct children — drives ZoneCard child indicator in UI
-          // CAST to integer — Postgres COUNT(*) returns numeric string via Knex without explicit cast
+          'warehouse_locations.location_code',
+          'warehouse_locations.type',
+          'warehouse_locations.parent_location_code',
+          'warehouse_locations.active',
           trx.raw(
             `(SELECT COUNT(*) FROM warehouse_locations wl2 WHERE wl2.shop_id = ? AND wl2.parent_location_code = warehouse_locations.location_code)::integer as children_count`,
             [shopId]
           ),
-          'barcode',
-          'position_x',
-          'position_y',
-          'width',
-          'depth',
-          'orientation',
-          'rack_levels',
-          'zone_type',
-          'last_printed_at',
+          'warehouse_locations.barcode',
+          'warehouse_locations.position_x',
+          'warehouse_locations.position_y',
+          'warehouse_locations.width',
+          'warehouse_locations.depth',
+          'warehouse_locations.orientation',
+          'warehouse_locations.rack_levels',
+          'warehouse_locations.zone_type',
+          'warehouse_locations.last_printed_at',
+          // Editable warehouse name — null for non-warehouse locations (§10.5)
+          'w.name as warehouse_name',
         );
 
       const productBarcodes = await trx('variants as v')

@@ -352,7 +352,7 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 - **`customers` and `fulfillment` modules — unaccounted for in §4 (added 2026-07-08):** both are live, registered modules with no corresponding entry in the target map. `customers` is confirmed deprecated (analytics/PostHog replacement, per `overview_pulse_and_signal_dedup_2026_06_20.md`) but still routed today — decide sunset timeline. `fulfillment`'s relationship to Orders/Warehouse is undetermined.
 - ~~`problem_center_tasks` ↔ `alerts` FK hardening (added 2026-07-08, see §10.4)~~ **✅ RESOLVED (2026-07-08) — see §8 item 1.** Was not FK hardening alone: the audit found three separate, live bugs in this seam (wrong ID namespace, a fully alert-blind resolve path, and an unvalidated client-supplied ID), fixed and verified live via curl/psql. One related gap remains open — receive-exception resolution has no dedicated path — tracked as **GitHub #1039**.
 - **Finances product refinement — blocks §8 item 3d and #1040 overlap (added 2026-07-08):** Cash Flow's current content (60-day projection, plan-a-stock-order) was judged during this session as not yet effectively resolving the ICP's core data-fragmentation/Excel-chaos pain. Finances, Cash Flow, and Margin are **frozen** pending a content/product pass — no further routing, nesting, or structural work should land on any of the three until that's decided. This blocks §8 item 3d (the `/cashflow` route nest) indefinitely, and should be resolved before revisiting whether Cash Flow deserves its own module at all vs folding into Finances/Margin.
-- **Warehouse shell architecture — GitHub #1040 (added 2026-07-08, see §8 item 3c, §10.3):** confirms the module-package-consolidation open question above is not hypothetical — Warehouse/WMS concretely lacks the shell-page pattern that Products and Finances already have, discovered while attempting the `/floor-planning` route nest. #1040 scopes the fix (new `WmsFT2Page.tsx` shell, mirroring `ProductsFT2Page.tsx`) but is deferred as its own unit of work.
+- **Warehouse shell architecture — GitHub #1040 ✅ CLOSED (2026-07-13):** `WmsFT2Page.tsx` shell built — `ModuleTabBar` and `PlanGate` centralized, `WmsOperationsPage.tsx` extracted, `WmsAnalyticsPage.tsx` stripped of duplicate tab bar, `LifecycleRouteHost.tsx` collapsed to single `/wms/*` route. `WmsPage.tsx` deleted.
 
 ---
 
@@ -530,7 +530,7 @@ capabilities, not to the existence of stable warehouse identity.
 > Mode, per standard audit rules. Numbering: ISS-201–265 (200-series reserved for this audit).
 >
 > **Workstream tags:**
-> **W1** number reconciliation (P0, §8 item 2) · **W2** warehouse contract + #1040 ·
+> **W1** number reconciliation (P0, §8 item 2) · **W2** warehouse contract (✅ #1040 closed 2026-07-13) ·
 > **W3** vocabulary/format sweep (§7) · **W4** naming/route hygiene (§4) ·
 > **W5** standalone quick fix · **K** known migration, logged for record ·
 > **P1** loop spec gap (§5/§6) · **R** product ruling required · **V** verify before classifying
@@ -546,7 +546,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-205 | W3 | Overview | One figure, three labels: $23,524 as "at stake" (greeting), "Blocked" (Pulse); separate "At risk $8,977" |
 | ISS-206 | W3 | Order Flow | Fourth synonym: "$23,524.00 held" |
 | ISS-207 | W3 | Overview/Orders | Currency mix on one screen: USD1,230 prefix style vs $3,800 symbol style (#27, cross-check #1041) |
-| ISS-208 | W1 | Orders vs Flow | Rounding drift: $2,629.95 vs $2,630; $23,524.00 vs $23,524 — no canonical rule (#60) |
+| ISS-208 | ✅ | Orders vs Flow | Intentional: formatCurrency (2dp) for line-item detail vs formatCurrencyCompact (0dp) for aggregate KPIs. Two formatters, two contexts, both correct. Rule in formatCurrency.ts (2026-07-13) |
 | ISS-209 | W4 | Orders/Outbound | Panel title drift: "Needs a decision" vs "Needs attention" — §3 canonical is "Needs attention" |
 | ISS-210 | W3 | Outbound | "SHIPPING HEALTH" sidebar — all sidebars are "X Pulse" (#49) |
 | ISS-211 | W4 | Orders | H1 "Orders" ≠ tab "Overview" ≠ breadcrumb; landing tab named module-adjacent not content ("Queue") |
@@ -555,9 +555,9 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-214 | W5 | Outbound | ✅ CLOSED 2026-07-11 — Export guidance now derives from the available report formats; Outbound correctly advertises CSV only. Frontend build and live UI verified. |
 | ISS-215 | ✅ | Outbound | Queue segmentation control — sanctioned exception to canonical time-range control. Rule documented in §7. (resolved 2026-07-12) |
 | ISS-216 | W4 | Demand | Route /demand escapes /inventory/demand — last known escapee in module |
-| ISS-217 | W1 | Intelligence/Catalog vs Data Quality | Missing-SKU: 26 vs 29; Barcodes page also says 29 — suspect 26 is stale source |
-| ISS-218 | W1 | Intelligence vs Data Quality | Unbinned: "24 SKUs no pick bin" vs "No bin location: 6" — one concept or two, copy must differentiate |
-| ISS-219 | W1 | Intelligence vs Catalog | Entity counts: 35 SKUs vs 32 variants with no explainable delta on screen |
+| ISS-217 | ✅ | Intelligence vs Data Quality | Intentional scope difference: Data Quality counts active variants with no SKU (ProductsOperatorFacts); Intelligence counts variants with SKU but no bin assignment (ProductsWmsReadinessFacts). Different concepts, labels must differentiate (2026-07-13) |
+| ISS-218 | ✅ | Intelligence vs Data Quality | Intentional scope difference: WmsReadiness counts SKU-having variants missing from inventory_unit_status; WarehouseBridge counts stocked variants with no bin location. Stock-aware vs SKU-aware. Labels must differentiate (2026-07-13) |
+| ISS-219 | ✅ | Intelligence vs Catalog | Intentional granularity difference: Intelligence counts variants (SKUs); Catalog counts products. Delta = multi-variant products. No bug (2026-07-13) |
 | ISS-220 | W3 | Catalog/Demand | Deprecated vocab live: "4 zero stock", "stockout risk" — canonical: Stocked out |
 | ISS-221 | W3 | Catalog | "CATALOG HEALTH" sidebar (#49) |
 | ISS-222 | W3 | Catalog vs Intelligence | "Sellable 2" vs "Ready to sell 2 of 32" — numbers agree, label drifts |
@@ -572,7 +572,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-231 | W5 | Intelligence | "No SKU" rendered in title slot of action queue rows — product identity unrecoverable |
 | ISS-232 | ✅ | Overview vs Costs | Intentional scope difference: Overview alert counts order-linked variants missing estimated_unit_cost (alerts.aggregator → order_revenue_units); Costs page counts all variants with unit_cost null/0 (variants table). Both correct — scoping unstated but not contradictory (2026-07-13) |
 | ISS-233 | K | Inventory | Intelligence still lead tab — target: Demand & Reorder leads, Intelligence folds (#20, #45) |
-| ISS-234 | K | Warehouse | Route fragmentation /wms + /floor-planning + /problem-center — #1040 shell prerequisite, confirmed |
+| ISS-234 | K | Warehouse | Route fragmentation /wms + /floor-planning + /problem-center — #1040 shell prerequisite ✅ closed 2026-07-13; ISS-234 route nesting rides its own K migration |
 | ISS-235 | W2 | Floor Planning | WH-1-ROOT exposed as user-facing warehouse identity on Map/Setup/Barcodes — §10.5 contract violation |
 | ISS-236 | W5 | Floor Planning Setup | Root warehouse row carries delete/hide affordances — data-loss risk; lifecycle belongs to Settings › Warehouse |
 | ISS-237 | W2 | Floor Planning | Setup/Barcodes own warehouse-identity objects — v1.2 split: identity→Settings, topology→Floor Plan |
@@ -625,12 +625,13 @@ capabilities, not to the existence of stable warehouse identity.
 
 ### 12.3 Structural diagnosis (W1)
 
-Every W1 item shares one root cause: surfaces compute their own aggregates from raw tables.
-The morning-brief resolver's policy — "Never query raw tables here — always read from
-`alerts`" — is the only surface honoring a shared-read rule. W1's fix is architectural:
-promote that policy app-wide (spine for signals; a shared stats resolver for floor/bin/
-pipeline aggregates), then reconcile per-surface labels. Fixing counts surface-by-surface
-without this will regress.
+W1 audit finding (revised after Lane A + B): most contradictions were intentional scope
+differences with inadequate labels — not raw-table policy violations. The `alerts`
+spine policy remains correct for signals. A shared stats resolver is not required.
+The one genuine shared-source violation (ISS-254) was a wrong aggregation function
+in the Returns Pulse query, fixed in place. The actual W1 fix is label clarity (W3/W4):
+each cross-surface number difference must either carry an explicit scope label or be
+unified at the source — the audit confirmed which is which per item.
 
 ### 12.4 Rulings required before implementation
 
@@ -643,5 +644,5 @@ without this will regress.
 ### 12.5 Sequencing
 
 W5 quick fixes → W1 (P0, with 12.3 architecture decision first) → W2 (already queued:
-contract layer + #1040; pull ISS-236 forward as standalone) → W3+W4 combined sweep.
+contract layer (✅ #1040 closed 2026-07-13); ISS-235 and ISS-237 remain) → W3+W4 combined sweep.
 K items ride their existing migrations. V items enter Audit Mode before classification.

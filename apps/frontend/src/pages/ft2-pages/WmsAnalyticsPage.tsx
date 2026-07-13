@@ -14,8 +14,6 @@ import {
   Popper, Paper, ClickAwayListener, Tooltip,
 } from '@mui/material';
 import { AlertTriangle, TrendingUp, Clock, ArrowRight, Cast, ExternalLink, Copy } from 'lucide-react';
-import { PlanGate } from '../../components/PlanGate';
-import { ModuleTabBar } from '../../components/ModuleTabBar';
 import {
   useWmsAnalytics,
   useLiveCapacity,
@@ -883,14 +881,7 @@ export default function WmsAnalyticsPage() {
   const loading    = analyticsQuery.isLoading;
 
   return (
-    <PlanGate feature="wms.pick_batches">
       <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
-        <ModuleTabBar tabs={[
-          { id: 'operations',     label: 'Operations',     path: '/wms' },
-          { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
-          { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics',  requiredTier: 'growth', feature: 'wms.pick_batches' },
-          { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'scale' },
-        ]} />
 
         {/* HEADER */}
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', px: 2.5, pt: 2, pb: 1.25, flexShrink: 0, flexWrap: 'wrap', gap: 1 }}>
@@ -933,6 +924,5 @@ export default function WmsAnalyticsPage() {
           </Box>
         </Box>
       </Box>
-    </PlanGate>
   );
 }
