@@ -578,8 +578,8 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-237 | W2 | Floor Planning | Setup/Barcodes own warehouse-identity objects — v1.2 split: identity→Settings, topology→Floor Plan |
 | ISS-238 | ✅ | Order Flow vs Operations | Intentional scope difference: Operations shows all non-complete batches; Order Flow counts only batches with assigned orders. Verified live: both return 0 with current seed data (2026-07-13) |
 | ISS-239 | ✅ | Orders vs Wh Analytics | Different aggregation windows and sources by design — Orders reads live order-pool; Analytics reads historical snapshots. Audit was a timing artifact (2026-07-13) |
-| ISS-240 | W1 | Floor Planning | "13 bins" header vs Barcodes "Total locations 17 / Barcoded 13" — barcoded count labeled as bin total |
-| ISS-241 | W1 | Intelligence vs Floor Planning | "0% occupancy · 0 of 12 bins" vs "13 bins · 1 with stock" — two bin-stat sources |
+| ISS-240 | ✅ | Floor Planning | Intentional scope difference: header = all bins (12 pick + 1 problem = 13); Barcodes = all locations (13 bins + 3 lanes + 1 warehouse = 17). Correct by definition. Seed fix: PROBLEM bin corrected from quarantine → problem zone_type (2026-07-13) |
+| ISS-241 | ✅ | Inventory Intelligence vs Floor Planning | Intentional scope difference: Intelligence shows pick-zone bins only (12); Floor Planning shows all bins (13). Both correct for their context (2026-07-13) |
 | ISS-242 | W4 | Operations | H1 "Warehouse" = module name; tab/breadcrumb say Operations |
 | ISS-243 | W4 | Floor Planning | Three H1s across tabs, two aspirational sentences on populated screens — register is empty-state-only (#15, #50) |
 | ISS-244 | W3 | Wh Analytics | Time control 7d/30d/90d — missing Today/Custom, wrong position; third variant app-wide |
