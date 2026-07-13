@@ -1,7 +1,7 @@
 # WarehouseGrid — Blueprint & Integration Spec
 
 **Last updated: July 13, 2026**  
-**Status: 2D grid and SVG isometric renderers implemented — overlay contract verified**
+**Status: 2D grid and SVG isometric renderers implemented — overlays, Growth+ Overview map, and Core teaser verified**
 
 ---
 
@@ -244,7 +244,8 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 | Demand `/demand` | `mini` | `heatmap` | `occupancy` |
 | Product Detail | `inline` | `focus` | `focusedBins` (page not built yet) |
 | PO Receiving | `mini` | `focus` | `focusedBins` |
-| Overview `/overview` | `IsometricCanvas` (direct) | `map` + occupancy | `occupancy`, `stations` (aprons), `liveActivity` (picker dots) — scale tier only |
+| Overview `/overview` — Growth/Scale | `IsometricCanvas` (direct) | Live map + occupancy | `occupancy`, `stations` (aprons), `liveActivity` (picker dots) |
+| Overview `/overview` — Core owner/admin teaser | `IsometricCanvas` (direct) | Static miniature preview | Static sample zones and occupancy; SVG labels hidden; no customer map or live operational data |
 
 ---
 

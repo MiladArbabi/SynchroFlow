@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** July 13, 2026 — v1-A, v1-B, v2 shipped and verified.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v3 parked.
+> **Last updated:** July 13, 2026 — Growth+ live-map gate and Core upgrade teaser shipped and visually verified.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · v3 parked.
 
 ---
 
@@ -55,15 +55,32 @@ The current Overview (triage-first signals + Business Pulse rail) solves the *de
 
 ## 3. Tier and zone gate — three-branch logic
 
-Resolved at `OverviewFT2Page` level (page layer owns state resolution; module receives props only — module boundary rule).
+Resolved at `OverviewFT2Page` level. The page owns subscription and data-state resolution; `OverviewModuleFT2` remains layout-only and receives rendered `mapContent` and `upgradeTeaser` props.
 
-| Branch | Condition | Map area renders |
+| Branch | Condition | Overview renders |
 |---|---|---|
-| **Live map** | tier `scale`+ AND `zones.length > 0` | Full `IsometricCanvas` + aprons |
-| **Teaching empty** | tier `scale`+ AND `zones.length === 0` | Ghost isometric silhouette (seed-like, dimmed) + "Build your floor →" CTA to `/floor-planning`. Ties to issue #1040. |
-| **Teaser** | tier below `scale` | Current triage layout (signals left, pulse right) + one dismissible teaser strip: miniature static `IsometricZoneView` + "See your operations live — Scale plan". Teaser renders once and is dismissible; do NOT occupy 75% of the page with a permanent upsell. |
+| **Live map** | tier is `growth` or `scale`, layout request succeeds, and `zones.length > 0` | Full `IsometricCanvas` with occupancy, apron stations, and live picker activity |
+| **Teaching empty** | tier is `growth` or `scale`, layout request succeeds, and `zones.length === 0` | “Build your floor” teaching state with CTA to `/floor-planning` |
+| **Upgrade teaser** | owner/admin tier is below `growth` | Core triage layout remains fully available, followed by a compact, dismissible live-map teaser with CTA to `/settings/billing` |
 
-**Implementation note:** `useEntitlements()` already available in `OverviewFT2Page`. Zone count comes from `useWarehouseGrid()` — `data?.zones?.length ?? 0`. Both are ready to use without new hooks.
+### 3.1 Core upgrade bridge
+
+The teaser closes the discovery gap between Core and Growth without replacing Core’s actionable “Needs a decision” workflow.
+
+Locked behaviour:
+
+- The teaser appears only for owners/admins below Growth.
+- Core’s triage list and Business Pulse remain unchanged and fully usable.
+- The teaser spans the triage layout width but does not occupy the permanent 75% map slot.
+- The preview uses `IsometricCanvas` with static sample warehouse geometry and static occupancy values.
+- No customer floor, occupancy, order-pool, or live-activity data is exposed through the preview.
+- SVG text labels are hidden in the teaser so the miniature communicates floor shape and racks without visual clutter.
+- Dismissal is stored in `sessionStorage` under `overview-live-map-teaser-dismissed`.
+- The CTA reads “See Growth plan →” and routes to `/settings/billing`.
+- The teaser emits `upgrade_prompt.shown`, `upgrade_prompt.dismissed`, and `upgrade_prompt.clicked` with `surface: 'overview'`.
+- Operators do not receive the billing upgrade prompt.
+
+The live Growth/Scale map currently receives layout zones from `useFloorPlanning()`, occupancy from `useWarehouseGridOccupancy()`, order-pool station data from `useOrderPool()`, and picker activity from `useWmsLiveActivity()`.
 
 ---
 
@@ -224,6 +241,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | FP-OV-06 | No tier/zone gate | v1-A: three-branch gate per §3 |
 | FP-OV-07 | BusinessPulse is revenue-only, no WMS signals | ✅ PARTIAL July 2026 — picker dots wired; WMS strip (Pool · Batches · Stow chips in pulse card) remains v3 |
 | FP-OV-08 | `operationalControl = null` dead code | v1-A: removed |
+| FP-OV-09 / OV-MAP-001 | Core users had no visible path to discover or upgrade to the live operations map | ✅ CLOSED July 13, 2026 — compact static map teaser added below Core triage with dismissal, billing CTA, and conversion events |
 
 ---
 
@@ -234,7 +252,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | **v1-A** ✅ | Layout flip · tier/zone gate · dead code removal · pulse card merged layout | FP-OV-05, FP-OV-06, FP-OV-07 (partial), FP-OV-08 |
 | **v1-B** ✅ | Page-level grid+occupancy hooks · `useOrderPool` wired · `IsometricCanvas` embed · `SyntheticStation` apron (inbound pool + blocked sub-stack) · `LiveBinActivity` type | FP-OV-01, FP-OV-02, FP-OV-03 |
 | **v2** ✅ | `GET /api/v1/wms/live-activity` · `useWmsLiveActivity` 15s poll · picker dot markers on `IsometricCanvas` | FP-OV-04, FP-OV-07 (partial) |
-| **v3** | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill | FP-OV-07 (complete) |
-| **v3** | Token animation · wave release from apron · order-detail drill from tokens | Parked |
+| **v2.1** ✅ | Core triage-preserving Growth teaser · static `IsometricCanvas` preview · session dismissal · billing CTA · conversion events | FP-OV-09 / OV-MAP-001 |
+| **v3** — Parked | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill from tokens | FP-OV-07 (remaining) |
 
-Update `WarehouseGrid.md` consumer map and `product-structure.md` §7 after each block ships.
+Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.

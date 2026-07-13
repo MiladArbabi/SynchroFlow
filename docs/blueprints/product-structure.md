@@ -1,7 +1,7 @@
 # LaSyncro — Product Structure
 >
-> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 (2026-07-08) + Warehouse context contract v1.2 (2026-07-11) + Full-screen audit v2 register v1.3 (2026-07-11, §12).
-> **Source:** Full-app screen audit (33 screens, 68 logged findings) workshopped against ICP → v1. AUDIT-mode codebase verification (53 issues, ISS-001–053) against live code/DB → v1.1 reconciliation (§10, §11, §8 corrections, §9 additions). Multi-warehouse schema and write-path implementation audit → v1.2 warehouse identity, routing, selection, settings, and tier contract.
+> **Status:** Target structure v1 (2026-07-07) + Reconciliation pass v1.1 + Reconciliation pass v1.1 (2026-07-08) + Warehouse context contract v1.2 (2026-07-11) + Full-screen audit v2 register v1.3 (2026-07-11, §12) + Overview monetization bridge v1.4 (2026-07-13, §5/§11).
+> **Source:** Full-app screen audit → target IA, role definitions, tier gates, page specs, behaviour rules. Reconciliation audit against live AppRoutes.tsx, HeaderSearch.tsx, Sidebar.tsx, EntitlementsContext.tsx, module registry and activation config → v1.1 corrections. Multi-warehouse schema and write-path implementation audit → v1.2 warehouse identity, routing, selection, settings, and tier contract. Overview live-map implementation audit and Core upgrade-bridge verification → v1.4 progressive-disclosure and entitlement contract.
 > **Purpose:** The canonical reference for IA, naming, routing, warehouse context, and the signal system. All refactors converge on this document.
 > **Reading order for new contributors:** §1–9 defines the target product design. §10–11 records code-verified ground truth and migration constraints. Read §10–11 before proposing changes to §4/§5. Where target and live implementation differ, the live-system sections describe the current constraint while the target sections define the intended destination.
 
@@ -137,10 +137,18 @@ $    Finances       /finances          · Margin | Cash Flow
 
 The 15-minute morning ritual. **This page IS the alert inbox.**
 
-- Greeting + one-line state: *"N decisions pending — everything else is on track."*
-- Signal queue (spine view, scope=owner), grouped Critical / Watch, ranked by consequence, `See N more` collapse.
-- Business Pulse sidebar (canonical daily numbers).
-- **Export Brief** → shareable owner's daily brief (retention + referral artifact).
+- Greeting + one-line state summary
+- Signal queue ranked by commercial consequence
+- Business Pulse sidebar
+- **Export Brief** — print/PDF-ready summary
+- **Tier-aware operations view:**
+  - **Core and tiers below Growth:** the full signal queue and Business Pulse remain primary. Owners/admins receive a compact, dismissible static isometric preview after the operational content, with a Growth-plan CTA.
+  - The Core preview uses sample zones and occupancy only. It never exposes the tenant’s floor layout, order pool, picker activity, or other live operational data.
+  - Non-owner/admin operators do not receive the billing prompt.
+  - **Growth and Scale:** the signal queue is condensed into the map-side pulse rail, while the main surface becomes the live `IsometricCanvas` with occupancy, apron stations, and picker activity.
+  - Scale inherits the Growth live-map entitlement; Scale does not introduce a separate Overview map experience.
+
+The live route remains `/overview` until the planned Overview → Today information-architecture migration. The tier-aware behaviour is already implemented on `/overview`.
 
 ### 🛍 Orders `/orders`
 
@@ -489,7 +497,7 @@ The next contract layer is:
 
 ---
 
-## 11. Tier Gating Map (updated 2026-07-11)
+## 11. Tier Gating Map (updated 2026-07-13)
 
 > IA changes must preserve or deliberately redesign live monetization gates.
 > Warehouse identity and selection are foundational context, while advanced
@@ -497,12 +505,21 @@ The next contract layer is:
 
 | Gate | Scope | Tier required |
 |---|---|---|
+| Overview live operations map | `/overview` live spatial layer: occupancy, apron stations, and picker activity | growth |
 | `returns-resolution` (whole nav item) | Returns & Resolution | `core` |
 | Warehouse list, selection, and rename | Existing warehouses available to the shop | Same tier as Warehouse access |
 | Additional warehouse creation and activation | Multi-warehouse capability | `scale` |
 | `floor-planning` (Warehouse child) | Floor Plan for the selected warehouse | `scale` |
 | `demand` (Inventory child) | Demand & Reorder | `growth` |
 | `finances` (whole nav item) | Finances | `growth` |
+
+Overview tier contract:
+
+- Core retains the complete decision queue and Business Pulse; operational value is not removed to manufacture an upgrade.
+- Owners/admins below Growth see a static, dismissible map preview with a CTA to `/settings/billing`.
+- The preview contains no tenant layout or live operational data.
+- Growth unlocks the live map. Scale inherits the same entitlement.
+- Upgrade visibility is measured through `upgrade_prompt.shown`, `upgrade_prompt.clicked`, and `upgrade_prompt.dismissed`.
 
 Warehouse tier contract:
 

@@ -258,6 +258,12 @@ export interface IsometricCanvasProps {
   /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
   autoFit?: boolean;
   fitPadding?: number;
+  /** Hide the FACES opacity legend — false for embedded/overview contexts (default: true) */
+  showLegend?: boolean;
+  /** Hide zoom/reset/angle controls — false for embedded/overview contexts (default: true) */
+  showControls?: boolean;
+  /** Disable pan and scroll — true for embedded/overview contexts where autoFit owns positioning (default: false) */
+  disablePan?: boolean;
   /**
    * Synthetic apron stations — order pool (inbound) and shipped-today (outbound).
    * Not backed by warehouse_locations. See overview-live-map-playbook.md §5.
@@ -283,7 +289,10 @@ export function IsometricCanvas({
     initialZoom = 0.9, 
     initialOffset = { x: 420, y: 120 },
     autoFit = true,
-    fitPadding = 0.85,
+    fitPadding = 0.68,
+    showLegend = true,
+    showControls = true,
+    disablePan = false,
     stations,
     liveActivity,
   }: IsometricCanvasProps) {
@@ -398,6 +407,7 @@ export function IsometricCanvas({
   }
 
   function onCanvasMouseDown(e: React.MouseEvent) {
+    if (disablePan) return;
     panRef.current = { startX: e.clientX, startY: e.clientY, startOX: offset.x, startOY: offset.y };
   }
 
@@ -418,7 +428,7 @@ export function IsometricCanvas({
       });
     }
     const svgEl = svgRef.current;
-    if (svgEl) svgEl.addEventListener('wheel', onWheel, { passive: false });
+    if (svgEl && !disablePan) svgEl.addEventListener('wheel', onWheel, { passive: false });
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
     return () => {
@@ -481,7 +491,7 @@ export function IsometricCanvas({
   return (
     <Box sx={{ display: 'flex', width: '100%', height: '100%', position: 'relative', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
       <svg ref={svgRef} width="100%" height="100%"
-        style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
+        style={{ cursor: disablePan ? 'default' : 'grab', userSelect: 'none', display: 'block' }}
         onMouseDown={onCanvasMouseDown}>
         <g transform={`translate(${offset.x},${offset.y})`}>
           {sorted.map((zone) => {
@@ -563,39 +573,42 @@ export function IsometricCanvas({
               ? worldBounds.minX - 4.0
               : worldBounds.maxX + 2.0;
             const wy = midY - 0.75;
-            const tw = 1.5, td = 0.75, stackH = 0.28, gap = 0.08;
-            const urgentCount  = station.urgentCount ?? 0;
-            const normalCount  = Math.max(0, station.count - urgentCount);
-            const capTokens    = 5;
-            const urgentVisible = Math.min(urgentCount, capTokens);
-            const normalVisible = Math.min(normalCount, Math.max(0, capTokens - urgentVisible));
-            const totalVisible  = urgentVisible + normalVisible;
+            // Single slim bar — scales to any order count, no token clutter.
+            // Bar height encodes urgency: urgent sub-bar in red at the base,
+            // normal remainder in accent above it.
+            const tw = 1.5, td = 0.75;
+            const urgentCount = station.urgentCount ?? 0;
+            const normalCount = Math.max(0, station.count - urgentCount);
+            const maxBarH = 2.5;   // world metres — max visual bar height
+            const totalBarH = Math.min(maxBarH, 0.4 + station.count * 0.06);
+            const urgentFrac = station.count > 0 ? urgentCount / station.count : 0;
+            const urgentH = totalBarH * urgentFrac;
+            const normalH = totalBarH - urgentH;
 
-            const renderToken = (idx: number, isUrgent: boolean) => {
-              const z0   = idx * (stackH + gap);
-              const z1   = z0 + stackH;
-              const fill = isUrgent ? '#E5484D' : 'var(--accent)';
-              const b00  = project(wx,      wy,      z0, zoom, flipped);
-              const b10  = project(wx + tw, wy,      z0, zoom, flipped);
-              const b11  = project(wx + tw, wy + td, z0, zoom, flipped);
-              const b01  = project(wx,      wy + td, z0, zoom, flipped);
-              const t00  = project(wx,      wy,      z1, zoom, flipped);
-              const t10  = project(wx + tw, wy,      z1, zoom, flipped);
-              const t11  = project(wx + tw, wy + td, z1, zoom, flipped);
-              const t01  = project(wx,      wy + td, z1, zoom, flipped);
-              return (
-                <g key={idx}>
-                  <polygon points={pts(t00, t10, t11, t01)} fill={fill} fillOpacity={0.75} />
-                  <polygon points={pts(t00, b00, b01, t01)} fill={fill} fillOpacity={0.45} />
-                  <polygon points={pts(t10, b10, b11, t11)} fill={fill} fillOpacity={0.32} />
-                </g>
-              );
-            };
+            // Normal (lower) bar
+            const nb00 = project(wx,      wy,           0,       zoom, flipped);
+            const nb10 = project(wx + tw, wy,           0,       zoom, flipped);
+            const nb11 = project(wx + tw, wy + td,      0,       zoom, flipped);
+            const nb01 = project(wx,      wy + td,      0,       zoom, flipped);
+            const nt00 = project(wx,      wy,           normalH, zoom, flipped);
+            const nt10 = project(wx + tw, wy,           normalH, zoom, flipped);
+            const nt11 = project(wx + tw, wy + td,      normalH, zoom, flipped);
+            const nt01 = project(wx,      wy + td,      normalH, zoom, flipped);
 
-            const topZ      = totalVisible * (stackH + gap) + stackH;
-            const countPt   = project(wx + tw / 2, wy + td / 2, topZ + 0.55, zoom, flipped);
-            const labelPt   = project(wx + tw / 2, wy + td / 2, topZ + 0.18, zoom, flipped);
+            // Urgent (upper) bar — stacked on top of normal
+            const ub00 = project(wx,      wy,           normalH,           zoom, flipped);
+            const ub10 = project(wx + tw, wy,           normalH,           zoom, flipped);
+            const ub11 = project(wx + tw, wy + td,      normalH,           zoom, flipped);
+            const ub01 = project(wx,      wy + td,      normalH,           zoom, flipped);
+            const ut00 = project(wx,      wy,           totalBarH,         zoom, flipped);
+            const ut10 = project(wx + tw, wy,           totalBarH,         zoom, flipped);
+            const ut11 = project(wx + tw, wy + td,      totalBarH,         zoom, flipped);
+            const ut01 = project(wx,      wy + td,      totalBarH,         zoom, flipped);
+
+            const countPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.45, zoom, flipped);
+            const labelPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.15, zoom, flipped);
             const countColor = urgentCount > 0 ? '#E5484D' : 'var(--accent)';
+            const accentFill = 'var(--accent)';
 
             return (
               <g
@@ -603,8 +616,31 @@ export function IsometricCanvas({
                 style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
                 onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
               >
-                {Array.from({ length: urgentVisible  }).map((_, i) => renderToken(i, true))}
-                {Array.from({ length: normalVisible  }).map((_, i) => renderToken(urgentVisible + i, false))}
+                {/* Normal order bar — sides first, top face last (painter order) */}
+                {normalH > 0.01 && (
+                  <>
+                    <polygon points={pts(nt00, nb00, nb01, nt01)} fill={accentFill} fillOpacity={0.45} />
+                    <polygon points={pts(nt10, nb10, nb11, nt11)} fill={accentFill} fillOpacity={0.32} />
+                    <polygon points={pts(nt00, nt10, nt11, nt01)} fill={accentFill} fillOpacity={0.75} />
+                  </>
+                )}
+                {/* Urgent/blocked sub-bar — sides first, top face last */}
+                {urgentH > 0.01 && (
+                  <>
+                    <polygon points={pts(ut00, ub00, ub01, ut01)} fill="#E5484D" fillOpacity={0.55} />
+                    <polygon points={pts(ut10, ub10, ub11, ut11)} fill="#E5484D" fillOpacity={0.40} />
+                    <polygon points={pts(ut00, ut10, ut11, ut01)} fill="#E5484D" fillOpacity={0.85} />
+                  </>
+                )}
+                {/* Urgent/blocked sub-bar */}
+                {urgentH > 0.01 && (
+                  <>
+                    <polygon points={pts(ut00, ut10, ut11, ut01)} fill="#E5484D" fillOpacity={0.85} />
+                    <polygon points={pts(ut00, ub00, ub01, ut01)} fill="#E5484D" fillOpacity={0.55} />
+                    <polygon points={pts(ut10, ub10, ub11, ut11)} fill="#E5484D" fillOpacity={0.40} />
+                  </>
+                )}
+                {/* Count badge */}
                 <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
                   fontSize={Math.round(11 * zoom)} fontWeight="600" fill={countColor} fontFamily="monospace">
                   {station.count}
@@ -619,8 +655,8 @@ export function IsometricCanvas({
         </g>
       </svg>
 
-      {/* Zoom controls */}
-      <Box sx={{ position: 'absolute', bottom: 12, right: 12, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+      {/* Zoom controls — hidden in embedded contexts via showControls={false} */}
+      {showControls && <Box sx={{ position: 'absolute', bottom: 12, right: 12, display:'flex', flexDirection: 'column', gap: 0.5 }}>
         {[{ label: '+', delta: 0.15 }, { label: '−', delta: -0.15 }].map(({ label, delta }) => (
           <Box key={label} onClick={() => setZoom(z => Math.min(2.5, Math.max(0.3, z + delta)))}
             sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -648,9 +684,10 @@ export function IsometricCanvas({
           {flipped ? '↙' : '↗'}
         </Box>
       </Box>
+      }
 
-      {/* Legend */}
-      <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
+      {/* Legend — hidden in embedded contexts via showLegend={false} */}
+      {showLegend && <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
         bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }}>
         <Typography sx={{ fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }}>FACES</Typography>
         {[{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (
@@ -659,7 +696,7 @@ export function IsometricCanvas({
             <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>{f.label} · {f.opacity}</Typography>
           </Box>
         ))}
-      </Box>
+      </Box>}
     </Box>
   );
 }

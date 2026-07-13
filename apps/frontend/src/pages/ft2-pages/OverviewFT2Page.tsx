@@ -1,6 +1,6 @@
 // File: apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 // Lines 1–12 (imports)
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography } from '@mui/material';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
@@ -17,7 +17,215 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
-import type { SyntheticStation, LiveBinActivity } from '@lasyncro/shared/ui';
+import type { SyntheticStation, LiveBinActivity, WarehouseZone } from '@lasyncro/shared/ui';
+import { sendEvent } from 'analytics/adapter';
+
+const LIVE_MAP_TEASER_DISMISS_KEY = 'overview-live-map-teaser-dismissed';
+
+function teaserZone(
+  locationCode: string,
+  type: WarehouseZone['type'],
+  parentLocationCode: string | null,
+  x: number,
+  y: number,
+  width: number,
+  depth: number,
+  rackLevels: number | null,
+  zoneType: string
+): WarehouseZone {
+  return {
+    location_code: locationCode,
+    type,
+    parent_location_code: parentLocationCode,
+    barcode: null,
+    active: true,
+    children_count: 0,
+    position_x: x,
+    position_y: y,
+    width,
+    depth,
+    orientation: 0,
+    rack_levels: rackLevels,
+    zone_type: zoneType,
+    last_printed_at: null,
+    warehouse_name: type === 'warehouse' ? 'Preview warehouse' : null,
+  };
+}
+
+const LIVE_MAP_TEASER_ZONES: WarehouseZone[] = [
+  teaserZone('PREVIEW', 'warehouse', null, 0, 0, 7, 6, null, 'storage'),
+
+  teaserZone('A', 'lane', 'PREVIEW', 0.7, 0.6, 3.3, 0.8, null, 'pick'),
+  teaserZone('A-1', 'bin', 'A', 0.8, 1.1, 0.9, 0.5, 3, 'pick'),
+  teaserZone('A-2', 'bin', 'A', 1.85, 1.1, 0.9, 0.5, 3, 'pick'),
+  teaserZone('A-3', 'bin', 'A', 2.9, 1.1, 0.9, 0.5, 3, 'pick'),
+
+  teaserZone('B', 'lane', 'PREVIEW', 0.7, 3, 3.3, 0.8, null, 'pick'),
+  teaserZone('B-1', 'bin', 'B', 0.8, 3.5, 0.9, 0.5, 3, 'pick'),
+  teaserZone('B-2', 'bin', 'B', 1.85, 3.5, 0.9, 0.5, 3, 'pick'),
+  teaserZone('B-3', 'bin', 'B', 2.9, 3.5, 0.9, 0.5, 3, 'pick'),
+
+  teaserZone('PACK', 'bin', 'PREVIEW', 5, 1.1, 1.3, 1.1, 1, 'pack'),
+  teaserZone('RECEIVE', 'bin', 'PREVIEW', 5, 3.4, 1.3, 1.1, 1, 'receive'),
+];
+
+const LIVE_MAP_TEASER_OCCUPANCY = {
+  'A-1': { on_hand_quantity: 5 },
+  'A-2': { on_hand_quantity: 18 },
+  'A-3': { on_hand_quantity: 27 },
+  'B-1': { on_hand_quantity: 8 },
+  'B-2': { on_hand_quantity: 20 },
+  'B-3': { on_hand_quantity: 29 },
+};
+
+function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
+  const [visible, setVisible] = useState(
+    () => window.sessionStorage.getItem(LIVE_MAP_TEASER_DISMISS_KEY) !== '1'
+  );
+
+  useEffect(() => {
+    if (!visible) return;
+
+    sendEvent('upgrade_prompt.shown', {
+      requiredTier: 'growth',
+      featureName: 'Overview live operations map',
+      mode: 'teaser',
+      surface: 'overview',
+    });
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const dismiss = () => {
+    window.sessionStorage.setItem(LIVE_MAP_TEASER_DISMISS_KEY, '1');
+    sendEvent('upgrade_prompt.dismissed', {
+      requiredTier: 'growth',
+      featureName: 'Overview live operations map',
+      surface: 'overview',
+    });
+    setVisible(false);
+  };
+
+  const upgrade = () => {
+    sendEvent('upgrade_prompt.clicked', {
+      requiredTier: 'growth',
+      featureName: 'Overview live operations map',
+      surface: 'overview',
+    });
+    onUpgrade();
+  };
+
+  return (
+    <Box
+      sx={{
+        position: 'relative',
+        minHeight: 126,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 2.5,
+        px: { xs: 2, sm: 2.5 },
+        py: 2,
+        bgcolor: 'var(--surface)',
+        border: '0.5px solid var(--rule)',
+        borderRadius: '14px',
+        overflow: 'hidden',
+      }}
+    >
+      <Box
+        aria-hidden="true"
+        sx={{
+          display: { xs: 'none', sm: 'block' },
+          position: 'relative',
+          flex: '0 0 220px',
+          height: '108px',
+          bgcolor: 'var(--bg-2)',
+          border: '0.5px solid var(--rule)',
+          borderRadius: '9px',
+          overflow: 'hidden',
+          pointerEvents: 'none',
+          opacity: 0.82,
+          '& svg text': {
+            display: 'none',
+          },
+        }}
+      >
+        <IsometricCanvas
+          zones={LIVE_MAP_TEASER_ZONES}
+          occupancy={LIVE_MAP_TEASER_OCCUPANCY}
+          showLegend={false}
+          showControls={false}
+          disablePan
+          autoFit
+          fitPadding={0.68}
+        />
+      </Box>
+
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          sx={{
+            fontSize: 10,
+            fontWeight: 600,
+            letterSpacing: '0.1em',
+            textTransform: 'uppercase',
+            color: 'var(--accent)',
+            mb: 0.5,
+          }}
+        >
+          Available on Growth
+        </Typography>
+
+        <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', mb: 0.5 }}>
+          See your warehouse move in real time
+        </Typography>
+
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+          Follow picks, stock pressure and blocked work on one live floor.
+        </Typography>
+      </Box>
+
+      <Box
+        component="button"
+        onClick={upgrade}
+        sx={{
+          flexShrink: 0,
+          px: 1.75,
+          py: 0.875,
+          bgcolor: 'var(--accent)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: '7px',
+          fontSize: 12,
+          fontWeight: 600,
+          cursor: 'pointer',
+          '&:hover': { opacity: 0.88 },
+        }}
+      >
+        See Growth plan →
+      </Box>
+
+      <Box
+        component="button"
+        aria-label="Dismiss live map upgrade"
+        onClick={dismiss}
+        sx={{
+          position: 'absolute',
+          top: 8,
+          right: 10,
+          bgcolor: 'transparent',
+          color: 'var(--ink-4)',
+          border: 'none',
+          fontSize: 18,
+          lineHeight: 1,
+          cursor: 'pointer',
+          p: 0.5,
+          '&:hover': { color: 'var(--ink)' },
+        }}
+      >
+        ×
+      </Box>
+    </Box>
+  );
+}
 
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
@@ -35,7 +243,7 @@ export default function OverviewPageFT2() {
   // Map data — all hooks unconditional (Rules of Hooks); data ignored when tier doesn't qualify.
   // Occupancy deferred until zones are loaded (enabled guard) to avoid a redundant request
   // on first paint. Per overview-live-map-playbook.md §3 and §4.
-  const hasMapTier = tier === 'scale';
+  const hasMapTier = tier === 'scale' || tier === 'growth';
   const floorPlanning = useFloorPlanning();
   const zones = floorPlanning.data?.zones ?? [];
   const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
@@ -75,15 +283,17 @@ export default function OverviewPageFT2() {
     const mapContent = (hasMapTier && !floorPlanning.isLoading) ? (
     zones.length > 0 ? (
       // Live map — occupancy overlay on by default
-      <Box sx={{ height: '100%', minHeight: 420, borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)' }}>
+      <Box sx={{ height: 520, borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)' }}>
         <IsometricCanvas
           zones={zones}
           occupancy={occupancyQuery.data?.occupancy}
           stations={stations}
           liveActivity={liveActivity}
+          showLegend={false}
+          showControls={false}
+          disablePan
           autoFit
-          fitPadding={24}
-          initialZoom={0.85}
+          fitPadding={0.68}
         />
       </Box>
     ) : (
@@ -118,15 +328,20 @@ export default function OverviewPageFT2() {
     <>
       <ProfileCompletionBanner />
       <OverviewModuleFT2
-        {...overviewProps}
-        userName={user?.first_name ?? null}
-        morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}
-        currency={displayCurrency}
-        mapContent={mapContent}
-        onNavigate={(deepLink) => navigate(deepLink)}
-        onRefreshBrief={() => setForceRefresh(f => !f)}
-        onExportBrief={async () => setExportDrawerOpen(true)}
-      />
+          {...overviewProps}
+          userName={user?.first_name ?? null}
+          morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}
+          currency={displayCurrency}
+          mapContent={mapContent}
+          upgradeTeaser={
+            isOwnerOrAdmin && !hasMapTier ? (
+              <LiveMapUpgradeTeaser onUpgrade={() => navigate('/settings/billing')} />
+            ) : undefined
+          }
+          onNavigate={(deepLink) => navigate(deepLink)}
+          onRefreshBrief={() => setForceRefresh(f => !f)}
+          onExportBrief={async () => setExportDrawerOpen(true)}
+        />
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}

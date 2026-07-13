@@ -91,6 +91,7 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * Tier gate and zone guard are resolved by the page layer — module is layout-only.
    */
   mapContent?: ReactNode;
+  upgradeTeaser?: ReactNode;
 };
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
@@ -374,8 +375,17 @@ function BusinessPulse({
   const activeStages = pulseStages.filter(s => s.count > 0);
   const stageTotal = activeStages.reduce((s, d) => s + d.count, 0) || 1;
   const cardSx = noCard
-    ? {}
-    : { flex: '0 0 280px', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', p: '18px 20px' };
+  ? {}
+  : {
+      flex: { xs: '1 1 auto', lg: '0 0 280px' },
+      width: { xs: '100%', lg: '280px' },
+      minWidth: 0,
+      boxSizing: 'border-box',
+      bgcolor: 'var(--surface)',
+      border: '0.5px solid var(--rule)',
+      borderRadius: '14px',
+      p: '18px 20px',
+    };
 
   return (
     <Box sx={cardSx}>
@@ -466,8 +476,21 @@ function MergedPulseCard({
   const hiddenCount = Math.max(0, urgentSignals.length - 3);
 
   return (
-    <Box sx={{ flex: '0 0 280px', bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-
+    <Box
+      sx={{
+        flex: { xs: '1 1 auto', lg: '0 0 280px' },
+        width: { xs: '100%', lg: '280px' },
+        minWidth: 0,
+        boxSizing: 'border-box',
+        bgcolor: 'var(--surface)',
+        border: '0.5px solid var(--rule)',
+        borderRadius: '14px',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        height: { xs: 'auto', lg: '100%' },
+      }}
+    >
       {/* ── DECISIONS ── */}
       {urgentSignals.length > 0 && (
         <Box sx={{ px: '1.25rem', pt: '1rem', pb: '0.75rem' }}>
@@ -543,7 +566,15 @@ function MergedPulseCard({
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 
 function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
-  const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief, mapContent } = props;
+  const {
+    morningBrief,
+    pulse,
+    onNavigate,
+    onRefreshBrief,
+    onExportBrief,
+    mapContent,
+    upgradeTeaser,
+  } = props;
 
   const isLoading    = morningBrief === undefined;
   const isTrustGated = morningBrief === null;
@@ -638,9 +669,22 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
       {!isLoading && (
         mapContent ? (
           /* MAP LAYOUT — 75% live map + 25% merged pulse card */
-          <Box sx={{ display: 'flex', gap: 2.25, alignItems: 'start' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', lg: 'row' },
+              gap: 2.25,
+              alignItems: 'stretch',
+            }}
+          >
             {/* LEFT: live map slot */}
-            <Box sx={{ flex: '1 1 0', minWidth: 0 }}>
+            <Box
+              sx={{
+                flex: '1 1 0',
+                width: { xs: '100%', lg: 'auto' },
+                minWidth: 0,
+              }}
+            >
               {mapContent}
             </Box>
             {/* RIGHT: merged pulse card (fixed 280px) */}
@@ -657,9 +701,30 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
           </Box>
         ) : (
           /* TRIAGE LAYOUT — fallback for non-scale tier and zero-zone tenants */
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexDirection: { xs: 'column', lg: 'row' },
+              flexWrap: { xs: 'nowrap', lg: 'wrap' },
+              gap: 2.25,
+              alignItems: 'stretch',
+            }}
+          >
             {/* LEFT: Needs a decision */}
-            <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+            <Box
+              sx={{
+                flex: { xs: '1 1 auto', lg: '1 1 0' },
+                width: { xs: '100%', lg: 'auto' },
+                minWidth: 0,
+                boxSizing: 'border-box',
+                bgcolor: 'var(--surface)',
+                border: '0.5px solid var(--rule)',
+                borderRadius: '14px',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
               {/* Card header */}
               <Box sx={{ px: '1.25rem', py: '0.9rem', borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                 <Box>
@@ -768,9 +833,20 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
               )}
 
-              {/* Footer */}
-              <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {trustWarning && (
+              {/* Footer — pinned to the bottom when Business Pulse is taller */}
+                  <Box
+                    sx={{
+                      mt: 'auto',
+                      px: '1.25rem',
+                      py: '0.625rem',
+                      bgcolor: 'var(--bg-2)',
+                      borderTop: '0.5px solid var(--rule)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                  {trustWarning && (
                   <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
                     Data may be stale ·
                   </Typography>
@@ -782,6 +858,11 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             </Box>
 
             {pulse && <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} />}
+            {upgradeTeaser && (
+              <Box sx={{ flex: '1 0 100%', minWidth: 0 }}>
+                {upgradeTeaser}
+              </Box>
+            )}
           </Box>
         )
       )}
