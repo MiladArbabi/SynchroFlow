@@ -592,7 +592,7 @@ capabilities, not to the existence of stable warehouse identity.
 | ISS-251 | W5 | Wh Analytics | "Add hourly costs in Team" — Team relocated to Settings 2026-07-08; stale pointer |
 | ISS-252 | P1 | Returns | Queue "Ranked oldest-first" — must be consequence-ranked with canonical sentence (§2.4, §5) |
 | ISS-253 | ✅ | Returns Pulse | Intentional: recovery_rate_pct = money-based (1515/3810 = 39.8%); jobs subtitle = count-based (3/8 = 37.5%). Two metrics, same query, both correct. Verified live (2026-07-13) |
-| ISS-254 | ✅ | Returns vs Inventory Intelligence | Stale audit screenshot — live: refunded=$3,810, leaked=$2,295, recovered=$1,515. Math holds: Leaked = Refunded − Recovered. No bug (2026-07-13) |
+| ISS-254 | ✅ | Returns Pulse | Genuine bug fixed: total_revenue_refunded was SUM(oru.line_total) — excluded 3 pending jobs with no line items ($1,410). Now uses SUM(re.total_refund_amount) per §7 canonical vocab. Verified live: $3,810 (2026-07-13) |
 | ISS-255 | W3 | Returns | "Claim →" primary CTA — verb absent from §7 actions and dispositions |
 | ISS-256 | K | Returns | "Scan a return" scan surface on Console decision page — Loop 3 placement, logged |
 | ISS-257 | ✅ | Returns Items | Restock condition-gated by design — disabled with inline reason when inspected condition blocks resale. Rule in §5. (resolved 2026-07-12) |
