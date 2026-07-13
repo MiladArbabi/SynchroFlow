@@ -108,7 +108,6 @@ export async function computeReturnsIntelligence(
       .where('o.shop_id', shopId)
       .select(
         trx.raw('COUNT(DISTINCT re.lasyncro_refund_execution_id) as total_refunds'),
-        trx.raw('COALESCE(SUM(oru.line_total), 0) as total_revenue_refunded'),
         trx.raw(`
           COALESCE(SUM(
             CASE
@@ -134,7 +133,14 @@ export async function computeReturnsIntelligence(
       .first();
 
     const totalRefunds = Number(summaryRow?.total_refunds ?? 0);
-    const totalRevenueRefunded = Number(summaryRow?.total_revenue_refunded ?? 0);
+    // ISS-254: use actual cash refunded (total_refund_amount) not order line totals
+    // Separate query avoids fan-out from the reli→oru join in summaryRow
+    const revenueRefundedRow = await trx('refund_executions as re')
+      .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+      .where('o.shop_id', shopId)
+      .sum('re.total_refund_amount as total')
+      .first();
+    const totalRevenueRefunded = Number(revenueRefundedRow?.total ?? 0);
     const totalMarginLeakage = Number(summaryRow?.total_margin_leakage ?? 0);
     const totalUnitsReturned = Number(summaryRow?.total_units_returned ?? 0);
     const totalUnitsRestocked = Number(restockRow?.total_restocked ?? 0);
