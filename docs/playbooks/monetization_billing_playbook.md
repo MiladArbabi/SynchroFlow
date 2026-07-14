@@ -136,18 +136,28 @@ Registration
       └── INSERT shop_subscriptions { tier: 'growth', status: 'trialing',
                                       billing_currency, trial_ends_at: +14d }
 
-Stripe Checkout
-  └── billing.controller.ts
-      └── reads billing_currency from shop_subscriptions
-      └── getStripePriceId(tier, billing_currency, interval)
-      └── stripe.checkout.sessions.create({ price: priceId })
+Pay-Per-Order Setup (SEG-022-B)
+  └── billing.controller.ts → createSetupSession
+      └── POST /api/v1/billing/setup-payment-method
+      └── no tier gate — Starter is the primary caller (via
+          ShippedOrderCapBanner "Enable pay-per-order" CTA)
+      └── reuses stripe_customer_id if present, else creates one
+      └── stripe.checkout.sessions.create({ mode: 'setup', ... })
+      └── card saved, no subscription, no charge
 
-Stripe Webhook → handleSubscriptionUpsert
-  └── merges: tier, billing_interval, stripe_customer_id,
-              stripe_subscription_id, status, trial_ends_at,
-              current_period_start, current_period_end
-  └── does NOT touch billing_currency (set once, never overwritten)
-  └── re-seeds shop_module_entitlements from tier constants
+Stripe Webhook → handleCheckoutSetupComplete
+  └── fires on checkout.session.completed
+  └── guard: only acts if session.mode === 'setup' AND
+      session.metadata.purpose === 'pay_per_order_setup'
+      (this event type also fires for ordinary subscription
+      checkouts — already handled via customer.subscription.created)
+  └── persists stripe_customer_id to shop_subscriptions
+  └── writes inside db.transaction + SET LOCAL "app.current_tenant"
+      (RLS-protected table — session-level SET is not reliable
+      across pooled connections, must be transaction-scoped)
+  └── once stripe_customer_id is set, reportShippedOrderOverage's
+      existing early-return (`if (!sub?.stripe_customer_id) return`)
+      starts firing automatically — no change needed there
 
 JWT issuance (token.service.ts)
   └── resolveTierForShop(shopId) → reads shop_subscriptions.tier
@@ -274,6 +284,7 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 | MON-09 | Shopify Billing API | ✅ Done |
 | MON-10 | Upgrade prompt system | ✅ Done (PlanGate, PaywallSurface) |
 | MON-currency | Multi-currency pricing | ✅ Backend done · 🔄 Frontend in progress |
+| SEG-022-B | Pay-per-order Stripe Customer flow (lazy setup, no card at signup) | ✅ Done (2026-07-14) |
 
 ---
 
@@ -441,3 +452,25 @@ considering the change complete. The module list and route-level checks
 do not share a single source of truth — verify both with live curl tests
 at the old and new tier boundaries, the same discipline used throughout
 §13.
+
+---
+
+## 15. RLS + Webhook Handlers — Recurring Gotcha (2026-07-14)
+
+Any webhook handler writing to an RLS-protected table (e.g.
+`shop_subscriptions`, `activation_audit_events`) MUST NOT rely on
+`WebhookRouter.dispatch`'s ambient `SET app.current_tenant` — that is a
+session-level SET on whatever connection the router borrowed, and Knex's
+connection pool can hand a *different* connection to the handler's own
+query. RLS then silently filters writes to zero affected rows — no
+error, no thrown exception, ledger still marks the event `processed`.
+
+**Rule:** every handler write to an RLS table must wrap in its own
+`db.transaction()` with `SET LOCAL "app.current_tenant" = '<shopId>'`
+inside that same transaction. Confirmed pattern in
+`handleCheckoutSetupComplete.ts`.
+
+**Also note:** Postgres `SET`/`SET LOCAL` does not accept bind
+parameters — the tenant ID must be inlined as a literal, not passed via
+`?`/`$1`. Safe here only because `shopId` is a validated `number` from
+`WebhookEnvelope`, never raw user input.

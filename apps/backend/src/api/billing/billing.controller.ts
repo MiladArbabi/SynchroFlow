@@ -118,6 +118,63 @@ export async function createCheckoutSession(req: Request, res: Response) {
 }
 
 /**
+ * POST /api/v1/billing/setup-payment-method
+ *
+ * Creates a Stripe Checkout session in 'setup' mode — saves a card,
+ * no subscription, no charge. Used by Starter shops opting into
+ * pay-per-order overage (SEG-022-B) without buying a paid tier.
+ *
+ * Reuses createCheckoutSession's customer-resolution pattern but
+ * intentionally does NOT gate on tier — Starter is the primary caller.
+ */
+export async function createSetupSession(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+
+  try {
+    const stripe = getStripe();
+    const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173';
+
+    const subRow = await db('shop_subscriptions')
+      .where({ shop_id: shopId })
+      .first('stripe_customer_id', 'billing_provider');
+
+    if (subRow?.billing_provider === 'shopify') {
+      return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
+    }
+
+    let customerId: string | undefined = subRow?.stripe_customer_id ?? undefined;
+
+    if (!customerId) {
+      const shop = await db('shops').where({ id: shopId }).first('name');
+      const customer = await stripe.customers.create({
+        name: shop?.name ?? `Shop ${shopId}`,
+        metadata: { shopId: String(shopId) },
+      });
+      customerId = customer.id;
+    }
+
+    const session = await stripe.checkout.sessions.create({
+      customer: customerId,
+      mode: 'setup',
+      payment_method_types: ['card'],
+      success_url: `${frontendUrl}/settings/billing?ppo=1`,
+      cancel_url: `${frontendUrl}/settings/billing?ppo_canceled=1`,
+      metadata: {
+        shopId: String(shopId),
+        purpose: 'pay_per_order_setup',
+      },
+    });
+
+    console.log('[billing] setup session created', { shopId, sessionId: session.id });
+
+    return res.json({ url: session.url });
+  } catch (err: any) {
+    console.error('[billing] createSetupSession failed', { shopId, err: err.message });
+    return res.status(500).json({ error: 'SETUP_SESSION_FAILED' });
+  }
+}
+
+/**
  * POST /api/v1/billing/portal
  *
  * Creates a Stripe Customer Portal session.

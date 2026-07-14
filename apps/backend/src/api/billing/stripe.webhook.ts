@@ -10,6 +10,7 @@
 //   customer.subscription.deleted  → handleSubscriptionDeleted
 //   invoice.payment_failed         → handlePaymentFailed
 //   invoice.payment_succeeded      → handleInvoicePaid
+//   checkout.session.completed → handleCheckoutSetupComplete
 
 import { Request, Response } from 'express';
 import { WebhookRouter } from '../webhooks/webhookRouter.js';
@@ -19,6 +20,7 @@ import {
   handleSubscriptionDeleted,
   handlePaymentFailed,
   handleInvoicePaid,
+  handleCheckoutSetupComplete,
 } from './handlers/index.js';
 
 // Register Stripe subscription lifecycle handlers
@@ -50,6 +52,12 @@ WebhookRouter.register({
   integration: 'stripe',
   eventType: 'invoice.payment_succeeded',
   handle: handleInvoicePaid,
+});
+
+WebhookRouter.register({
+  integration: 'stripe',
+  eventType: 'checkout.session.completed',
+  handle: handleCheckoutSetupComplete,
 });
 
 export async function stripeWebhookHandler(req: Request, res: Response) {

@@ -10,6 +10,7 @@ import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middle
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   createCheckoutSession,
+  createSetupSession,
   createPortalSession,
   getSubscription,
   getUsage,
@@ -27,5 +28,8 @@ router.post('/checkout', authenticateToken, requireAction('billing:write'), crea
 
 // POST /api/v1/billing/portal — create Stripe Customer Portal session
 router.post('/portal', authenticateToken, requireAction('billing:read'), createPortalSession);
+
+// POST /api/v1/billing/setup-payment-method — save a card, no subscription (SEG-022-B)
+router.post('/setup-payment-method', authenticateToken, requireAction('billing:write'), createSetupSession);
 
 export default router;

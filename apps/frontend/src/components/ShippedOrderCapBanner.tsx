@@ -42,6 +42,7 @@ export function ShippedOrderCapBanner() {
   const navigate = useNavigate();
   const { tier } = useEntitlements();
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  const [settingUpPPO, setSettingUpPPO] = useState(false);
 
   useEffect(() => {
     axiosInstance.get('/api/v1/billing/usage')
@@ -79,9 +80,21 @@ export function ShippedOrderCapBanner() {
       };
 
   const handleUpgrade = () => navigate('/settings/billing');
-  // Placeholder destination until the pay-per-order Stripe Customer flow
-  // (SEG-022-B) exists — routes to the same billing page for now.
-  const handlePayPerOrder = () => navigate('/settings/billing');
+
+  // SEG-022-B: opens Stripe Checkout in 'setup' mode — saves a card,
+  // no subscription. handleCheckoutSetupComplete webhook persists
+  // stripe_customer_id on completion; reportShippedOrderOverage then
+  // starts firing automatically for this shop.
+  const handlePayPerOrder = async () => {
+    setSettingUpPPO(true);
+    try {
+      const { data } = await axiosInstance.post('/api/v1/billing/setup-payment-method');
+      if (data.url) window.location.href = data.url;
+    } catch (err) {
+      console.error('[ShippedOrderCapBanner] setup-payment-method failed', err);
+      setSettingUpPPO(false);
+    }
+  };
 
   return (
     <Box sx={{
@@ -124,15 +137,16 @@ export function ShippedOrderCapBanner() {
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
         <Box
-          onClick={handlePayPerOrder}
+          onClick={settingUpPPO ? undefined : handlePayPerOrder}
           sx={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', height: 36, px: '16px',
             background: theme.palette.primary.main, color: '#FFF', borderRadius: '8px',
-            fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
-            '&:hover': { opacity: 0.88 },
+            fontSize: 12.5, fontWeight: 600, cursor: settingUpPPO ? 'default' : 'pointer',
+            whiteSpace: 'nowrap', opacity: settingUpPPO ? 0.6 : 1,
+            '&:hover': { opacity: settingUpPPO ? 0.6 : 0.88 },
           }}
         >
-          Enable pay-per-order
+          {settingUpPPO ? 'Redirecting…' : 'Enable pay-per-order'}
         </Box>
         {nextTier && (
           <Box
