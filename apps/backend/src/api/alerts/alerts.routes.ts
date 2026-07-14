@@ -14,6 +14,7 @@ import {
 } from './alertRules.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { requireTier } from '../../middleware/require-entitlement.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 
 const router = Router();
@@ -68,10 +69,16 @@ router.post('/:alertId/resolve',
  * --------------------
  * User-configurable rules evaluated on order arrival.
  * Owner/admin only — operators cannot configure rules.
+ *
+ * SECURITY FIX (audit ISS-P10 / alerts.rules): routes previously had
+ * zero tier enforcement despite alerts.rules being a documented Growth
+ * feature (PLAN_FEATURES in usePlanEntitlement.ts, gated via ModuleTabBar
+ * in AlertsPage.tsx). requireTier('growth') added to match.
  */
 router.get('/rules',
   authenticateToken,
   requireFt2,
+  requireTier('growth'),
   requireAction('alerts:rules:read'),
   httpGetAlertRules
 );
@@ -79,6 +86,7 @@ router.get('/rules',
 router.post('/rules',
   authenticateToken,
   requireFt2,
+  requireTier('growth'),
   requireAction('alerts:rules:write'),
   httpCreateAlertRule
 );
@@ -86,6 +94,7 @@ router.post('/rules',
 router.delete('/rules/:ruleId',
   authenticateToken,
   requireFt2,
+  requireTier('growth'),
   requireAction('alerts:rules:write'),
   httpDeleteAlertRule
 );

@@ -268,7 +268,7 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 | MON-03 | JWT tier claim + entitlements engine | ✅ Done |
 | MON-04 | Seat limit enforcement | ✅ Done |
 | MON-05 | Order cap enforcement | ✅ Done |
-| MON-06 | Module gating (backend + frontend) | ✅ Done |
+| MON-06 | Module gating (backend + frontend) | ⚠️ Partial — see §13 for confirmed gaps and fixes (2026-07-14) |
 | MON-07 | 14-day Growth trial on registration | ✅ Done |
 | MON-08 | Annual billing | ✅ Stripe prices exist, UI TBC |
 | MON-09 | Shopify Billing API | ✅ Done |
@@ -299,3 +299,72 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 6. Add module set constant in `tiers.ts`
 7. Update `requireTier` calls on routes as needed
 8. Update `PLAN_FEATURES` in frontend `usePlanEntitlement.ts`
+
+---
+
+## 13. Gating Architecture Audit — Findings & Guardrails (2026-07-14)
+
+> Full audit + implementation session. Confirmed multiple live tier-enforcement
+> gaps despite MON-06 being marked "Done." This section documents the actual
+> architecture as verified against live code and the database, the bugs found
+> and fixed, and rules to stop this class of bug recurring.
+
+### 13.1 There are THREE independent gating layers, not one
+
+Contrary to §7's simplified description, tier gating is enforced in three
+separate places that do not share logic and can silently disagree:
+
+1. **Sidebar nav** — `resolveNavigation.ts` → `resolveNavVisibility.ts`.
+   Correctly tier-aware. Not implicated in any bug found this session.
+2. **In-page tab bar** — `components/ModuleTabBar.tsx`. Used by Warehouse,
+   Orders, Finances, Returns, etc. Historically checked only the `feature`
+   prop and silently ignored `requiredTier` — meaning any tab gated by
+   `requiredTier` alone was unconditionally unlocked regardless of plan.
+   **Fixed 2026-07-14** — `isLocked()` now checks both.
+3. **Component-level** — `PlanGate` / `usePlanEntitlement()` /
+   `PLAN_FEATURES`. Correct by design, but `PLAN_FEATURES` is a hand-maintained
+   frontend map that can drift from backend `TIER_CONFIG` with nothing to
+   catch it (see 13.4).
+
+**Rule going forward:** any new tab/route must be checked against ALL THREE
+layers if it appears in more than one — do not assume fixing the sidebar
+also fixes the tab bar, or vice versa.
+
+### 13.2 The real enforcement is the backend route, not the frontend
+
+The frontend layers above are UX — they hide/show/badge things. The only
+thing that actually stops a request is `requireTier()` in the Express route
+chain (`authenticateToken → requireFt2 → requireTier → requireAction`).
+**A frontend-only gate with no backend `requireTier` counterpart is not a
+gate — it's a suggestion.** Every confirmed bug this session was a case of
+exactly that.
+
+### 13.3 Confirmed live defects found and fixed (2026-07-14)
+
+| Defect | File(s) | Impact | Status |
+|---|---|---|---|
+| Floor Planning routes had zero `requireTier` | `floor-planning.routes.ts` (11 routes) | Starter shops could read/write full warehouse layout, zones, barcodes | ✅ Fixed — `requireTier('scale')` added to all 11 |
+| Products routes had zero `requireTier` (and `/` had zero `requireFt2` too) | `products.routes.ts` (`/`, `/operator-summary`) | Starter shops could pull real margin/warehouse intelligence data | ✅ Fixed — `requireTier('core')` added to both |
+| `ModuleTabBar.isLocked()` ignored `requiredTier` | `ModuleTabBar.tsx` | Floor Planning / Problem Center tabs unconditionally unlocked in-page regardless of plan, even though sidebar correctly blocked the same route | ✅ Fixed — now checks `requiredTier` against user's tier |
+| Problem Center tagged `requiredTier: 'scale'` on frontend vs backend `requireTier('core')` | `FloorPlanningPage.tsx`, `ProblemCenterPage.tsx`, `warehouseModuleTabs.ts` | Once tab-bar enforcement was restored, Core customers would have been wrongly blocked from a feature they already pay for | ✅ Fixed — corrected to `'core'` in all 3 sites |
+| Sidenav upgrade modal hardcoded `requiredTier="growth"` | `SidenavContent.tsx` | Clicking any locked sidebar item — regardless of actual required tier — told the user to upgrade to Growth specifically, risking wrong-plan purchase | ✅ Fixed — tier now tracked from the clicked item/child |
+| Alert Rules routes had zero `requireTier` | `alerts.routes.ts` (`/rules` × 3) | Starter/Core shops could read/write alert rules (Growth feature) directly via API | 🔴 Confirmed, fix pending (next task) |
+
+### 13.4 Known drift between frontend `PLAN_FEATURES` and backend `TIER_CONFIG`
+
+`PLAN_FEATURES` in `usePlanEntitlement.ts` is maintained by hand and has no
+automated check against `packages/backend-core/src/config/tiers.ts`. Cross-checked
+2026-07-14:
+
+- `alerts.inbox: 'core'` — backend has `alerts` in `STARTER_MODULES` (free).
+  Mismatch confirmed, but **dead code** — not referenced by any live `PlanGate`
+  call, so no user-facing risk today. Left as-is; clean up if the feature is
+  ever wired up.
+- `orders.sla_bands`, `orders.aging_orders`, `orders.quick_actions`,
+  `orders.bulk_review`, `orders.pick_list` — no backend enforcement exists
+  for any of these keys, and **none are referenced by any live `PlanGate`
+  call**. Dead registry entries. Same treatment — leave until wired up, then
+  verify against backend before shipping.
+- Everything else in `PLAN_FEATURES` was spot-checked or verified live this
+  session and matches backend (`wms.*`, `products.*`, `demand.forecasting`,
+  
