@@ -44,6 +44,7 @@ import { OrderCapBanner } from '../../components/OrderCapBanner';
 import { ShippedOrderCapBanner } from '../../components/ShippedOrderCapBanner';
 import { ExportDrawer } from 'components/ExportDrawer';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
+import { Box } from '@mui/system';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -86,8 +87,10 @@ export default function OrdersFT2Page() {
   return (
     <>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
-      <OrderCapBanner />
-      <ShippedOrderCapBanner />
+      <Box sx={{ mt: 3, px: 2 }}>
+        <OrderCapBanner />
+        <ShippedOrderCapBanner />
+      </Box>
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}
