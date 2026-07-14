@@ -840,7 +840,7 @@ const BillingSettings: React.FC = () => {
 
       {/* Billing toggle + plan cards */}
       <Box ref={planCardsRef}>
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: 3 }}> 
           <BillingToggle value={billingInterval} onChange={setBilling} />
         </Box>
 
