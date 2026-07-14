@@ -108,7 +108,7 @@ export function bootstrapNavGroups() {
       // product-issues moved to warehouse.children[] — DEC-01/DEC-03 (2026-07-08)
       { id: 'returns',   title: 'Overview',   path: '/returns'        },
       { id: 'return-items',   title: 'Items',   path: '/returns/items'        },
-      { id: 'supplier-ratings',   title: 'Supplier Ratings',   path: '/returns/suppliers'        },
+      { id: 'supplier-ratings',   title: 'Supplier Ratings',   path: '/returns/suppliers', requiredTier: 'growth' },
     ],
   });
 
