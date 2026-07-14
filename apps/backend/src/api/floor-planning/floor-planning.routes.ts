@@ -28,7 +28,8 @@ import {
  * enforcement — any authenticated shop on any plan (incl. free Starter)
  * could read/write full warehouse layout data. Tier check restored to
  * match the wms.routes.ts pattern: authenticateToken → requireFt2 →
- * requireTier → requireAction.
+ * requireTier → requireAction. Tier: growth (moved from scale
+ * 2026-07-14 — see tiers.ts GROWTH_MODULES comment for why).
  *
  * FEAT-002: Extend with POST /zones, PATCH /zones/:code/barcode, etc.
  * once barcode column is added to warehouse_locations.
@@ -39,7 +40,7 @@ router.get(
   '/layout',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetLayout
 );
@@ -48,7 +49,7 @@ router.patch(
   '/products/:lasyncroVariantId/barcode',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:write'),
   httpUpdateProductBarcode
 );
@@ -57,7 +58,7 @@ router.post(
   '/zones',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:write'),
   httpCreateZone
 );
@@ -66,7 +67,7 @@ router.patch(
   '/zones/:locationCode',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:write'),
   httpUpdateZone
 );
@@ -75,7 +76,7 @@ router.delete(
   '/zones/:locationCode',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:write'),
   httpDeleteZone
 );
@@ -84,7 +85,7 @@ router.get(
   '/grid',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetGrid
 );
@@ -93,7 +94,7 @@ router.get(
   '/grid/occupancy',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetBinOccupancy
 );
@@ -102,7 +103,7 @@ router.get(
   '/bin/:locationCode/log',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetBinLog
 );
@@ -111,7 +112,7 @@ router.get(
   '/bin/:locationCode/stats',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetBinStats
 );
@@ -120,7 +121,7 @@ router.get(
   '/variant/:variantId/bins',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:read'),
   httpGetVariantBins
 );
@@ -129,7 +130,7 @@ router.post(
   '/zones/:locationCode/print',
   authenticateToken,
   requireFt2,
-  requireTier('scale'),
+  requireTier('growth'),
   requireAction('floor-planning:write'),
   httpPrintBarcode
 );

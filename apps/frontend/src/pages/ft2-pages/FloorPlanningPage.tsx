@@ -59,7 +59,7 @@ export default function FloorPlanningPage() {
       {/* Warehouse-level tab bar — mirrors WmsPage and WmsAnalyticsPage */}
       <ModuleTabBar tabs={[
         { id: 'operations',     label: 'Operations',     path: '/wms'            },
-        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale' },
+        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'growth' },
         { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth' },
         { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'core' },
       ]} />
