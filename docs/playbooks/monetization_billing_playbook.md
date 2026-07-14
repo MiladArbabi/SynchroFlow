@@ -13,7 +13,7 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 | Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
 |---|---|---|---|---|
 | Starter | Free | 1 seat (owner only) | 50 | 0 (no WMS) |
-| Core | $79 | 2 non-owner seats | 2,000 | 200 |
+| Core | $79 | 3 non-owner seats | 2,000 | 200 |
 | Growth | $179 | 5 non-owner seats | 10,000 | 1,000 |
 | Scale | $349 | Unlimited | Unlimited | Unlimited |
 

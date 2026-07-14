@@ -123,7 +123,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
    */
   core: {
     monthlyPriceCents: 7900,
-    seatLimit: 2,
+    seatLimit: 3,
     monthlyOrderCap: 2000,
     shippedOrderCap: 200,
     specterSessionCap: 5000,

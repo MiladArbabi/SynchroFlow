@@ -38,7 +38,7 @@ export const TIER_SHIPPED_ORDER_CAP: Record<Tier, number> = {
 
 export const TIER_SEAT_LIMIT: Record<Tier, number> = {
   starter: 1,
-  core: 2,
+  core: 3,
   growth: 5,
   scale: Infinity,
 };
