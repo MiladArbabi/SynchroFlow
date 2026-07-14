@@ -666,3 +666,51 @@ selections exist; the list owns the space otherwise. First and canonical use:
 `position: absolute`) when used inside a contextual action bar. It sits above the
 order list, coaches selection, and disappears once dismissed. After dismissal the
 space collapses — no empty placeholder.
+
+## 17. Shared Cap Status Pattern — useCapStatus(), 2026-07-14
+
+**New hook:** `apps/frontend/src/hooks/useCapStatus.ts` — single source of
+truth for any usage-vs-cap threshold logic. Takes `used`, `cap`, and an
+array of ascending fraction thresholds (e.g. `[0.75, 0.9]`), returns
+`{ pct, level }` where `level` is `'ok' | 'warn' | 'urgent' | 'blocked'`.
+
+**Why this exists:** two components (`OrderCapBanner`, `UsageMeter`) each
+had their own copy-pasted 80%-cutoff logic before this change, with no
+shared source — a recipe for silent drift where "approaching the limit"
+means something different on different screens. Extracted once, consumed
+by both the loud banner variant and the quiet inline meter variant.
+
+**Pattern — two presentations, one data source:**
+- **Loud (banner):** appears inline on the relevant page only when
+  `level !== 'ok'`, dismissed by not rendering rather than a close button.
+  First use: `OrderCapBanner.tsx` (ingestion cap, single threshold `[0.8]`,
+  unchanged legacy behavior), `ShippedOrderCapBanner.tsx` (shipped/pack
+  cap, two-stage `[0.75, 0.9]`, new 2026-07-14).
+- **Quiet (meter):** always visible on the Billing usage panel, progress
+  bar fills proportionally, color shifts via the same `level` value.
+  `UsageMeter` in `BillingSettings.tsx`, upgraded to 3-stage this session.
+
+**Scoping rule — banners are page-scoped, not global.** `OrderCapBanner`
+was already scoped to `OrdersFT2Page.tsx` only, not Overview or other
+modules. `ShippedOrderCapBanner` follows the same convention deliberately
+— cap warnings belong on the page where the capped activity happens, not
+broadcast everywhere. Don't mount cap banners globally; each one is
+relevant to a specific workflow.
+
+**CTA hierarchy applied per §2:** in `ShippedOrderCapBanner`, "Enable
+pay-per-order" commits an action → Tier 1 filled accent. "Upgrade plan"
+navigates to Billing → Tier 2 ghost pill. Same decision-guide logic as
+every other CTA in the app — cap banners are not a special case.
+
+**Known gap:** "Enable pay-per-order" currently routes to `/settings/billing`
+as a placeholder — the real flow (creating a Stripe Customer for a
+previously-card-free Starter shop, so `reportShippedOrderOverage()`'s
+existing `stripe_customer_id` check starts passing) is not yet built.
+Update this destination when that flow ships.
+
+**Terminology note:** `shipped_orders` in the database and API means
+*pack-complete*, not carrier-confirmed shipment — see
+`wms.controller.ts` `httpPackComplete`. Any new UI surfacing this number
+should say "packed," matching `ShippedOrderCapBanner`'s copy, not
+"shipped," to stay accurate until/unless the underlying trigger point
+changes.

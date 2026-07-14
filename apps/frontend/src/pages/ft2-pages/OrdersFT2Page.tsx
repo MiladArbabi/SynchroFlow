@@ -41,6 +41,7 @@ import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { OrderCapBanner } from '../../components/OrderCapBanner';
+import { ShippedOrderCapBanner } from '../../components/ShippedOrderCapBanner';
 import { ExportDrawer } from 'components/ExportDrawer';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 
@@ -86,6 +87,7 @@ export default function OrdersFT2Page() {
     <>
       <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <OrderCapBanner />
+      <ShippedOrderCapBanner />
       <OrdersModuleFT2
         {...headerProps}
         operationalControl={operationalControl}

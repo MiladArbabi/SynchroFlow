@@ -25,6 +25,7 @@ import {
   PEGGED_DISPLAY_PRICES, formatDisplayPrice, annualSavings, type BillingCurrency,
 } from '../../config/pricingDisplay';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
+import { useCapStatus } from '../../hooks/useCapStatus';
 
 // ─────────────────────────────────────────────
 // Static plan metadata (aligns with design system)
@@ -130,12 +131,14 @@ function UsageMeter({
 }: { label: string; used: number; cap: number; unit: string }) {
   const theme = useTheme();
   const infinite = cap === Infinity || cap <= 0;
-  const pct = infinite ? 0 : Math.min(100, Math.round((used / cap) * 100));
+  const { pct, level } = useCapStatus(used, cap, [0.75, 0.9]);
 
   let fill: string, note: string, noteColor: string;
-  if (pct >= 100) {
+  if (level === 'blocked') {
     fill = theme.palette.error.main; note = 'Limit reached'; noteColor = theme.palette.error.main;
-  } else if (pct >= 80) {
+  } else if (level === 'urgent') {
+    fill = theme.palette.error.main; note = 'Almost at limit'; noteColor = theme.palette.error.main;
+  } else if (level === 'warn') {
     fill = theme.palette.warning.main; note = 'Approaching limit'; noteColor = theme.palette.warning.main;
   } else {
     fill = theme.palette.success.main; note = 'On track'; noteColor = theme.palette.text.secondary;

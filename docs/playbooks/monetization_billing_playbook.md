@@ -348,7 +348,7 @@ exactly that.
 | `ModuleTabBar.isLocked()` ignored `requiredTier` | `ModuleTabBar.tsx` | Floor Planning / Problem Center tabs unconditionally unlocked in-page regardless of plan, even though sidebar correctly blocked the same route | ✅ Fixed — now checks `requiredTier` against user's tier |
 | Problem Center tagged `requiredTier: 'scale'` on frontend vs backend `requireTier('core')` | `FloorPlanningPage.tsx`, `ProblemCenterPage.tsx`, `warehouseModuleTabs.ts` | Once tab-bar enforcement was restored, Core customers would have been wrongly blocked from a feature they already pay for | ✅ Fixed — corrected to `'core'` in all 3 sites |
 | Sidenav upgrade modal hardcoded `requiredTier="growth"` | `SidenavContent.tsx` | Clicking any locked sidebar item — regardless of actual required tier — told the user to upgrade to Growth specifically, risking wrong-plan purchase | ✅ Fixed — tier now tracked from the clicked item/child |
-| Alert Rules routes had zero `requireTier` | `alerts.routes.ts` (`/rules` × 3) | Starter/Core shops could read/write alert rules (Growth feature) directly via API | 🔴 Confirmed, fix pending (next task) |
+| Alert Rules routes had zero `requireTier` | `alerts.routes.ts` (`/rules` × 3) | Starter/Core shops could read/write alert rules (Growth feature) directly via API | ✅ Fixed — `requireTier('growth')` added to all 3 |
 
 ### 13.4 Known drift between frontend `PLAN_FEATURES` and backend `TIER_CONFIG`
 
@@ -368,3 +368,76 @@ automated check against `packages/backend-core/src/config/tiers.ts`. Cross-check
 - Everything else in `PLAN_FEATURES` was spot-checked or verified live this
   session and matches backend (`wms.*`, `products.*`, `demand.forecasting`,
   
+---
+
+## 14. PLG Tier Restructure — 2026-07-14
+
+> Product decision, not a defect fix: the original tier architecture gated
+> the entire WMS pipeline behind Core, meaning free (Starter) users could
+> see problems (SLA breaches, stockouts) on Overview/Orders but had no way
+> to actually act on them — no pick, pack, stow, ship. This is the worst
+> place to put a paywall in a freemium product: before any value is
+> delivered. Restructured to a volume-gated model instead.
+
+### 14.1 Rationale
+
+Freemium products that convert well (Notion, Zapier, Mailchimp) let the
+free tier **fully use the core loop at small scale**, then gate by volume.
+Feature-gating the core loop itself converts nobody — users leave before
+ever experiencing the product's value. The fix: open the full
+Receive→Stow→Pick→Pack→Ship pipeline (including LSU/LSO barcode
+generation) to every tier, gated purely by `shippedOrderCap` (volume),
+not by module access.
+
+### 14.2 Changes made
+
+**Module list** (`packages/backend-core/src/config/tiers.ts`):
+- `wms` + `barcodes` moved from `CORE_MODULES` → `STARTER_MODULES`.
+- `floor-planning` moved from `SCALE_MODULES` → `GROWTH_MODULES` — fixes
+  a circular dependency: Overview's live operations map is Growth-tier
+  and renders the zones/bins Floor Planning creates; Floor Planning
+  itself required Scale, so Growth shops saw a live map with nothing to
+  visualize. Both now live at the same tier.
+- `SCALE_MODULES` is now an explicit empty spread of `GROWTH_MODULES` —
+  Scale's differentiation is seat/order caps only (`Infinity` across the
+  board), no module-list-exclusive features remain by design.
+
+**Route enforcement** — module grants and route-level `requireTier()` are
+independent checks; moving a module in `tiers.ts` does **not** change any
+hardcoded `requireTier()` literal in route files. Both had to be updated:
+- `floor-planning.routes.ts` — 11× `requireTier('scale')` → `'growth'`.
+- `wms.routes.ts` — ~30× `requireTier('core')` → `'starter'` across the
+  full pick/pack/stow/ship/receive/scan/settings/printer/carrier-settings
+  surface. **Intentionally left at `'core'`:** `/problem-center*` routes
+  (6) and `/sender-addresses*` routes (4) — these remain genuine Core-tier
+  product decisions, not part of the open core-loop pipeline.
+- Frontend `requiredTier` badges corrected in 3 sites to match
+  (`FloorPlanningPage.tsx`, `warehouseModuleTabs.ts`, `ProblemCenterPage.tsx`).
+
+**Caps** (§1 table superseded — see below): Starter's `shippedOrderCap`
+raised `0 → 50`. Core `seatLimit` raised `2 → 3`.
+
+### 14.3 Updated §1 module table
+
+Supersedes the module-access bullets in §1 — read this section as current:
+
+- **Starter:** overview, orders (full pipeline access — no longer view-only),
+  fulfillment queue, alerts, Shopify integration, **WMS pick/pack/stow/receive
+  + LSU/LSO barcodes, gated by 50 shipped orders/period, not by module access**
+- **Core+:** adds returns processing, products/catalog, problem center
+  (supervisor exception queue), sender-address management, 12-month order
+  history
+- **Growth+:** adds cash flow, demand forecasting, customer LTV, Specter,
+  returns analysis, problem center analytics, **floor planning + live
+  operations map (moved from Scale)**, unlimited order history
+- **Scale+:** unlimited seats, unlimited orders ingested/shipped — no
+  additional module grants; differentiation is capacity only
+
+### 14.4 Rule going forward
+
+When moving a module between tiers in `tiers.ts`, always grep the
+corresponding route file(s) for hardcoded `requireTier()` literals before
+considering the change complete. The module list and route-level checks
+do not share a single source of truth — verify both with live curl tests
+at the old and new tier boundaries, the same discipline used throughout
+§13.

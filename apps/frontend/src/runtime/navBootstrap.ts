@@ -87,7 +87,7 @@ export function bootstrapNavGroups() {
     requiredModuleId: 'wms-lite',
     children: [
       { id: 'wms-operations',  title: 'Operations',     path: '/wms'      },
-      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'scale', parentId: 'warehouse' },
+      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'growth', parentId: 'warehouse' },
       { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
       // DEC-01/DEC-03: relocated from returns-resolution — Problem Center is a warehouse-floor exception queue (pick/pack/stow/receive), not a customer-returns screen. parentId set explicitly since path (/problem-center) is not URL-nested under /wms.
       { id: 'product-issues', title: 'Problem Center', path: '/problem-center', parentId: 'warehouse' },
