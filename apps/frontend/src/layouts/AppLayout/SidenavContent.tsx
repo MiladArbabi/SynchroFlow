@@ -52,6 +52,12 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+  // SECURITY/UX FIX (audit ISS-P15/P17): requiredTier was hardcoded to
+  // 'growth' in the modal JSX below regardless of which item was clicked —
+  // a Scale-gated item would incorrectly tell the user to upgrade to
+  // Growth. Mirrors the tier-tracking pattern already used correctly in
+  // ModuleTabBar.tsx.
+  const [upgradeTier, setUpgradeTier] = useState<'core' | 'growth' | 'scale'>('growth');
 
   // Profile popover
   const profileAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -138,7 +144,12 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     // prompt on click, dimmed styling) instead of letting the sidebar
     // bypass the same tier restriction ModuleTabBar already enforces.
     const handleChildClick = () => {
-      if (isLocked) { setUpgradeFeature(child.title); setUpgradeOpen(true); return; }
+      if (isLocked) {
+        setUpgradeFeature(child.title);
+        setUpgradeTier((child.requiredTier as 'core' | 'growth' | 'scale') ?? 'growth');
+        setUpgradeOpen(true);
+        return;
+      }
       navigate(child.path);
     };
     return (
@@ -187,7 +198,12 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
     // Label/icon click → navigate only. Chevron click → toggle only.
     const handleClick = () => {
-      if (isLocked) { setUpgradeFeature(item.title); setUpgradeOpen(true); return; }
+      if (isLocked) {
+        setUpgradeFeature(item.title);
+        setUpgradeTier((item.requiredTier as 'core' | 'growth' | 'scale') ?? 'growth');
+        setUpgradeOpen(true);
+        return;
+      }
       navigate(item.path);
     };
 
@@ -451,7 +467,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
       )}
 
       <UpgradePrompt
-        requiredTier="growth"
+        requiredTier={upgradeTier}
         mode="modal"
         featureName={upgradeFeature}
         open={upgradeOpen}
