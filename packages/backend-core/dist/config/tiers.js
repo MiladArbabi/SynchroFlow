@@ -32,11 +32,15 @@ const STARTER_MODULES = [
     'alerts', // Operational alerts
     'shopify_integration',
     'specter_sdk_free',
+    // PLG decision (2026-07-14): the full Receive→Stow→Pick→Pack→Ship
+    // pipeline is open on Starter, gated by the 50-shipment volume cap
+    // (shippedOrderCap) instead of a module wall — free users must be
+    // able to fully run the core loop before hitting any paywall.
+    'wms', // WMS pick/pack/stow — receive, pick, pack, stow, LSU/LSO labels
+    'barcodes', // LSU/LSO operational labels + warehouse location barcodes
 ];
 const CORE_MODULES = [
     ...STARTER_MODULES,
-    'wms', // WMS pick/pack/stow — receive, pick, pack, stow, LSU/LSO labels
-    'barcodes', // LSU/LSO operational labels + warehouse location barcodes
     'returns',
     'products',
     'problem-center', // Product-side problem center — surfaces issues from WMS receive/pick/pack
@@ -47,11 +51,15 @@ const GROWTH_MODULES = [
     'finances', // Cash Flow
     'demand',
     'specter', // Full Specter (supersedes specter_sdk_free)
-    'echo-hub',
+    // Fix (2026-07-14): Overview's live operations map (also Growth-tier,
+    // see product-structure.md §11) renders the zones/bins Floor Planning
+    // creates — Floor Planning was previously Scale-only, meaning Growth
+    // shops could see a live map with nothing to visualize. Both now live
+    // at the same tier so the feature has data to render.
+    'floor-planning', // Warehouse floor plan builder + location barcode generation
 ];
 const SCALE_MODULES = [
     ...GROWTH_MODULES,
-    'floor-planning', // Warehouse floor plan builder + location barcode generation
 ];
 // --- Cumulative flag sets ---
 const STARTER_FLAGS = [];
@@ -76,7 +84,7 @@ export const TIER_CONFIG = {
         monthlyPriceCents: 0,
         seatLimit: 1,
         monthlyOrderCap: 50,
-        shippedOrderCap: 0, // WMS not available on Starter
+        shippedOrderCap: 50,
         specterSessionCap: 500,
         modules: STARTER_MODULES,
         flags: STARTER_FLAGS,
@@ -90,7 +98,7 @@ export const TIER_CONFIG = {
      */
     core: {
         monthlyPriceCents: 7900,
-        seatLimit: 2,
+        seatLimit: 3,
         monthlyOrderCap: 2000,
         shippedOrderCap: 200,
         specterSessionCap: 5000,

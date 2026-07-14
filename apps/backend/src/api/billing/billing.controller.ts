@@ -25,7 +25,13 @@ import { Request, Response } from 'express';
 import Stripe from 'stripe';
 import db from '@lasyncro/backend-core/db.js';
 import { isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
-import { getStripePriceId, PEGGED_DISPLAY_PRICES, BillingCurrency } from '@lasyncro/backend-core/config/pricing.config.js';
+import { 
+  getStripePriceId, 
+  getSeatPriceId, 
+  SeatTier, 
+  PEGGED_DISPLAY_PRICES, 
+  BillingCurrency 
+} from '@lasyncro/backend-core/config/pricing.config.js';
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -171,6 +177,63 @@ export async function createSetupSession(req: Request, res: Response) {
   } catch (err: any) {
     console.error('[billing] createSetupSession failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'SETUP_SESSION_FAILED' });
+  }
+}
+
+/**
+ * POST /api/v1/billing/add-seats
+ *
+ * Adds N extra seats to the shop's existing Stripe subscription as a
+ * new subscription item (AUD-C16). Requires an active paid subscription
+ * — Starter has no subscription to attach to, and Scale has unlimited
+ * seats already.
+ *
+ * Body: { quantity: number } — total extra seats desired (not delta).
+ * Stripe subscriptionItems.create is called once if no seat item exists
+ * yet; subsequent calls should update quantity via a future PATCH
+ * (not built in this pass — MVP only supports initial add).
+ */
+export async function addSeats(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+  const { quantity } = req.body;
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return res.status(400).json({ error: 'INVALID_QUANTITY' });
+  }
+
+  try {
+    const subRow = await db('shop_subscriptions')
+      .where({ shop_id: shopId })
+      .first('tier', 'stripe_subscription_id', 'billing_currency', 'billing_provider', 'extra_seats');
+
+    if (subRow?.billing_provider === 'shopify') {
+      return res.status(403).json({ error: 'APP_STORE_MERCHANT' });
+    }
+
+    if (subRow?.tier !== 'core' && subRow?.tier !== 'growth') {
+      return res.status(400).json({ error: 'SEATS_NOT_APPLICABLE_FOR_TIER' });
+    }
+
+    if (!subRow?.stripe_subscription_id) {
+      return res.status(400).json({ error: 'NO_ACTIVE_SUBSCRIPTION' });
+    }
+
+    const stripe = getStripe();
+    const billingCurrency = (subRow.billing_currency ?? 'USD') as BillingCurrency;
+    const priceId = getSeatPriceId(subRow.tier as SeatTier, billingCurrency);
+
+    const subscriptionItem = await stripe.subscriptionItems.create({
+      subscription: subRow.stripe_subscription_id,
+      price: priceId,
+      quantity,
+    });
+
+    console.log('[billing] seat item added', { shopId, quantity, itemId: subscriptionItem.id });
+
+    return res.json({ success: true, subscriptionItemId: subscriptionItem.id, quantity });
+  } catch (err: any) {
+    console.error('[billing] addSeats failed', { shopId, err: err.message });
+    return res.status(500).json({ error: 'ADD_SEATS_FAILED' });
   }
 }
 

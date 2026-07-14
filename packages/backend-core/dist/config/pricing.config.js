@@ -99,6 +99,36 @@ export function getStripePriceId(tier, currency, interval) {
     }
     return priceId;
 }
+// Display prices in minor units (pence / cents), monthly only —
+// seat add-ons are not offered annually.
+export const SEAT_DISPLAY_PRICES = {
+    core: { GBP: 1200, USD: 1500, EUR: 1300 },
+    growth: { GBP: 1000, USD: 1200, EUR: 1100 },
+};
+const SEAT_PRICE_ID_ENV_KEYS = {
+    core: {
+        GBP: 'STRIPE_PRICE_SEAT_ADDON_CORE_GBP',
+        USD: 'STRIPE_PRICE_SEAT_ADDON_CORE_USD',
+        EUR: 'STRIPE_PRICE_SEAT_ADDON_CORE_EUR',
+    },
+    growth: {
+        GBP: 'STRIPE_PRICE_SEAT_ADDON_GROWTH_GBP',
+        USD: 'STRIPE_PRICE_SEAT_ADDON_GROWTH_USD',
+        EUR: 'STRIPE_PRICE_SEAT_ADDON_GROWTH_EUR',
+    },
+};
+/**
+ * Returns the Stripe Price ID for an extra-seat add-on.
+ * Throws loudly if the env var is missing, same contract as getStripePriceId.
+ */
+export function getSeatPriceId(tier, currency) {
+    const envKey = SEAT_PRICE_ID_ENV_KEYS[tier][currency];
+    const priceId = process.env[envKey];
+    if (!priceId) {
+        throw new Error(`[pricing] Missing env var: ${envKey}. Add it to .env and Fly secrets.`);
+    }
+    return priceId;
+}
 /**
  * Detect billing currency from Accept-Language header.
  * Called once at shop registration — result persisted to shop_subscriptions.billing_currency.

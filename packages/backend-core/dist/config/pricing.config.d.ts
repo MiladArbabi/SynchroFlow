@@ -14,6 +14,13 @@ export declare const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency,
  * not silently with an undefined Price ID passed to Stripe.
  */
 export declare function getStripePriceId(tier: Exclude<Tier, 'starter'>, currency: BillingCurrency, interval: BillingInterval): string;
+export type SeatTier = 'core' | 'growth';
+export declare const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, number>>;
+/**
+ * Returns the Stripe Price ID for an extra-seat add-on.
+ * Throws loudly if the env var is missing, same contract as getStripePriceId.
+ */
+export declare function getSeatPriceId(tier: SeatTier, currency: BillingCurrency): string;
 /**
  * Detect billing currency from Accept-Language header.
  * Called once at shop registration — result persisted to shop_subscriptions.billing_currency.

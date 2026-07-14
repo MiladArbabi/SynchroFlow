@@ -14,6 +14,7 @@ import {
   createPortalSession,
   getSubscription,
   getUsage,
+  addSeats,
 } from './billing.controller.js';
 
 const router = Router();
@@ -31,5 +32,8 @@ router.post('/portal', authenticateToken, requireAction('billing:read'), createP
 
 // POST /api/v1/billing/setup-payment-method — save a card, no subscription (SEG-022-B)
 router.post('/setup-payment-method', authenticateToken, requireAction('billing:write'), createSetupSession);
+
+// POST /api/v1/billing/add-seats — add extra team seats to existing subscription (AUD-C16)
+router.post('/add-seats', authenticateToken, requireAction('billing:write'), addSeats);
 
 export default router;
