@@ -15,6 +15,7 @@ import {
   usePrintBarcode 
 } from '../floor-planning/useZoneManagement';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
 
 /**
  * FLOOR PLANNING GATE PAGE
@@ -57,12 +58,10 @@ export default function FloorPlanningPage() {
   return (
     <>
       {/* Warehouse-level tab bar — mirrors WmsPage and WmsAnalyticsPage */}
-      <ModuleTabBar tabs={[
-        { id: 'operations',     label: 'Operations',     path: '/wms'            },
-        { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'growth' },
-        { id: 'analytics',      label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth' },
-        { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'core' },
-      ]} />
+      {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts.
+          Previously a local duplicate (ISS-P21 follow-up, 2026-07-14) —
+          consolidated to prevent tier-label drift recurring a fourth time. */}
+      <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
       <FloorPlanningModuleFT2
         data={data ?? null}
         isLoading={isLoading}
