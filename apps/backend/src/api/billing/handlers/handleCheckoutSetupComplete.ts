@@ -23,9 +23,9 @@ import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 
 export async function handleCheckoutSetupComplete(envelope: WebhookEnvelope): Promise<void> {
-  // rawPayload is the full Stripe event envelope ({id, type, data: {object}}),
-  // not the Checkout Session itself — must unwrap one level.
-  const session = (envelope.rawPayload as any)?.data?.object;
+  // rawPayload is unwrapped to the Checkout Session object by
+  // StripeWebhookAdapter (ISS-B06 fix) — no manual unwrap needed here.
+  const session = envelope.rawPayload as any;
   const shopId = envelope.shopId;
 
   if (session?.mode !== 'setup' || session?.metadata?.purpose !== 'pay_per_order_setup') {

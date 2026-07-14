@@ -19,25 +19,29 @@ export class StripeWebhookAdapter {
   static toEnvelope(req: any): WebhookEnvelope {
     const event = req.body;
     const metadata = event?.data?.object?.metadata ?? {};
-
     // Resolve shopId from metadata — support both camelCase and snake_case keys
     const rawShopId = metadata.shopId ?? metadata.shop_id ?? null;
     const shopId = rawShopId !== null && !isNaN(Number(rawShopId))
       ? Number(rawShopId)
       : undefined;
-
     if (shopId === undefined) {
       console.warn('[stripe.adapter] shopId missing from event metadata', {
         eventId: event?.id,
         eventType: event?.type,
       });
     }
-
     return buildWebhookEnvelope({
       integration: 'stripe',
       eventId: event.id,
       eventType: event.type,
-      rawPayload: event,
+      // ISS-B06: rawPayload must be the unwrapped Stripe resource
+      // (subscription/invoice/session), not the full event envelope.
+      // Every handler (handleSubscriptionUpsert, handleInvoicePaid,
+      // handleSubscriptionDeleted) reads fields directly off rawPayload
+      // (sub.metadata, sub.customer, sub.id) — was silently broken for
+      // every real Stripe webhook until this fix, confirmed via a
+      // synthetic customer.subscription.created test (2026-07-14).
+      rawPayload: event?.data?.object ?? event,
       shopId,
     });
   }
