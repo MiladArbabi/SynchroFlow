@@ -206,7 +206,7 @@ export default function ProblemCenterPage() {
         { id: 'operations',    label: 'Operations',     path: '/wms'    },
         { id: 'floor-planning', label: 'Floor Planning', path: '/floor-planning', requiredTier: 'scale'  },
         { id: 'analytics',     label: 'Analytics',      path: '/wms/analytics', requiredTier: 'growth', feature: 'wms.pick_batches' },
-        { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'scale' },
+        { id: 'product-issues', label: 'Problem Center', path: '/problem-center', requiredTier: 'core' },
       ]} />
       {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
       <Box sx={{ px: '40px', pt: '24px' }}>

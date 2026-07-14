@@ -43,11 +43,24 @@ interface ModuleTabBarProps {
   tabs: ModuleTab[];
 }
 
+// Mirrors resolveNavVisibility.ts — kept local so ModuleTabBar has no
+// dependency on the nav runtime. SECURITY FIX (audit ISS-P12/P25):
+// isLocked() previously only checked `feature`, silently ignoring
+// `requiredTier` — tabs using requiredTier alone (Floor Planning,
+// Problem Center) were unconditionally unlocked regardless of the
+// user's actual plan.
+const TIER_ORDER: Record<'starter' | 'core' | 'growth' | 'scale', number> = {
+  starter: 0,
+  core: 1,
+  growth: 2,
+  scale: 3,
+};
+
 export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   const pal = useAppTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { can } = usePlanEntitlement();
+  const { can, tier } = usePlanEntitlement();
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
@@ -59,6 +72,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   };
 
   const isLocked = (tab: ModuleTab) => {
+    if (tab.requiredTier && TIER_ORDER[tier] < TIER_ORDER[tab.requiredTier]) return true;
     if (tab.feature) return !can(tab.feature);
     return false;
   };
