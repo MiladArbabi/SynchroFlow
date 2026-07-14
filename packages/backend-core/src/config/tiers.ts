@@ -108,7 +108,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     monthlyPriceCents: 0,
     seatLimit: 1,
     monthlyOrderCap: 50,
-    shippedOrderCap: 0,       // WMS not available on Starter
+    shippedOrderCap: 50, 
     specterSessionCap: 500,
     modules: STARTER_MODULES,
     flags: STARTER_FLAGS,

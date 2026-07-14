@@ -30,7 +30,7 @@ export const TIER_MONTHLY_ORDER_CAP: Record<Tier, number> = {
 };
 
 export const TIER_SHIPPED_ORDER_CAP: Record<Tier, number> = {
-  starter: 0,
+  starter: 50,
   core: 200,
   growth: 1000,
   scale: Infinity,
