@@ -109,7 +109,7 @@ router.get(
   '/batches',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetBatches
 );
@@ -117,7 +117,7 @@ router.get(
   '/batch/:batchId/line-items',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetBatchLineItems
 );
@@ -125,7 +125,7 @@ router.post(
   '/batch/release',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   httpReleaseBatch
 );
@@ -133,7 +133,7 @@ router.post(
   '/batch/:batchId/claim',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:claim'),
   httpClaimBatch
 );
@@ -141,7 +141,7 @@ router.post(
   '/batch/:batchId/pick-complete',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pick:scan'),
   httpCompletePick
 );
@@ -149,7 +149,7 @@ router.post(
   '/batch/:batchId/pack/claim',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpClaimPack
 );
@@ -157,7 +157,7 @@ router.get(
   '/batch/:batchId/orders',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetBatchOrders
 );
@@ -175,7 +175,7 @@ router.get(
   '/stow-tasks',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetStowTasks
 );
@@ -183,7 +183,7 @@ router.post(
   '/pack/scan',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpConfirmPackScan
 );
@@ -191,7 +191,7 @@ router.post(
   '/pack/free-scan',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpPackFreeScan
 );
@@ -199,7 +199,7 @@ router.post(
   '/batch/:batchId/pack-complete',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpCompletePack
 );
@@ -207,7 +207,7 @@ router.post(
   '/batch/:batchId/exception',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:exception:report'),
   httpReportPickException
 );
@@ -215,7 +215,7 @@ router.post(
   '/barcode/resolve',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpResolveBarcode
 );
@@ -223,7 +223,7 @@ router.post(
   '/pick/scan',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pick:scan'),
   httpConfirmPickScan
 );
@@ -251,7 +251,7 @@ router.get(
   '/outbound/handoff-queue',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetPackedHandoffQueue
 );
@@ -260,7 +260,7 @@ router.post(
   '/batch/:batchId/ship',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:ship:confirm'),
   httpConfirmShipment
 );
@@ -268,7 +268,7 @@ router.post(
   '/stow-tasks',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:stow:location'),
   httpCreateStowTask
 );
@@ -276,7 +276,7 @@ router.post(
   '/stow-tasks/:taskId/claim',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:stow:claim'),
   httpClaimStowTask
 );
@@ -284,7 +284,7 @@ router.post(
   '/stow-tasks/:taskId/confirm',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:stow:confirm'),
   httpConfirmStow
 );
@@ -293,7 +293,7 @@ router.patch(
   '/stow-tasks/:taskId/location',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:stow:location'),
   httpAssignStowLocation
 );
@@ -302,7 +302,7 @@ router.get(
   '/orders/:orderId/packing-slip',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetPackingSlipUrl
 );
@@ -311,7 +311,7 @@ router.get(
   '/orders/:orderId/invoice',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetOrderInvoice
 );
@@ -320,7 +320,7 @@ router.post(
   '/orders/:orderId/priority',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   httpSetOrderPriority
 );
@@ -329,7 +329,7 @@ router.post(
   '/location/resolve',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpResolveLocation
 );
@@ -338,7 +338,7 @@ router.get(
   '/order-pool',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetOrderPool
 );
@@ -347,7 +347,7 @@ router.post(
   '/scan/resolve',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpScanResolve
 );
@@ -383,7 +383,7 @@ router.post(
   '/stow-tasks/:taskId/exception',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:exception:report'),
   httpReportStowException
 );
@@ -392,7 +392,7 @@ router.patch(
   '/settings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpPatchWmsSettings
 );
@@ -401,7 +401,7 @@ router.get(
   '/settings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetWmsSettings
 );
@@ -524,7 +524,7 @@ router.post(
   '/pack/decision-request',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpRaisePackDecision
 );
@@ -532,7 +532,7 @@ router.get(
   '/pack/decision-request/:requestId',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetPackDecision
 );
@@ -540,7 +540,7 @@ router.post(
   '/pack/decision-request/:requestId/resolve',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   // wms:batch:release is the existing owner-only action gate
   httpResolvePackDecision
@@ -550,7 +550,7 @@ router.get(
   '/pack/decision-requests',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   httpListPackDecisions
 );
@@ -558,7 +558,7 @@ router.put(
   '/carrier-settings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   httpUpsertCarrierSettings
 );
@@ -566,7 +566,7 @@ router.get(
   '/carrier-settings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetCarrierSettings
 );
@@ -574,7 +574,7 @@ router.delete(
   '/carrier-settings/:carrierCode',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:batch:release'),
   httpDeleteCarrierSettings
 );
@@ -582,7 +582,7 @@ router.post(
   '/orders/:orderId/generate-label',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpGenerateShippingLabel
 );
@@ -590,7 +590,7 @@ router.get(
   '/receive-job-lines/:lineId/unit-labels',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetUnitLabels
 );
@@ -598,7 +598,7 @@ router.get(
   '/coverage',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetUnitLabelCoverage
 );
@@ -607,7 +607,7 @@ router.get(
   '/printers', 
   authenticateToken, 
   requireFt2, 
-  requireTier('core'), 
+  requireTier('starter'), 
   requireAction('wms:read'), 
   httpListPrinters
 );
@@ -616,7 +616,7 @@ router.post(
   '/printers', 
   authenticateToken, 
   requireFt2, 
-  requireTier('core'), 
+  requireTier('starter'), 
   requireAction('wms:settings:write'), 
   httpCreatePrinter
 );
@@ -625,7 +625,7 @@ router.patch(
   '/printers/:printerId', 
   authenticateToken, 
   requireFt2, 
-  requireTier('core'), 
+  requireTier('starter'), 
   requireAction('wms:settings:write'), 
   httpUpdatePrinter
 );
@@ -634,7 +634,7 @@ router.delete(
   '/printers/:printerId', 
   authenticateToken, 
   requireFt2, 
-  requireTier('core'), 
+  requireTier('starter'), 
   requireAction('wms:settings:write'), 
   httpDeletePrinter
 );
@@ -643,7 +643,7 @@ router.get(
   '/printers/default/:role', 
   authenticateToken, 
   requireFt2, 
-  requireTier('core'), 
+  requireTier('starter'), 
   requireAction('wms:read'), 
   httpGetDefaultPrinter
 );
@@ -693,7 +693,7 @@ router.post(
   '/orders/bulk-generate-label',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:pack:scan'),
   httpBulkGenerateShippingLabels
 );
