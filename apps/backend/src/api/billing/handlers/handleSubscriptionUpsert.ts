@@ -10,8 +10,17 @@
 //   - Idempotent (upsert, not insert)
 //   - Never revokes entitlements directly — uses EntitlementsService
 //   - shopId MUST be resolved from metadata; fail loud if missing
+//
+// ISS-RLS4 (CRITICAL FIX): previously opened its own db.transaction()
+// with NO tenant context set at all — verified directly that this
+// throws "new row violates row-level security policy" on
+// shop_subscriptions' strict WITH CHECK policy. Any real Stripe
+// customer.subscription.created/updated webhook would have failed
+// permanently (Stripe's retries hit the identical failure every time).
+// Now uses the router's tenant-scoped trx directly — see
+// RLS_blueprint.md §7.
 
-import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { getTierConfig, isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
@@ -33,7 +42,10 @@ const SEAT_ADDON_PRICE_IDS = new Set(
   ].filter(Boolean)
 );
 
-export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promise<void> {
+export async function handleSubscriptionUpsert(
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
+): Promise<void> {
   const sub = envelope.rawPayload as any;
   const shopId = envelope.shopId;
 
@@ -78,59 +90,57 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
     : null;
   const trialEnd = sub?.trial_end ? new Date(sub.trial_end * 1000) : null;
 
-  await db.transaction(async (trx) => {
-    // 1. Upsert subscription record
-    await trx('shop_subscriptions')
-      .insert({
-        shop_id: shopId,
-        tier,
-        billing_interval: billingInterval,
-        billing_provider: 'stripe',
-        stripe_customer_id: stripeCustomerId,
-        stripe_subscription_id: stripeSubscriptionId,
-        status,
-        extra_seats: extraSeats,
-        trial_ends_at: trialEnd,
-        current_period_start: currentPeriodStart,
-        current_period_end: currentPeriodEnd,
-        updated_at: new Date(),
-      })
-      .onConflict('shop_id')
-      .merge([
-        'tier',
-        'billing_interval',
-        'stripe_customer_id',
-        'stripe_subscription_id',
-        'status',
-        'extra_seats',
-        'trial_ends_at',
-        'current_period_start',
-        'current_period_end',
-        'updated_at',
-        // billing_provider intentionally excluded — Stripe webhook must never
-        // overwrite a 'shopify' provider stamp set at App Store install.
-      ]);
-
-    // 2. Re-seed entitlements from tier constants
-    // Additive only — EntitlementsService never revokes
-    const moduleRows = tierConfig.modules.map((moduleKey) => ({
+  // 1. Upsert subscription record
+  await trx('shop_subscriptions')
+    .insert({
       shop_id: shopId,
-      module_key: moduleKey,
-      flag_key: null as string | null,
-      source: `tier:${tier}`,
-    }));
+      tier,
+      billing_interval: billingInterval,
+      billing_provider: 'stripe',
+      stripe_customer_id: stripeCustomerId,
+      stripe_subscription_id: stripeSubscriptionId,
+      status,
+      extra_seats: extraSeats,
+      trial_ends_at: trialEnd,
+      current_period_start: currentPeriodStart,
+      current_period_end: currentPeriodEnd,
+      updated_at: new Date(),
+    })
+    .onConflict('shop_id')
+    .merge([
+      'tier',
+      'billing_interval',
+      'stripe_customer_id',
+      'stripe_subscription_id',
+      'status',
+      'extra_seats',
+      'trial_ends_at',
+      'current_period_start',
+      'current_period_end',
+      'updated_at',
+      // billing_provider intentionally excluded — Stripe webhook must never
+      // overwrite a 'shopify' provider stamp set at App Store install.
+    ]);
 
-    const flagRows = tierConfig.flags.map((flagKey) => ({
-      shop_id: shopId,
-      module_key: flagKey.split('.')[0],
-      flag_key: flagKey,
-      source: `tier:${tier}`,
-    }));
+  // 2. Re-seed entitlements from tier constants
+  // Additive only — EntitlementsService never revokes
+  const moduleRows = tierConfig.modules.map((moduleKey) => ({
+    shop_id: shopId,
+    module_key: moduleKey,
+    flag_key: null as string | null,
+    source: `tier:${tier}`,
+  }));
 
-    await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
-  });
+  const flagRows = tierConfig.flags.map((flagKey) => ({
+    shop_id: shopId,
+    module_key: flagKey.split('.')[0],
+    flag_key: flagKey,
+    source: `tier:${tier}`,
+  }));
 
-  console.log('[billing][subscription_upsert] complete', { shopId, tier, status, eventId: envelope.eventId });
+  await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+
+  console.log('[billing][subscription_upsert] complete', { shopId, tier, status,eventId: envelope.eventId });
 
   /**
    * PH-03: subscription_activated or subscription_upgraded.

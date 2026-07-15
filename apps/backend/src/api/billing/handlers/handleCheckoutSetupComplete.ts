@@ -18,26 +18,27 @@
 // HARD RULES:
 //   - Idempotent (upsert on shop_id, single column)
 //   - Never touches tier/status/entitlements — setup-only
-
-import db from '@lasyncro/backend-core/db.js';
+//
+// ISS-RLS3: trx REQUIRED — now uses the router's tenant-scoped trx
+// directly instead of opening a redundant inner db.transaction().
+import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
-
-export async function handleCheckoutSetupComplete(envelope: WebhookEnvelope): Promise<void> {
+export async function handleCheckoutSetupComplete(
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
+): Promise<void> {
   // rawPayload is unwrapped to the Checkout Session object by
   // StripeWebhookAdapter (ISS-B06 fix) — no manual unwrap needed here.
   const session = envelope.rawPayload as any;
   const shopId = envelope.shopId;
-
   if (session?.mode !== 'setup' || session?.metadata?.purpose !== 'pay_per_order_setup') {
     // Not our session type — ordinary subscription checkout, ignore.
     return;
   }
-
   if (!shopId) {
     console.error('[billing][checkout_setup_complete] missing shopId', { eventId: envelope.eventId });
     throw new Error('[billing][checkout_setup_complete] shopId required');
   }
-
   const stripeCustomerId = session?.customer ?? null;
   if (!stripeCustomerId) {
     console.error('[billing][checkout_setup_complete] missing customer id', {
@@ -46,14 +47,9 @@ export async function handleCheckoutSetupComplete(envelope: WebhookEnvelope): Pr
     });
     throw new Error('[billing][checkout_setup_complete] stripe customer id required');
   }
-
-  await db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-    await trx('shop_subscriptions')
-      .where({ shop_id: shopId })
-      .update({ stripe_customer_id: stripeCustomerId, updated_at: new Date() });
-  });
-
+  await trx('shop_subscriptions')
+    .where({ shop_id: shopId })
+    .update({ stripe_customer_id: stripeCustomerId, updated_at: new Date() });
   console.log('[billing][checkout_setup_complete] complete', {
     shopId,
     stripeCustomerId,

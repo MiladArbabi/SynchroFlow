@@ -6,33 +6,31 @@
 //   - Mark shop_subscriptions status as 'past_due'
 //   - Does NOT revoke entitlements — grace period is Stripe's responsibility
 //   - Ops signal only; dunning is handled by Stripe
-
-import db from '@lasyncro/backend-core/db.js';
+//
+// ISS-RLS3/4: trx REQUIRED — see handleSubscriptionUpsert.ts header.
+import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { captureEvent } from '../../../utils/analytics.js';
-
-export async function handlePaymentFailed(envelope: WebhookEnvelope): Promise<void> {
+export async function handlePaymentFailed(
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
+): Promise<void> {
   const shopId = envelope.shopId;
-
   if (!shopId) {
     console.error('[billing][payment_failed] missing shopId', { eventId: envelope.eventId });
     throw new Error('[billing][payment_failed] shopId required');
   }
-
-  const updated = await db('shop_subscriptions')
+  const updated = await trx('shop_subscriptions')
     .where({ shop_id: shopId })
     .update({
       status: 'past_due',
       updated_at: new Date(),
     });
-
   if (updated === 0) {
-    console.warn('[billing][payment_failed] no subscription row found for shop', { shopId, eventId: envelope.eventId });
+    console.warn('[billing][payment_failed] no subscription row found for shop',{ shopId, eventId: envelope.eventId });
     return;
   }
-
   console.log('[billing][payment_failed] complete', { shopId, eventId: envelope.eventId });
-
   /**
    * PH-03: payment_failed — fires when Stripe reports a failed invoice.
    * Dunning is handled by Stripe; this event is for PostHog cohort analysis.

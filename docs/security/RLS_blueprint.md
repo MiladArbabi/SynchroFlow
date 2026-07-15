@@ -563,3 +563,49 @@ returns suspiciously empty with zero errors, test with and without
 `sf_app`, no tenant context, before assuming the table or its policy is
 broken. The policy is very likely fine — `FOR UPDATE` is invoking a
 second policy you didn't mean to invoke.
+
+### ISS-RLS3/ISS-RLS4: Stripe and carrier webhook handlers had the same gap — one was a live revenue-path outage
+
+**Cause:** `WebhookRouter` is shared infrastructure used by Shopify, Stripe,
+and carrier-tracking webhooks alike. The ISS-RLS2 fix updated the router and
+all 9 Shopify handlers, but Stripe's 5 billing handlers
+(`handleSubscriptionUpsert`, `handleSubscriptionDeleted`,
+`handlePaymentFailed`, `handleInvoicePaid`, `handleCheckoutSetupComplete`)
+and 2 carrier handlers (`sendcloud.tracking.handler.ts`,
+`shippo.tracking.handler.ts`) were still on the old 1-argument handler
+signature, still importing bare `db`. This compiled cleanly against the
+updated `WebhookHandler` type — TypeScript allows a function with fewer
+parameters to satisfy a type expecting more — so nothing surfaced at build
+time; it had to be found by grepping for the old bare `db` import pattern
+file by file.
+
+**ISS-RLS4, found and fixed in the same pass — critical:**
+`handleSubscriptionUpsert.ts`, the primary Stripe tier-granting handler, was
+worse than the others: it opened its own **separate**
+`db.transaction()` with **no tenant context set at all** — not even the
+bare `SET` anti-pattern, nothing. Verified directly at the Postgres level:
+an identical `INSERT ... ON CONFLICT` as `sf_app` with no tenant context
+throws `new row violates row-level security policy for table
+"shop_subscriptions"`. This means any real `customer.subscription.created`
+or `customer.subscription.updated` webhook — i.e. every new paid
+subscription or tier change — would fail this exact way, every time,
+including on Stripe's automatic retries, since the failure is
+deterministic. This shipped independent of ISS-SEC1/RLS2 and had nothing to
+do with connection-pool leakage; it never worked correctly in the first
+place. Re-verified fixed with the identical query after the change, this
+time with `SET LOCAL app.current_tenant` set: clean `INSERT 0 1`.
+
+**Fix:** all 7 remaining handlers converted to accept and use the router's
+`trx`, matching the ISS-RLS2 pattern. Two of the five billing handlers
+(`handleInvoicePaid`, `handleCheckoutSetupComplete`) already had a
+correctly-scoped inner `db.transaction()` with `SET LOCAL` — these were
+simplified to use the router's `trx` directly instead, removing the
+redundant nested transaction rather than leaving two valid patterns
+side by side.
+
+**Lesson:** when a shared dispatcher's handler type changes, grep for every
+registration call site (`WebhookRouter.register`), not just the ones in the
+directory you were already working in — `stripe.webhook.ts` and the carrier
+handlers live in entirely different folders from the Shopify handlers and
+were easy to miss. A shared type change is only as complete as its least
+visible caller.
