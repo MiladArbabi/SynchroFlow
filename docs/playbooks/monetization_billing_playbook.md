@@ -2,7 +2,7 @@
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
 > **Last updated:** July 15, 2026
-> **Status:** Stripe subscription activation, flexible-billing periods, and lazy monthly usage rotation verified end-to-end.
+> **Status:** Stripe subscription activation, flexible-billing periods, monthly usage rotation, and development-seed tier parity verified end-to-end.
 
 ---
 
@@ -555,3 +555,30 @@ read/write:
 A fresh-database live API test also confirmed that
 `GET /api/v1/billing/usage` creates a missing open period and returns its
 tier snapshot and zeroed counters.
+
+---
+
+## 17. Development Seed Tier Parity (verified 2026-07-15)
+
+The development seed must never set `shop_subscriptions.tier` without
+also deriving the corresponding module and flag grants from canonical
+`TIER_CONFIG`.
+
+`dev_seed.ts` seeds Growth by:
+
+1. Reading `getTierConfig('growth')`.
+2. Mapping its cumulative modules and flags into entitlement rows.
+3. Applying them through
+   `EntitlementsService.applyFromCommercialGrant()`.
+4. Stamping the rows with source `dev_seed:growth`.
+
+This mirrors production registration and Stripe subscription handlers.
+A tier row alone is not sufficient: `/entitlements/me` reads module and
+flag rows independently from the subscription tier.
+
+Knex executes `dist/seeds/dev_seed.js`, so the backend build must run
+after editing `seeds/dev_seed.ts` and before executing the seed.
+
+Live verification confirmed that a freshly seeded Growth shop returns
+the canonical Growth module and flag set through
+`GET /api/v1/entitlements/me`.

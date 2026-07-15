@@ -2,6 +2,8 @@
 import type { Knex } from 'knex';
 import bcrypt from 'bcrypt';
 import { encrypt } from '../src/security/encryption.service.js';
+import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
+import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 
 /**
  * DEV SEED — IDENTITY-AWARE
@@ -106,7 +108,8 @@ export async function seed(knex: Knex): Promise<void> {
     throw new Error('[DEV_SEED] Failed to create user');
   }
 
-    // Seed growth tier subscription — required for WMS + FT2 access
+    // Seed Growth subscription and derive its grants from the same canonical
+    // tier configuration used by registration and billing webhooks.
     await trx('shop_subscriptions')
       .insert({
         shop_id: shop.id,
@@ -116,6 +119,27 @@ export async function seed(knex: Knex): Promise<void> {
       })
       .onConflict('shop_id')
       .merge({ tier: 'growth', status: 'active' });
+
+    const growthConfig = getTierConfig('growth');
+    const growthModuleRows = growthConfig.modules.map((moduleKey) => ({
+      shop_id: shop.id,
+      module_key: moduleKey,
+      flag_key: null as string | null,
+      source: 'dev_seed:growth',
+    }));
+    const growthFlagRows = growthConfig.flags.map((flagKey) => ({
+      shop_id: shop.id,
+      module_key: flagKey.split('.')[0],
+      flag_key: flagKey,
+      source: 'dev_seed:growth',
+    }));
+
+    await EntitlementsService.applyFromCommercialGrant(
+      trx,
+      [...growthModuleRows, ...growthFlagRows]
+    );
+
+    console.log('[DEV_SEED] ✅ Canonical Growth entitlements seeded');
 
   /**
    * 4️⃣ OPTIONALLY CREATE MEMBERSHIP
