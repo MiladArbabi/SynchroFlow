@@ -1,8 +1,8 @@
 # LaSyncro — Monetization, Billing & Currency Playbook
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
-> **Last updated:** June 2026
-> **Status:** Backend complete. Frontend `billingCurrency` wiring in progress.
+> **Last updated:** July 15, 2026
+> **Status:** Stripe subscription activation verified end-to-end; `SUB-002` billing-period derivation remains open.
 
 ---
 
@@ -455,22 +455,55 @@ at the old and new tier boundaries, the same discipline used throughout
 
 ---
 
-## 15. RLS + Webhook Handlers — Recurring Gotcha (2026-07-14)
+## 15. Stripe Webhook Trust Boundary and Tenant Scope (verified 2026-07-15)
 
-Any webhook handler writing to an RLS-protected table (e.g.
-`shop_subscriptions`, `activation_audit_events`) MUST NOT rely on
-`WebhookRouter.dispatch`'s ambient `SET app.current_tenant` — that is a
-session-level SET on whatever connection the router borrowed, and Knex's
-connection pool can hand a *different* connection to the handler's own
-query. RLS then silently filters writes to zero affected rows — no
-error, no thrown exception, ledger still marks the event `processed`.
+Stripe subscription activation follows one verified path:
 
-**Rule:** every handler write to an RLS table must wrap in its own
-`db.transaction()` with `SET LOCAL "app.current_tenant" = '<shopId>'`
-inside that same transaction. Confirmed pattern in
-`handleCheckoutSetupComplete.ts`.
+1. Express captures the raw request bytes before JSON parsing.
+2. `verifyStripeSignature` uses Stripe's official
+   `webhooks.constructEvent()` implementation to validate
+   `timestamp.rawBody`, signature selection, and timestamp tolerance.
+3. The verified Stripe event replaces `req.body`; downstream code never
+   receives an unverified event object.
+4. `StripeWebhookAdapter` unwraps `event.data.object` and resolves
+   `shopId` from subscription metadata.
+5. `WebhookRouter` opens one transaction, applies
+   `SET LOCAL app.current_tenant`, records the webhook ledger entry, and
+   passes that same transaction to the handler.
+6. `handleSubscriptionUpsert` upserts `shop_subscriptions` and seeds
+   entitlements from the canonical tier configuration.
 
-**Also note:** Postgres `SET`/`SET LOCAL` does not accept bind
-parameters — the tenant ID must be inlined as a literal, not passed via
-`?`/`$1`. Safe here only because `shopId` is a validated `number` from
-`WebhookEnvelope`, never raw user input.
+Handlers MUST use the transaction supplied by `WebhookRouter`. They must
+not open an independent transaction or use the bare database singleton
+for RLS-protected writes.
+
+### Failure behavior
+
+- Missing or invalid Stripe signatures return `400` before ledger or
+  domain processing.
+- Missing webhook configuration returns `500`.
+- Handler failures are recorded in the ledger and return `500`, allowing
+  Stripe to retry.
+- Successful duplicate events stop at the ledger idempotency guard.
+
+### Sandbox verification
+
+A genuine LaSyncro sandbox subscription update was delivered through
+Stripe CLI and verified end-to-end:
+
+- HTTP response: `200`
+- Ledger: `customer.subscription.updated`, `processed`, `verified=true`
+- Subscription: Core, active, real Stripe customer/subscription IDs
+- Entitlements: canonical Core grants seeded successfully
+
+Stripe Test mode and named sandboxes are separate account namespaces even
+though both use `sk_test_…` keys. The API key, Price IDs, Stripe CLI
+login, and webhook listener must all target the same sandbox account.
+
+### Known follow-up
+
+`SUB-002`: Stripe flexible-billing subscriptions expose current-period
+dates on subscription items rather than the former top-level fields.
+`current_period_start` and `current_period_end` therefore remain `NULL`
+until the handler is updated to derive them from the base subscription
+item.

@@ -1,22 +1,61 @@
 // Stripe Webhook Verification
 // ---------------------------
 //
-// Stripe signs payloads using HMAC-SHA256 over the raw request body,
-// but includes metadata in the signature header.
+// Stripe signs `${timestamp}.${rawBody}` and supplies one or more v1
+// signatures in the Stripe-Signature header. Verification must use
+// Stripe's official parser so timestamp tolerance, signature selection,
+// and constant-time comparison remain aligned with Stripe's protocol.
 //
-// Stripe's format allows multiple signatures (v1, v0, etc), so
-// verification checks whether the computed digest is INCLUDED
-// rather than strictly equal.
-//
-// Reference:
-// https://stripe.com/docs/webhooks/signatures
+// On success, req.body is replaced with the verified event returned by
+// Stripe. The downstream adapter therefore never handles an unverified
+// event object.
 
-import { createWebhookVerifier } from "../../api/webhooks/verifyWebhook.js";
+import { NextFunction, Request, Response } from 'express';
+import Stripe from 'stripe';
 
-
-export const verifyStripeSignature = createWebhookVerifier({
-  header: 'stripe-signature',
-  secretEnv: 'STRIPE_WEBHOOK_SECRET',
-  digest: 'hex',
-  compare: (signature, expected) => signature.includes(expected),
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? '', {
+  apiVersion: '2026-04-22.dahlia',
 });
+
+export function verifyStripeSignature(
+  req: Request,
+  res: Response,
+  next: NextFunction
+) {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(500).json({
+      error: 'Webhook secret not configured: STRIPE_WEBHOOK_SECRET',
+    });
+  }
+
+  const signature = req.headers['stripe-signature'];
+  if (typeof signature !== 'string') {
+    return res.status(400).json({
+      error: 'Missing webhook signature header: stripe-signature',
+    });
+  }
+
+  const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+  if (!rawBody || !Buffer.isBuffer(rawBody)) {
+    return res.status(400).json({
+      error: 'Missing raw request body',
+    });
+  }
+
+  try {
+    req.body = stripe.webhooks.constructEvent(
+      rawBody,
+      signature,
+      webhookSecret
+    );
+    return next();
+  } catch (error) {
+    console.error('[stripe.webhook] signature verification failed', {
+      error: error instanceof Error ? error.message : 'Unknown verification error',
+    });
+    return res.status(400).json({
+      error: 'Invalid webhook signature',
+    });
+  }
+}
