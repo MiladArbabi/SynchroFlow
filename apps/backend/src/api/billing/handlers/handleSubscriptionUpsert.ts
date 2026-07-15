@@ -24,6 +24,7 @@ import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
 import { getTierConfig, isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
+import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
 
 // AUD-C16: known extra-seat add-on Price IDs, used to separate seat
@@ -98,6 +99,14 @@ export async function handleSubscriptionUpsert(
     : null;
   const trialEnd = sub?.trial_end ? new Date(sub.trial_end * 1000) : null;
 
+  // ISS-C19: capture the shop's pre-upsert tier so we can detect a
+  // downgrade after the upsert overwrites it. A shop with no prior
+  // row (brand-new subscription) has nothing to revoke.
+  const priorRow = await trx('shop_subscriptions')
+    .where({ shop_id: shopId })
+    .first('tier');
+  const priorTier = priorRow?.tier as Tier | undefined;
+
   // 1. Upsert subscription record
   await trx('shop_subscriptions')
     .insert({
@@ -147,6 +156,37 @@ export async function handleSubscriptionUpsert(
   }));
 
   await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
+
+  // ISS-C19: revoke modules/flags the prior tier granted that the new
+  // tier does not. Only real downgrades produce anything to revoke —
+  // same tier or an upgrade always yields empty diffs. Mirrors the
+  // pattern in trial-expiry.service.ts, the only other place this
+  // system revokes entitlements.
+  if (priorTier && priorTier !== tier) {
+    const priorTierConfig = getTierConfig(priorTier);
+    const newModuleSet = new Set(tierConfig.modules);
+    const newFlagSet = new Set(tierConfig.flags);
+    const modulesToRevoke = priorTierConfig.modules.filter((m) => !newModuleSet.has(m));
+    const flagsToRevoke = priorTierConfig.flags.filter((f) => !newFlagSet.has(f));
+
+    if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {
+      await EntitlementRevocationService.revokeEntitlements({
+        shopId,
+        scope: {
+          modules: modulesToRevoke as string[],
+          flags: flagsToRevoke as string[],
+        },
+        reason: `tier_downgrade:${priorTier}->${tier}`,
+      });
+      console.log('[billing][subscription_upsert] entitlements revoked on downgrade', {
+        shopId,
+        priorTier,
+        newTier: tier,
+        modulesToRevoke,
+        flagsToRevoke,
+      });
+    }
+  }
 
   console.log('[billing][subscription_upsert] complete', { shopId, tier, status,eventId: envelope.eventId });
 

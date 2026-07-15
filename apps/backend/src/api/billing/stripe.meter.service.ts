@@ -19,7 +19,7 @@
 //   Never hardcode meter IDs here.
 
 import Stripe from 'stripe';
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { getTierConfig, isValidTier } from '@lasyncro/backend-core/config/tiers.js';
 
 function getStripe(): Stripe {
@@ -41,28 +41,31 @@ export async function reportShippedOrderOverage(
   newlyShipped: number,
 ): Promise<void> {
   try {
-    const sub = await db('shop_subscriptions')
-      .where({ shop_id: shopId })
-      .first('tier', 'stripe_customer_id', 'status');
-
+    // ISS-C34: shop_usage_metrics' RLS policy has no open/system bypass
+    // (unlike shop_subscriptions), so a bare untenanted read against it
+    // silently matches zero rows — no error, no exception. This function
+    // has always computed totalShipped as 0 as a result, meaning overage
+    // has never been reported to Stripe for any shop. Both reads now run
+    // inside withTenant() to actually see real data.
+    const { sub, usageRow } = await withTenant(shopId, async (trx) => {
+      const sub = await trx('shop_subscriptions')
+        .where({ shop_id: shopId })
+        .first('tier', 'stripe_customer_id', 'status');
+      const usageRow = await trx('shop_usage_metrics')
+        .where({ shop_id: shopId })
+        .whereNull('period_ends_at')
+        .first('shipped_orders');
+      return { sub, usageRow };
+    });
     if (!sub?.stripe_customer_id) {
       // No Stripe customer — trial or starter, no overage billing
       return;
     }
-
     const rawTier = sub.tier ?? 'starter';
     const tier = isValidTier(rawTier) ? rawTier : 'starter';
     const { shippedOrderCap } = getTierConfig(tier);
-
     // Scale tier: unlimited — never report overage
     if (!isFinite(shippedOrderCap)) return;
-
-    // Read current period shipped_orders to calculate overage
-    const usageRow = await db('shop_usage_metrics')
-      .where({ shop_id: shopId })
-      .whereNull('period_ends_at')
-      .first('shipped_orders');
-
     const totalShipped = Number(usageRow?.shipped_orders ?? 0);
     const previousTotal = totalShipped - newlyShipped;
 

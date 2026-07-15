@@ -582,3 +582,129 @@ after editing `seeds/dev_seed.ts` and before executing the seed.
 Live verification confirmed that a freshly seeded Growth shop returns
 the canonical Growth module and flag set through
 `GET /api/v1/entitlements/me`.
+---
+
+## 18. Downgrade Revocation, Entitlement Deduplication, and Overage Billing Fixes (verified 2026-07-15)
+
+### Downgrade entitlement revocation (ISS-C19)
+
+`handleSubscriptionUpsert.ts` previously re-seeded the new tier's
+entitlements on every webhook but never revoked modules/flags granted
+by a shop's *previous* tier. A real Stripe downgrade (e.g. Growth to
+Core) left the shop holding Growth-exclusive modules (`floor-planning`,
+`customers`, `finances`, `demand`, `specter`) indefinitely, since
+`EntitlementsService.applyFromCommercialGrant` is deliberately
+additive-only by design.
+
+Fixed by capturing the shop's prior tier before the subscription
+upsert, then — only when the tier has actually decreased — diffing the
+prior tier's modules/flags against the new tier's and calling
+`EntitlementRevocationService.revokeEntitlements()`, mirroring the
+existing pattern in `trial-expiry.service.ts` (previously the only
+caller of that service).
+
+Live-verified via two real Stripe subscription updates against a
+sandbox subscription: a same-tier re-fire (Core to Core) produced zero
+revocations, confirming no over-triggering; a real downgrade (Core to
+Starter) correctly revoked exactly `returns`, `products`,
+`problem-center` — precisely `CORE_MODULES minus STARTER_MODULES`. A
+subsequent real Stripe upgrade webhook (Growth to Core) was also
+observed correctly revoking all five Growth-exclusive modules/flags in
+production code, not just in the downgrade direction.
+
+Pre-existing entitlement rows granted outside the webhook path (e.g.
+`dev_seed:growth` rows) are not retroactively cleaned up by this fix —
+it only prevents *future* leaks going through
+`handleSubscriptionUpsert.ts`. Other grant paths
+(`auth.controller.ts`, `shopify.billing.controller.ts`,
+`integration.controller.ts`, `commercial-grant.service.ts`) still call
+`applyFromCommercialGrant` with no revocation step and remain an open
+gap for a future pass.
+
+### Entitlement row deduplication (ISS-C26)
+
+The unique index on `shop_module_entitlements(shop_id, module_key,
+flag_key)` never caught a conflict when `flag_key IS NULL` — the
+common case for module-level grants — because Postgres treats `NULL`
+as distinct from `NULL` for uniqueness. Every re-seed (every webhook,
+checkout, or seat change) silently inserted a duplicate row instead of
+being caught by `.onConflict().ignore()`. Shops observed with up to 6
+duplicate rows for a single module during this session's testing.
+
+Fixed at the base migration (`0022_shop_module_entitlements.ts`) by
+adding a partial unique index:
+
+```sql
+CREATE UNIQUE INDEX shop_module_entitlements_open_module_unique
+ON shop_module_entitlements (shop_id, module_key)
+WHERE flag_key IS NULL AND valid_until IS NULL;
+```
+
+Scoped to open (`valid_until IS NULL`) rows only, so revoked history is
+preserved and a shop can be re-granted a module after a prior
+revocation without collision.
+
+`EntitlementsService.applyEntitlementRows` (sealed, production-frozen)
+was updated to split incoming rows: flagged rows keep the original
+`.onConflict(['shop_id','module_key','flag_key'])` path; module-level
+rows (`flag_key: null`) use a raw parameterized insert whose `ON
+CONFLICT (shop_id, module_key) WHERE flag_key IS NULL AND valid_until
+IS NULL DO NOTHING` clause matches the new partial index, since Knex's
+`.onConflict(columns)` builder cannot express a partial-index conflict
+target.
+
+Verified via a dedicated regression test
+(`tests/unit/backend/entitlements/entitlements.deduplication.test.ts`)
+confirmed failing pre-fix (2 rows after 2 identical grants) and passing
+post-fix (1 row), satisfying the sealed file's change policy
+requirement of a failing test proving a broken invariant before
+modification.
+
+### Stripe metered overage billing — critical RLS fix (ISS-C34)
+
+`stripe.meter.service.ts`'s `reportShippedOrderOverage` read
+`shop_usage_metrics` via a bare, untenanted `db()` query.
+`shop_usage_metrics_tenant_isolation_policy` has no open/system bypass
+clause (unlike `shop_subscriptions` and `shop_module_entitlements`,
+both of which permit reads when `app.current_tenant` is unset, `''`,
+or `'0'`). Because the database session default for
+`app.current_tenant` is `'0'`, the untenanted read did not error — it
+silently matched zero rows on every call, for every shop, causing
+`totalShipped` to always compute as `0` and the function to exit
+before ever reporting to Stripe.
+
+**Impact: overage billing had very likely never fired a single real
+event in production** — any Core or Growth shop shipping past their
+`shippedOrderCap` was never billed for the overage, a direct and
+ongoing revenue leak since this service was written.
+
+Confirmed via a controlled comparison — an identical query run bare
+versus wrapped in `withTenant()` against the same row returned
+`undefined` and the real row respectively.
+
+Fixed by wrapping both reads (`shop_subscriptions`,
+`shop_usage_metrics`) inside `withTenant(shopId, ...)`. Live-verified
+end-to-end post-fix: seeded a shop at `shipped_orders: 210` against
+Core's `shippedOrderCap: 200`, called the function with
+`newlyShipped: 10`, and confirmed a correct `[stripe.meter] overage
+reported` log with accurate math (`overageUnits: 10`) and a successful
+Stripe Meter Event API call.
+
+**Known minor issue, not yet fixed:** `STRIPE_METER_ID_OVERAGE` in
+`.env` currently holds a Stripe Price ID rather than a Meter ID. This
+is functionally harmless — the code only uses the variable as an
+existence guard and hardcodes `event_name: 'overage'` directly in the
+`meterEvents.create()` call — but the variable name and value should
+be reconciled in a future pass to avoid confusion.
+
+### Extra-seat add-on (AUD-C16) — full end-to-end verification closed
+
+Previously built but never verified against a real Stripe subscription
+across two prior sessions. Verified this session end-to-end against a
+live sandbox subscription: `POST /api/v1/billing/add-seats` correctly
+created a Stripe subscription item, the resulting
+`customer.subscription.updated` webhook was received and processed
+(`200`), and `shop_subscriptions.extra_seats` persisted correctly with
+a matching timestamp. `AddSeatsModal`'s frontend behavior (pricing
+display, stepper, secondary upgrade CTA) was previously confirmed
+visually; this closes the remaining backend verification gap.

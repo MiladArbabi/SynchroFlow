@@ -47,6 +47,19 @@ export async function up(knex: Knex): Promise<void> {
     table.unique(['shop_id', 'module_key', 'flag_key']);
   });
 
+  // ISS-C26: the constraint above never catches a conflict when
+  // flag_key IS NULL, since Postgres treats NULL as distinct from NULL
+  // for uniqueness — every module-level grant (the common case) was
+  // silently duplicated on every re-seed. This partial index closes
+  // that gap, scoped to OPEN rows only (valid_until IS NULL) so
+  // revoked history is preserved and a shop can be re-granted a
+  // module after a prior revocation without collision.
+  await knex.raw(`
+    CREATE UNIQUE INDEX shop_module_entitlements_open_module_unique
+    ON shop_module_entitlements (shop_id, module_key)
+    WHERE flag_key IS NULL AND valid_until IS NULL;
+  `);
+
   // --- RLS: Enforce tenant isolation (direct via shop_id) ---
   // Entitlements control feature access → cross-tenant leakage = privilege escalation risk
   await knex.raw(`
