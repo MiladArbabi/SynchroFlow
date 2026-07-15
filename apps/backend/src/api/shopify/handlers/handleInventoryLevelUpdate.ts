@@ -8,6 +8,7 @@
  * - Idempotent via external_event_id (DB-enforced)
  */
 
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 
@@ -19,8 +20,10 @@ interface ShopifyInventoryPayload {
   admin_graphql_api_id?: string;
 }
 
+// ISS-RLS2: trx REQUIRED — see handleOrderCreated.ts header comment.
 export async function handleInventoryLevelUpdate(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
 
   const payload = envelope.rawPayload as Partial<ShopifyInventoryPayload>;
@@ -46,7 +49,7 @@ export async function handleInventoryLevelUpdate(
     return;
   }
 
-  const installation = await db('shopify_app_installations')
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
@@ -87,7 +90,7 @@ export async function handleInventoryLevelUpdate(
      * - replay
      * - debugging real-world Shopify inconsistencies
      */
-    await db('domain_events').insert({
+    await trx('domain_events').insert({
       shop_id: shopId,
       event_type: 'inventory_levels/update.invalid_payload',
       event_payload: envelope.rawPayload,
@@ -133,7 +136,7 @@ export async function handleInventoryLevelUpdate(
      * ------------------------------
      * Prevent silent desync by persisting invalid identity events.
      */
-    await db('domain_events').insert({
+    await trx('domain_events').insert({
       shop_id: shopId,
       event_type: 'inventory_levels/update.invalid_identity',
       event_payload: envelope.rawPayload,
@@ -186,7 +189,7 @@ export async function handleInventoryLevelUpdate(
    */
   if (externalInventoryItemGid && typeof payload.available === 'number') {
     try {
-      const identityRow = await db('external_product_identity_map')
+      const identityRow = await trx('external_product_identity_map')
         .where({
           shop_id: shopId,
           external_inventory_item_id: externalInventoryItemGid,
@@ -196,7 +199,7 @@ export async function handleInventoryLevelUpdate(
 
       if (identityRow?.lasyncro_variant_id) {
         const locationCode = `WH-${shopId}-ROOT`;
-        const currentTruth = await db('inventory_truth')
+        const currentTruth = await trx('inventory_truth')
           .where({
             shop_id: shopId,
             lasyncro_variant_id: identityRow.lasyncro_variant_id,
@@ -211,7 +214,7 @@ export async function handleInventoryLevelUpdate(
 
         if (delta !== 0) {
           const { randomUUID } = await import('crypto');
-          await db('inventory_movements')
+          await trx('inventory_movements')
             .insert({
               lasyncro_inventory_movement_id: randomUUID(),
               lasyncro_variant_id: identityRow.lasyncro_variant_id,
@@ -247,7 +250,7 @@ export async function handleInventoryLevelUpdate(
 
   let domainEventId: number;
   try {
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'inventory_levels/update',

@@ -1,4 +1,5 @@
 // apps/backend/src/api/shopify/handlers/handleOrderCreated.ts
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import { buildExternalEventId } from '../../webhooks/buildExternalEventId.js';
@@ -34,8 +35,15 @@ type ShopifyOrderCreatePayload = {
   }>;
 };
 
+// ISS-RLS2: trx is now REQUIRED — the router's caller passes its
+// tenant-scoped transaction (SET LOCAL app.current_tenant already
+// applied). All queries below use trx, never the bare db import,
+// except the initial shopify_app_installations lookup which is a
+// deliberate pre-tenant OAuth-path read (RLS_blueprint.md §4b) — see
+// note at that call site.
 export async function handleOrderCreated(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
 
   const raw = envelope.rawPayload as Partial<ShopifyOrderCreatePayload>;
@@ -66,7 +74,11 @@ export async function handleOrderCreated(
     return;
   }
 
-  const installation = await db('shopify_app_installations')
+  // OAuth-path table, split RLS policy — pre-tenant SELECT is
+  // permitted (RLS_blueprint.md §4b). Uses trx anyway since we're
+  // already inside the router's transaction; no functional difference
+  // here, just consistency.
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
@@ -105,7 +117,7 @@ export async function handleOrderCreated(
    */
   const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
 
-  const subRow = await db('shop_subscriptions')
+  const subRow = await trx('shop_subscriptions')
     .where({ shop_id: shopId })
     .first('tier');
 
@@ -114,7 +126,7 @@ export async function handleOrderCreated(
   const { monthlyOrderCap } = getTierConfig(currentTier);
 
   if (isFinite(monthlyOrderCap)) {
-    const usageRow = await db('shop_usage_metrics')
+    const usageRow = await trx('shop_usage_metrics')
       .where({ shop_id: shopId })
       .whereNull('period_ends_at')
       .first('ingested_orders');
@@ -122,7 +134,7 @@ export async function handleOrderCreated(
     const monthlyCount = Number(usageRow?.ingested_orders ?? 0);
 
     if (monthlyCount >= monthlyOrderCap) {
-      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestion blocked', {
+      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestionblocked', {
         shopId,
         tier: currentTier,
         monthlyCount,
@@ -133,7 +145,7 @@ export async function handleOrderCreated(
 
     const warningThreshold = Math.floor(monthlyOrderCap * 0.8);
     if (monthlyCount >= warningThreshold) {
-      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap', {
+      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap',{
         shopId,
         tier: currentTier,
         monthlyCount,
@@ -159,7 +171,7 @@ export async function handleOrderCreated(
 
   try {
 
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'orders/create',
@@ -194,7 +206,7 @@ export async function handleOrderCreated(
 
     // Increment ingested_orders on open billing period (MON-05)
     // Non-fatal — cap enforcement reads this value, not domain_events count.
-    const usageUpdated = await db('shop_usage_metrics')
+    const usageUpdated = await trx('shop_usage_metrics')
       .where({ shop_id: shopId })
       .whereNull('period_ends_at')
       .increment('ingested_orders', 1);
@@ -221,7 +233,7 @@ export async function handleOrderCreated(
 
     if (financialStatus === 'paid') {
 
-      const paidEvent = await db('domain_events')
+      const paidEvent = await trx('domain_events')
         .insert({
           shop_id: shopId,
           event_type: 'orders/paid',

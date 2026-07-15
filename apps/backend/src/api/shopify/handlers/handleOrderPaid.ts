@@ -1,4 +1,5 @@
 // apps/backend/src/api/shopify/handlers/handleOrderPaid.ts
+import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
 import { buildExternalEventId } from '../../webhooks/buildExternalEventId.js';
@@ -17,8 +18,10 @@ function isOrderPaidPayload(payload: unknown): payload is ShopifyOrderPaidPayloa
   );
 }
 
+// ISS-RLS2: trx REQUIRED — see handleOrderCreated.ts header comment.
 export async function handleOrderPaid(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
 
   const rawPayload = envelope.rawPayload;
@@ -57,7 +60,7 @@ export async function handleOrderPaid(
     return;
   }
 
-  const installation = await db('shopify_app_installations')
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
@@ -111,7 +114,7 @@ export async function handleOrderPaid(
 
   try {
 
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'orders/paid',

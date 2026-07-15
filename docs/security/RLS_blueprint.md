@@ -449,7 +449,51 @@ empty system-wide since `decisions` was never populated (see
 decision-engine-playbook.md). The instant decisions start flowing for
 real, this worker will hit the exact same silent-zero-rows failure
 unless fixed first.
-### `withTenant()` itself violated its own documented SET LOCAL rule
+### Webhook handlers silently ignored tenant context (ISS-RLS2)
+
+**Cause:** `webhookRouter.ts` set tenant context via a bare, non-transactional
+`db.raw("SET app.current_tenant = '${shopId}'")` before dispatching to
+handler functions, which then made their own independent `db(...)` calls
+assuming that context survived. Per §3, plain `SET` inside no transaction at
+all is even more fragile than the `withTenant()` case above — there was no
+transaction boundary holding the connection, so every downstream query in a
+handler could land on a completely different pooled connection with no
+tenant context whatsoever. Once ISS-SEC1 closed the accidental
+connection-leak workaround, this pattern had nothing left to hide behind.
+
+**Verified directly, 2026-07-15:** confirmed via the same class of
+`current_setting('app.current_tenant', true)` check used for ISS-SEC1 — a
+live `getUsage`-style read against a shop's own `shop_usage_metrics` row
+returned zeroed-out data despite a real row existing, because RLS silently
+matched zero rows for the connection's actual (default `'0'`) tenant
+setting.
+
+**Fix:** `webhookRouter.ts`'s entire ledger-write → dispatch → ledger-mark
+flow now runs inside a single `db.transaction()` with `SET LOCAL
+app.current_tenant`. The `WebhookHandler` type signature was changed to
+require `(envelope, trx)`, and all 9 Shopify handlers plus
+`webhook-ledger.service.ts` and `order-identity-guard.service.ts` were
+updated to accept and use that `trx` instead of importing the bare `db`
+singleton. Handler-level errors are caught and `markFailed` is written
+*inside* the transaction, but the error itself is re-thrown *after* commit
+— throwing inside the transaction callback would have rolled back the
+`markFailed` write along with everything else.
+
+**Known remaining gap (ISS-RLS3, tracked separately):** `WebhookRouter` is
+shared infrastructure also used by Stripe billing webhooks
+(`stripe.webhook.ts`) and carrier tracking webhooks
+(`sendcloud.tracking.handler.ts`, `shippo.tracking.handler.ts`). These
+still use the old 1-argument handler signature and bare `db` internally.
+TypeScript compiles them fine against the new `WebhookHandler` type (a
+function with fewer parameters is assignable to one expecting more), so
+this doesn't surface as a build error — it has to be checked for
+explicitly, file by file.
+
+**Lesson:** a handler function silently accepting fewer arguments than its
+declared type allows a partially-migrated codebase to compile cleanly while
+still being broken at specific call sites. `grep` for the old bare `db`
+import is a more reliable signal than a clean `tsc` build when migrating a
+shared handler type incrementally.
 
 **Cause:** Despite §3 explicitly stating "Never use `SET app.current_tenant`
 (without LOCAL)," the canonical `withTenant()` implementation in `db.ts` did

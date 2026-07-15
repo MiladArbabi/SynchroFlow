@@ -1,4 +1,5 @@
 import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 
 export type WebhookProcessingStatus =
   | 'received'
@@ -7,6 +8,9 @@ export type WebhookProcessingStatus =
   | 'failed';
 
 export class WebhookLedgerService {
+  // ISS-RLS2: trx defaults to bare `db` for backward compatibility with
+  // any caller not yet updated. Always pass the caller's transaction
+  // explicitly when one exists — see RLS_blueprint.md §3.
   static async recordReceived(params: {
     shopId?: number | null;
     integration: string;
@@ -14,7 +18,7 @@ export class WebhookLedgerService {
     eventType: string;
     payload: unknown;
     idempotencyKey: string;
-  }): Promise<boolean> {
+  }, trx: Knex | Knex.Transaction = db): Promise<boolean> {
     /**
      * INGESTION TRACEABILITY 
      * ---------------------------
@@ -32,7 +36,7 @@ export class WebhookLedgerService {
       throw new Error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]');
     }
 
-    const result = await db('integration_webhook_events')
+    const result = await trx('integration_webhook_events')
       .insert({
         shop_id: params.shopId,
         integration: params.integration,
@@ -74,16 +78,15 @@ export class WebhookLedgerService {
 
   static async markProcessed(
     externalEventId: string,
-    shopId?: number
+    shopId?: number,
+    trx: Knex | Knex.Transaction = db
   ): Promise<void> {
-
     if (shopId === undefined) {
       console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
         externalEventId
       });
     }
-
-    await db('integration_webhook_events')
+    await trx('integration_webhook_events')
       .where({ external_event_id: externalEventId })
       .update({
         processing_status: 'processed',
@@ -94,16 +97,15 @@ export class WebhookLedgerService {
   static async markIgnored(
     externalEventId: string,
     reason: string,
-    shopId?: number
+    shopId?: number,
+    trx: Knex | Knex.Transaction = db
   ): Promise<void> {
-
     if (shopId === undefined) {
       console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
         externalEventId
       });
     }
-
-    await db('integration_webhook_events')
+    await trx('integration_webhook_events')
       .where({ external_event_id: externalEventId })
       .update({
         processing_status: 'ignored',
@@ -115,16 +117,15 @@ export class WebhookLedgerService {
   static async markFailed(
     externalEventId: string,
     error: string,
-    shopId?: number
+    shopId?: number,
+    trx: Knex | Knex.Transaction = db
   ): Promise<void> {
-
     if (shopId === undefined) {
       console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
         externalEventId
       });
     }
-
-    await db('integration_webhook_events')
+    await trx('integration_webhook_events')
       .where({ external_event_id: externalEventId })
       .update({
         processing_status: 'failed',

@@ -1,4 +1,5 @@
 // apps/backend/src/api/shopify/handlers/handleOrderFulfillment.ts
+import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import db from '@lasyncro/backend-core/db.js';
 import { ensureOrderIdentityExists }
@@ -24,8 +25,10 @@ function isShopifyFulfillmentPayload(
   );
 }
 
+// ISS-RLS2: trx REQUIRED — see handleOrderCreated.ts header comment.
 export async function handleOrderFulfillment(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
 
   const rawPayload = envelope.rawPayload;
@@ -57,7 +60,7 @@ export async function handleOrderFulfillment(
     throw new Error('FULFILLMENT_MISSING_SHOP_DOMAIN');
   }
 
-  const installation = await db('shopify_app_installations')
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
@@ -111,7 +114,8 @@ export async function handleOrderFulfillment(
   await ensureOrderIdentityExists(
     shopId,
     shopDomain,
-    externalOrderId
+    externalOrderId,
+    trx
   );
 
   let domainEventId: number;
@@ -193,7 +197,7 @@ export async function handleOrderFulfillment(
   }
 
   try {
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         /**

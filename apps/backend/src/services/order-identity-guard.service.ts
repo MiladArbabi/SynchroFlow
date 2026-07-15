@@ -1,15 +1,12 @@
 // apps/backend/src/services/order-identity-guard.service.ts
-
-import db from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 import { createShopifyGraphQLClient } from './shopify-client.factory.js';
 import { decrypt } from '../security/encryption.service.js';
-
 // CENTRALIZED DECRYPTION
 // NOTE: Delegates to encryption.service (single source of truth)
 function decryptToken(encrypted: string): string {
   return decrypt(encrypted, 'order-identity-guard');
 }
-
 /**
  * ENSURE ORDER IDENTITY EXISTS
  * ----------------------------
@@ -22,41 +19,37 @@ function decryptToken(encrypted: string): string {
  * - Emit orders/sync domain event
  *
  * Deterministic, replay-safe.
+ *
+ * ISS-RLS2: trx is REQUIRED — caller must pass its tenant-scoped
+ * transaction (SET LOCAL app.current_tenant already applied).
  */
 export async function ensureOrderIdentityExists(
   shopId: number,
   shopDomain: string,
-  externalOrderNumericId: string
+  externalOrderNumericId: string,
+  trx: Knex.Transaction
 ): Promise<void> {
-
-  const existing = await db('external_order_identity_map')
+  const existing = await trx('external_order_identity_map')
     .where({
       shop_id: shopId,
       platform: 'shopify',
       external_order_id: externalOrderNumericId,
     })
     .first();
-
   if (existing) return;
-
-  const installation = await db('shopify_app_installations')
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .first();
-
   if (!installation) {
     throw new Error('[IDENTITY_GUARD_INSTALLATION_NOT_FOUND]');
   }
-
   const gid = `gid://shopify/Order/${externalOrderNumericId}`;
-
   const accessToken = decryptToken(installation.access_token);
-
   const client = createShopifyGraphQLClient(
     accessToken,
     shopDomain,
     shopId
   );
-
   const response = await client.request(`
     query ($id: ID!) {
       order(id: $id) {
@@ -91,15 +84,12 @@ export async function ensureOrderIdentityExists(
       variables: { id: gid },
     }
  );
-
   const node = response?.data?.order;
-
   if (!node) {
     throw new Error('[IDENTITY_GUARD_ORDER_NOT_FOUND_IN_SHOPIFY]');
   }
-
   try {
-    await db('domain_events').insert({
+    await trx('domain_events').insert({
       shop_id: shopId,
       event_type: 'orders/sync',
       /**
@@ -129,11 +119,9 @@ export async function ensureOrderIdentityExists(
        */
       external_event_id: (() => {
         let id = String(node.id);
-
         if (id.startsWith('gid://')) {
           id = id.split('/').pop()!;
         }
-
         return id;
       })(),
     });

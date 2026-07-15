@@ -1,6 +1,6 @@
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
-
 /**
  * Shopify returns/requested webhook handler.
  *
@@ -10,13 +10,14 @@ import { WebhookEnvelope } from '../../../api/webhooks/types.js';
  * - Enqueue returns ingestion worker
  *
  * No parsing. No inference.
+ *
+ * ISS-RLS2: trx REQUIRED — see handleOrderCreated.ts header comment.
  */
 export async function handleReturnRequested(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
-
   const { shopId, rawPayload } = envelope;
-
   /**
    * INGESTION TRACE
    * ----------------
@@ -28,7 +29,6 @@ export async function handleReturnRequested(
     eventId: envelope.eventId,
     hasPayload: !!rawPayload,
   });
-
   /**
    * INGESTION IDENTITY ENFORCEMENT
    */
@@ -37,23 +37,18 @@ export async function handleReturnRequested(
       '[INGESTION_IDENTITY_VIOLATION] Missing external eventId'
     );
   }
-
   /**
    * INGESTION EVENT-TIME ENFORCEMENT
    */
   const createdAt = (rawPayload as any)?.created_at;
-
   if (!createdAt) {
     throw new Error(
       '[EVENT_TIME_VIOLATION] Return missing event_time at ingestion'
     );
   }
-
   let domainEventId: number;
-
   try {
-
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'returns/requested',
@@ -63,11 +58,8 @@ export async function handleReturnRequested(
         external_event_id: envelope.eventId,
       })
       .returning('id');
-
     domainEventId = result[0].id ?? result[0];
-
   } catch (error: any) {
-
     /**
      * DUPLICATE DELIVERY HANDLING
      * ---------------------------
@@ -75,16 +67,13 @@ export async function handleReturnRequested(
      * (shop_id, external_event_id)
      */
     if (error?.code === '23505') {
-
       console.warn('[DOMAIN_EVENT_DUPLICATE]', {
         shopId,
         externalEventId: envelope.eventId,
         eventType: 'returns/requested',
       });
-
       return; // Do NOT enqueue duplicate
     }
-
     throw error;
   }
 }

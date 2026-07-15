@@ -8,6 +8,7 @@
 
 // apps/backend/src/api/shopify/handlers/handleRefundCreated.ts
 
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 
@@ -27,8 +28,10 @@ type ShopifyRefundPayload = {
   }>;
 };
 
+// ISS-RLS2: trx REQUIRED — see handleOrderCreated.ts header comment.
 export async function handleRefundCreated(
-  envelope: WebhookEnvelope
+  envelope: WebhookEnvelope,
+  trx: Knex.Transaction
 ): Promise<void> {
 
   const { rawPayload, shopDomain } = envelope;
@@ -52,7 +55,7 @@ export async function handleRefundCreated(
     return;
   }
 
-  const installation = await db('shopify_app_installations')
+  const installation = await trx('shopify_app_installations')
     .where({ shop_domain: shopDomain })
     .select('shop_id')
     .first();
@@ -115,7 +118,7 @@ export async function handleRefundCreated(
 
   try {
 
-    const result = await db('domain_events')
+    const result = await trx('domain_events')
       .insert({
         shop_id: shopId,
         event_type: 'refunds/create',
@@ -171,7 +174,7 @@ export async function handleRefundCreated(
       /**
        * Resolve external variant → lasyncro_variant_id
        */
-      const identityRow = await db('external_product_identity_map')
+      const identityRow = await trx('external_product_identity_map')
         .where({
           shop_id: shopId,
           external_variant_id: `gid://shopify/ProductVariant/${externalVariantId}`,
@@ -204,7 +207,7 @@ export async function handleRefundCreated(
         .slice(0, 32)
         .replace(/^(.{8})(.{4})(.{4})(.{4})(.{12}).*$/, '$1-$2-$3-$4-$5');
 
-      await db('inventory_movements')
+      await trx('inventory_movements')
         .insert({
           lasyncro_inventory_movement_id: randomUUID(),
           lasyncro_variant_id: identityRow.lasyncro_variant_id,
