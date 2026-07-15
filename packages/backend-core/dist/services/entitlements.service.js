@@ -195,13 +195,39 @@ export class EntitlementsService {
     static async applyEntitlementRows(trx, rows) {
         if (!rows || rows.length === 0)
             return;
-        await trx('shop_module_entitlements')
-            .insert(rows.map((r) => ({
+        const normalized = rows.map((r) => ({
             ...r,
             valid_from: r.valid_from ?? trx.fn.now(),
             valid_until: r.valid_until ?? null,
-        })))
-            .onConflict(['shop_id', 'module_key', 'flag_key'])
-            .ignore();
+        }));
+        // ISS-C26: the plain unique index on (shop_id, module_key, flag_key)
+        // never catches a conflict when flag_key IS NULL — Postgres treats
+        // NULL as distinct from NULL for uniqueness. Module-level rows
+        // (flag_key: null, the common case) must target the partial index
+        // added in migration 0022 instead. Knex's .onConflict(columns) API
+        // can't express a partial-index predicate, so that batch uses a raw
+        // multi-row insert whose ON CONFLICT clause matches the partial
+        // index's WHERE clause exactly.
+        const flaggedRows = normalized.filter((r) => r.flag_key !== null);
+        const moduleLevelRows = normalized.filter((r) => r.flag_key === null);
+        if (flaggedRows.length > 0) {
+            await trx('shop_module_entitlements')
+                .insert(flaggedRows)
+                .onConflict(['shop_id', 'module_key', 'flag_key'])
+                .ignore();
+        }
+        if (moduleLevelRows.length > 0) {
+            const values = moduleLevelRows
+                .map((r) => `(${trx.raw('?', [r.shop_id])}, ${trx.raw('?', [r.module_key])}, NULL, ${trx.raw('?', [r.source])}, ${trx.raw('?', [r.valid_from])}, ${trx.raw('?', [r.valid_until])})`)
+                .join(', ');
+            await trx.raw(`
+            INSERT INTO shop_module_entitlements
+              (shop_id, module_key, flag_key, source, valid_from, valid_until)
+            VALUES ${values}
+            ON CONFLICT (shop_id, module_key)
+            WHERE flag_key IS NULL AND valid_until IS NULL
+            DO NOTHING;
+          `);
+        }
     }
 }
