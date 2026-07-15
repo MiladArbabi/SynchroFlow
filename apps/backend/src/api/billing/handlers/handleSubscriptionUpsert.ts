@@ -82,11 +82,19 @@ export async function handleSubscriptionUpsert(
   const billingInterval = baseItem?.plan?.interval === 'year' ? 'annual' : 'monthly';
   const stripeCustomerId = sub?.customer ?? null;
   const stripeSubscriptionId = sub?.id ?? null;
-  const currentPeriodStart = sub?.current_period_start
-    ? new Date(sub.current_period_start * 1000)
+
+  // Stripe flexible billing moved period boundaries from the subscription
+  // onto each subscription item. Prefer the base tier item while retaining
+  // top-level fallbacks for legacy Stripe payloads.
+  const currentPeriodStartSeconds =
+    baseItem?.current_period_start ?? sub?.current_period_start;
+  const currentPeriodEndSeconds =
+    baseItem?.current_period_end ?? sub?.current_period_end;
+  const currentPeriodStart = currentPeriodStartSeconds
+    ? new Date(currentPeriodStartSeconds * 1000)
     : null;
-  const currentPeriodEnd = sub?.current_period_end
-    ? new Date(sub.current_period_end * 1000)
+  const currentPeriodEnd = currentPeriodEndSeconds
+    ? new Date(currentPeriodEndSeconds * 1000)
     : null;
   const trialEnd = sub?.trial_end ? new Date(sub.trial_end * 1000) : null;
 

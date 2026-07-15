@@ -2,7 +2,7 @@
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
 > **Last updated:** July 15, 2026
-> **Status:** Stripe subscription activation verified end-to-end; `SUB-002` billing-period derivation remains open.
+> **Status:** Stripe subscription activation and flexible-billing period derivation verified end-to-end.
 
 ---
 
@@ -500,10 +500,16 @@ Stripe Test mode and named sandboxes are separate account namespaces even
 though both use `sk_test_…` keys. The API key, Price IDs, Stripe CLI
 login, and webhook listener must all target the same sandbox account.
 
-### Known follow-up
+### Flexible-billing period derivation
 
-`SUB-002`: Stripe flexible-billing subscriptions expose current-period
-dates on subscription items rather than the former top-level fields.
-`current_period_start` and `current_period_end` therefore remain `NULL`
-until the handler is updated to derive them from the base subscription
-item.
+Stripe flexible-billing subscriptions expose current-period boundaries
+on subscription items rather than the former top-level subscription
+fields. `handleSubscriptionUpsert` therefore reads
+`current_period_start` and `current_period_end` from the base tier item,
+with top-level fallbacks for legacy payloads.
+
+Verified against a genuine sandbox subscription update:
+
+- Webhook response: `200`
+- Ledger: `processed`, `verified=true`
+- Database and billing API: matching non-null monthly period boundaries
