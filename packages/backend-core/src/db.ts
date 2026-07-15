@@ -93,7 +93,13 @@ export async function withTenant<T>(
     // NOTE:
     // PostgreSQL SET does NOT support parameter binding.
     // shopId is numeric and controlled → safe to inline.
-    await trx.raw(`SET app.current_tenant = '${shopId}'`);
+    // SEC-FIX (ISS-SEC1): SET LOCAL scopes the setting to this transaction
+    // only — Postgres automatically discards it on COMMIT or ROLLBACK.
+    // Plain SET persists on the physical connection and leaks to whatever
+    // request the pool hands that connection to next. Verified via
+    // tenant-leak-test.ts: prior to this fix, 25/25 unrelated queries on a
+    // reused connection inherited a stale tenant context after commit.
+    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
 
     // Instrumentation: verify context applied
     const check = await trx.raw(

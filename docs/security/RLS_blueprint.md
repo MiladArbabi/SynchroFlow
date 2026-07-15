@@ -449,7 +449,33 @@ empty system-wide since `decisions` was never populated (see
 decision-engine-playbook.md). The instant decisions start flowing for
 real, this worker will hit the exact same silent-zero-rows failure
 unless fixed first.
-### FOR UPDATE silently returns zero rows under cross-tenant split policies
+### `withTenant()` itself violated its own documented SET LOCAL rule
+
+**Cause:** Despite §3 explicitly stating "Never use `SET app.current_tenant`
+(without LOCAL)," the canonical `withTenant()` implementation in `db.ts` did
+exactly that — `await trx.raw(\`SET app.current_tenant = '${shopId}'\`)`. Since
+plain `SET` persists on the physical connection past `COMMIT`, and every
+tenant-scoped call site funnels through this one function, this was a
+codebase-wide cross-tenant leak vector rather than an isolated call-site bug.
+
+**Verified directly, 2026-07-15:** a standalone script called
+`withTenant(1, trx => trx.raw('SELECT 1'))`, let it commit, then fired 25
+subsequent `db.raw(\`SELECT current_setting('app.current_tenant', true)\`)`
+calls with zero tenant context of their own. All 25/25 returned `'1'` —
+i.e. any unrelated request that drew the same pooled connection after a
+shop-1 request would silently operate as shop 1 for every RLS-gated query,
+including writes, until that connection happened to be reused by another
+`withTenant()` call.
+
+**Fix:** changed the single line in `db.ts` to `SET LOCAL app.current_tenant
+= '${shopId}'`, matching §3's documented pattern. Re-ran the same script
+post-fix to confirm the leak no longer reproduces.
+
+**Lesson:** this doc having the correct rule in §3 did not prevent the bug
+— the canonical helper function itself drifted from it, undetected, likely
+since `withTenant()` was first written. Documented conventions need to be
+spot-checked against their own reference implementation periodically, not
+just applied by new call sites.
 
 **Cause:** `SELECT ... FOR UPDATE` does not only evaluate the table's
 SELECT policy — Postgres also requires the row to pass the table's
