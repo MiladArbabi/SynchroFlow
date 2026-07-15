@@ -23,7 +23,7 @@
 
 import { Request, Response } from 'express';
 import Stripe from 'stripe';
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { 
   getStripePriceId, 
@@ -283,12 +283,18 @@ export async function createPortalSession(req: Request, res: Response) {
 export async function getUsage(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
   try {
-    // Current open period — period_ends_at IS NULL
-    const usage = await db('shop_usage_metrics')
-      .where({ shop_id: shopId })
-      .whereNull('period_ends_at')
-      .orderBy('period_starts_at', 'desc')
-      .first('ingested_orders', 'shipped_orders', 'tier_at_period_start', 'period_starts_at');
+    // ISS-RLS1 fix: this bare db() call previously ran with no tenant
+    // context, so RLS silently returned zero rows for the shop's own
+    // data. withTenant() sets SET LOCAL app.current_tenant for this
+    // transaction only, matching RLS_blueprint.md §3.
+    const usage = await withTenant(shopId, async (trx) => {
+      // Current open period — period_ends_at IS NULL
+      return trx('shop_usage_metrics')
+        .where({ shop_id: shopId })
+        .whereNull('period_ends_at')
+        .orderBy('period_starts_at', 'desc')
+        .first('ingested_orders', 'shipped_orders', 'tier_at_period_start', 'period_starts_at');
+    });
 
     return res.json({
       ingested_orders: usage?.ingested_orders ?? 0,

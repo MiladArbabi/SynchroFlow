@@ -1,6 +1,9 @@
 import db from '@lasyncro/backend-core/db.js';
 export class WebhookLedgerService {
-    static async recordReceived(params) {
+    // ISS-RLS2: trx defaults to bare `db` for backward compatibility with
+    // any caller not yet updated. Always pass the caller's transaction
+    // explicitly when one exists — see RLS_blueprint.md §3.
+    static async recordReceived(params, trx = db) {
         /**
          * INGESTION TRACEABILITY
          * ---------------------------
@@ -16,7 +19,7 @@ export class WebhookLedgerService {
             });
             throw new Error('[WEBHOOK_LEDGER_SHOP_ID_REQUIRED]');
         }
-        const result = await db('integration_webhook_events')
+        const result = await trx('integration_webhook_events')
             .insert({
             shop_id: params.shopId,
             integration: params.integration,
@@ -52,26 +55,26 @@ export class WebhookLedgerService {
          */
         return !isDuplicate;
     }
-    static async markProcessed(externalEventId, shopId) {
+    static async markProcessed(externalEventId, shopId, trx = db) {
         if (shopId === undefined) {
             console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
                 externalEventId
             });
         }
-        await db('integration_webhook_events')
+        await trx('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'processed',
             ...(shopId !== undefined ? { shop_id: shopId } : {}),
         });
     }
-    static async markIgnored(externalEventId, reason, shopId) {
+    static async markIgnored(externalEventId, reason, shopId, trx = db) {
         if (shopId === undefined) {
             console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
                 externalEventId
             });
         }
-        await db('integration_webhook_events')
+        await trx('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'ignored',
@@ -79,13 +82,13 @@ export class WebhookLedgerService {
             ...(shopId !== undefined ? { shop_id: shopId } : {}),
         });
     }
-    static async markFailed(externalEventId, error, shopId) {
+    static async markFailed(externalEventId, error, shopId, trx = db) {
         if (shopId === undefined) {
             console.error('[WEBHOOK_LEDGER_SHOP_ID_MISSING_ON_UPDATE]', {
                 externalEventId
             });
         }
-        await db('integration_webhook_events')
+        await trx('integration_webhook_events')
             .where({ external_event_id: externalEventId })
             .update({
             processing_status: 'failed',
