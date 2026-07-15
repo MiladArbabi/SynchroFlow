@@ -21,6 +21,7 @@ import { useMembers, useUpdateMemberRole, useCreateMember, type MemberRole } fro
 import { useUiEvents } from '../../analytics/useUiEvents';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
+import { AddSeatsModal } from '../../components/AddSeatsModal';
 import { LinearProgress } from '@mui/material';
 import { TIER_SEAT_LIMIT, type Tier } from '../../config/tiers';
 import { SettingsShellHeader } from './SettingsShellHeader';
@@ -196,14 +197,23 @@ export default function MembersPage() {
         </Box>
       )}
 
-      {/* SEAT LIMIT MODAL */}
-      <UpgradePrompt
-        requiredTier="growth"
-        mode="modal"
-        featureName="Additional team seats"
-        open={seatLimitModalOpen}
-        onClose={() => setSeatLimitModalOpen(false)}
-      />
+      {/* SEAT LIMIT MODAL (AUD-C16) — Core/Growth get the seat add-on
+          stepper; Starter has no seat add-on product, keeps the
+          generic tier-upgrade-only modal. */}
+      {tier === 'core' || tier === 'growth' ? (
+        <AddSeatsModal
+          open={seatLimitModalOpen}
+          onClose={() => setSeatLimitModalOpen(false)}
+        />
+      ) : (
+        <UpgradePrompt
+          requiredTier="core"
+          mode="modal"
+          featureName="Additional team seats"
+          open={seatLimitModalOpen}
+          onClose={() => setSeatLimitModalOpen(false)}
+        />
+      )}
 
       {/* LOADING */}
       {isLoading && (

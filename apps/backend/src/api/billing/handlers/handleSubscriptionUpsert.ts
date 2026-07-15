@@ -17,6 +17,22 @@ import { getTierConfig, isValidTier, Tier } from '@lasyncro/backend-core/config/
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
 
+// AUD-C16: known extra-seat add-on Price IDs, used to separate seat
+// line items from the base tier line item on a subscription. Read
+// directly from env rather than importing getSeatPriceId, since we
+// need the full set to test membership, not a single tier/currency
+// lookup.
+const SEAT_ADDON_PRICE_IDS = new Set(
+  [
+    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_USD,
+    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_GBP,
+    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_EUR,
+    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_USD,
+    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_GBP,
+    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_EUR,
+  ].filter(Boolean)
+);
+
 export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promise<void> {
   const sub = envelope.rawPayload as any;
   const shopId = envelope.shopId;
@@ -38,9 +54,20 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
 
   const tier = rawTier as Tier;
   const tierConfig = getTierConfig(tier);
-
   const status = sub?.status ?? 'active';
-  const billingInterval = sub?.items?.data?.[0]?.plan?.interval === 'year' ? 'annual' : 'monthly';
+
+  // AUD-C16: subscription items now may include a seat add-on line
+  // alongside the base tier line — must not assume index 0 is the
+  // base item. extra_seats is derived fresh from Stripe's item list
+  // every upsert, so removing seats via the Stripe portal self-corrects
+  // on the next webhook without separate remove logic.
+  const items = sub?.items?.data ?? [];
+  const baseItem = items.find((i: any) => !SEAT_ADDON_PRICE_IDS.has(i?.price?.id)) ?? items[0];
+  const extraSeats = items
+    .filter((i: any) => SEAT_ADDON_PRICE_IDS.has(i?.price?.id))
+    .reduce((sum: number, i: any) => sum + (i?.quantity ?? 0), 0);
+
+  const billingInterval = baseItem?.plan?.interval === 'year' ? 'annual' : 'monthly';
   const stripeCustomerId = sub?.customer ?? null;
   const stripeSubscriptionId = sub?.id ?? null;
   const currentPeriodStart = sub?.current_period_start
@@ -62,6 +89,7 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
         stripe_customer_id: stripeCustomerId,
         stripe_subscription_id: stripeSubscriptionId,
         status,
+        extra_seats: extraSeats,
         trial_ends_at: trialEnd,
         current_period_start: currentPeriodStart,
         current_period_end: currentPeriodEnd,
@@ -74,6 +102,7 @@ export async function handleSubscriptionUpsert(envelope: WebhookEnvelope): Promi
         'stripe_customer_id',
         'stripe_subscription_id',
         'status',
+        'extra_seats',
         'trial_ends_at',
         'current_period_start',
         'current_period_end',

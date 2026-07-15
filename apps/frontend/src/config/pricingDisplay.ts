@@ -59,3 +59,13 @@ export function annualSavings(tier: Exclude<Tier, 'starter'>, currency: BillingC
   const p = PEGGED_DISPLAY_PRICES[tier][currency];
   return Math.round((p.monthly * 12 - p.annual) * 100) / 100;
 }
+
+// ── Extra-seat add-on pricing (AUD-C16) ──────────────────────
+// Mirrors backend SEAT_DISPLAY_PRICES in pricing.config.ts.
+// Scale excluded — unlimited seats, no add-on needed.
+export type SeatTier = 'core' | 'growth';
+
+export const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, number>> = {
+  core:   { USD: 15, GBP: 12, EUR: 13 },
+  growth: { USD: 12, GBP: 10, EUR: 11 },
+};
