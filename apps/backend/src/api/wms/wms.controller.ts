@@ -32,6 +32,7 @@ import {
 import { encrypt } from '../../security/encryption.service.js';
 import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service.js';
 import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
+import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.service.js';
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
 // ─────────────────────────────────────────
@@ -1159,24 +1160,31 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       billableCount = parseInt(billableOrders?.count ?? '0', 10);
 
       if (billableCount > 0) {
-        // Increment shipped_orders on the open billing period for this shop.
-        // If no open period exists, log and continue — never block fulfillment for billing failures.
+        // Rotate stale Starter periods before metering this completed batch.
+        // The helper returns the exact open row to increment, preventing a
+        // concurrent month-boundary rotation from moving this usage.
+        const usagePeriod = await getOrRotateOpenUsagePeriod(trx, shopId);
         const updated = await trx('shop_usage_metrics')
-          .where({ shop_id: shopId })
+          .where({
+            id: usagePeriod.id,
+            shop_id: shopId,
+          })
           .whereNull('period_ends_at')
           .increment('shipped_orders', billableCount);
 
         if (updated === 0) {
-          console.warn('[WMS_PACK_COMPLETE][USAGE] no open billing period found — shipped_orders not incremented', {
+          console.warn('[WMS_PACK_COMPLETE][USAGE] open period changed before increment', {
             shopId,
             batchId,
             billableCount,
+            usagePeriodId: usagePeriod.id,
           });
         } else {
           console.info('[WMS_PACK_COMPLETE][USAGE] shipped_orders incremented', {
             shopId,
             batchId,
             billableCount,
+            usagePeriodId: usagePeriod.id,
           });
         }
       }

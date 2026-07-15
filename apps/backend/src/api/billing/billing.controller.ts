@@ -32,6 +32,7 @@ import {
   PEGGED_DISPLAY_PRICES, 
   BillingCurrency 
 } from '@lasyncro/backend-core/config/pricing.config.js';
+import { getOrRotateOpenUsagePeriod } from './usagePeriod.service.js';
 
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -288,12 +289,9 @@ export async function getUsage(req: Request, res: Response) {
     // data. withTenant() sets SET LOCAL app.current_tenant for this
     // transaction only, matching RLS_blueprint.md §3.
     const usage = await withTenant(shopId, async (trx) => {
-      // Current open period — period_ends_at IS NULL
-      return trx('shop_usage_metrics')
-        .where({ shop_id: shopId })
-        .whereNull('period_ends_at')
-        .orderBy('period_starts_at', 'desc')
-        .first('ingested_orders', 'shipped_orders', 'tier_at_period_start', 'period_starts_at');
+      // Reads also rotate stale Starter periods so an idle shop sees a
+      // fresh monthly allowance before its next order or shipment.
+      return getOrRotateOpenUsagePeriod(trx, shopId);
     });
 
     return res.json({

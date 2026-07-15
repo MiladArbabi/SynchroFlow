@@ -3,6 +3,7 @@ import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from '../../../api/webhooks/types.js';
 import { buildExternalEventId } from '../../webhooks/buildExternalEventId.js';
+import { getOrRotateOpenUsagePeriod } from '../../billing/usagePeriod.service.js';
 
 type ShopifyOrderCreatePayload = {
   id: number | string;
@@ -124,17 +125,13 @@ export async function handleOrderCreated(
   const rawTier = subRow?.tier ?? 'starter';
   const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
   const { monthlyOrderCap } = getTierConfig(currentTier);
+  const usagePeriod = await getOrRotateOpenUsagePeriod(trx, shopId);
 
   if (isFinite(monthlyOrderCap)) {
-    const usageRow = await trx('shop_usage_metrics')
-      .where({ shop_id: shopId })
-      .whereNull('period_ends_at')
-      .first('ingested_orders');
-
-    const monthlyCount = Number(usageRow?.ingested_orders ?? 0);
+    const monthlyCount = Number(usagePeriod.ingested_orders ?? 0);
 
     if (monthlyCount >= monthlyOrderCap) {
-      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestionblocked', {
+      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestion blocked', {
         shopId,
         tier: currentTier,
         monthlyCount,
@@ -145,7 +142,7 @@ export async function handleOrderCreated(
 
     const warningThreshold = Math.floor(monthlyOrderCap * 0.8);
     if (monthlyCount >= warningThreshold) {
-      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap',{
+      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap', {
         shopId,
         tier: currentTier,
         monthlyCount,
@@ -206,8 +203,11 @@ export async function handleOrderCreated(
 
     // Increment ingested_orders on open billing period (MON-05)
     // Non-fatal — cap enforcement reads this value, not domain_events count.
-    const usageUpdated = await trx('shop_usage_metrics')
-      .where({ shop_id: shopId })
+     const usageUpdated = await trx('shop_usage_metrics')
+      .where({
+        id: usagePeriod.id,
+        shop_id: shopId,
+      })
       .whereNull('period_ends_at')
       .increment('ingested_orders', 1);
 

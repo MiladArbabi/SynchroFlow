@@ -2,7 +2,7 @@
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
 > **Last updated:** July 15, 2026
-> **Status:** Stripe subscription activation and flexible-billing period derivation verified end-to-end.
+> **Status:** Stripe subscription activation, flexible-billing periods, and lazy monthly usage rotation verified end-to-end.
 
 ---
 
@@ -513,3 +513,45 @@ Verified against a genuine sandbox subscription update:
 - Webhook response: `200`
 - Ledger: `processed`, `verified=true`
 - Database and billing API: matching non-null monthly period boundaries
+
+---
+
+## 16. Usage-Period Lifecycle (verified 2026-07-15)
+
+Starter caps reset on UTC calendar-month boundaries through lazy rotation;
+there is no cron dependency.
+
+`getOrRotateOpenUsagePeriod()` runs inside the caller's tenant-scoped
+transaction and is used by:
+
+- Shopify order ingestion before cap evaluation and increment
+- WMS pack-complete before shipped-order increment
+- `GET /api/v1/billing/usage` before returning current usage
+
+For Starter shops, the helper:
+
+1. Acquires a transaction-scoped, per-shop advisory lock.
+2. Returns the existing period when it belongs to the current UTC month.
+3. Closes a stale period at the first instant of the current UTC month.
+4. Opens a zeroed period using the shop's current tier snapshot.
+5. Creates a missing open period instead of silently losing usage.
+
+The partial unique index
+`idx_shop_usage_metrics_one_open_period` remains the database backstop
+against multiple open periods.
+
+Paid tiers remain invoice-driven through `handleInvoicePaid`; lazy
+calendar rotation does not replace their Stripe billing-cycle boundary.
+
+### Verification
+
+A rollback-only database test simulated June Starter usage and a July
+read/write:
+
+- June period closed at `2026-07-01T00:00:00.000Z`
+- July period opened with zero ingested and shipped counts
+- Original database state was fully preserved after rollback
+
+A fresh-database live API test also confirmed that
+`GET /api/v1/billing/usage` creates a missing open period and returns its
+tier snapshot and zeroed counters.
