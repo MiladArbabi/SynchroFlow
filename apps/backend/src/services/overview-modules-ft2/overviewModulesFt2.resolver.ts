@@ -1,4 +1,3 @@
-// apps/backend/src/services/overview-modules-ft2/overviewModulesFt2.resolver.ts
 import { getCustomersFt2Snapshot } from '../../services/customers-ft2.provider.js';
 import { CustomersFT2Exposure } from '../../services/customers-ftep/customersFtep.types.js';
 import { getOrderNexusFt2StateSnapshot } from '../../services/order-nexus-ft2/orderNexusFt2.state.resolver.js';
@@ -6,15 +5,14 @@ import { OrderNexusFT2Snapshot } from '../../services/order-nexus-ft2/orderNexus
 import { getProductsFt2Snapshot } from '../../services/products-ft2.provider.js';
 import { ProductsFT2Exposure } from '../../services/products-ftep/ProductsFtep.types.js';
 import { FT2RangeInput, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
+import type { Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { getOverviewPulse, OverviewPulse } from '../overview-ft2/overviewPulse.resolver.js';
-
 export interface OverviewModulesFt2Snapshot {
   orders: OrderNexusFT2Snapshot | null;
   products: ProductsFT2Exposure | null;
   customers: CustomersFT2Exposure | null;
   pulse: OverviewPulse | null;
 }
-
 /**
  * OverviewModules FT2
  * ------------------
@@ -31,11 +29,10 @@ export interface OverviewModulesFt2Snapshot {
 export async function getOverviewModulesFt2Snapshot(input: {
   shopId: number;
   range: FT2RangeInput;
+  tier?: Tier;
 }): Promise<OverviewModulesFt2Snapshot> {
-
   const { shopId, range } = input;
-
-  const period = resolveFt2Range(input.range);
+  const period = resolveFt2Range(input.range, input.tier);
 
   return {
     orders: await getOrderNexusFt2StateSnapshot(shopId),

@@ -33,19 +33,24 @@ export async function orderNexusFt2TimeseriesController(
   res: any
 ) {
   const shopId = req.user?.shopId;
-
   if (!shopId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const range = resolveFt2RangeFromRequest(req);
-
-  const result = await getOrderNexusFt2Timeseries({
-    shopId,
-    range,
-  });
-
-  return res.json(result);
+  // FT2-COVERAGE-CRASH-01: previously unhandled — a query error here
+  // crashed the whole dev process instead of returning a clean 500.
+  try {
+    const tier = req.user?.tier ?? 'starter';
+    const range = resolveFt2RangeFromRequest(req);
+    const result = await getOrderNexusFt2Timeseries({
+      shopId,
+      range,
+      tier,
+    });
+    return res.json(result);
+  } catch (err: unknown) {
+    console.error('[ORDER_NEXUS_FT2_TIMESERIES_FAILED]', { shopId, error: err instanceof Error ? err.message : err });
+    return res.status(500).json({ error: 'Failed to load order timeseries' });
+  }
 }
 
 export async function orderNexusFt2DistributionController(
@@ -53,43 +58,50 @@ export async function orderNexusFt2DistributionController(
   res: any
 ) {
   const shopId = req.user?.shopId;
-
   if (!shopId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const range = resolveFt2RangeFromRequest(req);
-
-  /**
-   * COVERAGE FACT SURFACE
-   * ---------------------
-   * Must call coverage projection service.
-   * Prevents accidental cross-surface metric leakage.
-   */
-  const result = await getOrderNexusFt2Coverage({
-    shopId,
-    range,
-  });
-
-  return res.json(result);
+  try {
+    const range = resolveFt2RangeFromRequest(req);
+    // FT2-COVERAGE-SWAP-01: this controller was incorrectly calling
+    // getOrderNexusFt2Coverage — swapped with orderNexusFt2CoverageController
+    // below, likely at initial authorship. Distribution route now calls
+    // the distribution service, matching its name/route/response shape.
+    const result = await getOrderNexusFt2Distribution({
+      shopId,
+      range,
+    });
+    return res.json(result);
+  } catch (err: unknown) {
+    console.error('[ORDER_NEXUS_FT2_DISTRIBUTION_FAILED]', { shopId, error: err instanceof Error ? err.message : err });
+    return res.status(500).json({ error: 'Failed to load order distribution' });
+  }
 }
-
 export async function orderNexusFt2CoverageController(
   req: any,
   res: any
 ) {
   const shopId = req.user?.shopId;
-
   if (!shopId) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-
-  const range = resolveFt2RangeFromRequest(req);
-
-  const result = await getOrderNexusFt2Distribution({
-    shopId,
-    range,
-  });
-
-  return res.json(result);
+  try {
+    const tier = req.user?.tier ?? 'starter';
+    const range = resolveFt2RangeFromRequest(req);
+    /**
+     * COVERAGE FACT SURFACE
+     * ---------------------
+     * Must call coverage projection service.
+     * Prevents accidental cross-surface metric leakage.
+     */
+    const result = await getOrderNexusFt2Coverage({
+      shopId,
+      range,
+      tier,
+    });
+    return res.json(result);
+  } catch (err: unknown) {
+    console.error('[ORDER_NEXUS_FT2_COVERAGE_FAILED]', { shopId, error: err instanceof Error ? err.message : err });
+    return res.status(500).json({ error: 'Failed to load order coverage' });
+  }
 }

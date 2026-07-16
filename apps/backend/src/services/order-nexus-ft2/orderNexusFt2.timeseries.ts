@@ -1,6 +1,6 @@
 import db from '@lasyncro/backend-core/db.js';
 import { FT2RangeInput, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2Period.js';
-
+import type { Tier } from '@lasyncro/backend-core/config/tiers.js';
 /**
  * getOrderNexusFt2Timeseries
  * --------------------------
@@ -15,11 +15,13 @@ import { FT2RangeInput, resolveFt2Range } from '@lasyncro/backend-core/utils/ft2
 export async function getOrderNexusFt2Timeseries({
   shopId,
   range,
+  tier,
 }: {
   shopId: number;
   range: FT2RangeInput;
+  tier?: Tier;
 }) {
-  const resolvedRange = resolveFt2Range(range);
+  const resolvedRange = resolveFt2Range(range, tier);
 
     const rows = await db('orders_operational_control_snapshot')
     .select(

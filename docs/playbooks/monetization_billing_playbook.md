@@ -924,3 +924,88 @@ layout supported the stretch correctly with no further changes needed.
 All four fixes live-verified on `/settings/billing`: correct spacing,
 correct Scale feature list, correct Core seat count (3 non-owner
 seats), and all three tier cards rendering at equal height.
+---
+
+## 22. FT2 Order-History Window Enforcement (verified 2026-07-16)
+
+Closes the handover's item 9 ("FT2 order-history window enforcement:
+query-layer enforcement recorded, precomputed FT2 snapshot enforcement
+remains pending"). Grew into three related fixes during
+implementation, all live-verified.
+
+### Tier-blind FT2 date range resolution (FT2-ORDER-WINDOW-01)
+
+`tierDataWindowSince(tier)` (Starter: 90 days, Core: 365 days,
+Growth/Scale: unlimited) was already correctly enforced at the live
+query layer (`orders.service.ts`, `exports.controller.ts`). The FT2
+snapshot system — dashboards, timeseries, coverage — had its own,
+entirely separate date-range resolver (`resolveFt2Range` in
+`packages/backend-core/src/utils/ft2Period.ts`) with zero tier
+awareness. A Starter or Core shop could request an explicit custom FT2
+range reaching arbitrarily far back and receive real data, even though
+the equivalent live-query endpoint would correctly reject or truncate
+the same request.
+
+Mapped every live caller funneling through `resolveFt2Range`
+(`orderNexusFt2.timeseries.ts`, `orderNexusFt2.coverage.ts`,
+`overviewModulesFt2.resolver.ts`, reached via
+`resolveFt2RangeFromRequest` from the Order Nexus facts controller and
+directly elsewhere) — all six confirmed to converge on this single
+function, making it the correct, sole choke point for the fix. Two
+callers (Customers, Specter) were excluded — both frozen/deprecated
+modules.
+
+Fixed by adding an optional `tier: Tier` parameter (default `'starter'`,
+the most restrictive, fail-safe value) to `resolveFt2Range`, clamping
+the resolved `from` boundary against `tierDataWindowSince(tier)` when
+it's more restrictive than the requested range — reusing the
+already-correct query-layer utility rather than reimplementing window
+logic. `tier` is threaded from `req.user?.tier ?? 'starter'` at each
+controller, mirroring the existing pattern in `orders.controller.ts`.
+
+Live-verified: a Core-tier shop requesting a custom range from
+2020-01-01 was correctly clamped to ~365 days back; an in-window
+`past_30_days` request passed through completely untouched, confirming
+no over-clamping regression.
+
+### Incidental discovery: coverage/distribution controller swap (FT2-COVERAGE-SWAP-01)
+
+While testing the tier fix against `/ft2/facts/coverage`, the response
+came back in the shape of `OrdersFt2Distribution` (always-zero stub),
+not `OrdersFt2Coverage`. Traced to `orderNexusFt2Facts.controller.ts`:
+`orderNexusFt2DistributionController` was calling
+`getOrderNexusFt2Coverage`, and `orderNexusFt2CoverageController` was
+calling `getOrderNexusFt2Distribution` — swapped relative to their own
+names and mounted routes. `/coverage` had always silently served the
+distribution stub; `/distribution` had always served real coverage
+data mislabeled. Fixed by swapping the internal service calls back to
+match each controller's name/route. Confirmed live: `/coverage` now
+returns the real `OrdersFt2Coverage` shape, `/distribution` now
+returns the stub shape.
+
+### Incidental discovery: coverage query referenced nonexistent columns, crashed the process (FT2-COVERAGE-CRASH-01)
+
+Fixing the swap made `getOrderNexusFt2Coverage`'s query reachable for
+apparently the first time — it crashed the entire dev server process
+immediately (unhandled Postgres error, no try/catch anywhere in the
+call chain). The query referenced three columns that don't exist on
+`order_revenue_units`: `shop_id` and `order_created_at` (both live only
+on the parent `orders` table; tenant scope is enforced via RLS through
+a subquery, not a direct column) and `id` (primary key is
+`lasyncro_revenue_unit_id`). This service had very likely never worked
+against the real schema — it was only ever protected from detection by
+the controller swap routing real traffic elsewhere.
+
+Fixed by rewriting the query to join `order_revenue_units` to `orders`
+on `lasyncro_order_id`, filtering on `orders.shop_id` and
+`orders.order_created_at` (using the existing purpose-built index
+`orders_shop_id_order_created_at_index`), and counting the correct
+primary key column. Also added try/catch with clean `500` responses
+across all three FT2 facts controllers (timeseries, distribution,
+coverage) so a future query error returns an error response instead of
+crashing the process again.
+
+Live-verified: `/coverage` now returns a real, correctly-shaped,
+tier-clamped response (`totalLineItems`, `presentCost`, `missingCost`,
+`completenessPct`) with no crash; server process confirmed alive and
+stable after repeated test calls against both endpoints.

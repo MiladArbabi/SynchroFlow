@@ -1,4 +1,7 @@
-// apps/backend/src/utils/ft2Period.ts
+// packages/backend-core/src/utils/ft2Period.ts
+
+import { tierDataWindowSince } from './tierDataWindow.js';
+import type { Tier } from '../config/tiers.js';
 
 export type FT2DateRangePreset =
   | 'today'
@@ -21,22 +24,42 @@ export type FT2RangeInput =
   | FT2DateRangePreset
   | { preset: 'custom'; from: string; to: string };
 
-export function resolveFt2Range(range: FT2RangeInput) {
+// FT2-ORDER-WINDOW-01: resolveFt2Range previously had no tier
+// awareness at all — a Starter/Core shop could request any FT2
+// snapshot range, including an explicit custom range reaching years
+// back, and receive real data. The live query-layer path
+// (orders.service.ts) already enforced tierDataWindowSince correctly;
+// this brings the FT2 snapshot path to parity by clamping the
+// resolved `from` boundary to the tier's window when the tier is more
+// restrictive than the requested range. `tier` defaults to 'starter'
+// (most restrictive) so existing callers that don't yet pass a real
+// tier — currently only the frozen Customers/Specter modules — fail
+// safe rather than silently keeping the old unlimited behavior.
+export function resolveFt2Range(range: FT2RangeInput, tier: Tier = 'starter') {
   type NonCustomPreset = Exclude<FT2DateRangePreset, 'custom'>;
 
-  if (typeof range === 'string') {
+  const resolved = (() => {
+    if (typeof range === 'string') {
+      return resolveFt2PeriodFromPreset({
+        preset: range as NonCustomPreset,
+      });
+    }
+
+    if (range.preset === 'custom') {
+      return resolveFt2PeriodFromPreset(range);
+    }
+
     return resolveFt2PeriodFromPreset({
-      preset: range as NonCustomPreset,
+      preset: range.preset as NonCustomPreset,
     });
+  })();
+
+  const tierFloor = tierDataWindowSince(tier);
+  if (tierFloor && new Date(resolved.from) < tierFloor) {
+    return { ...resolved, from: tierFloor.toISOString() };
   }
 
-  if (range.preset === 'custom') {
-    return resolveFt2PeriodFromPreset(range);
-  }
-
-  return resolveFt2PeriodFromPreset({
-    preset: range.preset as NonCustomPreset,
-  });
+  return resolved;
 }
 
 function assertNever(x: never): never {

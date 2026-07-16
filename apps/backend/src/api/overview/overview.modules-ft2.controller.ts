@@ -25,12 +25,13 @@ export async function getOverviewModulesFt2(
   res: Response
 ): Promise<void> {
   try {
-    const shopId = (req as any).user?.shopId;
 
+    const shopId = (req as any).user?.shopId;
     if (!shopId) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
+    const tier = (req as any).user?.tier ?? 'starter';
 
     /**
      * FT2 Date Range Resolution
@@ -54,6 +55,7 @@ export async function getOverviewModulesFt2(
     const snapshot = await getOverviewModulesFt2Snapshot({
       shopId,
       range,
+      tier,
     });
 
     res.status(200).json(snapshot);
