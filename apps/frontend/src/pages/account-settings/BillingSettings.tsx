@@ -35,7 +35,14 @@ const PLAN_FEATURES: Record<string, string[]> = {
   starter: ['Orders & fulfillment queue', 'Real-time stock alerts', '1 sales channel', 'Email support'],
   core:    ['Everything in Starter', 'WMS — pick / pack / stow', 'Barcode scanning', 'Returns management', 'Product catalog'],
   growth:  ['Everything in Core', 'Cash flow & runway', 'Demand forecasting', 'Customer LTV', 'Supplier scorecards'],
-  scale:   ['Everything in Growth', 'Warehouse floor planning', 'Unlimited seats', 'Specter intelligence', 'Priority support'],
+  // ISS-SCALE1: previously listed 'Warehouse floor planning' and
+  // 'Specter intelligence' as Scale differentiators — both are
+  // already included in Growth (SCALE_MODULES has zero exclusive
+  // modules beyond GROWTH_MODULES), so this misrepresented existing
+  // Growth features as new Scale value. Specter is additionally
+  // deprecated/frozen. Corrected to reflect Scale's actual
+  // differentiation: capacity only, no exclusive modules.
+  scale:   ['Everything in Growth', 'Unlimited seats', 'No order or shipment caps', 'Priority support'],
 };
 
 const PLAN_BLURBS: Record<string, string> = {
@@ -47,7 +54,11 @@ const PLAN_BLURBS: Record<string, string> = {
 
 const PLAN_SEATS: Record<string, string> = {
   starter: '0 extra seats',
-  core:    '2 non-owner seats',
+  // ISS-SCALE3: stale — Core's seatLimit was raised 2→3, this display
+  // constant was never updated to match. Verified against
+  // members.controller.ts: currentSeats counts non-owner active
+  // memberships directly against TIER_CONFIG.core.seatLimit (3).
+  core:    '3 non-owner seats',
   growth:  '5 non-owner seats',
   scale:   'Unlimited seats',
 };
@@ -759,6 +770,12 @@ const BillingSettings: React.FC = () => {
     : null;
 
   return (
+    // ISS-SCALE2: BillingSettings was the only settings tab not using
+    // SettingsPageWrapper, so it rendered flush against the shell's
+    // edges with no padding. Not using the wrapper directly since its
+    // maxWidth: 640 would break the 3-column tier grid and 2-column
+    // usage panel — matching only its p: 2.5 edge padding instead.
+    <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', p: 2.5 }}>
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {error && (
         <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>
@@ -847,7 +864,13 @@ const BillingSettings: React.FC = () => {
         <Box sx={{
           display: 'grid',
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' },
-          gap: 1.75, alignItems: 'start',
+          // ISS-SCALE4: 'start' let each card size to its own content;
+          // Scale's feature list is legitimately one line shorter than
+          // Core/Growth after the ISS-SCALE1 copy fix, making it look
+          // broken/incomplete next to the other two. 'stretch' matches
+          // all three cards to the tallest, which TierCard's
+          // flexDirection:'column' + flex:1 already supports.
+          gap: 1.75, alignItems: 'stretch',
         }}>
           {UPGRADE_TIERS.map((tierId) => (
             <TierCard
@@ -862,6 +885,7 @@ const BillingSettings: React.FC = () => {
           ))}
         </Box>
       </Box>
+    </Box>
     </Box>
   );
 };

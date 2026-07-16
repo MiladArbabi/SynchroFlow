@@ -849,3 +849,78 @@ accurate "Unlock [feature]" upgrade modal with correct current/
 required tier and live pricing — confirming the badge/teaser system
 works correctly end-to-end now that it can actually be observed
 locally.
+---
+
+## 21. Scale Value Proposition Review (verified 2026-07-16)
+
+Non-technical review of Scale's pricing page presentation
+($349/mo, unlimited seats/orders/shipments, $170/mo premium over
+Growth) surfaced four real defects in `BillingSettings.tsx`, all
+fixed and live-verified.
+
+### Misattributed features in Scale's feature list (ISS-SCALE1)
+
+`PLAN_FEATURES.scale` previously listed `'Warehouse floor planning'`
+and `'Specter intelligence'` as Scale differentiators. Both are
+already included in Growth — `SCALE_MODULES` has zero exclusive
+modules beyond `GROWTH_MODULES` — so a Growth customer would see two
+features they already pay for presented as new reasons to upgrade.
+Specter is additionally deprecated/frozen, so this was also selling a
+dead feature.
+
+Corrected to reflect Scale's actual differentiation, which is capacity
+only: `'Everything in Growth', 'Unlimited seats', 'No order or
+shipment caps', 'Priority support'`.
+
+Product note, not a code issue: with the misattribution removed,
+Scale's genuine value proposition is thin — three capacity-only
+differentiators for a $170/mo premium, no exclusive feature. Worth a
+separate product decision on whether Scale needs a genuine new
+capability (multi-warehouse, dedicated CSM, SLA guarantee, advanced
+permissions) to justify the price gap, or whether the pitch should
+lean harder into "you need >5 seats / >10K orders / >1K shipments,"
+a segment for which Growth's caps are a hard operational blocker
+rather than a nice-to-have.
+
+### Billing tab missing page-level padding (ISS-SCALE2)
+
+`BillingSettings.tsx` was the only settings tab not using the shared
+`SettingsPageWrapper` (`ShopSettingsShared.tsx`), so its content
+rendered flush against the shell's edges while every other tab had
+standard `p: 2.5` spacing. Not adopting the wrapper directly, since
+its `maxWidth: 640` would break Billing's 3-column tier grid and
+2-column usage panel — matched only its edge padding via a new
+outer `<Box sx={{ p: 2.5 }}>` wrapping the component's existing root.
+
+### Core seat count display was stale (ISS-SCALE3)
+
+`PLAN_SEATS.core` read `'2 non-owner seats'`, left over from before
+Core's `seatLimit` was raised 2 to 3 (Starter-tier thread). Verified
+against `members.controller.ts`: seat enforcement counts active
+non-owner `shop_memberships` rows directly against
+`TIER_CONFIG.core.seatLimit` (3), confirming the display was
+undercounting what Core customers actually get. Corrected to
+`'3 non-owner seats'`.
+
+Also noted, not fixed (out of scope): `members.controller.ts` sets
+tenant context via plain `SET app.current_tenant = '${shopId}'`
+(string interpolation, not `SET LOCAL`, not parameterized) — same
+category of pattern as ISS-SEC1 earlier this session, though `shopId`
+here originates from a trusted JWT claim rather than user input.
+Worth a dedicated pass separately.
+
+### Tier card height mismatch (ISS-SCALE4)
+
+Direct side effect of the ISS-SCALE1 copy fix: Scale's feature list
+went from 5 bullets to 4, one shorter than Core and Growth (6 each),
+and the tier-card grid used `alignItems: 'start'`, letting each card
+size to its own content — Scale visibly looked shorter/incomplete
+next to its siblings. Fixed by changing the grid to
+`alignItems: 'stretch'` rather than padding Scale's list with a filler
+bullet, which would have reintroduced the same dishonest-copy problem
+ISS-SCALE1 removed. `TierCard`'s existing `flexDirection: 'column'`
+layout supported the stretch correctly with no further changes needed.
+
+All four fixes live-verified on `/settings/billing`: correct spacing,
+correct Scale feature list, correct Core seat count (3 non-owner
+seats), and all three tier cards rendering at equal height.
