@@ -41,8 +41,13 @@ export function resolveNavVisibility({
   promoteIfLocked,
   hideIfLocked,
 }: ResolveNavVisibilityArgs): NavVisibility {
-  // DEV BYPASS: never lock nav items in development
-  if (import.meta.env.DEV) return 'enabled';
+  // ISS-N1: DEV bypass previously skipped ALL gating (tier + module),
+  // including the tier badge logic itself — meaning upgrade badges
+  // (↑ Growth, ↑ Core) never rendered in local dev, making tier-gate
+  // regressions like ISS-G1 invisible to normal browsing. Tier gating
+  // now runs even in DEV; only the module-entitlement bypass remains,
+  // since local dev seed data may legitimately lack certain module
+  // grants unrelated to what's being tested.
   // --- Tier gate (checked first — tier supersedes module entitlement) ---
   if (requiredTier) {
     const required = TIER_ORDER[requiredTier] ?? 0;
@@ -56,6 +61,7 @@ export function resolveNavVisibility({
   }
 
   // --- Module entitlement gate ---
+  if (import.meta.env.DEV) return 'enabled';
   if (!requiredModuleId) return 'enabled';
   if (modules.includes(requiredModuleId)) return 'enabled';
   if (hideIfLocked) return 'hidden';

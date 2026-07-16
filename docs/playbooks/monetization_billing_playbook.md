@@ -800,3 +800,52 @@ with no additions — Scale differentiates purely on capacity (unlimited
 seats, ingested orders, shipped orders), matching the handover's
 documented positioning. No module-level gate is needed because Scale
 has no exclusive modules.
+---
+
+## 20. Development Navigation Bypass Fix (verified 2026-07-16)
+
+`resolveNavVisibility.ts` previously contained an unconditional
+`if (import.meta.env.DEV) return 'enabled';` at the top of the
+function, bypassing both tier gating and module-entitlement gating for
+every nav item in any local development environment. This made
+upgrade-badge rendering completely untestable locally — a developer
+browsing the sidebar in dev would never see the `↑ Growth`/`↑ Core`
+badges or the locked-page teaser modal that a real user on an
+insufficient tier would see, since everything always resolved as
+`'enabled'`.
+
+Practical risk: a tier-gating regression at the nav layer (distinct
+from the `PlanGate`/backend-route bugs found in §19) could ship
+undetected, since the most natural manual-testing path — browsing the
+app locally — would never surface it.
+
+Cross-checked every `requiredTier` nav entry in
+`runtime/navBootstrap.ts` (Demand, Floor Planning, Supplier Ratings,
+Returns) against its destination page for a second-layer safety net
+(`PlanGate` and/or backend `requireTier()`). All four were confirmed
+independently protected — the DEV bypass's impact was testability
+only, not a live security gap.
+
+Fixed by scoping the bypass to module-entitlement checks only,
+preserving local dev convenience for shops whose seed data may
+legitimately lack certain module grants, while allowing tier gating
+(badges, teaser modals) to run and be testable even in DEV:
+
+```ts
+// Tier gate now runs unconditionally, including in DEV.
+if (requiredTier) { /* ... */ }
+
+// Module-entitlement bypass preserved for DEV convenience.
+if (import.meta.env.DEV) return 'enabled';
+if (!requiredModuleId) return 'enabled';
+```
+
+Live-verified post-fix: Starter-tier dev shop correctly shows faded
+`↑ Growth`/`↑ Core` badges on Demand, Floor Planning, Returns,
+Analytics, and Problem Center in the sidebar (never hidden, matching
+the documented "requiredTier shows upgrade badge, never hides the
+item" convention), and clicking a gated item correctly surfaces an
+accurate "Unlock [feature]" upgrade modal with correct current/
+required tier and live pricing — confirming the badge/teaser system
+works correctly end-to-end now that it can actually be observed
+locally.
