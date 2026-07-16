@@ -708,3 +708,95 @@ created a Stripe subscription item, the resulting
 a matching timestamp. `AddSeatsModal`'s frontend behavior (pricing
 display, stepper, secondary upgrade CTA) was previously confirmed
 visually; this closes the remaining backend verification gap.
+---
+
+## 19. Growth/Scale Gate Audit (verified 2026-07-16)
+
+Systematic cross-check of backend `requireTier()` route literals against
+frontend `PlanGate`/`PLAN_FEATURES` gating and live endpoint behavior,
+across all non-frozen modules. Two real defects found and fixed;
+finances, cashflow, margin, and specter were excluded as frozen/
+deprecated and not audited further.
+
+### Frontend WMS pipeline incorrectly locked at Core (ISS-G1)
+
+`PLAN_FEATURES` in `usePlanEntitlement.ts` gated `wms.pick_batches`,
+`wms.pack`, `wms.stow`, `wms.problem_center`, and `wms.receive` all at
+`'core'`, directly contradicting the backend's `requireTier('starter')`
+on the same pipeline routes and the PLG decision (§14, 2026-07-14) that
+the full Receive to Stow to Pick to Pack to Ship loop is free on
+Starter, gated only by the shipment volume cap.
+
+Impact: Starter shops saw the entire WMS module hidden behind an
+"Upgrade to Core" wall in the live app, despite the backend correctly
+allowing them through. This directly blocked the core PLG loop the
+tier structure was designed to protect.
+
+Fixed by correcting all five flags to `'starter'`. Live-verified
+before and after: pre-fix screenshot showed the full-module lock
+screen for a Starter shop; post-fix screenshot showed Operations
+loading normally, with Floor Planning correctly tagged "Growth" and
+Analytics/Problem Center correctly tagged "Core" in the tab bar —
+confirming the intelligence layers above the free pipeline remain
+properly gated.
+
+### Backend customers routes had no tier gate (ISS-G2)
+
+`customers.routes.ts` base routes (`GET /`, `GET /:id`) had no
+`requireTier()` call at all — only `requireAction('customers:read')`,
+which is pure RBAC (owner/admin/operator) with no plan awareness. No
+global module-gating middleware exists in `bootstrap/express.ts`,
+which mounts each router directly. `customers` is a Growth-exclusive
+module (present only in `GROWTH_MODULES`, absent from
+`CORE_MODULES`), so any authenticated Starter or Core shop could call
+these endpoints directly and receive real customer data — a backend
+paywall bypass, not caught by the frontend `PlanGate`, which only
+hides the UI.
+
+Fixed by adding `requireTier('growth')` to both routes, matching the
+existing correct pattern on the sibling `customers.ltv` route. Live-
+verified via a direct API call as a Core-tier shop, confirming `403`
+post-fix (previously `200`).
+
+Real-world severity note: `customers` is presently a frozen/hidden
+module (same as finances/cashflow/specter), so no live user traffic
+was exposed to this gap in practice — but any direct API call
+(outside the UI) would have succeeded regardless, so the fix stands on
+its own merits independent of the module's current frozen status.
+
+### Modules confirmed clean, no drift
+
+- **Products** — `requireTier('core')` on `/operator-summary` and `/`
+  matches `PLAN_FEATURES` (`products.operator_summary`,
+  `products.problem_center` both `'core'`).
+- **Demand** — `requireTier('growth')` on the single route matches
+  `PLAN_FEATURES['demand.forecasting']: 'growth'`.
+- **Returns** — base routes `requireTier('core')`, `/correlation`
+  `requireTier('growth')`, matches `returns` module tier and
+  `PLAN_FEATURES['returns.analysis']: 'growth'` exactly.
+- **Orders** — no backend tier gate on any route, and none needed.
+  `orders.quick_actions`, `orders.bulk_review`, `orders.pick_list`,
+  `orders.advanced_filters` are UI interaction affordances layered on
+  the same order data every tier already receives via `GET /orders`
+  and `GET /orders/:id` — there is no distinct dataset for a route
+  gate to protect, unlike `customers`. Assessed as correct by design,
+  not a gap.
+
+### WMS analytics/carrier-infra gating confirmed correct
+
+The 18 `requireTier('growth')` gates in `wms.routes.ts` were checked
+individually against their route paths: all are analytics/
+intelligence endpoints (`/analytics`, `/analytics/live`,
+`/analytics/operators`, `/analytics/pipeline`, etc.) or carrier-
+webhook-token management — layered features on top of the free core
+pipeline, not the pipeline itself. No contradiction with the Starter
+PLG decision.
+
+### Scale-tier exclusive gates
+
+Zero `requireTier('scale')` literals exist anywhere in the backend.
+Confirmed intentional, not a gap: `SCALE_MODULES = [...GROWTH_MODULES]`
+with no additions — Scale differentiates purely on capacity (unlimited
+seats, ingested orders, shipped orders), matching the handover's
+documented positioning. No module-level gate is needed because Scale
+has no exclusive modules.

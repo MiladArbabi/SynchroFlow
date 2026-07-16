@@ -54,12 +54,18 @@ const PLAN_FEATURES = {
   // Finances
   'finances.overview':         'growth',
 
- // WMS
-  'wms.pick_batches':          'core',
-  'wms.pack':                  'core',
-  'wms.stow':                  'core',
-  'wms.problem_center':        'core',
-  'wms.receive':               'core',   // inbound receive flow — lot tracking builds on this
+  // WMS
+  // ISS-G1: WMS pipeline is free on Starter, gated only by the
+  // shippedOrderCap volume cap (see product-structure.md PLG decision,
+  // 2026-07-14) — not a tier wall. Backend routes correctly use
+  // requireTier('starter') on these same actions; these flags were
+  // still gating the frontend UI at 'core', locking the entire WMS
+  // module for Starter shops despite backend access being allowed.
+  'wms.pick_batches':          'starter',
+  'wms.pack':                  'starter',
+  'wms.stow':                  'starter',
+  'wms.problem_center':        'starter',
+  'wms.receive':               'starter',   // inbound receive flow — lot tracking builds on this
   // Returns
   // 'returns.lot_attribution': 'growth', // PHASE 2 — batch-level return attribution via lot tracking (A-014)
 
