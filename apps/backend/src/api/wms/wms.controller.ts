@@ -2770,10 +2770,17 @@ export const httpPatchWmsSettings = async (req: Request, res: Response) => {
     auto_release_interval_minutes,
     idle_alert_threshold_minutes,
     include_return_label,
+    legacy_barcode_fallback_enabled,
   } = req.body;
+  
   const updates: Record<string, unknown> = {};
   if (problem_bin_location !== undefined) updates.problem_bin_location = String(problem_bin_location).trim() || null;
   if (include_return_label !== undefined) updates.include_return_label = Boolean(include_return_label);
+  // WM-46 manual toggle: lets a shop owner disable legacy barcode
+  // fallback once they've decided coverage is high enough, without
+  // waiting for auto-sunset (not yet implemented — see
+  // wms_barcode_identity_resolution_playbook.md §7b).
+  if (legacy_barcode_fallback_enabled !== undefined) updates.legacy_barcode_fallback_enabled = Boolean(legacy_barcode_fallback_enabled);
   if (max_batch_line_items !== undefined) {
     const val = Number(max_batch_line_items);
     if (!Number.isInteger(val) || val < 1 || val > 500) return res.status(400).json({ error: 'max_batch_line_items must be 1–500' });

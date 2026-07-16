@@ -256,6 +256,28 @@ function FloorDisplaySection() {
   );
 }
 
+function useWmsSettings() {
+  return useQuery<{ settings: { legacy_barcode_fallback_enabled: boolean } }>({
+    queryKey: ['wms-settings'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/settings');
+      return data;
+    },
+  });
+}
+
+function usePatchLegacyFallback() {
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+  return useMutation<void, Error, boolean>({
+    mutationFn: async (enabled) => {
+      await axiosInstance.patch('/api/v1/wms/settings', { legacy_barcode_fallback_enabled: enabled });
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['wms-settings'] }),
+    onError: () => show('Failed to update legacy barcode setting', 'error'),
+  });
+}
+
 function UnitLabelCoverageSection() {
   const { data, isLoading } = useQuery<{
     labelled_units: number;
@@ -270,6 +292,10 @@ function UnitLabelCoverageSection() {
     },
     refetchInterval: 60_000,
   });
+
+  const { data: settingsData } = useWmsSettings();
+  const { mutate: patchFallback, isPending: isTogglingFallback } = usePatchLegacyFallback();
+  const legacyFallbackEnabled = settingsData?.settings.legacy_barcode_fallback_enabled ?? true;
 
   const pct     = data?.coverage_pct ?? 0;
   const total   = data?.total_active_units ?? 0;
@@ -311,11 +337,21 @@ function UnitLabelCoverageSection() {
           </Box>
 
           {pct === 100 ? (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22C55E' }} />
-              <Typography sx={{ fontSize: 12, color: '#22C55E', fontWeight: 500 }}>
-                Full coverage — legacy barcode fallback can be disabled.
-              </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22C55E' }} />
+                <Typography sx={{ fontSize: 12, color: '#22C55E', fontWeight: 500 }}>
+                  Full coverage — legacy barcode fallback can be disabled.
+                </Typography>
+              </Box>
+              <Button
+                size="small" variant="outlined"
+                disabled={isTogglingFallback}
+                onClick={() => patchFallback(!legacyFallbackEnabled)}
+                sx={{ fontSize: 11, flexShrink: 0 }}
+              >
+                {isTogglingFallback ? 'Saving…' : legacyFallbackEnabled ? 'Disable legacy fallback' : 'Re-enable legacy fallback'}
+              </Button>
             </Box>
           ) : total === 0 ? (
             <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>

@@ -166,13 +166,33 @@ just undocumented.
 
 ## 7. Confirmed gaps — scoped, not yet built
 
-### 7a. Manual toggle (next up)
-A control on `/settings/warehouse`'s `UnitLabelCoverageSection` (or
-adjacent) to manually enable/disable `legacy_barcode_fallback_enabled`
-via a new settings endpoint (likely `PATCH /api/v1/wms/settings` or
-similar — check for an existing settings PATCH route before adding a
-new one). Closes the gap between the UI's existing "...can be
-disabled" copy and the actual absence of any control.
+### 7a. Manual toggle — DONE (2026-07-16)
+
+Closed the gap between the UI's "...can be disabled" copy and the
+actual absence of any control. No new route was needed — extended the
+existing `PATCH /api/v1/wms/settings` (`httpPatchWmsSettings` in
+`wms.controller.ts`), which already handled the sibling
+`include_return_label` boolean via the same partial-update pattern.
+`GET /api/v1/wms/settings` already returned the full
+`shop_wms_settings` row, so no read-side change was needed either.
+
+Frontend: `UnitLabelCoverageSection` in `ShopSettingsWarehousePage.tsx`
+gained a `useWmsSettings()` query and `usePatchLegacyFallback()`
+mutation (same `useQuery`/`useMutation` + `axiosInstance` pattern as
+the file's existing `useDisplayTokens`/`usePrinters` hooks). The
+toggle button renders only inside the `pct === 100` branch — a shop
+below full coverage is never nudged to disable their fallback safety
+net.
+
+Verified end-to-end via direct API calls: `GET` confirmed
+`legacy_barcode_fallback_enabled: true` by default, `PATCH` correctly
+flipped it to `false` with an updated `updated_at`, re-`PATCH`ed back
+to `true` to avoid leaving a real behavioral change on the test shop.
+Frontend page load confirmed clean (no console errors, non-100%
+branch unaffected) — full visual confirmation of the toggle itself
+was intentionally not pursued, since forcing coverage to 100% for a
+one-time check was judged not worth the setup cost given the backend
+round-trip already proved the underlying logic.
 
 ### 7b. Auto-sunset (follow-up)
 Needs a design decision before implementation on *what* checks
