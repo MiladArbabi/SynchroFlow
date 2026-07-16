@@ -1009,3 +1009,71 @@ Live-verified: `/coverage` now returns a real, correctly-shaped,
 tier-clamped response (`totalLineItems`, `presentCost`, `missingCost`,
 `completenessPct`) with no crash; server process confirmed alive and
 stable after repeated test calls against both endpoints.
+---
+
+## 22a. Correction to §22 — real-world impact of the FT2 facts endpoints
+
+Follow-up investigation (2026-07-16, same day) found that of the three
+FT2 facts endpoints touched in §22, only `/ft2/facts/distribution` has
+a wired frontend consumer (`useOrdersFt2Distribution.ts`) — and even
+that hook is never actually called from any rendered component; it
+and its backend service (`getOrderNexusFt2Distribution`) are a
+permanent stub returning zeros. `/ft2/facts/timeseries` is not called
+by the frontend at all — `useOrdersFt2Timeseries.ts`, despite its
+name, calls a different, unrelated endpoint
+(`/api/v1/orders/operational-pressure`). `/ft2/facts/coverage` has no
+frontend caller whatsoever.
+
+Practical correction: `FT2-COVERAGE-SWAP-01` and `FT2-COVERAGE-CRASH-01`
+were both real, worth-fixing bugs — but neither had any live user
+impact, since no real request ever reached either code path outside
+of direct API testing. The severity language in §22 should be read as
+"correct latent bugs," not "active incidents." The one fix from §22
+with confirmed real-world impact is the `resolveFt2Range` tier-window
+clamp itself (`FT2-ORDER-WINDOW-01`), which protects Overview's
+snapshot resolver — a genuinely live, rendered surface.
+
+## 23. Nav-Level Tier Gating Silently Defaulted to Starter for Every Shop (NAV-TIER-01, critical, verified 2026-07-16)
+
+Discovered while visually verifying the FT2 date-range work: a
+Core-tier shop clicking "Returns" in the sidebar was shown an "Unlock
+returns" upgrade modal reading `NOW: Core → REQUIRED: Core` —
+internally contradictory, since a shop already on the required tier
+should never see a lock.
+
+Root cause: `useResolvedNavigation.ts` calls `resolveNavigation()`,
+whose `currentTier` parameter defaults to `'starter'` when not
+explicitly passed. The hook only ever forwarded `entitlements: snapshot`
+to `resolveNavigation` — it never extracted or passed `tier` as
+`currentTier`. This meant nav-level tier gating (the sidebar's
+own pre-navigation lock, separate from page-level `PlanGate` checks)
+silently treated every shop as Starter, regardless of actual
+subscription, for every tier-gated nav item: Demand, Floor Planning,
+Supplier Ratings, and the entire Returns section.
+
+**Impact: every paying Core/Growth/Scale customer saw an upgrade
+prompt for features they already owned, every time they clicked
+directly into a tier-gated section from the sidebar** — not a display
+bug, a real access-friction bug actively working against retention and
+trust for paying customers. `UpgradeModal`'s own "Now" label happened
+to read the real tier correctly (via `useEntitlements().tier`
+directly), which is what exposed the contradiction — the gating
+decision and the tier displayed came from two different, disagreeing
+sources.
+
+This is distinct from `ISS-N1` (§20) — that was a DEV-only bypass
+overriding gating locally; this is a production-affecting bug in the
+gating logic itself, present regardless of environment.
+
+Fixed by having `useResolvedNavigation.ts` also destructure `tier`
+from `useEntitlements()` and pass it explicitly as `currentTier` to
+`resolveNavigation`. Live-verified both directions: a Core-tier shop
+now reaches the real Returns page directly from the sidebar; a
+Starter-tier shop correctly sees the upgrade prompt with accurate
+`NOW: Starter → REQUIRED: Core` labels.
+
+Page-level `PlanGate` checks (e.g. WMS module content) were never
+affected by this bug — they read tier correctly via a separate path
+(`usePlanEntitlement`) — which is why WMS content itself displayed
+correctly throughout today's earlier testing even while the sidebar's
+own lock state was wrong.
