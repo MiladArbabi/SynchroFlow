@@ -7,7 +7,7 @@
 // Used by ProductsCatalogPage to render the product image list.
 
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 
 export async function getProductsCatalogHandler(
   req: Request,
@@ -15,9 +15,9 @@ export async function getProductsCatalogHandler(
 ): Promise<void> {
   try {
     const shopId = req.user?.shopId;
-    if (!shopId) { res.status(401).json({ error: 'Unauthorized' }); return; }
+    if (!shopId) { res.status(401).json({ error: 'Unauthorized' }); return;}
 
-    const rows = await db('variants as v')
+    const rows = await withTenant(shopId, (trx) => trx('variants as v')
       .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .leftJoin('inventory_truth as it', 'it.lasyncro_variant_id', 'v.lasyncro_variant_id')
       .where('v.shop_id', shopId)
@@ -36,8 +36,10 @@ export async function getProductsCatalogHandler(
         db.raw('COALESCE(it.on_hand_quantity, 0) as on_hand_quantity'),
         db.raw('COALESCE(it.available_quantity, 0) as available_quantity'),
         db.raw('COALESCE(it.sellable_quantity, 0) as sellable_quantity'),
+        db.raw('(it.lasyncro_variant_id IS NOT NULL) as has_inventory_record'),
       ])
-      .orderBy(['p.title', 'v.title']);
+      .orderBy(['p.title', 'v.title'])
+    );
 
     res.status(200).json({ variants: rows });
   } catch (err) {

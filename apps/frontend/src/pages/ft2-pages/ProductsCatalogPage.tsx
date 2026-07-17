@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/ft2-pages/ProductsCatalogPage.tsx
 //
 // ProductsCatalogPage
@@ -13,7 +14,7 @@
 // - Read-only — never mutates
 import { useState } from 'react';
 import { useProductsOperatorSummary } from '../products/useProductsOperatorSummary';
-import type { FT2DateRange } from '@lasyncro/ui-ft2';
+import { FT2PresetSelector, type FT2DateRange } from '@lasyncro/ui-ft2';
 import { Box, Typography, Divider, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { useProductsCatalog } from '../products/useProductsCatalog';
@@ -21,6 +22,7 @@ import type { CatalogVariant } from '../products/useProductsCatalog';
 
 interface Props {
   range: FT2DateRange;
+  onChange: (range: FT2DateRange) => void;
 }
 
 function PulseRow({ label, value, valueColor, sub }: { label: string; value: string; valueColor?: string; sub?: string }) {
@@ -35,7 +37,7 @@ function PulseRow({ label, value, valueColor, sub }: { label: string; value: str
   );
 }
 
-export default function ProductsCatalogPage({ range }: Props) {
+export default function ProductsCatalogPage({ range, onChange }: Props) {
   const theme = useTheme();
   const navigate = useNavigate();
   const operatorQuery = useProductsOperatorSummary(range);
@@ -49,6 +51,7 @@ export default function ProductsCatalogPage({ range }: Props) {
   const [sortField, setSortField] = useState<SortField>('title');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [noSkuPage, setNoSkuPage] = useState(1);
+  const [noInventoryPage, setNoInventoryPage] = useState(1);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -64,7 +67,7 @@ export default function ProductsCatalogPage({ range }: Props) {
     return <Box sx={{ p: '24px 40px' }}><Typography sx={{ fontSize: 13, color: 'var(--ink-4)' }}>Loading catalog…</Typography></Box>;
   }
 
-  const { noSkuProducts, sellability, drift } = operatorQuery.data;
+  const { noSkuProducts, noInventoryProducts, sellability, drift } = operatorQuery.data;
   const variants = catalogQuery.data?.variants ?? [];
 
   // Group variants by product
@@ -84,6 +87,7 @@ export default function ProductsCatalogPage({ range }: Props) {
   const availOf = (p: typeof productGroups[string]) => p.variants.reduce((s, v) => s + v.available_quantity, 0);
   const statusRankOf = (p: typeof productGroups[string]) => {
     const oh = onHandOf(p);
+    if (p.variants.some(v => !v.has_inventory_record)) return 4; // not received — highest severity, no warehouse data at all
     if (oh < 0) return 3;                              // phantom
     if (p.variants.some(v => !v.sku)) return 1;        // no SKU
     if (oh === 0) return 2;                            // zero stock
@@ -109,11 +113,14 @@ export default function ProductsCatalogPage({ range }: Props) {
 
   // No-SKU pagination
   const noSkuTotalPages = Math.ceil(noSkuProducts.length / perPage);
-  const pagedNoSkuProducts = noSkuProducts.slice((noSkuPage - 1) * perPage, noSkuPage * perPage);
+  const pagedNoSkuProducts = noSkuProducts.slice((noSkuPage - 1) * perPage,noSkuPage * perPage);
+
+  // No-inventory pagination
+  const noInventoryTotalPages = Math.ceil(noInventoryProducts.length / perPage);
+  const pagedNoInventoryProducts = noInventoryProducts.slice((noInventoryPage - 1) * perPage, noInventoryPage * perPage);
 
   const totalProducts = (sellability.sellable ?? 0) + (sellability.blocked ?? 0);
   const added = drift.addedThisPeriod ?? 0;
-  const showDrift = added > 0 && added < totalProducts;
 
   const cardSx = {
     bgcolor: 'var(--surface)',
@@ -161,9 +168,11 @@ export default function ProductsCatalogPage({ range }: Props) {
             const phantom = sellability.blockedReasons.phantom ?? 0;
             const zeroStock = sellability.blockedReasons.zeroStock ?? 0;
             const noSku = sellability.blockedReasons.noSku ?? 0;
+            const noInventory = sellability.blockedReasons.noInventory ?? 0;
             const rows: { label: string; sub: string; accent: string; cta: string; onClick: () => void }[] = [];
-            if (phantom > 0) rows.push({ label: `${phantom} phantom`, sub: 'Sold without recorded receiving', accent: '#E5484D', cta: 'Check receiving →', onClick: () => navigate('/orders/inbound') });
+            if (phantom > 0) rows.push({ label: `${phantom} phantom`, sub: 'Sold without recorded receiving', accent: '#E5484D', cta: 'Check receiving →', onClick: () => navigate('/wms') });
             if (noSku > 0) rows.push({ label: `${noSku} missing SKU`, sub: 'Add a unique SKU in Shopify, then re-sync', accent: '#E5484D', cta: 'Fix below →', onClick: () => { document.getElementById('no-sku-section')?.scrollIntoView({ behavior: 'smooth' }); } });
+            if (noInventory > 0) rows.push({ label: `${noInventory} not yet received`, sub: 'Has a SKU but no warehouse inventory record', accent: '#E5484D', cta: 'See below →', onClick: () => { document.getElementById('no-inventory-section')?.scrollIntoView({ behavior: 'smooth' }); } });
             if (zeroStock > 0) rows.push({ label: `${zeroStock} zero stock`, sub: 'Genuinely empty — reorder to sell again', accent: '#D9A23B', cta: 'See demand →', onClick: () => navigate('/demand') });
             if (rows.length === 0) {
               return (
@@ -193,10 +202,39 @@ export default function ProductsCatalogPage({ range }: Props) {
           <PulseRow label="Blocked" value={String(sellability.blocked ?? 0)} valueColor={(sellability.blocked ?? 0) > 0 ? '#E5484D' : undefined} />
           <PulseRow label="Phantom" value={String(sellability.blockedReasons.phantom ?? 0)} valueColor={(sellability.blockedReasons.phantom ?? 0) > 0 ? '#E5484D' : undefined} sub="sold without recorded receiving" />
           <PulseRow label="Zero stock" value={String(sellability.blockedReasons.zeroStock ?? 0)} valueColor={(sellability.blockedReasons.zeroStock ?? 0) > 0 ? '#D9A23B' : undefined} />
-          <PulseRow label="Missing SKU" value={String(sellability.blockedReasons.noSku ?? 0)} valueColor={(sellability.blockedReasons.noSku ?? 0) > 0 ? '#E5484D' : undefined} />
+          <PulseRow label="Missing SKU" value={String(sellability.blockedReasons.noSku ?? 0)} valueColor={(sellability.blockedReasons.noSku ?? 0) > 0 ?'#E5484D' : undefined} />
+          <PulseRow label="Not received" value={String(sellability.blockedReasons.noInventory ?? 0)} valueColor={(sellability.blockedReasons.noInventory ?? 0) > 0 ? '#E5484D' : undefined} sub="has SKU, no warehouse record" />
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }}>
             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Variants</Typography>
             <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{variants.length}</Typography>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Catalog drift — always visible; date range scoped to this card only */}
+      <Box sx={{ ...cardSx, mb: 2 }}>
+        <Box sx={headerSx}>
+          <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+            Catalog drift
+          </Typography>
+          <FT2PresetSelector
+            preset={range.preset === 'custom' ? 'past_30_days' : range.preset}
+            onSelect={(preset) => onChange({ preset, from: null, to: null })}
+          />
+        </Box>
+        <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography sx={{ fontSize: 24, fontWeight: 500, color: added > 0 ? 'var(--accent)' : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
+            {added}
+          </Typography>
+          <Box>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
+              {added === 0 ? 'No products added this period' : `${added === 1 ? 'product' : 'products'} added this period`}
+            </Typography>
+            {added > 0 && (
+              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+                Verify SKU, cost, and bin location before selling
+              </Typography>
+            )}
           </Box>
         </Box>
       </Box>
@@ -238,7 +276,8 @@ export default function ProductsCatalogPage({ range }: Props) {
                 const totalStock = product.variants.reduce((s, v) => s + v.on_hand_quantity, 0);
                 const totalAvailable = product.variants.reduce((s, v) => s + v.available_quantity, 0);
                 const hasNoSku = product.variants.some(v => !v.sku);
-                const isZeroStock = totalStock === 0;
+                const notReceived = product.variants.some(v => !v.has_inventory_record);
+                const isZeroStock = totalStock === 0 && !notReceived;
                 return (
                   <Box key={product.title}>
                     {idx > 0 && <Divider sx={{ borderColor: 'var(--rule)' }} />}
@@ -270,7 +309,9 @@ export default function ProductsCatalogPage({ range }: Props) {
                       {/* Status */}
                       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                         {(() => {
-                          const s = totalStock < 0
+                          const s = notReceived
+                            ? { label: 'Not received', color: '#E5484D' }
+                            : totalStock < 0
                             ? { label: 'Phantom', color: '#E5484D' }
                             : hasNoSku
                             ? { label: 'No SKU', color: '#E5484D' }
@@ -286,8 +327,10 @@ export default function ProductsCatalogPage({ range }: Props) {
                       </Box>
                       {/* Action */}
                       <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-                        {totalStock < 0 ? (
-                          <Box onClick={(e) => { e.stopPropagation(); navigate('/orders/inbound'); }} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>Check →</Box>
+                        {notReceived ? (
+                          <Box onClick={(e) => { e.stopPropagation(); document.getElementById('no-inventory-section')?.scrollIntoView({ behavior: 'smooth' }); }} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>See below →</Box>
+                        ) : totalStock < 0 ? (
+                          <Box onClick={(e) => { e.stopPropagation(); navigate('/wms'); }} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)',border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>Check →</Box>
                         ) : hasNoSku ? (
                           <Box onClick={(e) => { e.stopPropagation(); document.getElementById('no-sku-section')?.scrollIntoView({ behavior: 'smooth' }); }} sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>Fix →</Box>
                         ) : isZeroStock ? (
@@ -331,7 +374,7 @@ export default function ProductsCatalogPage({ range }: Props) {
           )}
         </Box>
 
-        {/* No-SKU section + Catalog drift — full width, below list */}
+        {/* No-SKU section + Not-received section — full width, below list */}
         <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
           {noSkuProducts.length > 0 && (
             <Box id="no-sku-section" sx={cardSx}>
@@ -397,31 +440,70 @@ export default function ProductsCatalogPage({ range }: Props) {
               )}
             </Box>
           )}
-
-          {/* Catalog drift */}
-          {showDrift && (
-            <Box sx={cardSx}>
-              <Box sx={headerSx}>
+          {noInventoryProducts.length > 0 && (
+            <Box id="no-inventory-section" sx={cardSx}>
+              {/* Header */}
+              <Box sx={{ ...headerSx, bgcolor: 'var(--bg)' }}>
                 <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                  Catalog drift
+                  {sellability.blockedReasons.noInventory} variants · {noInventoryProducts.length} products not received
+                </Typography>
+                <Typography sx={{ fontSize: 11, fontWeight: 500, color: theme.palette.error.main }}>
+                  No warehouse record
                 </Typography>
               </Box>
-              <Box sx={{ px: 2, py: 1.5, display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography sx={{ fontSize: 24, fontWeight: 500, color: 'var(--accent)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.1 }}>
-                  {added}
+              <Box sx={{ px: 2, py: 1, borderBottom: '0.5px solid var(--rule)' }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>
+                  Has a SKU, but never received into the warehouse — receive stock to make it sellable.
                 </Typography>
-                <Box>
-                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>
-                    {added === 1 ? 'product' : 'products'} added this period
+              </Box>
+              {/* Rows with images */}
+              {pagedNoInventoryProducts.map((p, idx) => {
+                const imgUrl = titleToImage[p.productTitle ?? ''] ?? null;
+                return (
+                  <Box key={idx}>
+                    {idx > 0 && <Divider sx={{ borderColor: 'var(--rule)' }} />}
+                    <Box sx={{ px: 2, py: 1.25, display: 'flex', alignItems: 'center', gap: 2, '&:hover': { bgcolor: 'action.hover' } }}>
+                      {/* Thumbnail */}
+                      <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, bgcolor: 'var(--bg)', border: '0.5px solid var(--rule)', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {imgUrl
+                          ? <img src={imgUrl} alt={p.productTitle ?? ''} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-4)' }}>
+                              {(p.productTitle ?? '?').charAt(0).toUpperCase()}
+                            </Typography>
+                        }
+                      </Box>
+                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.productTitle ?? 'Unknown product'}
+                      </Typography>
+                      {p.variants.length > 1 && (
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>
+                          {p.variants.length} options
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                );
+              })}
+              {/* Pagination footer */}
+              {noInventoryProducts.length > 0 && (
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1, bgcolor: 'var(--bg)', borderTop: '0.5px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                    {((noInventoryPage - 1) * perPage) + 1}–{Math.min(noInventoryPage * perPage, noInventoryProducts.length)} of {noInventoryProducts.length}
                   </Typography>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
-                    Verify SKU, cost, and bin location before selling
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    {noInventoryTotalPages > 1 && <Box onClick={() => noInventoryPage > 1 && setNoInventoryPage(p => p - 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noInventoryPage > 1 ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noInventoryPage > 1 ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noInventoryPage > 1 ? 1 : 0.4 }}>← Prev</Box>}
+                    {noInventoryTotalPages > 1 && Array.from({ length: noInventoryTotalPages }, (_, i) => (
+                      <Box key={i} onClick={() => setNoInventoryPage(i + 1)}
+                        sx={{ px: 1.5, py: 0.5, fontSize: 11, border: '0.5px solid', borderColor: i + 1 === noInventoryPage ? 'var(--accent)' : 'var(--rule)', borderRadius: '6px', bgcolor: i + 1 === noInventoryPage ? 'var(--accent)' : 'var(--surface)', color: i + 1 === noInventoryPage ? '#fff' : 'var(--ink-3)', cursor: 'pointer', fontWeight: i + 1 === noInventoryPage ? 600 : 400 }}>
+                        {i + 1}
+                      </Box>
+                    ))}
+                    {noInventoryTotalPages > 1 && <Box onClick={() => noInventoryPage < noInventoryTotalPages && setNoInventoryPage(p => p + 1)} sx={{ px: 1.5, py: 0.5, borderRadius: '6px', cursor: noInventoryPage < noInventoryTotalPages ? 'pointer' : 'not-allowed', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12, color: noInventoryPage < noInventoryTotalPages ? 'var(--ink-3)' : 'var(--ink-4)', opacity: noInventoryPage < noInventoryTotalPages ? 1 : 0.4 }}>Next →</Box>}
+                  </Box>
                 </Box>
-              </Box>
+              )}
             </Box>
           )}
-
         </Box>{/* end RIGHT */}
       </Box>{/* end TWO COLUMN */}
 

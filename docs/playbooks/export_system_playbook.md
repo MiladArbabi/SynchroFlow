@@ -79,13 +79,13 @@ Direct file stream with appropriate `Content-Type` and `Content-Disposition` hea
 | Tier    | Format     | Date Range  | Column Selection       | Scheduled |
 |---------|------------|-------------|------------------------|-----------|
 | Starter | None       | —           | —                      | —         |
-| Core    | CSV only   | 12 months   | Fixed set              | —         |
+| Core    | CSV only   | 6 months    | Fixed set              | —         |
 | Growth  | CSV + PDF  | Unlimited   | Full column picker     | —         |
 | Scale   | CSV + PDF  | Unlimited   | Full + scheduled       | Daily/Weekly/Monthly |
 
 ### Date Window Enforcement
 ```ts
-// Core: 12-month rolling window
+// Core: 6-month rolling window
 const tierDataWindowSince = (tier: Tier): Date | null => {
   if (tier === 'core') {
     const d = new Date();
@@ -246,3 +246,12 @@ apps/backend/src/api/exports/
   matched Outbound's fulfilled-only filter shape. Button's `onClick`
   now just opens `ExportDrawer` with `reportIds={['orders-outbound']}`;
   visual styling was already correct Tier 2 ghost pill, untouched.
+- **2026-07-17** — Core-tier date window updated from 12 months to 6
+  months, matching a broader Starter/Core window revision (see
+  `monetization_billing_playbook.md`). Also fixed: this controller had
+  its own private, hardcoded `tierDataWindowSince()` duplicate instead
+  of importing the shared `@lasyncro/backend-core/utils/tierDataWindow.js`
+  utility — meant it had silently drifted out of sync and was still
+  enforcing the old 12-month window even after the canonical constant
+  changed. Replaced with an import; §4 table and inline code comment
+  both updated to reflect 6 months.

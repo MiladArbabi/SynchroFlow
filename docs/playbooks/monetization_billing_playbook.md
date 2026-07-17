@@ -31,10 +31,9 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 
 **Order history data window:**
 
-- Enforced at query layer in `orders.service.ts` via `tierDataWindowSince()` utility
-- Starter: 90 days · Core: 365 days · Growth+: unlimited
+- Enforced at query layer in `orders.service.ts`, exports, and the FT2 snapshot clamp via `tierDataWindowSince()` utility
+- Starter: 60 days · Core: 180 days · Growth+: unlimited
 - Source: `packages/backend-core/src/utils/tierDataWindow.ts`
-- FT2 snapshot layer (pre-computed) — data window enforcement pending (separate ticket)
 
 **Rule:** Never hardcode tier logic anywhere. Always import from `tiers.ts`.
 
@@ -1077,3 +1076,23 @@ affected by this bug — they read tier correctly via a separate path
 (`usePlanEntitlement`) — which is why WMS content itself displayed
 correctly throughout today's earlier testing even while the sidebar's
 own lock state was wrong.
+
+### Order-history window tightened; Catalog RLS + sellability bugs (2026-07-17)
+
+Revised `tierDataWindowSince()` constants (`packages/backend-core/src/utils/tierDataWindow.ts`) from Starter 90d/Core 365d to **Starter 60d/Core 180d**. Confirmed this single utility is the sole source for the order query layer, the FT2 snapshot clamp, and the export system — no other numbers to update except two stale duplicates found during the change (below).
+
+**Found during the same session, fixed alongside:**
+
+- **Stale duplicate window function (exports).** `exports.controller.ts` had its own private `tierDataWindowSince()` (hardcoded 365d for Core) instead of importing the shared utility — meant Core-tier CSV/PDF exports were still running on the old window even after the canonical constant changed. Replaced with an import; all three export call sites now correctly use 60/180.
+
+- **Catalog RLS gap (ISS-RLS5).** `products.catalog.controller.ts` queried `variants`/`products`/`inventory_truth` with zero tenant context — no `withTenant()`, no `SET LOCAL app.current_tenant`. Under RLS this silently returned an empty result set for every shop (`{"variants":[]}`), rendering Catalog's product table permanently blank ("0 products · 0 variants") regardless of real data. Same missing-tenant-context pattern as the earlier `handleSubscriptionUpsert.ts` (ISS-RLS4) and `stripe.meter.service.ts` bugs. Fixed via `withTenant()`.
+
+- **Missing "not received" sellability category (ISS-CAT3/CAT4).** `sellability.blocked` included a `noInventory` count (SKU exists, never received into warehouse) in its total, but no UI surfaced it — Catalog health showed a contradiction (Blocked: 3, all visible reasons: 0). Threaded `noInventoryProducts` end-to-end (backend facts → provider → frontend type → UI), added a dedicated pulse row, "Needs attention" entry, and product-table Status badge (ranked above Phantom in severity) so it no longer renders as "Zero stock."
+
+- **Orphaned route (ISS-NAV1).** `/orders/inbound` is deprecated — unregistered from `ordersModuleTabs.ts` navigation, superseded by `/wms`'s receive-session flow, but still mounted in the router and still targeted by 2 `navigate()` calls in Catalog's phantom-stock CTAs. Both redirected to `/wms`.
+
+- **Products operator-summary had no tier-window enforcement (ISS-MON1).** Unlike `orders.service.ts`/exports, `products.operator.controller.ts` passed client-supplied `preset`/`from`/`to` straight through with no clamp — any tier could request unrestricted historical drift/dead-weight/returns data via a custom range. Fixed by applying `tierDataWindowSince(tier)` the same way as the order query layer. Live-verified: a Starter shop requesting `from=2020-01-01` was correctly clamped to 60 days back.
+
+- **Catalog date-range control relocated.** The FT2 date-range bar only ever scoped the Catalog drift card (never the product table or sellability panels, which are correctly snapshot-scoped) but sat page-level, above everything — implying broader scope than it had. Moved into the drift card itself using the lighter `FT2PresetSelector` (5 presets, no custom/calendar — deferred pending the tier-window fix above, to avoid shipping a custom-date UI on an endpoint that didn't yet enforce it). Card is now always visible (previously hidden when drift was zero, hiding the control along with it) and relocated above the product table per usability feedback (originally landed at page-bottom, below pagination).
+
+All items independently live-verified via direct API calls and DB queries against seeded data; no regressions found in related surfaces (WMS Analytics tier-gating, Orders export windows) during verification.

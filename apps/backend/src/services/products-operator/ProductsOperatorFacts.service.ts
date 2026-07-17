@@ -61,6 +61,12 @@ export interface ProductsOperatorFacts {
     productTitle: string | null;
     variants: Array<{ variantTitle: string | null }>;
   }>;
+
+  // Products with SKU but no inventory_truth row — never synced/received
+  noInventoryProducts: Array<{
+    productTitle: string | null;
+    variants: Array<{ variantTitle: string | null; sku: string | null }>;
+  }>;
 }
 
 export async function getProductsOperatorFacts(
@@ -78,8 +84,10 @@ export async function getProductsOperatorFacts(
     .select([
       'v.lasyncro_variant_id',
       'v.sku',
+      'v.title as variant_title',
       'v.created_at',
       'p.product_type',
+      'p.title as product_title',
     ]);
 
   if (activeVariants.length === 0) {
@@ -95,6 +103,7 @@ export async function getProductsOperatorFacts(
       addedThisPeriodCount: null,
       topReturned: [],
       noSkuProducts: [],
+      noInventoryProducts: [],
     };
   }
 
@@ -148,6 +157,23 @@ export async function getProductsOperatorFacts(
       sellableCount++;
     }
   }
+
+  // ─────────────────────────────────────────
+  // No-inventory variants (snapshot) — grouped for operator action
+  // ─────────────────────────────────────────
+  const noInventoryRows = activeVariants.filter(
+    v => v.product_type === 'physical' && v.sku !== null && !inventoryMap.has(v.lasyncro_variant_id)
+  );
+  const noInventoryMap = new Map<string, Array<{ variantTitle: string | null; sku: string | null }>>();
+  for (const row of noInventoryRows) {
+    const key = (row as any).product_title ?? 'Unknown product';
+    if (!noInventoryMap.has(key)) noInventoryMap.set(key, []);
+    noInventoryMap.get(key)!.push({ variantTitle: (row as any).variant_title ?? null, sku: row.sku });
+  }
+  const noInventoryProducts = Array.from(noInventoryMap.entries()).map(([productTitle, variants]) => ({
+    productTitle,
+    variants,
+  }));
 
   // ─────────────────────────────────────────
   // No-sales variants (period-scoped)
@@ -258,6 +284,7 @@ export async function getProductsOperatorFacts(
     addedThisPeriodCount,
     topReturned,
     noSkuProducts,
+    noInventoryProducts,
     phantomCount
   };
 }

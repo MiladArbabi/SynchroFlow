@@ -16,7 +16,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
-import { FT2DateRangeBar, type FT2DateRange } from '@lasyncro/ui-ft2';
+import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
 import { mapProductsFt2Props } from '../products/useProductsFt2Adapter';
 import { useProductsOperatorSummary } from '../products/useProductsOperatorSummary';
@@ -46,16 +46,6 @@ export default function ProductsFT2Page() {
     <>
       <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
 
-      {/* Date range bar — visible on Intelligence + Catalog tabs only */}
-      <Routes>
-        {/* <Route path="/" element={
-          <FT2DateRangeBar value={range} onChange={setRange} />
-        } /> */}
-        <Route path="/catalog" element={
-          <FT2DateRangeBar value={range} onChange={setRange} />
-        } />
-      </Routes>
-
       <Routes>
         <Route path="/" element={(() => {
           if (!snapshotQuery.isSuccess) {
@@ -74,7 +64,8 @@ export default function ProductsFT2Page() {
             />
           );
         })()} />
-        <Route path="/catalog"        element={<ProductsCatalogPage range={range} />} />
+
+        <Route path="/catalog"        element={<ProductsCatalogPage range={range} onChange={setRange} />} />
         <Route path="/costs"          element={<ProductsCostsPage />} />
         <Route path="/data-quality"   element={<ProductsWmsReadinessPage />} />
         <Route path="*"               element={<Navigate to="/inventory" replace />} />

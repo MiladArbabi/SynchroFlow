@@ -44,6 +44,11 @@ export type ProductsOperatorSummary = {
     productTitle: string | null;
     variants: Array<{ variantTitle: string | null }>;
   }>;
+  // Products with SKU but never received into warehouse inventory
+  noInventoryProducts: Array<{
+    productTitle: string | null;
+    variants: Array<{ variantTitle: string | null; sku: string | null }>;
+  }>;
   // null = growth tier not enabled or no velocity data yet
   demand: {
     critical_reorder_count: number;
@@ -55,6 +60,8 @@ export type ProductsOperatorSummary = {
     reorder_now: Array<{
       lasyncro_variant_id: string;
       sku: string | null;
+      title: string | null;
+      product_title: string | null;
       days_of_stock_remaining: number | null;
       estimated_stockout_date: string | null;
       velocity_per_day: number;

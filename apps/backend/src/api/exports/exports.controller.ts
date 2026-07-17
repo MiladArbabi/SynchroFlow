@@ -8,9 +8,8 @@
 //   Core+  → CSV (orders, returns, finances)
 //   Growth+ → PDF (morning brief)
 //
-// Date window enforcement:
-//   Core   → 12-month rolling window
-//   Growth+ → unlimited
+// Date window enforcement (see @lasyncro/backend-core/utils/tierDataWindow.js):
+//   Starter → 60 days · Core → 180 days · Growth+ → unlimited
 //
 // All exports stream directly — no buffering, no temp files.
 // Content-Disposition is always 'attachment' — never 'inline'.
@@ -33,22 +32,9 @@ import PDFDocument from 'pdfkit';
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
+import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
-
-/**
- * Returns earliest allowed date for Core tier (12-month rolling).
- * Growth/Scale → null (no restriction).
- */
-function tierDataWindowSince(tier: Tier): Date | null {
-  if (tier === 'core') {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    return d;
-  }
-  return null;
-}
-
 function resolvedTier(req: Request): Tier {
   const raw = req.user?.tier ?? 'starter';
   return TIERS.includes(raw as Tier) ? (raw as Tier) : 'starter';

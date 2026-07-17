@@ -1,16 +1,35 @@
-// apps/backend/src/utils/ft2Period.ts
-export function resolveFt2Range(range) {
-    if (typeof range === 'string') {
+// packages/backend-core/src/utils/ft2Period.ts
+import { tierDataWindowSince } from './tierDataWindow.js';
+// FT2-ORDER-WINDOW-01: resolveFt2Range previously had no tier
+// awareness at all — a Starter/Core shop could request any FT2
+// snapshot range, including an explicit custom range reaching years
+// back, and receive real data. The live query-layer path
+// (orders.service.ts) already enforced tierDataWindowSince correctly;
+// this brings the FT2 snapshot path to parity by clamping the
+// resolved `from` boundary to the tier's window when the tier is more
+// restrictive than the requested range. `tier` defaults to 'starter'
+// (most restrictive) so existing callers that don't yet pass a real
+// tier — currently only the frozen Customers/Specter modules — fail
+// safe rather than silently keeping the old unlimited behavior.
+export function resolveFt2Range(range, tier = 'starter') {
+    const resolved = (() => {
+        if (typeof range === 'string') {
+            return resolveFt2PeriodFromPreset({
+                preset: range,
+            });
+        }
+        if (range.preset === 'custom') {
+            return resolveFt2PeriodFromPreset(range);
+        }
         return resolveFt2PeriodFromPreset({
-            preset: range,
+            preset: range.preset,
         });
+    })();
+    const tierFloor = tierDataWindowSince(tier);
+    if (tierFloor && new Date(resolved.from) < tierFloor) {
+        return { ...resolved, from: tierFloor.toISOString() };
     }
-    if (range.preset === 'custom') {
-        return resolveFt2PeriodFromPreset(range);
-    }
-    return resolveFt2PeriodFromPreset({
-        preset: range.preset,
-    });
+    return resolved;
 }
 function assertNever(x) {
     throw new Error(`Unexpected value: ${JSON.stringify(x)}`);

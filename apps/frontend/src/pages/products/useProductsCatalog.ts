@@ -19,6 +19,8 @@ export interface CatalogVariant {
   on_hand_quantity: number;
   available_quantity: number;
   sellable_quantity: number;
+  /** false = no inventory_truth row exists — never received, not genuinely empty */
+  has_inventory_record: boolean;
 }
 
 export function useProductsCatalog() {

@@ -66,6 +66,12 @@ export interface ProductsOperatorSummary {
     productTitle: string | null;
     variants: Array<{ variantTitle: string | null }>;
   }>;
+  // Products with SKU but never received into warehouse inventory
+  // Operator needs to know exactly which products to receive/sync
+  noInventoryProducts: Array<{
+    productTitle: string | null;
+    variants: Array<{ variantTitle: string | null; sku: string | null }>;
+  }>;
   // ── Demand signals (growth tier) ──────────────────────────
   // null = demand data unavailable (tier not enabled or no velocity yet)
   demand: ProductsDemandSignals | null;
@@ -140,6 +146,7 @@ export async function getProductsOperatorSummary(input: {
     })),
 
     noSkuProducts: facts.noSkuProducts,
+    noInventoryProducts: facts.noInventoryProducts,
     // null when growth tier not enabled or demand data not yet available
     demand,
     // null when no open POs or supplier module not yet used

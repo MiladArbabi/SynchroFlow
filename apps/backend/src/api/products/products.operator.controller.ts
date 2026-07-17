@@ -6,6 +6,8 @@ import {
   resolveFt2PeriodFromPreset,
   getFt2Period,
 } from '@lasyncro/backend-core/utils/ft2Period.js';
+import { isValidTier } from '@lasyncro/backend-core/config/tiers.js';
+import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
 
 /**
  * GET /api/v1/modules/products/operator-summary
@@ -43,7 +45,13 @@ export async function getProductsOperatorSummaryHandler(
         : resolveFt2PeriodFromPreset({ preset })
       : getFt2Period();
 
-    const summary = await getProductsOperatorSummary({ shopId, period });
+    const rawTier = req.user?.tier;
+    const tier = isValidTier(rawTier) ? rawTier : 'starter';
+    const windowSince = tierDataWindowSince(tier);
+    const clampedPeriod = windowSince && new Date(period.from) < windowSince
+      ? { from: windowSince.toISOString(), to: period.to }
+      : period;
+    const summary = await getProductsOperatorSummary({ shopId, period: clampedPeriod });
 
     res.status(200).json(summary);
   } catch (err) {
