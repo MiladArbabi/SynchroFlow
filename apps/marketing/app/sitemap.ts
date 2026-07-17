@@ -33,14 +33,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // Blog — use lastReviewed so Google sees accurate freshness signals
     ...blogItems.map(({ slug, frontmatter }) => ({
       url:             `${BASE_URL}/blog/${slug}`,
-      lastModified:    new Date(frontmatter.lastReviewed),
+      // SM1: lastReviewed may be absent on new pages — fall back to publish date,
+      // then to build time. A missing field must never fail the entire build.
+      lastModified:    new Date(frontmatter.lastReviewed ?? frontmatter.date ?? Date.now()),
       priority:        0.8,
       changeFrequency: 'weekly' as const,
     })),
     // Compare — commercial intent pages; use lastReviewed date
     ...compareItems.map(({ slug, frontmatter }) => ({
       url:             `${BASE_URL}/compare/${slug}`,
-      lastModified:    new Date(frontmatter.lastReviewed),
+      // SM1: lastReviewed may be absent on new pages — fall back to publish date,
+      // then to build time. A missing field must never fail the entire build.
+      lastModified:    new Date(frontmatter.lastReviewed ?? frontmatter.date ?? Date.now()),
       priority:        0.8,
       changeFrequency: 'monthly' as const,
     })),
@@ -60,7 +64,9 @@ export default function sitemap(): MetadataRoute.Sitemap {
     // Glossary — definition pages; priority 0.7, monthly change expected
     ...glossaryItems.map(({ slug, frontmatter }) => ({
       url:             `${BASE_URL}/glossary/${slug}`,
-      lastModified:    new Date(frontmatter.lastReviewed),
+      // SM1: lastReviewed may be absent on new pages — fall back to publish date,
+      // then to build time. A missing field must never fail the entire build.
+      lastModified:    new Date(frontmatter.lastReviewed ?? frontmatter.date ?? Date.now()),
       priority:        0.7,
       changeFrequency: 'monthly' as const,
     })),
