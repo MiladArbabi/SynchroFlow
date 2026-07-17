@@ -10,9 +10,13 @@
 //
 // Applied at the query layer — never deletes data.
 // Upgrade immediately unlocks the full window.
+// Starter: 60 days
+// Core:    180 days (6 months)
+// Growth:  null (unlimited)
+// Scale:   null (unlimited)
 const WINDOW_DAYS = {
-    starter: 90,
-    core: 365,
+    starter: 60,
+    core: 180,
     growth: null,
     scale: null,
 };

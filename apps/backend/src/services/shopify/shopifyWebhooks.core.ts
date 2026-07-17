@@ -42,6 +42,10 @@ export async function registerShopifyWebhooks(
 
     // App lifecycle
     'app/uninstalled',
+    // Billing — Managed Pricing plan approvals/changes/cancellations (SHB-07)
+    // Emitted by Shopify when merchant acts on hosted pricing page.
+    // Consumed by handleAppSubscriptionUpdate (SHB-01) to sync shop_subscriptions.
+    'app_subscriptions/update',
   ];
 
   /**
@@ -68,6 +72,8 @@ export async function registerShopifyWebhooks(
     'products/create': 'PRODUCTS_CREATE',
     'products/update': 'PRODUCTS_UPDATE',
     'app/uninstalled': 'APP_UNINSTALLED',
+    // SHB-07: Managed Pricing billing sync entry point
+    'app_subscriptions/update': 'APP_SUBSCRIPTIONS_UPDATE',
   };
 
   const callbackUrl = `${process.env.APP_BASE_URL}/api/v1/shopify/webhooks`;

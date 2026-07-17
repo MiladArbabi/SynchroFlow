@@ -136,10 +136,7 @@ export class EntitlementsService {
                 source: 'free_tier_default',
             },
         ];
-        await db('shop_module_entitlements')
-            .insert(baseRows)
-            .onConflict(['shop_id', 'module_key', 'flag_key'])
-            .ignore();
+        await EntitlementsService.applyEntitlementRows(db, baseRows);
     }
     /**
    * Grant the FT2-Free baseline entitlements for a given shop.
@@ -161,12 +158,8 @@ export class EntitlementsService {
             { shop_id: shopId, module_key: 'customers', flag_key: null, source: 'ft2_free_baseline' },
             { shop_id: shopId, module_key: 'finances', flag_key: null, source: 'ft2_free_baseline' },
         ];
-        await db('shop_module_entitlements')
-            .insert(rows)
-            .onConflict(['shop_id', 'module_key', 'flag_key'])
-            .ignore();
+        await EntitlementsService.applyEntitlementRows(db, rows);
     }
-    ;
     /**
      * Apply entitlement rows from a trusted system service.
      *
