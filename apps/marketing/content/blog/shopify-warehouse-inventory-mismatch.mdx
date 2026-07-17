@@ -1,0 +1,150 @@
+---
+title: "Why Shopify and Your Warehouse Show Different Numbers"
+titleAccent: "Three counts, one truth — and how to find out which one is lying."
+description: "Shopify says 23, your warehouse system says 19, the shelf says 21. Here is the 30-minute diagnostic to find which number is wrong, the five root causes of Shopify inventory mismatch, and why reconciliation keeps failing for growing merchants."
+date: "2026-07-18"
+author: "LaSyncro"
+tags: ["shopify", "inventory", "troubleshooting", "operations"]
+primaryKeyword: "shopify inventory mismatch"
+secondaryKeywords: ["why is my inventory wrong across shopify and 3pl", "shopify warehouse inventory discrepancy", "shopify stock discrepancy", "sync inventory between erp and shopify", "inventory sync shopify multiple warehouses"]
+vector: 1
+cta_text: "LaSyncro records every warehouse movement as a scan and updates Shopify in real time — one count, one truth, no reconciliation ritual."
+cta_url: "https://app.lasyncro.com/register"
+faq:
+  - question: "Why does my Shopify inventory not match my warehouse?"
+    answer: "Because the two systems count different events. Shopify decrements on sales and refund restocks; your warehouse count changes on physical movements — picks, receives, returns, damage, miscounts. Every movement that happens on the floor without being recorded in both systems becomes a permanent gap. The most common sources are unscanned returns, pick errors, untimed sync between systems, double-decrements from apps plus manual adjustments, and stock assigned to the wrong location."
+  - question: "How do I fix an inventory mismatch between Shopify and my 3PL?"
+    answer: "First establish which number is wrong: physically count the affected SKUs, then compare against both systems. If the 3PL's count matches the shelf, the sync or Shopify-side adjustments are the problem. If neither system matches the shelf, unrecorded movements are accumulating. Date-bound the discrepancy by checking when the numbers last agreed, then audit the movements in that window — receives, returns, and manual adjustments are the usual suspects. Fix the count with a dated adjustment, then fix the process that created the gap."
+  - question: "How do I sync inventory between my ERP or WMS and Shopify?"
+    answer: "Choose one system as the source of truth for stock levels and make the flow one-directional wherever possible. Bi-directional sync with adjustments allowed on both sides is the most common architecture behind persistent mismatches, because both systems accept changes the other never sees. Real-time event-based sync (each movement pushed as it happens) stays accurate far longer than scheduled batch sync, where every interval between runs is a window for overselling."
+  - question: "Why is my inventory wrong across multiple Shopify locations?"
+    answer: "Multi-location mismatch is usually an assignment problem rather than a counting problem: stock physically moved between locations without a matching transfer in Shopify, new locations added without the catalogue assigned, or fulfillment routed from a location whose count was never real. Audit per-location, not in aggregate — a correct total can hide two locations that are wrong in opposite directions."
+  - question: "How often should I reconcile Shopify inventory with my warehouse?"
+    answer: "If you are reconciling on a schedule, the schedule is covering for a process gap. Merchants with scan-recorded movements reconcile by exception — investigating specific SKUs when a discrepancy signal appears — rather than counting everything weekly. If full reconciliation is currently consuming more than 30 minutes a day, the underlying movement-recording process is the problem to fix, not the counting cadence."
+  - question: "Can inventory mismatch cause overselling on Shopify?"
+    answer: "Directly. When Shopify's number is higher than the shelf, the difference is sold to customers who will be refunded. Mismatch is the intermediate stage between an unrecorded movement and a cancelled order — which is why fixing the count without fixing the recording process only resets the clock on the next overselling incident."
+relatedLinks:
+  - href: "/blog/how-to-fix-inventory-drift-shopify"
+    title: "How to Fix Inventory Drift in Shopify"
+    description: "The deeper dive on the gap between recorded and physical stock."
+  - href: "/blog/why-shopify-inventory-not-syncing"
+    title: "Why Is My Shopify Inventory Not Syncing?"
+    description: "The four root causes of sync failures between Shopify and external systems."
+  - href: "/blog/shopify-overselling-problem"
+    title: "How to Stop Overselling on Shopify"
+    description: "What an unresolved mismatch eventually costs you."
+  - href: "/blog/shopify-inventory-not-tracked"
+    title: "Shopify \"Inventory Not Tracked\": What It Means and How to Fix It"
+    description: "The upstream state where Shopify is not counting at all."
+  - href: "/blog/shopify-warehouse-management"
+    title: "Shopify Warehouse Management: Where Shopify Ends and a WMS Begins"
+    description: "The operational layer that keeps the numbers matched."
+---
+
+<QuickAnswer>
+Shopify and your warehouse show different numbers because they count different events: Shopify records sales and refunds, while physical stock changes with every pick, receive, return, and miscount. To diagnose it in 30 minutes: physically count the affected SKUs, compare the shelf against both systems to identify which number is wrong, find the date the counts last agreed, and audit the movements in that window. Fix the count with a dated adjustment — then fix the recording gap that created it, or the mismatch returns.
+</QuickAnswer>
+
+You have at least two numbers for the same product — Shopify's count and your warehouse system's count — and a third one nobody has checked recently: what is actually on the shelf. When they disagree, every downstream decision is wrong. Reorders trigger too early or too late, orders route to locations that cannot fulfill them, and sooner or later a customer buys a unit that does not exist.
+
+This guide is the diagnostic. It covers how to find out which number is lying, the five root causes that create the gap, the reconciliation procedure that actually closes it, and — the part most guides skip — why reconciliation alone never keeps it closed.
+
+## The Three-Sources-of-Truth Problem
+
+Every merchant running their own warehouse or a 3PL operates three counts whether they acknowledge it or not:
+
+1. **Shopify's count** — moved by sales, refund restocks, manual adjustments, and whatever apps are connected.
+2. **The warehouse system's count** — your WMS, 3PL portal, or ERP; moved by receives, picks, transfers, and adjustments made on that side.
+3. **The shelf** — moved by physical reality: everything above, plus the events nobody recorded.
+
+A mismatch is never "Shopify is wrong." It is a disagreement between three ledgers, and the fix depends entirely on which pair diverged. That is why the diagnostic starts with a physical count — the shelf is the only one of the three that cannot be wrong about itself.
+
+<ArticleImage
+  src="overal-warehouse-in-one-system.png"
+  alt="Shopify inventory count compared against warehouse system count and physical shelf stock in one operational view"
+  caption="Three ledgers, one truth. The diagnostic is finding out which pair diverged."
+  priority={true}
+/>
+
+## The 30-Minute Diagnostic
+
+Before touching any settings, establish the facts:
+
+<Checklist items={[
+  "Pick 5-10 SKUs with known or suspected discrepancies — high-velocity items first, they accumulate gaps fastest",
+  "Physically count them. Do not sample from memory or trust the last cycle count",
+  "Record all three numbers per SKU: shelf, Shopify, warehouse system",
+  "Classify each SKU: systems agree but shelf differs (unrecorded movements) — or systems disagree (sync or adjustment problem)",
+  "Find the last date the numbers agreed — order history and adjustment logs date-bound the window",
+  "Audit the movements inside that window: receives, returns, refunds, transfers, manual adjustments, app activity"
+]} />
+
+The classification in step four is the whole diagnosis. **Systems agree, shelf differs** means the gap was born on the floor — something moved without a scan. **Systems disagree with each other** means the gap was born in the pipeline between them — sync timing, lost updates, or one-sided adjustments.
+
+## The Five Root Causes, Ranked
+
+<NumberedH3 n="1" title="Unrecorded physical movements" />
+
+The largest source by far. Returns stowed without a restock entry, picks pulled from the wrong bin, damaged units binned without an adjustment, samples taken for photography. Each event moves the shelf and nothing else. Individually invisible; compounding weekly. This is the mechanism behind [inventory drift](/blog/how-to-fix-inventory-drift-shopify) — and no sync architecture can fix it, because the missing event was never in any system to sync.
+
+<NumberedH3 n="2" title="Sync timing and lost updates" />
+
+Batch sync on a schedule means every interval between runs is a window where the systems legitimately disagree — and where a sale on one side can oversell stock the other side already committed. Webhook-based sync fails differently: a dropped or out-of-order update silently freezes one side. If the mismatch pattern is "correct, then suddenly wrong by exactly one order's quantity," this is the suspect. The full failure taxonomy is in [why Shopify inventory stops syncing](/blog/why-shopify-inventory-not-syncing).
+
+<NumberedH3 n="3" title="Double-decrements and adjustment collisions" />
+
+An app decrements on fulfillment, a staff member adjusts manually for the same event, and the unit is now subtracted twice. Or two systems both configured as writers: the WMS pushes its count while someone edits Shopify directly, and the next sync overwrites one truth with the other. The tell: discrepancies in clean multiples of real order quantities.
+
+<NumberedH3 n="4" title="Location misassignment" />
+
+Stock physically moved between locations without a Shopify transfer, catalogues never assigned to newly added locations, or fulfillment priority routing orders to a location whose count was aspirational. Aggregate totals can look correct while every individual location is wrong. If your mismatch only appears per-location, start here — and if products show ["not stocked at this location"](/blog/shopify-inventory-not-tracked), that is the same family of problem surfacing as an error message.
+
+<NumberedH3 n="5" title="Untracked variants leaking through" />
+
+Variants with tracking disabled hold no count anywhere, sell without limit, and reappear in reports as unexplained gaps when tracking is finally enabled. The upstream state is covered in the [inventory not tracked guide](/blog/shopify-inventory-not-tracked) — check for untracked variants before trusting any reconciliation, because they poison the totals.
+
+<ArticleImage
+  src="ba-scan-locations.png"
+  alt="Warehouse operator scanning bin locations so every product movement is recorded against a real location"
+  caption="Per-location truth: a correct total can hide two locations that are wrong in opposite directions."
+/>
+
+## Fixing the Count — and Fixing the Cause
+
+Close the gap in that order, never just the first half:
+
+**Fix the count.** Enter a dated, annotated adjustment in the designated source-of-truth system and let it propagate. Never "fix" both systems independently — that manufactures the next collision. Annotate the reason; an adjustment log full of unexplained corrections is a symptom in itself.
+
+**Fix the cause.** Match the root cause you diagnosed to its process fix: unrecorded movements need scan-at-the-point-of-action discipline (returns restocked when processed, not at shift end — see [restock versus receive](/blog/shopify-warehouse-management)); sync problems need one designated writer and event-based flow; collisions need one adjustment policy everyone follows; location problems need transfers recorded the moment stock moves.
+
+<ArticleImage
+  src="restock-vs-recieve.png"
+  alt="Returns processed with an immediate restock decision so the inventory record changes at the same moment the shelf does"
+  caption="The gap is born whenever the shelf changes and the record does not. Close that window and the mismatch stops accumulating."
+/>
+
+## Why Reconciliation Is a Treadmill
+
+Here is the uncomfortable arithmetic: if unrecorded movements created the gap, counting more often does not stop them — it just measures the leak more frequently. Merchants who reconcile weekly are budgeting permanent labor to re-discover the same process failure.
+
+The durable fix is structural. A snapshot count is a number you have to *trust*; an event ledger is a history you can *replay*. When every receive, pick, stow, return, and adjustment exists as a recorded movement, "which number is right" stops being a question — the count is derived from the movements, discrepancies are traceable to the exact event that caused them, and reconciliation becomes an exception-handling task instead of a ritual. That movement-level layer is what a WMS adds on top of Shopify's native counts — the full picture is in [where Shopify ends and a WMS begins](/blog/shopify-warehouse-management).
+
+<ArticleImage
+  src="ba-flow-strip.png"
+  alt="Warehouse movement flow from receiving to picking to returns with every step recorded as a scan event"
+  caption="A count you derive from recorded movements beats a count you have to trust."
+/>
+
+## When It Is the 3PL's Number That Is Wrong
+
+If you fulfill through a 3PL, the diagnostic gains a commercial edge: their count is a contractual representation, not just a data point. Request a cycle count on the disputed SKUs, compare receiving discrepancies against your POs (short-shipped receives booked as full are a classic source), and check whether their portal's adjustments carry reasons. A 3PL that cannot explain its adjustments is telling you where your inventory shrinkage lives. Keep your own independent movement record — inbound POs, expected quantities, returns sent — so a disagreement is an evidence comparison rather than their word against your guess.
+
+## The Sequence Worth Naming
+
+Mismatch is the middle chapter of a story you may already recognize:
+
+1. **[Untracked or unrecorded](/blog/shopify-inventory-not-tracked)** — an event happens, no system sees it
+2. **Mismatch and [drift](/blog/how-to-fix-inventory-drift-shopify)** — the ledgers disagree (this page)
+3. **[Overselling](/blog/shopify-overselling-problem)** — the wrong number meets a real customer
+
+Each stage has its own fix, and every fix holds only as long as the operation records what actually happens on the floor.
