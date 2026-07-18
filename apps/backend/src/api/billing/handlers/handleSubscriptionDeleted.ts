@@ -23,9 +23,14 @@ export async function handleSubscriptionDeleted(
     throw new Error('[billing][subscription_deleted] shopId required');
   }
   const canceledAt = sub?.canceled_at ? new Date(sub.canceled_at * 1000) : new Date();
+
+  // SHB-14: hard delete is unambiguously terminal — force starter here too,
+  // since this handler previously left tier untouched entirely, relying on
+  // handleSubscriptionUpsert to have already caught it (it hadn't).
   const updated = await trx('shop_subscriptions')
     .where({ shop_id: shopId })
     .update({
+      tier: 'starter',
       status: 'canceled',
       canceled_at: canceledAt,
       updated_at: new Date(),

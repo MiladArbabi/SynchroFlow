@@ -65,9 +65,20 @@ export async function handleSubscriptionUpsert(
     throw new Error(`[billing][subscription_upsert] invalid tier: "${rawTier}"`);
   }
 
-  const tier = rawTier as Tier;
-  const tierConfig = getTierConfig(tier);
   const status = sub?.status ?? 'active';
+
+  // SHB-14: mirror SHB-13's Shopify-side contract — resolveTierForShop()
+  // reads shop_subscriptions.tier verbatim with no status check, so tier
+  // must never stay elevated once Stripe has genuinely given up collecting.
+  // 'past_due' is intentionally excluded: Stripe's own dunning/retry grace
+  // period applies, entitlements stay live (see handlePaymentFailed.ts).
+  // 'canceled' and 'unpaid' are terminal — force starter regardless of
+  // what stale metadata.tier still says.
+  const TERMINAL_STRIPE_STATUSES = new Set(['canceled', 'unpaid']);
+  const tier: Tier = TERMINAL_STRIPE_STATUSES.has(status)
+    ? 'starter'
+    : (rawTier as Tier);
+  const tierConfig = getTierConfig(tier);
 
   // AUD-C16: subscription items now may include a seat add-on line
   // alongside the base tier line — must not assume index 0 is the
