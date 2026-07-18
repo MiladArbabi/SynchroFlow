@@ -5,6 +5,9 @@ description: "Shopify says 23, your warehouse system says 19, the shelf says 21.
 date: "2026-07-18"
 lastReviewed: "2026-07-18"
 author: "LaSyncro"
+image: "overal-warehouse-in-one-system.png"
+ogImage: "overal-warehouse-in-one-system.png"
+imageAlt: "Shopify inventory count compared against warehouse system count and physical shelf stock in one operational view"
 tags: ["shopify", "inventory", "troubleshooting", "operations"]
 primaryKeyword: "shopify inventory mismatch"
 secondaryKeywords: ["why is my inventory wrong across shopify and 3pl", "shopify warehouse inventory discrepancy", "shopify stock discrepancy", "sync inventory between erp and shopify", "inventory sync shopify multiple warehouses"]
@@ -71,14 +74,7 @@ A mismatch is never "Shopify is wrong." It is a disagreement between three ledge
 
 Before touching any settings, establish the facts:
 
-<Checklist items={[
-  "Pick 5-10 SKUs with known or suspected discrepancies — high-velocity items first, they accumulate gaps fastest",
-  "Physically count them. Do not sample from memory or trust the last cycle count",
-  "Record all three numbers per SKU: shelf, Shopify, warehouse system",
-  "Classify each SKU: systems agree but shelf differs (unrecorded movements) — or systems disagree (sync or adjustment problem)",
-  "Find the last date the numbers agreed — order history and adjustment logs date-bound the window",
-  "Audit the movements inside that window: receives, returns, refunds, transfers, manual adjustments, app activity"
-]} />
+<Checklist items="Pick 5-10 SKUs with known or suspected discrepancies — high-velocity items first, they accumulate gaps fastest|Physically count them. Do not sample from memory or trust the last cycle count|Record all three numbers per SKU: shelf, Shopify, warehouse system|Classify each SKU: systems agree but shelf differs (unrecorded movements) — or systems disagree (sync or adjustment problem)|Find the last date the numbers agreed — order history and adjustment logs date-bound the window|Audit the movements inside that window: receives, returns, refunds, transfers, manual adjustments, app activity" />
 
 The classification in step four is the whole diagnosis. **Systems agree, shelf differs** means the gap was born on the floor — something moved without a scan. **Systems disagree with each other** means the gap was born in the pipeline between them — sync timing, lost updates, or one-sided adjustments.
 
