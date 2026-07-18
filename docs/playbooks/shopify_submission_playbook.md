@@ -179,10 +179,8 @@ Full cycle tested against dev store `development-store-15820042357` via the real
 
 - `handleShopifyCallback` (dormant, dead code from the retired charge-creation flow) still omits `billing_provider` from its upsert — low priority since the path is unreachable, tracked as SHB-02.
 - Pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed-Pricing equivalent designed yet (Shopify allows one recurring line item + one usage line item per subscription, no multi-item add-ons) — product decision pending, tracked as SHB-05.
-- `app/uninstalled` handler (`handleAppUninstalled.ts`) is currently an empty stub — uninstall does not downgrade `shop_subscriptions` or revoke entitlements. Tracked as SHB-08, next priority.
-- Frontend has no `billing_provider` awareness yet — Stripe-only billing UI (`ShippedOrderCapBanner`, `BillingSettings`) will 403 for Shopify-billed shops with no fallback UI. Tracked as SHB-03/SHB-04.
-
----
+- Frontend has no `billing_provider` awareness yet — Stripe-only billing UI (`ShippedOrderCapBanner`, `BillingSettings`) will 403 for Shopify-billed shops with no fallback UI, and there's no cancel/downgrade or uninstall CTA routing to Shopify's hosted pages. Tracked as SHB-03/SHB-04/SHB-18.
+- **`app/uninstalled` handling is now code-complete** (SHB-08/SHB-08a) — see §25 of monetization_billing_playbook.md for the full design (uninstall marks `uninstalled_at`, a DB-only grace-period safety net downgrades immediately if the paid period already lapsed, and a scheduled sweep worker catches the case where it hasn't yet). **Not yet live-tested** — actually uninstalling/reinstalling on a dev store is required to verify, deliberately deferred to the pre-submission full install/uninstall cycle test rather than done mid-session. Do this before submitting.
 
 ---
 

@@ -310,7 +310,6 @@ export async function startWorkers(): Promise<void> {
     const trialExpiry = await import('../workers/trial-expiry.worker.js');
     if (typeof trialExpiry.startTrialExpiryWorker === 'function') {
       void trialExpiry.startTrialExpiryWorker();
-
       if (typeof trialExpiry.stopTrialExpiryWorker === 'function') {
         workerStopFns.push(async () => trialExpiry.stopTrialExpiryWorker());
       }
@@ -320,6 +319,22 @@ export async function startWorkers(): Promise<void> {
   } catch (err) {
     console.warn(
       '[bootstrap/workers] Trial expiry worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+  // start Shopify uninstall grace-period worker (SHB-08)
+  try {
+    const shopifyGrace = await import('../workers/shopifyUninstallGrace.worker.js');
+    if (typeof shopifyGrace.startShopifyUninstallGraceWorker === 'function') {
+      void shopifyGrace.startShopifyUninstallGraceWorker();
+      if (typeof shopifyGrace.stopShopifyUninstallGraceWorker === 'function') {
+        workerStopFns.push(async () => shopifyGrace.stopShopifyUninstallGraceWorker());
+      }
+      console.log('[bootstrap/workers] Shopify uninstall grace worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Shopify uninstall grace worker not available:',
       err && (err as Error).message ? (err as Error).message : err
     );
   }

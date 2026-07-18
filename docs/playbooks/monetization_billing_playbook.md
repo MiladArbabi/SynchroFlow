@@ -1154,3 +1154,44 @@ Full cycle tested against dev store `development-store-15820042357` through the 
 - **SHB-08** — `app/uninstalled` handler (`handleAppUninstalled.ts`) is an empty stub. Uninstall does not downgrade `shop_subscriptions` or revoke entitlements, despite Shopify auto-cancelling the underlying charge. Next priority.
 - **SHB-09** — `manualSync.controller.ts` writes `uninstalled_at` to a column that doesn't exist on `integrations` per live schema query; unresolved, needs verification against the correct table before SHB-08 work begins.
 - **SHB-14** — see above; Stripe-side equivalent of SHB-13, not yet fixed.
+## 25. Shopify Uninstall Handling — Grace-Period-Aware Downgrade (SHB-08, SHB-08a, SHB-09, verified 2026-07-18, live test deferred)
+
+`app/uninstalled` was an empty stub (`// domain logic`, no body) prior to this session — uninstalling the app left `shop_subscriptions` and entitlements completely untouched, so a merchant who uninstalled kept full paid access indefinitely. Closed this session, with one explicit product requirement driving the design: **a merchant on a paid plan who uninstalls must keep access until the end of the period they already paid for** — not be cut off immediately.
+
+### SHB-09 — uninstalled_at lives on the correct table, actively consumed
+
+Initial audit checked `integrations` and found no `uninstalled_at` column, flagging it as a possible dead-code reference in `manualSync.controller.ts`. Resolved: the column is real, lives on `shopify_app_installations` (a separate, purpose-built OAuth/token table — confirmed via `\d shopify_app_installations`), and is actively read as a sync gate (`manualSync.controller.ts` refuses to sync where `uninstalled_at` is not null) and consulted for reinstall detection (`integration.controller.ts`'s "Check for any existing installation" comment). It was simply never written by anything — dead on the write side, live on the read side, meaning the sync-gating and reinstall-detection logic have been silently inert since the column was created.
+
+### Why the safety-net design changed mid-implementation
+
+Original plan: `handleAppUninstalled` would call the same live `fetchShopifyBillingState` reconciliation used by `handleAppSubscriptionUpdate`, as a fallback in case a free-tier shop's uninstall doesn't trigger a separate billing webhook. Caught before writing code: Shopify typically revokes the shop's access token at or near uninstall time, so a live Admin API call from the uninstall handler would likely fail against an already-dead token. Redesigned to be **DB-only** — the safety net reads whatever `shop_subscriptions.current_period_end` was already captured the last time the token was valid, rather than calling out live. Documented as a known, accepted limitation: if `app_subscriptions/update` also fires around uninstall time and the token's already dead by then, that webhook's live-fetch attempt will fail and its retries will exhaust uselessly — harmless, since `uninstalled_at` is set independently by the uninstall handler and the grace-sweep worker still catches the eventual downgrade from DB state alone.
+
+### Architecture
+
+- **`apps/backend/src/services/shopify/forceDowngradeToStarter.service.ts`** (new) — `forceDowngradeShopToStarter(shopId, trx, reason)`. DB-only, idempotent (no-op if already Starter). Downgrades tier, sets `status: 'canceled'`, revokes the tier-diff entitlements. Extracted as a shared primitive rather than duplicated, since two call sites need identical logic (see below).
+- **`apps/backend/src/api/shopify/handlers/handleAppUninstalled.ts`** (rewritten from stub) — now takes `(shopId, trx)` instead of `{ shopDomain }`. Writes `uninstalled_at`, then checks the stored `current_period_end`: if it's null or already past, calls `forceDowngradeShopToStarter` immediately; if still in the future, logs and defers — the sweep worker will catch it later purely from DB state.
+- **`apps/backend/src/api/shopify/handlers/appUninstalled.handler.ts`** (wrapper) — updated to pass `envelope.shopId` (populated since the SHB-16 router fix) instead of `envelope.shopDomain`, and to call the new two-argument `handleAppUninstalled` signature.
+- **`apps/backend/src/services/shopify/shopifyUninstallGrace.service.ts`** + **`apps/backend/src/workers/shopifyUninstallGrace.worker.ts`** (new) — mirrors `trial-expiry.service.ts`/`.worker.ts` exactly: 6-hour poll, per-shop error isolation, DB-only sweep for `billing_provider: 'shopify'` shops with `status IN ('canceled', 'past_due')`, non-`starter` tier, and `current_period_end` in the past. Registered in `apps/backend/src/bootstrap/workers.ts` following the identical registration pattern as the trial-expiry worker.
+
+### Grace-period status scope (product decision, confirmed)
+
+Only `CANCELLED` (explicit cancel or uninstall, which auto-cancels the charge) and `FROZEN` (payment failure on a previously-active subscription — same semantics as Stripe's `past_due`, conventionally given a dunning/grace window) get the paid-until-period-end treatment. `DECLINED` and `EXPIRED` mean the merchant never completed approval in the first place — no period was ever actually purchased — so those downgrade immediately via `shopifyBillingReconciliation.service.ts`'s existing logic (§24), unrelated to the uninstall-specific grace mechanics documented here.
+
+### SHB-08a — reinstall must clear uninstalled_at
+
+Found while designing the uninstall handler: the OAuth reinstall path's `shopify_app_installations` upsert (`integration.controller.ts`) had an `onConflict(['shop_domain']).merge(...)` that omitted `uninstalled_at`. Harmless while nothing wrote that column, but the moment SHB-08 started writing it, a merchant who uninstalled and later reinstalled would stay permanently flagged as uninstalled — silently blocking `manualSync.controller.ts`'s sync gate forever, with no error explaining why. Fixed alongside SHB-08 in the same session rather than deferred, since shipping one without the other would have introduced a new bug. Both the insert and merge clauses now explicitly set `uninstalled_at: null`.
+
+### SHB-19 — dead duplicate handler file removed
+
+Found mid-implementation: `apps/backend/src/api/shopify/handlers/shopifyHandlers.ts` exported an identical `onShopifyAppUninstalled` function to the live `appUninstalled.handler.ts`, but was never imported anywhere — confirmed via repo-wide grep. Nearly edited the wrong file as a result. Deleted.
+
+### Live verification status
+
+Code-complete, `tsc` clean across all touched files. **Live uninstall/reinstall testing deliberately deferred** — unlike the plan-change testing in §24, exercising this path safely requires an actual uninstall/reinstall cycle on the dev store, which is more disruptive to test mid-session. Decision: defer to the pre-submission full install/uninstall cycle test, where this needs to be exercised anyway. Do not submit without running it at least once by then.
+
+### Known open items, carried forward
+
+- **SHB-02** — dormant `handleShopifyCallback`, still low priority, unreachable code path.
+- **SHB-03/SHB-04/SHB-18** — frontend has zero `billing_provider` awareness; also needs a cancel/downgrade CTA (deep-link to Shopify's hosted pricing page) and an uninstall CTA (deep-link to Shopify's app-management page, since we cannot uninstall on the merchant's behalf via any API) on the Billing/General settings screens.
+- **SHB-05** — pay-per-order overage / AUD-C16 seat add-on Managed Pricing equivalent, product decision pending.
+- **SHB-14** — Stripe-side equivalent of SHB-13 (force-starter on non-active status), not yet fixed.

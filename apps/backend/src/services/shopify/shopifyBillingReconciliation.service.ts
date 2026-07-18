@@ -39,6 +39,27 @@ const PLAN_NAME_TO_TIER: Record<string, Tier> = {
 // PENDING is intentionally excluded — approval not yet completed.
 const ACTIVE_STATUSES = new Set(['ACTIVE']);
 
+// SHB-08: uninstall/cancellation must not cut access before the merchant's
+// already-paid period ends — Shopify still owes them that time. Only
+// statuses that represent a subscription that WAS genuinely active and
+// paid for get this grace: CANCELLED (explicit cancel or uninstall, which
+// auto-cancels the charge) and FROZEN (payment failure on an active sub —
+// same semantics as Stripe past_due, conventionally given a grace/dunning
+// window). DECLINED and EXPIRED mean the merchant never completed approval
+// in the first place — no paid period was ever purchased, so no grace
+// applies; downgrade is immediate. Confirmed with product owner.
+const GRACE_PERIOD_STATUSES = new Set(['CANCELLED', 'FROZEN']);
+
+export interface ShopifyBillingState {
+  tier: Tier;
+  status: string; // raw Shopify status, stored verbatim for audit/display
+  isEntitled: boolean; // true only when status is a recognized active state
+  currentPeriodEnd: Date | null;
+  shopifySubscriptionId: string | null;
+  shopifySubscriptionName: string | null;
+}
+
+
 // shop_subscriptions.status has a DB check constraint
 // (shop_subscriptions_status_valid) written for Stripe's lowercase
 // lifecycle vocabulary: trialing, active, past_due, canceled, unpaid.
@@ -103,6 +124,7 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
             id
             name
             status
+            currentPeriodEnd
           }
         }
       }`,
@@ -122,6 +144,7 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
       tier: 'starter',
       status: 'canceled',
       isEntitled: false,
+      currentPeriodEnd: null,
       shopifySubscriptionId: null,
       shopifySubscriptionName: null,
     };
@@ -142,12 +165,23 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
     throw new Error(`[shopify_billing_reconciliation] unrecognized plan name: "${sub.name}"`);
   }
 
-  const isEntitled = ACTIVE_STATUSES.has(sub.status);
+  const currentPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+  const inGracePeriod =
+    GRACE_PERIOD_STATUSES.has(sub.status) &&
+    currentPeriodEnd !== null &&
+    currentPeriodEnd.getTime() > Date.now();
+
+  // SHB-08: during grace, keep the merchant on their paid tier — the
+  // shopify-uninstall-grace worker sweeps shop_subscriptions directly
+  // (status + current_period_end) and downgrades once the period truly
+  // lapses, since Shopify sends no further webhook at that boundary.
+  const isEntitled = ACTIVE_STATUSES.has(sub.status) || inGracePeriod;
 
   return {
-    tier: isEntitled ? tier : 'starter', // SHB-13: force starter on any non-active status
+    tier: isEntitled ? tier : 'starter', // SHB-13: force starter once active/grace both end
     status: mapToDbStatus(sub.status),
     isEntitled,
+    currentPeriodEnd,
     shopifySubscriptionId: sub.id ?? null,
     shopifySubscriptionName: sub.name ?? null,
   };

@@ -20,10 +20,10 @@ export async function onShopifyAppUninstalled(
   envelope: WebhookEnvelope,
   trx: Knex.Transaction
 ): Promise<void> {
-  if (!envelope.shopDomain) {
-    throw new Error('Missing shopDomain');
+  // SHB-16: envelope.shopId is now populated by WebhookRouter after
+  // shopDomain resolution — trusted here rather than re-deriving.
+  if (!envelope.shopId) {
+    throw new Error('[shopify][app_uninstalled] shopId required');
   }
-  await handleAppUninstalled({
-    shopDomain: envelope.shopDomain,
-  });
+  await handleAppUninstalled(envelope.shopId, trx);
 }

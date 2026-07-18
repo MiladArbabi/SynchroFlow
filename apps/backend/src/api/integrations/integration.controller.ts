@@ -360,10 +360,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           scopes: 
           'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
           installed_at: new Date(),
+          uninstalled_at: null,
         })
          .onConflict(['shop_domain'])
          .merge({
            access_token: encryptedToken,
+           // SHB-08a: reinstall must clear uninstalled_at — otherwise
+           // manualSync.controller.ts's `uninstalled_at IS NULL` sync gate
+           // permanently blocks any shop that ever uninstalled once,
+           // even after a legitimate reinstall.
+           uninstalled_at: null,
            updated_at: new Date(),
         });
 
