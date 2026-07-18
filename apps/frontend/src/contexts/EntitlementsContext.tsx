@@ -52,6 +52,8 @@ interface EntitlementsResponse {
   locale: string;
   /** CURRENCY LAYER 3 — billing currency from shop_subscriptions. Set once at registration. */
   billingCurrency: string;
+  /** SHB-03/04 — 'stripe' | 'shopify'. Drives billing-surface branching (Stripe checkout/portal vs Shopify hosted pricing page). */
+  billingProvider: string;
 }
 
 // --- Context shape exposed to UI ---
@@ -72,6 +74,8 @@ interface EntitlementsContextValue {
   displayCurrency: string;
   locale: string;
   billingCurrency: string;
+  /** SHB-03/04 — billing provider; 'stripe' default. Shopify-billed shops must never see Stripe CTAs. */
+  billingProvider: string;
   isLoading: boolean;
   hasResolved: boolean;
   error: string | null;
@@ -103,6 +107,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
   const [displayCurrency, setDisplayCurrency] = useState<string>('USD');
   const [locale, setLocale] = useState<string>('en-US');
   const [billingCurrency, setBillingCurrency] = useState<string>('USD');
+  const [billingProvider, setBillingProvider] = useState<string>('stripe'); // SHB-03/04
   const [trialEndsAt, setTrialEndsAt] = useState<string | null>(null);
 
   // --- Preserve last known good entitlement snapshot (for auth refresh churn) ---
@@ -114,6 +119,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     displayCurrency: string;
     locale: string;
     billingCurrency: string;
+    billingProvider: string;
   } | null>(null);
 
   const snapshot = React.useMemo(() => ({
@@ -209,6 +215,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setDisplayCurrency(payload.displayCurrency ?? 'USD');
         setLocale(payload.locale ?? 'en-US');
         setBillingCurrency(payload.billingCurrency ?? 'USD');
+        setBillingProvider(payload.billingProvider ?? 'stripe'); // SHB-03/04
         setError(null);
         setHasResolved(true);
         // --- Persist last known good snapshot ---
@@ -220,6 +227,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
           displayCurrency: payload.displayCurrency ?? 'USD',
           locale: payload.locale ?? 'en-US',
           billingCurrency: payload.billingCurrency ?? 'USD',
+          billingProvider: payload.billingProvider ?? 'stripe',
         };
 
         if (import.meta.env.DEV) {
@@ -251,6 +259,8 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
         setTier(snap.tier);
         setDisplayCurrency(snap.displayCurrency ?? 'USD');
         setLocale(snap.locale ?? 'en-US');
+        setBillingCurrency(snap.billingCurrency ?? 'USD');
+        setBillingProvider(snap.billingProvider ?? 'stripe'); // SHB-03/04
         setError(null);
         setHasResolved(true);
 
@@ -300,6 +310,7 @@ export const EntitlementsProvider: React.FC<EntitlementsProviderProps> = ({
     displayCurrency,
     locale,
     billingCurrency,
+    billingProvider,
     isLoading,
     hasResolved,
     error,

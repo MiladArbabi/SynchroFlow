@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/account-settings/BillingSettings.tsx
 //
 // BILLING SETTINGS (UX-02)
@@ -84,6 +85,9 @@ interface SubscriptionData {
   current_period_start: string | null;
   current_period_end: string | null;
   canceled_at: string | null;
+  // SHB-03/04: provider + backend-composed Shopify Managed Pricing URL
+  billing_provider?: 'stripe' | 'shopify';
+  manage_billing_url?: string | null;
 }
 
 interface UsageData {
@@ -706,6 +710,17 @@ const BillingSettings: React.FC = () => {
   }, []);
 
   const handleUpgrade = async (tierId: string) => {
+    // SHB-03/04: plan changes for Shopify-billed shops happen on Shopify's
+    // hosted pricing page — never Stripe checkout.
+    if (sub?.billing_provider === 'shopify') {
+      if (sub.manage_billing_url) {
+        window.open(sub.manage_billing_url, '_blank', 'noopener');
+      } else {
+        console.error('[BillingSettings] shopify-billed but manage_billing_url missing');
+        setError('Unable to open Shopify billing — please contact support.');
+      }
+      return;
+    }
     setUpgrading(tierId);
     try {
       const { data } = await axiosInstance.post('/api/v1/billing/checkout', {
@@ -724,6 +739,17 @@ const BillingSettings: React.FC = () => {
   };
 
   const handlePortal = async () => {
+    // SHB-03/04: subscription management (cancel/downgrade/plan change) for
+    // Shopify-billed shops lives on Shopify's hosted pricing page.
+    if (sub?.billing_provider === 'shopify') {
+      if (sub.manage_billing_url) {
+        window.open(sub.manage_billing_url, '_blank', 'noopener');
+      } else {
+        console.error('[BillingSettings] shopify-billed but manage_billing_url missing');
+        setError('Unable to open Shopify billing — please contact support.');
+      }
+      return;
+    }
     setOpPortal(true);
     try {
       const { data } = await axiosInstance.post('/api/v1/billing/portal');
@@ -761,6 +787,10 @@ const BillingSettings: React.FC = () => {
   const tier       = currentTier ?? 'starter';
   const nextTierId = NEXT_TIER[tier];
   const isMonthly  = billingInterval === 'monthly';
+  // SHB-03/04: Shopify-billed shops manage plans exclusively on Shopify's
+  // hosted Managed Pricing page — all Stripe CTAs retarget or hide.
+  const isShopifyBilled  = sub?.billing_provider === 'shopify';
+  const manageBillingUrl = sub?.manage_billing_url ?? null;
 
   const ingestedCap = TIER_MONTHLY_ORDER_CAP[tier as Tier] ?? Infinity;
   const shippedCap  = TIER_SHIPPED_ORDER_CAP[tier as Tier] ?? 0;
@@ -831,7 +861,8 @@ const BillingSettings: React.FC = () => {
               )}
             </Box>
 
-            {isMonthly && tier !== 'starter' && tier in PEGGED_DISPLAY_PRICES && (
+            {/* SHB-03/04: interval switching is Stripe-only; Shopify intervals are set on the hosted pricing page */}
+            {!isShopifyBilled && isMonthly && tier !== 'starter' && tier in PEGGED_DISPLAY_PRICES && (
               <AnnualSavingsCallout
                 currency={currency}
                 tierId={tier as Exclude<Tier, 'starter'>}
@@ -857,9 +888,12 @@ const BillingSettings: React.FC = () => {
 
       {/* Billing toggle + plan cards */}
       <Box ref={planCardsRef}>
-        <Box sx={{ mb: 3 }}> 
-          <BillingToggle value={billingInterval} onChange={setBilling} />
-        </Box>
+        {/* SHB-03/04: monthly/annual selection happens on Shopify's hosted page for App Store merchants */}
+        {!isShopifyBilled && (
+          <Box sx={{ mb: 3 }}>
+            <BillingToggle value={billingInterval} onChange={setBilling} />
+          </Box>
+        )}
 
         <Box sx={{
           display: 'grid',
@@ -885,9 +919,27 @@ const BillingSettings: React.FC = () => {
           ))}
         </Box>
       </Box>
+
+      {/* SHB-18: Shopify-billed shops cancel via plan change on the hosted
+          pricing page or by uninstalling (Shopify auto-voids the charge).
+          Apps-settings URL derived from manage_billing_url — same store handle. */}
+      {isShopifyBilled && manageBillingUrl && (
+        <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'text.secondary', textAlign: 'center', pb: 1 }}>
+          Your subscription is billed through Shopify. To cancel, switch plans via Manage Billing or uninstall laSyncro from your{' '}
+          <Box
+            component="a"
+            href={manageBillingUrl.replace(/\/charges\/.*$/, '/settings/apps')}
+            target="_blank"
+            rel="noopener"
+            sx={{ color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}
+          >
+            store's app settings
+          </Box>
+          {' '}— billing stops automatically.
+        </Typography>
+      )}
     </Box>
     </Box>
   );
 };
-
 export default BillingSettings;

@@ -325,9 +325,10 @@ export async function getSubscription(req: Request, res: Response) {
         'trial_ends_at',
         'current_period_start',
         'current_period_end',
-        'canceled_at'
+        'canceled_at',
+        // SHB-03/04: provider drives frontend billing-surface branching
+        'billing_provider'
       );
-
     if (!row) {
       return res.json({
         tier: 'starter',
@@ -337,10 +338,33 @@ export async function getSubscription(req: Request, res: Response) {
         current_period_start: null,
         current_period_end: null,
         canceled_at: null,
+        billing_provider: 'stripe',
+        manage_billing_url: null,
       });
     }
 
-    return res.json(row);
+    // SHB-03/04: Shopify-billed shops manage plans on Shopify's hosted
+    // Managed Pricing page — compose the URL server-side so the frontend
+    // never hardcodes the app handle. Requires SHOPIFY_APP_HANDLE env var.
+    let manageBillingUrl: string | null = null;
+    if (row.billing_provider === 'shopify') {
+      const appHandle = process.env.SHOPIFY_APP_HANDLE;
+      const install = await db('shopify_app_installations')
+        .where({ shop_id: shopId })
+        .whereNull('uninstalled_at')
+        .first('shop_domain');
+      if (appHandle && install?.shop_domain) {
+        const storeHandle = install.shop_domain.replace('.myshopify.com', '');
+        manageBillingUrl = `https://admin.shopify.com/store/${storeHandle}/charges/${appHandle}/pricing_plans`;
+      } else {
+        // No silent failure: surface the misconfiguration in logs
+        console.warn('[billing] getSubscription: shopify provider but cannot compose manage_billing_url', {
+          shopId, hasAppHandle: !!appHandle, hasDomain: !!install?.shop_domain,
+        });
+      }
+    }
+
+    return res.json({ ...row, manage_billing_url: manageBillingUrl });
   } catch (err: any) {
     console.error('[billing] getSubscription failed', { shopId, err: err.message });
     return res.status(500).json({ error: 'SUBSCRIPTION_FETCH_FAILED' });

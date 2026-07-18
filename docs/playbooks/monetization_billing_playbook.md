@@ -1195,3 +1195,30 @@ Code-complete, `tsc` clean across all touched files. **Live uninstall/reinstall 
 - **SHB-03/SHB-04/SHB-18** — frontend has zero `billing_provider` awareness; also needs a cancel/downgrade CTA (deep-link to Shopify's hosted pricing page) and an uninstall CTA (deep-link to Shopify's app-management page, since we cannot uninstall on the merchant's behalf via any API) on the Billing/General settings screens.
 - **SHB-05** — pay-per-order overage / AUD-C16 seat add-on Managed Pricing equivalent, product decision pending.
 - **SHB-14** — Stripe-side equivalent of SHB-13 (force-starter on non-active status), not yet fixed.
+
+## 25. Shopify Billing Frontend Awareness — SHB-03/04/18 (verified 2026-07-18)
+
+§24 closed the backend sync gap but left the frontend entirely Stripe-only: `BillingSettings`, `ShippedOrderCapBanner`, and `AddSeatsModal` had zero awareness that a shop could be billed through Shopify. Shopify-billed shops hit the existing `APP_STORE_MERCHANT` 403 guards silently or saw dead-end error copy referencing a "coming soon" state that was no longer accurate post-Managed-Pricing. This session closed that gap end-to-end.
+
+### Transport
+
+`GET /api/v1/billing/subscription` now returns `billing_provider` and a server-composed `manage_billing_url` for Shopify-billed shops (`https://admin.shopify.com/store/{store_handle}/charges/{app_handle}/pricing_plans`), built from `shopify_app_installations.shop_domain` and a new `SHOPIFY_APP_HANDLE` env var — the frontend never constructs or guesses the app handle. `GET /api/v1/entitlements/me` gained a parallel `billingProvider` field so every component using `useEntitlements()` (banners, modals, settings pages) gets the signal without an extra fetch, refreshed on the existing 15-minute JWT cadence. `EntitlementsContext` threads `billingProvider` through state, the payload/context-value interfaces, and the last-known-good-snapshot restore path used during auth refresh churn.
+
+Note the operational gotcha hit while wiring this: `apps/backend/.env` (loaded via `dotenv.config()` in `server.ts`, cwd-relative to `apps/backend`) is a distinct file from the repo-root `.env` — env var additions must go to the former or they're silently invisible to the running process. `apps/backend/.env` was also found to have a duplicate `SHOPIFY_API_VERSION` key (line 31 `2024-01`, line 67 `2024-10`); dotenv keeps the first occurrence, so the app has been running on `2024-01` since whoever added the `2024-10` line believed they'd upgraded it. Tracked as **SHB-20**, deferred — fixing it changes the live Shopify API version mid-sprint, and yesterday's §24 Managed Pricing verification ran under the current config.
+
+### Frontend branching
+
+`BillingSettings.tsx`: `handleUpgrade` and `handlePortal` now check `sub.billing_provider` first — Shopify-billed shops open `manage_billing_url` in a new tab (preserving the app's session rather than a full-page redirect) instead of hitting Stripe checkout/portal. The Monthly/Annual interval toggle and the "Switch to annual" savings callout are hidden entirely for Shopify-billed shops, since interval selection lives on Shopify's hosted page, not in-app. A footer-placed guidance line (**SHB-18**) tells Shopify-billed merchants they can cancel via plan change on the hosted page or by uninstalling from their store's app settings (URL derived from `manage_billing_url` by replacing the `/charges/...` suffix — no new backend field needed) — placed at the bottom of the tab by design decision, so cancellation guidance doesn't compete visually with upgrade CTAs.
+
+`ShippedOrderCapBanner.tsx` and `MembersPage.tsx`'s seat-limit modal implement the **SHB-05 interim decision**: pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`), so both surfaces are suppressed for Shopify-billed shops in favor of a hard cap plus an upgrade-plan CTA. This is explicitly parity-minus, not parity — Growth/Scale merchants on Shopify billing have no seat-add-on path and Starter merchants on Shopify billing have no pay-per-order overage path until a real Managed Pricing usage-charge design is scoped.
+
+### Live verification (2026-07-18)
+
+Full round trip tested against `development-store-15820042357` through the real hosted Managed Pricing page: Manage Billing → hosted plan page → select Starter → `app_subscriptions/update` webhook → `[shopify][billing_state_applied] entitlements revoked` (Core→Starter, 3 modules) → then reverse, select Core → webhook → `[shopify][app_subscription_update] complete` re-granting Core. Both directions confirmed via backend logs; each transition delivered as two webhook `eventId`s per the known Shopify duplicate-delivery behavior (§24), absorbed safely by the existing idempotent upsert.
+
+### Known open items, carried forward
+
+- **SHB-05** — pay-per-order and extra-seat Managed Pricing equivalents remain undesigned; current state is intentionally hard-cap-only for Shopify-billed shops.
+- **SHB-14** — Stripe-side equivalent of §24's SHB-13 fix; `handleSubscriptionUpsert` does not yet force `tier: starter` on Stripe cancellation/`past_due`. Next priority.
+- **SHB-20** — duplicate `SHOPIFY_API_VERSION` in `apps/backend/.env`, deferred.
+- **ShippedOrderCapBanner Shopify-billed path** — verified via code review and tsc only; not yet visually exercised in-browser (requires a shop at ≥75% of its shipped-order cap). Will be exercised naturally during the pre-submit full uninstall/reinstall cycle test (SHB-08a).

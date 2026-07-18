@@ -54,22 +54,22 @@ export const getMyEntitlements = async (req: Request, res: Response) => {
     // Null if shop has an active paid subscription or no subscription row.
     const subscription = await db('shop_subscriptions')
       .where({ shop_id: entitlements.shopId })
-      .first('trial_ends_at', 'status', 'billing_currency');
-
+      .first('trial_ends_at', 'status', 'billing_currency', 'billing_provider');
     const trialEndsAt =
       subscription?.status === 'trialing' && subscription?.trial_ends_at
         ? new Date(subscription.trial_ends_at).toISOString()
         : null;
-
     return res.json({
       shopId: entitlements.shopId ?? null,
-      modules: Array.isArray(entitlements.modules) ? entitlements.modules : [],
+      modules: Array.isArray(entitlements.modules) ? entitlements.modules :[],
       flags: Array.isArray(entitlements.flags) ? entitlements.flags : [],
       tier,
       trialEndsAt,
       displayCurrency: shopContext?.displayCurrency ?? 'USD',
       locale: shopContext?.locale ?? 'en-US',
       billingCurrency: subscription?.billing_currency ?? 'USD',
+      // SHB-03/04: 'stripe' | 'shopify' — global billing-surface branch signal
+      billingProvider: subscription?.billing_provider ?? 'stripe',
     });
   } catch (error) {
     console.error('Error fetching entitlements:', error);

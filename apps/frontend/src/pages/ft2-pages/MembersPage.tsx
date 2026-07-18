@@ -80,7 +80,9 @@ export default function MembersPage() {
   const navigate = useNavigate();
   const members = data?.members ?? [];
   const { emit } = useUiEvents();
-  const { tier } = useEntitlements();
+  // SHB-03/SHB-05 interim: Shopify-billed shops have no pay-per-order path
+  // (Managed Pricing has no usage add-on built yet) — hard cap + upgrade only.
+  const { tier, billingProvider } = useEntitlements();
   const rawSeatLimit = TIER_SEAT_LIMIT[tier as Tier] ?? 1;
   const seatLimit = rawSeatLimit === Infinity ? null : rawSeatLimit;
   const seatCount = members.length;
@@ -200,7 +202,10 @@ export default function MembersPage() {
       {/* SEAT LIMIT MODAL (AUD-C16) — Core/Growth get the seat add-on
           stepper; Starter has no seat add-on product, keeps the
           generic tier-upgrade-only modal. */}
-      {tier === 'core' || tier === 'growth' ? (
+      {/* SHB-05 interim: AUD-C16 seat add-on is a Stripe subscriptionItem —
+          no Managed Pricing equivalent. Shopify-billed shops get the
+          tier-upgrade prompt instead. */}
+      {(tier === 'core' || tier === 'growth') && billingProvider !== 'shopify' ? (
         <AddSeatsModal
           open={seatLimitModalOpen}
           onClose={() => setSeatLimitModalOpen(false)}

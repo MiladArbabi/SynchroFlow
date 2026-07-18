@@ -40,7 +40,10 @@ function formatResetDate(isoDate: string | undefined): string {
 export function ShippedOrderCapBanner() {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { tier } = useEntitlements();
+  // SHB-03/SHB-05 interim: Shopify-billed shops have no pay-per-order path
+  // (Managed Pricing has no usage add-on built yet) — hard cap + upgrade only.
+  const { tier, billingProvider } = useEntitlements();
+  const isShopifyBilled = billingProvider === 'shopify';
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [settingUpPPO, setSettingUpPPO] = useState(false);
 
@@ -120,11 +123,18 @@ export function ShippedOrderCapBanner() {
         </Typography>
 
         <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'text.secondary', mt: '2px' }}>
-          {isBlocked
-            ? `New packs are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)} — enable pay-per-order to keep shipping, or upgrade your plan.`
-            : isUrgent
-            ? `You're close to your limit. Enable pay-per-order to avoid an interruption, or upgrade${nextTier ? ` to ${nextTier}` : ''}.`
-            : `Enable pay-per-order for orders past your limit, or upgrade your plan for more headroom.`}
+          {/* SHB-05 interim: no pay-per-order mention for Shopify-billed shops */}
+          {isShopifyBilled
+            ? (isBlocked
+                ? `New packs are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)} — upgrade your plan to keep shipping.`
+                : isUrgent
+                ? `You're close to your limit. Upgrade${nextTier ? ` to ${nextTier}` : ''} to avoid an interruption.`
+                : `Upgrade your plan for more headroom.`)
+            : (isBlocked
+                ? `New packs are paused until your cycle resets on ${formatResetDate(usage.period_starts_at)} — enable pay-per-order to keep shipping, or upgrade your plan.`
+                : isUrgent
+                ? `You're close to your limit. Enable pay-per-order to avoid an interruption, or upgrade${nextTier ? ` to ${nextTier}` : ''}.`
+                : `Enable pay-per-order for orders past your limit, or upgrade your plan for more headroom.`)}
         </Typography>
 
         <Box sx={{
@@ -136,6 +146,8 @@ export function ShippedOrderCapBanner() {
       </Box>
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: '8px', flexShrink: 0 }}>
+        {/* SHB-05 interim: pay-per-order is Stripe-only — no Managed Pricing usage add-on exists */}
+        {!isShopifyBilled && (
         <Box
           onClick={settingUpPPO ? undefined : handlePayPerOrder}
           sx={{
@@ -148,6 +160,7 @@ export function ShippedOrderCapBanner() {
         >
           {settingUpPPO ? 'Redirecting…' : 'Enable pay-per-order'}
         </Box>
+        )}
         {nextTier && (
           <Box
             onClick={handleUpgrade}
