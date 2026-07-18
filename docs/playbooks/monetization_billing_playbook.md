@@ -1248,3 +1248,9 @@ Both files were confirmed gitignored with no git history (`git log --all -- .env
 - **SHB-14b** — `handleSubscriptionDeleted` still doesn't revoke entitlements; needs either a direct `EntitlementRevocationService` call mirroring `handleSubscriptionUpsert`'s diff logic, or confirmation via live Stripe test-mode testing that event ordering makes this unreachable in practice.
 - **SHB-05** — Managed Pricing overage/seat-add-on product decision, still pending.
 - **SHB-08a** — full uninstall→reinstall live cycle, last gate before submission.
+
+### SHB-14b closed (verified 2026-07-18, same session)
+
+`handleSubscriptionDeleted` now captures the prior tier before overwrite and calls `EntitlementRevocationService.revokeEntitlements` directly — no re-seed needed, since starter-tier entitlements are already granted additively at signup and untouched by upgrade/downgrade flows, so only the paid-tier diff needs revoking. Live-verified via the same hand-signed webhook method against an isolated test shop, hard-delete-only (no preceding `updated` event): `growth → starter`, 8 modules + 5 flags correctly revoked, matching the diff shape already proven in `handleSubscriptionUpsert`'s `ISS-C19` path.
+
+Sprint 2 is now fully closed except SHB-05 (product decision, no code) and SHB-08a (full uninstall/reinstall live cycle — deferred as the final pre-submission gate).
