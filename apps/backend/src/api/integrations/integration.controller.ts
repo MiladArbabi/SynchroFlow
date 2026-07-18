@@ -278,9 +278,10 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   }
 
   let shopifyAccessToken: string;
-  let shopBaseCurrency = 'USD'; // set from Shopify shop.json at OAuth time, fallback to USD
+  let shopBaseCurrency = 'USD'; // set from Shopify at OAuth time, fallback to USD
   let shopRealName: string | null = null;
   let shopContactEmail: string | null = null;
+  let shopGid: string | null = null;
 
   // --- Step 2.2.2.a: Token exchange (OUTSIDE DB transaction) ---
   try {
@@ -295,22 +296,46 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
       shopifyAccessToken = tokenResponse.data?.access_token;
 
-      // Fetch store currency + identity via GraphQL Admin API (single round-trip)
-      // currencyCode → sets shops.base_currency (display-only, never stored converted)
-      // name/contactEmail → used post-commit to backfill ghost shop/user identity
-      // (App Store installs only); never blocks OAuth completion if this fails.
+      // Fetch store currency + identity via GraphQL Admin API (single round-trip).
+      // id → canonical Shopify Shop GID required by App Events reporting.
+      // currencyCode → sets shops.base_currency (display-only, never stored converted).
+      // name/contactEmail → used post-commit to backfill ghost shop/user identity.
+      // This optional metadata lookup must never block OAuth completion.
       try {
         const shopInfoRes = await axios.post(
           `https://${oauthContext.shopDomain}/admin/api/2024-01/graphql.json`,
-          { query: '{ shop { currencyCode name contactEmail } }' },
-          { headers: { 'X-Shopify-Access-Token': shopifyAccessToken, 'Content-Type': 'application/json' } }
+          { query: '{ shop { id currencyCode name contactEmail } }' },
+          {
+            headers: {
+              'X-Shopify-Access-Token': shopifyAccessToken,
+              'Content-Type': 'application/json',
+            },
+          }
         );
+
         const shopGraphData = shopInfoRes.data?.data?.shop;
+        const shopGidCandidate = shopGraphData?.id;
+
         shopBaseCurrency = shopGraphData?.currencyCode ?? 'USD';
         shopRealName = shopGraphData?.name ?? null;
         shopContactEmail = shopGraphData?.contactEmail ?? null;
+
+        if (
+          typeof shopGidCandidate === 'string' &&
+          shopGidCandidate.startsWith('gid://shopify/Shop/')
+        ) {
+          shopGid = shopGidCandidate;
+        } else {
+          console.warn(
+            '[OAuth] Shopify identity response omitted a valid Shop GID; App Events reporting will remain disabled',
+            { shopDomain: oauthContext.shopDomain }
+          );
+        }
       } catch (err) {
-        console.warn('[OAuth] Failed to fetch shop currency/identity — defaulting to USD', err);
+        console.warn(
+          '[OAuth] Failed to fetch Shopify currency/identity/GID — using optional metadata fallbacks',
+          err
+        );
       }
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
@@ -329,7 +354,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     const result = await db.transaction(async trx => {
       const { shopId } = await requireShopContextForUser(oauthContext.userId);
 
-      // Persist shop base currency captured from Shopify at OAuth time
+      // Persist shop base currency captured from Shopify at OAuth time.
       await trx('shops')
         .where({ id: shopId })
         .update({ base_currency: shopBaseCurrency });
@@ -351,26 +376,31 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         })
         .returning('*');
 
-        // 🔐 SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN
-       await trx('shopify_app_installations')
+      // 🔐 SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN
+      await trx('shopify_app_installations')
         .insert({
           shop_id: shopId,
           shop_domain: oauthContext.shopDomain,
+          shop_gid: shopGid,
           access_token: encryptedToken,
-          scopes: 
-          'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+          scopes:
+            'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
           installed_at: new Date(),
           uninstalled_at: null,
         })
-         .onConflict(['shop_domain'])
-         .merge({
-           access_token: encryptedToken,
-           // SHB-08a: reinstall must clear uninstalled_at — otherwise
-           // manualSync.controller.ts's `uninstalled_at IS NULL` sync gate
-           // permanently blocks any shop that ever uninstalled once,
-           // even after a legitimate reinstall.
-           uninstalled_at: null,
-           updated_at: new Date(),
+        .onConflict(['shop_domain'])
+        .merge({
+          access_token: encryptedToken,
+          // Preserve a previously captured GID if this optional lookup fails.
+          shop_gid: trx.raw(
+            'COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)'
+          ),
+          // SHB-08a: reinstall must clear uninstalled_at — otherwise
+          // manualSync.controller.ts's `uninstalled_at IS NULL` sync gate
+          // permanently blocks any shop that ever uninstalled once,
+          // even after a legitimate reinstall.
+          uninstalled_at: null,
+          updated_at: new Date(),
         });
 
       return {

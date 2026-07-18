@@ -2,6 +2,7 @@
 
 **Sprint:** LaSyncro Shopify App Store Listing  
 **Date:** June 15–16, 2026  
+**Last updated:** July 18, 2026  
 **Status:** ✅ Submission-ready
 
 ---
@@ -178,9 +179,15 @@ Full cycle tested against dev store `development-store-15820042357` via the real
 ### Known open items
 
 - `handleShopifyCallback` (dormant, dead code from the retired charge-creation flow) still omits `billing_provider` from its upsert — low priority since the path is unreachable, tracked as SHB-02.
-- Pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed-Pricing equivalent designed yet (Shopify allows one recurring line item + one usage line item per subscription, no multi-item add-ons) — product decision pending, tracked as SHB-05.
-- Frontend has no `billing_provider` awareness yet — Stripe-only billing UI (`ShippedOrderCapBanner`, `BillingSettings`) will 403 for Shopify-billed shops with no fallback UI, and there's no cancel/downgrade or uninstall CTA routing to Shopify's hosted pages. Tracked as SHB-03/SHB-04/SHB-18.
-- **`app/uninstalled` handling is now code-complete** (SHB-08/SHB-08a) — see §25 of monetization_billing_playbook.md for the full design (uninstall marks `uninstalled_at`, a DB-only grace-period safety net downgrades immediately if the paid period already lapsed, and a scheduled sweep worker catches the case where it hasn't yet). **Not yet live-tested** — actually uninstalling/reinstalling on a dev store is required to verify, deliberately deferred to the pre-submission full install/uninstall cycle test rather than done mid-session. Do this before submitting.
+- SHB-05 now uses Shopify App Events as the selected shipped-order overage design. Shop GID storage and OAuth capture are complete (SHB-05-C/D); the reporting service, provider dispatch, and environment configuration remain pending (SHB-05-E/A/B/F). The hard-cap interim remains active until those paths are live-verified. AUD-C16 extra-seat billing remains a separate unresolved product decision.
+
+### Shopify App Events foundation — SHB-05-C/D
+
+`shopify_app_installations` now stores Shopify’s canonical Shop GID in nullable `shop_gid`. OAuth captures it from the existing Admin GraphQL shop-identity request and preserves any previously stored value if that optional lookup later fails.
+
+A real OAuth cycle against the development store persisted `gid://shopify/Shop/94567203186`, while the integration completed normally. This is foundation only: App Events authentication, event submission, provider dispatch, and environment configuration remain pending under SHB-05-E/A/B/F. Shopify-billed shipped-order enforcement therefore remains hard-cap-only.
+
+A real OAuth cycle against the development store persisted `gid://shopify/Shop/94567203186`, while the integration completed normally. This is foundation only: App Events authentication, event submission, provider dispatch, and environment configuration remain pending under SHB-05-E/A/B/F. Shopify-billed shipped-order enforcement therefore remains hard-cap-only.
 
 ---
 

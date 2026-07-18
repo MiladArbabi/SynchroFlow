@@ -10,9 +10,13 @@ export async function up(knex: Knex): Promise<void> {
       .notNullable()
       .references('id')
       .inTable('shops')
-      .onDelete('CASCADE');
+      .onDelete('CASCADE')
 
     table.string('shop_domain').notNullable().unique();
+
+    // Shopify App Events identifies the merchant by its canonical GraphQL GID.
+    // Nullable keeps existing installations valid until their next OAuth connection.
+    table.string('shop_gid', 255).nullable();
 
     table.text('access_token').notNullable();
     table.text('scopes').notNullable();

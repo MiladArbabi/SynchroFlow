@@ -1,8 +1,8 @@
 # LaSyncro — Monetization, Billing & Currency Playbook
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
-> **Last updated:** July 15, 2026
-> **Status:** Stripe subscription activation, flexible-billing periods, monthly usage rotation, and development-seed tier parity verified end-to-end.
+> **Last updated:** July 18, 2026
+> **Status:** Stripe billing, Shopify Managed Pricing reconciliation, and Shopify App Events Shop GID capture verified end-to-end.
 
 ---
 
@@ -1253,4 +1253,28 @@ Both files were confirmed gitignored with no git history (`git log --all -- .env
 
 `handleSubscriptionDeleted` now captures the prior tier before overwrite and calls `EntitlementRevocationService.revokeEntitlements` directly — no re-seed needed, since starter-tier entitlements are already granted additively at signup and untouched by upgrade/downgrade flows, so only the paid-tier diff needs revoking. Live-verified via the same hand-signed webhook method against an isolated test shop, hard-delete-only (no preceding `updated` event): `growth → starter`, 8 modules + 5 flags correctly revoked, matching the diff shape already proven in `handleSubscriptionUpsert`'s `ISS-C19` path.
 
-Sprint 2 is now fully closed except SHB-05 (product decision, no code) and SHB-08a (full uninstall/reinstall live cycle — deferred as the final pre-submission gate).
+## 27. Shopify App Events Usage Foundation — SHB-05-C/D (verified 2026-07-18)
+
+Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID. Before this change, `shopify_app_installations` stored only LaSyncro’s internal `shop_id` and the Shopify domain, so a future App Events request could not identify the merchant using Shopify’s required identifier.
+
+### Database and OAuth persistence
+
+- Base migration `20260213094649_0014_shopify_app_installations.ts` now defines nullable `shop_gid varchar(255)`.
+- The column is nullable so existing installations remain valid until their next OAuth connection.
+- `integration.controller.ts` now selects `shop.id` through the existing Admin GraphQL identity request; no additional Shopify API round trip was introduced.
+- Only values matching `gid://shopify/Shop/…` are accepted.
+- Missing or invalid GIDs produce an explicit warning but never block OAuth.
+- Reinstall upserts use `COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)` so a transient identity-query failure cannot erase a previously captured GID.
+
+### Live verification
+
+A real OAuth cycle against `development-store-15820042357.myshopify.com` persisted `gid://shopify/Shop/94567203186`. The installation remained active, and `GET /api/v1/integrations/sync-status` returned HTTP `200` with status `COMPLETED`.
+
+### Remaining SHB-05 scope
+
+- **SHB-05-E:** implement App Events client-credentials authentication, token caching, and non-fatal event reporting.
+- **SHB-05-A/B:** branch overage dispatch by `billing_provider` while preserving the existing Stripe path.
+- **SHB-05-F:** configure and document the App Events credentials and meter handle.
+- **AUD-C16:** Shopify extra-seat billing remains a separate unresolved product decision.
+
+The Shopify-billed shipped-order path remains hard-cap-only until SHB-05-E/A/B/F are implemented and verified. SHB-08a also remains open for the final live uninstall/reinstall cycle.
