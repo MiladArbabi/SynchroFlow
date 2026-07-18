@@ -148,7 +148,8 @@ export default function ForgotPasswordPage() {
                             sx={{
                               // AUTH: use LaSyncro accent — NOT color="secondary" (MUI amber)
                               bgcolor: 'var(--accent)',
-                              color: '#fff',
+                              // A8: on-accent text — --accent-ink per playbook §8 (white fails AA)
+                              color: 'var(--accent-ink)',
                               fontWeight: 700,
                               '&:hover': { bgcolor: 'var(--accent-hover)' },
                               '&:disabled': { opacity: 0.6 },

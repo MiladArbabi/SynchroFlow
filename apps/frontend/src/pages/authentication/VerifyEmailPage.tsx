@@ -122,7 +122,7 @@ export default function VerifyEmailPage() {
                     component={Link}
                     to="/check-inbox"
                     variant="contained"
-                    sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                    sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
                   >
                     Back to inbox check
                   </Button>
@@ -141,7 +141,7 @@ export default function VerifyEmailPage() {
                     component={Link}
                     to="/login"
                     variant="contained"
-                    sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                    sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
                   >
                     Go to sign in
                   </Button>

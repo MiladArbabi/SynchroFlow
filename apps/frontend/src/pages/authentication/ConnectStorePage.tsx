@@ -48,7 +48,7 @@ export default function ConnectStorePage() {
             <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 3 }}>
               <Stack direction="row" alignItems="center" spacing={0.75}>
                 <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Typography sx={{ color: '#fff', fontSize: '0.7rem', fontWeight: 700 }}>✓</Typography>
+                  <Typography sx={{ color: 'var(--accent-ink)', fontSize: '0.7rem', fontWeight: 700 }}>✓</Typography>
                 </Box>
                 <Typography variant="caption" sx={{ color: 'var(--ink-3)', fontWeight: 500 }}>Account</Typography>
               </Stack>
@@ -87,7 +87,7 @@ export default function ConnectStorePage() {
                 {SCOPES.map((scope) => (
                   <Stack key={scope} direction="row" alignItems="center" spacing={1}>
                     <Box sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <Typography sx={{ color: '#fff', fontSize: '0.6rem', fontWeight: 700 }}>✓</Typography>
+                      <Typography sx={{ color: 'var(--accent-ink)', fontSize: '0.6rem', fontWeight: 700 }}>✓</Typography>
                     </Box>
                     <Typography variant="body2" sx={{ color: 'var(--ink-2)' }}>{scope}</Typography>
                   </Stack>
@@ -108,7 +108,7 @@ export default function ConnectStorePage() {
                   rel="noopener noreferrer"
                   fullWidth
                   variant="contained"
-                  sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                  sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}
                 >
                   Install LaSyncro from the Shopify App Store →
                 </Button>

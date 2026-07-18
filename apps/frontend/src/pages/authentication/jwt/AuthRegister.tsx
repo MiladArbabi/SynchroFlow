@@ -374,7 +374,7 @@ export default function JWTRegister({ ...others }: JWTRegisterProps) {
               <AnimateButton>
                 {/* THEME-001: LaSyncro accent CTA — never color="secondary" (MUI amber) */}
                 <Button disableElevation disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained"
-                  sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}>
+                  sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}>
                   Continue →
                 </Button>
               </AnimateButton>

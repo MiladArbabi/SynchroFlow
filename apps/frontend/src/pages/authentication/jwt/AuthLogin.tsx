@@ -325,7 +325,7 @@ export default function JWTLogin({ ...others }: AuthLoginProps) {
               {/* This button is now safe to use! */}
               {/* THEME-001: LaSyncro accent CTA — never color="secondary" (MUI amber) */}
               <Button disabled={isSubmitting} fullWidth size="large" type="submit" variant="contained"
-                sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}>
+                sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 }}}>
                 Sign in →
               </Button>
             </AnimateButton>

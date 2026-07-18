@@ -115,7 +115,7 @@ export default function ResetPasswordPage() {
                     fullWidth
                     variant="contained"
                     onClick={() => navigate('/login')}
-                    sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+                    sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}
                   >
                     Sign in →
                   </Button>
@@ -208,7 +208,7 @@ export default function ResetPasswordPage() {
                         <Button
                           fullWidth size="large" type="submit" variant="contained"
                           disabled={isSubmitting}
-                          sx={{ bgcolor: 'var(--accent)', color: '#fff', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}
+                          sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 700, '&:hover': { bgcolor: 'var(--accent-hover)' }, '&:disabled': { opacity: 0.6 } }}
                         >
                           Set new password →
                         </Button>

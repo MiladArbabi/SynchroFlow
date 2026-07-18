@@ -175,7 +175,7 @@ export default function CheckInboxPage() {
                   sx={{
                     mb: 1.5,
                     bgcolor: 'var(--accent)',
-                    color: '#fff',
+                    color: 'var(--accent-ink)',
                     fontWeight: 700,
                     textTransform: 'none',
                     fontSize: '0.9rem',
