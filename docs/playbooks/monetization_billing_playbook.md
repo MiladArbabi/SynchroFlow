@@ -1098,3 +1098,59 @@ Revised `tierDataWindowSince()` constants (`packages/backend-core/src/utils/tier
 All items independently live-verified via direct API calls and DB queries against seeded data; no regressions found in related surfaces (WMS Analytics tier-gating, Orders export windows) during verification.
 
 **ISS-B1 — Starter usage-period rotation — confirmed closed, no code change.** This item had been carried forward across multiple sessions as "designed but never built." Investigation found `getOrRotateOpenUsagePeriod` (`apps/backend/src/api/billing/usagePeriod.service.ts`) already fully implemented — advisory-lock-serialized, tenant-scoped, wired into all 3 relevant call sites (`billing.controller.ts`, `wms.controller.ts`, `handleOrderCreated.ts`; `stripe.meter.service.ts` correctly excluded since it's Stripe-invoice-driven, not lazy-rotation). One deviation from the original design brief (30-day rolling window) — it rotates on the UTC calendar-month boundary instead — confirmed intentional and correct given `trial-expiry.service.ts`'s existing 14-day Growth-trial-to-Starter downgrade worker, which already absorbs any partial-period edge case at signup. Secondary flagged item (`integration.controller.ts` hardcoding `tier_at_period_start: 'growth'`) confirmed correct, not a bug — the Shopify App Store install path deliberately starts every shop on a 14-day Growth trial (`shop_subscriptions.tier: 'growth'`, `status: 'trialing'`) before trial-expiry downgrades to Starter. This ISS-B1 closure was never previously documented in this file, which is why it kept resurfacing as open across sessions — recorded here going forward.
+
+## 24. Shopify Managed Pricing Sync — SHB Audit (verified 2026-07-18)
+
+The `/api/v1/shopify-billing/change-plan` endpoint documented in earlier sessions (§9-era work, using `appSubscriptionCreate` directly) was retired June 2026 — Shopify rejects direct Billing API charge creation for apps on Managed Pricing ("Managed Pricing Apps cannot use the Billing API to create charges"). Plan selection moved entirely to Shopify's hosted pricing page. The retirement left a real gap: nothing synced the resulting plan state back into `shop_subscriptions`, meaning a merchant approving a paid plan on Shopify's own page got no entitlements at all. This session closed that gap end-to-end and caught two independent bugs that would have shipped otherwise.
+
+### Architecture (SHB-01, SHB-07)
+
+New `apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts` — `fetchShopifyBillingState(shopId)`. Treats the `app_subscriptions/update` webhook as a trigger only, not a data source; fetches authoritative state via the Admin GraphQL Active Subscription API (`currentAppInstallation.activeSubscriptions`), pinned to API version `2026-07` (confirmed current stable via `publicApiVersions` — the dormant controller's hardcoded `2024-01` was roughly 10 versions stale, itself a delisting risk independent of billing). Reusable for webhook-triggered, install-time, and future cron reconciliation — same shape as `handleSubscriptionUpsert`'s Stripe pattern, deliberately kept parallel.
+
+New handler `apps/backend/src/api/shopify/handlers/handleAppSubscriptionUpdate.ts` calls the reconciliation service, upserts `shop_subscriptions` with `billing_provider: 'shopify'` stamped explicitly (never left to default — see SHB-02 below), re-seeds entitlements from tier constants, and revokes the tier-downgrade diff exactly mirroring ISS-C19's existing Stripe downgrade logic (§18).
+
+Topic `app_subscriptions/update` added to the registration list and `GRAPHQL_TOPIC_MAP` in `shopifyWebhooks.core.ts`, dispatched via `shopify.webhook.ts` / `shopify.webhook.router.ts`, following the identical pattern as `app/uninstalled`.
+
+### Plan name has no stable handle (SHB-12)
+
+`AppSubscription` was assumed to expose a `handle` field parallel to the Partner Dashboard's "Internal plan handle" — confirmed via live GraphQL introspection (`__type(name: "AppSubscription")`) that it does not. Only `name` (the invoice-facing display string) crosses the API boundary. Tier mapping keys on `name`, normalized (trim, lowercase, hyphens/underscores collapsed to single spaces) after discovering the actual saved plan name is `"Early-access"` (hyphen) where the naive map key was `"early access"` (space) — a formatting mismatch that silently broke every free-tier sync until caught live:
+"Early-access" -> starter
+"Core"         -> core
+"Growth"       -> growth
+"Scale"        -> scale
+
+### Status vocabulary mismatch (bug caught live, not by compile)
+
+`shop_subscriptions.status` carries a DB check constraint (`shop_subscriptions_status_valid`) written for Stripe's lowercase lifecycle vocabulary: `trialing, active, past_due, canceled, unpaid`. The reconciliation service initially wrote Shopify's raw `AppSubscriptionStatus` enum value verbatim — `ACTIVE, PENDING, DECLINED, EXPIRED, FROZEN, CANCELLED`. This violated the constraint on **every** status, including the success case, since `'ACTIVE' !== 'active'` — a pure case mismatch, not specific to the edge-case statuses. `tsc` passed clean throughout; only live webhook testing against the real dev store surfaced it (`WEBHOOK_HANDLER_ERROR ... violates check constraint`). Mapped by semantic fit, confirmed with product owner where no exact Stripe equivalent exists:
+ACTIVE    -> active
+PENDING   -> unpaid     (no payment collected, awaiting merchant decision)
+FROZEN    -> past_due
+DECLINED  -> canceled
+EXPIRED   -> canceled
+CANCELLED -> canceled
+(no sub)  -> canceled
+
+### SHB-13 — forced-starter on non-active status, and the Stripe-side equivalent gap (SHB-14, still open)
+
+Confirmed via direct inspection that `resolveTierForShop` (`packages/backend-core/src/services/shop-resolution.service.ts`) — the sole source for the JWT `tier` claim, re-derived on every `issueAuthTokens` call with a 15-minute access-token expiry — reads `shop_subscriptions.tier` verbatim and never inspects `status`. `requireTier` middleware likewise gates purely on the JWT's `tier` claim. This means a subscription in any non-active state leaves the merchant fully entitled at their last-known tier indefinitely, with no separate invalidation mechanism to fight — writing the correct `tier` to the DB is sufficient, and self-propagates within one token cycle.
+
+For the Shopify path, the reconciliation service now forces `tier: 'starter'` whenever status isn't `ACTIVE`, and the handler revokes the resulting downgrade diff — same pattern as ISS-C19.
+
+**This same gap exists on the Stripe side and is NOT yet fixed** — `handleSubscriptionUpsert` writes `status` from Stripe webhooks but nothing forces `tier` to `starter` on `customer.subscription.deleted` or sustained `past_due`. Tracked as SHB-14, recommended as a follow-up sprint using the identical fix pattern proven here.
+
+### SHB-16 — latent webhook router bug, not billing-specific
+
+`WebhookRouter.dispatch` (`apps/backend/src/api/webhooks/webhookRouter.ts`) resolves `shopId` from `shopDomain` into a local `resolvedShopId` variable for `SET LOCAL app.current_tenant` and ledger writes, but never wrote it back onto `envelope.shopId`. No prior Shopify handler read `envelope.shopId` directly (all resolved shop context some other way), so this was dormant until `handleAppSubscriptionUpdate` — first symptom was `missing shopId` despite dispatch and ledger succeeding, which correctly pointed at a write-back gap rather than a resolution failure. Fixed at the single router choke point (mirrors the ISS-B06 precedent, §-earlier) rather than patched per-handler: `envelope.shopId = resolvedShopId` added immediately after resolution. Any future handler reading `envelope.shopId` is now safe by construction.
+
+### Live verification (2026-07-18)
+
+Full cycle tested against dev store `development-store-15820042357` through the real hosted Managed Pricing page — not synthetic webhook payloads. Sequence: Core → Early-access → Core. Each transition confirmed via both the `shop_subscriptions` row and `[shopify][app_subscription_update] complete` log lines, including correct entitlement revocation (8 modules — returns, products, problem-center, customers, finances, demand, specter, floor-planning; 5 flags) on the Core→Starter downgrade step. Final state: `tier: core, billing_provider: shopify, status: active`. Shopify delivered each transition as two distinct webhook `eventId`s in testing — consistent with normal webhook-infrastructure duplicate delivery, not a bug; the existing idempotent `onConflict('shop_id').merge(...)` upsert absorbs it safely, same final state either way.
+
+### Known open items, carried forward
+
+- **SHB-02** — dormant `handleShopifyCallback` (dead code from the retired direct-charge flow) still omits `billing_provider` from its upsert. Low priority, unreachable code path.
+- **SHB-03/SHB-04** — frontend has zero `billing_provider` awareness. `ShippedOrderCapBanner` and `BillingSettings` are Stripe-only; correctly 403 via existing `APP_STORE_MERCHANT` guards for Shopify-billed shops, but present no fallback UI routing to Shopify's hosted pricing page.
+- **SHB-05** — pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed Pricing equivalent designed (Shopify allows one recurring + one usage line item per subscription, no multi-item add-ons like Stripe's `subscriptionItems`). Product decision pending.
+- **SHB-08** — `app/uninstalled` handler (`handleAppUninstalled.ts`) is an empty stub. Uninstall does not downgrade `shop_subscriptions` or revoke entitlements, despite Shopify auto-cancelling the underlying charge. Next priority.
+- **SHB-09** — `manualSync.controller.ts` writes `uninstalled_at` to a column that doesn't exist on `integrations` per live schema query; unresolved, needs verification against the correct table before SHB-08 work begins.
+- **SHB-14** — see above; Stripe-side equivalent of SHB-13, not yet fixed.

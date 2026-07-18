@@ -21,6 +21,7 @@ import { handleRefundCreated } from './handlers/handleRefundCreated.js';
 import { handleInventoryLevelUpdate } from './handlers/handleInventoryLevelUpdate.js';
 import { handleProductCreated } from './handlers/handleProductCreated.js';
 import { handleProductUpdated } from './handlers/handleProductUpdated.js';
+import { handleAppSubscriptionUpdate } from './handlers/handleAppSubscriptionUpdate.js';
 
 /**
  * Shopify Webhook Route Registration
@@ -42,6 +43,13 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'app/uninstalled',
   handle: onShopifyAppUninstalled,
+});
+
+// Billing (SHB-01, SHB-07) — Managed Pricing plan approvals/changes/cancellations
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'app_subscriptions/update',
+  handle: handleAppSubscriptionUpdate,
 });
 
 // Order Creations

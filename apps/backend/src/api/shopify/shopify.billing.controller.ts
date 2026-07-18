@@ -37,7 +37,7 @@ import { PEGGED_DISPLAY_PRICES } from '@lasyncro/backend-core/config/pricing.con
  * Resolve shop's Shopify access token for API calls.
  * Decrypts from integrations table.
  */
-async function resolveShopifyAccessToken(shopId: number): Promise<{ accessToken: string; shopDomain: string }> {
+export async function resolveShopifyAccessToken(shopId: number): Promise<{ accessToken: string; shopDomain: string }> {
   const integration = await db('integrations')
     .where({ shop_id: shopId, platform: 'shopify' })
     .first('access_token_encrypted', 'platform_shop_name');

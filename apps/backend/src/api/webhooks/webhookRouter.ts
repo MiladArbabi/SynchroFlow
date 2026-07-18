@@ -145,8 +145,14 @@ export class WebhookRouter {
       if (!shopId) {
         throw new Error('[WEBHOOK_MISSING_SHOP_ID]');
       }
-
       const resolvedShopId = shopId;
+      // SHB-16: write resolved shopId back onto the envelope — resolution
+      // above only produces a local variable; handlers reading
+      // envelope.shopId (e.g. handleAppSubscriptionUpdate) got undefined
+      // otherwise. resolvedShopId remains the single source of truth for
+      // SET LOCAL/ledger calls within this function; this line just
+      // propagates it forward for handlers dispatched below.
+      envelope.shopId = resolvedShopId;
 
       /**
        * ISS-RLS2 FIX

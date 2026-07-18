@@ -30,6 +30,7 @@ router.post('/', async (req: Request, res: Response) => {
 
   switch (topic) {
     case 'app/uninstalled':
+    case 'app_subscriptions/update':
     case 'fulfillments/create':
     case 'fulfillments/update':
 

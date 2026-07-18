@@ -75,10 +75,12 @@ No changes required. Passed from the start once URLs were corrected.
 ### ✅ Verifies webhooks with HMAC signatures
 
 **Root causes (two bugs):**
+
 1. `verifyShopifySignature` returned HTTP `400` on bad HMAC — Shopify requires `401`.
 2. Compliance webhook handler fell through to `default` case returning `200 ignored`.
 
 **Fixes:**
+
 - `apps/backend/src/api/shopify/shopify.verify.middleware.ts` — changed status from `400` to `401`
 - `apps/backend/src/api/shopify/shopify.webhook.router.ts` — added `customers/data_request`, `customers/redact`, `shop/redact` cases
 
@@ -122,6 +124,7 @@ Final fix: `initQueue()` now awaits the actual `connect` event (25s timeout) bef
 The `events` queue was declared by `queue.topology.ts` with different `x-dead-letter-routing-key` and missing `x-single-active-consumer` vs what `worker.ts` expected. Same issue for `execution.jobs.v1` — topology used `execution.jobs.v1.dlx` as the DLX name but `execution.queue.ts` used `execution.dlx`.  
 
 Fixes:
+
 - `apps/backend/src/queue.topology.ts` — aligned `events` queue args with `worker.ts` (added `x-single-active-consumer: true`, fixed routing key to `'dead'`)
 - `apps/backend/src/queue.topology.ts` — aligned `execution.jobs.v1` to use `execution.dlx`, correct DLQ args matching `execution.queue.ts`
 
@@ -129,13 +132,57 @@ Fixes:
 
 ---
 
-## Shopify Billing — Plan Change Endpoint
+## Shopify Billing — Managed Pricing Sync (verified 2026-07-18)
+### Background
+The original `/api/v1/shopify-billing/change-plan` endpoint (using `appSubscriptionCreate` directly) was retired June 2026 — Shopify rejects direct Billing API charge creation for apps on Managed Pricing ("Managed Pricing Apps cannot use the Billing API to create charges"). Plan selection now happens entirely on Shopify's hosted pricing page (`https://admin.shopify.com/store/:store_handle/charges/:app_handle/pricing_plans`). The retirement left a gap: nothing synced the resulting plan state back into `shop_subscriptions`. Closed this session (SHB-01, SHB-07, SHB-13, SHB-16).
 
-Added `POST /api/v1/shopify-billing/change-plan` to allow merchants to upgrade/downgrade without reinstalling. Required by Shopify App Store review requirement "Allow pricing plan changes."
+### Architecture
 
-Files changed:
-- `apps/backend/src/api/shopify/shopify.billing.controller.ts` — added `changeShopifyPlan()`
-- `apps/backend/src/api/shopify/shopify.billing.routes.ts` — wired route
+- `apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts` — `fetchShopifyBillingState(shopId)`. Treats the webhook as a trigger only; fetches authoritative state via the Admin GraphQL Active Subscription API (`currentAppInstallation.activeSubscriptions`), API version `2026-07`. Reusable for webhook-triggered, install-time, and future cron reconciliation.
+- `apps/backend/src/api/shopify/handlers/handleAppSubscriptionUpdate.ts` — consumes the `app_subscriptions/update` webhook, calls the reconciliation service, upserts `shop_subscriptions` with `billing_provider: 'shopify'` stamped explicitly, re-seeds entitlements, and revokes the tier-downgrade diff (mirrors ISS-C19).
+- Registered in `shopifyWebhooks.core.ts` (topic `app_subscriptions/update` → GraphQL enum `APP_SUBSCRIPTIONS_UPDATE`) and dispatched via `shopify.webhook.ts` / `shopify.webhook.router.ts`.
+
+### Plan name → tier mapping
+`AppSubscription` has **no `handle` field** (confirmed via GraphQL introspection) — mapping keys on the invoice-facing `name` string, normalized (trim, lowercase, hyphens/underscores collapsed to spaces) to tolerate formatting drift:
+"Early-access" -> starter
+"Core"         -> core
+"Growth"       -> growth
+"Scale"        -> scale
+Partner Dashboard "Internal plan handle" values (`early-access`, `core`, `growth`, `scale`) are NOT used for mapping — they're invisible to the Admin API.
+
+### Status mapping
+`shop_subscriptions.status` has a DB check constraint written for Stripe's lowercase vocabulary (`trialing, active, past_due, canceled, unpaid`). Shopify's `AppSubscriptionStatus` enum (`ACTIVE, PENDING, DECLINED, EXPIRED, FROZEN, CANCELLED`) has no exact equivalents and is case-mismatched even for the success case — writing it raw violated the constraint on every status including `ACTIVE`. Mapped by semantic fit:
+ACTIVE    -> active
+PENDING   -> unpaid     (no payment collected, awaiting merchant decision)
+FROZEN    -> past_due
+DECLINED  -> canceled
+EXPIRED   -> canceled
+CANCELLED -> canceled
+(no sub)  -> canceled
+
+### SHB-13: forced-starter on non-active status
+`resolveTierForShop` (used for the JWT `tier` claim on every token issuance, 15-min expiry) reads `shop_subscriptions.tier` verbatim — no code anywhere reads `status` for gating. So the reconciliation service forces `tier: 'starter'` whenever Shopify status isn't `ACTIVE`, regardless of the plan name on the (inactive) subscription, and the handler revokes the resulting downgrade diff. This is provider-agnostic risk in principle — see monetization_billing_playbook.md §24 for the equivalent open gap on the Stripe side (SHB-14, not yet fixed).
+
+### SHB-16: webhook router shop-resolution bug (systemic, not billing-specific)
+`WebhookRouter.dispatch` resolved `shopId` from `shopDomain` into a local variable but never wrote it back onto `envelope.shopId`. Latent since no prior Shopify handler read `envelope.shopId` directly; surfaced by `handleAppSubscriptionUpdate`. Fixed at the router (single point, mirrors ISS-B06 precedent) — `envelope.shopId = resolvedShopId` added immediately after resolution.
+
+### Redirect URLs (Partner Dashboard, per plan)
+
+- Core, Growth, Scale: `/settings/billing` (relative)
+- Early-access: `https://app.lasyncro.com` (absolute, saved before the pattern was standardized — locked, cannot be changed retroactively per Shopify's own field constraint)
+Both formats confirmed accepted by Shopify. Inconsistency is cosmetic only; billing settings page reconciles live state on load regardless of entry point.
+
+### Live verification (2026-07-18)
+Full cycle tested against dev store `development-store-15820042357` via the real hosted pricing page (not synthetic webhooks): Core → Early-access → Core. Confirmed via `shop_subscriptions` row and `[shopify][app_subscription_update] complete` logs at each transition, including correct entitlement revocation (8 modules, 5 flags) on the downgrade step. Shopify may deliver each transition as two distinct webhook events (different `eventId`s) — idempotent upsert makes this safe; not a bug.
+
+### Known open items
+
+- `handleShopifyCallback` (dormant, dead code from the retired charge-creation flow) still omits `billing_provider` from its upsert — low priority since the path is unreachable, tracked as SHB-02.
+- Pay-per-order overage and the AUD-C16 extra-seat add-on have no Managed-Pricing equivalent designed yet (Shopify allows one recurring line item + one usage line item per subscription, no multi-item add-ons) — product decision pending, tracked as SHB-05.
+- `app/uninstalled` handler (`handleAppUninstalled.ts`) is currently an empty stub — uninstall does not downgrade `shop_subscriptions` or revoke entitlements. Tracked as SHB-08, next priority.
+- Frontend has no `billing_provider` awareness yet — Stripe-only billing UI (`ShippedOrderCapBanner`, `BillingSettings`) will 403 for Shopify-billed shops with no fallback UI. Tracked as SHB-03/SHB-04.
+
+---
 
 ---
 
