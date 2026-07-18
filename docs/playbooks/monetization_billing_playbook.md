@@ -1246,35 +1246,73 @@ Both files were confirmed gitignored with no git history (`git log --all -- .env
 ### Known open items, carried forward
 
 - **SHB-14b** — `handleSubscriptionDeleted` still doesn't revoke entitlements; needs either a direct `EntitlementRevocationService` call mirroring `handleSubscriptionUpsert`'s diff logic, or confirmation via live Stripe test-mode testing that event ordering makes this unreachable in practice.
-- **SHB-05** — Managed Pricing overage/seat-add-on product decision, still pending.
+- **SHB-05** — App Events persistence, reporter, and local environment contract are complete; provider dispatch and controlled live billing validation remain open.
 - **SHB-08a** — full uninstall→reinstall live cycle, last gate before submission.
 
 ### SHB-14b closed (verified 2026-07-18, same session)
 
 `handleSubscriptionDeleted` now captures the prior tier before overwrite and calls `EntitlementRevocationService.revokeEntitlements` directly — no re-seed needed, since starter-tier entitlements are already granted additively at signup and untouched by upgrade/downgrade flows, so only the paid-tier diff needs revoking. Live-verified via the same hand-signed webhook method against an isolated test shop, hard-delete-only (no preceding `updated` event): `growth → starter`, 8 modules + 5 flags correctly revoked, matching the diff shape already proven in `handleSubscriptionUpsert`'s `ISS-C19` path.
 
-## 27. Shopify App Events Usage Foundation — SHB-05-C/D (verified 2026-07-18)
+## 27. Shopify App Events Usage Reporting — SHB-05-C/D/E/F (verified 2026-07-18)
 
-Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID. Before this change, `shopify_app_installations` stored only LaSyncro’s internal `shop_id` and the Shopify domain, so a future App Events request could not identify the merchant using Shopify’s required identifier.
+Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID, app-level client credentials, a published meter handle, and deterministic event submission. The persistence and isolated reporting layers are now implemented; provider dispatch and live billing validation remain open.
 
 ### Database and OAuth persistence
 
-- Base migration `20260213094649_0014_shopify_app_installations.ts` now defines nullable `shop_gid varchar(255)`.
-- The column is nullable so existing installations remain valid until their next OAuth connection.
-- `integration.controller.ts` now selects `shop.id` through the existing Admin GraphQL identity request; no additional Shopify API round trip was introduced.
+- Base migration `20260213094649_0014_shopify_app_installations.ts` defines nullable `shop_gid varchar(255)`.
+- The column remains nullable so existing installations stay valid until their next OAuth connection.
+- `integration.controller.ts` selects `shop.id` through the existing Admin GraphQL identity request; no additional Shopify API round trip was introduced.
 - Only values matching `gid://shopify/Shop/…` are accepted.
 - Missing or invalid GIDs produce an explicit warning but never block OAuth.
-- Reinstall upserts use `COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)` so a transient identity-query failure cannot erase a previously captured GID.
+- Reinstall upserts preserve an existing GID with `COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)`.
 
-### Live verification
+### Published usage pricing
 
-A real OAuth cycle against `development-store-15820042357.myshopify.com` persisted `gid://shopify/Shop/94567203186`. The installation remained active, and `GET /api/v1/integrations/sync-status` returned HTTP `200` with status `COMPLETED`.
+- The billing event handle is `shipped-order`.
+- Early-access, Core, and Growth charge `$0.08` per reported unit.
+- LaSyncro reports only units above the local tier allowance: Early-access `50`, Core `200`, and Growth `1,000` shipped orders per billing period.
+- Scale remains unlimited and has no shipped-order usage meter.
+- Core, Growth, and Scale use a 14-day trial; the free Early-access plan does not require a trial.
+
+### Reporter behaviour
+
+`apps/backend/src/api/billing/shopify.events.service.ts` now:
+
+- obtains app-level bearer tokens from `POST https://api.shopify.com/auth/access_token`;
+- caches tokens with a five-minute refresh buffer and uses Shopify’s documented 60-minute TTL when `expires_in` is omitted;
+- reads subscription provider, tier, active Shop GID, and open usage-period state inside a tenant-scoped transaction;
+- skips non-Shopify subscriptions and the unlimited Scale tier;
+- submits positive overage units to `POST https://api.shopify.com/app/unstable/events`;
+- uses deterministic idempotency keys derived from shop, usage period, and cumulative shipped total;
+- retries one HTTP `401` with a fresh token;
+- logs every skip, acceptance, and failure without blocking fulfillment;
+- records HTTP `202` only as accepted for asynchronous processing, never as confirmed billed.
+
+### Environment contract
+
+The sanitized `.env.example` now documents:
+
+- `SHOPIFY_APP_EVENTS_CLIENT_ID`;
+- `SHOPIFY_APP_EVENTS_CLIENT_SECRET`;
+- `SHOPIFY_APP_EVENTS_METER_HANDLE=shipped-order`.
+
+App Events uses the same Dev Dashboard client ID and secret as the Shopify app. Runtime environments must contain literal secret values rather than dotenv variable references.
+
+### Verification
+
+- A real OAuth cycle against `development-store-15820042357.myshopify.com` persisted `gid://shopify/Shop/94567203186`.
+- Shopify client-credentials authentication returned HTTP `200`.
+- The App Events endpoint returned HTTP `401` without authentication, confirming the live route and auth boundary.
+- Backend TypeScript compilation completed cleanly.
+- Direct runtime invocation against the current Stripe-billed Growth shop emitted `billing_provider_is_not_shopify` and sent no billing event.
+- `GET /api/v1/billing/subscription` remained HTTP `200`.
+- No billable App Event was submitted during this task; Shopify’s asynchronous billing result therefore remains unverified.
 
 ### Remaining SHB-05 scope
 
-- **SHB-05-E:** implement App Events client-credentials authentication, token caching, and non-fatal event reporting.
-- **SHB-05-A/B:** branch overage dispatch by `billing_provider` while preserving the existing Stripe path.
-- **SHB-05-F:** configure and document the App Events credentials and meter handle.
+- **SHB-05-A/B:** dispatch overage reporting by `billing_provider` while preserving the existing Stripe path.
+- **SHB-05-G:** ensure an open usage period exists before provider reporting is activated.
+- **SHB-05-F deployment:** configure the three App Events variables in each deployed runtime.
 - **AUD-C16:** Shopify extra-seat billing remains a separate unresolved product decision.
 
-The Shopify-billed shipped-order path remains hard-cap-only until SHB-05-E/A/B/F are implemented and verified. SHB-08a also remains open for the final live uninstall/reinstall cycle.
+The Shopify-billed shipped-order path remains hard-cap-only until provider dispatch, open-period handling, deployed secrets, and one controlled billable event are live-verified. SHB-08a also remains open for the final uninstall/reinstall cycle.

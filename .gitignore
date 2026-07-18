@@ -20,7 +20,9 @@ node_modules/
 .env
 apps/frontend/.env
 .env.*
-!.env.example # Keep the example file
+
+# Keep the sanitized environment contract under version control.
+!.env.example
 *.log
 
 # ----------------------------------------------------------------------

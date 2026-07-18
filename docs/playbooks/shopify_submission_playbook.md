@@ -174,18 +174,33 @@ CANCELLED -> canceled
 Both formats confirmed accepted by Shopify. Inconsistency is cosmetic only; billing settings page reconciles live state on load regardless of entry point.
 
 ### Live verification (2026-07-18)
-Full cycle tested against dev store `development-store-15820042357` via the real hosted pricing page (not synthetic webhooks): Core → Early-access → Core. Confirmed via `shop_subscriptions` row and `[shopify][app_subscription_update] complete` logs at each transition, including correct entitlement revocation (8 modules, 5 flags) on the downgrade step. Shopify may deliver each transition as two distinct webhook events (different `eventId`s) — idempotent upsert makes this safe; not a bug.
+
+A full subscription cycle was tested against dev store `development-store-15820042357` through the real hosted pricing page: Core → Early-access → Core. The `shop_subscriptions` row and `[shopify][app_subscription_update] complete` logs confirmed each transition, including revocation of 8 modules and 5 flags during downgrade. Shopify can deliver a transition as two events with different `eventId` values; the idempotent subscription upsert handles both safely.
+
+### Shopify App Events usage billing — SHB-05-C/D/E/F
+
+- `shopify_app_installations.shop_gid` stores Shopify’s canonical merchant GID.
+- OAuth captures and validates `gid://shopify/Shop/…` while preserving any previously stored GID when the optional identity lookup fails.
+- A real OAuth cycle persisted `gid://shopify/Shop/94567203186`.
+- The published billing event handle is `shipped-order`.
+- Early-access, Core, and Growth charge `$0.08` for each locally calculated shipped-order overage unit.
+- Local included allowances remain 50, 200, and 1,000 respectively.
+- Scale is unlimited and has no shipped-order usage meter.
+- Core, Growth, and Scale use a 14-day trial; free Early-access has no trial.
+- `shopify.events.service.ts` implements app-level authentication, token caching, tenant-scoped billing context, deterministic idempotency, one authentication retry, explicit operator logs, and non-fatal reporting.
+- Client-credentials authentication returned HTTP `200`; unauthenticated event submission returned HTTP `401`.
+- Runtime verification against the current Stripe-billed shop correctly skipped reporting with `billing_provider_is_not_shopify`.
+- No billable App Event has yet been submitted; HTTP `202` acceptance and the asynchronous billing result remain unverified.
 
 ### Known open items
 
-- `handleShopifyCallback` (dormant, dead code from the retired charge-creation flow) still omits `billing_provider` from its upsert — low priority since the path is unreachable, tracked as SHB-02.
-- SHB-05 now uses Shopify App Events as the selected shipped-order overage design. Shop GID storage and OAuth capture are complete (SHB-05-C/D); the reporting service, provider dispatch, and environment configuration remain pending (SHB-05-E/A/B/F). The hard-cap interim remains active until those paths are live-verified. AUD-C16 extra-seat billing remains a separate unresolved product decision.
+- **SHB-05-A/B:** connect provider dispatch while preserving the existing Stripe reporter.
+- **SHB-05-G:** guarantee an open usage period before Shopify reporting is activated.
+- **SHB-05-F deployment:** configure App Events credentials and `shipped-order` in every deployed runtime.
+- **SHB-02:** dormant `handleShopifyCallback` still omits `billing_provider`; the retired charge-creation path remains unreachable.
+- **AUD-C16:** Shopify extra-seat billing remains a separate unresolved product decision.
 
-### Shopify App Events foundation — SHB-05-C/D
-
-`shopify_app_installations` now stores Shopify’s canonical Shop GID in nullable `shop_gid`. OAuth captures it from the existing Admin GraphQL shop-identity request and preserves any previously stored value if that optional lookup later fails.
-
-A real OAuth cycle against the development store persisted `gid://shopify/Shop/94567203186`, while the integration completed normally. This is foundation only: App Events authentication, event submission, provider dispatch, and environment configuration remain pending under SHB-05-E/A/B/F. Shopify-billed shipped-order enforcement therefore remains hard-cap-only.
+Shopify-billed shipped-order enforcement remains hard-cap-only until provider dispatch, open-period handling, deployed secrets, and one controlled billing event are live-verified.
 
 A real OAuth cycle against the development store persisted `gid://shopify/Shop/94567203186`, while the integration completed normally. This is foundation only: App Events authentication, event submission, provider dispatch, and environment configuration remain pending under SHB-05-E/A/B/F. Shopify-billed shipped-order enforcement therefore remains hard-cap-only.
 
