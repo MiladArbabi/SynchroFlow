@@ -27,6 +27,7 @@ import MarkEmailUnreadOutlinedIcon from '@mui/icons-material/MarkEmailUnreadOutl
 import RefreshIcon from '@mui/icons-material/Refresh';
 import MailOutlineIcon from '@mui/icons-material/MailOutline';
 import { AuthLogo } from './AuthLogo';
+import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 export default function CheckInboxPage() {
   const { user, logout, accessToken } = useAuth();
@@ -83,6 +84,7 @@ export default function CheckInboxPage() {
 
   return (
     <AuthWrapper1>
+      <AuthGridBackdrop />
       <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
 
         {/* Nav bar */}

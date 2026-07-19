@@ -22,6 +22,7 @@ import InputAdornment from '@mui/material/InputAdornment';
 import { SocialProofTicker, SystemStatusPill } from './AuthPageChrome';
 import FormControl from '@mui/material/FormControl';
 import { AuthLogo } from './AuthLogo'; // Shared auth chrome logo used by the fixed nav.
+import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 type SubmitState = 'idle' | 'success' | 'error';
 
@@ -31,6 +32,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthWrapper1>
+      <AuthGridBackdrop />
       <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
         <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
           {/* AUTH-012: top-left logo nav bar — matches target A2 */}

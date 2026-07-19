@@ -19,6 +19,7 @@ import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { Link } from 'react-router-dom';
 import { AuthLogo } from './AuthLogo';
+import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 type State = 'verifying' | 'success' | 'expired' | 'invalid' | 'error';
 
@@ -73,6 +74,7 @@ export default function VerifyEmailPage() {
 
   return (
     <AuthWrapper1>
+      <AuthGridBackdrop />
       <Stack sx={{ justifyContent: 'center', alignItems: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '60px' }}>
 
         {/* Nav bar */}

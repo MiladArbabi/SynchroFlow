@@ -25,6 +25,7 @@ import AuthCardWrapper from './AuthCardWrapper';
 import AnimateButton from 'ui-component/extended/AnimateButton';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { AuthLogo } from './AuthLogo';
+import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 type SubmitState = 'idle' | 'success' | 'error';
 
@@ -39,6 +40,7 @@ export default function ResetPasswordPage() {
   if (!token) {
     return (
       <AuthWrapper1>
+        <AuthGridBackdrop />
         <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
           <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
             <Link to="/" aria-label="LaSyncro home">
@@ -79,6 +81,7 @@ export default function ResetPasswordPage() {
 
   return (
     <AuthWrapper1>
+      <AuthGridBackdrop />
       <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
 
         {/* Nav bar */}
