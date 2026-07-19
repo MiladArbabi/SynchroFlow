@@ -23,6 +23,7 @@ import { useAuth } from 'contexts/AuthContext';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { CircularProgress } from '@mui/material';
 import { AuthLogo } from './AuthLogo';
+import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 // import { 'jwt' } from 'config'; // <-- COMMENT OUT
 
@@ -62,6 +63,7 @@ export default function Register() {
 
   return (
     <AuthWrapper1>
+      <AuthGridBackdrop />
       <Stack sx={{ justifyContent: 'center', minHeight: '100vh', overflowY: 'auto', pt: '80px', pb: '100px' }}>
         <Stack sx={{ justifyContent: 'center', alignItems: 'center' }}>
           {/* AUTH-012: top-left logo nav bar — matches target A2 */}

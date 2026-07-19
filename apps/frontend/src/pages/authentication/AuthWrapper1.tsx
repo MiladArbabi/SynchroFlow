@@ -13,6 +13,7 @@ import { CSSProperties } from 'react';
 // children inherit dark rendering automatically. Keep in sync with the theme's
 // dark block if those values ever change.
 const AuthWrapper1 = styled('div')({
+  position: 'relative', // C3': anchor for AuthGridBackdrop (absolute-positioned)
   minHeight: '100vh',
   backgroundColor: '#151D29', // --space-1 / dark --bg
   '--bg':            '#151D29',

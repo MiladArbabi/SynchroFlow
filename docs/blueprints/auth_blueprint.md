@@ -60,10 +60,15 @@ Field anatomy
 Animations (subtle, CSS-only where possible)
 - lsBlink — brand-panel eyebrow dot: 2.4s ease-in-out infinite,
   50% keyframe { opacity: .4; transform: scale(.75) }.
-- lsCell — grid-backdrop variant only: randomly placed 44px cells flare
-  orange (opacity .25 → 1 → .25 within first 14% of a 9s cycle), each with
-  a randomized animation-delay; cell positions/opacity/delay generated in
-  component state on mount, not hardcoded.
+- lsCell — AuthGridBackdrop (final, C3' 2026-07-19): 8 FIXED edge-hugging
+  cells (44px grid coords hardcoded in component); pulse timing randomized
+  per mount — delay 0–16s, duration 14–20s jitter, peak opacity 0.55
+  (deliberately calmer than design source's 9s/1.0 sequential circuit).
+  Grid mask INVERTED vs design source: transparent center (form area stays
+  clean), visible toward edges — radial ellipse 62%/55% at 50%/45%,
+  transparent 42% → black 82%. Glow relocated to top (50% 8%, 0.04).
+  Deployed on Login, Register, ConnectStore via <AuthGridBackdrop />;
+  AuthWrapper1 gained position: relative as its anchor.
 - CTA hover: translateY(-1px) + --accent-hover, transition 0.15s.
 - Respect prefers-reduced-motion: disable lsCell and lsBlink via media query.
 
@@ -590,3 +595,7 @@ Implementation log
   keys). AuthLogo pinned to /logo-dark.png on auth (scheme hook removed;
   reintroduce via forceDark prop if reused elsewhere). Keep the token block in
   sync with themes/index.tsx dark block.
+
+  - C3' (2026-07-19): AuthGridBackdrop.tsx shipped (reusable, aria-hidden,
+  pointer-events none, prefers-reduced-motion → static). Brand panel (A4)
+  closed won't-do — backdrop-only direction chosen.
