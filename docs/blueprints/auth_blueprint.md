@@ -38,8 +38,8 @@ Typography — Plus Jakarta Sans throughout (decision 2026-07-19)
 - Micro-labels: 11px, 500, uppercase, letter-spacing 0.08em, --ink-3.
 
 Per-state copy
-- Sign in: eyebrow "SIGN IN" · h "Welcome back. *Let's sync up.*" ·
-  sub "Enter your credentials to open today's brief." · labeled fields
+- Sign in (final copy, decision 2026-07-19 — no eyebrow): h "Hello. *Let's
+  sync up.*" · sub "Sign in to continue to today's brief." · labeled fields
   (EMAIL, PASSWORD with inline "Forgot password?" right of label) ·
   CTA "Sign in →" · trust line "No credit card · Connects to Shopify in
   60 seconds · Cancel anytime" below divider.
