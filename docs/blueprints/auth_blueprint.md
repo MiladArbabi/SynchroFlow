@@ -581,3 +581,12 @@ curl http://localhost:3000/api/v1/auth/dev-token
 | `/check-inbox` | `CheckInboxPage.tsx` | A5 |
 | `/verify-email` | `VerifyEmailPage.tsx` | — (token handler) |
 | `/reset-password` | `ResetPasswordPage.tsx` | — (not in original target designs) |
+
+Implementation log
+- C1 (2026-07-19): AuthWrapper1 converted to always-dark scope boundary —
+  locally re-declares scheme-scoped tokens (--bg/--surface/--ink*/--rule*/
+  --accent-ghost/--accent-border) to dark values, so every auth child renders
+  dark regardless of app color scheme. Cast via CSSProperties (custom-property
+  keys). AuthLogo pinned to /logo-dark.png on auth (scheme hook removed;
+  reintroduce via forceDark prop if reused elsewhere). Keep the token block in
+  sync with themes/index.tsx dark block.

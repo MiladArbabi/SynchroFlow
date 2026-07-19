@@ -8,20 +8,21 @@
 
 import React from 'react';
 import Box from '@mui/material/Box';
-import { useColorScheme } from '@mui/material/styles';
-import { ThemeMode } from 'config';
 
 interface AuthLogoProps {
   height?: number;
 }
 
+// AUTH-V2 (2026-07-19): auth surfaces are always dark (AuthWrapper1 token
+// override) — always render the white logo here regardless of app scheme.
+// The scheme-aware behavior below is intentionally removed for auth; if this
+// component is ever reused outside auth, reintroduce a `forceDark` prop
+// instead of reviving the hook.
 export const AuthLogo: React.FC<AuthLogoProps> = ({ height = 28 }) => {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === ThemeMode.DARK;
   return (
     <Box
       component="img"
-      src={isDark ? '/logo-dark.png' : '/logo.png'}
+      src="/logo-dark.png"
       alt="LaSyncro"
       sx={{ height, width: 'auto' }}
     />
