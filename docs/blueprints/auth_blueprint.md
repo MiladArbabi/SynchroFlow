@@ -57,6 +57,16 @@ Field anatomy
 - CTA: filled --accent, text --accent-ink, radius 8px, hover --accent-hover
   + translateY(-1px).
 
+Animations (subtle, CSS-only where possible)
+- lsBlink — brand-panel eyebrow dot: 2.4s ease-in-out infinite,
+  50% keyframe { opacity: .4; transform: scale(.75) }.
+- lsCell — grid-backdrop variant only: randomly placed 44px cells flare
+  orange (opacity .25 → 1 → .25 within first 14% of a 9s cycle), each with
+  a randomized animation-delay; cell positions/opacity/delay generated in
+  component state on mount, not hardcoded.
+- CTA hover: translateY(-1px) + --accent-hover, transition 0.15s.
+- Respect prefers-reduced-motion: disable lsCell and lsBlink via media query.
+
 Deltas tracked: A1–A7, A9–A10 (audit 2026-07-19). A8 (on-accent contrast)
 already shipped — design's #151D29-on-accent equals --accent-ink intent.
 
