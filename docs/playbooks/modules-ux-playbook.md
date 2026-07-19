@@ -1,6 +1,6 @@
 # LaSyncro — Modules UX Playbook
 
-> **Scope:** Webapp FT2 modules — all operator-facing surfaces.
+> **Scope:** Webapp FT2 modules — all operator-facing surfaces. Auth pages (`apps/frontend/src/pages/authentication/*`) are a **brand surface**, governed by `docs/blueprints/auth_blueprint.md` — the font ban and layout rules below do not apply there.
 > **Last updated:** 2026-07-17
 > **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sent operators to the wrong workflow (reorder vs. check receiving). Also: the `Orders/Inbound` pattern referenced in the entry below is deprecated — receiving now lives under WMS Operations (`/wms`).
 > **2026-06-21 — Suppliers Portal gained standalone supplier CRUD.** Suppliers were previously create-only inside the New-PO dialog; the portal's Suppliers list now supports add/edit/remove without a PO. Pattern: a single reusable `SupplierFormDialog` (mode `add` | `edit`) drives every supplier entry point for identical fields + validation; "Add supplier" uses the filled-accent CTA convention (per CTA-016); per-row Edit/Delete are outlined inline actions. Delete is a **soft-delete** (`active = false`) — `purchase_orders.supplier_id` is `ON DELETE RESTRICT`, so PO history is preserved and the supplier is hidden from new POs. Place record-management CRUD on the owning operational surface, not in Settings (which is for shop config, not records).
@@ -134,6 +134,7 @@ Canonical reveal control:
 - All app/module UI inherits the global app font.
 - Do not set `fontFamily` inside FT2 module components.
 - Do not use `Instrument Serif`, `DM Sans`, `DM Serif Display`, `DM Mono`, `var(--serif)`, or decorative serif fonts.
+- No exceptions: auth pages (brand surface, see Scope) follow the layout rules of the auth blueprint but use Plus Jakarta Sans like everything else (decision 2026-07-19).
 - Avoid `monospace` unless a documented exception exists for scanner/barcode/technical-code readability.
 
 ### Color Tokens

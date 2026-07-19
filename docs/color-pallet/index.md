@@ -57,6 +57,7 @@ Replace both existing `:root` blocks with this single definition. Use everywhere
   --space-4:       #2E3D62;
 
   /* Typography */
+  /* --serif intentionally aliases Plus Jakarta Sans — one font family app-wide (decision 2026-07-19); token name kept for landing-page markup compat */
   --serif: 'Plus Jakarta Sans', system-ui, sans-serif;
   --sans:  'DM Sans', system-ui, sans-serif;
 }

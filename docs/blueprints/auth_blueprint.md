@@ -12,6 +12,56 @@ LaSyncro uses a custom JWT-based auth system with email/password registration, S
 
 ---
 
+## Target Design — Auth v2 (2026-07-19, supersedes A1/A2 centered-card)
+
+Source of truth: `LaSyncro Auth.dc.html` (Claude Design bundle). Auth is a brand
+surface (see modules-ux-playbook scope carve-out) — landing-page treatment, not
+FT2 module treatment.
+
+Layout
+- Split screen: left brand panel `flex: 0 0 44%`, right form column centered,
+  form `max-width: 400px`.
+- Surface is ALWAYS dark `#151D29` (--space-1) in both color schemes — auth does
+  not follow prefers-color-scheme. AuthWrapper1 uses --space-1, not --bg.
+- Left panel: subtle 44px grid overlay + orange radial glow, logo top-left,
+  eyebrow "THE OPERATIONAL BRAIN" (accent, blinking dot), serif hero
+  "One real-time picture, finally synced up." (accent italic on last phrase),
+  subcopy, morning-brief mock card, stats footer (99.4% pick accuracy ·
+  91.2h spreadsheet work removed / mo).
+- Mobile/no-panel variant: centered form over grid backdrop (design's
+  showGridBackdrop state); existing SocialProofTicker retained bottom.
+
+Typography — Plus Jakarta Sans throughout (decision 2026-07-19)
+- Display: 700, headings 36px/1.15, accent-colored italic em (matches current
+  LoginPage headline treatment).
+- Body/UI: 300 body, 500 labels/CTAs.
+- Micro-labels: 11px, 500, uppercase, letter-spacing 0.08em, --ink-3.
+
+Per-state copy
+- Sign in: eyebrow "SIGN IN" · h "Welcome back. *Let's sync up.*" ·
+  sub "Enter your credentials to open today's brief." · labeled fields
+  (EMAIL, PASSWORD with inline "Forgot password?" right of label) ·
+  CTA "Sign in →" · trust line "No credit card · Connects to Shopify in
+  60 seconds · Cancel anytime" below divider.
+- Register: stepper 1 Account / 2 Connect store · h "Create your account.
+  *60 seconds.*" · sub "You'll connect Shopify in the next step. We never
+  store your password." · First/Last name grid, WORK EMAIL, PASSWORD with
+  3-segment strength meter + label, terms checkbox.
+- Connect store: h "Connect once." — BUT Shopify 2.3.1 interim notice flow
+  is retained until App Store approval; only heading/typography update now.
+
+Field anatomy
+- Uppercase micro-label above input; leading icon; input bg
+  rgba(255,255,255,0.04), border rgba(255,255,255,0.14), radius 8px,
+  focus border --accent.
+- CTA: filled --accent, text --accent-ink, radius 8px, hover --accent-hover
+  + translateY(-1px).
+
+Deltas tracked: A1–A7, A9–A10 (audit 2026-07-19). A8 (on-accent contrast)
+already shipped — design's #151D29-on-accent equals --accent-ink intent.
+
+---
+
 ## Architecture
 
 ### Stack
@@ -290,8 +340,9 @@ authStore.ts
 ## Design System (Auth Pages)
 
 ### Font
-
-**Plus Jakarta Sans** — loaded via Google Fonts in `apps/frontend/index.html`. Consistent across app, marketing, and landing page.
+**Plus Jakarta Sans** — everywhere, auth included (decision 2026-07-19: Auth v2
+adopts the design bundle's layout/copy/colors, NOT its typefaces). Design-spec
+serif headings map to Plus Jakarta Sans 700; body maps to 300/500 weights.
 
 ### Color tokens (CSS vars — set in themes/index.tsx)
 
@@ -312,7 +363,7 @@ authStore.ts
 
 ### Auth-specific rules
 
-- All CTA buttons: `sx={{ bgcolor: 'var(--accent)', color: '#fff', '&:hover': { bgcolor: 'var(--accent-hover)' } }}`
+- All CTA buttons: `sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent-hover)' } }}`
 - **Never** use `color="secondary"` on buttons — renders MUI amber (#F59E0B), not LaSyncro orange
 - Card: `<MainCard border boxShadow sx={{ bgcolor: 'var(--surface)', borderColor: 'var(--rule) !important' }}>`
 - Page wrapper: `<AuthWrapper1>` — sets `backgroundColor: 'var(--bg)'`
