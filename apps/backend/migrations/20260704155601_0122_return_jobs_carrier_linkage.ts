@@ -47,23 +47,49 @@ import type { Knex } from 'knex';
  *   schema first, service wiring is a separate, smaller-diff task.
  */
 export async function up(knex: Knex): Promise<void> {
-  await knex.schema.alterTable('return_jobs', (table) => {
-    table
-      .string('source', 20)
-      .notNullable()
-      .defaultTo('operator');
-    // values: 'operator' | 'carrier_webhook'
+  // IDEMPOTENCY GUARDS:
+  // Consolidation history split across two paths (see 75540ae0):
+  // - 'source' is created directly by 0008 on fresh installs, but
+  //   this migration originally ran standalone (pre-consolidation)
+  //   on databases like prod, where it already owns the column.
+  // - 'triggering_parcel_tracking_event_id' is also independently
+  //   added by 0118a (FK requires parcel_tracking_events from 0118,
+  //   which postdates this table's creation in 0008). Whichever of
+  //   0118a/0122 runs first on a given database owns the column;
+  //   the other must no-op.
+  const hasSource = await knex.schema.hasColumn('return_jobs', 'source');
+  const hasTriggeringEvent = await knex.schema.hasColumn(
+    'return_jobs',
+    'triggering_parcel_tracking_event_id',
+  );
 
-    table
-      .uuid('triggering_parcel_tracking_event_id')
-      .nullable()
-      .references('id')
-      .inTable('parcel_tracking_events')
-      .onDelete('SET NULL');
+  if (!hasSource) {
+    await knex.schema.alterTable('return_jobs', (table) => {
+      table.string('source', 20).notNullable().defaultTo('operator');
+      // values: 'operator' | 'carrier_webhook'
+      table.index(['shop_id', 'source']);
+    });
+  } else {
+    console.info(
+      '[migration 0122] return_jobs.source already present — skipping',
+    );
+  }
 
-    table.index(['triggering_parcel_tracking_event_id']);
-    table.index(['shop_id', 'source']);
-  });
+  if (!hasTriggeringEvent) {
+    await knex.schema.alterTable('return_jobs', (table) => {
+      table
+        .uuid('triggering_parcel_tracking_event_id')
+        .nullable()
+        .references('id')
+        .inTable('parcel_tracking_events')
+        .onDelete('SET NULL');
+      table.index(['triggering_parcel_tracking_event_id']);
+    });
+  } else {
+    console.info(
+      '[migration 0122] return_jobs.triggering_parcel_tracking_event_id already present — skipping',
+    );
+  }
 }
 
 export async function down(knex: Knex): Promise<void> {

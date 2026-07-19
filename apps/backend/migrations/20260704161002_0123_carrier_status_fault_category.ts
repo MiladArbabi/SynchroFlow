@@ -40,13 +40,31 @@ import type { Knex } from 'knex';
  *   generic string
  */
 export async function up(knex: Knex): Promise<void> {
+  // IDEMPOTENCY GUARD:
+  // 0118 (consolidated version) creates carrier_status_map with
+  // fault_category already built in and pre-seeded (see 0118 lines
+  // 97, 112-120). This migration originally ran standalone, before
+  // consolidation, on databases like prod, where it still owns the
+  // column and backfill. On fresh installs seeded from 0118 directly,
+  // both the column and the backfill values already exist — skip both.
+  const hasFaultCategory = await knex.schema.hasColumn(
+    'carrier_status_map',
+    'fault_category',
+  );
+
+  if (hasFaultCategory) {
+    console.info(
+      '[migration 0123] carrier_status_map.fault_category already present (added by 0118) — skipping',
+    );
+    return;
+  }
+
   await knex.schema.alterTable('carrier_status_map', (table) => {
     table
       .string('fault_category', 20)
       .nullable()
       .checkIn(['carrier_fault', 'customer_fault', 'unknown']);
   });
-
   // Only the two raw_status strings whose wording is itself unambiguous.
   // Every other 'exception' or 'returned' row is deliberately left as
   // 'unknown' — see up() comment above for why that's correct, not lazy.
