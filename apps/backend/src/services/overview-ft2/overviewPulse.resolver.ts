@@ -32,12 +32,18 @@ export interface OverviewPulse {
 }
 
 export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
-  // --- Financial anchor: today + yesterday gross revenue ---
-  const revenueRows = await db('revenue_projection_daily')
-    .where({ shop_id: shopId })
-    .orderBy('revenue_date', 'desc')
-    .limit(2)
-    .select('revenue_date', 'gross_revenue');
+  return db.transaction(async (trx) => {
+    // Both revenue_projection_daily and orders_operational_control_snapshot
+    // have strict RLS policies requiring app.current_tenant. Without SET LOCAL
+    // both queries silently return zero rows even with an explicit shop_id filter.
+    // This function owns its queries and therefore owns its own tenant context.
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+    const revenueRows = await trx('revenue_projection_daily')
+      .where({ shop_id: shopId })
+      .orderBy('revenue_date', 'desc')
+      .limit(2)
+      .select('revenue_date', 'gross_revenue');
 
   const revenueToday =
     revenueRows[0]?.gross_revenue != null
@@ -52,16 +58,16 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
       ? revenueToday - revenueYesterday
       : null;
 
-  // --- Operational revenue control: latest snapshot_date row ---
-  const opctl = await db('orders_operational_control_snapshot')
-    .where({ shop_id: shopId })
-    .orderBy('snapshot_date', 'desc')
-    .first(
-      'realized_revenue',
-      'at_risk_revenue',
-      'blocked_revenue',
-      'top_blocking_type'
-    );
+   // --- Operational revenue control: latest snapshot_date row ---
+   const opctl = await trx('orders_operational_control_snapshot')
+      .where({ shop_id: shopId })
+      .orderBy('snapshot_date', 'desc')
+      .first(
+        'realized_revenue',
+        'at_risk_revenue',
+        'blocked_revenue',
+        'top_blocking_type'
+      );
 
   return {
     revenueToday,
@@ -73,5 +79,6 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
     blockedRevenue:
       opctl?.blocked_revenue != null ? Number(opctl.blocked_revenue) : null,
     topBlockingType: opctl?.top_blocking_type ?? null,
-  };
+    };
+  });
 }

@@ -599,3 +599,4 @@ Implementation log
   - C3' (2026-07-19): AuthGridBackdrop.tsx shipped (reusable, aria-hidden,
   pointer-events none, prefers-reduced-motion → static). Brand panel (A4)
   closed won't-do — backdrop-only direction chosen.
+  
