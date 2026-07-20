@@ -287,16 +287,69 @@ export default function OverviewPageFT2() {
   let mapContent: React.ReactNode | undefined;
   if (!hasMapTier) {
     mapContent = undefined; // Core/Starter — triage layout (with upgrade teaser)
+  // AFTER
   } else if (floorPlanning.isLoading) {
-    // Growth/Scale — stable loading skeleton, NOT triage fallback
+    // Growth/Scale — shimmer skeleton holds the map slot.
+    // OV-01: Never falls to triage. Resolves to error after 9s timeout (useFloorPlanning).
     mapContent = (
       <Box sx={{
         height: 520, borderRadius: '14px', overflow: 'hidden',
         border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        p: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px',
+        '@keyframes lsShimmer': {
+          '0%': { opacity: 0.45 }, '50%': { opacity: 0.9 }, '100%': { opacity: 0.45 },
+        },
       }}>
-        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-          Loading floor data…
+        <Box sx={{ width: 140, height: 14, borderRadius: '4px', bgcolor: 'rgba(255,255,255,0.07)', animation: 'lsShimmer 1.6s ease-in-out infinite' }} />
+        <Box sx={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gridTemplateRows: 'repeat(3,1fr)', gap: '12px', mt: '8px' }}>
+          {Array.from({ length: 12 }, (_, i) => (
+            <Box key={i} sx={{ borderRadius: '10px', bgcolor: 'rgba(255,255,255,0.045)', animation: 'lsShimmer 1.6s ease-in-out infinite', animationDelay: `${i * 0.12}s` }} />
+          ))}
+        </Box>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+          Checking your floor…
+        </Typography>
+      </Box>
+    );
+  } else if (floorPlanning.isError) {
+    // OV-01: Floor service failed or timed out — explicit recovery state with retry.
+    // Without this branch isError silently falls to zones.length === 0, showing
+    // "Build your floor" to a user who already has a configured floor.
+    mapContent = (
+      <Box sx={{
+        height: 520, borderRadius: '14px', overflow: 'hidden',
+        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center',
+        justifyContent: 'center', gap: '16px', p: '40px', textAlign: 'center',
+      }}>
+        <Box sx={{
+          width: 44, height: 44, borderRadius: '50%',
+          border: '1px solid rgba(229,72,77,0.35)', bgcolor: 'rgba(229,72,77,0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#F2555A" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 9v4M12 17h.01" /><circle cx="12" cy="12" r="9" />
+          </svg>
+        </Box>
+        <Typography sx={{ fontSize: 21, fontFamily: 'Instrument Serif', color: 'var(--ink)' }}>
+          We couldn't load your floor.
+        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', lineHeight: 1.6, maxWidth: 340 }}>
+          The floor service didn't respond. Your data is safe — nothing has changed in your warehouse.
+        </Typography>
+        <Box
+          onClick={() => floorPlanning.refetch()}
+          sx={{
+            display: 'flex', alignItems: 'center', gap: '8px', fontSize: 12.5,
+            fontWeight: 500, color: '#10151E', bgcolor: 'var(--accent)',
+            borderRadius: '8px', px: '20px', py: '10px', cursor: 'pointer',
+            '&:hover': { opacity: 0.85 },
+          }}
+        >
+          Retry
+        </Box>
+        <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)' }}>
+          Error FL-503 · last tried just now
         </Typography>
       </Box>
     );
