@@ -15,6 +15,10 @@ export function useFloorPlanning() {
     queryKey: ['floor-planning', 'layout'],
     queryFn: () =>
       axiosInstance.get('/api/v1/floor-planning/layout').then((r) => r.data),
+    // OV-ENTRY-001: Keep previous data during background refetch to prevent
+    // Overview layout from flashing back to Core triage on every navigation.
+    staleTime: 60_000,
+    placeholderData: (prev) => prev,
   });
 
   return { data, isLoading, isError, refetch };

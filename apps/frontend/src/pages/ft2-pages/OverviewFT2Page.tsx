@@ -238,12 +238,14 @@ export default function OverviewPageFT2() {
   const morningBrief = useMorningBriefSnapshot(forceRefresh, !authLoading);
 
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
-  const { displayCurrency, tier } = useEntitlements();
+  const { displayCurrency, tier, hasResolved: entitlementsResolved } = useEntitlements();
 
   // Map data — all hooks unconditional (Rules of Hooks); data ignored when tier doesn't qualify.
   // Occupancy deferred until zones are loaded (enabled guard) to avoid a redundant request
   // on first paint. Per overview-live-map-playbook.md §3 and §4.
-  const hasMapTier = tier === 'scale' || tier === 'growth';
+  // OV-ENTRY-001: hasMapTier must be false until entitlements resolve.
+  // Prevents premature triage-layout flash while /api/v1/entitlements is in flight.
+  const hasMapTier = entitlementsResolved && (tier === 'scale' || tier === 'growth');
   const floorPlanning = useFloorPlanning();
   const zones = floorPlanning.data?.zones ?? [];
   const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
@@ -278,26 +280,29 @@ export default function OverviewPageFT2() {
     },
   ] : [];
 
-  // Three-branch gate — see playbook §3.
-  // mapContent=undefined → OverviewModuleFT2 renders triage fallback layout (non-scale teaser TODO).
-    const mapContent = (hasMapTier && !floorPlanning.isLoading) ? (
-    zones.length > 0 ? (
-      // Live map — occupancy overlay on by default
-      <Box sx={{ height: 520, borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)' }}>
-        <IsometricCanvas
-          zones={zones}
-          occupancy={occupancyQuery.data?.occupancy}
-          stations={stations}
-          liveActivity={liveActivity}
-          showLegend={false}
-          showControls={false}
-          disablePan
-          autoFit
-          fitPadding={0.68}
-        />
+    // Three-branch gate — see playbook §3.
+  // OV-ENTRY-001: Growth/Scale users must NEVER see Core triage layout,
+  // even while floor data is loading. A stable loading placeholder occupies
+  // the map slot until zones are known.
+  let mapContent: React.ReactNode | undefined;
+  if (!hasMapTier) {
+    mapContent = undefined; // Core/Starter — triage layout (with upgrade teaser)
+  } else if (floorPlanning.isLoading) {
+    // Growth/Scale — stable loading skeleton, NOT triage fallback
+    mapContent = (
+      <Box sx={{
+        height: 520, borderRadius: '14px', overflow: 'hidden',
+        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+          Loading floor data…
+        </Typography>
       </Box>
-    ) : (
-      // Teaching empty state — no zones configured yet (issue #1040)
+    );
+  } else if (zones.length === 0) {
+    // Teaching empty state — no zones configured yet (issue #1040)
+    mapContent = (
       <Box sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', minHeight: 420, bgcolor: 'var(--surface)',
@@ -311,13 +316,30 @@ export default function OverviewPageFT2() {
         </Typography>
         <Box
           onClick={() => navigate('/floor-planning')}
-          sx={{ display: 'inline-flex', alignItems: 'center', px: '14px', py: '7px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', px: '14px', py: '7px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 }}}
         >
           Set up floor planning →
         </Box>
       </Box>
-    )
-  ) : undefined;
+    );
+  } else {
+    // Live map — occupancy overlay on by default
+    mapContent = (
+      <Box sx={{ height: 520, borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)' }}>
+        <IsometricCanvas
+          zones={zones}
+          occupancy={occupancyQuery.data?.occupancy}
+          stations={stations}
+          liveActivity={liveActivity}
+          showLegend={false}
+          showControls={false}
+          disablePan
+          autoFit
+          fitPadding={0.68}
+        />
+      </Box>
+    );
+  }
 
   if (overviewModules.isPending) return null;
   if (overviewModules.isError) return null;
