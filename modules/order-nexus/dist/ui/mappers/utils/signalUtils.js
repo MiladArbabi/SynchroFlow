@@ -1,0 +1,70 @@
+/**
+ * Signal Utility Helpers
+ * ----------------------
+ *
+ * Shared helpers used by the operational
+ * signal engine.
+ *
+ * These utilities are intentionally stateless
+ * and deterministic.
+ */
+/**
+ * Generate deterministic signal ID namespace.
+ */
+export function signalId(type) {
+    return `orders:${type}`;
+}
+/**
+ * Prevent log spam by warning only once per key.
+ */
+export function warnOnce(registry, key, message, payload, maxSize = 100) {
+    const alreadySeen = registry.has(key);
+    if (!alreadySeen) {
+        if (registry.size >= maxSize) {
+            console.warn('[OperationalSignals] metricWarningRegistry capacity reached — registry cleared');
+            registry.clear();
+        }
+        registry.add(key);
+        console.warn(message, payload);
+    }
+    else {
+        console.debug('[OperationalSignals] duplicate metric warning suppressed', { key });
+    }
+}
+/**
+ * Normalize snapshot metric values.
+ */
+export function safeMetric(value, warn, maxValue = 100000) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+        warn(`invalid-${value}`, '[OperationalSignals] Invalid snapshot metric', { value });
+        return 0;
+    }
+    if (n < 0) {
+        warn(`negative-${value}`, '[OperationalSignals] Negative snapshot metric', { value });
+        return 0;
+    }
+    if (n > maxValue) {
+        warn(`excessive-${n}`, '[OperationalSignals] Excessive snapshot metric', { value: n });
+        return maxValue;
+    }
+    return n;
+}
+/**
+ * Deterministic severity escalation
+ * ---------------------------------
+ *
+ * Operational signals must not depend on wall-clock time.
+ * Severity escalation must therefore be driven by
+ * projection metrics or explicit lifecycle transitions.
+ *
+ * Current behavior:
+ * - Pass-through severity
+ * - Lifecycle engine responsible for escalation in future
+ *
+ * This preserves deterministic rebuild guarantees.
+ */
+export function escalateSeverity(severity, _detectedAt, _evaluationTime) {
+    return severity;
+}
+//# sourceMappingURL=signalUtils.js.map

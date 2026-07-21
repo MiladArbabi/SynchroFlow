@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "clean": "rm -rf dist *.tsbuildinfo",
-    "build": "tsc -b"
+    "build": "tsc -b tsconfig.json --force"
   },
   "dependencies": {
     "@lasyncro/epistemic": "0.1.0",

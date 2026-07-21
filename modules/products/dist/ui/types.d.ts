@@ -1,0 +1,1 @@
+export type ProductsFt1Scenario = 'NO_PRODUCTS' | 'PRODUCT_DATA_INCOMPLETE' | 'PARTIALLY_READY' | 'HEALTHY';

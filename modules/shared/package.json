@@ -5,7 +5,7 @@
   "types": "dist/index.d.ts",
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc --build tsconfig.build.json"
   },
   "exports": {
     ".": {
@@ -29,14 +29,13 @@
       "default": "./dist/ui-contracts.js"
     },
     "./contracts/*": {
-     "types": "./dist/contracts/*.d.ts",
-     "default": "./dist/contracts/*.js"
-   },
-
-   "./activation/*": {
-     "types": "./dist/activation/*.d.ts",
-     "default": "./dist/activation/*.js"
-   }
+      "types": "./dist/contracts/*.d.ts",
+      "default": "./dist/contracts/*.js"
+    },
+    "./activation/*": {
+      "types": "./dist/activation/*.d.ts",
+      "default": "./dist/activation/*.js"
+    }
   },
   "files": [
     "dist"
