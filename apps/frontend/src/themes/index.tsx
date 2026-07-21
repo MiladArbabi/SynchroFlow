@@ -153,6 +153,14 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--confirm-ghost':  '#E8F5E9',
           '--confirm-border': '#A5D6A7',
           '--confirm-ink':    '#2E7D32',
+          // Warning/idle-state indicator ONLY — same scoped-use pattern as
+          // --confirm-*. Anchored to #EAB308, the amber already used ad hoc
+          // in ShopSettingsWarehousePage.tsx (unlabeled coverage, printer
+          // detection). Formalized here so future warning states reference
+          // a token instead of repeating the hardcoded hex.
+          '--warning-ghost':  '#FEF9E7',
+          '--warning-border': '#FDE68A',
+          '--warning-ink':    '#EAB308',
           '--bg':            '#FAFAF8',
           '--bg-2':          '#F3F2EF',
           '--bg-3':          '#E8E6E0',
@@ -220,6 +228,9 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--confirm-ghost':  'rgba(76,175,80,0.12)',
           '--confirm-border': 'rgba(76,175,80,0.35)',
           '--confirm-ink':    '#66BB6A',
+          '--warning-ghost':  'rgba(234,179,8,0.12)',
+          '--warning-border': 'rgba(234,179,8,0.35)',
+          '--warning-ink':    '#EAB308',
           '--bg':            '#151D29',
           '--bg-2':          '#1C2740',
           '--bg-3':          '#243050',
