@@ -19,6 +19,7 @@ import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
 import type { SyntheticStation, LiveBinActivity, WarehouseZone } from '@lasyncro/shared/ui';
 import { sendEvent } from 'analytics/adapter';
+import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 
 const LIVE_MAP_TEASER_DISMISS_KEY = 'overview-live-map-teaser-dismissed';
 
@@ -247,8 +248,9 @@ export default function OverviewPageFT2() {
   // Prevents premature triage-layout flash while /api/v1/entitlements is in flight.
   const hasMapTier = entitlementsResolved && (tier === 'scale' || tier === 'growth');
   const floorPlanning = useFloorPlanning();
-  const zones = [];
+  const zones = floorPlanning.data?.zones ?? [];
   const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
+  const idleAlerts = useIdleAlerts(hasMapTier && zones.length > 0);
   // useOrderPool provides inbound apron data (eligible_order_count, summary.blocked_count).
   // Data consumed by apron stations prop once SyntheticStation lands in v1-B task 4.
   const orderPool = useOrderPool();
@@ -292,7 +294,7 @@ export default function OverviewPageFT2() {
     // OV-01: Never falls to triage. Resolves to error after 9s timeout (useFloorPlanning).
     mapContent = (
       <Box sx={{
-        height: 520, borderRadius: '14px', overflow: 'hidden',
+        minHeight: 520, height: '100%', borderRadius: '14px', overflow: 'hidden',
         border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
         p: '22px 24px', display: 'flex', flexDirection: 'column', gap: '12px',
         '@keyframes lsShimmer': {
@@ -316,7 +318,7 @@ export default function OverviewPageFT2() {
     // "Build your floor" to a user who already has a configured floor.
     mapContent = (
       <Box sx={{
-        height: 520, borderRadius: '14px', overflow: 'hidden',
+        minHeight: 520, height: '100%', borderRadius: '14px', overflow: 'hidden',
         border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', gap: '16px', p: '40px', textAlign: 'center',
@@ -372,7 +374,7 @@ export default function OverviewPageFT2() {
     mapContent = (
       <Box sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
-        justifyContent: 'center', minHeight: 420, bgcolor: 'var(--surface)',
+        justifyContent: 'center', minHeight: 420, height: '100%', bgcolor: 'var(--surface)',
         border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden',
       }}>
         <Box sx={{
@@ -390,7 +392,7 @@ export default function OverviewPageFT2() {
             </Typography>
           </Box>
           <Typography sx={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
-            Build your floor. <Box component="span" sx={{ fontStyle: 'italic', fontWeight: 400 }}>See it move.</Box>
+            Build your floor.
           </Typography>
           <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', maxWidth: 420, lineHeight: 1.65 }}>
             Map your warehouse zones once — receiving, racking, pick faces, packing — and this canvas turns into live inventory movement, picking activity and bottlenecks.
@@ -451,19 +453,63 @@ export default function OverviewPageFT2() {
     );
   } else {
     // Live map — occupancy overlay on by default
+    // OV-09: idle-pick/pack rail replaces the mockup's static stage-count
+    // footer with real signal — idleAlerts sources GET /api/v1/alerts
+    // filtered to wms_operator_idle (same alerts table "Needs a decision"
+    // reads from), not fabricated activity counts.
+    const hasIdleAlerts = idleAlerts.alerts.length > 0;
     mapContent = (
-      <Box sx={{ height: 520, borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)' }}>
-        <IsometricCanvas
-          zones={zones}
-          occupancy={occupancyQuery.data?.occupancy}
-          stations={stations}
-          liveActivity={liveActivity}
-          showLegend={false}
-          showControls={false}
-          disablePan
-          autoFit
-          fitPadding={0.68}
-        />
+      <Box sx={{
+        minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
+        borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)',
+      }}>
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <IsometricCanvas
+            zones={zones}
+            occupancy={occupancyQuery.data?.occupancy}
+            stations={stations}
+            liveActivity={liveActivity}
+            showLegend={false}
+            showControls={false}
+            disablePan
+            autoFit
+            fitPadding={0.68}
+          />
+        </Box>
+        <Box sx={{
+          display: 'flex', alignItems: 'center', gap: '10px', px: '16px', py: '11px',
+          borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0,
+        }}>
+          {hasIdleAlerts ? (
+            <>
+              <Box sx={{
+                width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--warning-ink)', flexShrink: 0,
+                '@keyframes ov09Pulse': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.4 } },
+                animation: 'ov09Pulse 2s ease-in-out infinite',
+              }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>
+                {idleAlerts.alerts.length} idle {idleAlerts.alerts.length === 1 ? 'operator' : 'operators'}
+              </Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+                — {idleAlerts.alerts[0].message}
+              </Typography>
+            </>
+          ) : (
+            <>
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--confirm-ink)', flexShrink: 0 }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+                All pickers and packers active
+              </Typography>
+            </>
+          )}
+          <Box sx={{ flex: 1 }} />
+          <Box
+            onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
+            sx={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', flexShrink: 0, '&:hover': { opacity: 0.75 } }}
+          >
+            Open floor →
+          </Box>
+        </Box>
       </Box>
     );
   }
