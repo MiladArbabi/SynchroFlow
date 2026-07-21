@@ -38,12 +38,14 @@ export const httpGetAlerts = async (req: Request, res: Response) => {
 
     const status = (req.query.status as string) ?? 'inbox';
     const limit  = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 50));
-
+    const alertType = req.query.alert_type as string | undefined;
     const alerts = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
       const q = trx('alerts')
         .where({ shop_id: shopId })
+        .modify((qb) => {
+          if (alertType) qb.where({ alert_type: alertType });
+        })
         .orderByRaw(`
           CASE severity
             WHEN 'critical' THEN 1
