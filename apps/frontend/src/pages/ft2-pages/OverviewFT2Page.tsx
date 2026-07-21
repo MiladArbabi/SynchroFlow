@@ -247,7 +247,7 @@ export default function OverviewPageFT2() {
   // Prevents premature triage-layout flash while /api/v1/entitlements is in flight.
   const hasMapTier = entitlementsResolved && (tier === 'scale' || tier === 'growth');
   const floorPlanning = useFloorPlanning();
-  const zones = floorPlanning.data?.zones ?? [];
+  const zones = [];
   const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
   // useOrderPool provides inbound apron data (eligible_order_count, summary.blocked_count).
   // Data consumed by apron stations prop once SyntheticStation lands in v1-B task 4.
@@ -354,23 +354,98 @@ export default function OverviewPageFT2() {
     );
   } else if (zones.length === 0) {
     // Teaching empty state — no zones configured yet (issue #1040)
+    // OV-03: expanded to match activation mockup — progress framing, feature
+    // chips, friction-reducer copy, 4-step rail. Rail state is intentionally
+    // partial (Option A): only "Connect Shopify" and "Map zones" reflect real
+    // data. "Print barcodes"/"Invite pickers" have no backing endpoint or role
+    // concept yet (see OV-05 follow-up) and render as static unchecked steps.
+    // OV-03 fidelity pass: chip dots use var(--accent) uniformly — no green/
+    // amber tokens exist for general decorative use (--confirm-ink is scoped
+    // to persisted-state only, per playbook §10); mockup's multi-color dots
+    // were non-semantic and would have required hardcoding, which is banned.
+    const activationSteps = [
+      { label: 'Connect Shopify', done: true },
+      { label: 'Map warehouse zones', done: zones.length > 0, active: zones.length === 0 },
+      { label: 'Print location barcodes', done: false, active: false },
+      { label: 'Invite your pickers', done: false, active: false },
+    ];
     mapContent = (
       <Box sx={{
         display: 'flex', flexDirection: 'column', alignItems: 'center',
         justifyContent: 'center', minHeight: 420, bgcolor: 'var(--surface)',
-        border: '0.5px solid var(--rule)', borderRadius: '14px', gap: '12px', p: '2rem',
+        border: '0.5px solid var(--rule)', borderRadius: '14px', overflow: 'hidden',
       }}>
-        <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>
-          Build your floor
-        </Typography>
-        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', textAlign: 'center', maxWidth: 280, lineHeight: 1.6 }}>
-          Add your warehouse zones to see live operations here.
-        </Typography>
-        <Box
-          onClick={() => navigate('/floor-planning')}
-          sx={{ display: 'inline-flex', alignItems: 'center', px: '14px', py: '7px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 }}}
-        >
-          Set up floor planning →
+        <Box sx={{
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          justifyContent: 'center', textAlign: 'center', gap: '14px', p: '2.75rem 2rem',
+        }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Box sx={{
+              width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)',
+              '@keyframes ov03Blink': { '0%,100%': { opacity: 1 }, '50%': { opacity: 0.35 } },
+              animation: 'ov03Blink 2.4s ease-in-out infinite',
+            }} />
+            <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              Next step · 2 of 4
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: 17, fontWeight: 500, color: 'var(--ink)' }}>
+            Build your floor. <Box component="span" sx={{ fontStyle: 'italic', fontWeight: 400 }}>See it move.</Box>
+          </Typography>
+          <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)', maxWidth: 420, lineHeight: 1.65 }}>
+            Map your warehouse zones once — receiving, racking, pick faces, packing — and this canvas turns into live inventory movement, picking activity and bottlenecks.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: '8px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            {['Live stock by zone', 'Picker paths', 'Bottleneck alerts'].map((chip) => (
+              <Box key={chip} sx={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: 12, fontWeight: 300, color: 'var(--ink-2)', border: '0.5px solid var(--rule)', borderRadius: '999px', px: '12px', py: '5px' }}>
+                <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--accent)' }} />
+                {chip}
+              </Box>
+            ))}
+          </Box>
+          <Box
+            onClick={() => navigate('/floor-planning')}
+            sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', mt: '6px', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
+          >
+            Set up floor planning →
+          </Box>
+          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+            Takes about 10 minutes · You can start with one zone
+          </Typography>
+        </Box>
+        <Box sx={{
+          width: '100%', display: 'grid', gridTemplateColumns: 'repeat(4, minmax(140px, 1fr))',
+          borderTop: '0.5px solid var(--rule)', bgcolor: 'var(--bg)',
+        }}>
+          {activationSteps.map((step, i) => (
+            <Box key={step.label} sx={{
+              display: 'flex', alignItems: 'center', gap: '9px', px: '14px', py: '12px',
+              borderRight: i < activationSteps.length - 1 ? '0.5px solid var(--rule)' : 'none',
+              minWidth: 0,
+            }}>
+              {step.done ? (
+                <Box sx={{ width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', bgcolor: 'var(--confirm-ink)' }}>
+                  <Typography sx={{ fontSize: 10, color: 'var(--surface)', fontWeight: 700, lineHeight: 1 }}>✓</Typography>
+                </Box>
+              ) : (
+                <Box sx={{
+                  width: 18, height: 18, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  borderRadius: '50%', border: `0.5px solid ${step.active ? 'var(--accent)' : 'var(--rule)'}`,
+                }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, color: step.active ? 'var(--accent)' : 'var(--ink-3)' }}>
+                    {i + 1}
+                  </Typography>
+                </Box>
+              )}
+              <Typography sx={{
+                fontSize: 12, fontWeight: step.active ? 500 : 300,
+                color: step.done ? 'var(--ink-2)' : step.active ? 'var(--ink)' : 'var(--ink-3)',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              }}>
+                {step.label}
+              </Typography>
+            </Box>
+          ))}
         </Box>
       </Box>
     );
