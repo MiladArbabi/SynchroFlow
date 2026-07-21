@@ -89,19 +89,18 @@ apps/*/dist/**
 /apps/**/dist/
 /apps/**/dist/**
 
-/modules/*/dist/
-modules/*/dist/**
-/modules/**/dist/
-/modules/**/dist/**
 
 # Vite / frontend build artefacts
 /dist/
 /build/
+/.turbo/
+**/.next/cache/
 
 # TypeScript build info
 *.tsbuildinfo
 **/*.tsbuildinfo
 tsconfig.tsbuildinfo
+tsconfig.*.tsbuildinfo
 
 # logs
 npm-debug.log*

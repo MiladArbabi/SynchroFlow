@@ -4,20 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json"
-  },
-  "dependencies": {
-    "@lasyncro/epistemic": "0.1.0",
-    "@lasyncro/ui-ft2": "0.1.0"
+    "build": "echo 'deprecated - no build needed'"
   },
   "exports": {
     ".": {
-      "types": "./dist/ui/index.d.ts",
-      "default": "./dist/ui/index.js"
+      "default": "./ModuleEntry.stub.js"
     },
     "./ui": {
-      "types": "./dist/ui/index.d.ts",
-      "default": "./dist/ui/index.js"
+      "default": "./ModuleEntry.stub.js"
     }
   }
 }

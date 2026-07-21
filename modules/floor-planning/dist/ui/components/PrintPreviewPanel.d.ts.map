@@ -1,0 +1,1 @@
+{"version":3,"file":"PrintPreviewPanel.d.ts","sourceRoot":"","sources":["../../../src/ui/components/PrintPreviewPanel.tsx"],"names":[],"mappings":"AAcA,OAAO,KAAK,EAAE,aAAa,EAAE,MAAM,qBAAqB,CAAC;AAsEzD,UAAU,sBAAsB;IAC9B,aAAa,EAAE,aAAa,EAAE,CAAC;CAChC;AAED,wBAAgB,iBAAiB,CAAC,EAAE,aAAa,EAAE,EAAE,sBAAsB,2CAkJ1E"}

@@ -6,14 +6,17 @@
     "jsx": "react-jsx",
     "strict": true,
     "composite": true,
-"incremental": true,
-"declaration": true,
+    "incremental": true,
+    "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "./dist/ui",
     "rootDir": "./src/ui",
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "noEmit": false
   },
-  "include": ["src/ui/**/*"]
+  "include": [
+    "src/ui/**/*"
+  ]
 }

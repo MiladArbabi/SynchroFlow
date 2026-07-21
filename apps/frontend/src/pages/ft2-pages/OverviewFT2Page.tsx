@@ -287,7 +287,6 @@ export default function OverviewPageFT2() {
   let mapContent: React.ReactNode | undefined;
   if (!hasMapTier) {
     mapContent = undefined; // Core/Starter — triage layout (with upgrade teaser)
-  // AFTER
   } else if (floorPlanning.isLoading) {
     // Growth/Scale — shimmer skeleton holds the map slot.
     // OV-01: Never falls to triage. Resolves to error after 9s timeout (useFloorPlanning).

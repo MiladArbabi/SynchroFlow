@@ -6,6 +6,7 @@ import { axiosInstance } from 'api/axiosConfig';
 export type DemandVelocity = {
   lasyncro_variant_id: string;
   title: string | null;
+  product_title: string | null;
   sku: string | null;
   unit_cost: number | null;
   available_quantity: number;

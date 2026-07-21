@@ -6,7 +6,7 @@
   "type": "module",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+  "build": "tsc -b tsconfig.build.json"
   },
   "files": ["dist"],
   "exports": {

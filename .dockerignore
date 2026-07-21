@@ -1,15 +1,78 @@
-node_modules
-.git
-.claude
+# Dependencies
+**/node_modules/
 
-# Do not ship unrelated apps to Fly
-apps/marketing
-apps/mobile
-apps/integration-service
+# Apps not deployed to Fly
+apps/marketing/
+apps/mobile/
+apps/integration-service/
 
-# Keep frontend source in Docker build so app.lasyncro.com can serve it
-apps/frontend/node_modules
+# Build artifacts & caches (monorepo-wide)
+# App-level build artifacts only — modules/*/dist and packages/*/dist
+# are required for TS resolution and must reach the Docker build context.
+apps/*/dist/
+apps/**/dist/
+**/build/
+**/out/
+**/.turbo/
+**/.next/
+**/*.tsbuildinfo
 
+# Local dev data (the 50 MB killer)
+dev-db-data/
+
+# Docs
+docs/
+
+# Testing & coverage
+coverage/
+*.test.*
+*.spec.*
+playwright-report/
+test-results/
+.nyc_output/
+
+# C++ / Core Engine
+apps/core-engine/build/
+apps/core-engine/CMakeFiles/
+*.o
+*.so
+*.a
+*.obj
+*.lib
+*.exe
+
+# Python / AI Engine
+apps/ai-engine/venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Backend
+apps/backend/migrations_legacy/
+
+#Packages
+packages/landing-page/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Git, IDE, OS
+.git/
+.gitignore
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+.env.*
+
+# Misc
 *.md
-.env*
-apps/backend/node_modules
+.claude/
+material-dashboard-react-main/
