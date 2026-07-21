@@ -23,15 +23,21 @@ export async function httpGetLayout(req: Request, res: Response) {
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const zones = await trx('warehouse_locations')
+      // Check whether the warehouses table exists in this environment.
+      // Production schema predates migration 0048's warehouses table creation —
+      // the join crashes with 'relation does not exist' on prod, returning 500.
+      // Fall back to null for warehouse_name when the table is absent.
+      const warehousesExist = await trx.raw(`
+        SELECT EXISTS (
+          SELECT 1 FROM information_schema.tables
+          WHERE table_schema = 'public' AND table_name = 'warehouses'
+        ) as exists
+      `);
+      const hasWarehousesTable = warehousesExist.rows[0]?.exists === true;
+
+      const zonesQuery = trx('warehouse_locations')
         .where({ 'warehouse_locations.shop_id': shopId })
         .orderBy('warehouse_locations.location_code', 'asc')
-        // Join warehouses to resolve editable name for root warehouse node.
-        // warehouse_name is non-null only on type='warehouse' rows; null on all others.
-        .leftJoin('warehouses as w', function () {
-          this.on('w.root_location_code', 'warehouse_locations.location_code')
-              .andOn('w.shop_id', trx.raw('?', [shopId]));
-        })
         .select(
           'warehouse_locations.location_code',
           'warehouse_locations.type',
@@ -50,9 +56,23 @@ export async function httpGetLayout(req: Request, res: Response) {
           'warehouse_locations.rack_levels',
           'warehouse_locations.zone_type',
           'warehouse_locations.last_printed_at',
-          // Editable warehouse name — null for non-warehouse locations (§10.5)
-          'w.name as warehouse_name',
         );
+
+      if (hasWarehousesTable) {
+        // Join warehouses to resolve editable name for root warehouse node.
+        // warehouse_name is non-null only on type='warehouse' rows; null on all others.
+        zonesQuery
+          .leftJoin('warehouses as w', function () {
+            this.on('w.root_location_code', 'warehouse_locations.location_code')
+                .andOn('w.shop_id', trx.raw('?', [shopId]));
+          })
+          .select('w.name as warehouse_name');
+      } else {
+        // warehouses table absent in this environment — return null for warehouse_name.
+        zonesQuery.select(trx.raw('null as warehouse_name'));
+      }
+
+      const zones = await zonesQuery;
 
       const productBarcodes = await trx('variants as v')
         .leftJoin('external_product_identity_map as ep', function () {
