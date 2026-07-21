@@ -45,8 +45,35 @@ export const MODULE_ONBOARDING_MANIFESTS: Array<
       }
     ]
   },
-
-    {
+  {
+    moduleId: 'wms',
+    displayName: 'Warehouse Operations',
+    requiredSignals: [
+      'wms.zonesConfigured',
+      'wms.barcodesPrinted'
+    ],
+    tasks: [
+      {
+        id: 'map-zones',
+        label: 'Map your warehouse zones',
+        required: false,
+        completionRules: [
+          { signal: 'wms.zonesConfigured', expectedValue: true }
+        ],
+        action: { type: 'navigate', target: '/floor-planning' }
+      },
+      {
+        id: 'print-barcodes',
+        label: 'Print your first location barcode',
+        required: false,
+        completionRules: [
+          { signal: 'wms.barcodesPrinted', expectedValue: true }
+        ],
+        action: { type: 'navigate', target: '/floor-planning' }
+      }
+    ]
+  },
+  {
     moduleId: 'order-nexus',
       displayName: 'Orders & Profitability',
       requiredSignals: [

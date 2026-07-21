@@ -214,9 +214,23 @@ export const returnNexusOnboardingSignalProvider: OnboardingSignalProvider = {
 export const wmsOnboardingSignalProvider: OnboardingSignalProvider = {
   moduleId: 'wms',
   async getSignals({ shopId }: { shopId: number; userId?: number }): Promise<ReadinessSignal[]> {
-    // Stubbed: FT0 does not yet expose WMS flows.
+    const zonesRow = await db('warehouse_locations')
+      .where({ shop_id: shopId })
+      .count<{ count: string }>('location_code as count')
+      .first();
+    const zonesConfigured = Number(zonesRow?.count ?? 0) > 0;
+
+    const printedRow = await db('warehouse_locations')
+      .where({ shop_id: shopId })
+      .whereNotNull('last_printed_at')
+      .count<{ count: string }>('location_code as count')
+      .first();
+    const barcodesPrinted = Number(printedRow?.count ?? 0) > 0;
+
     return [
-      { name: 'wms.enabled', value: false }
+      { name: 'wms.enabled', value: zonesConfigured },
+      { name: 'wms.zonesConfigured', value: zonesConfigured },
+      { name: 'wms.barcodesPrinted', value: barcodesPrinted }
     ];
   }
 };
