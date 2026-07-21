@@ -295,7 +295,7 @@ function UnitLabelCoverageSection() {
 
   const { data: settingsData } = useWmsSettings();
   const { mutate: patchFallback, isPending: isTogglingFallback } = usePatchLegacyFallback();
-  const legacyFallbackEnabled = settingsData?.settings.legacy_barcode_fallback_enabled ?? true;
+    const legacyFallbackEnabled = settingsData?.settings?.legacy_barcode_fallback_enabled ?? true;
 
   const pct     = data?.coverage_pct ?? 0;
   const total   = data?.total_active_units ?? 0;
