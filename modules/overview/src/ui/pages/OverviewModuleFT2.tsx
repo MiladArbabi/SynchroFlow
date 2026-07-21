@@ -407,32 +407,13 @@ function BusinessPulse({
         </Box>
       ))}
 
-      <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 1.25, bgcolor: 'var(--bg)' }}>
+      <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 2, bgcolor: 'var(--bg)' }}>
         {activeStages.map(stage => (
           <Box
             key={stage.key}
             sx={{ width: `${(stage.count / stageTotal) * 100}%`, bgcolor: stage.color }}
           />
         ))}
-      </Box>
-
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px', mb: 2 }}>
-        {activeStages.map(stage => (
-          <Box key={stage.key} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Box sx={{ width: 7, height: 7, borderRadius: '2px', bgcolor: stage.color, flexShrink: 0 }} />
-            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>{stage.label}</Typography>
-            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)' }}>{fmt(stage.count)}</Typography>
-          </Box>
-        ))}
-      </Box>
-
-      <Box sx={{ borderTop: '1px solid var(--rule)', pt: 1.5 }}>
-        <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-          Revenue today{' '}
-          <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt(pulse.revenueToday)}</Box>
-          {' · Blocked '}
-          <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt(pulse.blockedRevenue)}</Box>
-        </Typography>
       </Box>
 
       {onNavigate && (
