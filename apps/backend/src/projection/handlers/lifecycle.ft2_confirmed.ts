@@ -109,12 +109,23 @@ export async function handleLifecycleFT2Confirmed({
       '../../services/lifecycle-transition.service.js'
     );
 
-    await LifecycleTransitionService.auditIfTransitioned(
-      {
-        userId: payload.user_id,
+    try {
+      await LifecycleTransitionService.auditIfTransitioned(
+        {
+          userId: payload.user_id,
+          shopId,
+          currentPhase: 'FT2',
+        },
+        trx
+      );
+    } catch (err) {
+      // Invalid lifecycle transition (e.g. FT_MINUS_ONE->FT2 from seed data that
+      // bypassed the lifecycle controller and skipped ft0/completed).
+      // Warn and skip — do NOT propagate. The projection worker must not crash on
+      // invalid lifecycle states created outside the normal registration flow.
+      console.warn('[LIFECYCLE][FT2_CONFIRMED][TRANSITION_SKIP]', {
         shopId,
-        currentPhase: 'FT2',
-      },
-      trx
-    );
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   };
