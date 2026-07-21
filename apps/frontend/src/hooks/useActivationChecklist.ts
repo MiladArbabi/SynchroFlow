@@ -70,6 +70,18 @@ export function useActivationChecklist() {
       actionRoute:  '/inventory/catalog',
     },
     {
+      key:          'map-zones',
+      label:        'Map your warehouse zones',
+      complete:     findTask(modules, 'wms', 'map-zones'),
+      actionRoute:  '/floor-planning',
+    },
+    {
+      key:          'print-barcodes',
+      label:        'Print your first location barcode',
+      complete:     findTask(modules, 'wms', 'print-barcodes'),
+      actionRoute:  '/floor-planning',
+    },
+    {
       key:          'wave-released',
       label:        'Release your first wave',
       complete:     events.data?.wave_released ?? false,
