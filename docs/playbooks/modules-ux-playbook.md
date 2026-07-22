@@ -780,3 +780,38 @@ a rule going forward: any new CSS custom property needs `apps/frontend/src/theme
 updated in the same change as `color-pallet/index.md`, not just the docs
 file, and verification requires a rendered screenshot, not just a green
 build.
+
+**2026-07-22 — Pulse card wrap-fill rule made explicit, applies to every PulseCard call site.**
+Every `<PulseCard>` usage must be wrapped in a sizing `Box` with
+`flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0` — never a flat
+`flex: '0 0 300px'` (pins to 300px even when wrapped alone onto its own
+row, leaving dead space beside it — found in Orders' Today's Pulse,
+PULSE-01 migration) and never bare with no wrapper at all (falls back to
+browser-default content-sizing — found in Sourcing Pulse, same migration).
+`PulseCard` itself is deliberately width-agnostic — it never sets its own
+`flex` — sizing is always the caller's responsibility via this wrapper.
+Reference implementation: Overview's MergedPulseCard/BusinessPulse call
+sites and OrdersOutboundPage.tsx's Shipping Health wrapper, both already
+correct.
+
+**2026-07-22 — Triage+pulse outer container must use breakpoint-based wrap, not content-based.**
+`flexWrap: 'wrap'` alone (no breakpoint object) causes the primary
+(decision/left) card to visually squeeze down toward its flex-basis floor
+before the pulse card finally wraps — found in Orders, Outbound, and
+Sourcing, all pre-dating this fix. Canonical pattern, matching Overview's
+TRIAGE layout (the original correct implementation):
+```tsx
+sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'start' }}
+```
+Primary/decision card: `flex: { xs: '1 1 auto', lg: '1 1 0' }` (grows to
+fill remaining space at desktop width, full-width when stacked). Pulse
+card: `flex: { xs: '1 0 300px', lg: '0 0 300px' }` per the wrap-fill rule
+above. Below `lg`, layout jumps directly to full-width stacked columns —
+no squeeze zone in between.
+
+Also required on the same container: `alignItems: 'stretch'`, not `'start'`.
+In column mode (`xs`, stacked), flex-basis governs height, not width — width
+comes from cross-axis alignment. `alignItems: 'start'` lets children shrink
+to intrinsic content width, leaving dead space beside them when stacked;
+`'stretch'` fills the row. Found missing in Orders, Outbound, and Sourcing
+(all set `'start'`); Overview's TRIAGE layout was correct from the start.

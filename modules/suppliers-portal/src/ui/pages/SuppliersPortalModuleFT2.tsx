@@ -1839,10 +1839,10 @@ function PurchasingSourcingView({
 
   return (
     <Box sx={{ p: 2 }}>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }}>
 
         {/* DECISION CARD */}
-        <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+        <Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
           <Box sx={{ p: '18px 20px', borderBottom: '1px solid var(--rule)' }}>
             <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>Sourcing recommendations</Typography>
             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }}>
@@ -2109,37 +2109,39 @@ function PurchasingSourcingView({
         </Box>
 
         {/* PULSE CARD — migrated to shared PulseCard, PULSE-01 */}
-        <PulseCard
-          title="Sourcing pulse"
-          headline={{
-            value: String(neverOrderedCount),
-            tone: neverOrderedCount > 0 ? 'warning' : 'good',
-            subtext: neverOrderedCount > 0 ? 'never ordered — no supplier assigned yet' : 'all SKUs have a supplier',
-          }}
-          rows={[
-            {
-              id: 'never-ordered',
-              label: 'Never ordered before',
-              value: neverOrderedCount,
+        <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
+          <PulseCard
+            title="Sourcing pulse"
+            headline={{
+              value: String(neverOrderedCount),
               tone: neverOrderedCount > 0 ? 'warning' : 'good',
-            },
-            {
-              id: 'ready-to-order',
-              label: 'Ready to order',
-              value: goodMatches.length,
-            },
-            {
-              id: 'preferences-set',
-              label: 'Preferences set',
-              value: preferences.length,
-            },
-            {
-              id: 'queued-for-reorder',
-              label: 'Queued for reorder',
-              value: reorderRequests.reduce((sum, g) => sum + g.requests.length, 0),
-            },
-          ]}
-        />
+              subtext: neverOrderedCount > 0 ? 'never ordered — no supplier assigned yet' : 'all SKUs have a supplier',
+            }}
+            rows={[
+              {
+                id: 'never-ordered',
+                label: 'Never ordered before',
+                value: neverOrderedCount,
+                tone: neverOrderedCount > 0 ? 'warning' : 'good',
+              },
+              {
+                id: 'ready-to-order',
+                label: 'Ready to order',
+                value: goodMatches.length,
+              },
+              {
+                id: 'preferences-set',
+                label: 'Preferences set',
+                value: preferences.length,
+              },
+              {
+                id: 'queued-for-reorder',
+                label: 'Queued for reorder',
+                value: reorderRequests.reduce((sum, g) => sum + g.requests.length, 0),
+              },
+            ]}
+          />
+        </Box>
       </Box>
 
       <CreatePoDialog

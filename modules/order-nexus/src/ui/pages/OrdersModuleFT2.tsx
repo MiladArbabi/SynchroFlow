@@ -21,7 +21,7 @@ import { Box, Collapse, Typography } from '@mui/material';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
-import { formatCurrencyCompact, ReorderTransitionList } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, PulseCard, ReorderTransitionList } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 // ─── PROPS ────────────────────────────────────────────────────
@@ -466,10 +466,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       </Box>
 
       {/* ── TRIAGE-FIRST GRID ─────────────────────────────────── */}
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }}>
 
         {/* ── LEFT: Needs a decision ──────────────────────────── */}
-        <Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+        <Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
 
           {/* Card header */}
           <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }}>
@@ -612,7 +612,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                             at stake
                           </Typography>
                         </Box>
-                                                  {order.constraintType !== null ? (
+                          {order.constraintType !== null ? (
                             <Box
                               component="button"
                               onClick={() => onOrderClick?.(order.lasyncro_order_id)}
@@ -751,129 +751,34 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           </Box>
         </Box>
 
-                {/* ── RIGHT: Today's pulse ───────────────────────────── */}
-        <Box sx={{ flex: '0 0 300px' }}>
-          <Box
-            sx={{
-              bgcolor: 'var(--surface)',
-              border: '1px solid var(--rule)',
-              borderRadius: '14px',
-              p: '18px 20px',
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: 10,
-                fontWeight: 500,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-4)',
-                mb: 1,
-              }}
-            >
-              Today&apos;s pulse
-            </Typography>
-
-            <Typography
-              sx={{
-                fontSize: 24,
-                fontWeight: 700,
-                color: aging72 > 0 ? STAGE_COLORS.breached : 'var(--ink)',
-                lineHeight: 1.1,
-              }}
-            >
-              {fmtN(aging72)} breached
-            </Typography>
-
-            <Typography
-              sx={{
-                fontSize: 12,
-                fontWeight: 300,
-                color: 'var(--ink-4)',
-                mt: 0.5,
-                mb: 2,
-              }}
-            >
-              {unprioritizedCriticalCount > 0
+      {/* ── RIGHT: Today's pulse — PULSE-01 ───────────────────── */}
+        <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
+          <PulseCard
+            title="Today's pulse"
+            headline={{
+              value: `${fmtN(aging72)} breached`,
+              tone: aging72 > 0 ? 'critical' : 'good',
+              colorOverride: aging72 > 0 ? STAGE_COLORS.breached : 'var(--ink)',
+              subtext: unprioritizedCriticalCount > 0
                 ? `${unprioritizedCriticalCount} still need priority`
-                : 'Critical queue is under control'}
-            </Typography>
-
-            <Box sx={{ display: 'grid', gap: 1.15 }}>
-              {pulseRows.map(row => (
-                <Box key={row.label}>
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'baseline',
-                      justifyContent: 'space-between',
-                      mb: 0.5,
-                    }}
-                  >
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)' }}>
-                      {row.label}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12.5, fontWeight: 600, color: 'var(--ink)' }}>
-                      {fmtN(row.n)}
-                    </Typography>
-                  </Box>
-
-                  <Box
-                    sx={{
-                      height: 5,
-                      borderRadius: '999px',
-                      overflow: 'hidden',
-                      bgcolor: 'rgba(255,255,255,0.06)',
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: `${Math.max((row.n / pulseMax) * 100, row.n > 0 ? 8 : 0)}%`,
-                        height: '100%',
-                        borderRadius: '999px',
-                        bgcolor: row.color,
-                      }}
-                    />
-                  </Box>
-                </Box>
-              ))}
-            </Box>
-
-            <Box sx={{ borderTop: '1px solid var(--rule)', mt: 2, pt: 1.5 }}>
-              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-                  {fmtN(props.orders?.fulfilled)}
-                </Box>
+                : 'Critical queue is under control',
+            }}
+            rows={[
+              { id: 'breached', label: 'Breached', value: aging72, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: aging72, max: pulseMax } },
+              { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
+              { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
+              { id: 'ready', label: 'Ready', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
+            ]}
+            footerNote={
+              <>
+                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmtN(props.orders?.fulfilled)}</Box>
                 {' shipped today · '}
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-                  {fmt$(revenue?.earned)}
-                </Box>
+                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(revenue?.earned)}</Box>
                 {' collected'}
-              </Typography>
-            </Box>
-
-            <Box
-              onClick={() => navigate('/orders/flow')}
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                mt: 1.5,
-                px: 1.25,
-                py: 0.5,
-                fontSize: 11,
-                fontWeight: 500,
-                color: 'var(--accent)',
-                bgcolor: 'transparent',
-                border: '0.5px solid var(--accent)',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                '&:hover': { opacity: 0.75 },
-              }}
-            >
-              View order flow →
-            </Box>
-          </Box>
+              </>
+            }
+            footerCta={{ label: 'View order flow', onClick: () => navigate('/orders/flow') }}
+          />
         </Box>
       </Box>
     </Box>

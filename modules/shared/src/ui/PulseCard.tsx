@@ -21,23 +21,32 @@ export interface PulseCardRowData {
   value: string | number;
   tone?: PulseTone;
   subtext?: string;
-  subtextTone?: PulseTone; // colors subtext independently of the row's own tone (e.g. a delta hint)
+  subtextTone?: PulseTone;
   progress?: { value: number; max: number };
   action?: { label: string; onClick: () => void };
   onClick?: () => void;
   group?: string;
+  /**
+   * Escape hatch for domain-specific colors with no tone equivalent
+   * (e.g. pipeline-stage colors — see OrdersModuleFT2.tsx STAGE_COLORS,
+   * tracked in B-08). Wins over TONE_COLOR[tone] for dot/bar/value color.
+   * `tone` still governs severity-sort placement even when this is set.
+   */
+  colorOverride?: string;
 }
 
 export interface PulseCardHeadline {
   value: string;
   tone: PulseTone;
   subtext?: string;
+  colorOverride?: string; // see PulseCardRowData.colorOverride
 }
 
 export interface PulseCardProps {
   title: string;
   headline?: PulseCardHeadline;
   rows: PulseCardRowData[];
+  footerNote?: React.ReactNode; // plain descriptive line above footerCta, e.g. "10 shipped today · $37,453 collected"
   footerCta?: { label: string; onClick: () => void };
   updatedAt?: string;
   onRefresh?: () => void;
@@ -65,7 +74,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
     >
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, flex: 1, minWidth: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-          <Box aria-hidden sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: TONE_COLOR[tone], flexShrink: 0 }} />
+          <Box aria-hidden sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: row.colorOverride ?? TONE_COLOR[tone], flexShrink: 0 }} />
           <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}>{row.label}</Typography>
         </Box>
 
@@ -75,7 +84,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
 
         {row.progress && (
           <Box sx={{ height: 4, borderRadius: '2px', bgcolor: 'var(--rule)', overflow: 'hidden', ml: '14px', mt: 0.5 }}>
-            <Box sx={{ height: '100%', width: `${Math.min(100, (row.progress.value / row.progress.max) * 100)}%`, bgcolor: TONE_COLOR[tone], transition: 'width 0.2s' }} />
+            <Box sx={{ height: '100%', width: `${Math.max(Math.min(100, (row.progress.value / row.progress.max) * 100), row.progress.value > 0 ? 8 : 0)}%`, bgcolor: row.colorOverride ?? TONE_COLOR[tone], transition: 'width 0.2s' }} />
           </Box>
         )}
       </Box>
@@ -94,7 +103,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
           {row.action.label}
         </Box>
       ) : (
-        <Typography sx={{ fontSize: 15, fontWeight: 600, color: tone === 'neutral' ? 'var(--ink)' : TONE_COLOR[tone], flexShrink: 0, pl: 1 }}>
+        <Typography sx={{ fontSize: 15, fontWeight: 600, color: row.colorOverride ?? (tone === 'neutral' ? 'var(--ink)' : TONE_COLOR[tone]), flexShrink: 0, pl: 1 }}>
           {row.value}
         </Typography>
       )}
@@ -113,7 +122,16 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
   );
 }
 
-export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefresh, variant = 'card' }: PulseCardProps) {
+export function PulseCard({ 
+  title, 
+  headline, 
+  rows, 
+  footerNote, 
+  footerCta, 
+  updatedAt, 
+  onRefresh, 
+  variant = 'card' 
+}: PulseCardProps) {
   const sortedRows = sortRowsBySeverity(rows);
 
   const groups: { key: string | undefined; rows: PulseCardRowData[] }[] = [];
@@ -135,7 +153,7 @@ export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefre
 
       {headline && (
         <Box sx={{ pb: 1, mb: 0.5, borderBottom: '1px solid var(--rule)' }}>
-          <Typography sx={{ fontSize: 28, fontWeight: 600, color: TONE_COLOR[headline.tone], lineHeight: 1.1 }}>
+          <Typography sx={{ fontSize: 28, fontWeight: 600, color: headline.colorOverride ?? TONE_COLOR[headline.tone], lineHeight: 1.1 }}>
             {headline.value}
           </Typography>
           {headline.subtext && (
@@ -150,8 +168,13 @@ export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefre
         </Box>
       ))}
 
+      {footerNote && (
+        <Box sx={{ pt: 1.5, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
+          <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>{footerNote}</Typography>
+        </Box>
+      )}
       {(footerCta || updatedAt) && (
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: footerCta && updatedAt ? '1px solid var(--rule)' : 'none' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: footerCta && updatedAt && !footerNote ? '1px solid var(--rule)' : 'none' }}>
           {footerCta && (
             <Box
               component="button" onClick={footerCta.onClick}
