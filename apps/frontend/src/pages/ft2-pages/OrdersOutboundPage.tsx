@@ -6,7 +6,7 @@
 //
 // RULES: No alpha(). No useTheme(). No fontFamily overrides. 1px borders. 12px inner cards, 14px table.
 import { useMemo, useRef, useState, useCallback, ReactNode } from 'react';
-import { EntityDetailModal } from '@lasyncro/shared/ui';
+import { EntityDetailModal, PulseCard } from '@lasyncro/shared/ui';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 import { useBulkSetPriority } from '../wms/useOrderPool';
 import { useEntitlements } from 'contexts/EntitlementsContext';
@@ -763,63 +763,51 @@ export default function OrdersOutboundPage() {
             </Box>
           </Box>
 
-          <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
-            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
-              Shipping health
-            </Typography>
-
-            {[
-              { label: 'Shipped orders', value: String(outboundTotal), color: 'var(--ink)' },
-              { label: 'With tracking', value: String(Math.max(outboundTotal - outboundSignals.missingTrackingCount, 0)), color: '#4CAF7A' },
-              { label: 'Missing tracking', value: String(outboundSignals.missingTrackingCount), color: 'var(--accent)' },
-              { label: 'Tracking coverage', value: `${trackingCoverage}%`, color: trackingCoverage > 0 ? '#4CAF7A' : '#E5484D' },
-              {
-                label: 'Carrier setup',
-                value: carriersConfigured ? 'Ready' : 'Set up →',
-                color: carriersConfigured ? '#4CAF7A' : 'var(--accent)',
-                onClick: carriersConfigured ? undefined : () => navigate('/settings/carriers'),
-              },
-              ].map(({ label, value, color, onClick }) => (
-                <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', py: 1.125, borderBottom: '1px solid var(--rule)' }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
-                  <Box
-                    component={onClick ? 'button' : 'span'}
-                    onClick={onClick}
-                    sx={{
-                      px: onClick ? 1 : 0,
-                      py: onClick ? 0.25 : 0,
-                      m: 0,
-                      border: onClick ? '0.5px solid var(--accent)' : 0,
-                      borderRadius: onClick ? '6px' : 0,
-                      bgcolor: 'transparent',
-                      fontSize: onClick ? 11 : 15,
-                      fontWeight: onClick ? 500 : 600,
-                      lineHeight: 1.2,
-                      color,
-                      cursor: onClick ? 'pointer' : 'default',
-                      '&:hover': onClick ? { opacity: 0.75 } : {},
-                    }}
-                  >
-                    {value}
-                  </Box>
-                </Box>
-              ))}
-
-            <Box sx={{ borderTop: '1px solid var(--rule)', pt: 1.5, mt: 1.5 }}>
-              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                Value shipped this week{' '}
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(String(pulse.revenueThisWeek))}</Box>
-              </Typography>
-            </Box>
-
-            <Box sx={{ borderTop: '1px solid var(--rule)', pt: 1.5, mt: 1.5 }}>
-              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                Avg time to ship{' '}
-                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-                  {pulse.avgFulfilHours === null ? '—' : fmtFulfilTime(String(pulse.avgFulfilHours))}
-                </Box>
-              </Typography>
-            </Box>
+          <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            <PulseCard
+              title="Shipping health"
+              rows={[
+                {
+                  id: 'shipped-orders',
+                  label: 'Shipped orders',
+                  value: outboundTotal,
+                },
+                {
+                  id: 'with-tracking',
+                  label: 'With tracking',
+                  value: Math.max(outboundTotal - outboundSignals.missingTrackingCount, 0),
+                  tone: outboundTotal - outboundSignals.missingTrackingCount > 0 ? 'good' : 'critical',
+                },
+                {
+                  id: 'missing-tracking',
+                  label: 'Missing tracking',
+                  value: outboundSignals.missingTrackingCount,
+                  tone: outboundSignals.missingTrackingCount > 0 ? 'critical' : 'good',
+                },
+                {
+                  id: 'tracking-coverage',
+                  label: 'Tracking coverage',
+                  value: `${trackingCoverage}%`,
+                  tone: trackingCoverage > 0 ? 'good' : 'critical',
+                },
+                carriersConfigured
+                  ? { id: 'carrier-setup', label: 'Carrier setup', value: 'Ready', tone: 'good' }
+                  : { id: 'carrier-setup', label: 'Carrier setup', value: '', action: { label: 'Set up →', onClick: () => navigate('/settings/carriers') } },
+                {
+                  id: 'value-shipped-week',
+                  label: 'Value shipped this week',
+                  value: fmt$(String(pulse.revenueThisWeek)),
+                  group: 'context',
+                },
+                {
+                  id: 'avg-time-to-ship',
+                  label: 'Avg time to ship',
+                  value: pulse.avgFulfilHours === null ? '—' : fmtFulfilTime(String(pulse.avgFulfilHours)),
+                  // TODO: tone once fulfillment_sla_hours is threaded to this page — see follow-up issue
+                  group: 'context',
+                },
+              ]}
+            />
           </Box>
         </Box>
 

@@ -766,6 +766,7 @@ directly in new components — reference the token.
 | Today's Pulse (Orders) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | Not started |
 | Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | Not started |
 | Business Pulse (Overview, both layouts) | modules/overview/src/ui/pages/OverviewModuleFT2.tsx | ✅ Migrated 2026-07-22 |
+| Shipping Health (Outbound) | apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx | ✅ Migrated 2026-07-22 |
 
 **2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
 `--good-ink` were added to `docs/color-pallet/index.md` correctly but
