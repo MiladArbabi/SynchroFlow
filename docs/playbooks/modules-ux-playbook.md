@@ -1,10 +1,11 @@
 # LaSyncro — Modules UX Playbook
 
 > **Scope:** Webapp FT2 modules — all operator-facing surfaces. Auth pages (`apps/frontend/src/pages/authentication/*`) are a **brand surface**, governed by `docs/blueprints/auth_blueprint.md` — the font ban and layout rules below do not apply there.
-> **Last updated:** 2026-07-17
-> **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sent operators to the wrong workflow (reorder vs. check receiving). Also: the `Orders/Inbound` pattern referenced in the entry below is deprecated — receiving now lives under WMS Operations (`/wms`).
+> **Last updated:** 2026-07-22
+> **2026-07-22 — Inventory Intelligence adopted the shared `PulseCard`.** See §18, PULSE-02A, for the verified metric mapping and layout rules.
+> **2026-07-17 — Catalog Status severity order gained a 4th tier.** "Not received" (SKU exists, no `inventory_truth` row — never received into warehouse) now ranks above Phantom as the highest severity: `not received > phantom > zero-stock > no-SKU > sellable`. Distinct from Zero stock (confirmed empty inventory row) — conflating the two sends operators to the wrong workflow (reorder vs. check receiving).
 > **2026-06-21 — Suppliers Portal gained standalone supplier CRUD.** Suppliers were previously create-only inside the New-PO dialog; the portal's Suppliers list now supports add/edit/remove without a PO. Pattern: a single reusable `SupplierFormDialog` (mode `add` | `edit`) drives every supplier entry point for identical fields + validation; "Add supplier" uses the filled-accent CTA convention (per CTA-016); per-row Edit/Delete are outlined inline actions. Delete is a **soft-delete** (`active = false`) — `purchase_orders.supplier_id` is `ON DELETE RESTRICT`, so PO history is preserved and the supplier is hidden from new POs. Place record-management CRUD on the owning operational surface, not in Settings (which is for shop config, not records).
-> **2026-06-20 — Inventory/Catalog adopted the canonical triage + pulse layout** (decision card + `PulseRow` rail, matching Orders/Inbound). Catalog is now the reference for a **full-width sortable column grid**: a shared `gridTemplateColumns` constant drives both header and rows (Product · Variants · On-hand · Available · Status · Action), every header sortable with the `↑/↓` affordance, and a severity-ranked Status sort (phantom > zero-stock > no-SKU > sellable). Avoid the legacy fixed stat-card grid for new module surfaces.
+> **2026-06-20 — Catalog adopted the canonical triage + compact health-rail layout.** Catalog is the reference for a **full-width sortable column grid**: a shared `gridTemplateColumns` constant drives both header and rows (Product · Variants · On-hand · Available · Status · Action), with every header sortable using the `↑/↓` affordance. Avoid the legacy fixed stat-card grid for new module surfaces.
 
 ---
 
@@ -15,31 +16,39 @@
 Canonical triage + pulse layout:
 
 ```tsx
-<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }}>
+<Box
+  sx={{
+    display: 'flex',
+    flexDirection: { xs: 'column', lg: 'row' },
+    flexWrap: { xs: 'nowrap', lg: 'wrap' },
+    gap: 2.25,
+    alignItems: 'stretch',
+  }}
+>
 ```
 
-Decision card:
+Primary content:
 
 ```tsx
-<Box sx={{ flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }}>
+<Box sx={{ flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0 }}>
 ```
 
-Pulse card:
+Pulse rail:
 
 ```tsx
-<Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
+<Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
+  <PulseCard title="..." rows={rows} />
+</Box>
 ```
 
-## Rules
+#### Rules
 
-Use flex with wrapping, not fixed two-column grid.
-Decision card must not shrink below 300px.
-Pulse rail is fixed at 300px.
-When both cards no longer fit side by side, the pulse card wraps below.
-Decision card then takes the full available row width.
-Card shell uses bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px'.
-Pulse card padding is p: '18px 20px'.
-Orders Overview is the source of truth for this layout.
+Use breakpoint-driven flex layout, not a fixed two-column grid.
+Primary content owns the remaining desktop width.
+The pulse rail is 300px at desktop width and fills the row when stacked below `lg`.
+Use `alignItems: 'stretch'` so stacked children fill the available width.
+`PulseCard` owns its card shell; callers own only responsive sizing.
+Overview is the reference implementation for this layout.
 
 ### FT2 Page Scroll Rule
 Main module pages should prefer page-level vertical scroll over nested card/list scroll.
@@ -761,12 +770,15 @@ directly in new components — reference the token.
 
 | Surface | File | Status |
 |---|---|---|
+| Business Pulse (Overview, both layouts) | `modules/overview/src/ui/pages/OverviewModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
+| Today's Pulse (Orders Overview) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
+| Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ✅ Migrated 2026-07-22 |
 | Sourcing Pulse | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
-| Business Pulse (Overview) | `modules/overview/src/ui/pages/OverviewModuleFT2.tsx` | Not started |
-| Today's Pulse (Orders) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | Not started |
-| Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | Not started |
-| Business Pulse (Overview, both layouts) | modules/overview/src/ui/pages/OverviewModuleFT2.tsx | ✅ Migrated 2026-07-22 |
-| Shipping Health (Outbound) | apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx | ✅ Migrated 2026-07-22 |
+| Inventory Pulse (Inventory Intelligence) | `modules/products/src/ui/pages/ProductsModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
+
+**Wrap-behavior consistency audit, 2026-07-22 — all five migrated surfaces use Overview's reference layout: breakpoint-based direction/wrapping plus `alignItems: 'stretch'`.**
+
+**PULSE-02A — Inventory Intelligence:** Six verified operator-summary metrics map into the shared severity model. The 300px rail contains summary pulse data only; the actionable Inbound Pipeline remains in the primary column. Repeated row-action CTAs use a 120px action width, while header and contextual CTAs remain content-sized.
 
 **2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
 `--good-ink` were added to `docs/color-pallet/index.md` correctly but
@@ -801,7 +813,7 @@ before the pulse card finally wraps — found in Orders, Outbound, and
 Sourcing, all pre-dating this fix. Canonical pattern, matching Overview's
 TRIAGE layout (the original correct implementation):
 ```tsx
-sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'start' }}
+sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }}
 ```
 Primary/decision card: `flex: { xs: '1 1 auto', lg: '1 1 0' }` (grows to
 fill remaining space at desktop width, full-width when stacked). Pulse

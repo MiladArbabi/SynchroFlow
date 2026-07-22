@@ -22,12 +22,9 @@ import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
 import { Warehouse, RefreshCw } from 'lucide-react';
-import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, PulseCard } from '@lasyncro/shared/ui';
 // ─── HELPERS ──────────────────────────────────────────────────
 const fmtN = (n) => n == null ? '—' : Math.round(n).toLocaleString();
-function PulseRow({ label, value, valueColor, sub }) {
-    return (_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', py: 1, borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }, children: label }), sub && _jsx(Typography, { sx: { fontSize: 10, fontWeight: 300, color: 'var(--ink-4)', mt: 0.125 }, children: sub })] }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 600, color: valueColor ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums' }, children: value })] }));
-}
 // ─── STAT CARD ────────────────────────────────────────────────
 // Matches Orders FT2 StatCard exactly.
 function StatCard({ label, value, valueColor, sub, cta, ctaHref }) {
@@ -48,6 +45,9 @@ function StatCard({ label, value, valueColor, sub, cta, ctaHref }) {
 function SectionHeader({ label, meta }) {
     return (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: label }), meta && (_jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)' }, children: meta }))] }));
 }
+// Repeated operational row actions share one width for a stable right edge.
+// Header and section-level CTAs intentionally remain content-sized.
+const ROW_ACTION_CTA_WIDTH = 120;
 function ActionRow({ dot, label, meta, impact, cta, ctaHref }) {
     const theme = useTheme();
     const navigate = useNavigate();
@@ -60,7 +60,7 @@ function ActionRow({ dot, label, meta, impact, cta, ctaHref }) {
             borderBottom: '0.5px solid var(--rule)',
             '&:last-child': { borderBottom: 'none' },
             '&:hover': { bgcolor: dot === 'optimize' ? 'action.hover' : alpha(dotColor, 0.04) },
-        }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 } }), _jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink)', fontWeight: 500 }, children: label }), meta && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }, children: meta }))] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, ml: 2 }, children: [impact && (_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: dot === 'critical' ? theme.palette.error.main : dot === 'warning' ? theme.palette.warning.main : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }, children: impact })), _jsxs(Box, { onClick: () => navigate(ctaHref), sx: { display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: [cta, " \u2192"] })] })] }));
+        }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0 } }), _jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink)', fontWeight: 500 }, children: label }), meta && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }, children: meta }))] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0, ml: 2 }, children: [impact && (_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: dot === 'critical' ? theme.palette.error.main : dot === 'warning' ? theme.palette.warning.main : 'var(--ink-4)', fontVariantNumeric: 'tabular-nums' }, children: impact })), _jsxs(Box, { onClick: () => navigate(ctaHref), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: [cta, " \u2192"] })] })] }));
 }
 // ─── INBOUND ROW ──────────────────────────────────────────────
 function InboundRow({ po, isOverdue }) {
@@ -75,7 +75,7 @@ function InboundRow({ po, isOverdue }) {
             px: 2, py: 1.25,
             borderBottom: '0.5px solid var(--rule)',
             '&:last-child': { borderBottom: 'none' },
-        }, children: [_jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: _jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: po.supplier_name }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: [po.po_short_ref, " \u00B7 ", statusLabel] })] }) }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: [_jsxs(Box, { sx: { textAlign: 'right' }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: isOverdue ? theme.palette.error.main : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }, children: isOverdue ? `${po.overdue_days}d overdue` : `Due ${dateLabel}` }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)' }, children: [po.total_units_ordered, " units", po.covers_stocked_out_skus.length > 0 && ` · covers ${po.covers_stocked_out_skus.length} stocked out`] })] }), isOverdue && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }, children: "Chase \u2192" })), !isOverdue && po.status === 'shipped' && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }, children: "Receive \u2192" }))] })] }));
+        }, children: [_jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: _jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: po.supplier_name }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: [po.po_short_ref, " \u00B7 ", statusLabel] })] }) }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: [_jsxs(Box, { sx: { textAlign: 'right' }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: isOverdue ? theme.palette.error.main : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }, children: isOverdue ? `${po.overdue_days}d overdue` : `Due ${dateLabel}` }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)' }, children: [po.total_units_ordered, " units", po.covers_stocked_out_skus.length > 0 && ` · covers ${po.covers_stocked_out_skus.length} stocked out`] })] }), isOverdue && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Chase \u2192" })), !isOverdue && po.status === 'shipped' && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Receive \u2192" }))] })] }));
 }
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 export default function ProductsModuleFT2(props) {
@@ -90,6 +90,56 @@ export default function ProductsModuleFT2(props) {
     const noSku = os?.sellability.blockedReasons.noSku ?? 0;
     const zeroStock = os?.sellability.blockedReasons.zeroStock ?? 0;
     const phantom = os?.sellability.blockedReasons.phantom ?? 0;
+    // PULSE-02A: PulseCard owns severity ordering and token colors.
+    // This page only maps authoritative inventory facts to their operational tone.
+    const inventoryPulseRows = [
+        {
+            id: 'ready-to-sell',
+            label: 'Ready to sell',
+            value: `${fmtN(sellable)} of ${fmtN(total)}`,
+            tone: sellable === 0 ? 'critical' : sellable < total ? 'warning' : 'good',
+        },
+        {
+            id: 'margin-at-risk',
+            label: 'Margin at risk',
+            value: os?.finances
+                ? `${fmt$(os.finances.total_margin_at_risk_per_week)}/wk`
+                : '—',
+            tone: os?.finances && os.finances.total_margin_at_risk_per_week > 0
+                ? 'critical'
+                : 'neutral',
+        },
+        {
+            id: 'phantom',
+            label: 'Phantom',
+            value: String(phantom),
+            tone: phantom > 0 ? 'critical' : 'neutral',
+            subtext: 'sold without recorded receiving',
+        },
+        {
+            id: 'stocked-out',
+            label: 'Stocked out',
+            value: String(zeroStock),
+            tone: zeroStock > 0 ? 'warning' : 'neutral',
+        },
+        {
+            id: 'inbound',
+            label: 'Inbound',
+            value: os?.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—',
+            tone: 'neutral',
+            subtext: os?.inbound
+                ? `${os.inbound.open_po_count} open PO${os.inbound.open_po_count === 1 ? '' : 's'}`
+                : undefined,
+        },
+        {
+            id: 'dead-capital',
+            label: 'Dead capital',
+            value: os?.demand ? fmt$(os.demand.dead_capital_value) : '—',
+            tone: os?.demand && os.demand.dead_capital_value > 0
+                ? 'warning'
+                : 'neutral',
+        },
+    ];
     // Determine signal line
     const signalParts = [];
     if (context.variantsObserved)
@@ -110,7 +160,19 @@ export default function ProductsModuleFT2(props) {
                     borderRadius: '8px',
                 }, children: [_jsx(RefreshCw, { size: 12, color: theme.palette.warning.main }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: ["Some data may be stale \u2014", ' ', ['structural', 'inventory', 'sales', 'fulfillment', 'cost']
                                 .filter(k => dataFreshness[k] === 'stale')
-                                .join(', '), ' ', "data needs a sync."] })] })), _jsxs(Box, { sx: { display: 'flex', gap: 2, alignItems: 'stretch', flexWrap: 'wrap' }, children: [os && (_jsxs(Box, { sx: { flex: 2, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 2 }, children: [os?.warehouse && os.warehouse.variants_with_stock_no_bin > 0 && (_jsxs(Box, { sx: {
+                                .join(', '), ' ', "data needs a sync."] })] })), _jsxs(Box, { sx: {
+                    display: 'flex',
+                    flexDirection: { xs: 'column', lg: 'row' },
+                    flexWrap: { xs: 'nowrap', lg: 'wrap' },
+                    gap: 2.25,
+                    alignItems: 'stretch',
+                }, children: [os && (_jsxs(Box, { sx: {
+                            flex: { xs: '1 1 auto', lg: '1 1 0' },
+                            minWidth: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                        }, children: [os?.warehouse && os.warehouse.variants_with_stock_no_bin > 0 && (_jsxs(Box, { sx: {
                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                                     px: 2, py: 1.5,
                                     border: `0.5px solid ${alpha(theme.palette.warning.main, 0.35)}`,
@@ -129,7 +191,13 @@ export default function ProductsModuleFT2(props) {
                                         return (_jsx(ActionRow, { dot: "critical", label: v.product_title ?? v.title ?? v.sku ?? 'Unknown product', meta: `Stocked out · no inbound PO · ${v.velocity_per_day.toFixed(2)} units/day`, impact: fin ? `${fmt$(fin.margin_lost_per_week)}/wk lost` : undefined, cta: "Order", ctaHref: "/suppliers" }, v.lasyncro_variant_id));
                                     }), os.inbound?.overdue_pos
                                         .filter(po => po.covers_stocked_out_skus.length > 0)
-                                        .map(po => (_jsx(ActionRow, { dot: "critical", label: `${po.supplier_name} PO ${po.po_short_ref}`, meta: `${po.overdue_days}d overdue · covers ${po.covers_stocked_out_skus.length} stocked-out SKU${po.covers_stocked_out_skus.length > 1 ? 's' : ''}`, impact: po.overdue_days != null && po.overdue_days > 0 ? `${po.overdue_days}d late` : undefined, cta: "Chase", ctaHref: "/orders/inbound" }, po.po_short_ref))), noSku > 0 && (_jsx(ActionRow, { dot: "warning", label: `${noSku} SKUs have no product code`, meta: "WMS-Lite can't pick or receive these \u2014 fix in Shopify", cta: "Fix in Catalog", ctaHref: "/inventory/catalog" })), os.demand && os.demand.critical_reorder_count - os.demand.stockout_count > 0 && (_jsx(ActionRow, { dot: "warning", label: `${os.demand.critical_reorder_count - os.demand.stockout_count} SKUs under 7 days stock`, meta: "Order before they run out", cta: "See Demand", ctaHref: "/demand" })), os.demand && os.demand.dead_capital_value > 0 && (_jsx(ActionRow, { dot: "optimize", label: `${fmt$(os.demand.dead_capital_value)} in non-moving stock`, meta: "Active SKUs with stock but zero velocity", cta: "Review", ctaHref: "/demand" })), os.topReturned.length > 0 && (_jsx(ActionRow, { dot: "optimize", label: `${os.topReturned.length} returned product${os.topReturned.length > 1 ? 's' : ''} not restocked`, meta: "Every unrestocked return is double-lost \u2014 revenue refunded and inventory not recovered", cta: "Fix in Returns", ctaHref: "/returns" }))] })] })), _jsxs(Box, { sx: { flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 2 }, children: [os && (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }, children: "Inventory pulse" }), _jsx(PulseRow, { label: "Ready to sell", value: `${fmtN(sellable)} of ${fmtN(total)}`, valueColor: sellable === 0 ? '#E5484D' : sellable < total ? '#D9A23B' : '#4CAF7A' }), _jsx(PulseRow, { label: "Margin at risk", value: os.finances ? fmt$(os.finances.total_margin_at_risk_per_week) + '/wk' : '—', valueColor: os.finances && os.finances.total_margin_at_risk_per_week > 0 ? '#E5484D' : undefined }), _jsx(PulseRow, { label: "Phantom", value: String(phantom), valueColor: phantom > 0 ? '#E5484D' : undefined, sub: "sold without recorded receiving" }), _jsx(PulseRow, { label: "Stocked out", value: String(zeroStock), valueColor: zeroStock > 0 ? '#D9A23B' : undefined }), _jsx(PulseRow, { label: "Inbound", value: os.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—', sub: os.inbound ? `${os.inbound.open_po_count} open PO${os.inbound.open_po_count === 1 ? '' : 's'}` : undefined }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }, children: "Dead capital" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 600, color: os.demand && os.demand.dead_capital_value > 0 ? '#D9A23B' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }, children: os.demand ? fmt$(os.demand.dead_capital_value) : '—' })] })] })), os?.inbound && os.inbound.open_po_count > 0 && (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Inbound pipeline" }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: os.inbound.total_committed_value_cents != null && (_jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)' }, children: [fmt$(os.inbound.total_committed_value_cents / 100), "committed"] })) })] }), os.inbound.overdue_pos.map(po => (_jsx(InboundRow, { po: po, isOverdue: true }, po.po_short_ref))), os.inbound.pending_pos.map(po => (_jsx(InboundRow, { po: po, isOverdue: false }, po.po_short_ref)))] })), os?.topReturned && os.topReturned.length > 0 && (() => {
+                                        .map(po => (_jsx(ActionRow, { dot: "critical", label: `${po.supplier_name} PO ${po.po_short_ref}`, meta: `${po.overdue_days}d overdue · covers ${po.covers_stocked_out_skus.length} stocked-out SKU${po.covers_stocked_out_skus.length > 1 ? 's' : ''}`, impact: po.overdue_days != null && po.overdue_days > 0 ? `${po.overdue_days}d late` : undefined, cta: "Chase", ctaHref: "/orders/inbound" }, po.po_short_ref))), noSku > 0 && (_jsx(ActionRow, { dot: "warning", label: `${noSku} SKUs have no product code`, meta: "WMS-Lite can't pick or receive these \u2014 fix in Shopify", cta: "Fix in Catalog", ctaHref: "/inventory/catalog" })), os.demand && os.demand.critical_reorder_count - os.demand.stockout_count > 0 && (_jsx(ActionRow, { dot: "warning", label: `${os.demand.critical_reorder_count - os.demand.stockout_count} SKUs under 7 days stock`, meta: "Order before they run out", cta: "See Demand", ctaHref: "/demand" })), os.demand && os.demand.dead_capital_value > 0 && (_jsx(ActionRow, { dot: "optimize", label: `${fmt$(os.demand.dead_capital_value)} in non-moving stock`, meta: "Active SKUs with stock but zero velocity", cta: "Review", ctaHref: "/demand" })), os.topReturned.length > 0 && (_jsx(ActionRow, { dot: "optimize", label: `${os.topReturned.length} returned product${os.topReturned.length > 1 ? 's' : ''} not restocked`, meta: "Every unrestocked return is double-lost \u2014 revenue refunded and inventory not recovered", cta: "Fix in Returns", ctaHref: "/returns" }))] }), os?.inbound && os.inbound.open_po_count > 0 && (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Inbound pipeline" }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: os.inbound.total_committed_value_cents != null && (_jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)' }, children: [fmt$(os.inbound.total_committed_value_cents / 100), "committed"] })) })] }), os.inbound.overdue_pos.map(po => (_jsx(InboundRow, { po: po, isOverdue: true }, po.po_short_ref))), os.inbound.pending_pos.map(po => (_jsx(InboundRow, { po: po, isOverdue: false }, po.po_short_ref)))] }))] })), _jsxs(Box, { sx: {
+                            flex: { xs: '1 0 300px', lg: '0 0 300px' },
+                            minWidth: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                        }, children: [os && (_jsx(PulseCard, { title: "Inventory pulse", rows: inventoryPulseRows })), os?.topReturned && os.topReturned.length > 0 && (() => {
                                 const maxRate = Math.max(...os.topReturned.map(r => r.returnRatePct));
                                 const totalLeakage = os.topReturned.reduce((s, r) => s + r.revenueLeakage, 0);
                                 return (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Return leakage" }), _jsxs(Typography, { sx: { fontSize: 11, color: theme.palette.error.main, fontWeight: 500 }, children: [fmt$(totalLeakage), " lost \u00B7 0% restocked"] })] }), os.topReturned.map((item, idx) => {
@@ -141,7 +209,7 @@ export default function ProductsModuleFT2(props) {
                                                     px: 2, py: 1.5,
                                                     borderBottom: '0.5px solid var(--rule)',
                                                     '&:last-child': { borderBottom: 'none' },
-                                                }, children: [_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.75 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : item.sku ?? `Item ${idx + 1}` }), item.sku && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: item.sku }))] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: [item.unitsReturned, " returned"] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 500, color: theme.palette.error.main }, children: [fmt$(item.revenueLeakage), " lost"] }), _jsx(Box, { onClick: () => navigate('/returns'), sx: { display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }, children: "Restock \u2192" })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsx(Box, { sx: { flex: 1, height: 4, borderRadius: 1, bgcolor: 'var(--bg)', overflow: 'hidden' }, children: _jsx(Box, { sx: { height: '100%', width: `${barPct}%`, bgcolor: rateColor, borderRadius: 1, transition: 'width 0.3s ease' } }) }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: rateColor, minWidth: 70, textAlign: 'right' }, children: [item.returnRatePct, "% returned"] })] })] }, idx));
+                                                }, children: [_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.75 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : item.sku ?? `Item ${idx + 1}` }), item.sku && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: item.sku }))] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: [item.unitsReturned, " returned"] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 500, color: theme.palette.error.main }, children: [fmt$(item.revenueLeakage), " lost"] }), _jsx(Box, { onClick: () => navigate('/returns'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Restock \u2192" })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsx(Box, { sx: { flex: 1, height: 4, borderRadius: 1, bgcolor: 'var(--bg)', overflow: 'hidden' }, children: _jsx(Box, { sx: { height: '100%', width: `${barPct}%`, bgcolor: rateColor, borderRadius: 1, transition: 'width 0.3s ease' } }) }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: rateColor, minWidth: 70, textAlign: 'right' }, children: [item.returnRatePct, "% returned"] })] })] }, idx));
                                         })] }));
                             })()] })] })] }));
 }

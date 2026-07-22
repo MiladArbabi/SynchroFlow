@@ -22,7 +22,7 @@ import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
 import { Warehouse, RefreshCw } from 'lucide-react';
-import { formatCurrencyCompact } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, PulseCard, type PulseCardRowData } from '@lasyncro/shared/ui';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 
 // ─── PROPS ────────────────────────────────────────────────────
@@ -154,21 +154,8 @@ export interface ProductsModuleFT2DataProps {
 export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
 
 // ─── HELPERS ──────────────────────────────────────────────────
-
 const fmtN = (n: number | null | undefined): string =>
   n == null ? '—' : Math.round(n).toLocaleString();
-
-function PulseRow({ label, value, valueColor, sub }: { label: string; value: string; valueColor?: string; sub?: string }) {
-  return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', py: 1, borderBottom: '1px solid var(--rule)' }}>
-      <Box>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
-        {sub && <Typography sx={{ fontSize: 10, fontWeight: 300, color: 'var(--ink-4)', mt: 0.125 }}>{sub}</Typography>}
-      </Box>
-      <Typography sx={{ fontSize: 13, fontWeight: 600, color: valueColor ?? 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{value}</Typography>
-    </Box>
-  );
-}
 
 // ─── STAT CARD ────────────────────────────────────────────────
 // Matches Orders FT2 StatCard exactly.
@@ -244,6 +231,10 @@ type ActionRowProps = {
   ctaHref: string;
 };
 
+// Repeated operational row actions share one width for a stable right edge.
+// Header and section-level CTAs intentionally remain content-sized.
+const ROW_ACTION_CTA_WIDTH = 120;
+
 function ActionRow({ dot, label, meta, impact, cta, ctaHref }: ActionRowProps) {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -280,10 +271,10 @@ function ActionRow({ dot, label, meta, impact, cta, ctaHref }: ActionRowProps) {
             {impact}
           </Typography>
         )}
-        {/* Primary action CTA — filled accent pill, consistent with Resolve → and Review › */}
+        {/* Filled row action — width is shared across operational lists. */}
         <Box
           onClick={() => navigate(ctaHref)}
-          sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
+          sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
         >
           {cta} →
         </Box>
@@ -346,7 +337,7 @@ function InboundRow({ po, isOverdue }: {
         {isOverdue && (
           <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Chase →
           </Box>
@@ -354,7 +345,7 @@ function InboundRow({ po, isOverdue }: {
         {!isOverdue && po.status === 'shipped' && (
           <Box
             onClick={() => navigate('/orders/inbound')}
-            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
           >
             Receive →
           </Box>
@@ -381,6 +372,57 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const noSku     = os?.sellability.blockedReasons.noSku ?? 0;
   const zeroStock = os?.sellability.blockedReasons.zeroStock ?? 0;
   const phantom   = os?.sellability.blockedReasons.phantom ?? 0;
+
+  // PULSE-02A: PulseCard owns severity ordering and token colors.
+  // This page only maps authoritative inventory facts to their operational tone.
+  const inventoryPulseRows: PulseCardRowData[] = [
+    {
+      id: 'ready-to-sell',
+      label: 'Ready to sell',
+      value: `${fmtN(sellable)} of ${fmtN(total)}`,
+      tone: sellable === 0 ? 'critical' : sellable < total ? 'warning' : 'good',
+    },
+    {
+      id: 'margin-at-risk',
+      label: 'Margin at risk',
+      value: os?.finances
+        ? `${fmt$(os.finances.total_margin_at_risk_per_week)}/wk`
+        : '—',
+      tone: os?.finances && os.finances.total_margin_at_risk_per_week > 0
+        ? 'critical'
+        : 'neutral',
+    },
+    {
+      id: 'phantom',
+      label: 'Phantom',
+      value: String(phantom),
+      tone: phantom > 0 ? 'critical' : 'neutral',
+      subtext: 'sold without recorded receiving',
+    },
+    {
+      id: 'stocked-out',
+      label: 'Stocked out',
+      value: String(zeroStock),
+      tone: zeroStock > 0 ? 'warning' : 'neutral',
+    },
+    {
+      id: 'inbound',
+      label: 'Inbound',
+      value: os?.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—',
+      tone: 'neutral',
+      subtext: os?.inbound
+        ? `${os.inbound.open_po_count} open PO${os.inbound.open_po_count === 1 ? '' : 's'}`
+        : undefined,
+    },
+    {
+      id: 'dead-capital',
+      label: 'Dead capital',
+      value: os?.demand ? fmt$(os.demand.dead_capital_value) : '—',
+      tone: os?.demand && os.demand.dead_capital_value > 0
+        ? 'warning'
+        : 'neutral',
+    },
+  ];
 
   // Determine signal line
   const signalParts: string[] = [];
@@ -431,11 +473,28 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
 
       {/* ── 4. TWO COLUMN BODY ────────────────────────────────── */}
       {/* LEFT: Action queue  |  RIGHT: Inbound pipeline + Return leakage */}
-      <Box sx={{ display: 'flex', gap: 2, alignItems: 'stretch', flexWrap: 'wrap' }}>
+      <Box
+        sx={{
+          display: 'flex',
+          flexDirection: { xs: 'column', lg: 'row' },
+          flexWrap: { xs: 'nowrap', lg: 'wrap' },
+          gap: 2.25,
+          alignItems: 'stretch',
+        }}
+      >
 
         {/* ── LEFT COLUMN — Action queue ──────────────────────── */}
         {os && (
-          <Box sx={{ flex: 2, minWidth: 320, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box
+            sx={{
+              flex: { xs: '1 1 auto', lg: '1 1 0' },
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+
             {/* Warehouse banner — inside left column above action queue */}
             {os?.warehouse && os.warehouse.variants_with_stock_no_bin > 0 && (
               <Box sx={{
@@ -570,55 +629,54 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                 />
               )}
             </Box>
+
+            {/* PULSE-02A: Inbound is actionable work, so it stays in the
+                main column rather than the fixed 300px summary rail. */}
+            {/* Inbound pipeline */}
+            {os?.inbound && os.inbound.open_po_count > 0 && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Inbound pipeline
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    {os.inbound.total_committed_value_cents != null && (
+                      <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                        {fmt$(os.inbound.total_committed_value_cents / 100)}committed
+                      </Typography>
+                    )}
+                    {/* ISS-054/ISS-105: Cash Flow CTA removed — Finances/Cashflow module
+                        deliberately unwired from nav (2026-07-08). No route path exists
+                        to reach here; restore this button if/when Finances scope returns. */}
+                  </Box>
+                </Box>
+                {os.inbound.overdue_pos.map(po => (
+                  <InboundRow key={po.po_short_ref} po={po} isOverdue={true} />
+                ))}
+                {os.inbound.pending_pos.map(po => (
+                  <InboundRow key={po.po_short_ref} po={po} isOverdue={false} />
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
-        {/* ── RIGHT COLUMN — Inventory pulse + Inbound pipeline + Return leakage ─── */}
-        <Box sx={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 2 }}>
-
+        {/* ── RIGHT COLUMN — Inventory pulse + Return leakage ─── */}
+        <Box
+          sx={{
+            flex: { xs: '1 0 300px', lg: '0 0 300px' },
+            minWidth: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+          }}
+        >
           {/* Inventory pulse */}
           {os && (
-            <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
-              <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                Inventory pulse
-              </Typography>
-              <PulseRow label="Ready to sell" value={`${fmtN(sellable)} of ${fmtN(total)}`} valueColor={sellable === 0 ? '#E5484D' : sellable < total ? '#D9A23B' : '#4CAF7A'} />
-              <PulseRow label="Margin at risk" value={os.finances ? fmt$(os.finances.total_margin_at_risk_per_week) + '/wk' : '—'} valueColor={os.finances && os.finances.total_margin_at_risk_per_week > 0 ? '#E5484D' : undefined} />
-              <PulseRow label="Phantom" value={String(phantom)} valueColor={phantom > 0 ? '#E5484D' : undefined} sub="sold without recorded receiving" />
-              <PulseRow label="Stocked out" value={String(zeroStock)} valueColor={zeroStock > 0 ? '#D9A23B' : undefined} />
-              <PulseRow label="Inbound" value={os.inbound ? `${fmtN(os.inbound.total_units_expected)} units` : '—'} sub={os.inbound ? `${os.inbound.open_po_count} open PO${os.inbound.open_po_count === 1 ? '' : 's'}` : undefined} />
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pt: 1 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>Dead capital</Typography>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: os.demand && os.demand.dead_capital_value > 0 ? '#D9A23B' : 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{os.demand ? fmt$(os.demand.dead_capital_value) : '—'}</Typography>
-              </Box>
-            </Box>
-          )}
-
-          {/* Inbound pipeline */}
-          {os?.inbound && os.inbound.open_po_count > 0 && (
-            <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
-              <Box sx={{ px: 2, py: 1.25, borderBottom: '0.5px solid var(--rule)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                  Inbound pipeline
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  {os.inbound.total_committed_value_cents != null && (
-                    <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                      {fmt$(os.inbound.total_committed_value_cents / 100)}committed
-                    </Typography>
-                  )}
-                  {/* ISS-054/ISS-105: Cash Flow CTA removed — Finances/Cashflow module
-                      deliberately unwired from nav (2026-07-08). No route path exists
-                      to reach here; restore this button if/when Finances scope returns. */}
-                </Box>
-              </Box>
-              {os.inbound.overdue_pos.map(po => (
-                <InboundRow key={po.po_short_ref} po={po} isOverdue={true} />
-              ))}
-              {os.inbound.pending_pos.map(po => (
-                <InboundRow key={po.po_short_ref} po={po} isOverdue={false} />
-              ))}
-            </Box>
+            <PulseCard
+              title="Inventory pulse"
+              rows={inventoryPulseRows}
+            />
           )}
 
           {/* Return leakage */}
@@ -669,7 +727,7 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
                           </Typography>
                            <Box
                             onClick={() => navigate('/returns')}
-                            sx={{ display: 'inline-flex', alignItems: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }}
                           >
                             Restock →
                           </Box>

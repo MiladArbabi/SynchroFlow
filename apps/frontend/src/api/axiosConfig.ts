@@ -1,23 +1,50 @@
 // apps/frontend/src/api/axiosConfig.ts
 
-import axios, { AxiosRequestConfig } from 'axios';
+import axios, { AxiosError, AxiosRequestConfig } from 'axios';
 import { getToken, setToken, clearToken, notifyTokenRefreshed } from 'utils/authStore';
 
 /**
- * AXIOS AUTH PHILOSOPHY (v2 — silent refresh)
- * ────────────────────────────────────────────
+ * AXIOS AUTH PHILOSOPHY (v3 — silent refresh + error-aware retry)
+ * ────────────────────────────────────────────────────────────────
  * - Access token: 15-min JWT, injected into every non-auth request
  * - Refresh token: 7-day HttpOnly cookie, never touched by JS directly
- * - On 401: attempt ONE silent refresh via POST /api/v1/auth/refresh_token
- *   - Success → update authStore + React state (via bridge), retry original request
- *   - Failure → hardLogout (token revoked / session expired)
- * - Single-flight: concurrent 401s queue behind one refresh call
+ * - Single-flight: concurrent refresh triggers queue behind one call
+ *
+ * WHEN A REFRESH IS TRIGGERED (response interceptor):
+ * - 401 on any non-auth route → always refreshable (token expired/invalid)
+ * - 403 TIER_INSUFFICIENT → refreshable (ENT-01): the access token's `tier`
+ *   claim can go stale the moment a shop upgrades/downgrades, even though
+ *   the token is otherwise still valid for its full 15-min window.
+ *   requireTier() (backend) reads tier straight off the JWT claim, so the
+ *   only way to pick up a plan change without a full re-login is to force
+ *   a refresh, which re-resolves tier fresh via resolveTierForShop().
+ * - 403 from requireAction/requireRole (permission/role denial) → NOT
+ *   refreshable. Refreshing re-derives tier and identity, not permissions —
+ *   retrying cannot change who the user is, so this must stay excluded or
+ *   every permission error becomes a pointless extra round-trip.
+ *
+ * WHAT HAPPENS INSIDE silentRefresh() (AUTH-02):
+ * - The backend's POST /auth/refresh_token returns distinct, deliberate
+ *   error shapes (see auth.controller.ts):
+ *     503 REFRESH_TEMPORARILY_UNAVAILABLE, retryable: true  → transient
+ *     401 SESSION_EXPIRED                                    → terminal
+ *     403 SESSION_COMPROMISED                                → terminal
+ * - Previously (v2) any failure at all — including the transient 503 —
+ *   triggered immediate hardLogout(). In practice this meant a momentary
+ *   DB blip or hitting the refresh rate limiter (10/min) could silently
+ *   end an active operator's session mid-workflow, with no way to resume
+ *   short of logging back in from scratch.
+ * - Now: only genuinely transient failures (503 retryable, or no response
+ *   at all / network error) get ONE retry via performRefresh() before
+ *   giving up. SESSION_EXPIRED / SESSION_COMPROMISED still hardLogout
+ *   immediately — retrying those can never succeed.
  *
  * Guarantees:
- * - No refresh loops (isRefreshing gate)
+ * - No refresh loops (isRefreshing gate + originalRequest._retry)
  * - No poisoned login (auth routes excluded)
  * - No identity corruption (clearToken before hardLogout)
- * - Active WMS operators mid-workflow are never interrupted by token expiry
+ * - Active WMS operators mid-workflow are not interrupted by token expiry,
+ *   a mid-session tier change, or a single transient refresh failure
  */
 
 // ─────────────────────────────────────────────────────────────
@@ -82,6 +109,56 @@ function hardLogout(reason: string): void {
 let isRefreshing = false;
 let refreshPromise: Promise<string> | null = null;
 
+/**
+ * AUTH-02: single attempt against POST /auth/refresh_token.
+ * Extracted so silentRefresh() can retry it once for transient failures
+ * without re-entering the single-flight gate.
+ */
+async function performRefresh(): Promise<string> {
+  const res = await axios.post(
+    '/api/v1/auth/refresh_token',
+    {},
+    { withCredentials: true } // sends HttpOnly refreshToken cookie
+  );
+  const newToken: string = res.data.accessToken;
+  if (!newToken) throw new Error('REFRESH_RESPONSE_MISSING_TOKEN');
+
+  setToken(newToken);
+  axiosInstance.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+  notifyTokenRefreshed(newToken);
+
+  try {
+    const ph = (window as WindowWithPostHog).posthog;
+    if (ph?.capture) ph.capture('auth.token.refreshed_silently');
+  } catch { /* non-fatal */ }
+
+  console.info('[AUTH] Silent refresh succeeded');
+  return newToken;
+}
+
+/**
+ * AUTH-02: only retry refresh failures the backend explicitly marks as
+ * transient (503 REFRESH_TEMPORARILY_UNAVAILABLE, retryable: true) or a
+ * network error (no response at all). 401 SESSION_EXPIRED and
+ * 403 SESSION_COMPROMISED are terminal — retrying cannot fix them.
+ */
+interface RefreshErrorPayload {
+  error?: string;
+  retryable?: boolean;
+}
+
+function isRetryableRefreshError(err: unknown): boolean {
+  if (!axios.isAxiosError(err)) return false;
+  const axiosErr = err as AxiosError<RefreshErrorPayload>;
+  const status = axiosErr.response?.status;
+  const code = axiosErr.response?.data?.error;
+  return (
+    status === undefined ||
+    (status === 503 &&
+      (axiosErr.response?.data?.retryable === true || code === 'REFRESH_TEMPORARILY_UNAVAILABLE'))
+  );
+}
+
 async function silentRefresh(): Promise<string> {
   if (isRefreshing && refreshPromise) {
     // Another request already kicked off a refresh — queue behind it
@@ -90,47 +167,37 @@ async function silentRefresh(): Promise<string> {
 
   isRefreshing = true;
 
-  refreshPromise = axios
-    .post(
-      '/api/v1/auth/refresh_token',
-      {},
-      { withCredentials: true } // sends HttpOnly refreshToken cookie
-    )
-    .then(res => {
-      const newToken: string = res.data.accessToken;
-      if (!newToken) throw new Error('REFRESH_RESPONSE_MISSING_TOKEN');
+  refreshPromise = performRefresh()
+    .catch(async initialErr => {
+      let err = initialErr;
 
-      // 1. Update module-level store + localStorage
-      setToken(newToken);
+      if (isRetryableRefreshError(err)) {
+        console.warn(
+          '[AUTH] Silent refresh transient failure — retrying once',
+          err?.response?.status,
+          err?.response?.data?.error
+        );
+        try {
+          return await performRefresh();
+        } catch (retryErr) {
+          err = retryErr;
+        }
+      }
 
-      // 2. Update axios default header immediately for any requests
-      //    that fire before the React re-render
-      axiosInstance.defaults.headers.common.Authorization = `Bearer ${newToken}`;
+      const status = err?.response?.status;
+      const code = err?.response?.data?.error;
 
-      // 3. Notify AuthContext so React state stays in sync
-      notifyTokenRefreshed(newToken);
-
-      // PostHog: successful silent refresh (no PII)
-      try {
-        const ph = (window as WindowWithPostHog).posthog;
-        if (ph?.capture) ph.capture('auth.token.refreshed_silently');
-      } catch { /* non-fatal */ }
-
-      console.info('[AUTH] Silent refresh succeeded');
-      return newToken;
-    })
-    .catch(err => {
-      // PostHog: refresh failed — user will be logged out
       try {
         const ph = (window as WindowWithPostHog).posthog;
         if (ph?.capture) {
           ph.capture('auth.token.refresh_failed', {
-            status: err?.response?.status ?? 'network_error',
+            status: status ?? 'network_error',
+            code: code ?? null,
           });
         }
       } catch { /* non-fatal */ }
 
-      console.warn('[AUTH] Silent refresh failed — logging out', err?.response?.status);
+      console.warn('[AUTH] Silent refresh failed — logging out', status, code);
       hardLogout('refresh_failed');
       throw err;
     })
@@ -191,8 +258,18 @@ axiosInstance.interceptors.response.use(
       console.warn('[HTTP ← ERROR]', status, url);
     }
 
-    // Not a 401, or already retried, or an auth route — pass through
-    if (status !== 401 || originalRequest._retry || isAuthRoute(url)) {
+    /**
+     * ENT-01: a 403 TIER_INSUFFICIENT means the access token's tier claim is
+     * stale (e.g. shop just upgraded) even though the token itself is still
+     * valid — refreshing re-resolves tier fresh from the DB (see
+     * entitlements.controller.ts / requireTier). Other 403s (role/permission
+     * denials from requireAction/requireRole) are NOT refreshable — retrying
+     * won't change who the user is, so they must stay excluded here.
+     */
+    const isStaleTier = status === 403 && error?.response?.data?.error === 'TIER_INSUFFICIENT';
+    const isRefreshable = status === 401 || isStaleTier;
+
+    if (!isRefreshable || originalRequest._retry || isAuthRoute(url)) {
       return Promise.reject(error);
     }
 
