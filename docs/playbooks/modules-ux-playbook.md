@@ -765,3 +765,17 @@ directly in new components — reference the token.
 | Business Pulse (Overview) | `modules/overview/src/ui/pages/OverviewModuleFT2.tsx` | Not started |
 | Today's Pulse (Orders) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | Not started |
 | Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | Not started |
+| Business Pulse (Overview, both layouts) | modules/overview/src/ui/pages/OverviewModuleFT2.tsx | ✅ Migrated 2026-07-22 |
+
+**2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
+`--good-ink` were added to `docs/color-pallet/index.md` correctly but
+initially missed from `apps/frontend/src/themes/index.tsx` — the actual
+MUI theme object the app reads at runtime. `npm run build -w modules/shared`
+passed cleanly throughout, because a shared component only type-checks
+that it emits a `var(--token)` string; it can't verify the token resolves
+to anything at runtime. The gap surfaced only via screenshot (Blocked
+rendering as plain ink instead of red) — caught before merge, but this is
+a rule going forward: any new CSS custom property needs `apps/frontend/src/themes/index.tsx`
+updated in the same change as `color-pallet/index.md`, not just the docs
+file, and verification requires a rendered screenshot, not just a green
+build.

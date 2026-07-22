@@ -14,7 +14,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
 import { useState } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
-import { formatCurrencyCompact, ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ModuleErrorBoundary, PulseCard } from '@lasyncro/shared/ui';
 // ─── CONSTANTS ────────────────────────────────────────────────
 const TRIAGE_PREVIEW_LIMIT = 3;
 // Baked severity palette — no alpha() needed
@@ -107,17 +107,7 @@ function GroupBand({ sevK, count }) {
     return (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: '8px', px: '1.25rem', py: '8px', bgcolor: sev.bgBand, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Box, { sx: { width: 8, height: 8, borderRadius: '50%', bgcolor: sev.color, flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.12em', color: sev.color }, children: sev.band }), _jsxs(Typography, { sx: { ml: 'auto', fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }, children: [count, " item", count !== 1 ? 's' : ''] })] }));
 }
 // ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
-// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
-// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
-// ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
-// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
-// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
-// Styling mirrors the Today's Flow rail (modules UX playbook): var(--surface)
-// card, uppercase micro-header, label/value rows on var(--rule) dividers,
-// design tokens only — no hardcoded hex or px.
-function BusinessPulse({ pulse, currency, onNavigate, noCard = false, }) {
-    if (!pulse)
-        return null;
+function buildBusinessPulseRows(pulse, currency) {
     const fmt = (v) => formatCurrencyCompact(v, currency);
     const delta = pulse.revenueDeltaVsYesterday;
     const deltaLabel = delta == null
@@ -125,11 +115,7 @@ function BusinessPulse({ pulse, currency, onNavigate, noCard = false, }) {
         : delta === 0
             ? 'flat vs yesterday'
             : `${delta > 0 ? '▲' : '▼'} ${formatCurrencyCompact(Math.abs(Math.round(delta)), currency)} vs yesterday`;
-    const deltaColor = delta == null || delta === 0
-        ? 'var(--ink-4)'
-        : delta > 0
-            ? '#4CAF7A'
-            : '#D9A23B';
+    const deltaTone = delta == null || delta === 0 ? undefined : delta > 0 ? 'good' : 'warning';
     const blockLabelMap = {
         inventory: 'inventory',
         customer: 'customer',
@@ -139,52 +125,12 @@ function BusinessPulse({ pulse, currency, onNavigate, noCard = false, }) {
     const blockLabel = pulse.topBlockingType && pulse.topBlockingType !== 'none'
         ? blockLabelMap[pulse.topBlockingType] ?? pulse.topBlockingType
         : null;
-    const rows = [
-        {
-            label: 'Revenue today',
-            value: fmt(pulse.revenueToday),
-            color: 'var(--ink)',
-            hint: deltaLabel,
-            hintColor: deltaColor,
-        },
-        {
-            label: 'Collected today',
-            value: fmt(pulse.collectedRevenue),
-            color: '#4CAF7A',
-        },
-        {
-            label: 'At risk',
-            value: fmt(pulse.atRiskRevenue),
-            color: (pulse.atRiskRevenue ?? 0) > 0 ? '#D9A23B' : 'var(--ink)',
-        },
-        {
-            label: 'Blocked',
-            value: fmt(pulse.blockedRevenue),
-            color: (pulse.blockedRevenue ?? 0) > 0 ? 'var(--accent)' : 'var(--ink)',
-            hint: blockLabel ? `mostly ${blockLabel}` : undefined,
-            hintColor: 'var(--ink-4)',
-        },
+    return [
+        { id: 'revenue-today', label: 'Revenue today', value: fmt(pulse.revenueToday), subtext: deltaLabel, subtextTone: deltaTone },
+        { id: 'collected-today', label: 'Collected today', value: fmt(pulse.collectedRevenue), tone: 'good' },
+        { id: 'at-risk', label: 'At risk', value: fmt(pulse.atRiskRevenue), tone: (pulse.atRiskRevenue ?? 0) > 0 ? 'warning' : 'neutral' },
+        { id: 'blocked', label: 'Blocked', value: fmt(pulse.blockedRevenue), tone: (pulse.blockedRevenue ?? 0) > 0 ? 'critical' : 'neutral', subtext: blockLabel ? `mostly ${blockLabel}` : undefined },
     ];
-    const pulseStages = [
-        { key: 'collected', label: 'Collected', count: pulse.collectedRevenue ?? 0, color: '#4CAF7A' },
-        { key: 'atRisk', label: 'At risk', count: pulse.atRiskRevenue ?? 0, color: '#D9A23B' },
-        { key: 'blocked', label: 'Blocked', count: pulse.blockedRevenue ?? 0, color: 'var(--accent)' },
-    ];
-    const activeStages = pulseStages.filter(s => s.count > 0);
-    const stageTotal = activeStages.reduce((s, d) => s + d.count, 0) || 1;
-    const cardSx = noCard
-        ? {}
-        : {
-            flex: { xs: '1 1 auto', lg: '0 0 280px' },
-            width: { xs: '100%', lg: '280px' },
-            minWidth: 0,
-            boxSizing: 'border-box',
-            bgcolor: 'var(--surface)',
-            border: '0.5px solid var(--rule)',
-            borderRadius: '14px',
-            p: '18px 20px',
-        };
-    return (_jsxs(Box, { sx: cardSx, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }, children: "Business pulse" }), rows.map(({ label, value, color, hint, hintColor }) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', py: 1.125, borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: label }), hint && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: hintColor ?? 'var(--ink-4)', mt: 0.25 }, children: hint }))] }), _jsx(Typography, { sx: { fontSize: 15, fontWeight: 600, color }, children: value })] }, label))), _jsx(Box, { sx: { display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 2, bgcolor: 'var(--bg)' }, children: activeStages.map(stage => (_jsx(Box, { sx: { width: `${(stage.count / stageTotal) * 100}%`, bgcolor: stage.color } }, stage.key))) }), onNavigate && (_jsx(Box, { onClick: () => onNavigate('/orders/flow'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "View order flow \u2192" }))] }));
 }
 // ─── MERGED PULSE CARD ────────────────────────────────────────
 // Right-hand 25% card for the map layout. Combines ranked decisions
@@ -206,7 +152,7 @@ function MergedPulseCard({ criticalSignals, watchSignals, pulse, currency, onNav
             display: 'flex',
             flexDirection: 'column',
             height: { xs: 'auto', lg: '100%' },
-        }, children: [urgentSignals.length > 0 && (_jsxs(Box, { sx: { px: '1.25rem', pt: '1rem', pb: '0.75rem' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '0.625rem' }, children: "Needs a decision" }), visibleSignals.map(s => (_jsxs(Box, { onClick: () => s.deepLink && onNavigate?.(s.deepLink), sx: { display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }, children: [_jsx(Box, { sx: { width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 } }), _jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }, noWrap: true, children: s.title }), s.revenueImpact != null && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }, children: formatCurrencyCompact(s.revenueImpact, currency) }))] })] }, s.id))), hiddenCount > 0 && (_jsxs(Box, { onClick: () => onNavigate?.('/order-flow'), sx: { display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: ["+", hiddenCount, " more \u2192"] }))] })), urgentSignals.length > 0 && pulse && (_jsx(Box, { sx: { height: '0.5px', bgcolor: 'var(--rule)' } })), pulse && (_jsx(Box, { sx: { px: '18px', py: '14px', flex: 1 }, children: _jsx(BusinessPulse, { pulse: pulse, currency: currency, onNavigate: onNavigate, noCard: true }) })), _jsxs(Box, { sx: { px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }, children: [trustWarning && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: '#D9A23B' }, children: "Data may be stale \u00B7" })), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: generatedTime ? `Updated at ${generatedTime}` : 'Updating…' }), onRefreshBrief && (_jsx(Box, { component: "button", onClick: onRefreshBrief, sx: { ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }, children: _jsx(RefreshCw, { size: 11 }) }))] })] }));
+        }, children: [urgentSignals.length > 0 && (_jsxs(Box, { sx: { px: '1.25rem', pt: '1rem', pb: '0.75rem' }, children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '0.625rem' }, children: "Needs a decision" }), visibleSignals.map(s => (_jsxs(Box, { onClick: () => s.deepLink && onNavigate?.(s.deepLink), sx: { display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }, children: [_jsx(Box, { sx: { width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 } }), _jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }, noWrap: true, children: s.title }), s.revenueImpact != null && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }, children: formatCurrencyCompact(s.revenueImpact, currency) }))] })] }, s.id))), hiddenCount > 0 && (_jsxs(Box, { onClick: () => onNavigate?.('/order-flow'), sx: { display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: ["+", hiddenCount, " more \u2192"] }))] })), urgentSignals.length > 0 && pulse && (_jsx(Box, { sx: { height: '0.5px', bgcolor: 'var(--rule)' } })), pulse && (_jsx(Box, { sx: { px: '18px', py: '14px', flex: 1 }, children: _jsx(PulseCard, { title: "Business pulse", variant: "embedded", rows: buildBusinessPulseRows(pulse, currency), footerCta: onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined }) })), _jsxs(Box, { sx: { px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }, children: [trustWarning && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: '#D9A23B' }, children: "Data may be stale \u00B7" })), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: generatedTime ? `Updated at ${generatedTime}` : 'Updating…' }), onRefreshBrief && (_jsx(Box, { component: "button", onClick: onRefreshBrief, sx: { ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }, children: _jsx(RefreshCw, { size: 11 }) }))] })] }));
 }
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 function OverviewModuleFT2Inner(props) {
@@ -287,7 +233,7 @@ function OverviewModuleFT2Inner(props) {
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '8px',
-                                }, children: [trustWarning && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: '#D9A23B' }, children: "Data may be stale \u00B7" })), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: generatedTime ? `Updated at ${generatedTime}` : 'Updating…' })] })] }), pulse && _jsx(BusinessPulse, { pulse: pulse, currency: currency, onNavigate: onNavigate }), upgradeTeaser && (_jsx(Box, { sx: { flex: '1 0 100%', minWidth: 0 }, children: upgradeTeaser }))] }))), isLoading && (_jsxs(Box, { sx: { display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }, children: [_jsx(Box, { sx: { flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }, children: [1, 2, 3].map(i => _jsx(Skeleton, { height: 56, sx: { borderRadius: '8px' } }, i)) }), _jsx(Box, { sx: { flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }, children: [1, 2, 3, 4].map(i => _jsx(Skeleton, { height: 24, sx: { borderRadius: '4px' } }, i)) })] }))] }));
+                                }, children: [trustWarning && (_jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: '#D9A23B' }, children: "Data may be stale \u00B7" })), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: generatedTime ? `Updated at ${generatedTime}` : 'Updating…' })] })] }), pulse && (_jsx(Box, { sx: { flex: { xs: '1 1 auto', lg: '0 0 280px' }, width: { xs: '100%', lg: '280px' }, minWidth: 0 }, children: _jsx(PulseCard, { title: "Business pulse", rows: buildBusinessPulseRows(pulse, currency), footerCta: onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined }) })), upgradeTeaser && (_jsx(Box, { sx: { flex: '1 0 100%', minWidth: 0 }, children: upgradeTeaser }))] }))), isLoading && (_jsxs(Box, { sx: { display: 'flex', flexWrap: 'wrap', gap: 2.25, alignItems: 'start' }, children: [_jsx(Box, { sx: { flex: '1 0 300px', minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }, children: [1, 2, 3].map(i => _jsx(Skeleton, { height: 56, sx: { borderRadius: '8px' } }, i)) }), _jsx(Box, { sx: { flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '1.25rem', display: 'flex', flexDirection: 'column', gap: '12px' }, children: [1, 2, 3, 4].map(i => _jsx(Skeleton, { height: 24, sx: { borderRadius: '4px' } }, i)) })] }))] }));
 }
 // ─── EVERYTHING ELSE (collapsible on-track section) ───────────
 function EverythingElse({ signals, onNavigate, currency, }) {

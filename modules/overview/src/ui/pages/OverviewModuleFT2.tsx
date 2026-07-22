@@ -14,7 +14,7 @@
 import { useState, type ReactNode } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
-import { formatCurrencyCompact, ModuleErrorBoundary } from '@lasyncro/shared/ui';
+import { formatCurrencyCompact, ModuleErrorBoundary, PulseCard, PulseCardRowData, PulseTone } from '@lasyncro/shared/ui';
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -288,30 +288,11 @@ function GroupBand({ sevK, count }: { sevK: SevKey; count: number }) {
 }
 
 // ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
-// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
-// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
-// ─── BUSINESS PULSE SIDEBAR ───────────────────────────────────
-// Cross-domain financial outcomes — distinct from Orders' Today's Flow.
-// Flow = work-in-progress queues; Pulse = money realized / at-risk / stuck.
-// Styling mirrors the Today's Flow rail (modules UX playbook): var(--surface)
-// card, uppercase micro-header, label/value rows on var(--rule) dividers,
-// design tokens only — no hardcoded hex or px.
-function BusinessPulse({
-  pulse,
-  currency,
-  onNavigate,
-  noCard = false,
-}: {
-  pulse: OverviewModuleFT2DataProps['pulse'];
-  currency: string;
-  onNavigate?: (path: string) => void;
-  /** Suppresses outer card Box — for use inside MergedPulseCard. */
-  noCard?: boolean;
-}) {
-  if (!pulse) return null;
-
+function buildBusinessPulseRows(
+  pulse: NonNullable<OverviewModuleFT2DataProps['pulse']>,
+  currency: string
+): PulseCardRowData[] {
   const fmt = (v: number | null) => formatCurrencyCompact(v, currency);
-
   const delta = pulse.revenueDeltaVsYesterday;
   const deltaLabel =
     delta == null
@@ -319,13 +300,8 @@ function BusinessPulse({
       : delta === 0
         ? 'flat vs yesterday'
         : `${delta > 0 ? '▲' : '▼'} ${formatCurrencyCompact(Math.abs(Math.round(delta)), currency)} vs yesterday`;
-
-  const deltaColor =
-    delta == null || delta === 0
-      ? 'var(--ink-4)'
-      : delta > 0
-        ? '#4CAF7A'
-        : '#D9A23B';
+  const deltaTone: PulseTone | undefined =
+    delta == null || delta === 0 ? undefined : delta > 0 ? 'good' : 'warning';
 
   const blockLabelMap: Record<string, string> = {
     inventory: 'inventory',
@@ -333,99 +309,17 @@ function BusinessPulse({
     operational: 'fulfillment',
     none: 'none',
   };
-
   const blockLabel =
     pulse.topBlockingType && pulse.topBlockingType !== 'none'
       ? blockLabelMap[pulse.topBlockingType] ?? pulse.topBlockingType
       : null;
 
-  const rows = [
-    {
-      label: 'Revenue today',
-      value: fmt(pulse.revenueToday),
-      color: 'var(--ink)',
-      hint: deltaLabel,
-      hintColor: deltaColor,
-    },
-    {
-      label: 'Collected today',
-      value: fmt(pulse.collectedRevenue),
-      color: '#4CAF7A',
-    },
-    {
-      label: 'At risk',
-      value: fmt(pulse.atRiskRevenue),
-      color: (pulse.atRiskRevenue ?? 0) > 0 ? '#D9A23B' : 'var(--ink)',
-    },
-    {
-      label: 'Blocked',
-      value: fmt(pulse.blockedRevenue),
-      color: (pulse.blockedRevenue ?? 0) > 0 ? 'var(--accent)' : 'var(--ink)',
-      hint: blockLabel ? `mostly ${blockLabel}` : undefined,
-      hintColor: 'var(--ink-4)',
-    },
+  return [
+    { id: 'revenue-today', label: 'Revenue today', value: fmt(pulse.revenueToday), subtext: deltaLabel, subtextTone: deltaTone },
+    { id: 'collected-today', label: 'Collected today', value: fmt(pulse.collectedRevenue), tone: 'good' },
+    { id: 'at-risk', label: 'At risk', value: fmt(pulse.atRiskRevenue), tone: (pulse.atRiskRevenue ?? 0) > 0 ? 'warning' : 'neutral' },
+    { id: 'blocked', label: 'Blocked', value: fmt(pulse.blockedRevenue), tone: (pulse.blockedRevenue ?? 0) > 0 ? 'critical' : 'neutral', subtext: blockLabel ? `mostly ${blockLabel}` : undefined },
   ];
-
-  const pulseStages = [
-    { key: 'collected', label: 'Collected', count: pulse.collectedRevenue ?? 0, color: '#4CAF7A' },
-    { key: 'atRisk', label: 'At risk', count: pulse.atRiskRevenue ?? 0, color: '#D9A23B' },
-    { key: 'blocked', label: 'Blocked', count: pulse.blockedRevenue ?? 0, color: 'var(--accent)' },
-  ];
-
-  const activeStages = pulseStages.filter(s => s.count > 0);
-  const stageTotal = activeStages.reduce((s, d) => s + d.count, 0) || 1;
-  const cardSx = noCard
-  ? {}
-  : {
-      flex: { xs: '1 1 auto', lg: '0 0 280px' },
-      width: { xs: '100%', lg: '280px' },
-      minWidth: 0,
-      boxSizing: 'border-box',
-      bgcolor: 'var(--surface)',
-      border: '0.5px solid var(--rule)',
-      borderRadius: '14px',
-      p: '18px 20px',
-    };
-
-  return (
-    <Box sx={cardSx}>
-      <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.875 }}>
-        Business pulse
-      </Typography>
-
-      {rows.map(({ label, value, color, hint, hintColor }) => (
-        <Box key={label} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', py: 1.125, borderBottom: '1px solid var(--rule)' }}>
-          <Box>
-            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>{label}</Typography>
-            {hint && (
-              <Typography sx={{ fontSize: 11, fontWeight: 300, color: hintColor ?? 'var(--ink-4)', mt: 0.25 }}>
-                {hint}
-              </Typography>
-            )}
-          </Box>
-          <Typography sx={{ fontSize: 15, fontWeight: 600, color }}>{value}</Typography>
-        </Box>
-      ))}
-
-      <Box sx={{ display: 'flex', height: 6, borderRadius: '3px', overflow: 'hidden', mt: 2, mb: 2, bgcolor: 'var(--bg)' }}>
-        {activeStages.map(stage => (
-          <Box
-            key={stage.key}
-            sx={{ width: `${(stage.count / stageTotal) * 100}%`, bgcolor: stage.color }}
-          />
-        ))}
-      </Box>
-
-      {onNavigate && (
-        <Box
-          onClick={() => onNavigate('/orders/flow')}
-          sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', mt: 1.5, px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-        >
-          View order flow →
-        </Box>
-      )}
-    </Box>
-  );
 }
 
 // ─── MERGED PULSE CARD ────────────────────────────────────────
@@ -513,10 +407,15 @@ function MergedPulseCard({
         <Box sx={{ height: '0.5px', bgcolor: 'var(--rule)' }} />
       )}
 
-      {/* ── BUSINESS PULSE (inline, no card wrapper) ── */}
+      {/* ── BUSINESS PULSE (inline, embedded PulseCard) — PULSE-01 ── */}
       {pulse && (
         <Box sx={{ px: '18px', py: '14px', flex: 1 }}>
-          <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} noCard />
+          <PulseCard
+            title="Business pulse"
+            variant="embedded"
+            rows={buildBusinessPulseRows(pulse, currency)}
+            footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
+          />
         </Box>
       )}
 
@@ -838,7 +737,15 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
               </Box>
             </Box>
 
-            {pulse && <BusinessPulse pulse={pulse} currency={currency} onNavigate={onNavigate} />}
+            {pulse && (
+              <Box sx={{ flex: { xs: '1 1 auto', lg: '0 0 280px' }, width: { xs: '100%', lg: '280px' }, minWidth: 0 }}>
+                <PulseCard
+                  title="Business pulse"
+                  rows={buildBusinessPulseRows(pulse, currency)}
+                  footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
+                />
+              </Box>
+            )}
             {upgradeTeaser && (
               <Box sx={{ flex: '1 0 100%', minWidth: 0 }}>
                 {upgradeTeaser}

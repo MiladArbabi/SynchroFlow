@@ -5,6 +5,7 @@ export interface PulseCardRowData {
     value: string | number;
     tone?: PulseTone;
     subtext?: string;
+    subtextTone?: PulseTone;
     progress?: {
         value: number;
         max: number;
@@ -31,6 +32,7 @@ export interface PulseCardProps {
     };
     updatedAt?: string;
     onRefresh?: () => void;
+    variant?: 'card' | 'embedded';
 }
-export declare function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefresh }: PulseCardProps): import("react/jsx-runtime").JSX.Element;
+export declare function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefresh, variant }: PulseCardProps): import("react/jsx-runtime").JSX.Element;
 //# sourceMappingURL=PulseCard.d.ts.map

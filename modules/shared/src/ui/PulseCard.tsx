@@ -21,6 +21,7 @@ export interface PulseCardRowData {
   value: string | number;
   tone?: PulseTone;
   subtext?: string;
+  subtextTone?: PulseTone; // colors subtext independently of the row's own tone (e.g. a delta hint)
   progress?: { value: number; max: number };
   action?: { label: string; onClick: () => void };
   onClick?: () => void;
@@ -40,6 +41,7 @@ export interface PulseCardProps {
   footerCta?: { label: string; onClick: () => void };
   updatedAt?: string;
   onRefresh?: () => void;
+  variant?: 'card' | 'embedded'; // 'embedded' suppresses outer shell — for composing inside a larger card
 }
 
 function sortRowsBySeverity(rows: PulseCardRowData[]): PulseCardRowData[] {
@@ -68,7 +70,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
         </Box>
 
         {row.subtext && (
-          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', pl: '14px' }}>{row.subtext}</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 300, color: row.subtextTone ? TONE_COLOR[row.subtextTone] : 'var(--ink-4)', pl: '14px' }}>{row.subtext}</Typography>
         )}
 
         {row.progress && (
@@ -111,7 +113,7 @@ function PulseCardRow({ row }: { row: PulseCardRowData }) {
   );
 }
 
-export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefresh }: PulseCardProps) {
+export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefresh, variant = 'card' }: PulseCardProps) {
   const sortedRows = sortRowsBySeverity(rows);
 
   const groups: { key: string | undefined; rows: PulseCardRowData[] }[] = [];
@@ -121,8 +123,12 @@ export function PulseCard({ title, headline, rows, footerCta, updatedAt, onRefre
     else groups.push({ key: row.group, rows: [row] });
   }
 
+  const shellSx = variant === 'embedded'
+    ? {}
+    : { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' };
+
   return (
-    <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+    <Box sx={{ ...shellSx, display: 'flex', flexDirection: 'column', gap: 1 }}>
       <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
         {title}
       </Typography>
