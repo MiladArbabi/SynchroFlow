@@ -27,7 +27,16 @@ interface SpotlightCoachMarkProps {
   onDismiss: () => void;
   step?: number;
   totalSteps?: number;
+  /** Optional pointer — renders a small triangle on the given edge, aimed at the coached element. */
+  direction?: 'up' | 'down' | 'left' | 'right';
 }
+
+const ARROW_SX_BY_DIRECTION = {
+  left:  { left: -7, top: '50%', transform: 'translateY(-50%)', borderTop: '7px solid transparent', borderBottom: '7px solid transparent', borderRight: '7px solid var(--accent-border)' },
+  right: { right: -7, top: '50%', transform: 'translateY(-50%)', borderTop: '7px solid transparent', borderBottom: '7px solid transparent', borderLeft: '7px solid var(--accent-border)' },
+  up:    { top: -7, left: '50%', transform: 'translateX(-50%)', borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderBottom: '7px solid var(--accent-border)' },
+  down:  { bottom: -7, left: '50%', transform: 'translateX(-50%)', borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderTop: '7px solid var(--accent-border)' },
+} as const;
 
 export function SpotlightCoachMark({
   title,
@@ -36,12 +45,14 @@ export function SpotlightCoachMark({
   onDismiss,
   step,
   totalSteps,
+  direction,
 }: SpotlightCoachMarkProps) {
   if (isDismissed) return null;
 
   return (
     <Box
       sx={{
+        position: 'relative',
         width: '100%',
         bgcolor: 'var(--accent-ghost)',
         border: '1px solid var(--accent-border)',
@@ -61,6 +72,7 @@ export function SpotlightCoachMark({
         },
       }}
     >
+      {direction && <Box sx={{ position: 'absolute', width: 0, height: 0, ...ARROW_SX_BY_DIRECTION[direction] }} />}
       {/* Progress + dismiss row */}
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: '6px' }}>
         {step && totalSteps ? (

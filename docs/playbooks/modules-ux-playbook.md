@@ -42,15 +42,15 @@ Pulse card padding is p: '18px 20px'.
 Orders Overview is the source of truth for this layout.
 
 ### FT2 Page Scroll Rule
-
 Main module pages should prefer page-level vertical scroll over nested card/list scroll.
-
 Rules:
 
 - Do not give primary lists their own `overflowY: 'auto'` unless explicitly required.
 - Avoid parent `height: '100%'` + `overflow: 'hidden'` clamps when the list should extend the page.
 - Drawer, modal, and side-panel bodies may keep internal scroll.
 - Table/list cards may keep `overflow: 'hidden'` for rounded corners, but the row container should not own vertical scroll.
+
+**Board Layout Exception (2026-07-21, OF-12):** Multi-column board layouts (e.g. Order Flow's Blocked / Pool / Fulfillment lanes) may give each column independent `overflowY: 'auto'` scroll, and their shared parent may use `height: '100%'` to bound row height for `alignItems: 'stretch'`. A board's purpose is simultaneous visibility across lanes — forcing page-level scroll on a board scrolls all lanes out of view together to reach one lane's overflow, defeating the layout. This exception applies only to genuine multi-column board pages, not single-list module pages, which remain governed by the base rule above.
 
 ### Orders Outbound Pattern
 
@@ -683,6 +683,7 @@ means something different on different screens. Extracted once, consumed
 by both the loud banner variant and the quiet inline meter variant.
 
 **Pattern — two presentations, one data source:**
+
 - **Loud (banner):** appears inline on the relevant page only when
   `level !== 'ok'`, dismissed by not rendering rather than a close button.
   First use: `OrderCapBanner.tsx` (ingestion cap, single threshold `[0.8]`,
@@ -716,3 +717,51 @@ Update this destination when that flow ships.
 should say "packed," matching `ShippedOrderCapBanner`'s copy, not
 "shipped," to stay accurate until/unless the underlying trigger point
 changes.
+
+## 18. Pulse Severity Tokens — critical / warning / good, 2026-07-22
+
+**The problem this corrects:** no severity color tokens existed for live
+risk metrics (as opposed to `--confirm-*`, §10, which is scoped narrowly to
+*persisted state*, and `--ft2-infoblock-diff-up`, which is scoped to
+*positive deltas*). In their absence, `#E5484D` was hardcoded independently
+at 60+ call sites across the app, converging into a de facto standard
+without ever being named — the same drift pattern §8 formalized for
+`#10151E`. `#D9A23B` and `#EAB308` also both circulated as "amber," doing
+two different jobs (status-dot amber vs. severity-tier amber) without a
+documented boundary between them.
+
+**New tokens** (`apps/frontend/src/themes/index.tsx`):
+
+```css
+--critical-ink: #E5484D   /* light + dark, matches 60+ existing call sites */
+--warning-ink:  #EAB308   /* already existed, undocumented until now */
+--good-ink:     #2E7D32   /* light */ / #4CAF7A   /* dark */
+```
+
+**Scope:** live risk/status metrics only — pulse cards, severity bands,
+decision-row indicators. Distinct from:
+
+- `--confirm-*` (§10) — persisted/disabled state only, never a live metric
+- `--ft2-infoblock-diff-up` — day-over-day delta framing specifically
+
+**Amber disambiguation, resolved:** `--warning-ink` (#EAB308) is canonical
+for severity-tier warning going forward (pulse cards, decision rows). Existing
+`#D9A23B` call sites (age/urgency coloring in `BlockedOrdersPage`,
+`OrdersInboundPage`, `WmsAnalyticsPage`) are pre-existing and out of scope
+for this change — not migrated as part of PULSE-01. Flag for a future sweep
+if full convergence is wanted, same pattern as CTA-023's deferred `#10151E`
+migration.
+
+**Rule going forward:** severity color in any live-metric context (not
+persisted state, not delta) uses `--critical-ink` / `--warning-ink` /
+`--good-ink`. Do not hardcode `#E5484D`, `#EAB308`, `#4CAF7A`, or `#2E7D32`
+directly in new components — reference the token.
+
+**PulseCard rollout status:**
+
+| Surface | File | Status |
+|---|---|---|
+| Sourcing Pulse | `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx` | ✅ Migrated 2026-07-22 |
+| Business Pulse (Overview) | `modules/overview/src/ui/pages/OverviewModuleFT2.tsx` | Not started |
+| Today's Pulse (Orders) | `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` | Not started |
+| Shipping Health (Outbound) | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | Not started |

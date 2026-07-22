@@ -50,6 +50,11 @@ Replace both existing `:root` blocks with this single definition. Use everywhere
   --rule:          #E8E6E0;
   --rule-2:        #D1CFC8;
 
+  /* Pulse severity — live risk/status metrics only, not persisted state (--confirm-*) or deltas (--ft2-infoblock-diff-up) */
+  --critical-ink:  #E5484D;
+  --warning-ink:   #EAB308;
+  --good-ink:      #2E7D32;
+
   /* Space dark (dark mode backgrounds) */
   --space-1:       #151D29;
   --space-2:       #1C2740;
@@ -77,6 +82,7 @@ Replace both existing `:root` blocks with this single definition. Use everywhere
 
     --rule:    rgba(255,255,255,0.08);
     --rule-2:  rgba(255,255,255,0.14);
+    --good-ink: #4CAF7A;
 
     /* Accent stays identical in both modes */
     --accent-ghost:  rgba(255,107,43,0.12);

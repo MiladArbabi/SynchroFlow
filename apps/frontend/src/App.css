@@ -1,42 +1,7 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
-}
+/* App.css intentionally emptied 2026-07-22 — removed unused Vite starter
+   template CSS (#root padding/max-width, .logo, .card, .read-the-docs).
+   The #root padding: 2rem was the actual root cause of whole-page scroll
+   on Order Flow: AppLayout's root Box sets height: 100vh (a fixed viewport
+   value), so #root's own padding pushed total rendered height 64px past
+   the viewport, overflowing html/body regardless of any internal flex/grid
+   height chain. See OF-12 for the full chain of fixes this made moot. */

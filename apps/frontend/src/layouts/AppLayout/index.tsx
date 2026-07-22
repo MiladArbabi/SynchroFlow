@@ -144,7 +144,7 @@ const AppLayout = (props: AppLayoutProps) => {
         </Box>
 
         {/* BELOW TOPNAV — sidenav + content side by side */}
-        <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden" }}>
+        <Box sx={{ flexGrow: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
 
           {/* SIDENAV — below topnav, full remaining height */}
           {isSidenavAllowed && (
@@ -205,7 +205,7 @@ const AppLayout = (props: AppLayoutProps) => {
           )}
 
           {/* MAIN CONTENT AREA */}
-          <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <Box sx={{ flexGrow: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
 
             {/* SYSTEM HEALTH BANNER (H-01) — FT2 only */}
             {isSidenavAllowed && systemHealth && (

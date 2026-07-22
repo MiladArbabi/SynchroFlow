@@ -45,7 +45,8 @@
 //     per-batch deadlines exist.
 
 import { type ChangeEvent, type ReactNode, useCallback, useMemo, useState } from 'react';
-import { SpotlightCoachMark } from '../../components/SpotlightCoachMark';
+import { SpotlightCoachMark } from '@lasyncro/shared/ui';
+import { useSpotlight } from '../../hooks/useSpotlight';
 import { useSearchParams } from 'react-router-dom';
 import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from '@mui/material';
 import { Clock, Flag, ChevronDown, ChevronUp, X } from 'lucide-react';
@@ -130,6 +131,8 @@ export default function OrderFlowPage() {
   const liveCapacityQuery = useLiveCapacity();
   const releaseBatch = useReleaseBatch();
   const setPriority = useSetPriority();
+  const spotlightOrderFlowWave = useSpotlight('order_flow_wave');
+
   /**
    * OF-08 (2026-07-02) — Blocked-order resolution path.
    * Reuses the exact same modal + body component as OrdersFT2Page.tsx
@@ -449,18 +452,19 @@ export default function OrderFlowPage() {
     <Box
       sx={{
         bgcolor: 'var(--bg)',
-        minHeight: '100%',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
       }}
     >
-      <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
-
+     <ModuleTabBar tabs={ORDERS_MODULE_TABS} />
       <Box
         sx={{
           p: '20px 28px',
           display: 'flex',
           flexDirection: 'column',
+          flex: 1,
+          minHeight: 0,
         }}
       >
         {/* ---------- Header: title + live summary + pool-filter chip ---------- */}
@@ -594,8 +598,10 @@ export default function OrderFlowPage() {
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateRows: 'max-content auto',
+                gridTemplateRows: 'max-content minmax(0, 1fr)',
                 gap: 2,
+                flex: 1,
+                minHeight: 0,
               }}
             >
               <Box
@@ -608,7 +614,56 @@ export default function OrderFlowPage() {
                   pb: '1px',
                 }}
               >
+              {/* ---- Release-success banner (transient, auto-dismisses) ---- */}
+              {releaseSuccess && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 1.5,
+                    px: 2,
+                    py: 1.375,
+                    bgcolor: 'var(--accent-ghost)',
+                    border: '1px solid var(--accent-border)',
+                    borderRadius: '12px',
+                  }}
+                >
+                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0, mt: 0.625 }} />
 
+                  <Box>
+                    {releaseSuccess.orderCount > 0 && (
+                      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
+                        <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+                          {releaseSuccess.orderCount} order{releaseSuccess.orderCount !== 1 ? 's' : ''} released
+                        </Box>
+                        {releaseSuccess.batchId && (
+                          <>
+                            {' · '}
+                            Batch {releaseSuccess.batchId.slice(0, 8).toUpperCase()} is now active in fulfillment.
+                          </>
+                        )}
+                      </Typography>
+                    )}
+
+                    {releaseSuccess.skippedOrders.length > 0 && (
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)', mt: releaseSuccess.orderCount > 0 ? 0.5 : 0 }}>
+                        <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+                          {releaseSuccess.skippedOrders.length} order{releaseSuccess.skippedOrders.length !== 1 ? 's' : ''} not released
+                        </Box>
+                        {' · '}
+                        {releaseSuccess.skippedOrders.slice(0, 3).map(formatSkippedOrder).join(' · ')}
+                        {releaseSuccess.skippedOrders.length > 3 && ` ·+${releaseSuccess.skippedOrders.length - 3} more`}
+                      </Typography>
+                    )}
+
+                    {releaseSuccess.orderCount === 0 && releaseSuccess.skippedOrders.length === 0 && (
+                      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                        No orders were released. The release pool may have changed. Refresh and try again.
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
               {/* Phase 4a of target-IA rebuild: grid wrapper so the three
                 columns (Blocked / Pool / Fulfillment) render side-by-side
                 instead of stacked. Legacy banner/grid/table/Drawer UI has
@@ -621,7 +676,9 @@ export default function OrderFlowPage() {
                       lg: blockedCount > 0 ? '0.8fr 1.4fr 0.8fr' : 'repeat(2, 1fr)',
                     },
                     gap: 1.5,
-                    alignItems: 'start',
+                    alignItems: 'stretch',
+                    flex: 1,
+                    minHeight: 0,
                   }}
                 >
 
@@ -640,12 +697,14 @@ export default function OrderFlowPage() {
                       display: 'flex',
                       flexDirection: 'column',
                       gap: 1,
+                      minHeight: 0,
                     }}
                   >
-                   <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                   <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', flexShrink: 0 }}>
                       Blocked orders
                     </Typography>
-                    {(['operational', 'inventory', 'customer', 'unknown']as const).map((key) =>
+                    <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {(['operational', 'inventory', 'customer', 'unknown'] as const).map((key) =>
                       blockedByReason[key].length > 0 && (
                         <Box key={key} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                           <Box
@@ -740,7 +799,8 @@ export default function OrderFlowPage() {
                       )
                     )}
                   </Box>
-                )}
+                </Box>
+              )}
 
                 {/* Phase 2 of target-IA rebuild: consolidated "Order pool" column
                     (target mockup's middle column). Added alongside the existing
@@ -805,28 +865,61 @@ export default function OrderFlowPage() {
                       are simple operator-toggled filters on data already
                       shown inline as row badges (Priority/SLA breached).
                     */}
-                    <Box sx={{ display: 'flex', gap: 0.75, mt: 1 }}>
-                      {([
-                        { key: 'priority' as const, label: 'Priority' },
-                        { key: 'sla_breached' as const, label: 'SLA breached' },
-                      ]).map(({ key, label }) => {
-                        const active = statusFilter.has(key);
-                        return (
-                          <Box
-                            key={key}
-                            onClick={() => toggleStatusFilter(key)}
-                            sx={{
-                              px: 1.25, py: 0.375, fontSize: 10.5, fontWeight: 500,
-                              border: '0.5px solid', borderRadius: '999px', cursor: 'pointer',
-                              borderColor: active ? 'var(--accent)' : 'var(--rule)',
-                              bgcolor: active ? 'var(--accent-ghost)' : 'transparent',
-                              color: active ? 'var(--accent)' : 'var(--ink-4)',
-                            }}
-                          >
-                            {label}
-                          </Box>
-                        );
-                      })}
+                    <Box sx={{ display: 'flex', gap: 0.75, mt: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+                      <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+                        {([
+                          { key: 'priority' as const, label: 'Priority' },
+                          { key: 'sla_breached' as const, label: 'SLA breached' },
+                        ]).map(({ key, label }) => {
+                          const active = statusFilter.has(key);
+                          return (
+                            <Box
+                              key={key}
+                              onClick={() => toggleStatusFilter(key)}
+                              sx={{
+                                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                px: 1.25, py: 0.375, fontSize: 10.5, fontWeight: 600,
+                                border: '1px solid', borderRadius: '999px', cursor: 'pointer',
+                                borderColor: active ? 'var(--accent)' : 'var(--ink-3)',
+                                bgcolor: active ? 'var(--accent-ghost)' : 'var(--surface)',
+                                color: active ? 'var(--accent)' : 'var(--ink-2)',
+                                transition: 'border-color 0.12s, color 0.12s',
+                                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' },
+                              }}
+                            >
+                              <Box sx={{
+                                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                                bgcolor: active ? 'var(--accent)' : 'transparent',
+                                border: active ? 'none' : '1px solid var(--ink-3)',
+                              }} />
+                              {label}
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                      <Box
+                        component="button"
+                        type="button"
+                        disabled={releaseBatch.isPending}
+                        onClick={handleRelease}
+                        sx={{
+                          flexShrink: 0, px: '14px', py: '7px',
+                          border: 0, borderRadius: '8px',
+                          bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
+                          fontSize: 12, fontWeight: 600,
+                          cursor: releaseBatch.isPending ? 'wait' : 'pointer',
+                          opacity: releaseBatch.isPending ? 0.6 : 1,
+                          transition: 'opacity 0.12s',
+                          '&:hover': { opacity: 0.88 },
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {releaseBatch.isPending
+                          ? 'Releasing…'
+                          : selected.size > 0
+                          ? `Release ${selected.size} order${selected.size !== 1 ? 's' : ''}`
+                          : `Release all ${poolOrders.length}`}
+                      </Box>
                     </Box>
 
                     {/* ISS-OP-02: order search input */}
@@ -848,76 +941,11 @@ export default function OrderFlowPage() {
                     />
                   </Box>
 
-                  {/* ISS-OP-01 + T9: top action bar — release all or release selected.
-                      Spotlight coaches selection when nothing is selected.
-                      Bar always visible at top of list — no scrolling required. */}
-                  <Box sx={{
-                    px: '14px', py: '10px',
-                    borderBottom: '1px solid var(--rule)',
-                    bgcolor: selected.size > 0 ? 'var(--accent-ghost)' : 'var(--bg-2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1,
-                  }}>
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      {selected.size === 0 ? (
-                        <SpotlightCoachMark
-                          spotlightKey="order_flow_wave"
-                          title="Select orders to release"
-                          body="Check orders below to choose what goes to the floor, or release all at once."
-                          step={1}
-                          totalSteps={2}
-                        />
-                      ) : (
-                        <Box>
-                          <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
-                            {selected.size} selected · {waveLineItems} line items · {waveUnits} units
-                          </Typography>
-                          <Box sx={{ display: 'flex', gap: 0.75, mt: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <Box
-                              component="select"
-                              value={operatorId}
-                              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setOperatorId(e.target.value)}
-                              sx={{
-                                px: 1, py: 0.375, bgcolor: 'var(--bg)',
-                                border: '1px solid var(--rule)', borderRadius: '6px',
-                                color: operatorId ? 'var(--ink)' : 'var(--ink-3)',
-                                fontSize: 11, fontFamily: 'inherit', outline: 'none',
-                              }}
-                            >
-                              <option value="">All operators</option>
-                              {operators.map(op => (
-                                <option key={op.user_id} value={op.user_id}>
-                                  {`${op.first_name} ${op.last_name}`.trim()}
-                                </option>
-                              ))}
-                            </Box>
-                          </Box>
-                        </Box>
-                      )}
-                    </Box>
-                    <Box
-                      component="button"
-                      type="button"
-                      disabled={releaseBatch.isPending}
-                      onClick={handleRelease}
-                      sx={{
-                        flexShrink: 0, px: '14px', py: '7px',
-                        border: 0, borderRadius: '8px',
-                        bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
-                        fontSize: 12, fontWeight: 600,
-                        cursor: releaseBatch.isPending ? 'wait' : 'pointer',
-                        opacity: releaseBatch.isPending ? 0.6 : 1,
-                        transition: 'opacity 0.12s',
-                        '&:hover': { opacity: 0.88 },
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {releaseBatch.isPending
-                        ? 'Releasing…'
-                        : selected.size > 0
-                        ? `Release ${selected.size} order${selected.size !== 1 ? 's' : ''}`
-                        : `Release all ${poolOrders.length}`}
-                    </Box>
-                  </Box>
+                  {/* OF-10 (2026-07-21): Release CTA moved to the filter-chips
+                      row above. Multi-select operator picker (previously
+                      shown here when selected.size > 0) removed alongside —
+                      confirm scope before reintroducing if operator assignment
+                      on release is still needed. */}
 
                   <Box
                     sx={{
@@ -1206,12 +1234,25 @@ export default function OrderFlowPage() {
                     display: 'flex',
                     flexDirection: 'column',
                     gap: 1,
+                    minHeight: 0,
                   }}
                 >
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', flexShrink: 0 }}>
                     Fulfillment · {batches.length} active
                   </Typography>
 
+                  {selected.size === 0 && (
+                    <SpotlightCoachMark
+                      title="Select orders to release"
+                      body="Check orders in the pool to choose what goes to the floor, or release all at once."
+                      isDismissed={spotlightOrderFlowWave.isDismissed}
+                      onDismiss={spotlightOrderFlowWave.dismiss}
+                      step={1}
+                      totalSteps={2}
+                    />
+                  )}
+
+                  <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   {batches.length === 0 ? (
                     <Box sx={{ px: 1, py: 4, textAlign: 'center' }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-4)' }}>
@@ -1298,6 +1339,7 @@ export default function OrderFlowPage() {
                       );
                     })
                   )}
+                 </Box>
                 </Box>
                 
                 </Box>
@@ -1310,57 +1352,6 @@ export default function OrderFlowPage() {
                   gap: 1.5,
                 }}
               >
-
-              {/* ---- Release-success banner (transient, auto-dismisses) ---- */}
-              {releaseSuccess && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 1.5,
-                    px: 2,
-                    py: 1.375,
-                    bgcolor: 'var(--accent-ghost)',
-                    border: '1px solid var(--accent-border)',
-                    borderRadius: '12px',
-                  }}
-                >
-                  <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--accent)', flexShrink: 0, mt: 0.625 }} />
-
-                  <Box>
-                    {releaseSuccess.orderCount > 0 && (
-                      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
-                        <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-                          {releaseSuccess.orderCount} order{releaseSuccess.orderCount !== 1 ? 's' : ''} released
-                        </Box>
-                        {releaseSuccess.batchId && (
-                          <>
-                            {' · '}
-                            Batch {releaseSuccess.batchId.slice(0, 8).toUpperCase()} is now active in fulfillment.
-                          </>
-                        )}
-                      </Typography>
-                    )}
-
-                    {releaseSuccess.skippedOrders.length > 0 && (
-                      <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)', mt: releaseSuccess.orderCount > 0 ? 0.5 : 0 }}>
-                        <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
-                          {releaseSuccess.skippedOrders.length} order{releaseSuccess.skippedOrders.length !== 1 ? 's' : ''} not released
-                        </Box>
-                        {' · '}
-                        {releaseSuccess.skippedOrders.slice(0, 3).map(formatSkippedOrder).join(' · ')}
-                        {releaseSuccess.skippedOrders.length > 3 && ` · +${releaseSuccess.skippedOrders.length - 3} more`}
-                      </Typography>
-                    )}
-
-                    {releaseSuccess.orderCount === 0 && releaseSuccess.skippedOrders.length === 0 && (
-                      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-                        No orders were released. The release pool may have changed. Refresh and try again.
-                      </Typography>
-                    )}
-                  </Box>
-                </Box>
-              )}
 
             {/* ---- Release pool table + next-wave rail ---- */}
               <Box
@@ -1403,6 +1394,7 @@ export default function OrderFlowPage() {
           />
         )}
       </EntityDetailModal>
+
     </Box>
   );
 }

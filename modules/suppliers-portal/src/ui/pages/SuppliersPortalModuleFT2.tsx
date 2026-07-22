@@ -33,6 +33,7 @@ import {
   ModuleLoadingSkeleton, 
   SpotlightCoachMark,
   EntityDetailModal,
+  PulseCard
  } from '@lasyncro/shared/ui';
 /**
  * SUPPLIERS PORTAL MODULE — FT2 SURFACE
@@ -2107,30 +2108,38 @@ function PurchasingSourcingView({
           )}
         </Box>
 
-        {/* PULSE CARD */}
-        <Box sx={{ flex: '0 0 300px', bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '18px 20px' }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-3)', mb: 1.5 }}>
-            Sourcing pulse
-          </Typography>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Never ordered before</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{neverOrderedCount}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Ready to order</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{goodMatches.length}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Preferences set</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>{preferences.length}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>Queued for reorder</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-              {reorderRequests.reduce((sum, g) => sum + g.requests.length, 0)}
-            </Typography>
-          </Box>
-        </Box>
+        {/* PULSE CARD — migrated to shared PulseCard, PULSE-01 */}
+        <PulseCard
+          title="Sourcing pulse"
+          headline={{
+            value: String(neverOrderedCount),
+            tone: neverOrderedCount > 0 ? 'warning' : 'good',
+            subtext: neverOrderedCount > 0 ? 'never ordered — no supplier assigned yet' : 'all SKUs have a supplier',
+          }}
+          rows={[
+            {
+              id: 'never-ordered',
+              label: 'Never ordered before',
+              value: neverOrderedCount,
+              tone: neverOrderedCount > 0 ? 'warning' : 'good',
+            },
+            {
+              id: 'ready-to-order',
+              label: 'Ready to order',
+              value: goodMatches.length,
+            },
+            {
+              id: 'preferences-set',
+              label: 'Preferences set',
+              value: preferences.length,
+            },
+            {
+              id: 'queued-for-reorder',
+              label: 'Queued for reorder',
+              value: reorderRequests.reduce((sum, g) => sum + g.requests.length, 0),
+            },
+          ]}
+        />
       </Box>
 
       <CreatePoDialog
