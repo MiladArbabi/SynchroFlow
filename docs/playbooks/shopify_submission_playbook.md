@@ -318,3 +318,12 @@ Then log out/in to refresh the JWT `tier` claim.
 
 - Test account: `contact@lasyncro.com` + password
 - Testing instructions: log in → lands directly on connected FT2 dashboard (no store-connect step, by design)
+### ROUTE-01 closed (verified 2026-07-23)
+
+Shopify sends real App Store install requests as GET to the exact App URL configured in the Partner Dashboard (this app's is the bare root, https://app.lasyncro.com) with shop, hmac, and timestamp query params appended, per Shopify's own OAuth documentation. The backend's handleShopifyInstall handler existed and was correctly implemented (HMAC validation, ghost-shop creation, billing_provider stamped at birth per SHB-01/03/04), but was only mounted at /api/v1/integrations/shopify/install. Nothing routed root-path traffic there, so a real install request would have silently fallen through to the SPA and served the login page instead, with the install parameters discarded entirely.
+
+First fix attempt placed the install-detection check inside the app.get(*) catch-all, positioned after app.use(express.static(...)). Deployed cleanly but did not fix the issue — verified via response headers (etag, last-modified) showing express.static intercepts and serves index.html for bare / before any handler registered after it ever runs. Corrected by moving the check to its own app.get('/') handler registered before express.static, calling next() to fall through to normal SPA serving for any request that isn't install-shaped.
+
+Live-verified against production: a request to / with shop and hmac params now reaches handleShopifyInstall and correctly returns 401 for an invalid signature (previously returned 200 with the SPA HTML). Confirmed no regression on /overview, /login, and plain / with no query params, which all still return 200 and serve the SPA correctly.
+
+This closes the last known gap in the real App Store install path — the ghost-shop-creation and billing_provider stamping logic (SHB-01/03/04/18) is now actually reachable by a genuine Shopify-initiated install, not just correct in isolation.

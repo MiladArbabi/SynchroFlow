@@ -1,5 +1,5 @@
 // apps/backend/src/bootstrap/express.ts
-import express, { Express } from 'express';
+import express, { Express, Request } from 'express';
 import cookieParser from 'cookie-parser';
 import db from '@lasyncro/backend-core/db.js';
 import path from 'path';
@@ -16,6 +16,7 @@ import shopifyRoutes from '../api/shopify/shopify.routes.js';
 import onboardingReadinessRouter from '../onboarding/readiness.router.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { registerActivationRoutes } from '../api/activation/activation.routes.js';
+import { handleShopifyInstall } from '../api/integrations/integration.controller.js';
 import specterRouter from '../api/specter/specter.routes.js';
 import customersFt2Routes from '../api/customers/customers.ft2.routes.js';
 import orderNexusRoutes from '../api/order-nexus/orderNexus.routes.js';
@@ -175,11 +176,45 @@ app.use('/api/v1/pilot-applications', pilotRoutes);
  *
  * to return the React index.html instead of Express 404.
  */
+/**
+ * ROUTE-01: SHOPIFY APP STORE INSTALL DETECTION
+ * -----------------------------------------------
+ * Shopify sends real install requests as GET to the exact App URL
+ * configured in the Partner Dashboard (this app's is the bare root,
+ * https://app.lasyncro.com) with shop, hmac, and timestamp query
+ * params appended. Without this check, those requests fell straight
+ * through to the SPA catch-all below, silently discarding the install
+ * params — no HMAC verification, no ghost-shop creation, no
+ * billing_provider stamping ever ran for a real App Store install.
+ *
+ * handleShopifyInstall is self-contained (own param extraction, own
+ * HMAC validation, no auth middleware dependency — see its own HARD
+ * RULES comment), so it's safe to call directly here rather than
+ * duplicating its logic or issuing an HTTP redirect to itself.
+ *
+ * Checked before the SPA catch-all in every branch below so this
+ * applies in production, and in dev/no-frontend-build fallbacks too —
+ * install detection should never depend on which branch is active.
+ */
+function isShopifyInstallRequest(req: Request): boolean {
+  return req.path === '/' && !!req.query.shop && !!req.query.hmac;
+}
+
 if (process.env.NODE_ENV === 'production') {
   const frontendDistPath = path.resolve(process.cwd(), 'apps/frontend/dist');
   const frontendIndexPath = path.join(frontendDistPath, 'index.html');
 
   if (fs.existsSync(frontendIndexPath)) {
+    // ROUTE-01: must run BEFORE express.static — serve-static (which
+    // express.static wraps) serves index.html for '/' by default,
+    // intercepting the request before it ever reaches the app.get('*')
+    // catch-all below. A real Shopify install request to bare '/' was
+    // being served the SPA here, never reaching this check at all.
+    app.get('/', (req, res, next) => {
+      if (isShopifyInstallRequest(req)) return handleShopifyInstall(req, res);
+      next();
+    });
+
     app.use(express.static(frontendDistPath));
 
     app.get('*', (req, res, next) => {
@@ -189,12 +224,16 @@ if (process.env.NODE_ENV === 'production') {
   } else {
     console.warn('[frontend] dist/index.html not found:', frontendIndexPath);
 
-    app.get('/', (_req, res) => {
+    app.get('/', (req, res) => {
+      if (isShopifyInstallRequest(req)) return handleShopifyInstall(req, res);
       res.send('SynchroFlow API is running!');
     });
   }
 } else {
-  app.get('/', (_req, res) => res.send('laSyncro API is running!'));
+  app.get('/', (req, res) => {
+    if (isShopifyInstallRequest(req)) return handleShopifyInstall(req, res);
+    res.send('laSyncro API is running!');
+  });
 }
 
 return app;
