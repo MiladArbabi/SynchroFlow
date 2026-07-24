@@ -57,6 +57,11 @@ export const normalizeShopDomain = (shopInput: string): string => {
   return shop;
 };
 
+// SCOPE-01: scopes here MUST exactly match [access_scopes] in shopify.app.toml.
+// Shopify grants only the intersection of the two lists — a mismatch silently
+// breaks whatever feature depends on the missing scope. Last audited 2026-07-24:
+// write_inventory -> stow cascade sync; read_refunds -> shopifyRefundBackfill.service.ts
+
 export const initiateOAuth = async (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform?: string; shop?: string };
   let userId: number;
@@ -117,7 +122,7 @@ export const initiateOAuth = async (req: Request, res: Response) => {
       'read_refunds',
       'read_customers',
       'read_inventory',
-      'read_payouts',
+      'write_inventory',
       'read_fulfillments',
       'write_fulfillments',
       'read_merchant_managed_fulfillment_orders',
@@ -384,7 +389,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_gid: shopGid,
           access_token: encryptedToken,
           scopes:
-            'read_products,read_orders,read_returns,read_customers,read_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+            'read_products,read_orders,read_refunds,read_customers,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
           installed_at: new Date(),
           uninstalled_at: null,
         })
@@ -604,6 +609,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  *   - HMAC validation is mandatory — reject any unsigned request
  *   - Ghost user email is @lasyncro.internal and is password-login-disabled
  *   - billing_provider: 'shopify' is stamped at birth on new installs
+ * 
+ * SCOPE-01: scopes here MUST exactly match [access_scopes] in shopify.app.toml.
+ * Shopify grants only the intersection of the two lists — a mismatch silently
+ * breaks whatever feature depends on the missing scope. Last audited 2026-07-24:
+ * write_inventory -> stow cascade sync; read_refunds -> shopifyRefundBackfill.service.ts
  */
 export const handleShopifyInstall = async (req: Request, res: Response) => {
   const query = req.query as Record<string, string>;
