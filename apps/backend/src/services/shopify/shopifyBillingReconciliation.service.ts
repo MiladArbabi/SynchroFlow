@@ -24,7 +24,7 @@
 import { Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { resolveShopifyAccessToken } from '../../api/shopify/shopify.billing.controller.js';
 
-const SHOPIFY_API_VERSION = '2026-07';
+const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION!;
 
 // SHB-12: keys are the exact "Plan name for merchant invoices" values
 // as saved in the Partner Dashboard. Normalized lowercase at lookup time.
