@@ -81,14 +81,46 @@ export const initiateOAuth = async (req: Request, res: Response) => {
   if (platform === 'shopify' && !shop) {
     return res.status(400).json({ error: 'Missing required query param: shop' });
   }
-
-    // --- Generate CSRF state ---
+  // --- Generate CSRF state ---
   const state = crypto.randomBytes(16).toString('hex');
-
   // --- Normalize shop domain (Shopify only) ---
   const shopDomain = platform === 'shopify'
     ? normalizeShopDomain(shop!)
     : null;
+
+ // BILL-19 / OAUTH-RECONNECT-01: this endpoint is reachable by any authenticated
+  // user with a freeform `shop` param. Shopify App Store review requirement 2.3.1
+  // prohibits initiating installs via manual myshopify.com entry — fresh Shopify
+  // installs MUST originate from handleShopifyInstall (App-Store-owned surface).
+  // This endpoint may ONLY be used today to reconnect a shop the requesting user
+  // already owns/belongs to. Non-Shopify platforms (future: WooCommerce, Amazon,
+  // NetSuite, Etsy) are intentionally exempt — this restriction is Shopify-specific.
+  //
+  // FUTURE (multi-Shopify-store consolidation, not yet built): when a merchant can
+  // connect a SECOND, independent Shopify store from within laSyncro, this "must
+  // already own an installation for this exact shop_domain" check will need to
+  // change to something like "this shop_domain isn't already owned by a DIFFERENT
+  // user" — otherwise this endpoint will incorrectly reject legitimate new-store
+  // connections. Revisit this block first when building that feature. New-store
+  // connections through this path still won't satisfy 2.3.1 on their own — that
+  // will need its own App-Store-style safeguard (e.g. confirming installation via
+  // Shopify's install redirect rather than a typed domain), not just an ownership
+  // check.
+  
+  if (platform === 'shopify') {
+    const ownedInstallation = await db('shopify_app_installations')
+      .join('shop_memberships', 'shop_memberships.shop_id', 'shopify_app_installations.shop_id')
+      .where('shop_memberships.user_id', userId)
+      .andWhere('shopify_app_installations.shop_domain', shopDomain)
+      .first('shopify_app_installations.shop_id');
+
+    if (!ownedInstallation) {
+      console.warn('[OAUTH_RECONNECT_DENIED]', { userId, shopDomain });
+      return res.status(403).json({
+        error: 'This endpoint only supports reconnecting an existing Shopify installation.',
+      });
+    }
+  }
 
   // --- Hard expiry (10 minutes) ---
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
@@ -106,6 +138,7 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     state,
     shop_domain: shopDomain,
     expires_at: expiresAt,
+    install_source: platform === 'shopify' ? 'reconnect' : null,
   });
 
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
@@ -573,8 +606,13 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    // App Store installs: stamp billing_provider on subscription (covers reinstalls)
-    if (oauthContext.installSource === 'app_store') {
+    // BILL-19: stamp billing_provider on subscription for both App Store installs
+    // AND reconnects (initiateOAuth) — a reconnect must never silently reset an
+    // App Store merchant's billing_provider away from 'shopify'.
+    if (
+      oauthContext.installSource === 'app_store' ||
+      oauthContext.installSource === 'reconnect'
+    ) {
       await db('shop_subscriptions')
         .where({ shop_id: result.shopId })
         .update({ billing_provider: 'shopify', updated_at: new Date() });
