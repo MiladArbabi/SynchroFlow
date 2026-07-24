@@ -7,9 +7,9 @@ const shopify = shopifyApi({
   apiVersion: process.env.SHOPIFY_API_VERSION as ApiVersion,
   isEmbeddedApp: false,
   hostName: 'localhost',
+  // NOTE (SCOPE-02): not authoritative/enforced — see shopify.app.toml. Kept as description only.
   scopes: [
     'read_orders',
-    'read_returns',
     'read_customers',
     'read_products',
     'read_inventory',

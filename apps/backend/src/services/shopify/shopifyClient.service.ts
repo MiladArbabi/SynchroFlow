@@ -2,27 +2,26 @@ import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 
 /**
- * SHOPIFY CLIENT FACTORY (SINGLE SOURCE OF TRUTH)
+ * SHOPIFY CLIENT FACTORY
  * ----------------------------------------------
  * Centralizes Shopify API initialization.
  *
- * Guarantees:
- * - consistent scopes
- * - reusable client creation
- * - isolation from orchestration logic
+ * NOTE (SCOPE-02): this scopes array is NOT authoritative and is NOT
+ * enforced by the SDK — @shopify/shopify-api only reads config.scopes
+ * inside shopify.auth.begin(), which this codebase never calls (OAuth
+ * URLs are built manually in integration.controller.ts). The real
+ * source of truth is shopify.app.toml [access_scopes], which MUST
+ * match the scope arrays in integration.controller.ts's initiateOAuth
+ * and handleShopifyInstall. This list is kept only as a description
+ * of scopes this client's queries actually rely on.
  */
 
 const REQUIRED_SCOPES = [
   'read_orders',
-  'read_returns',
   'read_customers',
   'read_products',
   'read_inventory',
-  'write_inventory',          // stow cascade sync — already added
-  'read_inventory_shipments',
-  'write_inventory_shipments',
-  'read_inventory_transfers',
-  'write_inventory_transfers',
+  'write_inventory',          // stow cascade sync
   'read_fulfillments',
 
   /**
