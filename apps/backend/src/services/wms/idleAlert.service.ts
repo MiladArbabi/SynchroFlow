@@ -123,7 +123,10 @@ async function upsertIdleAlert({
   const title = `Operator idle during ${stage}`;
   const message = `Operator has been inactive for ${idleMinutes} minute${idleMinutes !== 1 ? 's' : ''} on batch ${batchId.slice(0, 8).toUpperCase()}.`;
 
-  await db.raw(`
+  const result = await db.raw(`
+    WITH previous AS (
+      SELECT is_active FROM alerts WHERE shop_id = ? AND alert_key = ?
+    )
     INSERT INTO alerts (
       shop_id, alert_key, source, alert_type, severity,
       title, message, entity_id, entity_type,
@@ -142,13 +145,19 @@ async function upsertIdleAlert({
         WHEN EXCLUDED.is_active = false THEN CURRENT_TIMESTAMP
         ELSE alerts.dismissed_at
       END
+    RETURNING (SELECT is_active FROM previous) AS previous_is_active
   `, [
+    shopId, alertKey,
     shopId, alertKey,
     title, message, batchId,
     isActive, isActive ? null : new Date(),
   ]);
 
-  if (isActive) {
+  // WM-ALERT-01: only log on inactive→active transition, not every poll cycle.
+  // Previously logged on every 60s cycle while a batch stayed idle (observed
+  // 5000+ consecutive identical log lines for one stale batch).
+  const previousIsActive = result.rows?.[0]?.previous_is_active;
+  if (isActive && previousIsActive !== true) {
     console.warn('[WMS_IDLE_ALERT_FIRED]', { shopId, alertKey, stage, userId, batchId, idleMinutes });
   }
 }
