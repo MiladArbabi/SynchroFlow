@@ -338,6 +338,23 @@ export async function startWorkers(): Promise<void> {
       err && (err as Error).message ? (err as Error).message : err
     );
   }
+  // start Shopify billing reconciliation worker (BILL-20) — fallback for
+  // missed app_subscriptions/update webhook deliveries
+  try {
+    const shopifyBillingReconciliation = await import('../workers/shopifyBillingReconciliation.worker.js');
+    if (typeof shopifyBillingReconciliation.startShopifyBillingReconciliationWorker === 'function') {
+      void shopifyBillingReconciliation.startShopifyBillingReconciliationWorker();
+      if (typeof shopifyBillingReconciliation.stopShopifyBillingReconciliationWorker === 'function') {
+        workerStopFns.push(async () => shopifyBillingReconciliation.stopShopifyBillingReconciliationWorker());
+      }
+      console.log('[bootstrap/workers] Shopify billing reconciliation worker started');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Shopify billing reconciliation worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
   // start margin snapshot integrity worker (FIN-02 hardening — read-only drift detector)
   try {
     const marginIntegrity = await import('../workers/margin-snapshot-integrity.worker.js');
