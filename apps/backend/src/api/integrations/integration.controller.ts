@@ -60,7 +60,9 @@ export const normalizeShopDomain = (shopInput: string): string => {
 // SCOPE-01: scopes here MUST exactly match [access_scopes] in shopify.app.toml.
 // Shopify grants only the intersection of the two lists — a mismatch silently
 // breaks whatever feature depends on the missing scope. Last audited 2026-07-24:
-// write_inventory -> stow cascade sync; read_refunds -> shopifyRefundBackfill.service.ts
+// write_inventory -> stow cascade sync. NOTE: refund data (shopifyRefundBackfill.service.ts)
+// is covered by read_orders — there is no separate "read_refunds" scope in Shopify's
+// system. Do not re-add it; Shopify's app deploy validation will reject it outright.
 
 export const initiateOAuth = async (req: Request, res: Response) => {
   const { platform, shop } = req.query as { platform?: string; shop?: string };
@@ -119,7 +121,6 @@ export const initiateOAuth = async (req: Request, res: Response) => {
     const scopes = [
       'read_products',
       'read_orders',
-      'read_refunds',
       'read_customers',
       'read_inventory',
       'write_inventory',
@@ -389,7 +390,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_gid: shopGid,
           access_token: encryptedToken,
           scopes:
-            'read_products,read_orders,read_refunds,read_customers,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+            'read_products,read_orders,read_customers,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
           installed_at: new Date(),
           uninstalled_at: null,
         })
@@ -613,7 +614,9 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  * SCOPE-01: scopes here MUST exactly match [access_scopes] in shopify.app.toml.
  * Shopify grants only the intersection of the two lists — a mismatch silently
  * breaks whatever feature depends on the missing scope. Last audited 2026-07-24:
- * write_inventory -> stow cascade sync; read_refunds -> shopifyRefundBackfill.service.ts
+ * write_inventory -> stow cascade sync. NOTE: refund data (shopifyRefundBackfill.service.ts)
+ * is covered by read_orders — there is no separate "read_refunds" scope in Shopify's
+ * system. Do not re-add it; Shopify's app deploy validation will reject it outright.
  */
 export const handleShopifyInstall = async (req: Request, res: Response) => {
   const query = req.query as Record<string, string>;
@@ -863,7 +866,6 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
   const scopes = [
     'read_products',
     'read_orders',
-    'read_refunds',
     'read_customers',
     'read_inventory',
     'read_payouts',
