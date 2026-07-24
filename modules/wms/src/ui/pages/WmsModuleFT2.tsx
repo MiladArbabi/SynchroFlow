@@ -157,6 +157,27 @@ export type WmsModuleFT2Props = {
   onAddReturnLine: (returnJobId: string, input: AddReturnLineInput) => Promise<void>;
   onProcessReturnLine: (returnJobId: string, input: UpdateReturnLineInput) => Promise<void>;
   onCompleteReturnJob: (returnJobId: string, input: CompleteReturnJobInput) => Promise<void>;
+  /**
+   * Orders sitting in pick_complete batches — picked, no pack claim yet.
+   * Powers the "X orders ready to be packed" summary + expandable list,
+   * so operators can see which LSU- barcodes to scan without already
+   * being mid pack-session. See wms_qa_findings_2026_07_24.md.
+   */
+  readyToPackOrders?: {
+    pick_batch_id: string;
+    lasyncro_order_id: string;
+    external_order_id: string;
+    wms_barcode: string | null;
+    line_items: {
+      lasyncro_line_item_id: string;
+      product_title: string;
+      variant_title: string | null;
+      sku: string | null;
+      quantity: number;
+      unit_barcode: string | null;
+    }[];
+  }[];
+  readyToPackCount?: number;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -529,6 +550,8 @@ function WmsModuleFT2Inner({
   onAddReturnLine,
   onProcessReturnLine,
   onCompleteReturnJob,
+  readyToPackOrders,
+  readyToPackCount,
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -578,6 +601,7 @@ function WmsModuleFT2Inner({
 
   const [packScanLoading, setPackScanLoading] = useState(false);
   const [packScanError, setPackScanError] = useState<string | null>(null);
+  const [readyToPackOpen, setReadyToPackOpen] = useState(false);
   const packInputRef = useRef<HTMLInputElement>(null);
   const packErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -834,6 +858,79 @@ function WmsModuleFT2Inner({
           Scanner auto-submits · manual entry: press Enter
         </Typography>
       </Box>
+
+      {/* READY TO PACK — orders picked, no pack claim yet. Click to see LSU-/LSO- codes to scan. */}
+      {!!readyToPackCount && readyToPackCount > 0 && (
+        <Box sx={{
+          bgcolor: 'var(--surface)',
+          border: '1px solid var(--rule)',
+          borderRadius: '14px',
+          mb: 2.5,
+          overflow: 'hidden',
+        }}>
+          <Box
+            onClick={() => setReadyToPackOpen(v => !v)}
+            sx={{
+              display: 'flex', alignItems: 'center', gap: 1,
+              px: '20px', py: '16px', cursor: 'pointer',
+            }}
+          >
+            <Package size={16} color="var(--accent)" />
+            <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
+              {readyToPackCount} {readyToPackCount === 1 ? 'order' : 'orders'} ready to be packed
+            </Typography>
+            <Box sx={{ flex: 1 }} />
+            <Typography sx={{
+              fontSize: 12, color: 'var(--ink-4)',
+              transform: readyToPackOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 0.15s',
+            }}>
+              ▾
+            </Typography>
+          </Box>
+          {readyToPackOpen && (
+            <Box sx={{ px: '20px', pb: '16px' }}>
+              {(readyToPackOrders ?? []).map(order => (
+                <Box key={order.lasyncro_order_id} sx={{
+                  border: '1px solid var(--rule)', borderRadius: '10px',
+                  p: '14px 16px', mb: 1.25,
+                  '&:last-child': { mb: 0 },
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                    <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                      #{order.external_order_id}
+                    </Typography>
+                    {order.wms_barcode && (
+                      <Typography sx={{
+                        fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                        color: 'var(--ink-3)', ml: 'auto',
+                      }}>
+                        {order.wms_barcode}
+                      </Typography>
+                    )}
+                  </Box>
+                  {order.line_items.map(item => (
+                    <Box key={item.lasyncro_line_item_id} sx={{
+                      display: 'flex', alignItems: 'center', gap: 1,
+                      py: 0.5,
+                    }}>
+                      <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', flex: 1 }} noWrap>
+                        {item.product_title}{item.variant_title ? ` · ${item.variant_title}` : ''}
+                      </Typography>
+                      <Typography sx={{
+                        fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                        color: item.unit_barcode ? 'var(--accent)' : 'var(--ink-4)',
+                      }}>
+                        {item.unit_barcode ?? 'no tracked unit'}
+                      </Typography>
+                    </Box>
+                  ))}
+                </Box>
+              ))}
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* ACTIVE BATCHES SECTION */}
       {!isLoading && !loadingSession && batches.length > 0 && (

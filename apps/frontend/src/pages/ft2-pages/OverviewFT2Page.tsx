@@ -257,17 +257,38 @@ export default function OverviewPageFT2() {
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.
   const liveActivityQuery = useWmsLiveActivity(hasMapTier);
+  const activeBatches = liveActivityQuery.data?.activeBatches ?? [];
+  // batch_id -> status, so pickerPositions (which only carry batch_id) can
+  // resolve which phase is happening at their bin. See playbook §6.4 (OV-14).
+  const batchStatusById = activeBatches.reduce<Record<string, 'picking' | 'packing'>>(
+    (acc, b) => { acc[b.batch_id] = b.status; return acc; },
+    {}
+  );
   const liveActivity = liveActivityQuery.data?.pickerPositions.reduce<Record<string, LiveBinActivity>>(
     (acc, p) => {
       const existing = acc[p.location_code];
       acc[p.location_code] = {
         operatorCount: (existing?.operatorCount ?? 0) + 1,
         hasActivePick: true,
+        status: batchStatusById[p.batch_id] ?? existing?.status,
       };
       return acc;
     },
     {}
   );
+
+  // Floor-wide batch summary for the footer strip — real activeBatches data
+  // that was previously fetched and discarded. See playbook §6.1 (OV-14).
+  const pickingBatches = activeBatches.filter(b => b.status === 'picking');
+  const packingBatches = activeBatches.filter(b => b.status === 'packing');
+  const batchUnitsPicked = activeBatches.reduce((sum, b) => sum + b.picked_lines, 0);
+  const batchUnitsTotal = activeBatches.reduce((sum, b) => sum + b.total_units, 0);
+  const batchProgressPct = batchUnitsTotal > 0 ? Math.round((batchUnitsPicked / batchUnitsTotal) * 100) : null;
+  const packQueueCount = packingBatches.reduce(
+    (sum, b) => sum + Math.max(0, b.total_units - b.units_packed),
+    0
+  );
+  const awaitingPackCount = liveActivityQuery.data?.awaitingPackUnits ?? 0;
 
   // Inbound apron — order pool count + constrained (blocked) sub-stack.
   // Outbound apron wired in v2 once useLiveCapacity is added to this page.
@@ -469,6 +490,8 @@ export default function OverviewPageFT2() {
             occupancy={occupancyQuery.data?.occupancy}
             stations={stations}
             liveActivity={liveActivity}
+            packQueueCount={packQueueCount}
+            awaitingPackCount={awaitingPackCount}
             showLegend={false}
             showControls={false}
             disablePan
@@ -494,13 +517,26 @@ export default function OverviewPageFT2() {
                 — {idleAlerts.alerts[0].message}
               </Typography>
             </>
-          ) : (
+            ) : activeBatches.length > 0 ? (
             <>
               <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'var(--confirm-ink)', flexShrink: 0 }} />
-              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
-                All pickers and packers active
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)' }}>
+                {pickingBatches.length > 0 && `${pickingBatches.length} picking`}
+                {pickingBatches.length > 0 && packingBatches.length > 0 && ' · '}
+                {packingBatches.length > 0 && `${packingBatches.length} packing`}
               </Typography>
+              {batchProgressPct !== null && (
+                <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+                  — {batchProgressPct}% units picked
+                </Typography>
+              )}
             </>
+            ) : (
+            // Calm state per overview-live-map-playbook.md §4 — floor is idle,
+            // not broken. Distinct from the idle-operator alert above.
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+              Floor is clear · No active batches
+            </Typography>
           )}
           <Box sx={{ flex: 1 }} />
           <Box

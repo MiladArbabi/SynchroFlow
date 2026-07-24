@@ -8,6 +8,7 @@ import {
   useWebPush,
 } from '@lasyncro/wms';
 import { useWms } from '../wms/useWms';
+import { useReadyToPack } from '../wms/useReadyToPack';
 import { axiosInstance } from 'api/axiosConfig';
 import type {
   ConfirmScanParams,
@@ -103,6 +104,7 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
 export default function WmsOperationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { data, isLoading, isError, refetch, stowTasks, settings } = useWms();
+  const readyToPackQuery = useReadyToPack();
   const { data: gridData } = useWarehouseGrid();
 
   const { user } = useAuth();
@@ -486,6 +488,8 @@ export default function WmsOperationsPage() {
       data={data ?? null}
       isLoading={isLoading}
       isError={isError}
+      readyToPackOrders={readyToPackQuery.data?.orders}
+      readyToPackCount={readyToPackQuery.data?.orderCount}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}

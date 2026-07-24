@@ -22,6 +22,8 @@ export interface ActiveBatch {
   status: 'picking' | 'packing';
   picked_lines: number;
   total_lines: number;
+  total_units: number;
+  units_packed: number;
 }
 
 export interface StowPressure {
@@ -33,6 +35,7 @@ export interface WmsLiveActivity {
   pickerPositions: PickerPosition[];
   activeBatches: ActiveBatch[];
   stowPressure: StowPressure;
+  awaitingPackUnits: number;
 }
 
 export function useWmsLiveActivity(enabled = true) {

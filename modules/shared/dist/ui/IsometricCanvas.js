@@ -135,7 +135,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
                 return (_jsxs("g", { children: [_jsx("polygon", { points: pts(ll0, ll1, lu1, lu0), fill: lFill, stroke: stroke, strokeWidth: "0.4" }), _jsx("polygon", { points: pts(rl0, rl1, ru1, ru0), fill: lFillDark, stroke: stroke, strokeWidth: "0.4" })] }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, }) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
@@ -354,6 +354,9 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             const dotPt = activity?.hasActivePick
                                 ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
                                 : null;
+                            const packPt = !isFrame && zone.zone_type === 'pack' && (packQueueCount ?? 0) > 0
+                                ? project(wx + ww + 0.3, wy + wd / 2, wh + 0.35, zoom, flipped)
+                                : null;
                             return (_jsxs("g", { children: [_jsx(IsometricBox, { wx: wx, wy: wy, ww: ww, wd: wd, wh: wh, colorKey: colorKey, isSelected: selected === zone.location_code, isDimmed: !isFrame && ((highlightZoneTypes != null &&
                                             highlightZoneTypes.size > 0 &&
                                             !highlightZoneTypes.has(zone.zone_type ?? '')) ||
@@ -363,7 +366,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone
-                                            : undefined, isFrame: isFrame, label: zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: "#4CAF7A", opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] }))] }, zone.location_code));
+                                            : undefined, isFrame: isFrame, label: zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A', opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
                         }), stations && worldBounds && stations.map(station => {
                             if (station.count === 0)
                                 return null;

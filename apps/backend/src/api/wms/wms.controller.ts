@@ -671,6 +671,71 @@ export const httpGetBatchOrders = async (req: Request, res: Response) => {
 };
 
 // ─────────────────────────────────────────
+// GET /api/v1/wms/batches/ready-to-pack
+// ─────────────────────────────────────────
+// Aggregate version of httpGetBatchOrders above — every order sitting in a
+// pick_complete batch (picked, no pack claim yet), with the LSU- unit
+// barcode to scan per line item. Powers the "X orders ready to be packed"
+// summary + expandable list in WMS Operations. Previously there was no
+// way to see which barcodes belonged to a ready batch without already
+// being mid pack-session — see wms_qa_findings_2026_07_24.md.
+export const httpGetReadyToPack = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const orders = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const batchOrders = await trx('pick_batches as pb')
+        .join('pick_batch_orders as pbo', 'pbo.pick_batch_id', 'pb.pick_batch_id')
+        .join('orders as o', 'o.lasyncro_order_id', 'pbo.lasyncro_order_id')
+        .join('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where('pb.shop_id', shopId)
+        .where('pb.status', 'pick_complete')
+        .select(
+          'pb.pick_batch_id',
+          'o.lasyncro_order_id',
+          'eim.external_order_id',
+          'o.wms_barcode',
+        );
+
+      const orderIds = batchOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
+      if (orderIds.length === 0) return [];
+
+      const lineItems = await trx('order_line_items as oli')
+        .leftJoin('products as p', 'p.lasyncro_product_id', 'oli.lasyncro_product_id')
+        .leftJoin('pick_scan_log as pskl', (join) => {
+          join
+            .on('pskl.lasyncro_line_item_id', 'oli.lasyncro_line_item_id')
+            .andOnVal('pskl.status', 'confirmed');
+        })
+        .whereIn('oli.lasyncro_order_id', orderIds)
+        .select(
+          'oli.lasyncro_line_item_id',
+          'oli.lasyncro_order_id',
+          'oli.sku',
+          trx.raw(`COALESCE(p.title, 'Unknown product') as product_title`),
+          trx.raw(`oli.title as variant_title`),
+          'oli.quantity',
+          'pskl.lasyncro_unit_id as unit_barcode'
+        );
+
+      return batchOrders.map((order: { lasyncro_order_id: string }) => ({
+        ...order,
+        line_items: lineItems.filter((li: { lasyncro_order_id: string }) => li.lasyncro_order_id === order.lasyncro_order_id),
+      }));
+    });
+
+    return res.status(200).json({ orderCount: orders.length, orders });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[WMS_READY_TO_PACK_FAILED]', { shopId, error: message });
+    return res.status(500).json({ error: `Failed to fetch ready-to-pack orders: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
 // POST /api/v1/wms/pack/scan
 // ─────────────────────────────────────────
 export const httpConfirmPackScan = async (req: Request, res: Response) => {
@@ -3720,13 +3785,15 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [pickerRows, batchRows, stowRow] = await Promise.all([
+    const [pickerRows, batchRows, stowRow, awaitingPackRow] = await Promise.all([
       // Last scan location per operator — within 4-hour recency window only.
       trx('pick_scan_log as psl')
+        .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
         .select('psl.scanned_by as operator_id', 'psl.location_code', 'psl.scanned_at', 'psl.pick_batch_id')
         .where('psl.shop_id', shopId)
         .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
         .whereNotNull('psl.location_code')
+        .whereIn('pb.status', ['picking', 'packing'])
         .orderBy('psl.scanned_by')
         .orderBy('psl.scanned_at', 'desc')
         .distinctOn('psl.scanned_by'),
@@ -3737,7 +3804,9 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
           'pb.pick_batch_id',
           'pb.status',
           trx.raw('COALESCE(pb.units_picked, 0) AS picked_lines'),
-          'pb.total_line_items'
+          'pb.total_line_items',
+          'pb.total_units',
+          trx.raw('COALESCE(pb.units_packed, 0) AS units_packed')
         )
         .where('pb.shop_id', shopId)
         .whereIn('pb.status', ['picking', 'packing']),
@@ -3747,6 +3816,12 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .where('shop_id', shopId)
         .where('status', 'pending')
         .count('stow_task_id as pending_count')
+        .first(),
+
+      trx('pick_batches')
+        .where('shop_id', shopId)
+        .where('status', 'pick_complete')
+        .sum('total_units as total')
         .first(),
     ]);
 
@@ -3762,11 +3837,14 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         status: r.status,
         picked_lines: Number(r.picked_lines),
         total_lines: Number(r.total_line_items),
+        total_units: Number(r.total_units),
+        units_packed: Number(r.units_packed),
       })),
       stowPressure: {
         pending_count: Number(stowRow?.pending_count ?? 0),
         anchor_location: 'RECEIVE-1',
       },
-    });
+      awaitingPackUnits: Number(awaitingPackRow?.total ?? 0),
+      });
   });
 };

@@ -15,6 +15,7 @@ import {
   httpConfirmPickScan,
   httpClaimPack,
   httpGetBatchOrders,
+  httpGetReadyToPack,
   httpConfirmPackScan,
   httpCompletePack,
   httpGetProblemCenterExceptions,
@@ -160,6 +161,14 @@ router.get(
   requireTier('starter'),
   requireAction('wms:read'),
   httpGetBatchOrders
+);
+router.get(
+  '/batches/ready-to-pack',
+  authenticateToken,
+  requireFt2,
+  requireTier('starter'),
+  requireAction('wms:read'),
+  httpGetReadyToPack
 );
 
 router.get(

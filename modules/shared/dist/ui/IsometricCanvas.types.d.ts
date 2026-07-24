@@ -25,6 +25,14 @@ export type WarehouseZone = {
 export interface LiveBinActivity {
     operatorCount: number;
     hasActivePick: boolean;
+    /**
+     * Phase of the batch currently active at this bin, joined from
+     * activeBatches (pick_batches.status) via pick_scan_log.pick_batch_id.
+     * Optional for backward compatibility with callers that only know
+     * "someone is here" (e.g. WarehouseGrid) without batch phase.
+     * See overview-live-map-playbook.md §6.4 (OV-14).
+     */
+    status?: 'picking' | 'packing';
 }
 /**
  * SyntheticStation — virtual apron projected in isometric space,

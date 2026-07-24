@@ -275,6 +275,9 @@ export interface IsometricCanvasProps {
    * Populated by useWmsLiveActivity — absent until v2 is wired at page level.
    */
   liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
+  packQueueCount?: number;
+  awaitingPackCount?: number;
+
 }
 export function IsometricCanvas({ 
     zones, 
@@ -295,6 +298,7 @@ export function IsometricCanvas({
     disablePan = false,
     stations,
     liveActivity,
+    packQueueCount,
   }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
@@ -513,6 +517,9 @@ export function IsometricCanvas({
             const dotPt = activity?.hasActivePick
               ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
               : null;
+            const packPt = !isFrame && zone.zone_type === 'pack' && (packQueueCount ?? 0) > 0
+              ? project(wx + ww + 0.3, wy + wd / 2, wh + 0.35, zoom, flipped)
+              : null;
 
             return (
               <g key={zone.location_code}>
@@ -549,7 +556,11 @@ export function IsometricCanvas({
                 {/* Picker activity dot — rendered above bin top face when operator is active */}
                 {dotPt && (
                   <g>
-                    <circle cx={dotPt.sx} cy={dotPt.sy} r={5 * zoom} fill="#4CAF7A" opacity={0.9} />
+                    <circle
+                      cx={dotPt.sx} cy={dotPt.sy} r={5 * zoom}
+                      fill={activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A'}
+                      opacity={0.9}
+                    />
                     {(activity?.operatorCount ?? 0) > 1 && (
                       <text x={dotPt.sx} y={dotPt.sy + 1} textAnchor="middle"
                         dominantBaseline="middle"
@@ -558,6 +569,32 @@ export function IsometricCanvas({
                         {activity!.operatorCount}
                       </text>
                     )}
+                  </g>
+                )}
+                
+                {/* Parcel icon — qty queued to pack, PACK zone only, hidden at 0 */}
+                {packPt && (
+                  <g>
+                    <g>
+                      <rect
+                        x={packPt.sx - 5 * zoom} y={packPt.sy - 5 * zoom}
+                        width={10 * zoom} height={9 * zoom} rx={1 * zoom}
+                        fill="#D9A23B" stroke="var(--bg)" strokeWidth={0.75} opacity={0.92}
+                      />
+                      <line
+                        x1={packPt.sx} y1={packPt.sy - 5 * zoom}
+                        x2={packPt.sx} y2={packPt.sy + 4 * zoom}
+                        stroke="var(--bg)" strokeWidth={0.75} opacity={0.6}
+                      />
+                      <animate attributeName="opacity" values="1;0.6;1" dur="2.6s" repeatCount="indefinite" />
+                    </g>
+                    <text
+                      x={packPt.sx + 9 * zoom} y={packPt.sy + 1}
+                      textAnchor="start" dominantBaseline="middle"
+                      fontSize={Math.round(7 * zoom)} fontWeight="600"
+                      fill="var(--ink)" fontFamily="monospace">
+                      {packQueueCount}
+                    </text>
                   </g>
                 )}
               </g>

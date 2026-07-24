@@ -54,8 +54,10 @@ export interface IsometricCanvasProps {
      * Populated by useWmsLiveActivity — absent until v2 is wired at page level.
      */
     liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
+    packQueueCount?: number;
+    awaitingPackCount?: number;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react/jsx-runtime").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map
