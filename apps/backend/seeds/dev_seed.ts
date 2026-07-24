@@ -517,7 +517,7 @@ export async function seed(knex: Knex): Promise<void> {
       console.log('[DEV_SEED]    Operator → claim receive job → inspect → close → barcodes generated');
       console.log('[DEV_SEED]    Operator → claim stow → scan LOC-A01 → scan product barcode');
       console.log('[DEV_SEED]    Operator → claim pick batch → scan product barcodes');
-      console.log('[DEV_SEED]    Operator → claim pack → scan items → scan QA-ORD-100x → ship');
+     console.log('[DEV_SEED]    Operator → claim pack → scan items → scanQA-ORD-100x → ship');
     }
   } else if (process.env.DEV_SEED_MODE !== 'full_data') {
     console.log('[DEV_SEED] ⚠️ No shop membership created');
@@ -1124,7 +1124,7 @@ export async function seed(knex: Knex): Promise<void> {
         updated_at: now,
       });
 
-    console.log('[DEV_SEED] ✅ shopify_app_installations placeholder seeded (webhook shop-resolution will work; real API calls will not — see inline comment)');
+      console.log('[DEV_SEED] ✅ shopify_app_installations placeholder seeded (webhook shop-resolution will work; real API calls will not — see inline comment)');
     console.log('[DEV_SEED] ✅ Full operational data seeded');
     console.log('[DEV_SEED] → Trust gate will pass');
     console.log('[DEV_SEED] → Morning brief, cash flow, and FT2 surfaces ready');
@@ -1133,5 +1133,94 @@ export async function seed(knex: Knex): Promise<void> {
   console.log('────────────────────────────────────────');
   console.log('[DEV_SEED] Completed successfully');
   console.log('────────────────────────────────────────');
-  }); 
+  });
+
+  // ── LIFECYCLE DOMAIN EVENTS (FT0 + FT2) ────────────────────────────────────
+  // ISSUE-01: direct-inserted orders/fulfillment never drove domain_events,
+  // so system_readiness_state and ft2_state stayed empty for seeded shops.
+  // MUST run after the seed transaction above commits — processDomainEvent
+  // reads domain_events via its own separate connection/transaction, so an
+  // event inserted inside the still-open seed trx is invisible to it
+  // ([PROJECTION_EVENT_NOT_FOUND]). Uses the plain knex connection, not trx.
+  // Skipped entirely if no shop membership exists (bare dev:setup).
+  const seededShop = await knex('shops').orderBy('id', 'desc').first();
+  if (!seededShop) return;
+
+  const hasMembership = await knex('shop_memberships')
+    .where({ shop_id: seededShop.id })
+    .first();
+
+  if (hasMembership) {
+    console.log('[DEV_SEED] Emitting lifecycle domain events (ft0_completed, ft2_confirmed)…');
+
+    const { processDomainEvent } = await import('../src/events/processDomainEvent.js');
+
+    const owner = await knex('users').where({ shop_id: seededShop.id }).orderBy('id', 'asc').first();
+
+    const countRow = await knex('orders')
+      .where({ shop_id: seededShop.id })
+      .count<{ count: string }>('* as count')
+      .first();
+
+    const liveOrderCount = Number(countRow?.count ?? 0);
+
+    const ft0Result = await knex.raw(
+      `INSERT INTO domain_events (shop_id, event_type, event_payload, event_time, event_version, external_event_id)
+       VALUES (?, 'ft0/completed', ?, CURRENT_TIMESTAMP, 1, ?)
+       ON CONFLICT (shop_id, external_event_id) WHERE external_event_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [
+        seededShop.id,
+        JSON.stringify({ orders: liveOrderCount, firstInsightDelivered: false }),
+        `internal:ft0/completed:${seededShop.id}`,
+      ]
+    );
+
+    const ft0Event = ft0Result.rows[0];
+
+    if (ft0Event) {
+      await processDomainEvent(ft0Event.id);
+      console.log('[DEV_SEED] ✅ ft0_completed processed — system_readiness_state populated');
+    } else {
+      console.log('[DEV_SEED] ft0_completed already exists — skipped');
+    }
+
+    const ft2Result = await knex.raw(
+      `INSERT INTO domain_events (shop_id, event_type, event_payload, event_time, event_version, external_event_id)
+       VALUES (?, 'lifecycle/ft2_confirmed', ?, CURRENT_TIMESTAMP, 1, ?)
+       ON CONFLICT (shop_id, external_event_id) WHERE external_event_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [
+        seededShop.id,
+        JSON.stringify({
+          user_id: owner?.id ?? null,
+          evaluator_version: 'ft2-evaluator@dev-seed',
+          evaluation_snapshot: {
+            eligible: true,
+            status: 'ELIGIBLE',
+            blockers: [],
+            evidence: { source: 'dev_seed' },
+          },
+        }),
+        `internal:lifecycle/ft2_confirmed:${seededShop.id}`,
+      ]
+    );
+    const ft2Event = ft2Result.rows[0];
+
+    if (ft2Event) {
+      await processDomainEvent(ft2Event.id);
+      console.log('[DEV_SEED] ✅ ft2_confirmed processed — FT2 readiness populated');
+    } else {
+      console.log('[DEV_SEED] ft2_confirmed already exists — skipped');
+    }
+
+    // ── ISSUE-02 NOTE ──────────────────────────────────────────────────────
+    // orders_operational_control_snapshot is NOT scheduled here.
+    // dev_seed.ts runs before seed_overview.sql (which inserts real
+    // domain_events) and before `npm run rebuild` (which replays them).
+    // Scheduling the snapshot job this early captures a stale, near-empty
+    // state. The snapshot job is scheduled at the npm-script level in
+    // package.json's dev:full-seed / dev:full-reset chains, AFTER rebuild
+    // completes, so it reflects the fully seeded + rebuilt order data.
+  }
 }

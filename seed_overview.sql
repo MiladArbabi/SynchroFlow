@@ -116,15 +116,3 @@ VALUES
   (1,'orders/fulfillment_updated','{"status":"pending","order_id":"900017"}','2026-06-13T09:00:00Z','900017:fulfillment_updated'),
   (1,'orders/fulfillment_updated','{"status":"pending","order_id":"900018"}','2026-06-16T10:00:00Z','900018:fulfillment_updated')
 ON CONFLICT (shop_id, external_event_id) WHERE external_event_id IS NOT NULL DO NOTHING;
-
-BEGIN;
-SET LOCAL app.current_tenant = '1';
-
-INSERT INTO domain_events (shop_id, event_type, event_payload, event_time)
-VALUES
-  (1, 'ft0/completed',
-   '{"orders": 4, "firstInsightDelivered": true}'::jsonb, now()),
-  (1, 'lifecycle/ft2_confirmed',
-   '{"user_id": 1, "evaluator_version": "dev-seed", "evaluation_snapshot": {}}'::jsonb, now());
-
-COMMIT;

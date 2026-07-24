@@ -156,31 +156,37 @@ export async function handleLifecycleFT0Completed({
     }
 
     // Send sync completed email — to custom notify email if set, else registered email
-    try {
-      const { sendSyncCompletedEmail } = await import(
-        '../../services/email/email.service.js'
-      );
-      const integration = await trx('integrations')
-        .where({ shop_id: shopId })
-        .first('sync_notify_email');
+    // SKIPPED during dev seed (DEV_SEED_MODE set) to avoid firing real Resend
+    // sends on every dev:full-seed run. See ISSUE-01.
+    if (process.env.DEV_SEED_MODE) {
+      console.info('[FT0_COMPLETED] sync completed email skipped (DEV_SEED_MODE)', { shopId });
+    } else {
+      try {
+        const { sendSyncCompletedEmail } = await import(
+          '../../services/email/email.service.js'
+        );
+        const integration = await trx('integrations')
+          .where({ shop_id: shopId })
+          .first('sync_notify_email');
 
-      const customNotifyEmail = integration?.sync_notify_email ?? null;
+        const customNotifyEmail = integration?.sync_notify_email ?? null;
 
-      const users = await trx('users')
-        .whereIn('id', members.map((m: { user_id: number }) => m.user_id))
-        .select('email', 'first_name');
+        const users = await trx('users')
+          .whereIn('id', members.map((m: { user_id: number }) => m.user_id))
+          .select('email', 'first_name');
 
-      for (const user of users) {
-        const targetEmail = customNotifyEmail ?? user.email;
-        sendSyncCompletedEmail({
-          toEmail: targetEmail,
-          firstName: user.first_name ?? '',
-        }).catch((err: unknown) => {
-          console.error('[FT0_COMPLETED] sync completed email failed', { err });
-        });
+        for (const user of users) {
+          const targetEmail = customNotifyEmail ?? user.email;
+          sendSyncCompletedEmail({
+            toEmail: targetEmail,
+            firstName: user.first_name ?? '',
+          }).catch((err: unknown) => {
+            console.error('[FT0_COMPLETED] sync completed email failed', { err });
+          });
+        }
+      } catch (err) {
+        console.error('[FT0_COMPLETED] email dispatch error', err);
       }
-    } catch (err) {
-      console.error('[FT0_COMPLETED] email dispatch error', err);
     }
 
     /**
