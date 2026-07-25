@@ -41,9 +41,33 @@ export function useCreateZone() {
 
 export function useUpdateZone() {
   const qc = useQueryClient();
+  const queryKey = ['floor-planning', 'layout'];
   return useMutation({
     mutationFn: ({ locationCode, ...payload }: UpdateZonePayload & { locationCode: string }) =>
       axiosInstance.patch(`/api/v1/floor-planning/zones/${locationCode}`, payload).then(r => r.data),
+    // FP-09: optimistic update. Without this, the UI showed stale values
+    // (e.g. rack_levels reverting) if the user navigated away before the
+    // PATCH round-trip completed and invalidateQueries refetched — the
+    // cache still held pre-edit data during that window. onMutate writes
+    // the change into the cache immediately; onError rolls back if the
+    // save actually fails; onSuccess still invalidates as the final
+    // reconciliation against real server state.
+    onMutate: async ({ locationCode, ...payload }) => {
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<{ zones: Array<Record<string, unknown>> }>(queryKey);
+      if (previous) {
+        qc.setQueryData(queryKey, {
+          ...previous,
+          zones: previous.zones.map(z =>
+            z.location_code === locationCode ? { ...z, ...payload } : z
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(queryKey, context.previous);
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
     },

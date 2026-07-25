@@ -415,6 +415,13 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Layers size={12} color="var(--ink-4)" />
             <TextField size="small" type="number"
+              // FP-08: defaultValue only reads once on mount and never
+              // re-syncs when zone.rack_levels changes (after save, or
+              // when a different zone is selected) — this caused the
+              // input to show stale values until several edits forced
+              // a coincidental remount. key forces a real remount
+              // whenever the underlying value actually changes.
+              key={`${zone.location_code}:${zone.rack_levels ?? 'none'}`}
               defaultValue={zone.rack_levels ?? ''}
               placeholder="—"
               onBlur={(e) => {
