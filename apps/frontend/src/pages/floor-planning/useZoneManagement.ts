@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import { useToast } from '../../contexts/ToastContext';
+import { printViaQz } from 'utils/qzPrint';
 import type { WarehouseLocationType } from '@lasyncro/shared/ui';
 
 /**
@@ -102,10 +103,13 @@ export function useUpdateProductBarcode() {
   });
 }
 
-// FP-15: responseType 'blob' is a local override for this one call —
-// the backend now returns a real PDF, not JSON. Opened in a new tab so
-// the browser's native print dialog handles it; printViaQz delivery-layer
-// wiring is a separate, later sub-issue under #1047.
+// FP-15/FP-17a: responseType 'blob' is a local override for this one call
+// — the backend now returns a real PDF, not JSON. FP-17a wires this into
+// the QZ Tray delivery layer (role: location_label) as the primary path
+// — silent thermal print when QZ Tray is running and a default
+// location_label printer is configured. Falls back to opening the PDF
+// in a new browser tab (native print dialog) when QZ dispatch fails or
+// isn't configured, same as the original FP-15 behavior.
 export function usePrintBarcode() {
   const qc = useQueryClient();
   return useMutation({
@@ -113,9 +117,12 @@ export function usePrintBarcode() {
       axiosInstance
         .post(`/api/v1/floor-planning/zones/${locationCode}/print`, {}, { responseType: 'blob' })
         .then(r => r.data as Blob),
-    onSuccess: (blob) => {
-      const url = window.open(URL.createObjectURL(blob), '_blank');
-      if (!url) console.warn('[FP-15] Label popup blocked — check browser popup settings');
+    onSuccess: async (blob) => {
+      const dispatched = await printViaQz(blob, 'location_label', axiosInstance);
+      if (!dispatched) {
+        const url = window.open(URL.createObjectURL(blob), '_blank');
+        if (!url) console.warn('[FP-15] Label popup blocked — check browser popup settings');
+      }
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
     },
   });
