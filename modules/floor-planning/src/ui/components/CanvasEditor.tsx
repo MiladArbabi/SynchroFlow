@@ -582,6 +582,13 @@ export function CanvasEditor({
   const panRef    = useRef<PanState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const savingRef = useRef<Set<string>>(new Set());
+  // FP-11: alignment guide lines, shown while dragging a frame zone
+  // (warehouse/lane/shelf) if it lines up with a sibling frame zone's
+  // left/center/right or top/center/bottom edge. Scoped to frame zones
+  // only — they currently get zero positioning assistance (clampPosition
+  // skips them entirely), unlike bins which already have collision-snap.
+  // x/y are in SVG canvas coordinates (post-toSvg), null when no snap active.
+  const [alignGuides, setAlignGuides] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
   // Merge prop-positioned zones with optimistically placed zones
   const positionedZones = [
     ...zones.filter(z => z.position_x != null && z.position_y != null),
@@ -654,6 +661,70 @@ export function CanvasEditor({
       if (!moved) break; // stable — no more overlaps
     }
     return { x: cx, y: cy };
+  }
+
+  // FP-11: alignment snap for frame zones (warehouse/lane/shelf) only.
+  // Unlike clampPosition, this ignores collision and only checks whether
+  // the dragged zone's edges/center line up with a sibling frame zone's
+  // edges/center — the goal is visual alignment (e.g. lanes A/B/C sharing
+  // the same X), not overlap prevention. Threshold is in metres, converted
+  // from a fixed pixel tolerance so it feels consistent at any zoom level.
+  const SNAP_PX = 6;
+  function getFrameAlignmentSnap(
+    code: string, x: number, y: number, w: number, h: number
+  ): { x: number; y: number; guideX: number | null; guideY: number | null } {
+    const tol = SNAP_PX / (SCALE * zoomRef.current);
+    let snappedX = x;
+    let snappedY = y;
+    let guideX: number | null = null;
+    let guideY: number | null = null;
+    let bestDx = tol;
+    let bestDy = tol;
+
+    for (const z of positionedZonesRef.current) {
+      if (z.location_code === code) continue;
+      if (z.type !== 'warehouse' && z.type !== 'lane' && z.type !== 'shelf') continue;
+      const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
+      const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
+      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
+      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+
+      // X axis: compare left/center/right of dragged zone against left/center/right of sibling
+      const candidatesX = [
+        { dragEdge: x,             targetEdge: zx },
+        { dragEdge: x,             targetEdge: zx + zw },
+        { dragEdge: x + w,         targetEdge: zx },
+        { dragEdge: x + w,         targetEdge: zx + zw },
+        { dragEdge: x + w / 2,     targetEdge: zx + zw / 2 },
+      ];
+      for (const { dragEdge, targetEdge } of candidatesX) {
+        const d = Math.abs(dragEdge - targetEdge);
+        if (d < bestDx) {
+          bestDx = d;
+          snappedX = x + (targetEdge - dragEdge);
+          guideX = toSvg(targetEdge);
+        }
+      }
+
+      // Y axis: same, top/center/bottom
+      const candidatesY = [
+        { dragEdge: y,             targetEdge: zy },
+        { dragEdge: y,             targetEdge: zy + zh },
+        { dragEdge: y + h,         targetEdge: zy },
+        { dragEdge: y + h,         targetEdge: zy + zh },
+        { dragEdge: y + h / 2,     targetEdge: zy + zh / 2 },
+      ];
+      for (const { dragEdge, targetEdge } of candidatesY) {
+        const d = Math.abs(dragEdge - targetEdge);
+        if (d < bestDy) {
+          bestDy = d;
+          snappedY = y + (targetEdge - dragEdge);
+          guideY = toSvg(targetEdge);
+        }
+      }
+    }
+
+    return { x: snappedX, y: snappedY, guideX, guideY };
   }
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
@@ -747,7 +818,21 @@ export function CanvasEditor({
         const zone = positionedZonesRef.current.find(z => z.location_code === d.locationCode);
         const w    = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width  ?? 1));
         const h    = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth  ?? 0.8));
-        const { x: newX, y: newY } = clampPosition(d.locationCode, rawX, rawY, w, h);
+        // FP-11: alignment snap runs first for frame zones (lane/warehouse/
+        // shelf) — clampPosition already returns {x,y} unchanged for these
+        // types, so this is purely additive, never fighting the existing
+        // bin collision-snap below.
+        let finalX = rawX;
+        let finalY = rawY;
+        if (zone && (zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf')) {
+          const snap = getFrameAlignmentSnap(d.locationCode, rawX, rawY, w, h);
+          finalX = snap.x;
+          finalY = snap.y;
+          setAlignGuides({ x: snap.guideX, y: snap.guideY });
+        } else if (alignGuides.x !== null || alignGuides.y !== null) {
+          setAlignGuides({ x: null, y: null });
+        }
+        const { x: newX, y: newY } = clampPosition(d.locationCode, finalX, finalY, w, h);
         setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
         return;
       }
@@ -793,6 +878,10 @@ export function CanvasEditor({
         }
         dragRef.current = null;
       }
+      // FP-11: clear alignment guides on drag-end regardless of which
+      // branch fired above — avoids a stale guide line lingering after
+      // the drag stops.
+      setAlignGuides({ x: null, y: null });
       // FP-06: marquee-resolution block removed along with marquee feature.
       panRef.current = null;
     }
@@ -992,7 +1081,26 @@ export function CanvasEditor({
                     );
                   })}
                 </g>
-              {/* FP-06: marquee <rect> render removed along with marquee feature. */}
+              {/* FP-11: alignment guide lines — rendered outside the transform
+                  group in screen coords (same reasoning FP-06's marquee rect
+                  used), so offset.x/y must be added manually since toSvg()
+                  only applies zoom, not pan translation. */}
+                {alignGuides.x !== null && (
+                  <line
+                    x1={alignGuides.x + offset.x} y1={0}
+                    x2={alignGuides.x + offset.x} y2={canvasH + offset.y}
+                    stroke="var(--accent)" strokeWidth="1" strokeDasharray="4 3"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
+                {alignGuides.y !== null && (
+                  <line
+                    x1={0} y1={alignGuides.y + offset.y}
+                    x2={canvasW + offset.x} y2={alignGuides.y + offset.y}
+                    stroke="var(--accent)" strokeWidth="1" strokeDasharray="4 3"
+                    style={{ pointerEvents: 'none' }}
+                  />
+                )}
               </svg>
 
               {/* Zone type legend */}

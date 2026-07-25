@@ -268,6 +268,13 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
     const panRef = useRef(null);
     const resizeRef = useRef(null);
     const savingRef = useRef(new Set());
+    // FP-11: alignment guide lines, shown while dragging a frame zone
+    // (warehouse/lane/shelf) if it lines up with a sibling frame zone's
+    // left/center/right or top/center/bottom edge. Scoped to frame zones
+    // only — they currently get zero positioning assistance (clampPosition
+    // skips them entirely), unlike bins which already have collision-snap.
+    // x/y are in SVG canvas coordinates (post-toSvg), null when no snap active.
+    const [alignGuides, setAlignGuides] = useState({ x: null, y: null });
     // Merge prop-positioned zones with optimistically placed zones
     const positionedZones = [
         ...zones.filter(z => z.position_x != null && z.position_y != null),
@@ -345,6 +352,65 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                 break; // stable — no more overlaps
         }
         return { x: cx, y: cy };
+    }
+    // FP-11: alignment snap for frame zones (warehouse/lane/shelf) only.
+    // Unlike clampPosition, this ignores collision and only checks whether
+    // the dragged zone's edges/center line up with a sibling frame zone's
+    // edges/center — the goal is visual alignment (e.g. lanes A/B/C sharing
+    // the same X), not overlap prevention. Threshold is in metres, converted
+    // from a fixed pixel tolerance so it feels consistent at any zoom level.
+    const SNAP_PX = 6;
+    function getFrameAlignmentSnap(code, x, y, w, h) {
+        const tol = SNAP_PX / (SCALE * zoomRef.current);
+        let snappedX = x;
+        let snappedY = y;
+        let guideX = null;
+        let guideY = null;
+        let bestDx = tol;
+        let bestDy = tol;
+        for (const z of positionedZonesRef.current) {
+            if (z.location_code === code)
+                continue;
+            if (z.type !== 'warehouse' && z.type !== 'lane' && z.type !== 'shelf')
+                continue;
+            const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
+            const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
+            const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
+            const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+            // X axis: compare left/center/right of dragged zone against left/center/right of sibling
+            const candidatesX = [
+                { dragEdge: x, targetEdge: zx },
+                { dragEdge: x, targetEdge: zx + zw },
+                { dragEdge: x + w, targetEdge: zx },
+                { dragEdge: x + w, targetEdge: zx + zw },
+                { dragEdge: x + w / 2, targetEdge: zx + zw / 2 },
+            ];
+            for (const { dragEdge, targetEdge } of candidatesX) {
+                const d = Math.abs(dragEdge - targetEdge);
+                if (d < bestDx) {
+                    bestDx = d;
+                    snappedX = x + (targetEdge - dragEdge);
+                    guideX = toSvg(targetEdge);
+                }
+            }
+            // Y axis: same, top/center/bottom
+            const candidatesY = [
+                { dragEdge: y, targetEdge: zy },
+                { dragEdge: y, targetEdge: zy + zh },
+                { dragEdge: y + h, targetEdge: zy },
+                { dragEdge: y + h, targetEdge: zy + zh },
+                { dragEdge: y + h / 2, targetEdge: zy + zh / 2 },
+            ];
+            for (const { dragEdge, targetEdge } of candidatesY) {
+                const d = Math.abs(dragEdge - targetEdge);
+                if (d < bestDy) {
+                    bestDy = d;
+                    snappedY = y + (targetEdge - dragEdge);
+                    guideY = toSvg(targetEdge);
+                }
+            }
+        }
+        return { x: snappedX, y: snappedY, guideX, guideY };
     }
     // ── Drag handlers ──────────────────────────────────────────────────────────
     function onRackMouseDown(e, zone) {
@@ -437,7 +503,22 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                 const zone = positionedZonesRef.current.find(z => z.location_code === d.locationCode);
                 const w = localSizesRef.current[d.locationCode]?.w ?? parseFloat(String(zone?.width ?? 1));
                 const h = localSizesRef.current[d.locationCode]?.h ?? parseFloat(String(zone?.depth ?? 0.8));
-                const { x: newX, y: newY } = clampPosition(d.locationCode, rawX, rawY, w, h);
+                // FP-11: alignment snap runs first for frame zones (lane/warehouse/
+                // shelf) — clampPosition already returns {x,y} unchanged for these
+                // types, so this is purely additive, never fighting the existing
+                // bin collision-snap below.
+                let finalX = rawX;
+                let finalY = rawY;
+                if (zone && (zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf')) {
+                    const snap = getFrameAlignmentSnap(d.locationCode, rawX, rawY, w, h);
+                    finalX = snap.x;
+                    finalY = snap.y;
+                    setAlignGuides({ x: snap.guideX, y: snap.guideY });
+                }
+                else if (alignGuides.x !== null || alignGuides.y !== null) {
+                    setAlignGuides({ x: null, y: null });
+                }
+                const { x: newX, y: newY } = clampPosition(d.locationCode, finalX, finalY, w, h);
                 setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
                 return;
             }
@@ -488,6 +569,10 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                 }
                 dragRef.current = null;
             }
+            // FP-11: clear alignment guides on drag-end regardless of which
+            // branch fired above — avoids a stale guide line lingering after
+            // the drag stops.
+            setAlignGuides({ x: null, y: null });
             // FP-06: marquee-resolution block removed along with marquee feature.
             panRef.current = null;
         }
@@ -521,27 +606,27 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                 }, onCreateZone: onCreateZone, canvasCentreX: snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom))), canvasCentreY: snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom))) }), _jsxs(Box, { sx: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'var(--bg-2)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 1, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0 }, children: [_jsxs(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: ["Floor 1 \u00B7 ", CANVAS_W * CANVAS_H, "m\u00B2 \u00B7 Top-down"] }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)' }, children: "\u00B7" }), lastSaved && (_jsxs(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)', fontStyle: 'italic' }, children: ["Saved ", Math.floor((Date.now() - lastSaved.getTime()) / 60000) < 1 ? 'just now' : `${Math.floor((Date.now() - lastSaved.getTime()) / 60000)}m ago`] })), _jsxs(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)' }, children: [positionedZones.length, " components", unpositionedCount > 0 && _jsxs("span", { style: { color: 'var(--ink-4)' }, children: [" \u00B7 ", unpositionedCount, " unpositioned"] })] }), onViewIn3D && (_jsx(Box, { onClick: onViewIn3D, title: "View this layout in 3D on the Map tab", sx: { display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.4, mr: 1,
                                     border: '1px solid var(--rule)', borderRadius: 1.5, cursor: 'pointer',
                                     fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-3)',
-                                    '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "View in 3D" })), _jsxs(Box, { sx: { ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }, children: [[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (_jsx(Box, { onClick: () => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta))), sx: { width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: label }, label))), _jsxs(Box, { sx: { px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', fontFamily: 'monospace', minWidth: 40, justifyContent: 'center' }, children: [Math.round(zoom * 100), "%"] }), _jsx(Box, { onClick: () => { setZoom(1); setOffset({ x: 40, y: 40 }); }, sx: { px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "Reset" })] })] }), _jsxs(Box, { sx: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { display: 'flex', flexShrink: 0 }, children: [_jsx(Box, { sx: { width: RULER_SIZE, height: RULER_SIZE, bgcolor: 'var(--bg-2)', borderRight: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)', flexShrink: 0 } }), _jsx(Box, { sx: { flex: 1, overflow: 'hidden' }, children: _jsx(Ruler, { length: CANVAS_W, horizontal: true, scale: SCALE, offset: offset.x, zoom: zoom }) })] }), _jsxs(Box, { sx: { flex: 1, display: 'flex', overflow: 'hidden' }, children: [_jsx(Box, { sx: { width: RULER_SIZE, flexShrink: 0, overflow: 'hidden' }, children: _jsx(Ruler, { length: CANVAS_H, horizontal: false, scale: SCALE, offset: offset.y, zoom: zoom }) }), _jsxs(Box, { sx: { flex: 1, overflow: 'hidden', position: 'relative' }, children: [_jsx("svg", { ref: svgRef, width: "100%", height: "100%", style: { cursor: 'grab', userSelect: 'none', display: 'block' }, onMouseDown: onCanvasMouseDown, children: _jsxs("g", { transform: `translate(${offset.x},${offset.y})`, children: [_jsx("defs", { children: _jsx("pattern", { id: "grid-dots", x: "0", y: "0", width: SCALE * zoom * SNAP, height: SCALE * zoom * SNAP, patternUnits: "userSpaceOnUse", children: _jsx("circle", { cx: "1", cy: "1", r: "1", fill: "var(--rule)", opacity: "0.5" }) }) }), _jsx("rect", { x: "0", y: "0", width: canvasW, height: canvasH, fill: "url(#grid-dots)" }), _jsx("rect", { x: "0", y: "0", width: canvasW, height: canvasH, fill: "none", stroke: "var(--rule)", strokeWidth: "1" }), [...positionedZones].sort((a, b) => {
-                                                            const order = { warehouse: 0, lane: 1, shelf: 2, bin: 3 };
-                                                            return (order[a.type] ?? 3) - (order[b.type] ?? 3);
-                                                        }).map((zone) => {
-                                                            const lp = localPositions[zone.location_code];
-                                                            const ls = localSizes[zone.location_code];
-                                                            const px = toSvg(lp?.x ?? parseFloat(String(zone.position_x)));
-                                                            const py = toSvg(lp?.y ?? parseFloat(String(zone.position_y)));
-                                                            const pw = toSvg(ls?.w ?? parseFloat(String(zone.width ?? 1)));
-                                                            const ph = toSvg(ls?.h ?? parseFloat(String(zone.depth ?? 0.8)));
-                                                            // Frame types (lane/warehouse/shelf) use type-based colour regardless of zone_type
-                                                            const colorKey = (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf')
-                                                                ? zone.type
-                                                                : (zone.zone_type ?? 'storage');
-                                                            const fill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
-                                                            const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-                                                            const isSelected = selected === zone.location_code;
-                                                            const isDragging = dragRef.current?.locationCode === zone.location_code;
-                                                            const HANDLE = 6;
-                                                            return (_jsxs("g", { transform: `translate(${px},${py})`, onMouseDown: (e) => onRackMouseDown(e, zone), style: { cursor: isDragging ? 'grabbing' : 'grab' }, children: [isSelected && (_jsx("rect", { x: "-2", y: "-2", width: pw + 4, height: ph + 4, rx: "5", fill: "none", stroke: "var(--accent)", strokeWidth: "2", opacity: "0.5", strokeDasharray: "4 2" })), _jsx("rect", { x: "0", y: "0", width: pw, height: ph, rx: "3", fill: fill, stroke: isSelected ? 'var(--accent)' : stroke, strokeWidth: isSelected ? 1.5 : 1, opacity: savingRef.current.has(zone.location_code) ? 0.5 : 1 }), (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? (_jsxs(_Fragment, { children: [_jsx("rect", { x: "0", y: "0", width: Math.min(pw, 48), height: 14, rx: "3", fill: stroke, opacity: isSelected ? 0.9 : 0.7, style: { pointerEvents: 'none' } }), _jsx("text", { x: "6", y: "7", dominantBaseline: "middle", fontSize: "8", fontFamily: "monospace", fontWeight: 700, fill: "#fff", style: { pointerEvents: 'none', userSelect: 'none' }, children: zone.location_code })] })) : (_jsx("text", { x: pw / 2, y: ph / 2, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.max(8, Math.min(11, pw * 0.18)), fontFamily: "monospace", fontWeight: isSelected ? 700 : 500, fill: isSelected ? 'var(--accent)' : 'var(--ink-2)', style: { pointerEvents: 'none', userSelect: 'none' }, children: zone.location_code })), zone.rack_levels != null && pw > 28 && (_jsxs("text", { x: pw - 4, y: ph - 4, textAnchor: "end", dominantBaseline: "auto", fontSize: "7", fontFamily: "monospace", fill: stroke, opacity: "0.8", style: { pointerEvents: 'none' }, children: ["L", zone.rack_levels] })), isSelected && (_jsxs(_Fragment, { children: [_jsx("rect", { x: pw - HANDLE / 2, y: ph / 2 - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--bg)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'ew-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } }), _jsx("rect", { x: pw / 2 - HANDLE / 2, y: ph - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--bg)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'ns-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } }), _jsx("rect", { x: pw - HANDLE / 2, y: ph - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--accent)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'nwse-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } })] }))] }, zone.location_code));
-                                                        })] }) }), _jsx(Box, { sx: { position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 1, flexWrap: 'wrap', pointerEvents: 'none' }, children: Object.entries(ZONE_COLORS).map(([type, fill]) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.4 }, children: [_jsx(Box, { sx: { width: 8, height: 8, borderRadius: 0.4, bgcolor: fill, border: `1px solid ${ZONE_STROKE[type]}` } }), _jsx(Typography, { sx: { fontSize: 8, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: type })] }, type))) })] })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0, px: 1, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0, overflowX: 'auto', height: 28 }, children: [_jsx(Typography, { sx: { fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--ink-4)', textTransform: 'uppercase', mr: 1, flexShrink: 0 }, children: "Tree:" }), positionedZones.filter(z => z.type === 'lane' || z.type === 'warehouse').map((z, i, arr) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', flexShrink: 0 }, children: [_jsx(Box, { onClick: () => setSelected(z.location_code), sx: { px: 1, py: 0.25, borderRadius: 0.75, cursor: 'pointer', fontSize: 10, fontFamily: 'monospace',
+                                    '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "View in 3D" })), _jsxs(Box, { sx: { ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }, children: [[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (_jsx(Box, { onClick: () => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta))), sx: { width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: label }, label))), _jsxs(Box, { sx: { px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', fontFamily: 'monospace', minWidth: 40, justifyContent: 'center' }, children: [Math.round(zoom * 100), "%"] }), _jsx(Box, { onClick: () => { setZoom(1); setOffset({ x: 40, y: 40 }); }, sx: { px: 1, height: 22, display: 'flex', alignItems: 'center', border: '1px solid var(--rule)', borderRadius: 1, fontSize: 10, color: 'var(--ink-3)', bgcolor: 'var(--bg)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "Reset" })] })] }), _jsxs(Box, { sx: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { display: 'flex', flexShrink: 0 }, children: [_jsx(Box, { sx: { width: RULER_SIZE, height: RULER_SIZE, bgcolor: 'var(--bg-2)', borderRight: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)', flexShrink: 0 } }), _jsx(Box, { sx: { flex: 1, overflow: 'hidden' }, children: _jsx(Ruler, { length: CANVAS_W, horizontal: true, scale: SCALE, offset: offset.x, zoom: zoom }) })] }), _jsxs(Box, { sx: { flex: 1, display: 'flex', overflow: 'hidden' }, children: [_jsx(Box, { sx: { width: RULER_SIZE, flexShrink: 0, overflow: 'hidden' }, children: _jsx(Ruler, { length: CANVAS_H, horizontal: false, scale: SCALE, offset: offset.y, zoom: zoom }) }), _jsxs(Box, { sx: { flex: 1, overflow: 'hidden', position: 'relative' }, children: [_jsxs("svg", { ref: svgRef, width: "100%", height: "100%", style: { cursor: 'grab', userSelect: 'none', display: 'block' }, onMouseDown: onCanvasMouseDown, children: [_jsxs("g", { transform: `translate(${offset.x},${offset.y})`, children: [_jsx("defs", { children: _jsx("pattern", { id: "grid-dots", x: "0", y: "0", width: SCALE * zoom * SNAP, height: SCALE * zoom * SNAP, patternUnits: "userSpaceOnUse", children: _jsx("circle", { cx: "1", cy: "1", r: "1", fill: "var(--rule)", opacity: "0.5" }) }) }), _jsx("rect", { x: "0", y: "0", width: canvasW, height: canvasH, fill: "url(#grid-dots)" }), _jsx("rect", { x: "0", y: "0", width: canvasW, height: canvasH, fill: "none", stroke: "var(--rule)", strokeWidth: "1" }), [...positionedZones].sort((a, b) => {
+                                                                const order = { warehouse: 0, lane: 1, shelf: 2, bin: 3 };
+                                                                return (order[a.type] ?? 3) - (order[b.type] ?? 3);
+                                                            }).map((zone) => {
+                                                                const lp = localPositions[zone.location_code];
+                                                                const ls = localSizes[zone.location_code];
+                                                                const px = toSvg(lp?.x ?? parseFloat(String(zone.position_x)));
+                                                                const py = toSvg(lp?.y ?? parseFloat(String(zone.position_y)));
+                                                                const pw = toSvg(ls?.w ?? parseFloat(String(zone.width ?? 1)));
+                                                                const ph = toSvg(ls?.h ?? parseFloat(String(zone.depth ?? 0.8)));
+                                                                // Frame types (lane/warehouse/shelf) use type-based colour regardless of zone_type
+                                                                const colorKey = (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf')
+                                                                    ? zone.type
+                                                                    : (zone.zone_type ?? 'storage');
+                                                                const fill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+                                                                const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
+                                                                const isSelected = selected === zone.location_code;
+                                                                const isDragging = dragRef.current?.locationCode === zone.location_code;
+                                                                const HANDLE = 6;
+                                                                return (_jsxs("g", { transform: `translate(${px},${py})`, onMouseDown: (e) => onRackMouseDown(e, zone), style: { cursor: isDragging ? 'grabbing' : 'grab' }, children: [isSelected && (_jsx("rect", { x: "-2", y: "-2", width: pw + 4, height: ph + 4, rx: "5", fill: "none", stroke: "var(--accent)", strokeWidth: "2", opacity: "0.5", strokeDasharray: "4 2" })), _jsx("rect", { x: "0", y: "0", width: pw, height: ph, rx: "3", fill: fill, stroke: isSelected ? 'var(--accent)' : stroke, strokeWidth: isSelected ? 1.5 : 1, opacity: savingRef.current.has(zone.location_code) ? 0.5 : 1 }), (zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? (_jsxs(_Fragment, { children: [_jsx("rect", { x: "0", y: "0", width: Math.min(pw, 48), height: 14, rx: "3", fill: stroke, opacity: isSelected ? 0.9 : 0.7, style: { pointerEvents: 'none' } }), _jsx("text", { x: "6", y: "7", dominantBaseline: "middle", fontSize: "8", fontFamily: "monospace", fontWeight: 700, fill: "#fff", style: { pointerEvents: 'none', userSelect: 'none' }, children: zone.location_code })] })) : (_jsx("text", { x: pw / 2, y: ph / 2, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.max(8, Math.min(11, pw * 0.18)), fontFamily: "monospace", fontWeight: isSelected ? 700 : 500, fill: isSelected ? 'var(--accent)' : 'var(--ink-2)', style: { pointerEvents: 'none', userSelect: 'none' }, children: zone.location_code })), zone.rack_levels != null && pw > 28 && (_jsxs("text", { x: pw - 4, y: ph - 4, textAnchor: "end", dominantBaseline: "auto", fontSize: "7", fontFamily: "monospace", fill: stroke, opacity: "0.8", style: { pointerEvents: 'none' }, children: ["L", zone.rack_levels] })), isSelected && (_jsxs(_Fragment, { children: [_jsx("rect", { x: pw - HANDLE / 2, y: ph / 2 - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--bg)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'ew-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'e', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } }), _jsx("rect", { x: pw / 2 - HANDLE / 2, y: ph - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--bg)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'ns-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 's', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } }), _jsx("rect", { x: pw - HANDLE / 2, y: ph - HANDLE / 2, width: HANDLE, height: HANDLE, rx: "1", fill: "var(--accent)", stroke: "var(--accent)", strokeWidth: "1.5", style: { cursor: 'nwse-resize' }, onMouseDown: (e) => { e.stopPropagation(); resizeRef.current = { locationCode: zone.location_code, edge: 'se', startMouseX: e.clientX, startMouseY: e.clientY, startW: ls?.w ?? parseFloat(String(zone.width ?? 1)), startD: ls?.h ?? parseFloat(String(zone.depth ?? 0.8)) }; } })] }))] }, zone.location_code));
+                                                            })] }), alignGuides.x !== null && (_jsx("line", { x1: alignGuides.x + offset.x, y1: 0, x2: alignGuides.x + offset.x, y2: canvasH + offset.y, stroke: "var(--accent)", strokeWidth: "1", strokeDasharray: "4 3", style: { pointerEvents: 'none' } })), alignGuides.y !== null && (_jsx("line", { x1: 0, y1: alignGuides.y + offset.y, x2: canvasW + offset.x, y2: alignGuides.y + offset.y, stroke: "var(--accent)", strokeWidth: "1", strokeDasharray: "4 3", style: { pointerEvents: 'none' } }))] }), _jsx(Box, { sx: { position: 'absolute', bottom: 8, left: 8, display: 'flex', gap: 1, flexWrap: 'wrap', pointerEvents: 'none' }, children: Object.entries(ZONE_COLORS).map(([type, fill]) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.4 }, children: [_jsx(Box, { sx: { width: 8, height: 8, borderRadius: 0.4, bgcolor: fill, border: `1px solid ${ZONE_STROKE[type]}` } }), _jsx(Typography, { sx: { fontSize: 8, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: type })] }, type))) })] })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0, px: 1, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0, overflowX: 'auto', height: 28 }, children: [_jsx(Typography, { sx: { fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--ink-4)', textTransform: 'uppercase', mr: 1, flexShrink: 0 }, children: "Tree:" }), positionedZones.filter(z => z.type === 'lane' || z.type === 'warehouse').map((z, i, arr) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', flexShrink: 0 }, children: [_jsx(Box, { onClick: () => setSelected(z.location_code), sx: { px: 1, py: 0.25, borderRadius: 0.75, cursor: 'pointer', fontSize: 10, fontFamily: 'monospace',
                                             fontWeight: selected === z.location_code ? 700 : 400,
                                             color: selected === z.location_code ? 'var(--accent)' : 'var(--ink-3)',
                                             bgcolor: selected === z.location_code ? 'var(--accent-ghost)' : 'transparent',
