@@ -50,6 +50,7 @@ export async function up(knex: Knex): Promise<void> {
           'unit_label',
           'invoice',
           'problem_label',
+          'location_label',
           'general'
         );
       END IF;
@@ -109,10 +110,13 @@ export async function up(knex: Knex): Promise<void> {
      * ROLE
      * ----
      * Determines which print jobs are routed to this printer.
-     * unit_label:    LSU- thermal labels generated at receive (WM-46/47)
-     * invoice:       A4 invoice PDFs generated at pack (WM-34)
-     * problem_label: PROB-BIN labels for problem center tasks
-     * general:       fallback for any unrouted job
+     * unit_label:     LSU- thermal labels generated at receive (WM-46/47)
+     * invoice:        A4 invoice PDFs generated at pack (WM-34)
+     * problem_label:  PROB-BIN labels for problem center tasks
+     * location_label: bin/lane barcode labels from Floor Planning
+     *                 (Setup > Canvas single print, Barcodes tab batch
+     *                 print) — added under 1047 Unified Printing System
+     * general:        fallback for any unrouted job
      * One default printer per role per shop — enforced at application layer.
      */
     table
