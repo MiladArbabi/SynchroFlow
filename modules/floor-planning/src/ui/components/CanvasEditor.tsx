@@ -692,6 +692,21 @@ export function CanvasEditor({
     };
   }
 
+  // FP-05: keeps at least MARGIN px of canvas content visible on every side,
+  // regardless of pan direction or zoom level, so the user can never scroll
+  // the floor plan fully off-screen and lose track of where it went.
+  const PAN_MARGIN = 100;
+  function clampOffset(x: number, y: number, currentZoom: number) {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return { x, y };
+    const cw = CANVAS_W * SCALE * currentZoom;
+    const ch = CANVAS_H * SCALE * currentZoom;
+    return {
+      x: Math.min(rect.width - PAN_MARGIN, Math.max(PAN_MARGIN - cw, x)),
+      y: Math.min(rect.height - PAN_MARGIN, Math.max(PAN_MARGIN - ch, y)),
+    };
+  }
+
   useEffect(() => {
     function onMouseMove(e: MouseEvent) {
       // Resize — clamp to nearest blocker edge
@@ -753,10 +768,15 @@ export function CanvasEditor({
         }
         return;
       }
-      // Pan
+      // Pan — FP-05: clamped so the floor plan can't be dragged fully off-screen
       if (panRef.current) {
         const p = panRef.current;
-        setOffset({ x: p.startOffsetX + (e.clientX - p.startMouseX), y: p.startOffsetY + (e.clientY - p.startMouseY) });
+        const next = clampOffset(
+          p.startOffsetX + (e.clientX - p.startMouseX),
+          p.startOffsetY + (e.clientY - p.startMouseY),
+          zoom
+        );
+        setOffset(next);
       }
     }
 
@@ -822,12 +842,14 @@ export function CanvasEditor({
     }
     // Native wheel listener on SVG — { passive: false } required to call preventDefault()
     // React synthetic onWheel cannot reliably prevent page scroll in all browsers
+    // FP-05: clamped so wheel-panning can't scroll the floor plan fully off-screen
     function onWheel(e: WheelEvent) {
       e.preventDefault();
-      setOffset(prev => ({
-        x: prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8,
-        y: prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8,
-      }));
+      setOffset(prev => clampOffset(
+        prev.x - (e.shiftKey ? e.deltaY : e.deltaX) * 0.8,
+        prev.y - (e.shiftKey ? 0 : e.deltaY) * 0.8,
+        zoom
+      ));
     }
     const svgEl = svgRef.current;
     if (svgEl) svgEl.addEventListener('wheel', onWheel, { passive: false });
