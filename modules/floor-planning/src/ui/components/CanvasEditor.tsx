@@ -371,7 +371,14 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
         <Typography sx={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
           {zone.type.toUpperCase()}
         </Typography>
-        <IconButton size="small" onClick={onClose} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {/* FP-07: Duplicate moved from footer to header — it's a
+              high-frequency action (building out repeated bins/aisles),
+              unlike Delete, so it shouldn't share footer weight or
+              require scrolling past Dimensions/Barcode to reach. */}
+          <IconButton size="small" title="Duplicate zone" onClick={openDuplicate} sx={{ color: 'var(--ink-4)', '&:hover': { color: 'var(--accent)' } }}><Copy size={13} /></IconButton>
+          <IconButton size="small" onClick={onClose} sx={{ color: 'var(--ink-4)' }}><X size={13} /></IconButton>
+        </Box>
       </Box>
       <Box sx={{ flex: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
         <Box>
@@ -467,14 +474,12 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             <Tag size={12} /> Print barcode
           </Box>
         )}
-        <Box sx={{ display: 'flex', gap: 0.75 }}>
-          <Box onClick={openDuplicate} sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)', fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s' }}>
-            <Copy size={11} /> Duplicate
-          </Box>
-          <Box onClick={handleDelete}
-            sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)', fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'rgba(239,68,68,0.6)', color: 'rgba(239,68,68,0.9)' }, transition: 'all 0.15s' }}>
-            <Trash2 size={11} /> Delete
-          </Box>
+        {/* FP-07: Duplicate lives in the header now — Delete stays here
+            alone, full-width, so a destructive action isn't visually
+            adjacent to a high-frequency one. */}
+        <Box onClick={handleDelete}
+          sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, py: 0.75, borderRadius: 1.5, border: '1px solid var(--rule)', fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer', '&:hover': { borderColor: 'rgba(239,68,68,0.6)', color: 'rgba(239,68,68,0.9)' }, transition: 'all 0.15s' }}>
+          <Trash2 size={11} /> Delete
         </Box>
       </Box>
 
