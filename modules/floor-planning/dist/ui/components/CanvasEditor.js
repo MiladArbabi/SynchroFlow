@@ -412,6 +412,63 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
         }
         return { x: snappedX, y: snappedY, guideX, guideY };
     }
+    // FP-12: alignment snap for resizing frame zones — extends FP-11's drag
+    // snap to the resize handles. Only the far edge being dragged moves
+    // (near edge/position is fixed), so this checks a single edge per axis
+    // against sibling frame zones, rather than the multi-candidate set
+    // getFrameAlignmentSnap uses for whole-shape dragging.
+    function getFrameResizeSnap(code, curX, curY, rawW, rawH, edge) {
+        const tol = SNAP_PX / (SCALE * zoomRef.current);
+        let snappedW = rawW;
+        let snappedH = rawH;
+        let guideX = null;
+        let guideY = null;
+        let bestDx = tol;
+        let bestDy = tol;
+        const checkX = edge === 'e' || edge === 'se';
+        const checkY = edge === 's' || edge === 'se';
+        if (!checkX && !checkY)
+            return { w: snappedW, h: snappedH, guideX, guideY };
+        const farX = curX + rawW;
+        const farY = curY + rawH;
+        for (const z of positionedZonesRef.current) {
+            if (z.location_code === code)
+                continue;
+            if (z.type !== 'warehouse' && z.type !== 'lane' && z.type !== 'shelf')
+                continue;
+            const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
+            const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
+            const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
+            const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+            if (checkX) {
+                // FP-12b: curX + zw is a *dimension* match (same width as this
+                // sibling, regardless of its position) — distinct from zx/zx+zw
+                // which are positional edge matches. Same candidate mechanism,
+                // just one more target to check.
+                for (const targetEdge of [zx, zx + zw, curX + zw]) {
+                    const d = Math.abs(farX - targetEdge);
+                    if (d < bestDx) {
+                        bestDx = d;
+                        snappedW = targetEdge - curX;
+                        guideX = toSvg(targetEdge);
+                    }
+                }
+            }
+            if (checkY) {
+                // FP-12b: curY + zh is a depth-match candidate (same depth as
+                // this sibling lane), independent of that sibling's own position.
+                for (const targetEdge of [zy, zy + zh, curY + zh]) {
+                    const d = Math.abs(farY - targetEdge);
+                    if (d < bestDy) {
+                        bestDy = d;
+                        snappedH = targetEdge - curY;
+                        guideY = toSvg(targetEdge);
+                    }
+                }
+            }
+        }
+        return { w: Math.max(0.5, snappedW), h: Math.max(0.5, snappedH), guideX, guideY };
+    }
     // ── Drag handlers ──────────────────────────────────────────────────────────
     function onRackMouseDown(e, zone) {
         // FP-06: mode branch removed — Select mode/marquee no longer exists,
@@ -470,9 +527,12 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                 const zone = positionedZonesRef.current.find(z => z.location_code === r.locationCode);
                 const curX = localPositionsRef.current[r.locationCode]?.x ?? parseFloat(String(zone?.position_x ?? 0));
                 const curY = localPositionsRef.current[r.locationCode]?.y ?? parseFloat(String(zone?.position_y ?? 0));
-                // Frame zones resize freely — no collision clamping
+                // Frame zones resize freely — no collision clamping.
+                // FP-12: alignment snap applied here, mirroring FP-11's drag snap.
                 if (zone && (zone.type === 'warehouse' || zone.type === 'lane' || zone.type === 'shelf')) {
-                    setLocalSizes(prev => ({ ...prev, [r.locationCode]: { w: Math.max(0.5, rawW), h: Math.max(0.5, rawH) } }));
+                    const snap = getFrameResizeSnap(r.locationCode, curX, curY, rawW, rawH, r.edge);
+                    setAlignGuides({ x: snap.guideX, y: snap.guideY });
+                    setLocalSizes(prev => ({ ...prev, [r.locationCode]: { w: snap.w, h: snap.h } }));
                     return;
                 }
                 let clampedW = rawW;
@@ -545,6 +605,9 @@ export function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, 
                     }
                 }
                 resizeRef.current = null;
+                // FP-12: clear alignment guides on resize-end — resize returns
+                // early above drag's guide-clear, so it needs its own.
+                setAlignGuides({ x: null, y: null });
                 return;
             }
             if (dragRef.current) {
