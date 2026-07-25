@@ -89,7 +89,9 @@ interface PrintPreviewPanelProps {
   // boundary, which doesn't resolve a direct import of the host app's
   // axiosInstance. FloorPlanningPage owns the actual HTTP call and
   // returns the PDF blob here for opening.
-  onBatchPrint?: (locationCodes: string[], formatId: string) => Promise<Blob>;
+  // FP-17b: a null resolution means FloorPlanningPage already dispatched
+  // the print silently via QZ Tray — nothing further to do here.
+  onBatchPrint?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
 }
 export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewPanelProps) {
   const [formatId, setFormatId] = useState<string>('avery-5160');
@@ -107,6 +109,7 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
     if (codes.length === 0 || !onBatchPrint) return;
     try {
       const blob = await onBatchPrint(codes, formatId);
+      if (!blob) return;
       const url = window.open(URL.createObjectURL(blob), '_blank');
       if (!url) console.warn('[FP-16] Label sheet popup blocked — check browser popup settings');
     } catch (e) {

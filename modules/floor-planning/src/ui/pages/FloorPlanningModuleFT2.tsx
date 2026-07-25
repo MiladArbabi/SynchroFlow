@@ -99,11 +99,11 @@ export type FloorPlanningPageProps = {
   // the blob, so callers don't need to touch it, but the type must reflect
   // what mutateAsync actually resolves to.
   onPrintBarcode?: (locationCode: string) => Promise<Blob>;
-  // FP-16: batch print — returns the generated PDF blob so PrintPreviewPanel
-  // can open it, keeping axios/blob handling in the host app (FloorPlanningPage)
-  // rather than importing across the modules/floor-planning <-> apps/frontend
-  // package boundary, which doesn't resolve.
-  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob>;
+  // FP-17b: null return means FloorPlanningPage already dispatched the
+  // print silently via QZ Tray — PrintPreviewPanel should not also open
+  // a browser tab for the same PDF. A resolved Blob means QZ Tray wasn't
+  // available/configured and the caller must handle it (browser fallback).
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
@@ -431,7 +431,9 @@ function BarcodesTab({
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) =>Promise<void>;
   activeSubTab?: 'locations' | 'products';
   onSubTabChange?: (subTab: 'locations' | 'products') => void;
-  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob>;
+  // FP-17b: null means already printed via QZ Tray, see outer interface
+  // comment above for full rationale.
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
 }) {
   const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');

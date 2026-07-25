@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
+import { printViaQz } from 'utils/qzPrint';
 import { FloorPlanningModuleFT2 } from '@lasyncro/floor-planning';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
@@ -83,7 +84,17 @@ export default function FloorPlanningPage() {
         onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
         onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
         onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
-        onBatchPrintBarcodes={(locationCodes, formatId) => batchPrintBarcodes.mutateAsync({ locationCodes, formatId })}
+        // FP-17b: tries silent QZ Tray dispatch (role location_label)
+        // first. Returns null when QZ printed successfully — signals
+        // PrintPreviewPanel to skip opening a browser tab, avoiding a
+        // double-print of the same label sheet. Returns the blob so
+        // PrintPreviewPanel falls back to the browser tab when QZ Tray
+        // is unavailable or not configured.
+        onBatchPrintBarcodes={async (locationCodes, formatId) => {
+          const blob = await batchPrintBarcodes.mutateAsync({ locationCodes, formatId });
+          const dispatched = await printViaQz(blob, 'location_label', axiosInstance);
+          return dispatched ? null : blob;
+        }}
         onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
         activeTab={activeTab}
         onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}

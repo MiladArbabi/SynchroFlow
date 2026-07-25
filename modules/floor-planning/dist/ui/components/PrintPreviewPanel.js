@@ -51,6 +51,8 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }) {
             return;
         try {
             const blob = await onBatchPrint(codes, formatId);
+            if (!blob)
+                return;
             const url = window.open(URL.createObjectURL(blob), '_blank');
             if (!url)
                 console.warn('[FP-16] Label sheet popup blocked — check browser popup settings');
