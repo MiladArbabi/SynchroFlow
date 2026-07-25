@@ -165,6 +165,27 @@ export type WmsModuleFT2Props = {
     onAddReturnLine: (returnJobId: string, input: AddReturnLineInput) => Promise<void>;
     onProcessReturnLine: (returnJobId: string, input: UpdateReturnLineInput) => Promise<void>;
     onCompleteReturnJob: (returnJobId: string, input: CompleteReturnJobInput) => Promise<void>;
+    /**
+     * Orders sitting in pick_complete batches — picked, no pack claim yet.
+     * Powers the "X orders ready to be packed" summary + expandable list,
+     * so operators can see which LSU- barcodes to scan without already
+     * being mid pack-session. See wms_qa_findings_2026_07_24.md.
+     */
+    readyToPackOrders?: {
+        pick_batch_id: string;
+        lasyncro_order_id: string;
+        external_order_id: string;
+        wms_barcode: string | null;
+        line_items: {
+            lasyncro_line_item_id: string;
+            product_title: string;
+            variant_title: string | null;
+            sku: string | null;
+            quantity: number;
+            unit_barcode: string | null;
+        }[];
+    }[];
+    readyToPackCount?: number;
 };
 export interface PackFreeScanLineItem {
     lasyncro_line_item_id: string;

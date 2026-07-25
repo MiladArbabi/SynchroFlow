@@ -14,7 +14,7 @@ interface CanvasEditorProps {
         zone_type?: string | null;
     }) => Promise<void>;
     onDeleteZone?: (locationCode: string) => Promise<void>;
-    onPrintBarcode?: (locationCode: string) => Promise<void>;
+    onPrintBarcode?: (locationCode: string) => Promise<Blob>;
     onCreateZone?: (payload: {
         location_code: string;
         type: WarehouseLocationType;

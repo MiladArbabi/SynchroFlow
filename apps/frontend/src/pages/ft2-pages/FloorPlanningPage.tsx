@@ -12,7 +12,8 @@ import {
   useDeleteZone, 
   useUpdateZone, 
   useUpdateProductBarcode, 
-  usePrintBarcode 
+  usePrintBarcode,
+  useBatchPrintBarcodes
 } from '../floor-planning/useZoneManagement';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
@@ -41,6 +42,7 @@ export default function FloorPlanningPage() {
   const { data: gridData, isLoading: isGridLoading } = useWarehouseGrid();
   const { data: occupancyData } = useWarehouseGridOccupancy(!isGridLoading);
   const printBarcode  = usePrintBarcode();
+  const batchPrintBarcodes = useBatchPrintBarcodes();
   const { data: binLogData, isLoading: isBinLogLoading } = useBinLog(activeBinLog);
   const { data: binStatsData } = useBinStats(selectedBin);
   const createZone    = useCreateZone();
@@ -81,6 +83,7 @@ export default function FloorPlanningPage() {
         onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
         onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
         onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
+        onBatchPrintBarcodes={(locationCodes, formatId) => batchPrintBarcodes.mutateAsync({ locationCodes, formatId })}
         onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
         activeTab={activeTab}
         onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}

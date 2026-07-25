@@ -92,7 +92,18 @@ export type FloorPlanningPageProps = {
   variantFocusBins?: string[];
   onCreateZone?: (payload: { location_code: string; type: WarehouseLocationType; parent_location_code?: string }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
-  onPrintBarcode?: (locationCode: string) => Promise<void>;
+  // FP-16 follow-up: FP-15 changed usePrintBarcode's mutationFn to resolve
+  // the fetched label Blob (responseType: 'blob') instead of void — the
+  // interface here was never updated to match, causing TS2322 in
+  // FloorPlanningPage. onSuccess in usePrintBarcode already handles opening
+  // the blob, so callers don't need to touch it, but the type must reflect
+  // what mutateAsync actually resolves to.
+  onPrintBarcode?: (locationCode: string) => Promise<Blob>;
+  // FP-16: batch print — returns the generated PDF blob so PrintPreviewPanel
+  // can open it, keeping axios/blob handling in the host app (FloorPlanningPage)
+  // rather than importing across the modules/floor-planning <-> apps/frontend
+  // package boundary, which doesn't resolve.
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
@@ -413,12 +424,14 @@ function BarcodesTab({
   onUpdateProductBarcode,
   activeSubTab,
   onSubTabChange,
+  onBatchPrintBarcodes,
 }: { 
   zones: WarehouseZone[]; 
   productBarcodes: ProductBarcode[]; 
-  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+  onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) =>Promise<void>;
   activeSubTab?: 'locations' | 'products';
   onSubTabChange?: (subTab: 'locations' | 'products') => void;
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob>;
 }) {
   const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
@@ -612,7 +625,7 @@ function BarcodesTab({
             transition: 'width 0.25s ease, opacity 0.2s ease',
             flexShrink: 0,
           }}>
-            <PrintPreviewPanel selectedZones={selectedZoneObjects} />
+            <PrintPreviewPanel selectedZones={selectedZoneObjects} onBatchPrint={onBatchPrintBarcodes} />
           </Box>
         </Box>
       )}
@@ -660,6 +673,7 @@ function FloorPlanningModuleFT2Inner({
   onViewChange,
   activeSubTab,
   onSubTabChange,
+  onBatchPrintBarcodes,
 }: FloorPlanningPageProps) {
   const zones = data?.zones ?? [];
   const productBarcodes = data?.product_barcodes ?? [];
@@ -1320,6 +1334,7 @@ function FloorPlanningModuleFT2Inner({
           onUpdateProductBarcode={onUpdateProductBarcode}
           activeSubTab={activeSubTab}
           onSubTabChange={onSubTabChange}
+          onBatchPrintBarcodes={onBatchPrintBarcodes}
         />
       )}
     </Box>

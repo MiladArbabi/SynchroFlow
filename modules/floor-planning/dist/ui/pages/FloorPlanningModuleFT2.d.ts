@@ -47,7 +47,8 @@ export type FloorPlanningPageProps = {
         parent_location_code?: string;
     }) => Promise<void>;
     onDeleteZone?: (locationCode: string) => Promise<void>;
-    onPrintBarcode?: (locationCode: string) => Promise<void>;
+    onPrintBarcode?: (locationCode: string) => Promise<Blob>;
+    onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob>;
     onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
     onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
     /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */

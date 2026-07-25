@@ -122,7 +122,11 @@ interface CanvasEditorProps {
     zone_type?: string | null;
   }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
-  onPrintBarcode?: (locationCode: string) => Promise<void>;
+  // FP-16 follow-up: mirrors the FloorPlanningModuleFT2 interface fix —
+  // usePrintBarcode's mutationFn resolves the fetched label Blob
+  // (responseType: 'blob'), not void. Usage at line 472 is fire-and-forget
+  // (no await/.then chain), so widening this return type is safe.
+  onPrintBarcode?: (locationCode: string) => Promise<Blob>;
   onCreateZone?: (payload: { 
     location_code: string; 
     type: WarehouseLocationType; 

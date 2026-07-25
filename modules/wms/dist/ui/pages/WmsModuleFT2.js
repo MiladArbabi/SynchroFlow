@@ -116,7 +116,7 @@ const StowTaskCard = memo(function StowTaskCard({ task, onClaim, onConfirm, }) {
                     transition: 'opacity 0.15s ease',
                 }, children: isPending ? 'Claim & stow →' : 'Confirm stowed →' })] }));
 });
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, onReportStowException, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, onReportStowException, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, }) {
     // Auto-enter receive session if handed off from Suppliers portal via URL param
     const [activeSession, setActiveSession] = useState(pendingReceiveSession
         ? { type: 'receive', ...pendingReceiveSession }
@@ -160,6 +160,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     };
     const [packScanLoading, setPackScanLoading] = useState(false);
     const [packScanError, setPackScanError] = useState(null);
+    const [readyToPackOpen, setReadyToPackOpen] = useState(false);
     const packInputRef = useRef(null);
     const packErrorTimerRef = useRef(null);
     // Re-focus pack input whenever operations page becomes active
@@ -269,7 +270,33 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                     fontSize: 15, color: 'var(--ink-3)',
                                     '&::placeholder': { color: 'var(--ink-4)' },
                                 },
-                            } }) }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: "Scanner auto-submits \u00B7 manual entry: press Enter" })] }), !isLoading && !loadingSession && batches.length > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Active batches" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [batches.length, " in progress"] })] })), !isLoading && !loadingSession && !isError && batches.length === 0 && (_jsxs(Box, { sx: {
+                            } }) }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: "Scanner auto-submits \u00B7 manual entry: press Enter" })] }), !!readyToPackCount && readyToPackCount > 0 && (_jsxs(Box, { sx: {
+                    bgcolor: 'var(--surface)',
+                    border: '1px solid var(--rule)',
+                    borderRadius: '14px',
+                    mb: 2.5,
+                    overflow: 'hidden',
+                }, children: [_jsxs(Box, { onClick: () => setReadyToPackOpen(v => !v), sx: {
+                            display: 'flex', alignItems: 'center', gap: 1,
+                            px: '20px', py: '16px', cursor: 'pointer',
+                        }, children: [_jsx(Package, { size: 16, color: "var(--accent)" }), _jsxs(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink)' }, children: [readyToPackCount, " ", readyToPackCount === 1 ? 'order' : 'orders', " ready to be packed"] }), _jsx(Box, { sx: { flex: 1 } }), _jsx(Typography, { sx: {
+                                    fontSize: 12, color: 'var(--ink-4)',
+                                    transform: readyToPackOpen ? 'rotate(180deg)' : 'none',
+                                    transition: 'transform 0.15s',
+                                }, children: "\u25BE" })] }), readyToPackOpen && (_jsx(Box, { sx: { px: '20px', pb: '16px' }, children: (readyToPackOrders ?? []).map(order => (_jsxs(Box, { sx: {
+                                border: '1px solid var(--rule)', borderRadius: '10px',
+                                p: '14px 16px', mb: 1.25,
+                                '&:last-child': { mb: 0 },
+                            }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 1 }, children: [_jsxs(Typography, { sx: { fontSize: 13, fontWeight: 600, color: 'var(--ink)' }, children: ["#", order.external_order_id] }), order.wms_barcode && (_jsx(Typography, { sx: {
+                                                fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                                                color: 'var(--ink-3)', ml: 'auto',
+                                            }, children: order.wms_barcode }))] }), order.line_items.map(item => (_jsxs(Box, { sx: {
+                                        display: 'flex', alignItems: 'center', gap: 1,
+                                        py: 0.5,
+                                    }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)', flex: 1 }, noWrap: true, children: [item.product_title, item.variant_title ? ` · ${item.variant_title}` : ''] }), _jsx(Typography, { sx: {
+                                                fontSize: 11.5, fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                                                color: item.unit_barcode ? 'var(--accent)' : 'var(--ink-4)',
+                                            }, children: item.unit_barcode ?? 'no tracked unit' })] }, item.lasyncro_line_item_id)))] }, order.lasyncro_order_id))) }))] })), !isLoading && !loadingSession && batches.length > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Active batches" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [batches.length, " in progress"] })] })), !isLoading && !loadingSession && !isError && batches.length === 0 && (_jsxs(Box, { sx: {
                     textAlign: 'center', py: 8,
                     bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
                     borderRadius: '14px',

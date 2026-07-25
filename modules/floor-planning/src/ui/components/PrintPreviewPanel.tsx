@@ -84,43 +84,34 @@ function BarcodeSVG({ value, widthMm, heightMm }: BarcodeSVGProps) {
 
 interface PrintPreviewPanelProps {
   selectedZones: WarehouseZone[];
+  // FP-16: callback prop rather than direct axios import — this module
+  // lives across the modules/floor-planning <-> apps/frontend package
+  // boundary, which doesn't resolve a direct import of the host app's
+  // axiosInstance. FloorPlanningPage owns the actual HTTP call and
+  // returns the PDF blob here for opening.
+  onBatchPrint?: (locationCodes: string[], formatId: string) => Promise<Blob>;
 }
-
-export function PrintPreviewPanel({ selectedZones }: PrintPreviewPanelProps) {
+export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewPanelProps) {
   const [formatId, setFormatId] = useState<string>('avery-5160');
   const format = LABEL_FORMATS.find((f) => f.id === formatId) ?? LABEL_FORMATS[0];
-
   const barcoded = selectedZones.filter((z) => z.barcode !== null && z.active);
   const sheet    = barcoded.slice(0, format.labelsPerSheet);
-
-  const labelPxW = format.labelWidthMm  * MM_TO_PX * 0.6; // 0.6 = preview scale
+  const labelPxW = format.labelWidthMm  * MM_TO_PX * 0.6; // 0.6 = previewscale
   const labelPxH = format.labelHeightMm * MM_TO_PX * 0.6;
-
-  function handlePrint() {
-    // Inject print styles scoped to this sheet — removed after print
-    const style = document.createElement('style');
-    style.id = '__lsy-print-style';
-    style.innerHTML = `
-      @media print {
-        @page { size: ${format.paperSize === 'A4' ? 'A4' : format.paperSize === '4x6' ? '4in 6in' : '1in 2.125in'} portrait; margin: 8mm; }
-        body > *:not(#lasyncro-print-root) { display: none !important; }
-        #lasyncro-print-root > *:not(#lasyncro-print-sheet) { display: none !important; }
-        #lasyncro-print-sheet {
-          display: grid !important;
-          grid-template-columns: repeat(${format.columns}, 1fr);
-          gap: 2mm;
-          padding: 0;
-        }
-        #lasyncro-print-sheet .lsy-label {
-          border: 0.2mm solid #ccc;
-          padding: 2mm;
-          break-inside: avoid;
-        }
-      }
-    `;
-    document.head.appendChild(style);
-    window.print();
-    setTimeout(() => document.getElementById('__lsy-print-style')?.remove(), 1000);
+  // FP-16: was window.print() against a #lasyncro-print-root selector
+  // that never existed in the DOM (dead CSS, confirmed by full-repo grep
+  // in the print-system architecture audit). Now generates a real
+  // server-rendered PDF, same pattern as FP-15's single-zone print.
+  async function handlePrint() {
+    const codes = sheet.map((z) => z.location_code);
+    if (codes.length === 0 || !onBatchPrint) return;
+    try {
+      const blob = await onBatchPrint(codes, formatId);
+      const url = window.open(URL.createObjectURL(blob), '_blank');
+      if (!url) console.warn('[FP-16] Label sheet popup blocked — check browser popup settings');
+    } catch (e) {
+      console.error('[FP-16] Batch print failed', e);
+    }
   }
 
   return (
@@ -174,7 +165,7 @@ export function PrintPreviewPanel({ selectedZones }: PrintPreviewPanelProps) {
               }}
             >
               <BarcodeSVG
-                value={zone.barcode!}
+                value={zone.location_code}
                 widthMm={format.labelWidthMm}
                 heightMm={format.labelHeightMm}
               />

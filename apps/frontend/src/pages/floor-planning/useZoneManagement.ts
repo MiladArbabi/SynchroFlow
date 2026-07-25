@@ -120,3 +120,16 @@ export function usePrintBarcode() {
     },
   });
 }
+
+// FP-16: batch print — mutationFn returns the raw Blob (no onSuccess
+// side-effect here) because PrintPreviewPanel needs to open the blob
+// itself via the onBatchPrint callback prop; unlike usePrintBarcode,
+// there's no last_printed_at invalidation tied to a single zone here.
+export function useBatchPrintBarcodes() {
+  return useMutation({
+    mutationFn: ({ locationCodes, formatId }: { locationCodes: string[]; formatId: string }) =>
+      axiosInstance
+        .post('/api/v1/floor-planning/zones/print-batch', { locationCodes, formatId }, { responseType: 'blob' })
+        .then(r => r.data as Blob),
+  });
+}

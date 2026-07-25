@@ -1,7 +1,11 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
-import { generateWarehouseLabelPdf } from '../../services/wms/warehouseLabelPdf.service.js';
+import { 
+  generateWarehouseLabelPdf, 
+  generateWarehouseLabelSheetPdf, 
+  WarehouseLabelZone
+} from '../../services/wms/warehouseLabelPdf.service.js';
 
 /**
  * FLOOR PLANNING CONTROLLERS
@@ -729,5 +733,42 @@ export async function httpPrintBarcode(req: Request, res: Response) {
   } catch (err) {
     console.error('[floor-planning] httpPrintBarcode failed', err);
     return res.status(500).json({ error: 'Failed to generate label' });
+  }
+}
+
+// FP-16: batch print for the Barcodes tab's multi-select UI. Re-fetches
+// zones by code rather than trusting client-supplied zone data — same
+// principle as httpPrintBarcode. Filters to barcode-assigned + active,
+// mirroring the rule PrintPreviewPanel already applied client-side for
+// its preview, so what gets printed matches what was previewed.
+export async function httpBatchPrintBarcodes(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+  const { locationCodes, formatId } = req.body as { locationCodes?: string[]; formatId?: string };
+  if (!Array.isArray(locationCodes) || locationCodes.length === 0) {
+    return res.status(400).json({ error: 'locationCodes required' });
+  }
+  try {
+    const zones = await db.transaction<WarehouseLabelZone[]>(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const rows = await trx('warehouse_locations')
+        .where({ shop_id: shopId })
+        .whereIn('location_code', locationCodes)
+        .andWhere({ active: true })
+        .whereNotNull('barcode')
+        .orderBy('location_code')
+        .select('location_code', 'type', 'zone_type', 'barcode');
+      return rows;
+    });
+
+    if (!zones.length) return res.status(404).json({ error: 'No printable zones in selection' });
+
+    const pdfBuffer = await generateWarehouseLabelSheetPdf(zones, formatId ?? 'avery-5160');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="warehouse-labels.pdf"');
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[floor-planning] httpBatchPrintBarcodes failed', err);
+    return res.status(500).json({ error: 'Failed to generate label sheet' });
   }
 }
