@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import { useToast } from '../../contexts/ToastContext';
 import type { WarehouseLocationType } from '@lasyncro/shared/ui';
 
 /**
@@ -41,6 +42,7 @@ export function useCreateZone() {
 
 export function useUpdateZone() {
   const qc = useQueryClient();
+  const { show } = useToast();
   const queryKey = ['floor-planning', 'layout'];
   return useMutation({
     mutationFn: ({ locationCode, ...payload }: UpdateZonePayload & { locationCode: string }) =>
@@ -65,8 +67,12 @@ export function useUpdateZone() {
       }
       return { previous };
     },
+    // FP-13: surface a toast when a rollback actually happens, so a
+    // failed save doesn't just silently revert with no explanation -
+    // previously the value would snap back with zero indication of why.
     onError: (_err, _vars, context) => {
       if (context?.previous) qc.setQueryData(queryKey, context.previous);
+      show('Failed to save changes — reverted to last saved value.', 'error');
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
