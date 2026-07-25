@@ -18,14 +18,21 @@ const TYPE_LABELS = {
 };
 function ZoneCard({ zone, onDelete, onToggleActive }) {
     const type = TYPE_LABELS[zone.type] ?? { label: zone.type, color: 'default' };
-    return (_jsxs(Paper, { variant: "outlined", sx: { p: 2, mb: 1.5, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }, children: [_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }, children: [_jsx(Typography, { variant: "body2", fontWeight: 700, sx: { fontFamily: 'monospace' }, children: zone.location_code }), _jsxs(Box, { sx: { display: 'flex', gap: 1, alignItems: 'center' }, children: [!zone.active && _jsx(Chip, { label: "Inactive", size: "small", color: "default" }), _jsx(Chip, { label: type.label, size: "small", color: type.color }), zone.zone_type && (_jsx(Chip, { label: zone.zone_type, size: "small", sx: {
-                                    fontSize: 10,
-                                    height: 20,
-                                    textTransform: 'capitalize',
-                                    bgcolor: ZONE_COLORS[zone.zone_type] ?? 'transparent',
-                                    color: ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)',
-                                    border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
-                                } })), _jsx(IconButton, { size: "small", title: zone.active ? 'Deactivate' : 'Activate', onClick: () => onToggleActive?.(zone.location_code, !zone.active), sx: { color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }, children: zone.active ? _jsx(EyeOff, { size: 14 }) : _jsx(Eye, { size: 14 }) }), zone.parent_location_code !== null && (_jsx(IconButton, { size: "small", title: "Delete zone", onClick: () => onDelete?.(zone.location_code), sx: { color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }, children: _jsx(Trash2, { size: 14 }) }))] })] }), zone.parent_location_code && (_jsxs(Typography, { variant: "caption", color: "text.secondary", sx: { display: 'block', mb: 0.5 }, children: ["Parent: ", zone.parent_location_code] })), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mt: 1 }, children: [_jsx(Tag, { size: 13 }), _jsx(Typography, { variant: "caption", sx: { fontFamily: 'monospace' }, color: zone.barcode ? 'text.primary' : 'text.disabled', children: zone.barcode ?? 'No barcode assigned' })] }), zone.children_count > 0 && (_jsxs(Typography, { variant: "caption", color: "text.secondary", sx: { mt: 0.5, display: 'block' }, children: [zone.children_count, " child location", zone.children_count > 1 ? 's' : ''] }))] }));
+    const metaParts = [];
+    if (zone.parent_location_code)
+        metaParts.push(`Parent: ${zone.parent_location_code}`);
+    metaParts.push(zone.barcode ?? 'No barcode assigned');
+    if (zone.children_count > 0) {
+        metaParts.push(`${zone.children_count} child location${zone.children_count > 1 ? 's' : ''}`);
+    }
+    return (_jsx(Paper, { variant: "outlined", sx: { p: 1.5, mb: 1, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }, children: _jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }, children: [_jsxs(Box, { sx: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.75 }, children: [_jsx(Typography, { variant: "body2", fontWeight: 700, sx: { fontFamily: 'monospace' }, children: zone.location_code }), _jsxs(Box, { sx: { display: 'flex', gap: 1, alignItems: 'center' }, children: [!zone.active && _jsx(Chip, { label: "Inactive", size: "small", color: "default" }), _jsx(Chip, { label: type.label, size: "small", color: type.color }), zone.zone_type && (_jsx(Chip, { label: zone.zone_type, size: "small", sx: {
+                                        fontSize: 10,
+                                        height: 20,
+                                        textTransform: 'capitalize',
+                                        bgcolor: ZONE_COLORS[zone.zone_type] ?? 'transparent',
+                                        color: ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)',
+                                        border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
+                                    } }))] })] }), _jsxs(Box, { sx: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.75 }, children: [_jsxs(Box, { sx: { display: 'flex', gap: 0.5, alignItems: 'center' }, children: [_jsx(IconButton, { size: "small", title: zone.active ? 'Deactivate' : 'Activate', onClick: () => onToggleActive?.(zone.location_code, !zone.active), sx: { color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }, children: zone.active ? _jsx(EyeOff, { size: 14 }) : _jsx(Eye, { size: 14 }) }), zone.parent_location_code !== null && (_jsx(IconButton, { size: "small", title: "Delete zone", onClick: () => onDelete?.(zone.location_code), sx: { color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }, children: _jsx(Trash2, { size: 14 }) }))] }), _jsx(Typography, { variant: "caption", color: "text.secondary", sx: { fontFamily: 'monospace', textAlign: 'right' }, children: metaParts.map((part, i) => (_jsxs("span", { children: [i > 0 && _jsx("span", { style: { opacity: 0.5 }, children: " \u00B7 " }), part] }, i))) })] })] }) }));
 }
 function ProductBarcodesTable({ items, onUpdateProductBarcode }) {
     const [filter, setFilter] = useState('');

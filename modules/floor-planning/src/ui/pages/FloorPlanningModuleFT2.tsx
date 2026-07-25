@@ -129,24 +129,32 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
   onToggleActive?: (code: string, active: boolean) => void;
 }) {
   const type = TYPE_LABELS[zone.type] ?? { label: zone.type, color: 'default' as const };
+  const metaParts: string[] = [];
+  if (zone.parent_location_code) metaParts.push(`Parent: ${zone.parent_location_code}`);
+  metaParts.push(zone.barcode ?? 'No barcode assigned');
+  if (zone.children_count > 0) {
+    metaParts.push(`${zone.children_count} child location${zone.children_count > 1 ? 's' : ''}`);
+  }
   return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-        <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
-          {zone.location_code}
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          {!zone.active && <Chip label="Inactive" size="small" color="default" />}
-          <Chip label={type.label} size="small" color={type.color} />
-          {/* FP-01: List view previously only showed structural type (Bin/Lane/
-              Shelf/Warehouse) and dropped zone_type entirely, unlike the Table
-              and Canvas views which both surface it. This chip closes that gap
-              using the same colour source as Canvas's own detail-panel chip. */}
-          {zone.zone_type && (
-            <Chip
-              label={zone.zone_type}
-              size="small"
-              sx={{
+    <Paper variant="outlined" sx={{ p: 1.5, mb: 1, borderRadius: 2, opacity: zone.active ? 1 : 0.5 }}>
+      {/* FP-03: two-column layout, each column hugs its own content
+          (no fixed widths) via alignItems flex-start / flex-end inside
+          a space-between row, instead of one wide row with a trailing
+          meta line. Left = identity (code + type chips), right =
+          actions (eye/trash) + reference meta (parent/barcode/children). */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0.75 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ fontFamily: 'monospace' }}>
+            {zone.location_code}
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            {!zone.active && <Chip label="Inactive" size="small" color="default" />}
+            <Chip label={type.label} size="small" color={type.color} />
+            {zone.zone_type && (
+              <Chip
+                label={zone.zone_type}
+                size="small"
+                sx={{
                 fontSize: 10,
                 height: 20,
                 textTransform: 'capitalize',
@@ -155,45 +163,44 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
                 border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
               }}
             />
-          )}
-          <IconButton
+            )}
+          </Box>
+        </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.75 }}>
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <IconButton
             size="small"
             title={zone.active ? 'Deactivate' : 'Activate'}
             onClick={() => onToggleActive?.(zone.location_code, !zone.active)}
             sx={{ color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }}
           >
-            {zone.active ? <EyeOff size={14} /> : <Eye size={14} />}
-          </IconButton>
-          {/* Root row delete suppressed — lifecycle belongs to Settings › Warehouse (ISS-236) */}
-          {zone.parent_location_code !== null && (
-            <IconButton
+              {zone.active ? <EyeOff size={14} /> : <Eye size={14} />}
+            </IconButton>
+            {zone.parent_location_code !== null && (
+              <IconButton
               size="small"
               title="Delete zone"
               onClick={() => onDelete?.(zone.location_code)}
               sx={{ color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }}
             >
               <Trash2 size={14} />
-            </IconButton>
-          )}
+              </IconButton>
+            )}
+          </Box>
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ fontFamily: 'monospace', textAlign: 'right' }}
+          >
+            {metaParts.map((part, i) => (
+              <span key={i}>
+                {i > 0 && <span style={{ opacity: 0.5 }}> · </span>}
+                {part}
+              </span>
+            ))}
+          </Typography>
         </Box>
       </Box>
-
-      {zone.parent_location_code && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-          Parent: {zone.parent_location_code}
-        </Typography>
-      )}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-        <Tag size={13} />
-        <Typography variant="caption" sx={{ fontFamily: 'monospace' }} color={zone.barcode ? 'text.primary' : 'text.disabled'}>
-          {zone.barcode ?? 'No barcode assigned'}
-        </Typography>
-      </Box>
-      {zone.children_count > 0 && (
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
-          {zone.children_count} child location{zone.children_count > 1 ? 's' : ''}
-        </Typography>
-      )}
     </Paper>
   );
 }

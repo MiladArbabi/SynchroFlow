@@ -133,6 +133,11 @@ interface CanvasEditorProps {
     depth?: number;
     rack_levels?: number
   }) => Promise<void>;
+  // FP-04: Canvas no longer embeds its own 3D preview — IsometricCanvas
+  // already renders full-featured (with occupancy/stock-out overlays) on
+  // the Map tab. This callback lets Canvas hand off to that existing view
+  // instead of duplicating a stripped-down copy of it.
+  onViewIn3D?: () => void;
 }
 // ── ComponentPalette ─────────────────────────────────────────────────────────
 function ComponentPalette({ zones, unpositionedZones, onPlace, onCreateZone, canvasCentreX, canvasCentreY }: {
@@ -545,6 +550,7 @@ export function CanvasEditor({
   onDeleteZone, 
   onCreateZone,
   onPrintBarcode,
+  onViewIn3D,
 }: CanvasEditorProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(1);
@@ -556,7 +562,9 @@ export function CanvasEditor({
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [renderMode, setRenderMode] = useState<'2D' | '3D'>('2D');
+  // FP-04: renderMode/3D toggle removed — Canvas is 2D-only now.
+  // 3D preview lives on the Map tab (same shared IsometricCanvas,
+  // with occupancy overlays Canvas never had access to).
   // Interaction mode — pan (default) or select (marquee)
   const [mode, setMode] = useState<'pan' | 'select'>('pan');
   // Marquee selection rectangle — SVG canvas coordinates in pixels
@@ -840,7 +848,7 @@ export function CanvasEditor({
     <Box sx={{ display: 'flex', width: '100%', height: 560, border: '1px solid var(--rule)', borderRadius: 2, overflow: 'hidden', bgcolor: 'var(--bg)' }}>
 
       {/* LEFT — palette */}
-      {renderMode === '2D' && <ComponentPalette
+      <ComponentPalette
         zones={zones}
         unpositionedZones={zones.filter(z => z.position_x == null)}
         onPlace={(zone) => {
@@ -853,7 +861,6 @@ export function CanvasEditor({
         canvasCentreX={snapV(Math.max(0, (-offset.x + 200) / (SCALE * zoom)))}
         canvasCentreY={snapV(Math.max(0, (-offset.y + 150) / (SCALE * zoom)))}
       />
-      }
 
       {/* CENTER — canvas */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', bgcolor: 'var(--bg-2)' }}>
@@ -873,19 +880,18 @@ export function CanvasEditor({
             {positionedZones.length} components
             {unpositionedCount > 0 && <span style={{ color: 'var(--ink-4)' }}> · {unpositionedCount} unpositioned</span>}
           </Typography>
-          {/* 2D/3D toggle — Phase 3: IsometricCanvas activates on 3D */}
-          <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden', mr: 1 }}>
-            {(['2D', '3D'] as const).map((m) => (
-              <Box key={m} title={m === '3D' ? 'Isometric 2.5D view' : 'SVG floor plan'} onClick={() => setRenderMode(m)}
-                sx={{ px: 1.25, py: 0.4, fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-                  cursor: 'pointer',
-                  bgcolor: renderMode === m ? 'var(--accent)' : 'transparent',
-                  color:   renderMode === m ? '#fff' : 'var(--ink-4)',
-                  transition: 'all 0.15s' }}>
-                {m}
-              </Box>
-            ))}
-          </Box>
+          {/* FP-04: View in 3D — links out to Map instead of re-rendering
+              a props-stripped IsometricCanvas inline. Only shown when the
+              parent wires a handler; degrades gracefully if not. */}
+          {onViewIn3D && (
+            <Box onClick={onViewIn3D} title="View this layout in 3D on the Map tab"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.25, py: 0.4, mr: 1,
+                border: '1px solid var(--rule)', borderRadius: 1.5, cursor: 'pointer',
+                fontSize: 10, fontWeight: 600, letterSpacing: '0.04em', color: 'var(--ink-3)',
+                '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+              View in 3D
+            </Box>
+          )}
           {/* Mode toggle — Pan (default) or Select (marquee) */}
           <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden', mr: 1 }}>
             {([
@@ -901,7 +907,7 @@ export function CanvasEditor({
               </Box>
             ))}
           </Box>
-          {renderMode === '2D' && <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
               <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta)))}
                 sx={{ width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 13, color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
@@ -916,16 +922,9 @@ export function CanvasEditor({
               Reset
             </Box>
           </Box>
-          }
         </Box>
 
-        {/* Rulers + SVG — 2D mode only */}
-        {renderMode === '3D' && (
-          <Box sx={{ flex: 1, overflow: 'hidden' }}>
-            <IsometricCanvas zones={zones} onSelect={(code) => setSelected(code)} />
-          </Box>
-        )}
-        {renderMode === '2D' && <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <Box sx={{ display: 'flex', flexShrink: 0 }}>
             <Box sx={{ width: RULER_SIZE, height: RULER_SIZE, bgcolor: 'var(--bg-2)', borderRight: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)', flexShrink: 0 }} />
             <Box sx={{ flex: 1, overflow: 'hidden' }}>
@@ -1054,7 +1053,6 @@ export function CanvasEditor({
             </Box>
           </Box>
         </Box>
-        }
 
         {/* Zone tree breadcrumb */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0, px: 1, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg)', flexShrink: 0, overflowX: 'auto', height: 28 }}>
@@ -1080,8 +1078,8 @@ export function CanvasEditor({
       {/* RIGHT — inspector */}
       {selectedZone ? (
         <RackInspector zone={selectedZone} onClose={() => setSelected(null)}
-          onUpdateZone={renderMode === '2D' ? onUpdateZone : undefined}
-          onDeleteZone={renderMode === '2D' ? onDeleteZone : undefined}
+          onUpdateZone={onUpdateZone}
+          onDeleteZone={onDeleteZone}
           onPrintBarcode={onPrintBarcode}
           onCreateZone={onCreateZone} />
       ) : (
