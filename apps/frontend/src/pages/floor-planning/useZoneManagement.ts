@@ -102,12 +102,20 @@ export function useUpdateProductBarcode() {
   });
 }
 
+// FP-15: responseType 'blob' is a local override for this one call —
+// the backend now returns a real PDF, not JSON. Opened in a new tab so
+// the browser's native print dialog handles it; printViaQz delivery-layer
+// wiring is a separate, later sub-issue under #1047.
 export function usePrintBarcode() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (locationCode: string) =>
-      axiosInstance.post(`/api/v1/floor-planning/zones/${locationCode}/print`).then(r => r.data),
-    onSuccess: () => {
+      axiosInstance
+        .post(`/api/v1/floor-planning/zones/${locationCode}/print`, {}, { responseType: 'blob' })
+        .then(r => r.data as Blob),
+    onSuccess: (blob) => {
+      const url = window.open(URL.createObjectURL(blob), '_blank');
+      if (!url) console.warn('[FP-15] Label popup blocked — check browser popup settings');
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
     },
   });

@@ -1,6 +1,7 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { generateWarehouseLabelPdf } from '../../services/wms/warehouseLabelPdf.service.js';
 
 /**
  * FLOOR PLANNING CONTROLLERS
@@ -693,23 +694,40 @@ export async function httpDeleteZone(req: Request, res: Response) {
   }
 }
 
+// FP-15: now generates and returns a real PDF label instead of only
+// updating last_printed_at. Previously this button gave false confidence
+// that a physical label was produced when nothing was ever rendered.
 export async function httpPrintBarcode(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
   const { locationCode } = req.params;
   try {
-    const updated = await db.transaction(async (trx) => {
+    const { updated, childBinCodes } = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-      return trx('warehouse_locations')
+      const updated = await trx('warehouse_locations')
         .where({ shop_id: shopId, location_code: locationCode })
         .update({ last_printed_at: trx.fn.now() })
-        .returning(['location_code', 'last_printed_at']);
+        .returning(['location_code', 'last_printed_at', 'type', 'zone_type']);
+
+      let childBinCodes: string[] = [];
+      if (updated[0]?.type === 'lane') {
+        const children = await trx('warehouse_locations')
+          .where({ shop_id: shopId, parent_location_code: locationCode })
+          .orderBy('location_code')
+          .select('location_code');
+        childBinCodes = children.map((c) => c.location_code);
+      }
+      return { updated, childBinCodes };
     });
 
     if (!Array.isArray(updated) || !updated.length) return res.status(404).json({ error: 'Zone not found' });
-    return res.json({ location_code: updated[0].location_code, last_printed_at: updated[0].last_printed_at });
+
+    const pdfBuffer = await generateWarehouseLabelPdf(updated[0], childBinCodes);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${updated[0].location_code}.pdf"`);
+    return res.send(pdfBuffer);
   } catch (err) {
     console.error('[floor-planning] httpPrintBarcode failed', err);
-    return res.status(500).json({ error: 'Failed to update last_printed_at' });
+    return res.status(500).json({ error: 'Failed to generate label' });
   }
 }

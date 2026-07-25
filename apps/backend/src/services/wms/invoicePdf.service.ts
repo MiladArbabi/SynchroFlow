@@ -20,7 +20,7 @@
 // images render a grey placeholder box. Never fail the PDF.
 
 import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage } from 'pdf-lib';
-import bwipjs from 'bwip-js';
+import { generateCode128Png } from '../shared/barcodeGenerator.js';
 
 export interface InvoiceOrder {
   lasyncro_order_id: string;
@@ -68,25 +68,8 @@ const WHITE  = rgb(1, 1, 1);
 
 // ─── Barcode generation ───────────────────────────────────────────────────────
 
-async function generateCode128Png(value: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    bwipjs.toBuffer(
-      {
-        bcid: 'code128',
-        text: value,
-        scale: 2,
-        height: 12,
-        includetext: false,
-        paddingwidth: 4,
-        paddingheight: 2,
-      },
-      (err, png) => {
-        if (err) reject(err);
-        else resolve(png);
-      }
-    );
-  });
-}
+// FP-15: generateCode128Png moved to services/shared/barcodeGenerator.ts
+// so warehouseLabelPdf.service.ts can reuse it without duplication.
 
 // ─── Image fetch ──────────────────────────────────────────────────────────────
 
