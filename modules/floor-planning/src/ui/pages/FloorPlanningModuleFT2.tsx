@@ -671,6 +671,7 @@ function FloorPlanningModuleFT2Inner({
   // Default to every supported operational zone so active locations never disappear silently.
   const [zoneFilters, setZoneFilters] = useState<Set<string>>(new Set(['pick', 'pack', 'receive', 'ship', 'returns', 'problem', 'quarantine', 'kitting', 'storage']));
   const [canvasView, setCanvasView] = useState(activeView === 'canvas');
+  const [setupFilter, setSetupFilter] = useState<LocationFilter>('all');
   // Layer visibility — wired to Layers rail in Map tab.
   const [showFloor, setShowFloor] = useState(true);
   const [showBins,  setShowBins]  = useState(true);
@@ -785,6 +786,27 @@ function FloorPlanningModuleFT2Inner({
         </Typography>
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mt: 1, mb: 0.5 }}>Configure aisles, shelves, and bins. Your layout is the foundation of every pick.</Typography>
       </>}
+      {/* FP-13 — type filter parity with Barcodes tab; List view only, Canvas is spatial and doesn't need it */}
+      {tab === 'setup' && !canvasView && (
+        <Box sx={{ display: 'flex', gap: 0.75, mb: 2, flexWrap: 'wrap' }}>
+          {FILTER_PILLS.map(({ label, value }) => (
+            <Box
+              key={value}
+              onClick={() => setSetupFilter(value)}
+              sx={{
+                px: 1.25, py: 0.4, borderRadius: 1, cursor: 'pointer', fontSize: 11, fontWeight: 600, letterSpacing: '0.06em',
+                border: '1px solid',
+                borderColor: setupFilter === value ? 'var(--accent)' : 'var(--rule)',
+                color: setupFilter === value ? 'var(--accent)' : 'var(--ink-4)',
+                bgcolor: setupFilter === value ? 'var(--accent-ghost)' : 'transparent',
+                transition: 'all 0.12s',
+              }}
+            >
+              {label}
+            </Box>
+          ))}
+        </Box>
+      )}
       {tab === 'barcodes' && (() => {
         const barcodedLocs     = zones.filter((z) => z.barcode !== null).length;
         const missingLocs      = zones.filter((z) => z.barcode === null).length;
@@ -1278,7 +1300,7 @@ function FloorPlanningModuleFT2Inner({
                 </Typography>
               </Paper>
             ) : (
-              zones.map((zone) => (
+              (setupFilter === 'all' ? zones : zones.filter((z) => z.type === setupFilter)).map((zone) => (
                 <ZoneCard
                   key={zone.location_code}
                   zone={zone}
