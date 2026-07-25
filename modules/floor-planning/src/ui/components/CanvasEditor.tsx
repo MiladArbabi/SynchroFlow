@@ -727,6 +727,67 @@ export function CanvasEditor({
     return { x: snappedX, y: snappedY, guideX, guideY };
   }
 
+  // FP-14: alignment snap for bins and other non-frame zones — mirrors
+  // FP-11's frame alignment snap, comparing against sibling collidable
+  // zones instead of frames. Runs before clampPosition, which still has
+  // final say — an aligned position that would overlap a neighbor is
+  // resolved by clampPosition exactly as before, so this never weakens
+  // collision, it only tries alignment first.
+  function getBinAlignmentSnap(
+    code: string, x: number, y: number, w: number, h: number
+  ): { x: number; y: number; guideX: number | null; guideY: number | null } {
+    const tol = SNAP_PX / (SCALE * zoomRef.current);
+    let snappedX = x;
+    let snappedY = y;
+    let guideX: number | null = null;
+    let guideY: number | null = null;
+    let bestDx = tol;
+    let bestDy = tol;
+
+    for (const z of positionedZonesRef.current) {
+      if (z.location_code === code) continue;
+      if (z.type === 'warehouse' || z.type === 'lane' || z.type === 'shelf') continue;
+      const zx = localPositionsRef.current[z.location_code]?.x ?? parseFloat(String(z.position_x ?? 0));
+      const zy = localPositionsRef.current[z.location_code]?.y ?? parseFloat(String(z.position_y ?? 0));
+      const zw = localSizesRef.current[z.location_code]?.w ?? parseFloat(String(z.width ?? 1));
+      const zh = localSizesRef.current[z.location_code]?.h ?? parseFloat(String(z.depth ?? 0.8));
+
+      const candidatesX = [
+        { dragEdge: x,         targetEdge: zx },
+        { dragEdge: x,         targetEdge: zx + zw },
+        { dragEdge: x + w,     targetEdge: zx },
+        { dragEdge: x + w,     targetEdge: zx + zw },
+        { dragEdge: x + w / 2, targetEdge: zx + zw / 2 },
+      ];
+      for (const { dragEdge, targetEdge } of candidatesX) {
+        const d = Math.abs(dragEdge - targetEdge);
+        if (d < bestDx) {
+          bestDx = d;
+          snappedX = x + (targetEdge - dragEdge);
+          guideX = toSvg(targetEdge);
+        }
+      }
+
+      const candidatesY = [
+        { dragEdge: y,         targetEdge: zy },
+        { dragEdge: y,         targetEdge: zy + zh },
+        { dragEdge: y + h,     targetEdge: zy },
+        { dragEdge: y + h,     targetEdge: zy + zh },
+        { dragEdge: y + h / 2, targetEdge: zy + zh / 2 },
+      ];
+      for (const { dragEdge, targetEdge } of candidatesY) {
+        const d = Math.abs(dragEdge - targetEdge);
+        if (d < bestDy) {
+          bestDy = d;
+          snappedY = y + (targetEdge - dragEdge);
+          guideY = toSvg(targetEdge);
+        }
+      }
+    }
+
+    return { x: snappedX, y: snappedY, guideX, guideY };
+  }
+
   // FP-12: alignment snap for resizing frame zones — extends FP-11's drag
   // snap to the resize handles. Only the far edge being dragged moves
   // (near edge/position is fixed), so this checks a single edge per axis
@@ -894,8 +955,11 @@ export function CanvasEditor({
           finalX = snap.x;
           finalY = snap.y;
           setAlignGuides({ x: snap.guideX, y: snap.guideY });
-        } else if (alignGuides.x !== null || alignGuides.y !== null) {
-          setAlignGuides({ x: null, y: null });
+        } else {
+          const snap = getBinAlignmentSnap(d.locationCode, rawX, rawY, w, h);
+          finalX = snap.x;
+          finalY = snap.y;
+          setAlignGuides({ x: snap.guideX, y: snap.guideY });
         }
         const { x: newX, y: newY } = clampPosition(d.locationCode, finalX, finalY, w, h);
         setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
