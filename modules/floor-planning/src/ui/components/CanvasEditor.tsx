@@ -16,7 +16,7 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Box, Typography, Divider, Chip, IconButton, Paper, TextField, Dialog, DialogTitle, DialogActions, Button } from '@mui/material';
-import { X, Layers, RotateCw, Copy, Trash2, Tag, Hand, MousePointer } from 'lucide-react';
+import { X, Layers, RotateCw, Copy, Trash2, Tag } from 'lucide-react';
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
 import { IsometricCanvas } from './IsometricCanvas.js';
@@ -562,16 +562,10 @@ export function CanvasEditor({
   // Optimistic placement: zones placed this session before props re-render with new coordinates
   const [placedCoords, setPlacedCoords] = useState<Record<string, { x: number; y: number }>>({});
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  // FP-04: renderMode/3D toggle removed — Canvas is 2D-only now.
-  // 3D preview lives on the Map tab (same shared IsometricCanvas,
-  // with occupancy overlays Canvas never had access to).
-  // Interaction mode — pan (default) or select (marquee)
-  const [mode, setMode] = useState<'pan' | 'select'>('pan');
-  // Marquee selection rectangle — SVG canvas coordinates in pixels
-  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const marqueeRef    = useRef<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
-  const marqueeStartRef = useRef<{ x: number; y: number } | null>(null);
-
+  // FP-06: mode/marquee state removed — Canvas is pan-only now. Marquee
+  // selection only ever selected one zone regardless of drag area
+  // (dead scaffolding, never completed to true multi-select), and
+  // Select mode existed only to enable it.
   const dragRef   = useRef<DragState | null>(null);
   const panRef    = useRef<PanState | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
@@ -589,17 +583,14 @@ export function CanvasEditor({
   const positionedZonesRef = useRef(positionedZones);
   const localSizesRef      = useRef(localSizes);
   const localPositionsRef  = useRef(localPositions);
-  const modeRef            = useRef(mode);
-  const zoomRef            = useRef(zoom);
+  const zoomRef             = useRef(zoom);
   const offsetRef          = useRef(offset);
   // Sync refs synchronously on every render — avoids stale closure in mousemove handler
   positionedZonesRef.current = positionedZones;
   localSizesRef.current      = localSizes;
   localPositionsRef.current  = localPositions;
-  modeRef.current            = mode;
   zoomRef.current            = zoom;
   offsetRef.current          = offset;
-  marqueeRef.current         = marquee;
   const unpositionedCount = zones.filter(z => z.position_x == null && !placedCoords[z.location_code]).length;
   const selectedZone = selected
     ? positionedZones.find(z => z.location_code === selected) ?? zones.find(z => z.location_code === selected)
@@ -655,12 +646,9 @@ export function CanvasEditor({
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   function onRackMouseDown(e: React.MouseEvent, zone: WarehouseZone) {
-    // In select mode: let event bubble to canvas so marquee can start over zones.
-    // In pan mode: stop propagation to prevent canvas pan hijacking zone drag.
-    if (modeRef.current === 'select') {
-      setSelected(zone.location_code);
-      return;
-    }
+    // FP-06: mode branch removed — Select mode/marquee no longer exists,
+    // so zone mousedown always starts a drag (previously "pan mode" only
+    // behavior) and never lets the event bubble to canvas.
     e.stopPropagation();
     setSelected(zone.location_code);
     dragRef.current = {
@@ -672,17 +660,13 @@ export function CanvasEditor({
     };
   }
 
+  // FP-06: marquee selection removed — it only ever selected a single
+  // zone regardless of drag area (see prior mouseup comment: "Multi-select:
+  // for now select first hit — group select in future sprint"). Canvas
+  // is pan-only now; clicking a zone directly still selects it via
+  // onRackMouseDown, unaffected by this change.
   function onCanvasMouseDown(e: React.MouseEvent) {
     if (dragRef.current) return;
-    if (mode === 'select') {
-      // Start marquee selection — record SVG canvas start point
-      const rect = svgRef.current!.getBoundingClientRect();
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
-      marqueeStartRef.current = { x: sx, y: sy };
-      setMarquee({ x1: sx, y1: sy, x2: sx, y2: sy });
-      return;
-    }
     setSelected(null);
     panRef.current = {
       startMouseX:  e.clientX,
@@ -755,19 +739,7 @@ export function CanvasEditor({
         setLocalPositions(prev => ({ ...prev, [d.locationCode]: { x: newX, y: newY } }));
         return;
       }
-      // Marquee update
-      if (marqueeStartRef.current) {
-        const rect = svgRef.current?.getBoundingClientRect();
-        if (rect) {
-          setMarquee({
-            x1: marqueeStartRef.current.x,
-            y1: marqueeStartRef.current.y,
-            x2: e.clientX - rect.left,
-            y2: e.clientY - rect.top,
-          });
-        }
-        return;
-      }
+      // FP-06: marquee-update branch removed along with marquee feature.
       // Pan — FP-05: clamped so the floor plan can't be dragged fully off-screen
       if (panRef.current) {
         const p = panRef.current;
@@ -809,35 +781,7 @@ export function CanvasEditor({
         }
         dragRef.current = null;
       }
-      // Commit marquee selection — select all zones whose centre falls within the marquee rect
-      if (marqueeStartRef.current && marqueeRef.current) {
-        const minX = Math.min(marqueeRef.current.x1, marqueeRef.current.x2);
-        const maxX = Math.max(marqueeRef.current.x1, marqueeRef.current.x2);
-        const minY = Math.min(marqueeRef.current.y1, marqueeRef.current.y2);
-        const maxY = Math.max(marqueeRef.current.y1, marqueeRef.current.y2);
-        // Only select if marquee has meaningful size (not just a click)
-        if (maxX - minX > 4 || maxY - minY > 4) {
-          const hits = positionedZonesRef.current.filter(z => {
-            const lp = localPositionsRef.current[z.location_code];
-            const ls = localSizesRef.current[z.location_code];
-            const zx = (lp?.x ?? parseFloat(String(z.position_x ?? 0)));
-            const zy = (lp?.y ?? parseFloat(String(z.position_y ?? 0)));
-            const zw = (ls?.w ?? parseFloat(String(z.width  ?? 1)));
-            const zh = (ls?.h ?? parseFloat(String(z.depth  ?? 0.5)));
-            // Centre of zone in SVG pixels
-            const cx = offsetRef.current.x + (zx + zw / 2) * SCALE * zoomRef.current;
-            const cy = offsetRef.current.y + (zy + zh / 2) * SCALE * zoomRef.current;
-            return cx >= minX && cx <= maxX && cy >= minY && cy <= maxY;
-          });
-          if (hits.length >= 1) setSelected(hits[0].location_code);
-          // Multi-select: for now select first hit — group select in future sprint
-        }
-        marqueeStartRef.current = null;
-        setMarquee(null);
-      }
-      // Always clear marqueeStartRef on mouseup — prevents stale ref hijacking pan mode
-      marqueeStartRef.current = null;
-      setMarquee(null);
+      // FP-06: marquee-resolution block removed along with marquee feature.
       panRef.current = null;
     }
     // Native wheel listener on SVG — { passive: false } required to call preventDefault()
@@ -914,21 +858,8 @@ export function CanvasEditor({
               View in 3D
             </Box>
           )}
-          {/* Mode toggle — Pan (default) or Select (marquee) */}
-          <Box sx={{ display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden', mr: 1 }}>
-            {([
-              { m: 'pan'    as const, icon: <Hand size={12} />,          title: 'Pan mode — drag to pan canvas' },
-              { m: 'select' as const, icon: <MousePointer size={12} />,  title: 'Select mode — click or drag to select zones' },
-            ]).map(({ m, icon, title }) => (
-              <Box key={m} title={title} onClick={() => setMode(m)}
-                sx={{ px: 1.25, py: 0.4, display: 'flex', alignItems: 'center', cursor: 'pointer',
-                  bgcolor: mode === m ? 'var(--accent)' : 'transparent',
-                  color:   mode === m ? '#fff' : 'var(--ink-4)',
-                  transition: 'all 0.15s' }}>
-                {icon}
-              </Box>
-            ))}
-          </Box>
+          {/* FP-06: Pan/Select mode toggle removed — Canvas is pan-only
+              now that marquee selection is gone. */}
           <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
             {[{ label: '−', delta: -0.15 }, { label: '+', delta: 0.15 }].map(({ label, delta }) => (
               <Box key={label} onClick={() => setZoom(z => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z + delta)))}
@@ -959,7 +890,7 @@ export function CanvasEditor({
             </Box>
             <Box sx={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
               <svg ref={svgRef} width="100%" height="100%"
-                style={{ cursor: mode === 'select' ? 'crosshair' : 'grab', userSelect: 'none', display: 'block' }}
+                style={{ cursor: 'grab', userSelect: 'none', display: 'block' }}
                 onMouseDown={onCanvasMouseDown}>
                 <g transform={`translate(${offset.x},${offset.y})`}>
                   <defs>
@@ -1049,18 +980,7 @@ export function CanvasEditor({
                     );
                   })}
                 </g>
-              {/* Marquee selection rectangle — rendered outside transform group in screen coords */}
-                {marquee && (
-                  <rect
-                    x={Math.min(marquee.x1, marquee.x2)}
-                    y={Math.min(marquee.y1, marquee.y2)}
-                    width={Math.abs(marquee.x2 - marquee.x1)}
-                    height={Math.abs(marquee.y2 - marquee.y1)}
-                    fill="var(--accent-ghost)" stroke="var(--accent)"
-                    strokeWidth="1" strokeDasharray="4 2"
-                    style={{ pointerEvents: 'none' }}
-                  />
-                )}
+              {/* FP-06: marquee <rect> render removed along with marquee feature. */}
               </svg>
 
               {/* Zone type legend */}
