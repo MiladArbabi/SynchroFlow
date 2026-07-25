@@ -376,21 +376,24 @@ function UnitLabelCoverageSection() {
   );
 }
 
-type PrinterRole = 'unit_label' | 'invoice' | 'problem_label' | 'general';
+// FP-17 (issue 1047): location_label added for Floor Planning bin/lane
+// barcode labels, routed via printViaQz in FP-17a/FP-17b.
+type PrinterRole = 'unit_label' | 'invoice' | 'problem_label' | 'location_label' | 'general';
 type ConnectionType = 'usb' | 'wifi' | 'bluetooth';
-
 const ROLE_LABELS: Record<PrinterRole, string> = {
-  unit_label:    'Unit labels (LSU-)',
-  invoice:       'Invoices (A4)',
-  problem_label: 'Problem bin labels',
-  general:       'General',
+  unit_label:     'Unit labels (LSU-)',
+  invoice:        'Invoices (A4)',
+  problem_label:  'Problem bin labels',
+  location_label: 'Location labels (bin/lane)',
+  general:        'General',
 };
 
 const ROLE_COLORS: Record<PrinterRole, string> = {
-  unit_label:    '#22C55E',
-  invoice:       'var(--accent)',
-  problem_label: '#EAB308',
-  general:       'var(--ink-3)',
+  unit_label:     '#22C55E',
+  invoice:        'var(--accent)',
+  problem_label:  '#EAB308',
+  location_label: '#3B82F6',
+  general:        'var(--ink-3)',
 };
 
 const CONNECTION_ICONS: Record<ConnectionType, React.ReactNode> = {

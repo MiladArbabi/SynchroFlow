@@ -2,7 +2,11 @@
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { getErrorMessage } from '@lasyncro/backend-core';
-
+// FP-18: mirrors the printer_role Postgres enum (migrations 0106, 0127).
+// Validated at the controller layer so an invalid role returns a clean
+// 400 instead of a raw Postgres constraint error leaking through as a
+// 500 — keep this list in sync if the enum ever changes.
+const VALID_PRINTER_ROLES = ['unit_label', 'invoice', 'problem_label', 'location_label', 'general'] as const;
 /**
  * PRINTERS CONTROLLER (WM-47)
  * ----------------------------
@@ -58,7 +62,9 @@ export const httpCreatePrinter = async (req: Request, res: Response) => {
   if (!name || !connection_type || !role) {
     return res.status(400).json({ error: 'name, connection_type, role required' });
   }
-
+  if (!VALID_PRINTER_ROLES.includes(role)) {
+    return res.status(400).json({ error: `Invalid role. Must be one of: ${VALID_PRINTER_ROLES.join(', ')}` });
+  }
   try {
     const printer = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -105,7 +111,9 @@ export const httpUpdatePrinter = async (req: Request, res: Response) => {
 
   const { printerId } = req.params;
   const { name, connection_type, address, model, role, os_printer_name, is_default } = req.body;
-
+  if (role !== undefined && !VALID_PRINTER_ROLES.includes(role)) {
+    return res.status(400).json({ error: `Invalid role. Must be one of: ${VALID_PRINTER_ROLES.join(', ')}` });
+  }
   try {
     const printer = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
