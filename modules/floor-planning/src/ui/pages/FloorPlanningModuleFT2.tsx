@@ -38,6 +38,8 @@ import type {
 } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
+// FP-01: shared zone_type colour map, single source of truth with Canvas.
+import { ZONE_COLORS, ZONE_STROKE } from '../components/CanvasEditor.js';
 import { CanvasEditor } from '../components/CanvasEditor.js';
 import { IsometricCanvas } from '../components/IsometricCanvas.js';
 
@@ -136,6 +138,24 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {!zone.active && <Chip label="Inactive" size="small" color="default" />}
           <Chip label={type.label} size="small" color={type.color} />
+          {/* FP-01: List view previously only showed structural type (Bin/Lane/
+              Shelf/Warehouse) and dropped zone_type entirely, unlike the Table
+              and Canvas views which both surface it. This chip closes that gap
+              using the same colour source as Canvas's own detail-panel chip. */}
+          {zone.zone_type && (
+            <Chip
+              label={zone.zone_type}
+              size="small"
+              sx={{
+                fontSize: 10,
+                height: 20,
+                textTransform: 'capitalize',
+                bgcolor: ZONE_COLORS[zone.zone_type] ?? 'transparent',
+                color: ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)',
+                border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
+              }}
+            />
+          )}
           <IconButton
             size="small"
             title={zone.active ? 'Deactivate' : 'Activate'}

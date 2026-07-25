@@ -31,7 +31,10 @@ const RULER_SIZE = 24;
 function zoneRGBA(type, alpha) {
     return `rgba(var(--zone-${type}, 100,116,139),${alpha})`;
 }
-const ZONE_COLORS = {
+// FP-01: exported so FloorPlanningModuleFT2.tsx (Setup > List view) can
+// reuse the same zone_type -> colour mapping as the Canvas view, instead
+// of duplicating a second colour map that could drift out of sync.
+export const ZONE_COLORS = {
     lane: zoneRGBA('lane', 0.12),
     warehouse: zoneRGBA('warehouse', 0.08),
     shelf: zoneRGBA('shelf', 0.10),
@@ -45,7 +48,7 @@ const ZONE_COLORS = {
     kitting: zoneRGBA('kitting', 0.25),
     storage: zoneRGBA('storage', 0.18),
 };
-const ZONE_STROKE = {
+export const ZONE_STROKE = {
     lane: zoneRGBA('lane', 0.50),
     warehouse: zoneRGBA('warehouse', 0.35),
     shelf: zoneRGBA('shelf', 0.45),

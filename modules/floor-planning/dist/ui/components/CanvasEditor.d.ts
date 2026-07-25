@@ -1,5 +1,7 @@
 import type { WarehouseZone } from '../pages/FloorPlanningModuleFT2.js';
 import { WarehouseLocationType } from '@lasyncro/shared/ui';
+export declare const ZONE_COLORS: Record<string, string>;
+export declare const ZONE_STROKE: Record<string, string>;
 interface CanvasEditorProps {
     zones: WarehouseZone[];
     onUpdateZone?: (locationCode: string, payload: {
