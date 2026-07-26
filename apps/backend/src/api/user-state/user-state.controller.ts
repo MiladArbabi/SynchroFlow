@@ -167,6 +167,13 @@ const VALID_SPOTLIGHT_KEYS = new Set([
   'order_flow_batch',
   'order_flow_blocked',
   'demand_reorder',
+  // ONB-SHARED1: Suppliers Portal spotlights — live since ship but never
+  // registered here, so every "Got it" 400'd and the mark rolled back into
+  // view. Keys 1-3 are the Sourcing arc; po_send_flow is standalone (Open POs).
+  'sourcing_never_ordered',
+  'sourcing_alert_triggered',
+  'sourcing_accumulator',
+  'po_send_flow',
 ]);
 
 export const dismissSpotlight = async (req: Request, res: Response) => {

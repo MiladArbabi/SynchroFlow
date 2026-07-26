@@ -144,14 +144,19 @@ Two causes, both server-side and both invisible in the UI:
 | 2 | `order_flow_batch` | live | Order Flow | Fulfillment panel (floor phase) | "Your wave is on the floor — track each batch through picking and packing." |
 | 3 | `order_flow_blocked` | registered, not built | Order Flow / Blocked | First blocked order card | "Fix the constraint here. The order moves to the pool automatically." |
 | 4 | `demand_reorder` | registered, not built | Demand | Reorder CTA | "Qty is pre-calculated from your sales velocity. Adjust if needed, then create the PO." |
-| 5 | `sourcing_never_ordered` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
-| 6 | `sourcing_alert_triggered` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
-| 7 | `sourcing_accumulator` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
-| 8 | `po_send_flow` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
+| 5 | `sourcing_never_ordered` | live | Suppliers Portal / Sourcing | "Never ordered before" section (1 of 3) | "These products have no supplier yet — assign one so you know who to order from." |
+| 6 | `sourcing_alert_triggered` | live | Suppliers Portal / Sourcing | Ranked supplier options, on alert select (2 of 3) | "Your best supplier, ranked automatically." |
+| 7 | `sourcing_accumulator` | live | Suppliers Portal / Sourcing | Reorder queue section (3 of 3) | "Building up your order before sending." |
+| 8 | `po_send_flow` | live | Suppliers Portal / Open POs | Above PO list, when a draft PO exists | "Ready to order? Copy and send to your supplier." |
 
-Keys 5–8 render but their "Got it" 400s — dismissal silently rolls back (see Silent
-failure modes below). This table is the contract; a key missing from it or from
-`VALID_SPOTLIGHT_KEYS` is a defect.
+This table is the contract; a key missing from it or from `VALID_SPOTLIGHT_KEYS` is a
+defect (see Silent failure modes below).
+
+**Known gaps (registered):** keys 5–7 form a 3-step arc but each renders on an
+independent condition with no phase coordination — steps can co-display, violating the
+stacking rule above, and the arc is click-chain-shaped rather than a phase function
+(ONB-SUP1). Key 8 passes `step={1} totalSteps={1}`, rendering a meaningless "1 of 1"
+label (ONB-SUP2).
 
 **Rule:** Never stack more than one spotlight on a single surface at the same time.
 If a surface has multiple spotlights (e.g. Order Flow has keys 1 and 2), show them
