@@ -1,6 +1,7 @@
 // apps/backend/src/api/floor-planning/floor-planning.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
 import { 
   generateWarehouseLabelPdf, 
   generateWarehouseLabelSheetPdf, 
@@ -18,6 +19,68 @@ import {
  * FEAT-002: Add barcode column to warehouse_locations migration.
  * FEAT-002: Join products table for product_title on variants query.
  */
+
+/**
+ * FP-GATE1 — spatial fields are Growth-tier.
+ *
+ * Routes are gated at 'starter' (see floor-planning.routes.ts header).
+ * Zone create/update accept List-tab attributes and Canvas geometry in the
+ * same payload, so the Growth boundary is enforced per-field here.
+ *
+ * Membership rationale: the List tab never sends any of these. Confirmed
+ * against CreateZonePayload (useZoneManagement.ts — location_code, type,
+ * parent_location_code, barcode only) and the List create form
+ * (FloorPlanningModuleFT2.tsx). rack_levels is written exclusively by the
+ * Canvas inspector (CanvasEditor.tsx), and is only READ elsewhere for the
+ * capacity heuristic — reads are unrestricted, so guarding the write costs
+ * Starter nothing. zone_type is deliberately NOT here: it's a functional
+ * attribute (FP-01 chip), not geometry.
+ */
+const GROWTH_SPATIAL_FIELDS = [
+  'position_x',
+  'position_y',
+  'width',
+  'depth',
+  'orientation',
+  'rack_levels',
+] as const;
+
+/**
+ * Returns true when the request was rejected (response already sent).
+ *
+ * Rejects rather than silently stripping: a strip would discard a
+ * downgraded Growth shop's canvas edits with no signal, and would mask
+ * frontend bugs. A field is "present" only when it carries a meaningful
+ * value — undefined and null are no-ops, and orientation defaults to 0,
+ * so 0 is not a spatial assertion either.
+ */
+function rejectSpatialFieldsBelowGrowth(req: Request, res: Response): boolean {
+  if (meetsTier(req, 'growth')) return false;
+
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const offending = GROWTH_SPATIAL_FIELDS.filter((field) => {
+    const value = body[field];
+    if (value === undefined || value === null) return false;
+    if (field === 'orientation') return value !== 0;
+    return true;
+  });
+
+  if (offending.length === 0) return false;
+
+  console.warn('[floor-planning] FP-GATE1 spatial field rejected', {
+    shopId: req.user?.shopId,
+    path: req.path,
+    fields: offending,
+  });
+
+  res.status(403).json({
+    error: 'TIER_INSUFFICIENT_FIELD',
+    required: 'growth',
+    current: req.user?.tier ?? 'starter',
+    fields: offending,
+  });
+  return true;
+}
 
 export async function httpGetLayout(req: Request, res: Response) {
   const shopId = req.user?.shopId;
@@ -470,13 +533,14 @@ export async function httpGetVariantBins(req: Request, res: Response) {
  * location_code must be unique per shop.
  * parent_location_code must exist if provided.
  *
- * Body: { location_code, type, parent_location_code?, barcode? }
+ * Body: { location_code, type, parent_location_code?, barcode?, zone_type? }
+ * Growth only: { position_x?, position_y?, width?, depth?, orientation?, rack_levels? }
  */
 export async function httpCreateZone(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { 
+  const {
     location_code, 
     type, 
     parent_location_code, 
@@ -496,6 +560,10 @@ export async function httpCreateZone(req: Request, res: Response) {
   if (!['warehouse', 'lane', 'shelf', 'bin'].includes(type)) {
     return res.status(400).json({ error: 'type must be warehouse | lane | shelf | bin' });
   }
+
+  // FP-GATE1: Growth gate for geometry. The List create form never sends
+  // these — this is defence against crafted requests, not a UI path.
+  if (rejectSpatialFieldsBelowGrowth(req, res)) return;
 
   try {
     const warehouseId = await db.transaction(async (trx) => {
@@ -594,7 +662,8 @@ export async function httpCreateZone(req: Request, res: Response) {
  * Updates a zone's active status, barcode, or parent.
  * location_code itself is immutable (it's the PK).
  *
- * Body: { active?, barcode?, parent_location_code? }
+ * Body: { active?, barcode?, parent_location_code?, zone_type? }
+ * Growth only: { position_x?, position_y?, width?, depth?, orientation?, rack_levels? }
  */
 export async function httpUpdateZone(req: Request, res: Response) {
   const shopId = req.user?.shopId;
@@ -613,6 +682,11 @@ export async function httpUpdateZone(req: Request, res: Response) {
     rack_levels, 
     zone_type 
   } = req.body;
+
+  // FP-GATE1: Growth gate for geometry. This is the ONLY spatial write path
+  // in the module — Canvas drag/resize persists through looped PATCH calls
+  // here, so this guard is the entire Growth boundary for floor planning.
+  if (rejectSpatialFieldsBelowGrowth(req, res)) return;
 
   try {
     await db.transaction(async (trx) => {

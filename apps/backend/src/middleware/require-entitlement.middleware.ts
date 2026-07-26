@@ -40,10 +40,32 @@ const TIER_ORDER: Record<Tier, number> = {
  * Reads tier from req.user.tier (set by authenticateToken from JWT claim).
  * Fails closed: missing or unrecognized tier is treated as 'starter'.
  */
+/**
+ * Resolve the request's effective tier. Fails closed: missing or
+ * unrecognized tier is treated as 'starter'.
+ */
+export function resolveTier(req: Request): Tier {
+  const rawTier = req.user?.tier ?? 'starter';
+  return TIERS.includes(rawTier as Tier) ? (rawTier as Tier) : 'starter';
+}
+
+/**
+ * FP-GATE1: boolean tier check for field-level guards inside controllers.
+ *
+ * Route-level gating can't express "this endpoint is Starter, but these
+ * fields within its payload are Growth". Floor-planning zone create/update
+ * accept spatial geometry (Canvas) and non-spatial attributes (List) in the
+ * same payload, so the Growth gate has to live in the handler. This helper
+ * exists so those handlers reuse TIER_ORDER rather than reimplementing the
+ * hierarchy — see CHANGE POLICY above.
+ */
+export function meetsTier(req: Request, minimumTier: Tier): boolean {
+  return TIER_ORDER[resolveTier(req)] >= TIER_ORDER[minimumTier];
+}
+
 export function requireTier(minimumTier: Tier) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const rawTier = req.user?.tier ?? 'starter';
-    const currentTier = TIERS.includes(rawTier as Tier) ? (rawTier as Tier) : 'starter';
+    const currentTier = resolveTier(req);
 
     if (TIER_ORDER[currentTier] < TIER_ORDER[minimumTier]) {
       /**
