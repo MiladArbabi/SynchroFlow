@@ -457,18 +457,24 @@ export class UserStateService {
     };
   }
 
-  // T3 — onboarding: dismiss a spotlight coach mark permanently per user.
-  // Key format: spotlight:dismissed:<spotlightKey>
-  static async dismissSpotlight(userId: number, spotlightKey: string): Promise<void> {
-    await db('user_states')
-      .insert({
-        user_id:    userId,
-        key:        `spotlight:dismissed:${spotlightKey}`,
-        value:      '1',
-        updated_at: db.fn.now(),
-      })
-      .onConflict(['user_id', 'key'])
-      .merge({ value: '1', updated_at: db.fn.now() });
+  // ONB-ORD2: user_states has FORCED RLS; the policy has no WITH CHECK, so the
+  // USING expression (user_id must belong to app.current_tenant's shop) is applied
+  // to the INSERT and the ON CONFLICT UPDATE alike. A bare db() call inherits
+  // whatever tenant the pooled connection was last left with — succeeding or
+  // failing with 42501 at random. Same pattern as getActivationEvents below.
+  static async dismissSpotlight(userId: number, spotlightKey: string, shopId: number): Promise<void> {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(shopId)}'`);
+      await trx('user_states')
+        .insert({
+          user_id:    userId,
+          key:        `spotlight:dismissed:${spotlightKey}`,
+          value:      '1',
+          updated_at: trx.fn.now(),
+        })
+        .onConflict(['user_id', 'key'])
+        .merge({ value: '1', updated_at: trx.fn.now() });
+    });
   }
 
   // T4 — onboarding: check which activation audit events exist for this shop.
@@ -491,13 +497,20 @@ export class UserStateService {
 
   // T6 — returns all onboarding-related user_states flags in one query.
   // Covers checklist:completed + all spotlight:dismissed:* keys.
-  static async getOnboardingFlags(userId: number): Promise<Record<string, boolean>> {
-    const rows = await db('user_states')
-      .where({ user_id: userId })
-      .where(function () {
-        this.where('key', 'like', 'checklist:%').orWhere('key', 'like', 'spotlight:%');
-      })
-      .select('key', 'value');
+  // ONB-ORD2: user_states has FORCED RLS. Without app.current_tenant the policy's
+  // USING clause filters every row out — the read returns {} silently while the
+  // rows exist, so dismissed spotlights re-appear on reload. Reads need the same
+  // tenant context as writes.
+  static async getOnboardingFlags(userId: number, shopId: number): Promise<Record<string, boolean>> {
+    const rows = (await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${Number(shopId)}'`);
+      return trx('user_states')
+        .where({ user_id: userId })
+        .where(function () {
+          this.where('key', 'like', 'checklist:%').orWhere('key', 'like', 'spotlight:%');
+        })
+        .select('key', 'value');
+    })) as { key: string; value: string }[];
 
     return Object.fromEntries(rows.map((r: { key: string; value: string }) => [r.key, r.value === '1']));
   }

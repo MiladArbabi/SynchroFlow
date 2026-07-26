@@ -18,7 +18,6 @@ import AuthWrapper1 from './AuthWrapper1';
 import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { SHOPIFY_APP_STORE_URL } from 'lib/appStoreUrl';
-import { AuthLogo } from './AuthLogo'; // Shared auth chrome logo; keeps connect-store consistent with other auth pages.
 import { AuthGridBackdrop } from './AuthGridBackdrop';
 
 const SCOPES = [
@@ -39,7 +38,6 @@ export default function ConnectStorePage() {
 
         <Box sx={{ position: 'fixed', top: 0, left: 0, right: 0, px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 10 }}>
           <Link to="/" aria-label="LaSyncro home">
-            <AuthLogo />
           </Link>
           <SystemStatusPill />
         </Box>

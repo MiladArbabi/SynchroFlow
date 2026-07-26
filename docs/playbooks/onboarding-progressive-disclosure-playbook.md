@@ -129,19 +129,57 @@ Token rules (follow modules-ux-playbook §1):
 which writes `spotlight:dismissed:<key>` → `"1"` to `user_states`. Read on mount
 via `GET /api/v1/user-state`. Once dismissed, the spotlight never reappears —
 no "reset tour" affordance (adds confusion, rarely used).
+**Silent failure modes.** `useSpotlight` hides the mark optimistically and rolls back
+on error, so a failed dismissal looks like "Got it does nothing / the mark returns".
+Two causes, both server-side and both invisible in the UI:
+1. Key absent from `VALID_SPOTLIGHT_KEYS` → 400.
+2. Missing RLS tenant context on the `user_states` read or write → 500 on write
+   (42501), or `{}` on read while the rows exist (see Implementation notes).
 
 **Spotlight registry — priority order for first build:**
 
-| # | Key | Surface | Anchor | Copy |
-|---|---|---|---|---|
-| 1 | `order_flow_wave` | Order Flow | "Release wave to floor" button | "Select orders above, then release — operators pick and ship immediately." |
-| 2 | `order_flow_blocked` | Order Flow / Blocked column | First blocked order card | "Fix the constraint here. The order moves to the pool automatically." |
-| 3 | `demand_reorder` | Demand page | Reorder CTA | "Qty is pre-calculated from your sales velocity. Adjust if needed, then create the PO." |
+| # | Key | Status | Surface | Anchor | Copy |
+|---|---|---|---|---|---|
+| 1 | `order_flow_wave` | live | Order Flow | Fulfillment panel (pool phase) | "Select orders to release" / "Ready when you are" — see Multi-step arcs below |
+| 2 | `order_flow_batch` | live | Order Flow | Fulfillment panel (floor phase) | "Your wave is on the floor — track each batch through picking and packing." |
+| 3 | `order_flow_blocked` | registered, not built | Order Flow / Blocked | First blocked order card | "Fix the constraint here. The order moves to the pool automatically." |
+| 4 | `demand_reorder` | registered, not built | Demand | Reorder CTA | "Qty is pre-calculated from your sales velocity. Adjust if needed, then create the PO." |
+| 5 | `sourcing_never_ordered` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
+| 6 | `sourcing_alert_triggered` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
+| 7 | `sourcing_accumulator` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
+| 8 | `po_send_flow` | ⚠️ live, NOT registered (ONB-SHARED1) | Suppliers Portal | — | — |
+
+Keys 5–8 render but their "Got it" 400s — dismissal silently rolls back (see Silent
+failure modes below). This table is the contract; a key missing from it or from
+`VALID_SPOTLIGHT_KEYS` is a defect.
 
 **Rule:** Never stack more than one spotlight on a single surface at the same time.
 If a surface has multiple spotlights (e.g. Order Flow has keys 1 and 2), show them
 sequentially across visits — key 1 on first visit, key 2 on second visit (after key 1
 is dismissed). Progress is tracked by checking which keys are already dismissed.
+
+**Multi-step arcs.** The stacking rule above covers *unrelated* spotlights on one
+surface (sequential across visits). A multi-step arc is different: one teaching
+narrative whose beats follow the user through a task on a single visit.
+
+Rules for arcs:
+- **One persistent slot.** Render a single `<SpotlightCoachMark>` whose props are
+  derived from app state. Never conditionally render two marks — the swap must be a
+  content change in place, not unmount/remount.
+- **Phase function, not click-chain.** Steps advance because the user's state changed
+  (selection made, batch created), never because they clicked "Got it". A step that
+  disappears when the user complies with it reads as the app snatching the
+  instructions away mid-task.
+- **One key per step**, so dismissing early kills only that beat; later beats still
+  surface once their phase is reached.
+
+Worked example — Order Flow fulfillment arc (`OrderFlowPage.tsx`, `fulfillmentCoach`):
+
+| Phase | Condition | Label | Key |
+|---|---|---|---|
+| Pool, nothing selected | `batches.length === 0 && selected.size === 0` | 1 of 2 · Select orders to release | `order_flow_wave` |
+| Pool, orders selected | `batches.length === 0 && selected.size > 0` | 1 of 2 · Ready when you are | `order_flow_wave` |
+| Floor | `batches.length > 0` | 2 of 2 · Your wave is on the floor | `order_flow_batch` |
 
 **Relationship to intent banner (modules-ux-playbook §15):**
 
@@ -259,7 +297,7 @@ Implementation: single upsert to `user_states` with key
 
 ### 4.2 Activation events check endpoint (NEW)
 
-```
+```ts
 GET /api/v1/user-state/activation-events
 Auth: Bearer token (authenticateToken)
 Response 200: {
@@ -292,8 +330,14 @@ Tasks are atomic and must be executed in this order. Do not batch.
 | T9 | ✅ | Wire spotlight to Order Flow | `apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx` | Layer 2 live |
 | T10 | 🔴 | Teaching empty states sweep | All module pages (copy only, no logic) | Layer 3 |
 
-### Implementation notes (2026-07-10)
+### Implementation notes (2026-07-26)
 
+**RLS tenant context is required for all `activation_audit_events` AND `user_states`
+reads and writes.** Both tables have FORCED row-level security. `user_states` carries
+every checklist and spotlight flag, so the same transaction + `SET LOCAL` wrapper
+applies to `dismissSpotlight`, `getOnboardingFlags`, `dismissChecklist`, and every
+other method touching that table. Interpolate the tenant id as `${Number(shopId)}` —
+`SET LOCAL` cannot take a bound parameter.
 **RLS tenant context is required for all `activation_audit_events` reads and writes.**
 The table is protected by row-level security. Every insert and select must wrap in a
 transaction with `SET LOCAL "app.current_tenant" = '<shopId>'` before touching the table,

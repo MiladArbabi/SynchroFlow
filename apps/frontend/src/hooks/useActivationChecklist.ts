@@ -83,7 +83,7 @@ export function useActivationChecklist() {
     },
     {
       key:          'wave-released',
-      label:        'Release your first wave',
+      label:        'Release your first batch',
       complete:     events.data?.wave_released ?? false,
       actionRoute:  '/orders/flow',
     },

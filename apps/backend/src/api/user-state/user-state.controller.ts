@@ -157,8 +157,14 @@ export const updateUserProductCosts = async (req: Request, res: Response) => {
 
 
 // T3 — spotlight registry: valid keys must match onboarding playbook §2.
+// Server-side allow-list for spotlight keys. Any key used by a
+// useSpotlight() call site MUST be registered here or its dismissal
+// 400s and the mark re-appears (the frontend optimistically hides,
+// then rolls back on error — see hooks/useSpotlight.ts onError).
 const VALID_SPOTLIGHT_KEYS = new Set([
   'order_flow_wave',
+  // ONB-ORD1: step 2 of the Order Flow fulfillment coaching arc.
+  'order_flow_batch',
   'order_flow_blocked',
   'demand_reorder',
 ]);
@@ -166,6 +172,9 @@ const VALID_SPOTLIGHT_KEYS = new Set([
 export const dismissSpotlight = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
+    // ONB-ORD2: shopId is required to establish RLS tenant context for the write.
+    const shopId = (req as any).user?.shopId;
+    if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
     const key = String(req.params.key);
@@ -173,7 +182,7 @@ export const dismissSpotlight = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid spotlight key', validKeys: [...VALID_SPOTLIGHT_KEYS] });
     }
 
-    await UserStateService.dismissSpotlight(userId, key);
+    await UserStateService.dismissSpotlight(userId, key, shopId);
     return res.status(200).json({ dismissed: true, key });
   } catch (error) {
     console.error('[SPOTLIGHT_DISMISS_FAILED]', error);
@@ -198,9 +207,11 @@ export const getActivationEvents = async (req: Request, res: Response) => {
 export const getOnboardingFlags = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const rows = await UserStateService.getOnboardingFlags(userId);
+    // ONB-ORD2: shopId required to establish RLS tenant context — user_states has
+    // forced RLS and the read returns {} silently without it.
+    const shopId = (req as any).user?.shopId;
+    if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+    const rows = await UserStateService.getOnboardingFlags(userId, shopId);
     return res.status(200).json(rows);
   } catch (error) {
     console.error('[ONBOARDING_FLAGS_FAILED]', error);

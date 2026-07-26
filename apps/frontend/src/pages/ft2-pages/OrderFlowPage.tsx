@@ -132,6 +132,9 @@ export default function OrderFlowPage() {
   const releaseBatch = useReleaseBatch();
   const setPriority = useSetPriority();
   const spotlightOrderFlowWave = useSpotlight('order_flow_wave');
+  // ONB-ORD1: step 2 of the fulfillment coaching arc (pool → release → floor).
+  // Renders once a batch exists; key is free-form server-side (user-state.controller.ts:166).
+  const spotlightOrderFlowBatch = useSpotlight('order_flow_batch');
 
   /**
    * OF-08 (2026-07-02) — Blocked-order resolution path.
@@ -160,7 +163,6 @@ export default function OrderFlowPage() {
   const blockedOrders = useMemo(() => constrainedQuery.data?.data ?? [], [constrainedQuery.data]);
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
-
   // --- Deep-link params: ?constraint=<type> auto-expands its accordion
   // section; ?urgency=sla_breach filters to order_age_snapshot's real
   // is_shipping_sla_breached flag. See cta-deeplink-playbook.md §3 — these
@@ -405,6 +407,43 @@ export default function OrderFlowPage() {
   const waveUnits = waveSource.reduce((sum, order) => sum + order.unit_count, 0);
   const maxLineItems = orderPoolQuery.data?.max_batch_line_items ?? 108;
   const releaseDisabled = waveOrders === 0 || releaseBatch.isPending;
+   // ONB-ORD1: the fulfillment coaching arc is a phase function over app state,
+  // not a click-chain. One mark stays mounted and its content follows the user
+  // (pool → selected → floor) so acting on step 1 never blanks the panel.
+  // Dismissal stays per-key: giving up in the pool phase still leaves the
+  // floor beat available once a wave actually exists.
+  const fulfillmentCoach = useMemo(() => {
+    if (batches.length > 0) {
+      return {
+        step: 2,
+        title: 'Your wave is on the floor',
+        body: 'Track each batch as it moves through picking and packing. Tap a batch for detail.',
+        isDismissed: spotlightOrderFlowBatch.isDismissed,
+        dismiss: spotlightOrderFlowBatch.dismiss,
+      };
+    }
+    if (selected.size > 0) {
+      return {
+        step: 1,
+        title: 'Ready when you are',
+        body: `Hit Release ${selected.size} order${selected.size === 1 ? '' : 's'} to send this wave to the floor.`,
+        isDismissed: spotlightOrderFlowWave.isDismissed,
+        dismiss: spotlightOrderFlowWave.dismiss,
+      };
+    }
+    return {
+      step: 1,
+      title: 'Select orders to release',
+      body: 'Check orders in the pool to choose what goes to the floor, or release all at once.',
+      isDismissed: spotlightOrderFlowWave.isDismissed,
+      dismiss: spotlightOrderFlowWave.dismiss,
+    };
+  }, [
+    batches.length,
+    selected.size,
+    spotlightOrderFlowWave.isDismissed, spotlightOrderFlowWave.dismiss,
+    spotlightOrderFlowBatch.isDismissed, spotlightOrderFlowBatch.dismiss,
+  ]);
 
   // --- Selection + release handlers ----------------------------------------
   const toggleSelect = useCallback((id: string) => {
@@ -1241,16 +1280,17 @@ export default function OrderFlowPage() {
                     Fulfillment · {batches.length} active
                   </Typography>
 
-                  {selected.size === 0 && (
-                    <SpotlightCoachMark
-                      title="Select orders to release"
-                      body="Check orders in the pool to choose what goes to the floor, or release all at once."
-                      isDismissed={spotlightOrderFlowWave.isDismissed}
-                      onDismiss={spotlightOrderFlowWave.dismiss}
-                      step={1}
-                      totalSteps={2}
-                    />
-                  )}
+                  {/* ONB-ORD1: persistent coach slot, sits above the (scrollable)
+                      batch list so it never scrolls away. Same DOM position across
+                      all phases — copy swaps in place instead of unmounting. */}
+                  <SpotlightCoachMark
+                    title={fulfillmentCoach.title}
+                    body={fulfillmentCoach.body}
+                    isDismissed={fulfillmentCoach.isDismissed}
+                    onDismiss={fulfillmentCoach.dismiss}
+                    step={fulfillmentCoach.step}
+                    totalSteps={2}
+                  />
 
                   <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
                   {batches.length === 0 ? (

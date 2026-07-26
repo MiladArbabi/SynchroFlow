@@ -236,7 +236,7 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
       return res.status(200).json({ message: 'No eligible orders available for batching' });
     }
 
-    // T1 — onboarding activation audit: first wave released.
+    // T1 — onboarding activation audit: first batch released.
     //    — tenant context required for RLS on activation_audit_events.
     // Fire-and-forget — audit failure must never block the batch release.
     db.transaction(async (trx) => {
