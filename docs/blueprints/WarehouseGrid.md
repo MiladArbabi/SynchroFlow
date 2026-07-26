@@ -37,6 +37,7 @@ import type { WarehouseGridProps, WarehouseLocation, BinOccupancy } from '@lasyn
 ```typescript
 interface WarehouseGridProps {
   locations: WarehouseLocation[];
+  zoneTypes?: WarehouseZoneType[];                 // restrict which zones become columns; undefined = all
   occupancy?: Record<string, BinOccupancy>;       // keyed by location_code
   highlightedBins?: string[];                      // accent border
   pickPath?: string[];                             // ordered pick route
@@ -71,11 +72,20 @@ interface WarehouseLocation {
 ---
 
 ## Grid Derivation
-
 - Grid renders **bin-type locations only** — warehouse/lane/shelf are structural, not rendered as cells
-- Aisle = the bin's `parent_location_code` (the lane it belongs to). **Do NOT** string-split `location_code` — that breaks on quarantine/problem bins with no aisle prefix (fixed June 2026, WMS-FP-01/02). Aisle counts exclude `zone_type='quarantine'` bins.
+- Aisle = the segment of `location_code` before the first hyphen (`aisleOf()` in `index.tsx`). Functional-zone bins (`PACK-1`, `SHIP-1`, `RETURNS-1`, `RECEIVE-1`, `QUARANTINE-1`, `KITTING-1`, `PROBLEM`) are single bins, so each derives its own one-cell column beside the storage aisles.
+- Consumers that only want storage aisles pass `zoneTypes={['pick']}` — the WMS pick map does (WMS-OPS1). Floor Planning and Overview deliberately omit it and render the whole floor.
 - Bins sorted `ASC` within each aisle — matches `wms.controller.ts` pick route sort
 - Aisles sorted alphabetically left→right
+
+> **Known divergence (WMS-FP-03, open).** An earlier revision of this section
+> specified grouping by `parent_location_code` and credited a June 2026 fix
+> (WMS-FP-01/02). No such grouping exists in `modules/shared/src/ui` — the field
+> is declared on the type but never read. Switching to it today would group
+> `PROBLEM` (whose `parent_location_code` is `A`) *inside* pick aisle A and stack
+> the six `WH-1-ROOT` functional bins into one column. The correct grouping for
+> functional bins is an open question, deferred to the Floor Planning pass since
+> that is the surface that renders them.
 
 ---
 
@@ -240,7 +250,7 @@ PGPASSWORD=sf_pass psql -h localhost -p 5432 -U sf_user -d synchroflow_db -c "\p
 | Module | variant | mode | Extra props |
 |---|---|---|---|
 | Floor Planning `/floor-planning` | `full` | `map` | `onBinSelect` → right panel |
-| WMS Batch Detail | `mini` | `pick` | `pickPath`, `highlightedBins` |
+| WMS Batch Detail | `mini` | `pick` | `pickPath`, `highlightedBins`, `zoneTypes={['pick']}` |
 | Demand `/demand` | `mini` | `heatmap` | `occupancy` |
 | Product Detail | `inline` | `focus` | `focusedBins` (page not built yet) |
 | PO Receiving | `mini` | `focus` | `focusedBins` |
