@@ -229,8 +229,10 @@ export const getOnboardingFlags = async (req: Request, res: Response) => {
 export const dismissChecklist = async (req: Request, res: Response) => {
   try {
     const userId = (req as any).user?.userId;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-    await UserStateService.dismissChecklist(userId);
+    // ONB-SHARED2: shopId required for RLS tenant context on the write.
+    const shopId = (req as any).user?.shopId;
+    if (!userId || !shopId) return res.status(401).json({ error: 'Unauthorized' });
+    await UserStateService.dismissChecklist(userId, shopId);
     return res.status(200).json({ dismissed: true });
   } catch (error) {
     console.error('[CHECKLIST_DISMISS_FAILED]', error);
