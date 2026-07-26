@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 import { AisleColumn } from './AisleColumn.js';
 import { PickPathOverlay } from './PickPathOverlay.js';
-import type { WarehouseGridProps, WarehouseLocation } from './WarehouseGrid.types.js';
+import type { WarehouseGridProps, WarehouseLocation, WarehouseZoneType } from './WarehouseGrid.types.js';
 
 /**
  * WarehouseGrid — reusable warehouse map component.
@@ -23,11 +23,22 @@ function aisleOf(locationCode: string): string {
   return locationCode.split('-')[0] ?? locationCode;
 }
 
-/** Group bin-type locations by aisle label */
-function groupByAisle(locations: WarehouseLocation[]): Map<string, WarehouseLocation[]> {
+/**
+ * Group bin-type locations by aisle label.
+ * WMS-OPS1: optional zoneTypes narrows which zones become columns. Functional
+ * zones (pack/ship/returns/problem/quarantine/kitting/receive) are single bins
+ * whose location_code has no hyphen, so aisleOf() turns each into its own
+ * one-cell column — seven columns of dead space on a pick map that only walks
+ * A/B/C. Undefined = no filter, preserving every other consumer's behaviour.
+ */
+function groupByAisle(
+  locations: WarehouseLocation[],
+  zoneTypes?: WarehouseZoneType[],
+): Map<string, WarehouseLocation[]> {
   const map = new Map<string, WarehouseLocation[]>();
   for (const loc of locations) {
     if (loc.type !== 'bin') continue; // grid renders bins only
+    if (zoneTypes && !zoneTypes.includes(loc.zone_type as WarehouseZoneType)) continue;
     const aisle = aisleOf(loc.location_code);
     if (!map.has(aisle)) map.set(aisle, []);
     map.get(aisle)!.push(loc);
@@ -40,6 +51,7 @@ const CANVAS_GAP: Record<string, number> = { full: 12, mini: 8, inline: 6 };
 
 export function WarehouseGrid({
   locations,
+  zoneTypes,
   occupancy,
   highlightedBins,
   pickPath,
@@ -52,7 +64,7 @@ export function WarehouseGrid({
 }: WarehouseGridProps) {
   const [selectedBin, setSelectedBin] = useState<string | undefined>();
 
-  const aisleMap = useMemo(() => groupByAisle(locations), [locations]);
+  const aisleMap = useMemo(() => groupByAisle(locations, zoneTypes), [locations, zoneTypes]);
 
   const highlightedSet = useMemo(
     () => new Set(highlightedBins ?? []),

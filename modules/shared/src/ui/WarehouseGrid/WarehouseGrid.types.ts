@@ -74,6 +74,7 @@ export type GridRenderer = 'svg' | 'three'; // 'three' = Phase 3
 
 export interface WarehouseGridProps {
   locations: WarehouseLocation[];
+  zoneTypes?: WarehouseZoneType[];                 // WMS-OPS1: restrict which zones become columns; undefined = all
   occupancy?: Record<string, BinOccupancy>;       // keyed by location_code
   highlightedBins?: string[];                      // accent border (pick path bins)
   pickPath?: string[];                             // ordered location_codes for path overlay

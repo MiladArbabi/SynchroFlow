@@ -20,12 +20,21 @@ import { PickPathOverlay } from './PickPathOverlay.js';
 function aisleOf(locationCode) {
     return locationCode.split('-')[0] ?? locationCode;
 }
-/** Group bin-type locations by aisle label */
-function groupByAisle(locations) {
+/**
+ * Group bin-type locations by aisle label.
+ * WMS-OPS1: optional zoneTypes narrows which zones become columns. Functional
+ * zones (pack/ship/returns/problem/quarantine/kitting/receive) are single bins
+ * whose location_code has no hyphen, so aisleOf() turns each into its own
+ * one-cell column — seven columns of dead space on a pick map that only walks
+ * A/B/C. Undefined = no filter, preserving every other consumer's behaviour.
+ */
+function groupByAisle(locations, zoneTypes) {
     const map = new Map();
     for (const loc of locations) {
         if (loc.type !== 'bin')
             continue; // grid renders bins only
+        if (zoneTypes && !zoneTypes.includes(loc.zone_type))
+            continue;
         const aisle = aisleOf(loc.location_code);
         if (!map.has(aisle))
             map.set(aisle, []);
@@ -35,9 +44,9 @@ function groupByAisle(locations) {
     return new Map([...map.entries()].sort(([a], [b]) => a.localeCompare(b)));
 }
 const CANVAS_GAP = { full: 12, mini: 8, inline: 6 };
-export function WarehouseGrid({ locations, occupancy, highlightedBins, pickPath, focusedBins, liveActivity, onBinSelect, mode = 'map', variant = 'full', renderer = 'svg', }) {
+export function WarehouseGrid({ locations, zoneTypes, occupancy, highlightedBins, pickPath, focusedBins, liveActivity, onBinSelect, mode = 'map', variant = 'full', renderer = 'svg', }) {
     const [selectedBin, setSelectedBin] = useState();
-    const aisleMap = useMemo(() => groupByAisle(locations), [locations]);
+    const aisleMap = useMemo(() => groupByAisle(locations, zoneTypes), [locations, zoneTypes]);
     const highlightedSet = useMemo(() => new Set(highlightedBins ?? []), [highlightedBins]);
     const focusedSet = useMemo(() => new Set(focusedBins ?? []), [focusedBins]);
     function handleBinSelect(locationCode) {

@@ -51,6 +51,7 @@ export type GridVariant = 'full' | 'mini' | 'inline';
 export type GridRenderer = 'svg' | 'three';
 export interface WarehouseGridProps {
     locations: WarehouseLocation[];
+    zoneTypes?: WarehouseZoneType[];
     occupancy?: Record<string, BinOccupancy>;
     highlightedBins?: string[];
     pickPath?: string[];

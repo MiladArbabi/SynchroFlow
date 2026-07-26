@@ -292,10 +292,13 @@ const BatchCard = memo(function BatchCard({
       )}
       {mapOpen && gridLocations && (
         <Box sx={{ mb: 2, border: '1px solid var(--rule)', borderRadius: '8px', p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }}>
+          {/* WMS-OPS1: pick maps show storage aisles only — functional zones
+              (PACK/SHIP/RETURNS/…) add a column each and never appear in a route. */}
           <WarehouseGrid
             locations={gridLocations}
             highlightedBins={pickLocations}
             pickPath={pickLocations}
+            zoneTypes={['pick']}
             mode="pick"
             variant="mini"
           />
