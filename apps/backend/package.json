@@ -55,6 +55,7 @@
     "@types/node": "^20.14.9",
     "@types/pdfkit": "^0.17.6",
     "@types/web-push": "^3.6.4",
+    "@types/amqplib": "^0.10.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.2"
   }
