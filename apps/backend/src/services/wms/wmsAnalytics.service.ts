@@ -1,5 +1,6 @@
 import { Knex } from 'knex';
 import crypto from 'crypto';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 
 function sha256(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -16,18 +17,24 @@ export function generateDisplayToken(shopId: number): { raw: string; hash: strin
 
 export async function validateDisplayToken(
   token: string,
-  knex: Knex,
 ): Promise<{ shopId: number; tokenId: string } | null> {
   const underscoreIdx = token.indexOf('_');
   if (underscoreIdx <= 0) return null;
   const shopId = parseInt(token.slice(0, underscoreIdx), 10);
   if (!Number.isFinite(shopId) || shopId <= 0) return null;
-  await knex.raw(`SET "app.current_tenant" = '${shopId}'`);
-  const row = await knex('shop_display_tokens')
+  // ISS-RLS7: shop_id here is parsed from the token prefix, unverified —
+  // it exists only to open RLS-satisfying tenant context (this table has
+  // FORCE ROW LEVEL SECURITY; a bare-context read returns zero rows, not
+  // an error, which is what broke the earlier systemQuery attempt). The
+  // actual proof of legitimacy is the hash  rotated_at match below, same
+  // as the pre-fix code — only the SET mechanism changes, from a bare SET
+  // that leaked onto the pooled connection to SET LOCAL scoped by
+  // withTenant() to this transaction alone.
+  const row = await withTenant(shopId, (trx) => trx('shop_display_tokens')
     .where('shop_id', shopId)
     .where('token_hash', sha256(token))
     .whereNull('rotated_at')
-    .first('id', 'shop_id');
+    .first('id', 'shop_id'));
   if (!row) return null;
   return { shopId: row.shop_id, tokenId: row.id };
 }
@@ -659,7 +666,6 @@ export async function getDisplayZones(shopId: number, knex: Knex) {
 }
 
 export async function getActivityStream(shopId: number, sinceMs: number, knex: Knex) {
-  await knex.raw(`SET "app.current_tenant" = '${shopId}'`);
   const since = new Date(sinceMs);
   const pulses = await knex('inventory_movements')
     .where('shop_id', shopId)

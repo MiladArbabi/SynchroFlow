@@ -1,6 +1,6 @@
 // apps/backend/src/api/wms/wms.analytics.controller.ts
 import { Request, Response } from 'express';
-import db, { withTenant } from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import {
   getLiveCapacity,
   getOperatorPerformance,
@@ -132,7 +132,7 @@ export const httpGetDisplayData = async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
     if (!token) return res.status(401).json({ error: 'MISSING_TOKEN' });
-    const validated = await validateDisplayToken(token, db);
+    const validated = await validateDisplayToken(token);
     if (!validated) return res.status(401).json({ error: 'INVALID_TOKEN' });
     const { shopId } = validated;
     const [live, pipeline, exceptions, zones] = await withTenant(shopId, (trx) => Promise.all([
@@ -153,9 +153,11 @@ export const httpDisplayHeartbeat = async (req: Request, res: Response) => {
   try {
     const token = req.query.token as string;
     if (!token) return res.status(401).json({ error: 'MISSING_TOKEN' });
-    const validated = await validateDisplayToken(token, db);
+    const validated = await validateDisplayToken(token);
     if (!validated) return res.status(401).json({ error: 'INVALID_TOKEN' });
-    await db('shop_display_tokens').where('id', validated.tokenId).update({ last_seen_at: new Date() });
+    await withTenant(validated.shopId, (trx) => trx('shop_display_tokens')
+     .where('id', validated.tokenId)
+     .update({ last_seen_at: new Date() }));
     return res.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
