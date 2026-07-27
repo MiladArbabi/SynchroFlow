@@ -37,7 +37,7 @@ import { getOrRotateOpenUsagePeriod } from './usagePeriod.service.js';
 function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('[billing] STRIPE_SECRET_KEY not set');
-  return new Stripe(key, { apiVersion: '2026-04-22.dahlia' });
+  return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
 };
 
 /**
