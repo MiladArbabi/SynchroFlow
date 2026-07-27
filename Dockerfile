@@ -14,7 +14,7 @@ RUN apt-get update -qq && \
 
 COPY --link . .
 
-RUN npm install
+RUN npm install --legacy-peer-deps
 RUN npm install -g typescript@5.5.2
 
 # Build frontend dependencies used by module imports
