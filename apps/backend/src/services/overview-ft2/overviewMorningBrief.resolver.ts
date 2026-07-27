@@ -109,6 +109,7 @@ const ACTION_LABEL_MAP: Record<string, string> = {
   customer:              'Fix addresses',
   operational:           'Inspect orders',
   stockout_risk:         'Reorder now',
+  low_stock_reorder:     'Reorder now',
   missing_cogs:          'Add costs',
 };
 
@@ -148,6 +149,11 @@ const DEEP_LINK_MAP: Record<string, { module: string; deepLink: string }> = {
   wms_supplier_rating:      { module: 'suppliers-portal', deepLink: '/suppliers-portal' },
   // ── Demand signals
   stockout_risk:            { module: 'demand',           deepLink: '/demand?filter=critical' },
+  // FP-OV-10b: shop-level low-stock summary (AL-01 aggregator, scheduled),
+  // distinct alert_type from stockout_risk (per-variant, order-triggered) —
+  // same landing page and operator action, kept as a separate map entry so
+  // the two can diverge independently without a breaking change to either.
+  low_stock_reorder:        { module: 'demand',           deepLink: '/demand?filter=critical' },
 };
 
 const SEVERITY_PRIORITY: Record<string, number> = {

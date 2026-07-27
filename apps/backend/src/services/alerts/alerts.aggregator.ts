@@ -12,6 +12,7 @@ import type { Knex } from 'knex';
  * - order_age_snapshot (SLA breaches)
  * - orders_operational_control_snapshot (revenue at risk)
  * - order_revenue_units (missing COGS)
+ * - inventory_truth (low/out of stock, summed available_quantity per variant)
  *
  * RULES:
  * - Idempotent — upserts on (shop_id, alert_key)
@@ -386,6 +387,81 @@ async function aggregateRevenueAlerts(
 }
 
 /**
+ * LOW STOCK / REORDER ALERT (FP-OV-10)
+ * -------------------------------------
+ * Surfaces when active variants have low or zero sellable availability,
+ * summed across all locations (a variant can hold stock in multiple
+ * bins — checking a single location undercounts true availability).
+ * Category: stock_reorder — declared in the taxonomy but previously
+ * unproduced by any aggregator; only fired reactively by the manual
+ * resolve_inventory_block handler, never on a schedule.
+ *
+ * Threshold: <=3 available units, matching the existing client-side
+ * "at risk" threshold in FloorPlanningModuleFT2.tsx's gridOccupancy
+ * calculation (FP-SUMMARY1) — one fact source, one signal everywhere.
+ * No per-shop configurable reorder point exists yet (audited, confirmed
+ * absent); this is a shared hardcoded default until that's built.
+ *
+ * alert_type 'low_stock_reorder' is distinct from the manual handler's
+ * 'stockout_risk' alert_type — different alert_key namespace, no
+ * onConflict collision. This is a shop-level summary count, not
+ * per-variant, matching the pattern of the other snapshot aggregators.
+ */
+async function aggregateStockReorderAlerts(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<AlertUpsert[]> {
+  const rows = await trx('inventory_truth as it')
+    .join('variants as v', function () {
+      this.on('v.lasyncro_variant_id', 'it.lasyncro_variant_id')
+        .andOn('v.shop_id', 'it.shop_id');
+    })
+    .where('it.shop_id', shopId)
+    .where('v.status', 'active')
+    .groupBy('it.lasyncro_variant_id')
+    .havingRaw('SUM(it.available_quantity) <= 3')
+    .select(
+      'it.lasyncro_variant_id',
+      trx.raw('SUM(it.available_quantity) as available_quantity')
+    );
+
+  const count       = rows.length;
+  const outOfStock  = rows.filter((r: any) => Number(r.available_quantity) <= 0).length;
+
+  if (count === 0) {
+    return [{
+      shop_id:     shopId,
+      alert_key:   `inventory:shop-${shopId}:low_stock`,
+      source:      'snapshot',
+      alert_type:  'low_stock_reorder',
+      severity:    'warning',
+      title:       'Stock levels healthy',
+      message:     'No active products are low on stock.',
+      entity_type: 'shop',
+      is_active:   false,
+      category:    'stock_reorder',
+      audience:    'all',
+    }];
+  }
+
+  return [{
+    shop_id:        shopId,
+    alert_key:      `inventory:shop-${shopId}:low_stock`,
+    source:         'snapshot',
+    alert_type:     'low_stock_reorder',
+    severity:       outOfStock > 0 ? 'critical' : 'warning',
+    title:          `${count} product${count > 1 ? 's' : ''} low on stock`,
+    message: `${count} active product${count > 1 ? 's are' : ' is'} at or below reorder threshold${outOfStock > 0 ? `, ${outOfStock} completely out of stock` : ''} — reorder soon to avoid stockouts.`,
+    entity_id:      null,
+    entity_type:    'shop',
+    revenue_impact: null,
+    is_active:      true,
+    category:       'stock_reorder',
+    audience:       'all',
+  }];
+}
+
+/**
  * MAIN AGGREGATOR ENTRY POINT
  * ---------------------------
  * Called after every snapshot recomputation.
@@ -395,19 +471,21 @@ export async function aggregateAlertsForShop(shopId: number): Promise<void> {
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts] = await Promise.all([
-      aggregateConstraintAlerts(trx, shopId),
-      aggregateSlaAlerts(trx, shopId),
-      aggregateRevenueAlerts(trx, shopId),
-      aggregateMissingCogsAlerts(trx, shopId),
-    ]);
+    const [constraintAlerts, slaAlerts, revenueAlerts, missingCogsAlerts, stockReorderAlerts] = await Promise.all([
+        aggregateConstraintAlerts(trx, shopId),
+        aggregateSlaAlerts(trx, shopId),
+        aggregateRevenueAlerts(trx, shopId),
+        aggregateMissingCogsAlerts(trx, shopId),
+        aggregateStockReorderAlerts(trx, shopId),
+      ]);
 
-    const allAlerts = [
-      ...constraintAlerts,
-      ...slaAlerts,
-      ...revenueAlerts,
-      ...missingCogsAlerts,
-    ];
+      const allAlerts = [
+        ...constraintAlerts,
+        ...slaAlerts,
+        ...revenueAlerts,
+        ...missingCogsAlerts,
+        ...stockReorderAlerts,
+      ];
 
     await upsertAlerts(trx, allAlerts);
 
