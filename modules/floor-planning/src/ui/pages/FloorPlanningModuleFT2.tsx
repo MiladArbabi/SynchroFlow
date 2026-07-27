@@ -694,6 +694,23 @@ function FloorPlanningModuleFT2Inner({
 
   // Derive grid props from overlay selection
   const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
+
+  // FP-SUMMARY1: always-on counts for the headline strip, independent of
+  // which overlay is currently selected — a merchant looking at Occupancy
+  // should still see "3 at risk" without switching views. Same predicates
+  // as overlayFocusedBins (at risk: qty > 0 && qty <= 3; empty: qty === 0)
+  // but computed together rather than gated behind `overlay ===`.
+  const summaryCounts = useMemo(() => {
+    const bins = (gridLocations ?? []).filter(l => l.type === 'bin');
+    let atRisk = 0, empty = 0;
+    for (const l of bins) {
+      const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
+      if (qty === 0) empty;
+      else if (qty <= 3) atRisk++;
+    }
+    return { atRisk, empty, total: bins.length };
+  }, [gridLocations, gridOccupancy]);
+
   const overlayFocusedBins = useMemo(() => {
     if (overlay === 'empty') {
       return (gridLocations ?? [])
@@ -986,31 +1003,7 @@ function FloorPlanningModuleFT2Inner({
               {/* ── END FILTER RAIL ──────────────────────────────── */}
 
               <Box sx={{ flex: 1, overflowX: 'auto' }}>
-              {/* Map toolbar — bin count + active overlay label + controls */}
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, px: 0.5 }}>
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                  SHOWING &nbsp;
-                  <Typography component="span" sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink)' }}>
-                    {(gridLocations ?? []).filter((l) => l.type === 'bin').length} bins
-                  </Typography>
-                  {' · overlay: '}
-                  <Typography component="span" sx={{ fontSize: 12, fontStyle: 'italic', color: 'var(--accent)' }}>
-                    {overlay}
-                  </Typography>
-                </Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {/* Zoom controls — Phase 2 will wire to canvas scale */}
-                  {[{ label: '−' }, { label: '+' }].map(({ label }) => (
-                    <Box key={label} sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
-                      {label}
-                    </Box>
-                  ))}
-                  {/* Refresh */}
-                  <Box onClick={onRefresh} sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', color: 'var(--ink-3)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
-                    <RefreshCw size={13} />
-                  </Box>
-                </Box>
-              </Box>
+              
               {/* MAP TAB — isometric 2.5D view (read-only). 2D editing stays in Setup → Canvas. */}
                <IsometricCanvas
                 zones={zones}
@@ -1023,6 +1016,9 @@ function FloorPlanningModuleFT2Inner({
                 showFloor={showFloor}
                 showBins={showBins}
                 onUnplacedZonesClick={() => setTab('setup')}
+                overlay={overlay}
+                summaryCounts={summaryCounts}
+                onRefresh={onRefresh}
               />
               </Box>
               {/* Bin detail panel — enriched with occupancy data */}
@@ -1192,23 +1188,6 @@ function FloorPlanningModuleFT2Inner({
             open={logOpen}
             onClose={() => setLogOpen(false)}
           />
-
-            {/* Legend bar — full width, outside the grid/panel flex row */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mt: 3, pt: 2, borderTop: '1px solid var(--rule)' }}>
-              {[
-                { color: 'var(--bg-3)',          label: 'EMPTY' },
-                { color: 'rgba(34,197,94,0.15)', label: 'BELOW 55%' },
-                { color: 'rgba(245,158,11,0.15)',label: '55-85%' },
-                { color: 'rgba(239,68,68,0.15)', label: 'HOT · 85%+' },
-              ].map(({ color, label }) => (
-                <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                  <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: color, border: '1px solid var(--rule)' }} />
-                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                    {label}
-                  </Typography>
-                </Box>
-              ))}
-            </Box>
         </Box>
       )}
 

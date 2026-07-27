@@ -1,4 +1,4 @@
-// modules/floor-planning/src/ui/components/IsometricCanvas.tsx
+// modules/shared/src/ui/IsometricCanvas.tsx
 /**
  * IsometricCanvas — 2.5D isometric SVG floor plan renderer (Phase 3)
  * -------------------------------------------------------------------
@@ -284,6 +284,36 @@ export interface IsometricCanvasProps {
    * badge with no click affordance.
    */
   onUnplacedZonesClick?: () => void;
+  /**
+   * FP-LEGEND1: which color-scale legend to render in the top-right slot
+   * (replaces the old static FACES legend). 'occupancy' shows the 4-tier
+   * heatmap scale matching fillOverride's thresholds; 'stockout'/'empty'
+   * show their single focusFill color; 'none' or omitted renders no legend.
+   * Colors are pulled from the same rgba(var(--zone-x,...)) strings used
+   * in IsometricBox's actual paint logic so this can't drift from the
+   * real render.
+   */
+  overlay?: 'occupancy' | 'stockout' | 'empty' | 'none';
+  /**
+  * FP-SUMMARY1: headline counts rendered top-left, above the
+  * unplaced-zones badge (FP-NULL1) if both are present. Replaces the
+  * earlier FP-CTRL1 statusLabel string — this is now the primary
+  * first-glance answer to "is anything wrong", not secondary status
+  * text, so it's passed as structured counts (computed page-side from
+  * gridLocations/gridOccupancy — a different array than `zones`, so
+  * recomputing here risked the same count-mismatch found during
+  * FP-NULL1/FP-SCROLL1 verification) rather than one flat string.
+  */
+ summaryCounts?: { atRisk: number; empty: number; total: number };
+  /**
+   * FP-CTRL1: optional manual refresh trigger, rendered in the bottom-right
+   * controls cluster alongside zoom/reset/mirror. useFloorPlanning has no
+   * auto-refetch (staleTime: 60s, no polling, no refetchOnWindowFocus —
+   * "refetch on demand" by design) so this is the only way to pull fresh
+   * layout data without a full page reload once the page-level toolbar
+   * button (its previous home) was removed.
+   */
+  onRefresh?: () => void;
 }
 export function IsometricCanvas({ 
     zones, 
@@ -306,6 +336,9 @@ export function IsometricCanvas({
     liveActivity,
     packQueueCount,
     onUnplacedZonesClick,
+    overlay,
+    summaryCounts,
+    onRefresh,
   }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
@@ -334,6 +367,27 @@ export function IsometricCanvas({
   // showBins so toggling display filters never changes what merchants are
   // told about their actual data completeness.
   const unplacedCount = zones.filter(z => z.position_x == null || z.position_y == null).length;
+
+  // FP-LEGEND1: mirrors IsometricBox's fillOverride/focusFill thresholds
+  // exactly — same zoneRGBVar keys, same alpha values — so the legend
+  // can never show a color that doesn't match what's actually painted.
+  const legendItems = (() => {
+    if (overlay === 'stockout') {
+      return [{ label: 'At risk · ≤3 units', rgba: `rgba(${zoneRGBVar('quarantine')},0.72)` }];
+    }
+    if (overlay === 'empty') {
+      return [{ label: 'Empty', rgba: 'rgba(100,116,139,0.55)' }];
+    }
+    if (overlay === 'occupancy') {
+      return [
+        { label: 'Empty',        rgba: 'rgba(100,116,139,0.25)' },
+        { label: 'Below 50%',    rgba: `rgba(${zoneRGBVar('receive')},0.55)` },
+        { label: '50–85%',       rgba: `rgba(${zoneRGBVar('pack')},0.65)` },
+        { label: 'Hot · 85%',   rgba: `rgba(${zoneRGBVar('quarantine')},0.75)` },
+      ];
+    }
+    return null; // 'none' or omitted — no legend
+  })();
 
   const worldBounds = useMemo(() => {
     if (positionedZones.length === 0) return null;
@@ -732,26 +786,65 @@ export function IsometricCanvas({
             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
           {flipped ? '↙' : '↗'}
         </Box>
+        {/* FP-CTRL1: manual refresh — only rendered if the page provides onRefresh */}
+       {onRefresh && (
+         <Box onClick={onRefresh} title="Refresh layout data"
+           sx={{ width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+             border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14,
+             color: 'var(--ink-3)', bgcolor: 'var(--bg)',
+             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }}>
+           ↻
+         </Box>
+       )}
       </Box>
       }
 
       {/* Legend — hidden in embedded contexts via showLegend={false} */}
-      {showLegend && <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
-        bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }}>
-        <Typography sx={{ fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }}>FACES</Typography>
-        {[{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (
-          <Box key={f.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Box sx={{ width: 10, height: 6, bgcolor: `rgba(${zoneRGBVar('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 }} />
-            <Typography sx={{ fontSize: 8, color: 'var(--ink-4)' }}>{f.label} · {f.opacity}</Typography>
-          </Box>
-        ))}
-      </Box>}
+      {/* FP-LEGEND1: overlay-aware color-scale legend, replaces FACES */}
+      {showLegend && legendItems && (
+        <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
+          bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }}>
+          {legendItems.map((item) => (
+            <Box key={item.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Box sx={{ width: 12, height: 12, borderRadius: 0.5, bgcolor: item.rgba, border: '1px solid var(--rule)' }} />
+              <Typography sx={{ fontSize: 9, fontWeight: 500, color: 'var(--ink-4)' }}>{item.label}</Typography>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {summaryCounts && (
+        <Box sx={{
+          position: 'absolute', top: 8, left: 8,
+          display: 'flex', alignItems: 'center', gap: 0.75,
+          bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
+          px: 1.25, py: 0.75, opacity: 0.95,
+        }}>
+          <Typography sx={{
+           fontSize: 12, fontWeight: 700,
+           color: summaryCounts.atRisk > 0 ? `rgba(${zoneRGBVar('pack')},1)` : 'var(--ink-4)',
+         }}>
+           {summaryCounts.atRisk} low on stock
+         </Typography>
+         <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>·</Typography>
+         <Typography sx={{
+           fontSize: 12, fontWeight: 700,
+           color: summaryCounts.empty > 0 ? `rgba(${zoneRGBVar('quarantine')},1)` : 'var(--ink-4)',
+         }}>
+           {summaryCounts.empty} out of stock
+         </Typography>
+         <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', ml: 0.5 }}>
+           / {summaryCounts.total} bins
+         </Typography>
+        </Box>
+      )}
+
       {/* FP-NULL1: unplaced-zones badge — always visible when relevant, independent of showControls/showLegend */}
      {unplacedCount > 0 && (
        <Box
          onClick={onUnplacedZonesClick}
          sx={{
-           position: 'absolute', top: 8, left: 8,
+           position: 'absolute', top: summaryCounts ? 44 : 8, left: 8,
            display: 'flex', alignItems: 'center', gap: 0.5,
            bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
            px: 1, py: 0.5, opacity: 0.9,

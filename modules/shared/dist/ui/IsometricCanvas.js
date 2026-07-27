@@ -1,5 +1,5 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
-// modules/floor-planning/src/ui/components/IsometricCanvas.tsx
+// modules/shared/src/ui/IsometricCanvas.tsx
 /**
  * IsometricCanvas — 2.5D isometric SVG floor plan renderer (Phase 3)
  * -------------------------------------------------------------------
@@ -135,7 +135,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
                 return (_jsxs("g", { children: [_jsx("polygon", { points: pts(ll0, ll1, lu1, lu0), fill: lFill, stroke: stroke, strokeWidth: "0.4" }), _jsx("polygon", { points: pts(rl0, rl1, ru1, ru0), fill: lFillDark, stroke: stroke, strokeWidth: "0.4" })] }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, onUnplacedZonesClick, }) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
@@ -159,6 +159,26 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
     // showBins so toggling display filters never changes what merchants are
     // told about their actual data completeness.
     const unplacedCount = zones.filter(z => z.position_x == null || z.position_y == null).length;
+    // FP-LEGEND1: mirrors IsometricBox's fillOverride/focusFill thresholds
+    // exactly — same zoneRGBVar keys, same alpha values — so the legend
+    // can never show a color that doesn't match what's actually painted.
+    const legendItems = (() => {
+        if (overlay === 'stockout') {
+            return [{ label: 'At risk · ≤3 units', rgba: `rgba(${zoneRGBVar('quarantine')},0.72)` }];
+        }
+        if (overlay === 'empty') {
+            return [{ label: 'Empty', rgba: 'rgba(100,116,139,0.55)' }];
+        }
+        if (overlay === 'occupancy') {
+            return [
+                { label: 'Empty', rgba: 'rgba(100,116,139,0.25)' },
+                { label: 'Below 50%', rgba: `rgba(${zoneRGBVar('receive')},0.55)` },
+                { label: '50–85%', rgba: `rgba(${zoneRGBVar('pack')},0.65)` },
+                { label: 'Hot · 85%', rgba: `rgba(${zoneRGBVar('quarantine')},0.75)` },
+            ];
+        }
+        return null; // 'none' or omitted — no legend
+    })();
     const worldBounds = useMemo(() => {
         if (positionedZones.length === 0)
             return null;
@@ -425,9 +445,23 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             color: flipped ? 'var(--accent)' : 'var(--ink-4)',
                             borderColor: flipped ? 'var(--accent)' : 'var(--rule)',
                             bgcolor: 'var(--bg)', cursor: 'pointer', fontFamily: 'monospace',
-                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: flipped ? '↙' : '↗' })] }), showLegend && _jsxs(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
-                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: [_jsx(Typography, { sx: { fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }, children: "FACES" }), [{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Box, { sx: { width: 10, height: 6, bgcolor: `rgba(${zoneRGBVar('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 } }), _jsxs(Typography, { sx: { fontSize: 8, color: 'var(--ink-4)' }, children: [f.label, " \u00B7 ", f.opacity] })] }, f.label)))] }), unplacedCount > 0 && (_jsx(Box, { onClick: onUnplacedZonesClick, sx: {
+                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: flipped ? '↙' : '↗' }), onRefresh && (_jsx(Box, { onClick: onRefresh, title: "Refresh layout data", sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14,
+                            color: 'var(--ink-3)', bgcolor: 'var(--bg)',
+                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "\u21BB" }))] }), showLegend && legendItems && (_jsx(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
+                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: legendItems.map((item) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(Box, { sx: { width: 12, height: 12, borderRadius: 0.5, bgcolor: item.rgba, border: '1px solid var(--rule)' } }), _jsx(Typography, { sx: { fontSize: 9, fontWeight: 500, color: 'var(--ink-4)' }, children: item.label })] }, item.label))) })), summaryCounts && (_jsxs(Box, { sx: {
                     position: 'absolute', top: 8, left: 8,
+                    display: 'flex', alignItems: 'center', gap: 0.75,
+                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
+                    px: 1.25, py: 0.75, opacity: 0.95,
+                }, children: [_jsxs(Typography, { sx: {
+                            fontSize: 12, fontWeight: 700,
+                            color: summaryCounts.atRisk > 0 ? `rgba(${zoneRGBVar('pack')},1)` : 'var(--ink-4)',
+                        }, children: [summaryCounts.atRisk, " low on stock"] }), _jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "\u00B7" }), _jsxs(Typography, { sx: {
+                            fontSize: 12, fontWeight: 700,
+                            color: summaryCounts.empty > 0 ? `rgba(${zoneRGBVar('quarantine')},1)` : 'var(--ink-4)',
+                        }, children: [summaryCounts.empty, " out of stock"] }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', ml: 0.5 }, children: ["/ ", summaryCounts.total, " bins"] })] })), unplacedCount > 0 && (_jsx(Box, { onClick: onUnplacedZonesClick, sx: {
+                    position: 'absolute', top: summaryCounts ? 44 : 8, left: 8,
                     display: 'flex', alignItems: 'center', gap: 0.5,
                     bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
                     px: 1, py: 0.5, opacity: 0.9,

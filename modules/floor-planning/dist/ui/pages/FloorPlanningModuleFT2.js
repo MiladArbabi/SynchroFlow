@@ -2,7 +2,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
 import { useState, useCallback, useMemo } from 'react';
 import { Box, Paper, Typography, Alert, Chip, Divider, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Collapse, IconButton, Tab, Tabs, Checkbox, Button, FormControl, InputLabel, MenuItem, Select, } from '@mui/material';
-import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, RefreshCw, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
+import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
@@ -152,6 +152,23 @@ function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, 
     const [showBins, setShowBins] = useState(true);
     // Derive grid props from overlay selection
     const overlayGridMode = overlay === 'none' ? 'map' : overlay === 'stockout' || overlay === 'empty' ? 'focus' : 'heatmap';
+    // FP-SUMMARY1: always-on counts for the headline strip, independent of
+    // which overlay is currently selected — a merchant looking at Occupancy
+    // should still see "3 at risk" without switching views. Same predicates
+    // as overlayFocusedBins (at risk: qty > 0 && qty <= 3; empty: qty === 0)
+    // but computed together rather than gated behind `overlay ===`.
+    const summaryCounts = useMemo(() => {
+        const bins = (gridLocations ?? []).filter(l => l.type === 'bin');
+        let atRisk = 0, empty = 0;
+        for (const l of bins) {
+            const qty = gridOccupancy?.[l.location_code]?.on_hand_quantity ?? 0;
+            if (qty === 0)
+                empty;
+            else if (qty <= 3)
+                atRisk++;
+        }
+        return { atRisk, empty, total: bins.length };
+    }, [gridLocations, gridOccupancy]);
     const overlayFocusedBins = useMemo(() => {
         if (overlay === 'empty') {
             return (gridLocations ?? [])
@@ -295,9 +312,9 @@ function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, 
                                                             border: '1.5px solid', borderColor: active ? 'var(--accent)' : 'var(--rule)',
                                                             bgcolor: active ? 'var(--accent)' : 'transparent',
                                                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                        }, children: active && _jsx(Box, { sx: { width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 } }) }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-2)' }, children: label })] }, label)))] }), _jsx(Divider, {}), _jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }, children: "Surfaced Today" }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontStyle: 'italic' }, children: "Live signals in Phase 2c" })] })] }), _jsxs(Box, { sx: { flex: 1, overflowX: 'auto' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, px: 0.5 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: ["SHOWING \u00A0", _jsxs(Typography, { component: "span", sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink)' }, children: [(gridLocations ?? []).filter((l) => l.type === 'bin').length, " bins"] }), ' · overlay: ', _jsx(Typography, { component: "span", sx: { fontSize: 12, fontStyle: 'italic', color: 'var(--accent)' }, children: overlay })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [[{ label: '−' }, { label: '+' }].map(({ label }) => (_jsx(Box, { sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14, color: 'var(--ink-3)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: label }, label))), _jsx(Box, { onClick: onRefresh, sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', color: 'var(--ink-3)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: _jsx(RefreshCw, { size: 13 }) })] })] }), _jsx(IsometricCanvas, { zones: zones, onSelect: (code) => code && handleBinSelect(code), filteredCodes: new Set(filteredGridLocations.map(l => l.location_code)), 
-                                        /* Each overlay owns one visual language: heatmap or semantic focus. */
-                                        occupancy: overlay === 'occupancy' ? gridOccupancy : undefined, focusedBins: overlayFocusedBins, focusTone: overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined, showFloor: showFloor, showBins: showBins, onUnplacedZonesClick: () => setTab('setup') })] }), selectedBin && (() => {
+                                                        }, children: active && _jsx(Box, { sx: { width: 6, height: 6, bgcolor: '#fff', borderRadius: 0.25 } }) }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-2)' }, children: label })] }, label)))] }), _jsx(Divider, {}), _jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }, children: "Surfaced Today" }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontStyle: 'italic' }, children: "Live signals in Phase 2c" })] })] }), _jsx(Box, { sx: { flex: 1, overflowX: 'auto' }, children: _jsx(IsometricCanvas, { zones: zones, onSelect: (code) => code && handleBinSelect(code), filteredCodes: new Set(filteredGridLocations.map(l => l.location_code)), 
+                                    /* Each overlay owns one visual language: heatmap or semantic focus. */
+                                    occupancy: overlay === 'occupancy' ? gridOccupancy : undefined, focusedBins: overlayFocusedBins, focusTone: overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined, showFloor: showFloor, showBins: showBins, onUnplacedZonesClick: () => setTab('setup'), overlay: overlay, summaryCounts: summaryCounts, onRefresh: onRefresh }) }), selectedBin && (() => {
                                 const occ = gridOccupancy?.[selectedBin];
                                 const totalUnits = occ?.on_hand_quantity ?? 0;
                                 // Capacity derived from rack_levels × estimated units per level (10).
@@ -364,12 +381,7 @@ function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, 
                                                                 fontSize: 11, fontWeight: 500, color: 'var(--ink-3)', cursor: 'pointer',
                                                                 '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' }, transition: 'all 0.15s',
                                                             }, children: "Move" })] })] })] }));
-                            })()] })), _jsx(BinLogDrawer, { locationCode: selectedBin ?? '', events: binLog?.events ?? [], isLoading: isBinLogLoading ?? false, open: logOpen, onClose: () => setLogOpen(false) }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 3, mt: 3, pt: 2, borderTop: '1px solid var(--rule)' }, children: [
-                            { color: 'var(--bg-3)', label: 'EMPTY' },
-                            { color: 'rgba(34,197,94,0.15)', label: 'BELOW 55%' },
-                            { color: 'rgba(245,158,11,0.15)', label: '55-85%' },
-                            { color: 'rgba(239,68,68,0.15)', label: 'HOT · 85%+' },
-                        ].map(({ color, label }) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(Box, { sx: { width: 12, height: 12, borderRadius: 0.5, bgcolor: color, border: '1px solid var(--rule)' } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: label })] }, label))) })] })), isLoading && tab !== 'map' && _jsx(ModuleLoadingSkeleton, {}), isError && tab !== 'map' && (_jsx(Alert, { severity: "error", sx: { mb: 3 }, children: "Failed to load floor planning data. Please refresh." })), !isLoading && !isError && tab === 'setup' && (_jsx(_Fragment, { children: _jsxs(Box, { sx: { mb: 4 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 2 }, children: [_jsx(LayoutDashboard, { size: 18 }), _jsx(Typography, { variant: "subtitle1", fontWeight: 700, children: "Warehouse Zones" }), _jsx(Chip, { label: zones.length, size: "small" }), _jsxs(Box, { sx: { ml: 'auto', display: 'flex', gap: 1 }, children: [_jsx(Box, { sx: { display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden' }, children: [{ label: 'List', val: false }, { label: 'Canvas', val: true }].map(({ label, val }) => (_jsx(Box, { onClick: () => { setCanvasView(val); onViewChange?.(val ? 'canvas' : 'list'); }, sx: {
+                            })()] })), _jsx(BinLogDrawer, { locationCode: selectedBin ?? '', events: binLog?.events ?? [], isLoading: isBinLogLoading ?? false, open: logOpen, onClose: () => setLogOpen(false) })] })), isLoading && tab !== 'map' && _jsx(ModuleLoadingSkeleton, {}), isError && tab !== 'map' && (_jsx(Alert, { severity: "error", sx: { mb: 3 }, children: "Failed to load floor planning data. Please refresh." })), !isLoading && !isError && tab === 'setup' && (_jsx(_Fragment, { children: _jsxs(Box, { sx: { mb: 4 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 2 }, children: [_jsx(LayoutDashboard, { size: 18 }), _jsx(Typography, { variant: "subtitle1", fontWeight: 700, children: "Warehouse Zones" }), _jsx(Chip, { label: zones.length, size: "small" }), _jsxs(Box, { sx: { ml: 'auto', display: 'flex', gap: 1 }, children: [_jsx(Box, { sx: { display: 'flex', border: '1px solid var(--rule)', borderRadius: 1.5, overflow: 'hidden' }, children: [{ label: 'List', val: false }, { label: 'Canvas', val: true }].map(({ label, val }) => (_jsx(Box, { onClick: () => { setCanvasView(val); onViewChange?.(val ? 'canvas' : 'list'); }, sx: {
                                                     px: 1.5, py: 0.6, fontSize: 12, fontWeight: 500, cursor: 'pointer',
                                                     bgcolor: canvasView === val ? 'var(--accent)' : 'transparent',
                                                     color: canvasView === val ? '#fff' : 'var(--ink-3)',

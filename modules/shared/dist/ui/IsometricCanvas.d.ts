@@ -63,8 +63,42 @@ export interface IsometricCanvasProps {
      * badge with no click affordance.
      */
     onUnplacedZonesClick?: () => void;
+    /**
+     * FP-LEGEND1: which color-scale legend to render in the top-right slot
+     * (replaces the old static FACES legend). 'occupancy' shows the 4-tier
+     * heatmap scale matching fillOverride's thresholds; 'stockout'/'empty'
+     * show their single focusFill color; 'none' or omitted renders no legend.
+     * Colors are pulled from the same rgba(var(--zone-x,...)) strings used
+     * in IsometricBox's actual paint logic so this can't drift from the
+     * real render.
+     */
+    overlay?: 'occupancy' | 'stockout' | 'empty' | 'none';
+    /**
+    * FP-SUMMARY1: headline counts rendered top-left, above the
+    * unplaced-zones badge (FP-NULL1) if both are present. Replaces the
+    * earlier FP-CTRL1 statusLabel string — this is now the primary
+    * first-glance answer to "is anything wrong", not secondary status
+    * text, so it's passed as structured counts (computed page-side from
+    * gridLocations/gridOccupancy — a different array than `zones`, so
+    * recomputing here risked the same count-mismatch found during
+    * FP-NULL1/FP-SCROLL1 verification) rather than one flat string.
+    */
+    summaryCounts?: {
+        atRisk: number;
+        empty: number;
+        total: number;
+    };
+    /**
+     * FP-CTRL1: optional manual refresh trigger, rendered in the bottom-right
+     * controls cluster alongside zoom/reset/mirror. useFloorPlanning has no
+     * auto-refetch (staleTime: 60s, no polling, no refetchOnWindowFocus —
+     * "refetch on demand" by design) so this is the only way to pull fresh
+     * layout data without a full page reload once the page-level toolbar
+     * button (its previous home) was removed.
+     */
+    onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react/jsx-runtime").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map
