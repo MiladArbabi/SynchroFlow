@@ -135,7 +135,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
                 return (_jsxs("g", { children: [_jsx("polygon", { points: pts(ll0, ll1, lu1, lu0), fill: lFill, stroke: stroke, strokeWidth: "0.4" }), _jsx("polygon", { points: pts(rl0, rl1, ru1, ru0), fill: lFillDark, stroke: stroke, strokeWidth: "0.4" })] }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, }) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, onUnplacedZonesClick, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
@@ -155,6 +155,10 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
     const positionedZones = zones.filter(z => z.position_x != null && z.position_y != null &&
         (filteredCodes == null || filteredCodes.has(z.location_code)) &&
         (isFrame(z) ? showFloor : showBins));
+    // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
+    // showBins so toggling display filters never changes what merchants are
+    // told about their actual data completeness.
+    const unplacedCount = zones.filter(z => z.position_x == null || z.position_y == null).length;
     const worldBounds = useMemo(() => {
         if (positionedZones.length === 0)
             return null;
@@ -422,7 +426,14 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             borderColor: flipped ? 'var(--accent)' : 'var(--rule)',
                             bgcolor: 'var(--bg)', cursor: 'pointer', fontFamily: 'monospace',
                             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: flipped ? '↙' : '↗' })] }), showLegend && _jsxs(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
-                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: [_jsx(Typography, { sx: { fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }, children: "FACES" }), [{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Box, { sx: { width: 10, height: 6, bgcolor: `rgba(${zoneRGBVar('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 } }), _jsxs(Typography, { sx: { fontSize: 8, color: 'var(--ink-4)' }, children: [f.label, " \u00B7 ", f.opacity] })] }, f.label)))] })] }));
+                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: [_jsx(Typography, { sx: { fontSize: 8, fontWeight: 600, color: 'var(--ink-4)', mb: 0.25 }, children: "FACES" }), [{ label: 'Top', opacity: '100%' }, { label: 'Left', opacity: '70%' }, { label: 'Right', opacity: '50%' }].map(f => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Box, { sx: { width: 10, height: 6, bgcolor: `rgba(${zoneRGBVar('pick')},1)`, opacity: f.label === 'Top' ? 1 : f.label === 'Left' ? 0.7 : 0.5, borderRadius: 0.25 } }), _jsxs(Typography, { sx: { fontSize: 8, color: 'var(--ink-4)' }, children: [f.label, " \u00B7 ", f.opacity] })] }, f.label)))] }), unplacedCount > 0 && (_jsx(Box, { onClick: onUnplacedZonesClick, sx: {
+                    position: 'absolute', top: 8, left: 8,
+                    display: 'flex', alignItems: 'center', gap: 0.5,
+                    bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
+                    px: 1, py: 0.5, opacity: 0.9,
+                    cursor: onUnplacedZonesClick ? 'pointer' : 'default',
+                    '&:hover': onUnplacedZonesClick ? { borderColor: 'var(--accent)' } : undefined,
+                }, children: _jsxs(Typography, { sx: { fontSize: 9, fontWeight: 600, color: 'var(--ink-3)' }, children: [unplacedCount, " location", unplacedCount === 1 ? '' : 's', " not placed on the floor"] }) }))] }));
 }
 export function IsometricZoneView({ zone, width = 120, height = 90 }) {
     const ww = parseFloat(String(zone.width ?? 1));

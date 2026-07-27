@@ -277,7 +277,13 @@ export interface IsometricCanvasProps {
   liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
   packQueueCount?: number;
   awaitingPackCount?: number;
-
+  /**
+   * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
+   * surfaces with a placement affordance (Map tab → Setup Canvas); omit on
+   * read-only surfaces (Overview, Display) to render an informational-only
+   * badge with no click affordance.
+   */
+  onUnplacedZonesClick?: () => void;
 }
 export function IsometricCanvas({ 
     zones, 
@@ -299,6 +305,7 @@ export function IsometricCanvas({
     stations,
     liveActivity,
     packQueueCount,
+    onUnplacedZonesClick,
   }: IsometricCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom]         = useState(initialZoom);
@@ -322,6 +329,11 @@ export function IsometricCanvas({
     (filteredCodes == null || filteredCodes.has(z.location_code)) &&
     (isFrame(z) ? showFloor : showBins)
   );
+
+  // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
+  // showBins so toggling display filters never changes what merchants are
+  // told about their actual data completeness.
+  const unplacedCount = zones.filter(z => z.position_x == null || z.position_y == null).length;
 
   const worldBounds = useMemo(() => {
     if (positionedZones.length === 0) return null;
@@ -734,6 +746,24 @@ export function IsometricCanvas({
           </Box>
         ))}
       </Box>}
+      {/* FP-NULL1: unplaced-zones badge — always visible when relevant, independent of showControls/showLegend */}
+     {unplacedCount > 0 && (
+       <Box
+         onClick={onUnplacedZonesClick}
+         sx={{
+           position: 'absolute', top: 8, left: 8,
+           display: 'flex', alignItems: 'center', gap: 0.5,
+           bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5,
+           px: 1, py: 0.5, opacity: 0.9,
+           cursor: onUnplacedZonesClick ? 'pointer' : 'default',
+           '&:hover': onUnplacedZonesClick ? { borderColor: 'var(--accent)' } : undefined,
+         }}
+       >
+         <Typography sx={{ fontSize: 9, fontWeight: 600, color: 'var(--ink-3)' }}>
+           {unplacedCount} location{unplacedCount === 1 ? '' : 's'} not placed on the floor
+         </Typography>
+       </Box>
+     )}
     </Box>
   );
 }

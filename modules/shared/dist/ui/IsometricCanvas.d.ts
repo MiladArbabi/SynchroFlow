@@ -56,8 +56,15 @@ export interface IsometricCanvasProps {
     liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
     packQueueCount?: number;
     awaitingPackCount?: number;
+    /**
+     * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
+     * surfaces with a placement affordance (Map tab → Setup Canvas); omit on
+     * read-only surfaces (Overview, Display) to render an informational-only
+     * badge with no click affordance.
+     */
+    onUnplacedZonesClick?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react/jsx-runtime").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map

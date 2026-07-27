@@ -1022,6 +1022,7 @@ function FloorPlanningModuleFT2Inner({
                 focusTone={overlay === 'stockout' ? 'risk' : overlay === 'empty' ? 'empty' : undefined}
                 showFloor={showFloor}
                 showBins={showBins}
+                onUnplacedZonesClick={() => setTab('setup')}
               />
               </Box>
               {/* Bin detail panel — enriched with occupancy data */}
