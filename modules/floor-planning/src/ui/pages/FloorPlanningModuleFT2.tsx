@@ -862,7 +862,7 @@ function FloorPlanningModuleFT2Inner({
           {!isGridLoading && (
             <Box sx={{ display: 'flex', gap: 2, flex: 1, position: 'relative', overflow: 'hidden' }}>
               {/* ── LEFT FILTER RAIL ─────────────────────────────── */}
-              <Box sx={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <Box sx={{ width: 180, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 2.5, height: '100%', overflowY: 'auto', pr: 0.5 }}>
                 {/* VIEW OVERLAY */}
                 <Box>
                   <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
