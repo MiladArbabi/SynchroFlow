@@ -1,5 +1,24 @@
 import { Knex } from 'knex';
 
+/**
+ * ⚠️ DRIFT WARNING (added post DRIFT-AUDIT-01, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1) BEFORE
+ * order_reconciliation_intents' shop_id column and RLS policies were
+ * added to this file (2026-06-29, THREAD A-2 incident fix). Knex
+ * marks this migration complete and will NEVER re-run it — so this
+ * file's current `up()` does NOT reflect what actually existed in
+ * prod for shops/tenants created before 2026-07-28.
+ *
+ * shop_id, RLS, and the split select/write policies on
+ * order_reconciliation_intents were backfilled into production
+ * separately via migration 0130
+ * (20260728150000_0130_add_shop_id_rls_order_reconciliation_intents.ts).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * Any further schema change here only affects fresh/local databases
+ * migrated from scratch. Use a new forward migration instead (rule 7).
+ */
 export async function up(knex: Knex): Promise<void> {
   // ─────────────────────────────────────────
   // 1️⃣ Create ENUM (idempotent-safe)
