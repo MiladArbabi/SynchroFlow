@@ -224,6 +224,6 @@ type VariantOption = {
     image_url: string | null;
     product_title: string | null;
 };
-export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps): import("react/jsx-runtime").JSX.Element;
+export default function SuppliersPortalModuleFT2(props: SuppliersPortalPageProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=SuppliersPortalModuleFT2.d.ts.map

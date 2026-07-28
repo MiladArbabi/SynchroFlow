@@ -1,6 +1,24 @@
 import { Knex } from 'knex';
 
+/**
+ * ⚠️ DRIFT WARNING (added post PROD-ZONE1, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1) BEFORE the
+ * `warehouses` table and `warehouse_id` column were added to this file.
+ * Knex marks this migration complete and will NEVER re-run it — so this
+ * file's current `up()` does NOT reflect what actually exists in prod
+ * for shops/tenants created before 2026-07-28.
+ *
+ * The `warehouses` table and `warehouse_locations.warehouse_id` column
+ * were backfilled into production separately via migration 0128
+ * (20260728120000_0128_backfill_warehouses_table.ts).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * Any further schema change here only affects fresh/local databases
+ * migrated from scratch. Use a new forward migration instead (rule 7).
+ */
 export async function up(knex: Knex): Promise<void> {
+
 
   // 1️⃣ Create ENUM (idempotent-safe)
   await knex.schema.raw(`

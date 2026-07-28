@@ -3,6 +3,6 @@ interface PrintPreviewPanelProps {
     selectedZones: WarehouseZone[];
     onBatchPrint?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
 }
-export declare function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewPanelProps): import("react/jsx-runtime").JSX.Element;
+export declare function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewPanelProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=PrintPreviewPanel.d.ts.map

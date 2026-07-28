@@ -68,5 +68,5 @@ export type FloorPlanningPageProps = {
         zone_type?: string | null;
     }) => Promise<void>;
 };
-export default function FloorPlanningModuleFT2(props: FloorPlanningPageProps): import("react/jsx-runtime").JSX.Element;
+export default function FloorPlanningModuleFT2(props: FloorPlanningPageProps): import("react").JSX.Element;
 //# sourceMappingURL=FloorPlanningModuleFT2.d.ts.map

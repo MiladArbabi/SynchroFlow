@@ -1,5 +1,23 @@
 import { Knex } from 'knex';
 
+/**
+ * ⚠️ DRIFT WARNING (added post PROD-ZONE1, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1). The composite
+ * FK this file currently declares — warehouse_locations_parent_same_warehouse_fk,
+ * referencing (shop_id, warehouse_id, parent_location_code) — was NOT what
+ * ran in prod. Prod still has the older two-column FK from this migration's
+ * pre-amendment version: warehouse_locations_shop_id_parent_location_code_foreign,
+ * referencing (shop_id, parent_location_code) only.
+ *
+ * Knex marks this migration complete and will NEVER re-run it, so this
+ * file's current `up()` does not reflect prod's real constraint set.
+ * Confirmed via schema diff 2026-07-28 (see PROD-ZONE1 / migration 0128).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * If the composite FK is ever needed in prod, write a new forward
+ * migration instead (rule 7).
+ */
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.alterTable('warehouse_locations', (table) => {
     table.dropForeign(['parent_location_code']);

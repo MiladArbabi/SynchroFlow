@@ -6,6 +6,6 @@ interface BinLogDrawerProps {
     open: boolean;
     onClose: () => void;
 }
-export declare function BinLogDrawer({ locationCode, events, isLoading, open, onClose }: BinLogDrawerProps): import("react/jsx-runtime").JSX.Element;
+export declare function BinLogDrawer({ locationCode, events, isLoading, open, onClose }: BinLogDrawerProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=BinLogDrawer.d.ts.map

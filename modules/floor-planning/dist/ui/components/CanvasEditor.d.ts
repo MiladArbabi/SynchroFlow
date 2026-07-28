@@ -27,6 +27,6 @@ interface CanvasEditorProps {
     }) => Promise<void>;
     onViewIn3D?: () => void;
 }
-export declare function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, onPrintBarcode, onViewIn3D, }: CanvasEditorProps): import("react/jsx-runtime").JSX.Element;
+export declare function CanvasEditor({ zones, onUpdateZone, onDeleteZone, onCreateZone, onPrintBarcode, onViewIn3D, }: CanvasEditorProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=CanvasEditor.d.ts.map
