@@ -46,6 +46,11 @@ export interface LiveBinActivity {
 export interface SyntheticStation {
   id: string;
   label: string;
+  /**
+   * Screen rail the apron docks to, resolved in isometric screen space by
+   * IsometricCanvas (OV-13): 'inbound' → right of the slab, 'outbound' → left.
+   * NOT a world-axis hint — see the stationPlacements comment for why.
+   */
   side: 'inbound' | 'outbound';
   /** Total token stack count. */
   count: number;

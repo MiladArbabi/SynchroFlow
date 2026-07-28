@@ -251,8 +251,10 @@ export default function OverviewPageFT2() {
   const zones = floorPlanning.data?.zones ?? [];
   const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
   const idleAlerts = useIdleAlerts(hasMapTier && zones.length > 0);
-  // useOrderPool provides inbound apron data (eligible_order_count, summary.blocked_count).
-  // Data consumed by apron stations prop once SyntheticStation lands in v1-B task 4.
+  // useOrderPool (GET /api/v1/wms/order-pool, 30s poll) feeds the inbound apron:
+  // eligible_order_count → bar height, summary.blocked_count → red sub-bar.
+  // Semantics: orders waiting to be released to the floor, not yet released.
+  // Consumed by the `stations` prop below → IsometricCanvas (OV-13).
   const orderPool = useOrderPool();
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.

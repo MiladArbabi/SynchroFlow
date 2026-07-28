@@ -405,6 +405,70 @@ export function IsometricCanvas({
     return { minX, maxX, minY, maxY };
   }, [positionedZones]);
 
+  /**
+   * OV-13 — apron geometry, resolved once and shared by the renderer and by
+   * both fit bboxes so a station can never be painted outside the fitted view.
+   *
+   * Placement works in ISOMETRIC SCREEN space, not world X. Because
+   *   sx = (wx - wy) * TILE_W/2      sy = (wx + wy) * TILE_H/2 - wz * LEVEL_H
+   * changing world X alone moves a box diagonally — right AND down-screen —
+   * which is why the old `worldBounds.minX - 4.0` anchor pushed the order pool
+   * up-left INTO the PICK-0B rack column instead of beside the slab. We work in
+   * the rotated basis instead:
+   *   v = wx - wy  → drives screen X only
+   *   u = wx + wy  → drives screen Y only
+   * pin the apron a fixed gutter clear of the slab's rightmost screen edge
+   * (max v), vertically centred on it (mid u), then invert back to world
+   * coords. Since the gutter is applied in v, the apron column is horizontally
+   * disjoint from every zone at ANY bar height, zone count, or zoom level.
+   */
+  const stationPlacements = useMemo(() => {
+    if (!stations || !worldBounds) return [];
+    const { minX, maxX, minY, maxY } = worldBounds;
+    const vMax = maxX - minY;                       // slab's rightmost screen edge
+    const vMin = minX - maxY;                       // slab's leftmost screen edge
+    const uMid = (minX + minY + maxX + maxY) / 2;   // slab's vertical screen centre
+
+    const GUTTER = 2.0;          // world-diagonal metres of guaranteed clear space
+    const tw = 1.5, td = 0.75;   // apron footprint
+    const MAX_BAR_H = 2.5;
+
+    // Mirrored view negates screen X, so "right of the slab" becomes minimum v.
+    const vRight = flipped ? vMin - GUTTER - tw : vMax + GUTTER + td;
+    const vLeft  = flipped ? vMax + GUTTER + td : vMin - GUTTER - tw;
+
+    return stations
+      .filter(s => s.count > 0)
+      .map(station => {
+        // Order pool ('inbound') rides the RIGHT rail — it represents orders
+        // waiting to be released to the floor, read before the floor itself.
+        const v0 = station.side === 'inbound' ? vRight : vLeft;
+        const u0 = uMid - (tw + td) / 2;
+
+        // OV-13: urgentCount is an independent server count (blocked orders)
+        // and can legitimately exceed the pool count. Left unclamped it gave
+        // urgentFrac > 1 → negative normalH → inverted, self-intersecting
+        // polygons drawn below the floor plane: the "red arch" defect.
+        const urgentCount = Math.min(station.count, Math.max(0, station.urgentCount ?? 0));
+        const totalBarH = Math.min(MAX_BAR_H, 0.4 + station.count * 0.06);
+        const urgentH   = totalBarH * (urgentCount / station.count);
+        const normalH   = Math.max(0, totalBarH - urgentH);
+
+        return {
+          station,
+          wx: (u0 + v0) / 2,
+          wy: (u0 - v0) / 2,
+          tw, td, totalBarH, urgentH, normalH,
+        };
+      });
+  }, [stations, worldBounds, flipped]);
+
+  // Apron height and visibility track the counts, so the fit must react to
+  // count changes exactly as it reacts to layout changes.
+  const stationSig = stationPlacements
+    .map(p => `${p.station.id}:${p.station.count}:${p.station.urgentCount ?? 0}`)
+    .join('|');
+
   // Signature of what's drawn — refit only when the layout actually changes,
   // never on every render (so manual pan/zoom survives between changes).
   // World-space bounding box — used to anchor synthetic apron stations.
@@ -440,8 +504,28 @@ export function IsometricCanvas({
         if (sy > maxY) maxY = sy;
       }
     }
+
+    // OV-13: aprons are drawn but were not measured, so the clamp could park
+    // them off-canvas. +0.6 m of headroom covers the count badge and label
+    // text drawn above the bar top face.
+    for (const p of stationPlacements) {
+      const top = p.totalBarH + 0.6;
+      const corners: Array<[number, number, number]> = [
+        [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
+        [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
+        [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
+        [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
+      ];
+      for (const [px, py, pz] of corners) {
+        const { sx, sy } = project(px, py, pz, 1, flipped);
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
+      }
+    }
     bboxRef.current = { minX, maxX, minY, maxY };
-  }, [zoneSig, flipped]);
+  }, [zoneSig, stationSig, flipped]);
 
   // Painter's algorithm: sort by (position_x + position_y) ascending — back zones first
   // Painter's algorithm: ascending = back-to-front for standard view.
@@ -537,6 +621,25 @@ export function IsometricCanvas({
       const corners: Array<[number, number, number]> = [
         [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
         [wx, wy, wh], [wx + ww, wy, wh], [wx + ww, wy + wd, wh], [wx, wy + wd, wh],
+      ];
+      for (const [px, py, pz] of corners) {
+        const { sx, sy } = project(px, py, pz, 1, flipped);
+        if (sx < minX) minX = sx;
+        if (sx > maxX) maxX = sx;
+        if (sy < minY) minY = sy;
+        if (sy > maxY) maxY = sy;
+      }
+    }
+
+    // OV-13: same union as the clamp bbox — without it autoFit solves a zoom
+    // that fits the slab only, and the apron gets cropped at the right edge.
+    for (const p of stationPlacements) {
+      const top = p.totalBarH + 0.6;
+      const corners: Array<[number, number, number]> = [
+        [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
+        [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
+        [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
+        [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
       ];
       for (const [px, py, pz] of corners) {
         const { sx, sy } = project(px, py, pz, 1, flipped);
@@ -667,27 +770,11 @@ export function IsometricCanvas({
             );
           })}
 
-          {/* ── SYNTHETIC APRON STATIONS ── */}
-          {stations && worldBounds && stations.map(station => {
-            if (station.count === 0) return null;
-            const midY  = (worldBounds.minY + worldBounds.maxY) / 2;
-            // Inbound apron: left of warehouse; outbound: right.
-            const wx = station.side === 'inbound'
-              ? worldBounds.minX - 4.0
-              : worldBounds.maxX + 2.0;
-            const wy = midY - 0.75;
-            // Single slim bar — scales to any order count, no token clutter.
-            // Bar height encodes urgency: urgent sub-bar in red at the base,
-            // normal remainder in accent above it.
-            const tw = 1.5, td = 0.75;
-            const urgentCount = station.urgentCount ?? 0;
-            const normalCount = Math.max(0, station.count - urgentCount);
-            const maxBarH = 2.5;   // world metres — max visual bar height
-            const totalBarH = Math.min(maxBarH, 0.4 + station.count * 0.06);
-            const urgentFrac = station.count > 0 ? urgentCount / station.count : 0;
-            const urgentH = totalBarH * urgentFrac;
-            const normalH = totalBarH - urgentH;
-
+          {/* ── SYNTHETIC APRON STATIONS ──
+              OV-13: geometry, urgency clamp, and screen-space placement all
+              resolved in `stationPlacements` above so the renderer and the fit
+              bboxes can never disagree about where an apron actually is. */}
+          {stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH }) => {
             // Normal (lower) bar
             const nb00 = project(wx,      wy,           0,       zoom, flipped);
             const nb10 = project(wx + tw, wy,           0,       zoom, flipped);
@@ -710,7 +797,7 @@ export function IsometricCanvas({
 
             const countPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.45, zoom, flipped);
             const labelPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.15, zoom, flipped);
-            const countColor = urgentCount > 0 ? '#E5484D' : 'var(--accent)';
+            const countColor = urgentH > 0.01 ? '#E5484D' : 'var(--accent)';
             const accentFill = 'var(--accent)';
 
             return (
@@ -719,28 +806,29 @@ export function IsometricCanvas({
                 style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
                 onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
               >
-                {/* Normal order bar — sides first, top face last (painter order) */}
+                {/* Normal order bar — sides first, top face last (painter order).
+                    OV-18: the first face was on plane x=wx — a BACK face, hidden
+                    on any real solid — leaving the visible y=wy+td front face
+                    undrawn. Two parallel constant-X planes 45px apart, bridged
+                    only by the top face, rendered as a hollow doorway. Face
+                    planes now match IsometricBox's level bands: one constant-Y
+                    (front-left, lighter) + one constant-X (right, darker). */}
                 {normalH > 0.01 && (
                   <>
-                    <polygon points={pts(nt00, nb00, nb01, nt01)} fill={accentFill} fillOpacity={0.45} />
+                    <polygon points={pts(nt01, nt11, nb11, nb01)} fill={accentFill} fillOpacity={0.45} />
                     <polygon points={pts(nt10, nb10, nb11, nt11)} fill={accentFill} fillOpacity={0.32} />
                     <polygon points={pts(nt00, nt10, nt11, nt01)} fill={accentFill} fillOpacity={0.75} />
                   </>
                 )}
-                {/* Urgent/blocked sub-bar — sides first, top face last */}
-                {urgentH > 0.01 && (
+                {/* Urgent/blocked sub-bar — sides first, top face last so the
+                    painter order matches the normal bar. Emitted ONCE: the
+                    second identical group (OV-15) double-painted the alpha and
+                    made a translucent bar read as an opaque wall. */}
+                    {urgentH > 0.01 && (
                   <>
-                    <polygon points={pts(ut00, ub00, ub01, ut01)} fill="#E5484D" fillOpacity={0.55} />
+                    <polygon points={pts(ut01, ut11, ub11, ub01)} fill="#E5484D" fillOpacity={0.55} />
                     <polygon points={pts(ut10, ub10, ub11, ut11)} fill="#E5484D" fillOpacity={0.40} />
                     <polygon points={pts(ut00, ut10, ut11, ut01)} fill="#E5484D" fillOpacity={0.85} />
-                  </>
-                )}
-                {/* Urgent/blocked sub-bar */}
-                {urgentH > 0.01 && (
-                  <>
-                    <polygon points={pts(ut00, ut10, ut11, ut01)} fill="#E5484D" fillOpacity={0.85} />
-                    <polygon points={pts(ut00, ub00, ub01, ut01)} fill="#E5484D" fillOpacity={0.55} />
-                    <polygon points={pts(ut10, ub10, ub11, ut11)} fill="#E5484D" fillOpacity={0.40} />
                   </>
                 )}
                 {/* Count badge */}

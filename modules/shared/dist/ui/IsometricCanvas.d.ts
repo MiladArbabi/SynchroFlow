@@ -98,7 +98,7 @@ export interface IsometricCanvasProps {
      */
     onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react/jsx-runtime").JSX.Element;
-export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react/jsx-runtime").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
+export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map
