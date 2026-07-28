@@ -283,7 +283,12 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
             const wh = isFrame(z) ? 0 : (z.rack_levels ?? 1) * LEVEL_HEIGHT;
             const corners = [
                 [wx, wy, 0], [wx + ww, wy, 0], [wx + ww, wy + wd, 0], [wx, wy + wd, 0],
-                [wx, wy, wh], [wx + ww, wy, wh], [wx + wh, wy + wd, wh], [wx, wy + wd, wh],
+                // OV-14: the far-top corner read `wx + wh` — height on the X axis. Since
+                // sx = (px - py) * TILE_W/2, that corner's sx exceeded the true maxX
+                // whenever wh > ww + wd (reachable at 4+ rack levels on a 1m x 0.5m bin),
+                // inflating bboxRef.maxX and loosening clampOffset's left bound. Must stay
+                // identical to the autoFit effect's list below — same eight corners.
+                [wx, wy, wh], [wx + ww, wy, wh], [wx + ww, wy + wd, wh], [wx, wy + wd, wh],
             ];
             for (const [px, py, pz] of corners) {
                 const { sx, sy } = project(px, py, pz, 1, flipped);
