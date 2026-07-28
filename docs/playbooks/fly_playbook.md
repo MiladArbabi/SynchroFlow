@@ -72,8 +72,12 @@ fly deploy --app synchroflow --no-cache
 The `fly.toml` `release_command` runs DB migrations before the new machine starts:
 ```toml
 [deploy]
-  release_command = "node /app/apps/backend/migrate-prod.mjs"
+  release_command = "node /app/apps/backend/dist/src/scripts/runMigrationsWithChecksum.js"
 ```
+
+> **Checksum drift guard (added 2026-07-28, CHECKSUM-GUARD-01):** this runner hashes every migration file and compares it against `migration_checksums`. If a file was amended after it ran, the release phase fails with `[MIGRATION_DRIFT_DETECTED]` instead of silently skipping the change (see PROD-ZONE1 for what happens without this guard). Previously `release_command` ran a bare `migrate-prod.mjs` with no drift detection — that file has been deleted.
+>
+> `migration_checksums` was empty in prod before this change. The **first** deploy after this switch establishes baselines for all ~127 existing migrations as-is — it does **not** retroactively detect drift that happened before this guard existed. A handful of other migrations are still suspected (not confirmed) to have drifted the same way `0048`/`0049` did; this guard only protects going forward from here.
 
 ---
 
