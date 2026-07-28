@@ -1,6 +1,26 @@
 import { Knex } from 'knex';
 
 /**
+ * ⚠️ DRIFT WARNING (added post DRIFT-AUDIT-01, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1) BEFORE
+ * FORCE ROW LEVEL SECURITY and the split select/write RLS policies
+ * were added to this file (2026-06-30, incident fix — a decision
+ * execution sat stuck in 'pending' for over an hour with no error).
+ * Knex marks this migration complete and will NEVER re-run it — so
+ * this file's current `up()` does NOT reflect what actually existed
+ * in prod before 2026-07-28.
+ *
+ * FORCE RLS and the split policies were backfilled into production
+ * separately via migration 0131
+ * (20260728160000_0131_fix_rls_policy_drift_commands_deq_returnjobs.ts).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * Use a new forward migration instead (rule 7).
+ */
+/**
+
+/**
  * decision_execution_queue
  * ------------------------
  * PURPOSE:
