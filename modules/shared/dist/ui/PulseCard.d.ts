@@ -44,5 +44,5 @@ export interface PulseCardProps {
     onRefresh?: () => void;
     variant?: 'card' | 'embedded';
 }
-export declare function PulseCard({ title, headline, rows, footerNote, footerCta, updatedAt, onRefresh, variant }: PulseCardProps): import("react/jsx-runtime").JSX.Element;
+export declare function PulseCard({ title, headline, rows, footerNote, footerCta, updatedAt, onRefresh, variant }: PulseCardProps): React.JSX.Element;
 //# sourceMappingURL=PulseCard.d.ts.map

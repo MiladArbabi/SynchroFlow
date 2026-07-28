@@ -24,6 +24,6 @@ interface BinCellProps {
     variant?: GridVariant;
     onClick?: (locationCode: string) => void;
 }
-export declare function BinCell({ locationCode, occupancy, isHighlighted, isSelected, isFocused, isDimmed, liveState, mode, variant, onClick, }: BinCellProps): import("react/jsx-runtime").JSX.Element;
+export declare function BinCell({ locationCode, occupancy, isHighlighted, isSelected, isFocused, isDimmed, liveState, mode, variant, onClick, }: BinCellProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=BinCell.d.ts.map

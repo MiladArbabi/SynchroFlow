@@ -20,5 +20,5 @@ export type ReorderTransitionListProps<TItem> = {
  * parent components often create new arrays on every render, and animating
  * from tiny layout deltas causes visual jitter in otherwise static lists.
  */
-export declare function ReorderTransitionList<TItem>({ items, getKey, renderItem, durationMs, easing, className, itemClassName, itemStyle, }: ReorderTransitionListProps<TItem>): import("react/jsx-runtime").JSX.Element;
+export declare function ReorderTransitionList<TItem>({ items, getKey, renderItem, durationMs, easing, className, itemClassName, itemStyle, }: ReorderTransitionListProps<TItem>): import("react").JSX.Element;
 //# sourceMappingURL=ReorderTransitionList.d.ts.map

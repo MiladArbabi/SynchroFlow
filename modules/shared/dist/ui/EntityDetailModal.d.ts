@@ -28,5 +28,5 @@ export interface EntityDetailModalProps {
     /** Default 'lg' — override only with a specific reason */
     maxWidth?: 'md' | 'lg' | 'xl';
 }
-export declare function EntityDetailModal({ entityId, onClose, title, subtitle, headerActions, isLoading, errorMessage, children, footerActions, maxWidth, }: EntityDetailModalProps): import("react/jsx-runtime").JSX.Element;
+export declare function EntityDetailModal({ entityId, onClose, title, subtitle, headerActions, isLoading, errorMessage, children, footerActions, maxWidth, }: EntityDetailModalProps): import("react").JSX.Element;
 //# sourceMappingURL=EntityDetailModal.d.ts.map

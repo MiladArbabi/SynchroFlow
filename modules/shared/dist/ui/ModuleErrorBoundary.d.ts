@@ -11,7 +11,7 @@ export declare class ModuleErrorBoundary extends React.Component<Props, State> {
     constructor(props: Props);
     static getDerivedStateFromError(error: Error): State;
     componentDidCatch(error: Error, info: React.ErrorInfo): void;
-    render(): import("react/jsx-runtime").JSX.Element;
+    render(): React.JSX.Element;
 }
 export {};
 //# sourceMappingURL=ModuleErrorBoundary.d.ts.map

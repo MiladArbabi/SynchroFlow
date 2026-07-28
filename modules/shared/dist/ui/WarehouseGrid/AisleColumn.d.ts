@@ -20,6 +20,6 @@ interface AisleColumnProps {
     variant?: GridVariant;
     onBinSelect?: (locationCode: string) => void;
 }
-export declare function AisleColumn({ aisleLabel, bins, occupancy, highlightedBins, focusedBins, selectedBin, liveActivity, mode, variant, onBinSelect, }: AisleColumnProps): import("react/jsx-runtime").JSX.Element;
+export declare function AisleColumn({ aisleLabel, bins, occupancy, highlightedBins, focusedBins, selectedBin, liveActivity, mode, variant, onBinSelect, }: AisleColumnProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=AisleColumn.d.ts.map

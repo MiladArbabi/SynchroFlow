@@ -5,5 +5,5 @@ export interface PickPathOverlayProps {
     allBins: Map<string, string[]>;
     variant?: GridVariant;
 }
-export declare function PickPathOverlay({ pickPath, allBins, variant }: PickPathOverlayProps): import("react/jsx-runtime").JSX.Element | null;
+export declare function PickPathOverlay({ pickPath, allBins, variant }: PickPathOverlayProps): import("react").JSX.Element | null;
 //# sourceMappingURL=PickPathOverlay.d.ts.map
