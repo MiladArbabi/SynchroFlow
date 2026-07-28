@@ -1,5 +1,24 @@
 import type { Knex } from "knex";
 
+/**
+ * ⚠️ DRIFT WARNING (added post DRIFT-AUDIT-01, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1) BEFORE
+ * 'address_corrected' was added to fulfillment_status_type
+ * (2026-07-02, OF-08/OF-11 shipping-address correction feature).
+ * Knex marks this migration complete and will NEVER re-run it — so
+ * this file's current `up()` does NOT reflect what actually existed
+ * in prod before 2026-07-28.
+ *
+ * The missing enum value was backfilled into production separately
+ * via migration 0133
+ * (20260728180000_0133_backfill_enum_values_fulfillment_stow.ts).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * Use a new forward migration instead (rule 7). Note Postgres does
+ * not support removing enum values, so any future addition should
+ * also go in a new forward migration, not here.
+ */
 export async function up(knex: Knex): Promise<void> {
 
   // 1️⃣ Create native enum safely
