@@ -1,5 +1,21 @@
 import { Knex } from 'knex';
 
+/**
+ * ⚠️ DRIFT WARNING (added post DRIFT-AUDIT-01, 2026-07-28)
+ * -----------------------------------------------------
+ * This migration ran in production on 2026-06-18 (batch 1) BEFORE
+ * moq and lead_time_days were added to this file. Knex marks this
+ * migration complete and will NEVER re-run it — so this file's
+ * current `up()` does NOT reflect what actually existed in prod
+ * before 2026-07-28.
+ *
+ * Both columns were backfilled into production separately via
+ * migration 0132
+ * (20260728170000_0132_backfill_missing_columns_suppliers_shopopsettings.ts).
+ *
+ * DO NOT amend this file's `up()` again expecting it to affect prod.
+ * Use a new forward migration instead (rule 7).
+ */
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('suppliers', (table) => {
     table.increments('id').primary();
