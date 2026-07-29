@@ -80,16 +80,19 @@ export async function up(knex: Knex): Promise<void> {
       OR current_setting('app.current_tenant', true) IN ('', '0')
       OR current_setting('app.current_tenant', true) IS NULL);
   `);
-  await knex.raw(`
+   await knex.raw(`
     CREATE POLICY shop_module_entitlements_write_policy
     ON shop_module_entitlements FOR ALL
-    USING (true) WITH CHECK (true);
+    USING (shop_id = current_setting('app.current_tenant', true)::int)
+    WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
   `);
 
   /**
-   * NOTE:
-   * Direct enforcement via shop_id
-   * Prevents cross-tenant entitlement leakage
+   * NOTE: Direct shop_id enforcement on both SELECT and ALL-command
+   * policies. USING (true) was the prior state — it overrode the scoped
+   * SELECT policy (PostgreSQL OR's policies per command) and exposed all
+   * entitlements to every tenant. All write call sites already use
+   * withTenant(), so no pre-tenant write access is lost. See OV-29-A.
    */
 }
 
