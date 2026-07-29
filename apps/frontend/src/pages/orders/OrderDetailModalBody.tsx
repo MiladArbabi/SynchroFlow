@@ -353,6 +353,7 @@ export function OrderDetailModalBody({
   onNavigateToOrder,
   onFooterReady,
   onPriorityFlag,
+  onClose,
 }: {
   orderId: string;
   onTitleReady: (title: string) => void;
@@ -376,6 +377,8 @@ export function OrderDetailModalBody({
    * at top of pool with a Priority badge).
    */
   onPriorityFlag?: (orderIds: string[], flagged: boolean) => Promise<void>;
+  /** OV-22: called before navigate so the Dialog unmounts before the new route mounts. */
+  onClose?: () => void;
 }) {
   const { data, isLoading, isError, error } = useOrderDecision(orderId);
   const navigate = useNavigate();
@@ -503,14 +506,14 @@ export function OrderDetailModalBody({
           variant="outlined"
           size="small"
           endIcon={<ArrowRight size={14} />}
-          onClick={() => navigate('/orders/flow')}
+          onClick={() => { onClose?.(); navigate('/orders/flow'); }}
           sx={{ flex: '0 1 auto', minWidth: 140, borderColor: 'var(--accent-border)', color: 'var(--accent)', textTransform: 'none' }}
         >
           Go to order flow
         </Button>
       </Box>
     );
-  }, [hasAnyActiveConstraint, order?.warehouseStatus, isPrioritizing, prioritized, onPriorityFlag, orderId, navigate]);
+  }, [hasAnyActiveConstraint, order?.warehouseStatus, prioritized, isPrioritizing, onPriorityFlag, orderId, onClose, navigate]);
   const showInventoryResolvedBanner = !hasActiveInventoryConstraint && isSuccess;
 
   useEffect(() => {

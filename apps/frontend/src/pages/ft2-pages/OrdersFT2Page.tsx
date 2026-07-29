@@ -122,13 +122,14 @@ export default function OrdersFT2Page() {
       >
         {selectedOrderId && (
           <OrderDetailModalBody
-            orderId={selectedOrderId}
-            onTitleReady={setModalTitle}
-            onSubtitleReady={setModalSubtitle}
-            onNavigateToOrder={setSelectedOrderId}
-            onFooterReady={setModalFooter}
-            onPriorityFlag={onPriorityFlag}
-          />
+              orderId={selectedOrderId}
+              onTitleReady={setModalTitle}
+              onSubtitleReady={setModalSubtitle}
+              onNavigateToOrder={setSelectedOrderId}
+              onFooterReady={setModalFooter}
+              onPriorityFlag={onPriorityFlag}
+              onClose={() => setSelectedOrderId(null)}
+            />
         )}
       </EntityDetailModal>
     </>
