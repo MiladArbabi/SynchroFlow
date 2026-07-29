@@ -80,7 +80,7 @@ export async function up(knex: Knex): Promise<void> {
       OR current_setting('app.current_tenant', true) IN ('', '0')
       OR current_setting('app.current_tenant', true) IS NULL);
   `);
-   await knex.raw(`
+  await knex.raw(`
     CREATE POLICY shop_module_entitlements_write_policy
     ON shop_module_entitlements FOR ALL
     USING (true) WITH CHECK (true);
@@ -90,12 +90,6 @@ export async function up(knex: Knex): Promise<void> {
    * NOTE:
    * Direct enforcement via shop_id
    * Prevents cross-tenant entitlement leakage
-   *
-   * OV-29-A: USING (true) was the original state here. The write policy
-   * was tightened via forward migration 0135 which converges all
-   * existing databases. This base file is kept at its original value so
-   * the production checksum is not invalidated. Fresh installs get
-   * the open policy here, then 0135 immediately tightens it.
    */
 }
 
