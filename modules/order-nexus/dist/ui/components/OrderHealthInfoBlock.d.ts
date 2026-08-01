@@ -7,4 +7,4 @@ export interface OrderHealthInfoBlockProps {
     pending_payment: number;
     exception_orders: number;
 }
-export declare function OrderHealthInfoBlock(props: OrderHealthInfoBlockProps): import("react/jsx-runtime").JSX.Element;
+export declare function OrderHealthInfoBlock(props: OrderHealthInfoBlockProps): import("react").JSX.Element;

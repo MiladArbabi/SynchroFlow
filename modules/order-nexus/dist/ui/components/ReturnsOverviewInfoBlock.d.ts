@@ -4,5 +4,5 @@ type ReturnsOverviewInfoBlockProps = {
     returnedUnits: number | null;
     affectedOrders: number | null;
 };
-export declare function ReturnsOverviewInfoBlock({ returnedRevenue, returnedUnits, affectedOrders, }: ReturnsOverviewInfoBlockProps): import("react/jsx-runtime").JSX.Element;
+export declare function ReturnsOverviewInfoBlock({ returnedRevenue, returnedUnits, affectedOrders, }: ReturnsOverviewInfoBlockProps): import("react").JSX.Element;
 export {};

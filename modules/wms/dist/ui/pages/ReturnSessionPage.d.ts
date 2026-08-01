@@ -41,5 +41,5 @@ export interface ReturnSessionPageProps {
     onCompleteReturnJob: (returnJobId: string, input: CompleteReturnJobInput) => Promise<void>;
     onComplete: () => void;
 }
-export default function ReturnSessionPage({ returnJobId, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, onComplete, }: ReturnSessionPageProps): import("react/jsx-runtime").JSX.Element;
+export default function ReturnSessionPage({ returnJobId, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, onComplete, }: ReturnSessionPageProps): import("react").JSX.Element;
 //# sourceMappingURL=ReturnSessionPage.d.ts.map

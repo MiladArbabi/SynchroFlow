@@ -76,5 +76,5 @@ export interface PickSessionPageProps {
     onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
     onPickComplete: () => Promise<void>;
 }
-export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, }: PickSessionPageProps): import("react/jsx-runtime").JSX.Element | null;
+export default function PickSessionPage({ pickBatchId, lineItems, onComplete, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, }: PickSessionPageProps): import("react").JSX.Element | null;
 //# sourceMappingURL=PickSessionPage.d.ts.map

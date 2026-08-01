@@ -14,5 +14,5 @@ type RevenueOverviewInfoBlockProps = {
         pending: number | null;
     };
 };
-export declare function RevenueOverviewInfoBlock({ span, revenue, }: RevenueOverviewInfoBlockProps): import("react/jsx-runtime").JSX.Element;
+export declare function RevenueOverviewInfoBlock({ span, revenue, }: RevenueOverviewInfoBlockProps): import("react").JSX.Element;
 export {};

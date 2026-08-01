@@ -25,5 +25,5 @@ type ObligationOverviewInfoBlockProps = {
  * No prioritization.
  * No guidance.
  */
-export declare function ObligationOverviewInfoBlock({ obligations, }: ObligationOverviewInfoBlockProps): import("react/jsx-runtime").JSX.Element;
+export declare function ObligationOverviewInfoBlock({ obligations, }: ObligationOverviewInfoBlockProps): import("react").JSX.Element;
 export {};

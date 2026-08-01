@@ -16,4 +16,4 @@ export interface OperationalSignalsSectionProps {
  *
  * All rendered using FT2SignalBanner.
  */
-export declare function OperationalSignalsSection({ signals, queues, onSignalAction, onQueueAction }: OperationalSignalsSectionProps): import("react/jsx-runtime").JSX.Element;
+export declare function OperationalSignalsSection({ signals, queues, onSignalAction, onQueueAction }: OperationalSignalsSectionProps): import("react").JSX.Element;

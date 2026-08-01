@@ -28,5 +28,5 @@ export interface BarcodeScanSurfaceProps {
     enabled?: boolean;
     hint?: string;
 }
-export declare function BarcodeScanSurface({ onScan, enabled, hint, }: BarcodeScanSurfaceProps): import("react/jsx-runtime").JSX.Element;
+export declare function BarcodeScanSurface({ onScan, enabled, hint, }: BarcodeScanSurfaceProps): import("react").JSX.Element;
 //# sourceMappingURL=BarcodeScanSurface.d.ts.map

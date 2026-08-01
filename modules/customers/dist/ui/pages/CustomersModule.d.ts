@@ -15,4 +15,4 @@
 export interface CustomersModuleProps {
     sessionsObserved: number | null;
 }
-export default function CustomersModule(props: CustomersModuleProps): import("react/jsx-runtime").JSX.Element;
+export default function CustomersModule(props: CustomersModuleProps): import("react").JSX.Element;

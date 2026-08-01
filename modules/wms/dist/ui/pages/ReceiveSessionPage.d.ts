@@ -38,5 +38,5 @@ export interface ReceiveSessionPageProps {
     } | null>;
     onPrintUnitLabels?: (receiveJobLineId: string) => Promise<void>;
 }
-export default function ReceiveSessionPage({ receiveJobId, supplierName, lines, onInspectLine, onReportException, onCloseJob, onComplete, onResolveBarcode, onPrintUnitLabels, }: ReceiveSessionPageProps): import("react/jsx-runtime").JSX.Element;
+export default function ReceiveSessionPage({ receiveJobId, supplierName, lines, onInspectLine, onReportException, onCloseJob, onComplete, onResolveBarcode, onPrintUnitLabels, }: ReceiveSessionPageProps): import("react").JSX.Element;
 //# sourceMappingURL=ReceiveSessionPage.d.ts.map

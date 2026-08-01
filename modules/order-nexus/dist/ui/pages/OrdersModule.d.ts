@@ -23,4 +23,4 @@ export interface OrdersModuleProps {
     missingCostCount: number;
     onIntent?: (intent: OrderNexusUiIntent) => void;
 }
-export default function OrdersModule(props: OrdersModuleProps): import("react/jsx-runtime").JSX.Element;
+export default function OrdersModule(props: OrdersModuleProps): import("react").JSX.Element;

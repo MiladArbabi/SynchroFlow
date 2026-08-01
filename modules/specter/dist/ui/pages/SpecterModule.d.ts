@@ -13,4 +13,4 @@ export interface SpecterModuleProps {
  * - No lifecycle awareness
  * - One scenario → one card
  */
-export default function SpecterModule(props: SpecterModuleProps): import("react/jsx-runtime").JSX.Element;
+export default function SpecterModule(props: SpecterModuleProps): import("react").JSX.Element;

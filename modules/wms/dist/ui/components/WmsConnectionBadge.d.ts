@@ -11,6 +11,6 @@ interface WmsConnectionBadgeProps {
     isOnline: boolean;
     queuedCount: number;
 }
-export declare function WmsConnectionBadge({ isOnline, queuedCount }: WmsConnectionBadgeProps): import("react/jsx-runtime").JSX.Element;
+export declare function WmsConnectionBadge({ isOnline, queuedCount }: WmsConnectionBadgeProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=WmsConnectionBadge.d.ts.map

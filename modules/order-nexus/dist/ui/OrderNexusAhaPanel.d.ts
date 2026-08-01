@@ -1,3 +1,4 @@
+import React from 'react';
 import { OrderNexusUiIntent } from './intents.js';
 interface OrderNexusAhaSummary {
     hasRisk: boolean;
@@ -8,5 +9,5 @@ interface OrderNexusAhaPanelProps {
     summary: OrderNexusAhaSummary;
     onIntent: (intent: OrderNexusUiIntent) => void;
 }
-export declare function OrderNexusAhaPanel({ summary, onIntent, }: OrderNexusAhaPanelProps): import("react/jsx-runtime").JSX.Element | null;
+export declare function OrderNexusAhaPanel({ summary, onIntent, }: OrderNexusAhaPanelProps): React.JSX.Element | null;
 export {};

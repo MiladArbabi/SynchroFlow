@@ -12,4 +12,4 @@ export type SpecterDiagnosticCardProps = {
  *
  * MUST mirror OrderNexusDiagnosticCard exactly.
  */
-export declare function SpecterDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: SpecterDiagnosticCardProps): import("react/jsx-runtime").JSX.Element;
+export declare function SpecterDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: SpecterDiagnosticCardProps): import("react").JSX.Element;

@@ -16,4 +16,4 @@ export type OrderNexusDiagnosticCardProps = {
  * - No lifecycle awareness
  * - One message, one optional CTA
  */
-export declare function OrderNexusDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: OrderNexusDiagnosticCardProps): import("react/jsx-runtime").JSX.Element;
+export declare function OrderNexusDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: OrderNexusDiagnosticCardProps): import("react").JSX.Element;

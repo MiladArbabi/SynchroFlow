@@ -9,4 +9,4 @@ export interface RevenueIntegrityInfoBlockProps {
     revenue_leakage: number;
     avg_contribution_margin_pct: number;
 }
-export declare function RevenueIntegrityInfoBlock({ span, at_risk_revenue, revenue_leakage, avg_contribution_margin_pct, }: RevenueIntegrityInfoBlockProps): import("react/jsx-runtime").JSX.Element;
+export declare function RevenueIntegrityInfoBlock({ span, at_risk_revenue, revenue_leakage, avg_contribution_margin_pct, }: RevenueIntegrityInfoBlockProps): import("react").JSX.Element;

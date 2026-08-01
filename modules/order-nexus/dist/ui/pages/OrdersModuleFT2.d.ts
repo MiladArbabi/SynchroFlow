@@ -103,4 +103,4 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
     } | null;
     currency?: CurrencyContext;
 }
-export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps): import("react/jsx-runtime").JSX.Element;
+export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps): import("react").JSX.Element;

@@ -251,5 +251,5 @@ export type PackFreeScanApiResponse = PackFreeScanResult | {
     error: string;
     message: string;
 };
-export default function WmsModuleFT2(props: WmsModuleFT2Props): import("react/jsx-runtime").JSX.Element;
+export default function WmsModuleFT2(props: WmsModuleFT2Props): import("react").JSX.Element;
 //# sourceMappingURL=WmsModuleFT2.d.ts.map

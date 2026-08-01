@@ -51,5 +51,5 @@ export interface PackSessionPageProps {
     onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
     onComplete: () => void;
 }
-export default function PackSessionPage({ initialFreeScanResult, onPackFreeScan, onPackCountConfirm, onPrintInvoice, onPrintLabel, onCreateProblemTask, onComplete, }: PackSessionPageProps): import("react/jsx-runtime").JSX.Element;
+export default function PackSessionPage({ initialFreeScanResult, onPackFreeScan, onPackCountConfirm, onPrintInvoice, onPrintLabel, onCreateProblemTask, onComplete, }: PackSessionPageProps): import("react").JSX.Element;
 //# sourceMappingURL=PackSessionPage.d.ts.map

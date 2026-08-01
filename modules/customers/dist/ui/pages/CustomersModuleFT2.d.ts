@@ -43,4 +43,4 @@ export interface CustomersModuleFT2Props {
     /** CURRENCY LAYER 3 — pass from EntitlementsContext, never hardcode */
     currency?: CurrencyContext;
 }
-export default function CustomersModuleFT2(props: CustomersModuleFT2Props): import("react/jsx-runtime").JSX.Element;
+export default function CustomersModuleFT2(props: CustomersModuleFT2Props): import("react").JSX.Element;

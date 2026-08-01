@@ -49,5 +49,5 @@ export interface StowSessionPageProps {
         lasyncro_unit_id?: string;
     }) => Promise<StowExceptionResult>;
 }
-export default function StowSessionPage({ initialTaskId, onComplete, onFetchTasks, onResolveLocation, onAssignLocation, onClaimTask, onResolveBarcode, onConfirmStow, onReportException, }: StowSessionPageProps): import("react/jsx-runtime").JSX.Element | null;
+export default function StowSessionPage({ initialTaskId, onComplete, onFetchTasks, onResolveLocation, onAssignLocation, onClaimTask, onResolveBarcode, onConfirmStow, onReportException, }: StowSessionPageProps): import("react").JSX.Element | null;
 //# sourceMappingURL=StowSessionPage.d.ts.map
