@@ -327,3 +327,19 @@ First fix attempt placed the install-detection check inside the app.get(*) catch
 Live-verified against production: a request to / with shop and hmac params now reaches handleShopifyInstall and correctly returns 401 for an invalid signature (previously returned 200 with the SPA HTML). Confirmed no regression on /overview, /login, and plain / with no query params, which all still return 200 and serve the SPA correctly.
 
 This closes the last known gap in the real App Store install path — the ghost-shop-creation and billing_provider stamping logic (SHB-01/03/04/18) is now actually reachable by a genuine Shopify-initiated install, not just correct in isolation.
+
+### Reviewer account — actual state (verified 2026-08-02)
+
+`contact@lasyncro.com` lives on **shop_id 1 ("Shopify's Shop")** — the general
+dev tenant — on **Scale** tier. This is the account Shopify reviewers log into.
+
+`apps/backend/src/scripts/seed_reviewer.ts` creates a *different* tenant,
+shop_id 8 ("LaSyncro Demo Store"), which has **0 users and is unreachable**.
+The script's existing-user check is `SELECT * FROM users WHERE email = ?` with
+no `shop_id` filter, so it matched the shop-1 user, skipped the insert, and
+left shop 8 with a floor plan and entitlements but nobody who can log in.
+The script also provisions Growth, not Scale.
+
+**Consequence:** the reviewer seed script has never produced a usable tenant.
+Any reviewer-facing data work must target shop 1. Fix the email lookup to
+`WHERE email = ? AND shop_id = ?` before that script is used for anything.
