@@ -44,6 +44,7 @@ import { usePickExceptionsForOrder, useResolvePickException } from './usePickExc
 import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { useUpdateShippingAddress } from './useShippingAddress';
 import type { OrderShipping } from './useOrderDetail';
+import { useCurrency } from '../../hooks/useCurrency';
 
 const ACTION_LABELS: Record<string, string> = {
   proceed_fulfillment: 'Proceed to ship',
@@ -56,9 +57,10 @@ function getActionLabel(actionType: string): string {
   return ACTION_LABELS[actionType] ?? 'Take action';
 }
 
-function formatCurrency(amount: number, currency: string) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
-}
+// OV-103: local formatCurrency removed — it hardcoded the 'en-US' locale, so
+// even calls passing order.currency rendered with US grouping and symbol
+// placement. Line items use transaction currency (order.currency); aggregates
+// across orders use the shop's display currency. See useCurrency's docstring.
 
 function formatWarehouseStatus(status: string | null): string {
   if (!status) return 'In pool';
@@ -128,10 +130,17 @@ function useCachedConstrainedRow(orderId: string): ConstrainedOrder | undefined 
  * margin) so the operator never has to go back to the list to re-derive
  * why this order mattered.
  */
-function buildUrgencySubtitle(row: ConstrainedOrder | undefined): string | undefined {
+// OV-103: format is injected rather than imported — this is a plain function,
+// not a component, so it cannot call useCurrency itself. The caller (line 526)
+// is inside the component and supplies it. row.revenue aggregates across
+// orders, so this is display currency, not the order's own.
+function buildUrgencySubtitle(
+  row: ConstrainedOrder | undefined,
+  format: (n: number | null | undefined, opts?: { currency?: string }) => string,
+): string | undefined {
   if (!row) return undefined;
   const parts: string[] = [];
-  if (row.revenue != null) parts.push(`${formatCurrency(row.revenue, 'USD')} at stake`);
+  if (row.revenue != null) parts.push(`${format(row.revenue)} at stake`);
   const proximity = getSlaProximity(row);
   if (proximity === 'breached') parts.push(`SLA breached · ${getAgeLabel(row)} past`);
   else if (proximity === 'warning') parts.push(`Approaching SLA · ${getAgeLabel(row)} old`);
@@ -382,6 +391,7 @@ export function OrderDetailModalBody({
 }) {
   const { data, isLoading, isError, error } = useOrderDecision(orderId);
   const navigate = useNavigate();
+  const { format } = useCurrency();
   // FIX (2026-07-01): 404 is now an expected, good response from
   // httpGetOrderDecision after the status-filter fix — it means "no
   // active decision for this order" (fully resolved, or calmly sitting
@@ -523,8 +533,8 @@ export function OrderDetailModalBody({
   }, [order, orderId, onTitleReady]);
 
   useEffect(() => {
-    onSubtitleReady(buildUrgencySubtitle(cachedRow));
-  }, [cachedRow, onSubtitleReady]);
+    onSubtitleReady(buildUrgencySubtitle(cachedRow, format));
+  }, [cachedRow, format, onSubtitleReady]);
 
   useEffect(() => {
     onFooterReady(footerContent);
@@ -603,7 +613,7 @@ export function OrderDetailModalBody({
                   <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{item.sku ?? 'No SKU'} · qty {item.quantity}</Typography>
                 </Box>
                 <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                  {formatCurrency(item.line_total, order.currency)}
+                  {format(item.line_total, { currency: order.currency })}
                 </Typography>
               </Box>
             ))}
@@ -646,16 +656,16 @@ export function OrderDetailModalBody({
             </Typography>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
               <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Subtotal</Typography>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{formatCurrency(order.subtotal, order.currency)}</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.subtotal, { currency: order.currency })}</Typography>
             </Box>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
               <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Tax</Typography>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{formatCurrency(order.tax, order.currency)}</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.tax, { currency: order.currency })}</Typography>
             </Box>
             {/* Shipping line intentionally omitted — GH-1032, no reliable source yet */}
             <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
               <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Total</Typography>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{formatCurrency(order.total, order.currency)}</Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{format(order.total, { currency: order.currency })}</Typography>
             </Box>
 
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.75 }}>
@@ -731,14 +741,14 @@ export function OrderDetailModalBody({
             <Box sx={{ mt: 1.5, p: 1.25, bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', borderRadius: '8px' }}>
               <Typography sx={{ fontSize: 12.5, color: 'var(--ink-2)', mb: 1 }}>
                 {similarOrders.length} other order{similarOrders.length === 1 ? '' : 's'} share this exact issue —{' '}
-                {formatCurrency(similarOrders.reduce((sum, o) => sum + Number(o.revenue ?? 0), 0), 'USD')} combined at stake
+                {format(similarOrders.reduce((sum, o) => sum + Number(o.revenue ?? 0), 0))} combined at stake
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                 {similarOrders.slice(0, 5).map((o) => (
                   <Box key={o.order_id} onClick={() => onNavigateToOrder(o.order_id)}
                     sx={{ display: 'flex', justifyContent: 'space-between', px: 1, py: 0.5, borderRadius: '6px', cursor: 'pointer', '&:hover': { bgcolor: 'var(--accent-border)' } }}>
                     <Typography sx={{ fontSize: 12, color: 'var(--ink)' }}>#{o.external_order_id ?? o.order_id.slice(0, 8).toUpperCase()}</Typography>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{o.revenue != null ? formatCurrency(o.revenue, 'USD') : '—'}</Typography>
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{o.revenue != null ? format(o.revenue) : '—'}</Typography>
                   </Box>
                 ))}
                 {similarOrders.length > 5 && (

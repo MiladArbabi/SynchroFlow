@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { useAuth } from 'contexts/AuthContext';
+import { useCurrency } from 'hooks/useCurrency';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import AlertRulesPanel from 'components/AlertRulesPanel';
 import {
@@ -143,10 +144,10 @@ function relativeAge(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-function formatCurrency(value: number): string {
-  if (value >= 1000) return `$${Math.round(value / 1000)}k`;
-  return `$${Math.round(value).toLocaleString()}`;
-}
+// OV-103: local formatCurrency removed — it hardcoded '$' and bypassed Intl
+// entirely, so every alert figure rendered in USD with US grouping regardless
+// of the shop's currency. All monetary display now routes through useCurrency.
+// Both call sites are cross-order aggregates, so they use display currency.
 
 function tabFromPath(pathname: string): AlertStatus {
   if (pathname.startsWith('/alerts/snoozed'))  return 'snoozed';
@@ -204,6 +205,7 @@ function SeverityBadge({ severity, acknowledged }: {
 function AlertsPulseStrip({ alerts }: { alerts: Alert[] }) {
   const pal   = useAppTheme();
   const theme = useTheme();
+  const { formatCompact } = useCurrency();
 
   const criticalCount = alerts.filter(a => a.severity === 'critical').length;
   const totalAtRisk   = alerts.reduce((s, a) => s + Number(a.revenue_impact ?? 0), 0);
@@ -252,7 +254,7 @@ function AlertsPulseStrip({ alerts }: { alerts: Alert[] }) {
       />
       <StatCard
         label="$ at risk" icon={TrendingDown}
-        value={totalAtRisk > 0 ? formatCurrency(totalAtRisk) : '—'}
+        value={totalAtRisk > 0 ? formatCompact(totalAtRisk) : '—'}
         sub={totalAtRisk > 0 ? 'blocked revenue' : 'None at risk'}
         valueColor={totalAtRisk > 5000 ? theme.palette.error.main : undefined}
       />
@@ -364,6 +366,7 @@ function AlertCard({ alert, isOwner, currentUserId, readOnly = false }: {
   const pal   = useAppTheme();
   const theme = useTheme();
   const nav   = useNavigate();
+  const { formatCompact } = useCurrency();
 
   const { mutate: acknowledge, isPending: ackPending }    = useAcknowledgeAlert();
   const { mutate: snooze,      isPending: snoozePending } = useSnoozeAlert();
@@ -419,7 +422,7 @@ function AlertCard({ alert, isOwner, currentUserId, readOnly = false }: {
               fontVariantNumeric: 'tabular-nums',
               color: alert.severity === 'critical' ? theme.palette.error.main : pal.ink3,
             }}>
-              {formatCurrency(revenue)}
+              {formatCompact(revenue)}
             </Typography>
           )}
         </Box>
