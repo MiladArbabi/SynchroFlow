@@ -17,10 +17,21 @@
 import db from '@lasyncro/backend-core/db.js';
 
 export interface OverviewPulse {
-  /** Today's gross revenue (revenue_projection_daily, latest date). */
-  revenueToday: number | null;
-  /** Delta vs the prior day's gross revenue. Null if no prior day. */
-  revenueDeltaVsYesterday: number | null;
+  /**
+   * OV-122: gross revenue for the CURRENT date specifically — 0 when there
+   * were no sales today. Previously this returned the latest available row
+   * regardless of its date, so a shop with no recent orders saw stale figures
+   * labelled "today" (the reviewer account displayed 45-day-old revenue).
+   * A day with no sales is a real and unremarkable state; showing 0 is
+   * accurate, whereas showing an old number is not.
+   */
+  revenueToday: number;
+  /**
+   * Delta vs the immediately preceding calendar day (also 0 when absent).
+   * Both operands are now anchored to explicit dates, so this can no longer
+   * compare two non-consecutive days that merely happen to be adjacent rows.
+   */
+  revenueDeltaVsYesterday: number;
   /** Revenue already collected/realized today (opctl). */
   collectedRevenue: number | null;
   /** Revenue exposed but not yet lost (opctl). */
@@ -39,24 +50,30 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
     // This function owns its queries and therefore owns its own tenant context.
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+    // OV-122: query the two specific calendar dates rather than the two most
+    // recent rows. Missing row = no sales that day = 0, not "unknown".
+    /**
+     * OV-122: Postgres labels the rows, not JS. A DATE column comes back as
+     * local midnight, so new Date(...).toISOString() shifts it into the
+     * previous day for any timezone east of UTC — building map keys that way
+     * silently mismatched every row (Stockholm is UTC+2 in summer).
+     * Comparing dates in SQL keeps a single source of truth for "today".
+     */
     const revenueRows = await trx('revenue_projection_daily')
       .where({ shop_id: shopId })
-      .orderBy('revenue_date', 'desc')
-      .limit(2)
-      .select('revenue_date', 'gross_revenue');
+      .whereRaw(`revenue_date IN (CURRENT_DATE, CURRENT_DATE - INTERVAL '1 day')`)
+      .select(
+        trx.raw(`(revenue_date = CURRENT_DATE) as is_today`),
+        'gross_revenue'
+      );
 
-  const revenueToday =
-    revenueRows[0]?.gross_revenue != null
-      ? Number(revenueRows[0].gross_revenue)
-      : null;
-  const revenueYesterday =
-    revenueRows[1]?.gross_revenue != null
-      ? Number(revenueRows[1].gross_revenue)
-      : null;
-  const revenueDeltaVsYesterday =
-    revenueToday != null && revenueYesterday != null
-      ? revenueToday - revenueYesterday
-      : null;
+  const revenueToday = Number(
+    revenueRows.find((r: { is_today: boolean }) => r.is_today)?.gross_revenue ?? 0
+  );
+  const revenueYesterday = Number(
+    revenueRows.find((r: { is_today: boolean }) => !r.is_today)?.gross_revenue ?? 0
+  );
+  const revenueDeltaVsYesterday = revenueToday - revenueYesterday;
 
    // --- Operational revenue control: latest snapshot_date row ---
    const opctl = await trx('orders_operational_control_snapshot')
