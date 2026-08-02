@@ -115,6 +115,14 @@ interface BoxProps {
   focusTone?: FocusTone;
   isFrame: boolean;
   isDimmed?: boolean;
+  /**
+   * FP-214: warehouse_locations.active = false. Distinct from isDimmed —
+   * isDimmed is transient view state (filter rail, focus overlay) and clears
+   * when the user changes filters; isInactive is persisted zone state and
+   * must survive every view change. Rendered at higher opacity than dimming
+   * plus a dashed outline so the two are never confused.
+   */
+  isInactive?: boolean;
   label: string;
   rackLevels: number | null;
   zoom: number;
@@ -122,7 +130,7 @@ interface BoxProps {
   onClick: () => void;
 }
 
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }: BoxProps) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }: BoxProps) {
   const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
   const selStroke  = 'var(--accent)';
@@ -172,7 +180,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
 
   return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
-    <g onClick={onClick} style={{ cursor: 'pointer' }} opacity={isDimmed ? 0.25 : 1}>
+    <g onClick={onClick} style={{ cursor: 'pointer' }} opacity={isDimmed ? 0.25 : isInactive ? 0.4 : 1}>
       {/* Left and right faces are now rendered as per-level slices below.
           Full-height polygons removed to avoid double-painting over level bands. */}
       {/* Top face */}
@@ -181,6 +189,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
         fill={fill}
         stroke={isSelected ? selStroke : stroke}
         strokeWidth={isSelected ? 2 : 1}
+        strokeDasharray={isInactive ? '3 2' : undefined}
         opacity={isFlat ? 0.6 : 1}
       />
       {/* Selection highlight */}
@@ -682,9 +691,12 @@ export function IsometricCanvas({
             const wh = isFrame ? 0 : (rackLevels ?? 1) * LEVEL_HEIGHT;
             const colorKey = isFrame ? zone.type : (zone.zone_type ?? 'storage');
             // Occupancy fraction: bins only. Capacity = rack_levels × 10 units (fallback 10).
-            const occ = !isFrame && occupancy ? occupancy[zone.location_code] : undefined;
+            // FP-214: inactive zones are excluded from occupancy heat. A
+            // decommissioned bin colouring as 85%-full red is contradictory —
+            // it is out of service, so it reports no stock signal.
+            const occ = !isFrame && zone.active && occupancy ? occupancy[zone.location_code] : undefined;
             const capacity = (zone.rack_levels ?? 1) * 10;
-            const occupancyFraction = !isFrame && occupancy
+            const occupancyFraction = !isFrame && zone.active && occupancy
               ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
               : undefined;
             const activity = liveActivity?.[zone.location_code];
@@ -720,6 +732,7 @@ export function IsometricCanvas({
                       : undefined
                   }
                   isFrame={isFrame}
+                  isInactive={!zone.active}
                   label={zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code}
                   rackLevels={rackLevels}
                   zoom={zoom}
@@ -986,6 +999,7 @@ export function IsometricZoneView({ zone, width = 120, height = 90 }: IsometricZ
           colorKey={colorKey}
           isSelected={false}
           isFrame={isFrame}
+          isInactive={!zone.active}
           label={zone.location_code}
           rackLevels={zone.rack_levels ?? null}
           zoom={zoom}

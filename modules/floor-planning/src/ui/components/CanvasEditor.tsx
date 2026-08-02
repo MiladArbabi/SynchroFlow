@@ -1167,11 +1167,19 @@ export function CanvasEditor({
                           <rect x="-2" y="-2" width={pw + 4} height={ph + 4} rx="5"
                             fill="none" stroke="var(--accent)" strokeWidth="2" opacity="0.5" strokeDasharray="4 2" />
                         )}
+                        {/* FP-214: three states — saving (0.5), inactive (0.35 + dashed),
+                            normal (1). Saving already owned 0.5, so inactive uses a lower
+                            value plus a dashed stroke to stay distinguishable mid-save. */}
                         <rect x="0" y="0" width={pw} height={ph} rx="3"
                           fill={fill}
                           stroke={isSelected ? 'var(--accent)' : stroke}
                           strokeWidth={isSelected ? 1.5 : 1}
-                          opacity={savingRef.current.has(zone.location_code) ? 0.5 : 1} />
+                          strokeDasharray={zone.active === false ? '4 3' : undefined}
+                          opacity={
+                            savingRef.current.has(zone.location_code) ? 0.5
+                            : zone.active === false ? 0.35
+                            : 1
+                          } />
                         {/* Frame label bar — always visible sticky tab at top of lane/warehouse/shelf */}
                         {(zone.type === 'lane' || zone.type === 'warehouse' || zone.type === 'shelf') ? (
                           <>

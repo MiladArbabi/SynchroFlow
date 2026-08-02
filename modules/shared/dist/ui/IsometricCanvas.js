@@ -71,7 +71,7 @@ function project(wx, wy, wz, zoom, flipped = false) {
 function pts(...coords) {
     return coords.map(c => `${c.sx.toFixed(1)},${c.sy.toFixed(1)}`).join(' ');
 }
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }) {
     const baseFill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
     const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
     const selStroke = 'var(--accent)';
@@ -113,7 +113,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
     const isFlat = wh < 0.01;
     return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
-    _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed ? 0.25 : 1, children: [_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: fill, stroke: isSelected ? selStroke : stroke, strokeWidth: isSelected ? 2 : 1, opacity: isFlat ? 0.6 : 1 }), isSelected && (_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
+    _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed ? 0.25 : isInactive ? 0.4 : 1, children: [_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: fill, stroke: isSelected ? selStroke : stroke, strokeWidth: isSelected ? 2 : 1, strokeDasharray: isInactive ? '3 2' : undefined, opacity: isFlat ? 0.6 : 1 }), isSelected && (_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
                 const centre = project(wx + ww / 2, wy + wd / 2, wh + 0.05, zoom, flipped);
                 const fontSize = Math.max(7, Math.min(10, TILE_W * zoom * ww * 0.12));
                 return (_jsx("text", { x: centre.sx, y: centre.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: fontSize, fontFamily: "monospace", fontWeight: isSelected ? 700 : 600, fill: isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)', style: { pointerEvents: 'none', userSelect: 'none' }, children: label }));
@@ -477,9 +477,12 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             const wh = isFrame ? 0 : (rackLevels ?? 1) * LEVEL_HEIGHT;
                             const colorKey = isFrame ? zone.type : (zone.zone_type ?? 'storage');
                             // Occupancy fraction: bins only. Capacity = rack_levels × 10 units (fallback 10).
-                            const occ = !isFrame && occupancy ? occupancy[zone.location_code] : undefined;
+                            // FP-214: inactive zones are excluded from occupancy heat. A
+                            // decommissioned bin colouring as 85%-full red is contradictory —
+                            // it is out of service, so it reports no stock signal.
+                            const occ = !isFrame && zone.active && occupancy ? occupancy[zone.location_code] : undefined;
                             const capacity = (zone.rack_levels ?? 1) * 10;
-                            const occupancyFraction = !isFrame && occupancy
+                            const occupancyFraction = !isFrame && zone.active && occupancy
                                 ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
                                 : undefined;
                             const activity = liveActivity?.[zone.location_code];
@@ -498,7 +501,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone
-                                            : undefined, isFrame: isFrame, label: zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A', opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
+                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A', opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
                         }), stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH }) => {
                             // Normal (lower) bar
                             const nb00 = project(wx, wy, 0, zoom, flipped);
@@ -571,5 +574,5 @@ export function IsometricZoneView({ zone, width = 120, height = 90 }) {
     const cy = height * 0.65;
     // Render at world origin (0,0) then translate to centre via SVG transform
     const originPt = project(0, 0, 0, zoom);
-    return (_jsx("svg", { width: width, height: height, viewBox: `0 0 ${width} ${height}`, xmlns: "http://www.w3.org/2000/svg", style: { display: 'block', overflow: 'visible' }, children: _jsx("g", { transform: `translate(${cx - originPt.sx}, ${cy - originPt.sy})`, children: _jsx(IsometricBox, { wx: 0, wy: 0, ww: ww, wd: wd, wh: wh, colorKey: colorKey, isSelected: false, isFrame: isFrame, label: zone.location_code, rackLevels: zone.rack_levels ?? null, zoom: zoom, flipped: false, onClick: () => { } }) }) }));
+    return (_jsx("svg", { width: width, height: height, viewBox: `0 0 ${width} ${height}`, xmlns: "http://www.w3.org/2000/svg", style: { display: 'block', overflow: 'visible' }, children: _jsx("g", { transform: `translate(${cx - originPt.sx}, ${cy - originPt.sy})`, children: _jsx(IsometricBox, { wx: 0, wy: 0, ww: ww, wd: wd, wh: wh, colorKey: colorKey, isSelected: false, isFrame: isFrame, isInactive: !zone.active, label: zone.location_code, rackLevels: zone.rack_levels ?? null, zoom: zoom, flipped: false, onClick: () => { } }) }) }));
 }
