@@ -1,36 +1,3 @@
-Good instinct — several of these will cost hours to re-derive otherwise. Here's what I'd capture, split by where it belongs.
-
-1. Append to shopify_submission_playbook.md
-
-The Reviewer Test Account section is now partly wrong — it says Scale is granted via SQL, but doesn't record which shop the reviewer actually lives on.
-
-zsh
-cd ~/Codes/projects/SynchroFlow
-cat >> docs/playbooks/shopify_submission_playbook.md <<'EOF'
-
-### Reviewer account — actual state (verified 2026-08-02)
-
-`contact@lasyncro.com` lives on **shop_id 1 ("Shopify's Shop")** — the general
-dev tenant — on **Scale** tier. This is the account Shopify reviewers log into.
-
-`apps/backend/src/scripts/seed_reviewer.ts` creates a *different* tenant,
-shop_id 8 ("LaSyncro Demo Store"), which has **0 users and is unreachable**.
-The script's existing-user check is `SELECT * FROM users WHERE email = ?` with
-no `shop_id` filter, so it matched the shop-1 user, skipped the insert, and
-left shop 8 with a floor plan and entitlements but nobody who can log in.
-The script also provisions Growth, not Scale.
-
-**Consequence:** the reviewer seed script has never produced a usable tenant.
-Any reviewer-facing data work must target shop 1. Fix the email lookup to
-`WHERE email = ? AND shop_id = ?` before that script is used for anything.
-EOF
-2. New file — docs/playbooks/production_deploy_gotchas.md
-
-The PROD-DEPLOY-3 lesson is the most expensive one in the sprint and isn't recorded anywhere.
-
-zsh
-cd ~/Codes/projects/SynchroFlow
-cat > docs/playbooks/production_deploy_gotchas.md <<'EOF'
 # Production Deploy — Gotchas
 
 ## Failed releases are silent
@@ -42,6 +9,44 @@ on the **Jul 28 build for four days** while the app was under App Store review.
 
 **Check `flyctl releases --app synchroflow | head -5` before assuming a fix is
 live.** A green `flyctl deploy` scrollback is not proof — read the last lines.
+
+## "App is not listening on the expected address" is a FALSE ALARM
+
+Every deploy prints this, and it has never once been real. Do not audit it again.
+
+    WARNING The app is not listening on the expected address...
+    Found these processes inside the machine with open listening sockets:
+     PROCESS        │ ADDRESSES
+     /.fly/hallpass │ [fdaa:...]:22
+
+**Why:** `apps/backend/src/server.ts` opens the socket *last*. `start()` awaits
+`initRedisClient` → `initSpecterStore` → `runSchemaGuard` → `initQueue` →
+`declareTopology` → `startWorkers` before reaching `app.listen` (line 34). Redis,
+RabbitMQ topology, the schema guard and every background worker must finish
+first — ~1.5s on v247. Fly probes listening sockets the moment the machine
+reaches `started`, lands inside that window, and sees only the SSH sidecar.
+The bind happens immediately after and the health check passes.
+
+Because the ordering is structural, this warning fires on **every** deploy, not
+intermittently.
+
+`fly.toml` is correct (`PORT=8080`, `internal_port=8080`). `server.ts:16` reads
+`HOST` from the machine env, which is `0.0.0.0`; the `|| '127.0.0.1'` fallback
+there is local-dev only and never applies on Fly. (`node-start.js` has a similar
+fallback but does not perform the production listen — don't chase it.)
+
+**Authoritative signals — check these, ignore the warning:**
+
+    flyctl logs -a synchroflow --no-tail | grep "Server is listening"
+    # → Server is listening on http://0.0.0.0:8080
+    curl -sS -o /dev/null -w "%{http_code}\n" https://synchroflow.fly.dev/
+    # → 200
+
+Health check `servicecheck-00-http-8080` passing in `flyctl status` is the same
+proof. If log + curl are green, **the deploy is good.** Verified 2026-08-03,
+v247 (PROD-DEPLOY-4, closed NOT-A-BUG).
+
+**Aside:** `/api/v1/health` returns 404 — that path does not exist. Curl `/`.
 
 ## Migration checksum drift
 
