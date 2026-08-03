@@ -76,11 +76,43 @@ export async function resolveBarcode(
     return null;
   }
 
-  // 3a. Barcode — primary physical scan resolution
-  const byBarcode = await trx('external_product_identity_map')
-    .where({ shop_id: shopId, barcode: scannedValue })
-    .select('lasyncro_variant_id')
-    .first();
+  // 3a. Barcode — primary physical scan resolution.
+  //
+  // SHOP-REV-01c: this previously read external_product_identity_map alone.
+  // That table's barcode column (migration 0004) is populated only via the
+  // onConflict.merge() path in shopifyProducts.core.ts and on this tenant
+  // carried 3 rows, all SKU strings — while all 14 real Shopify barcodes sat
+  // in variants.barcode. The two sets were disjoint, so every physical scan
+  // of a real product barcode missed here, fell through to the SKU and
+  // external_variant_id paths, and returned null. Shopify paused App Store
+  // review on 2026-07-29 (ref 102766) citing exactly this.
+  //
+// Both columns hold the same thing: the EXTERNAL EAN/UPC from Shopify.
+  // Neither is the laSyncro-minted identity — that lives in
+  // barcode_print_jobs.barcode_value (migration 0100) and is resolved by the
+  // LSU-/LS- paths, not here.
+  //
+  // variants.barcode is the designated receive-time lookup target: migration
+  // 0027 carries a dedicated ['shop_id','barcode'] index annotated "fast EAN
+  // lookup at receive scan time", and its own doc comment defines the receive
+  // branch on whether this column is null. The identity map's barcode column
+  // (migration 0004) is only ever written by the onConflict.merge() path in
+  // shopifyProducts.core.ts, which on this tenant left it holding 3 SKU
+  // strings against 14 real barcodes in variants.
+  //
+  // Identity map is queried first purely to preserve existing behaviour for
+  // tenants where it is populated; variants.barcode is the fallback that makes
+  // a physical scan work. Both lookups are shop-scoped. Why the two columns
+  // diverge at all is a separate defect in the product sync (SHOP-REV-01e).
+  const byBarcode =
+    (await trx('external_product_identity_map')
+      .where({ shop_id: shopId, barcode: scannedValue })
+      .select('lasyncro_variant_id')
+      .first()) ??
+    (await trx('variants')
+      .where({ shop_id: shopId, barcode: scannedValue })
+      .select('lasyncro_variant_id')
+      .first());
 
   // ── Legacy resolution — shared unit lookup helper ─────────────────────────
   // After resolving to a variant via any legacy path, attempt to find the next
