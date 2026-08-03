@@ -30,6 +30,10 @@ import crypto from 'crypto';
 const SHOP_ID = Number(process.env.SEED_SHOP_ID ?? 1);
 const MARKER = 'SEED:REVIEWER_ACTIVITY';
 const RUN = crypto.randomBytes(3).toString('hex').toUpperCase();
+const OPERATOR_EMAILS = [
+  'elin.vargas@lasyncro.internal',
+  'marcus.boateng@lasyncro.internal',
+];
 
 const log = (m: string) => console.log(`[ACTIVITY_SEED] ${m}`);
 
@@ -72,7 +76,29 @@ async function main(): Promise<void> {
     if (pickBins.length === 0) throw new Error('No active pick bins found');
     log(`Discovered ${variants.length} variants, ${pickBins.length} pick bins`);
 
-    const owner = await trx('users').where({ shop_id: SHOP_ID }).orderBy('id').first();
+        const owner = await trx('users').where({ shop_id: SHOP_ID }).orderBy('id').first();
+
+    // OV-125a: pick_scan_log is append-only, so reviewer operators must exist
+    // before batches and scans are created; attribution cannot be repaired later.
+    const reviewerOperators = await trx('users')
+      .where({ shop_id: SHOP_ID })
+      .whereIn('email', OPERATOR_EMAILS)
+      .select('id', 'email');
+
+    const primaryPicker = reviewerOperators.find(
+      operator => operator.email === OPERATOR_EMAILS[0]
+    );
+    const secondaryPicker = reviewerOperators.find(
+      operator => operator.email === OPERATOR_EMAILS[1]
+    );
+
+    if (!primaryPicker || !secondaryPicker) {
+      throw new Error(
+        'Reviewer operators missing — run seed_reviewer_operators.ts first'
+      );
+    }
+
+    log(`Operators: ${primaryPicker.email}, ${secondaryPicker.email}`);
 
     // ── PHASE A: SUPPLIERS + PURCHASE ORDERS ────────────────────────────────
     const supplierRows = [
@@ -232,11 +258,32 @@ async function main(): Promise<void> {
     } else {
       // pick_batch_status: pending | picking | pick_complete | packing
       //                  | pack_complete | cancelled
-      const batchSpecs = [
-        { status: 'picking',       orders: 3, pickedRatio: 0.4, packedRatio: 0    },
-        { status: 'packing',       orders: 3, pickedRatio: 1.0, packedRatio: 0.5  },
-        { status: 'pack_complete', orders: 3, pickedRatio: 1.0, packedRatio: 1.0  },
-      ];
+              const batchSpecs = [
+          {
+            status: 'picking',
+            orders: 3,
+            pickedRatio: 0.4,
+            packedRatio: 0,
+            pickerId: primaryPicker.id,
+            packerId: null,
+          },
+          {
+            status: 'packing',
+            orders: 3,
+            pickedRatio: 1.0,
+            packedRatio: 0.5,
+            pickerId: secondaryPicker.id,
+            packerId: secondaryPicker.id,
+          },
+          {
+            status: 'pack_complete',
+            orders: 3,
+            pickedRatio: 1.0,
+            packedRatio: 1.0,
+            pickerId: primaryPicker.id,
+            packerId: secondaryPicker.id,
+          },
+        ];
 
       let cursor = 0;
       for (const spec of batchSpecs) {
@@ -254,9 +301,9 @@ async function main(): Promise<void> {
           total_units: totalUnits,
           units_picked: Math.floor(totalUnits * spec.pickedRatio),
           units_packed: Math.floor(totalUnits * spec.packedRatio),
-          picked_by: spec.pickedRatio > 0 ? owner?.id ?? null : null,
-          packed_by: spec.packedRatio > 0 ? owner?.id ?? null : null,
-          assigned_operator_id: owner?.id ?? null,
+          picked_by: spec.pickedRatio > 0 ? spec.pickerId : null,
+          packed_by: spec.packedRatio > 0 ? spec.packerId : null,
+          assigned_operator_id: spec.pickerId,
           pick_claimed_at: trx.raw(`NOW() - INTERVAL '90 minutes'`),
           pick_last_activity_at: trx.raw(`NOW() - INTERVAL '4 minutes'`),
           pick_completed_at: spec.pickedRatio >= 1 ? trx.raw(`NOW() - INTERVAL '40 minutes'`) : null,
@@ -293,7 +340,7 @@ async function main(): Promise<void> {
               location_code: pickBins[i % pickBins.length],
               quantity_confirmed: 1,
               status: 'confirmed',
-              scanned_by: owner.id,
+              scanned_by: spec.pickerId,
               scanned_at: trx.raw(`NOW() - INTERVAL '${2 + i} minutes'`),
             });
           }

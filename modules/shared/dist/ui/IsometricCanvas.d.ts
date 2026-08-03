@@ -55,6 +55,32 @@ export interface IsometricCanvasProps {
      */
     liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
     packQueueCount?: number;
+    /**
+     * OV-129: pending stow units keyed by location_code. Rendered as a badge on
+     * the bin's top face — work waiting to be put away, distinct from an
+     * operator being present (liveActivity). See overview-live-map-playbook §6.4.
+     */
+    stowPending?: Record<string, number>;
+    /**
+     * OV-129c: show the live-marker key (stow / pick / pack glyphs with words).
+     * Deliberately separate from `showLegend`, which controls the occupancy
+     * COLOR-SCALE legend and is false on Overview. A glyph at 6px can remind a
+     * user of a label they already learned; it cannot teach one. Without this
+     * key the badges are unexplained integers.
+     */
+    showMarkerKey?: boolean;
+    /**
+     * OV-129d: floor-wide units awaiting stow, shown in the marker key.
+     * Units, not task count — must reconcile with the sum of the badges.
+     */
+    stowPendingTotal?: number;
+    /**
+     * OV-131: units physically at a dock, keyed by location_code. Sourced from
+     * inventory_units.current_location_code where status='received' — receive_jobs
+     * has no location column, and its totals are expected PO quantities rather
+     * than observations. See overview-live-map-playbook §6.5.
+     */
+    receiveAtDock?: Record<string, number>;
     awaitingPackCount?: number;
     /**
      * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
@@ -98,7 +124,7 @@ export interface IsometricCanvasProps {
      */
     onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, stowPending, showMarkerKey, stowPendingTotal, receiveAtDock, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map

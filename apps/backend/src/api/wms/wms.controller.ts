@@ -3786,7 +3786,9 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
     const [pickerRows, batchRows, stowRow, stowByBinRows, receiveByBinRows, awaitingPackRow] = await Promise.all([
-      // Last scan location per operator — within 4-hour recency window only.
+      // Last scan location per current picker — within 4-hour recency window.
+      // Scan rows are immutable, so filter against picked_by to prevent a
+      // reassigned batch's former picker from remaining visible on the map.
       trx('pick_scan_log as psl')
         .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
         .select('psl.scanned_by as operator_id', 'psl.location_code', 'psl.scanned_at', 'psl.pick_batch_id')
@@ -3794,6 +3796,7 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
         .whereNotNull('psl.location_code')
         .whereIn('pb.status', ['picking', 'packing'])
+        .whereRaw('psl.scanned_by = pb.picked_by')
         .orderBy('psl.scanned_by')
         .orderBy('psl.scanned_at', 'desc')
         .distinctOn('psl.scanned_by'),

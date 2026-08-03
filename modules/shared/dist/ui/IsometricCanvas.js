@@ -135,7 +135,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
                 return (_jsxs("g", { children: [_jsx("polygon", { points: pts(ll0, ll1, lu1, lu0), fill: lFill, stroke: stroke, strokeWidth: "0.4" }), _jsx("polygon", { points: pts(rl0, rl1, ru1, ru0), fill: lFillDark, stroke: stroke, strokeWidth: "0.4" })] }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, stowPending, showMarkerKey = false, stowPendingTotal, receiveAtDock, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
@@ -492,6 +492,45 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             const packPt = !isFrame && zone.zone_type === 'pack' && (packQueueCount ?? 0) > 0
                                 ? project(wx + ww + 0.3, wy + wd / 2, wh + 0.35, zoom, flipped)
                                 : null;
+                            // OV-129: stow badge sits on the bin's top face — inside the box,
+                            // per the agreed split: identity stays inline, live state goes on
+                            // the face. Suppressed while an operator is present so the pick
+                            // dot and the badge never contend for the same anchor.
+                            const stowUnits = !isFrame && zone.active ? stowPending?.[zone.location_code] : undefined;
+                            // OV-129: offset toward the near-right corner of the top face —
+                            // IsometricBox draws the location code at the face centre, so a
+                            // badge anchored there buries the bin's identity. Bins are
+                            // 3-level towers here, hence a real collision rather than a
+                            // theoretical one.
+                            const stowPt = (stowUnits ?? 0) > 0 && !activity?.hasActivePick
+                                ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
+                                : null;
+                            // OV-131: dock zones are flat (wh = 0 for frames, low for bins), so
+                            // the badge sits just above the face rather than on a tower top.
+                            const dockUnits = zone.active ? receiveAtDock?.[zone.location_code] : undefined;
+                            const dockPt = (dockUnits ?? 0) > 0 && !activity?.hasActivePick
+                                ? project(wx + ww * 0.5, wy + wd * 0.5, wh + 0.35, zoom, flipped)
+                                : null;
+                            // OV-128: anchor at the slab's near-left corner and run the label
+                            // along the adjacent edge. The angle is derived from the two
+                            // projected corners rather than hardcoded, so it stays correct
+                            // under `flipped` and at any zoom.
+                            const namePt = isFrame && zone.type === 'warehouse' && zone.warehouse_name
+                                ? project(wx, wy + wd, 0, zoom, flipped)
+                                : null;
+                            // Swap to project(wx, wy, ...) to run along the upper-left edge instead.
+                            const nameEdgePt = namePt
+                                ? project(wx + ww, wy + wd, 0, zoom, flipped)
+                                : null;
+                            const nameAngle = namePt && nameEdgePt
+                                ? (Math.atan2(nameEdgePt.sy - namePt.sy, nameEdgePt.sx - namePt.sx) * 180) / Math.PI
+                                : 0;
+                            // OV-128: plate width is derived from character count — safe because
+                            // the label is monospace, so no DOM measurement is needed.
+                            const nameFontSize = Math.round(8 * zoom);
+                            const nameTextW = namePt
+                                ? (zone.warehouse_name?.length ?? 0) * (nameFontSize * 0.6 + 0.5)
+                                : 0;
                             return (_jsxs("g", { children: [_jsx(IsometricBox, { wx: wx, wy: wy, ww: ww, wd: wd, wh: wh, colorKey: colorKey, isSelected: selected === zone.location_code, isDimmed: !isFrame && ((highlightZoneTypes != null &&
                                             highlightZoneTypes.size > 0 &&
                                             !highlightZoneTypes.has(zone.zone_type ?? '')) ||
@@ -501,7 +540,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone
-                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A', opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
+                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' ? '' : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { children: [_jsx("circle", { cx: dotPt.sx, cy: dotPt.sy, r: 5 * zoom, fill: activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A', opacity: 0.9 }), (activity?.operatorCount ?? 0) > 1 && (_jsx("text", { x: dotPt.sx, y: dotPt.sy + 1, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: activity.operatorCount }))] })), namePt && (_jsxs("g", { transform: `rotate(${nameAngle} ${namePt.sx} ${namePt.sy})`, style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: namePt.sx - 4 * zoom, y: namePt.sy + 11 * zoom, width: nameTextW + 8 * zoom, height: nameFontSize + 6 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.82 }), _jsx("text", { x: namePt.sx, y: namePt.sy + 11 * zoom, dy: (nameFontSize + 6 * zoom) / 2, textAnchor: "start", dominantBaseline: "middle", fontSize: nameFontSize, fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", letterSpacing: 0.5, children: zone.warehouse_name })] })), stowPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: stowPt.sx - 10 * zoom, y: stowPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: stowPt.sx - 6 * zoom, y1: stowPt.sy - 3 * zoom, x2: stowPt.sx - 6 * zoom, y2: stowPt.sy + 0.5 * zoom }), _jsx("polyline", { points: `${stowPt.sx - 7.6 * zoom},${stowPt.sy - 1 * zoom} ${stowPt.sx - 6 * zoom},${stowPt.sy + 0.7 * zoom} ${stowPt.sx - 4.4 * zoom},${stowPt.sy - 1 * zoom}` }), _jsx("polyline", { points: `${stowPt.sx - 8.2 * zoom},${stowPt.sy + 1.6 * zoom} ${stowPt.sx - 8.2 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 1.6 * zoom}` })] }), _jsx("text", { x: stowPt.sx + 3 * zoom, y: stowPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: stowUnits })] })), dockPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: dockPt.sx - 10 * zoom, y: dockPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("rect", { x: dockPt.sx - 8.4 * zoom, y: dockPt.sy - 0.4 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 0.5 * zoom }), _jsx("line", { x1: dockPt.sx - 5.9 * zoom, y1: dockPt.sy - 4.2 * zoom, x2: dockPt.sx - 5.9 * zoom, y2: dockPt.sy - 1.4 * zoom }), _jsx("polyline", { points: `${dockPt.sx - 7.3 * zoom},${dockPt.sy - 2.6 * zoom} ${dockPt.sx - 5.9 * zoom},${dockPt.sy - 1.2 * zoom} ${dockPt.sx - 4.5 * zoom},${dockPt.sy - 2.6 * zoom}` })] }), _jsx("text", { x: dockPt.sx + 3 * zoom, y: dockPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: dockUnits })] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
                         }), stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH }) => {
                             // Normal (lower) bar
                             const nb00 = project(wx, wy, 0, zoom, flipped);
@@ -540,7 +579,13 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: flipped ? '↙' : '↗' }), onRefresh && (_jsx(Box, { onClick: onRefresh, title: "Refresh layout data", sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14,
                             color: 'var(--ink-3)', bgcolor: 'var(--bg)',
-                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "\u21BB" }))] }), showLegend && legendItems && (_jsx(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
+                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "\u21BB" }))] }), showMarkerKey && stowPending && Object.keys(stowPending).length > 0 && (_jsxs(Box, { sx: {
+                    position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 0.75,
+                    px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
+                    bgcolor: 'var(--bg)', opacity: 0.92,
+                }, children: [_jsx("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: _jsxs("g", { stroke: "var(--ink-3)", strokeWidth: 1, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: 7, y1: 2, x2: 7, y2: 6.5 }), _jsx("polyline", { points: "5.2,4.6 7,6.7 8.8,4.6" }), _jsx("polyline", { points: "4,8 4,10 10,10 10,8" })] }) }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: (stowPendingTotal ?? 0) > 0
+                            ? `${stowPendingTotal} units awaiting stow`
+                            : 'units awaiting stow' })] })), showLegend && legendItems && (_jsx(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
                     bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: legendItems.map((item) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(Box, { sx: { width: 12, height: 12, borderRadius: 0.5, bgcolor: item.rgba, border: '1px solid var(--rule)' } }), _jsx(Typography, { sx: { fontSize: 9, fontWeight: 500, color: 'var(--ink-4)' }, children: item.label })] }, item.label))) })), summaryCounts && (_jsxs(Box, { sx: {
                     position: 'absolute', top: 8, left: 8,
                     display: 'flex', alignItems: 'center', gap: 0.75,

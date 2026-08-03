@@ -399,8 +399,10 @@ Its supplier marker makes subsequent runs exit without changing timestamps.
 and the marker prevents the seeder from restoring them. A dedicated,
 non-destructive reviewer refresh procedure is still required under OV-132.
 
-**Resolved locally; deployment pending: OV-125 (P1).** Production
-contained 42 orders, of which the six newest unbatched orders had no
+**Resolved and committed, pending deployment: OV-125 (P1).**
+Permanent fix: `4a3ce9eb`.
+
+Production contained 42 orders, of which the six newest unbatched orders had no
 `order_line_items`. The committed selector claimed those six orders, but
 `pick_scan_log` requires a real `lasyncro_line_item_id`, so the picking and
 packing batches produced no usable scan activity.
@@ -415,3 +417,48 @@ Production data was repaired once: both active batches now have three valid
 claims and three scan rows. The one-off repair script was not retained in the
 repository because its deletion scope was unsafe for reuse. The permanent
 seeder fix is the only OV-125 source change.
+
+### Reviewer operator attribution — OV-125a
+
+**Resolved locally, pending commit and deployment.** A single reviewer account
+made `GET /api/v1/wms/live-activity` structurally capable of returning only one
+picker position because the endpoint selects the latest scan per
+`pick_scan_log.scanned_by`.
+
+`seed_reviewer_operators.ts` now creates and reconciles two non-login operator
+identities and their active shop memberships. It deliberately does not update
+batches or scans: `pick_scan_log` is append-only, and changing historical
+operator attribution after insertion is prohibited.
+
+For a fresh reviewer seed, operators must be created before operational
+activity:
+
+    SEED_SHOP_ID=1 \
+    EXPECTED_DATABASE_NAME=synchroflow_db \
+    EXPECTED_SHOP_NAME='Default Dev Shop' \
+    npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_operators.ts
+
+    SEED_SHOP_ID=1 \
+    npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_activity.ts
+
+`seed_reviewer_activity.ts` refuses to create activity when either reviewer
+operator is missing. It assigns the picking batch to Elin Vargas and the
+packing batch to Marcus Boateng when the immutable scan rows are first
+inserted. The live-activity query additionally requires
+`pick_scan_log.scanned_by = pick_batches.picked_by`, preventing historical
+scans belonging to a former picker from remaining visible after reassignment.
+
+Local verification produced two active batches, six correctly attributed scan
+rows, zero attribution mismatches, and zero duplicate confirmed batch/line
+pairs. The authenticated live-activity endpoint returned two picker positions;
+unauthenticated access remained `401`. Because both latest scans were at
+`A-1`, the map correctly rendered its co-location badge with a count of `2`.
+
+Do not rerun either script as a freshness mechanism. Both are sequentially
+idempotent, and the activity marker intentionally prevents timestamp refresh.
+Morning-of-review freshness remains tracked separately under OV-132.
+
+Before deploying the live-activity ownership filter, verify production’s
+immutable `scanned_by` values match each active batch’s `picked_by`. Production
+database access must use newly rotated credentials; do not reuse previously
+exposed credentials.
