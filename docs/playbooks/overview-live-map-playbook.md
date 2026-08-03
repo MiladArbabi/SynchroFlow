@@ -45,6 +45,7 @@ The current Overview (triage-first signals + Business Pulse rail) solves the *de
 ```
 
 **Geometry rules:**
+
 - Layout is stable regardless of signal count — no dynamic layout swaps.
 - Map area: `flex: '1 1 0'`, min-width 0, bounded by the 75/25 split.
 - Pulse card: `flex: '0 0 280px'` — same fixed width as the current BusinessPulse rail.
@@ -58,7 +59,7 @@ The current Overview (triage-first signals + Business Pulse rail) solves the *de
 Resolved at `OverviewFT2Page` level. The page owns subscription and data-state resolution; `OverviewModuleFT2` remains layout-only and receives rendered `mapContent` and `upgradeTeaser` props.
 
 | Branch | Condition | Overview renders |
-|---|---|---|
+| --- | --- | --- |
 | **Live map** | tier is `growth` or `scale`, layout request succeeds, and `zones.length > 0` | Full `IsometricCanvas` with occupancy, apron stations, and live picker activity |
 | **Teaching empty** | tier is `growth` or `scale`, layout request succeeds, and `zones.length === 0` | “Build your floor” teaching state with CTA to `/floor-planning` |
 | **Upgrade teaser** | owner/admin tier is below `growth` | Core triage layout remains fully available, followed by a compact, dismissible live-map teaser with CTA to `/settings/billing` |
@@ -87,6 +88,7 @@ The live Growth/Scale map currently receives layout zones from `useFloorPlanning
 ## 4. Calm state
 
 When the floor is idle (evenings, weekends, no active batches, no pool pressure), the map must not read as broken. Rules:
+
 - Floor renders normally with occupancy overlay (bins still have stock — occupancy is always meaningful).
 - Aprons show `0` counts in a muted style (not hidden — absence of orders is information).
 - No picker dots visible (v2 feature, so this is the default state at launch).
@@ -123,7 +125,7 @@ Inbound apron projects to the left of the warehouse envelope (negative x offset 
 ### 5.3 Data sources
 
 | Apron field | Source |
-|---|---|
+| --- | --- |
 | `inbound.count` | `GET /api/v1/wms/order-pool` → `eligible_order_count` |
 | `inbound.urgentCount` | `computeConstraintMetrics` result → `constrained_orders` (already the Orders header source per W1 — same field, same API) |
 | `inbound.pulsingBadge` | `morningBrief.signals` any signal with `priority <= 2` AND `module === 'orders'` with SLA context — derived client-side from existing brief data, no new endpoint |
@@ -143,7 +145,19 @@ Map badges must derive from the same `alerts` table rows that drive the bell cou
 
 No new writers. Derive from existing tables only.
 
-### 6.1 Response shape
+**OV-129 addition — `stowPressure.by_location`.** The original `stowPressure`
+collapsed every pending task to one integer and pinned it to a hardcoded
+`anchor_location: 'RECEIVE-1'` — a location that usually holds no stow tasks at
+all, since tasks carry the *destination* bin. Per-bin detail existed in
+`stow_tasks.location_code` and was discarded by the `.count()`. Added alongside
+the scalar rather than replacing it, since `pending_count` is part of the
+existing contract:
+    by_location: [{ location_code, pending_units, pending_tasks }]
+
+`pending_units` sums `stow_tasks.quantity`; `pending_tasks` counts rows. **These
+are different numbers and must not be interchanged** — the map badges show
+units, and a floor-wide total built from `pending_count` would not reconcile
+with them (8 tasks vs 132 units on the dev tenant).
 
 ```typescript
 {
@@ -187,6 +201,43 @@ liveActivity?: Record<string, { operatorCount: number; hasActivePick: boolean }>
 
 ---
 
+### 6.5 Live markers on bins (OV-129, OV-129b/c/d)
+
+Identity stays inline, live state goes on the box face. Bins keep their
+`location_code` label from `IsometricBox`; work state renders as a badge on the
+top face. The warehouse slab is the exception — its name moved to the near
+corner (OV-128) because the slab's centre is the middle of the floor.
+
+**Anchoring.** The badge sits at `wx + ww * 0.85, wy + wd * 0.85` on the top
+face, not the centre. `IsometricBox` draws the location code at the face
+centre, and bins here are 3-level towers, so a centred badge buries the bin's
+identity. The badge is also suppressed while `hasActivePick` is true so the
+pick dot and the badge never contend for one anchor.
+
+**Why the glyph exists (OV-129b).** A bare integer on a bin cannot say what it
+counts — stock on hand, units to pick, units to stow and capacity would all
+render identically. The arrow-into-tray glyph disambiguates between marker
+types and reserves the same slot for pick and pack markers so they read as one
+family. Silhouette weight only; detail is illegible at ~6px.
+
+**Why the glyph is not sufficient (OV-129c).** An icon at 6px reminds a user of
+a label they already learned; it cannot teach one. The `showMarkerKey` prop
+renders a key with the glyph and the words "N units awaiting stow".
+
+`showMarkerKey` is deliberately separate from `showLegend`: the latter controls
+the occupancy COLOR-SCALE legend (`legendMode`) and is `false` at both Overview
+call sites, so a marker key folded into it would never render on the screen
+that needs it.
+
+**Total (OV-129d).** The key's total is summed from `by_location` units, never
+from `stowPressure.pending_count`. See the warning in §6.1.
+
+**Staleness.** Badges reflect `stow_tasks` with `status = 'pending'` and update
+on the 15s poll. Unlike `pick_scan_log`-derived markers, they have no recency
+window — a task pending for a week still shows.
+
+---
+
 ## 7. Pulse card — merged layout
 
 The right card absorbs both decisions and stats without becoming a junk drawer. Rules:
@@ -203,6 +254,7 @@ The right card absorbs both decisions and stats without becoming a junk drawer. 
 ## 8. Signal >3 criticals rule
 
 Layout does NOT flip when critical count exceeds 3. The map is the stable front door regardless of signal volume. Resolution:
+
 - Top 3 criticals visible in pulse card decisions section.
 - "+N more →" chip in severity red deeplinks to `/order-flow` (the triage surface).
 - The spatial badges on the inbound apron (pulsing red stack) carry the urgency visually for anyone looking at the map.
@@ -232,7 +284,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 ## 11. Issue register — resolved by this playbook
 
 | ID | Description | Resolution |
-|---|---|---|
+| --- | --- | --- |
 | FP-OV-01 | No IsometricCanvas in Overview | v1-B: wired via `useWarehouseGrid` in page layer |
 | FP-OV-02 | No warehouse hooks in `OverviewFT2Page` | v1-B: `useWarehouseGrid` + `useWarehouseGridOccupancy` added |
 | FP-OV-03 | No standalone `useOrderPool` hook | v1-B: extracted from `OrderFlowPage` into `apps/frontend/src/pages/wms/useOrderPool.ts` |
@@ -242,13 +294,18 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | FP-OV-07 | BusinessPulse is revenue-only, no WMS signals | ✅ PARTIAL July 2026 — picker dots wired; WMS strip (Pool · Batches · Stow chips in pulse card) remains v3 |
 | FP-OV-08 | `operationalControl = null` dead code | v1-A: removed |
 | FP-OV-09 / OV-MAP-001 | Core users had no visible path to discover or upgrade to the live operations map | ✅ CLOSED July 13, 2026 — compact static map teaser added below Core triage with dismissal, billing CTA, and conversion events |
+| OV-128 | Warehouse name centred on slab, colliding with PACK-1 | Moved to near corner, rotated along the projected slab edge, plate with inverted fill | ✅ |
+| OV-129 | Stow pressure aggregated to a scalar pinned to a hardcoded RECEIVE-1; per-bin detail discarded | `by_location` added to live-activity; badges on bin top faces | ✅ |
+| OV-129b | Bare integer badge could not say what it counted | Arrow-into-tray glyph prefix | ✅ |
+| OV-129c | Glyph alone does not teach meaning | `showMarkerKey` — glyph + words, independent of `showLegend` | ✅ |
+| OV-129d | No floor-wide total | Summed from `by_location` units | ✅ |
 
 ---
 
 ## 12. Implementation order
 
 | Block | Tasks | Issues closed |
-|---|---|---|
+| --- | --- | --- |
 | **v1-A** ✅ | Layout flip · tier/zone gate · dead code removal · pulse card merged layout | FP-OV-05, FP-OV-06, FP-OV-07 (partial), FP-OV-08 |
 | **v1-B** ✅ | Page-level grid+occupancy hooks · `useOrderPool` wired · `IsometricCanvas` embed · `SyntheticStation` apron (inbound pool + blocked sub-stack) · `LiveBinActivity` type | FP-OV-01, FP-OV-02, FP-OV-03 |
 | **v2** ✅ | `GET /api/v1/wms/live-activity` · `useWmsLiveActivity` 15s poll · picker dot markers on `IsometricCanvas` | FP-OV-04, FP-OV-07 (partial) |

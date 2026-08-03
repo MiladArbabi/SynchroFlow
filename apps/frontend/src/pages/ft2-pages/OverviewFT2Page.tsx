@@ -291,6 +291,17 @@ export default function OverviewPageFT2() {
     0
   );
   const awaitingPackCount = liveActivityQuery.data?.awaitingPackUnits ?? 0;
+  // OV-129: per-bin pending stow → map badges. The flat stowPressure.pending_count
+  // is anchored to a hardcoded 'RECEIVE-1' that usually holds no stow tasks.
+  const stowPending = (liveActivityQuery.data?.stowPressure.by_location ?? []).reduce<Record<string, number>>(
+    (acc, s) => { acc[s.location_code] = s.pending_units; return acc; },
+    {}
+  );
+  // OV-129d: floor-wide total for the marker key. Summed from by_location
+  // UNITS — deliberately not stowPressure.pending_count, which counts TASKS.
+  // Mixing the two would print a total that doesn't reconcile with the badges.
+  const stowPendingTotal = (liveActivityQuery.data?.stowPressure.by_location ?? [])
+    .reduce((sum, s) => sum + s.pending_units, 0);
 
   // Inbound apron — order pool count + constrained (blocked) sub-stack.
   // Outbound apron wired in v2 once useLiveCapacity is added to this page.
@@ -493,6 +504,9 @@ export default function OverviewPageFT2() {
             stations={stations}
             liveActivity={liveActivity}
             packQueueCount={packQueueCount}
+            stowPending={stowPending}
+            stowPendingTotal={stowPendingTotal}
+            showMarkerKey
             awaitingPackCount={awaitingPackCount}
             showLegend={false}
             showControls={false}

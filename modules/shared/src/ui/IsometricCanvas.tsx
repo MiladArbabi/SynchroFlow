@@ -283,8 +283,27 @@ export interface IsometricCanvasProps {
    * Renders operator dot markers on active bins.
    * Populated by useWmsLiveActivity — absent until v2 is wired at page level.
    */
-  liveActivity?: Record<string, import('./IsometricCanvas.types.js').LiveBinActivity>;
+  liveActivity?: Record<string,import('./IsometricCanvas.types.js').LiveBinActivity>;
   packQueueCount?: number;
+  /**
+   * OV-129: pending stow units keyed by location_code. Rendered as a badge on
+   * the bin's top face — work waiting to be put away, distinct from an
+   * operator being present (liveActivity). See overview-live-map-playbook §6.4.
+   */
+  stowPending?: Record<string, number>;
+  /**
+   * OV-129c: show the live-marker key (stow / pick / pack glyphs with words).
+   * Deliberately separate from `showLegend`, which controls the occupancy
+   * COLOR-SCALE legend and is false on Overview. A glyph at 6px can remind a
+   * user of a label they already learned; it cannot teach one. Without this
+   * key the badges are unexplained integers.
+   */
+  showMarkerKey?: boolean;
+  /**
+   * OV-129d: floor-wide units awaiting stow, shown in the marker key.
+   * Units, not task count — must reconcile with the sum of the badges.
+   */
+  stowPendingTotal?: number;
   awaitingPackCount?: number;
   /**
    * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
@@ -344,6 +363,9 @@ export function IsometricCanvas({
     stations,
     liveActivity,
     packQueueCount,
+    stowPending,
+    showMarkerKey = false,
+    stowPendingTotal,
     onUnplacedZonesClick,
     overlay,
     summaryCounts,
@@ -707,6 +729,41 @@ export function IsometricCanvas({
               ? project(wx + ww + 0.3, wy + wd / 2, wh + 0.35, zoom, flipped)
               : null;
 
+            // OV-129: stow badge sits on the bin's top face — inside the box,
+            // per the agreed split: identity stays inline, live state goes on
+            // the face. Suppressed while an operator is present so the pick
+            // dot and the badge never contend for the same anchor.
+            const stowUnits = !isFrame && zone.active ? stowPending?.[zone.location_code] : undefined;
+            // OV-129: offset toward the near-right corner of the top face —
+            // IsometricBox draws the location code at the face centre, so a
+            // badge anchored there buries the bin's identity. Bins are
+            // 3-level towers here, hence a real collision rather than a
+            // theoretical one.
+            const stowPt = (stowUnits ?? 0) > 0 && !activity?.hasActivePick
+              ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
+              : null;
+
+            // OV-128: anchor at the slab's near-left corner and run the label
+            // along the adjacent edge. The angle is derived from the two
+            // projected corners rather than hardcoded, so it stays correct
+            // under `flipped` and at any zoom.
+            const namePt = isFrame && zone.type === 'warehouse' && zone.warehouse_name
+              ? project(wx, wy + wd, 0, zoom, flipped)
+              : null;
+            // Swap to project(wx, wy, ...) to run along the upper-left edge instead.
+            const nameEdgePt = namePt
+              ? project(wx + ww, wy + wd, 0, zoom, flipped)
+              : null;
+            const nameAngle = namePt && nameEdgePt
+              ? (Math.atan2(nameEdgePt.sy - namePt.sy, nameEdgePt.sx - namePt.sx) * 180) / Math.PI
+              : 0;
+            // OV-128: plate width is derived from character count — safe because
+            // the label is monospace, so no DOM measurement is needed.
+            const nameFontSize = Math.round(8 * zoom);
+            const nameTextW = namePt
+              ? (zone.warehouse_name?.length ?? 0) * (nameFontSize * 0.6 + 0.5)
+              : 0;
+
             return (
               <g key={zone.location_code}>
                 <IsometricBox
@@ -733,7 +790,7 @@ export function IsometricCanvas({
                   }
                   isFrame={isFrame}
                   isInactive={!zone.active}
-                  label={zone.type === 'warehouse' && zone.warehouse_name ? zone.warehouse_name : zone.location_code}
+                  label={zone.type === 'warehouse' ? '' : zone.location_code}
                   rackLevels={rackLevels}
                   zoom={zoom}
                   flipped={flipped}
@@ -758,7 +815,76 @@ export function IsometricCanvas({
                     )}
                   </g>
                 )}
-                
+
+                {/* OV-128: warehouse name at the near corner, not the centre. */}
+                {namePt && (
+                  <g
+                    transform={`rotate(${nameAngle} ${namePt.sx} ${namePt.sy})`}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    {/* OV-128: solid plate so the name reads against slab, bins
+                        or page background alike. Fill --ink / text --bg inverts
+                        automatically between light and dark themes. */}
+                    <rect
+                      x={namePt.sx - 4 * zoom}
+                      y={namePt.sy + 11 * zoom}
+                      width={nameTextW + 8 * zoom}
+                      height={nameFontSize + 6 * zoom}
+                      rx={2 * zoom}
+                      fill="var(--ink)"
+                      opacity={0.82}
+                    />
+                    <text
+                      x={namePt.sx} y={namePt.sy + 11 * zoom}
+                      dy={(nameFontSize + 6 * zoom) / 2}
+                      textAnchor="start" dominantBaseline="middle"
+                      fontSize={nameFontSize} fontWeight="600"
+                      fill="var(--bg)" fontFamily="monospace"
+                      letterSpacing={0.5}
+                    >
+                      {zone.warehouse_name}
+                    </text>
+                  </g>
+                )}
+
+                {/* OV-129: pending stow units on the bin's top face.
+                    OV-129b: a bare number can't say what it counts — stock,
+                    picks and stow would all read as an unlabelled integer once
+                    the pick and pack markers land. The arrow-into-tray glyph
+                    makes the badge self-describing, and reserves the same slot
+                    for the other marker types so they read as one family. */}
+                {stowPt && (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect
+                      x={stowPt.sx - 10 * zoom} y={stowPt.sy - 5 * zoom}
+                      width={20 * zoom} height={10 * zoom} rx={2 * zoom}
+                      fill="var(--ink)" opacity={0.78}
+                    />
+                    {/* Stow glyph: arrow descending into an open tray.
+                        Silhouette weight only — detail is illegible at ~6px. */}
+                    <g stroke="var(--bg)" strokeWidth={0.9 * zoom} fill="none" strokeLinecap="round">
+                      <line
+                        x1={stowPt.sx - 6 * zoom} y1={stowPt.sy - 3 * zoom}
+                        x2={stowPt.sx - 6 * zoom} y2={stowPt.sy + 0.5 * zoom}
+                      />
+                      <polyline
+                        points={`${stowPt.sx - 7.6 * zoom},${stowPt.sy - 1 * zoom} ${stowPt.sx - 6 * zoom},${stowPt.sy + 0.7 * zoom} ${stowPt.sx - 4.4 * zoom},${stowPt.sy - 1 * zoom}`}
+                      />
+                      <polyline
+                        points={`${stowPt.sx - 8.2 * zoom},${stowPt.sy + 1.6 * zoom} ${stowPt.sx - 8.2 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 1.6 * zoom}`}
+                      />
+                    </g>
+                    <text
+                      x={stowPt.sx + 3 * zoom} y={stowPt.sy}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fontSize={Math.round(6 * zoom)} fontWeight="600"
+                      fill="var(--bg)" fontFamily="monospace"
+                    >
+                      {stowUnits}
+                    </text>
+                  </g>
+                )}
+
                 {/* Parcel icon — qty queued to pack, PACK zone only, hidden at 0 */}
                 {packPt && (
                   <g>
@@ -904,6 +1030,28 @@ export function IsometricCanvas({
        )}
       </Box>
       }
+
+      {/* OV-129c: live-marker key. Rendered only when markers can appear. */}
+      {showMarkerKey && stowPending && Object.keys(stowPending).length > 0 && (
+        <Box sx={{
+          position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 0.75,
+          px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
+          bgcolor: 'var(--bg)', opacity: 0.92,
+        }}>
+          <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
+            <g stroke="var(--ink-3)" strokeWidth={1} fill="none" strokeLinecap="round">
+              <line x1={7} y1={2} x2={7} y2={6.5} />
+              <polyline points="5.2,4.6 7,6.7 8.8,4.6" />
+              <polyline points="4,8 4,10 10,10 10,8" />
+            </g>
+          </svg>
+          <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+            {(stowPendingTotal ?? 0) > 0
+              ? `${stowPendingTotal} units awaiting stow`
+              : 'units awaiting stow'}
+          </Typography>
+        </Box>
+      )}
 
       {/* Legend — hidden in embedded contexts via showLegend={false} */}
       {/* FP-LEGEND1: overlay-aware color-scale legend, replaces FACES */}

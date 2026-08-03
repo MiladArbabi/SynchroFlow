@@ -26,9 +26,17 @@ export interface ActiveBatch {
   units_packed: number;
 }
 
+export interface StowPendingAtLocation {
+  location_code: string;
+  pending_units: number;
+  pending_tasks: number;
+}
+
 export interface StowPressure {
   pending_count: number;
   anchor_location: string;
+  /** OV-129: per-bin breakdown — drives stow badges on the live map. */
+  by_location: StowPendingAtLocation[];
 }
 
 export interface WmsLiveActivity {

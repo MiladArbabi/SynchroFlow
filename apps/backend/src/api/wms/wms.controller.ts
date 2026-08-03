@@ -3785,7 +3785,7 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [pickerRows, batchRows, stowRow, awaitingPackRow] = await Promise.all([
+    const [pickerRows, batchRows, stowRow, stowByBinRows, awaitingPackRow] = await Promise.all([
       // Last scan location per operator — within 4-hour recency window only.
       trx('pick_scan_log as psl')
         .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
@@ -3818,6 +3818,20 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .count('stow_task_id as pending_count')
         .first(),
 
+      // OV-129: per-bin pending stow, so the map can badge the bins that
+      // actually hold work. The scalar above collapses every task to one
+      // number anchored at a hardcoded 'RECEIVE-1' — a location that
+      // frequently has no stow tasks at all. Kept alongside it rather than
+      // replacing it, since stowPressure is part of the existing contract.
+      trx('stow_tasks')
+        .where('shop_id', shopId)
+        .where('status', 'pending')
+        .whereNotNull('location_code')
+        .groupBy('location_code')
+        .select('location_code')
+        .sum('quantity as pending_units')
+        .count('stow_task_id as pending_tasks'),
+
       trx('pick_batches')
         .where('shop_id', shopId)
         .where('status', 'pick_complete')
@@ -3843,6 +3857,11 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
       stowPressure: {
         pending_count: Number(stowRow?.pending_count ?? 0),
         anchor_location: 'RECEIVE-1',
+        by_location: stowByBinRows.map(r => ({
+          location_code: r.location_code as string,
+          pending_units: Number(r.pending_units),
+          pending_tasks: Number(r.pending_tasks),
+        })),
       },
       awaitingPackUnits: Number(awaitingPackRow?.total ?? 0),
       });
