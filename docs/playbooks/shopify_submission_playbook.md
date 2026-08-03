@@ -340,6 +340,41 @@ no `shop_id` filter, so it matched the shop-1 user, skipped the insert, and
 left shop 8 with a floor plan and entitlements but nobody who can log in.
 The script also provisions Growth, not Scale.
 
-**Consequence:** the reviewer seed script has never produced a usable tenant.
-Any reviewer-facing data work must target shop 1. Fix the email lookup to
-`WHERE email = ? AND shop_id = ?` before that script is used for anything.
+### Activity seed applied to production (2026-08-03)
+
+`seed_reviewer_activity.ts` ran against prod shop 1. Additive, idempotent
+(marker `SEED:REVIEWER_ACTIVITY` on `suppliers.notes`), all phases in one
+transaction. Result: 3 suppliers, 4 POs, 2 receive jobs, 20 inventory units,
+8 stow tasks, 3 pick batches, revenue $4,820 today / $3,960 yesterday.
+Prod discovery found 12 variants and 6 pick bins; all five zone types
+(pick 6, pack 3, receive 1, ship 1, returns 1) present.
+
+**Running it against prod.** `database.config.ts` selects its connection by
+`NODE_ENV`. The `development` branch reads discrete `PGHOST`/`PGPORT`/`PGUSER`/
+`PGPASSWORD`/`PGDATABASE` and **ignores `DATABASE_URL` entirely** — only the
+`production` branch uses it. Exporting `DATABASE_URL` therefore does nothing;
+export the `PG*` vars instead (dotenv does not overwrite existing env vars):
+
+    export PGHOST=localhost PGPORT=5434 PGUSER=synchroflow PGDATABASE=synchroflow
+    export PGPASSWORD=$(printf '%s' "$PGURL" | sed -E 's|^postgresql://[^:]+:([^@]+)@.*|\1|')
+    SEED_SHOP_ID=1 npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_activity.ts
+
+**Two guard lines before trusting the run.** `[DB_IDENTITY]` must show
+`database: 'synchroflow'` (local is `synchroflow_db`), and `[ACTIVITY_SEED]
+Shop:` must read **Shopify's Shop** (local is "Default Dev Shop"). Ignore the
+host/port in `DB_IDENTITY` — `inet_server_addr()` reports Postgres's own 6PN
+address (`fdaa:…:5433`), not the proxy endpoint.
+
+**Why the tenant guard is not enough on its own.** The Proxy in
+`packages/backend-core/src/db.ts` only asserts that `app.current_tenant` is
+*set*, never that it *matches* the shop being written, and auto-bypasses every
+single-string raw query. A wrong `SEED_SHOP_ID` passes it. Real isolation comes
+from RLS — verified here: seeded rows landed on shop 1 only.
+
+**Data staleness.** `pick_scan_log` rows drive the operator dots on the
+isometric map and go stale within hours. Re-run the seeder the morning of a
+review. `npm run rebuild` overwrites `revenue_projection_daily` from the event
+ledger — re-run after any rebuild.
+
+**Open:** OV-125 (P1) — prod produced 1 `pick_scan_log` row where local produced
+6, so the floor map is under-populated. Not yet audited.
