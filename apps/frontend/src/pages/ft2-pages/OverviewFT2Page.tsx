@@ -302,6 +302,13 @@ export default function OverviewPageFT2() {
   // Mixing the two would print a total that doesn't reconcile with the badges.
   const stowPendingTotal = (liveActivityQuery.data?.stowPressure.by_location ?? [])
     .reduce((sum, s) => sum + s.pending_units, 0);
+  // OV-131: units physically at a dock → receive badge.
+  const receiveAtDock = (liveActivityQuery.data?.receiveAtDock ?? []).reduce<Record<string, number>>(
+    (acc, r) => { acc[r.location_code] = r.units; return acc; },
+    {}
+  );
+  const receiveAtDockTotal = (liveActivityQuery.data?.receiveAtDock ?? [])
+    .reduce((sum, r) => sum + r.units, 0);
 
   // Inbound apron — order pool count + constrained (blocked) sub-stack.
   // Outbound apron wired in v2 once useLiveCapacity is added to this page.
@@ -506,6 +513,8 @@ export default function OverviewPageFT2() {
             packQueueCount={packQueueCount}
             stowPending={stowPending}
             stowPendingTotal={stowPendingTotal}
+            receiveAtDock={receiveAtDock}
+            receiveAtDockTotal={receiveAtDockTotal}
             showMarkerKey
             awaitingPackCount={awaitingPackCount}
             showLegend={false}

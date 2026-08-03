@@ -39,10 +39,17 @@ export interface StowPressure {
   by_location: StowPendingAtLocation[];
 }
 
+/** OV-131: units physically at a dock, keyed by real location_code. */
+export interface ReceiveAtDock {
+  location_code: string;
+  units: number;
+}
+
 export interface WmsLiveActivity {
   pickerPositions: PickerPosition[];
   activeBatches: ActiveBatch[];
   stowPressure: StowPressure;
+  receiveAtDock: ReceiveAtDock[];
   awaitingPackUnits: number;
 }
 

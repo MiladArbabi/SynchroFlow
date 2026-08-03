@@ -236,6 +236,33 @@ from `stowPressure.pending_count`. See the warning in §6.1.
 on the 15s poll. Unlike `pick_scan_log`-derived markers, they have no recency
 window — a task pending for a week still shows.
 
+**Receive (OV-131).** Badged from `inventory_units.current_location_code` where
+`status = 'received'`, **not** from `receive_jobs`. That table has no location
+column at all — a job is attached to a PO, never to a dock — and its
+`total_units` is the *expected* PO quantity rather than an observation.
+`receive_job_lines.suggested_location_code` is the eventual destination bin, not
+where stock currently sits.
+
+The map reports physical truth; job-level progress belongs to the Warehouse
+module, which already shows it. **The two will disagree** — on the dev tenant,
+`receive_jobs` reports 280 units across two jobs while `inventory_units` reports
+12 at the dock. Both are correct: job headers count expected units, unit rows
+count tracked ones. The marker key says "N units at dock" so the badge is
+explicitly scoped rather than reading as a broken total.
+
+Dock zones are flat, so the badge lifts `wh + 0.15` rather than stow's `0.35`,
+and offsets to 0.82 of the face — the dock carries its own location label at
+centre, same collision as the 3-level bins.
+
+**Anchor codes are never hardcoded.** Local's receive bin is `RECEIVE-1`;
+production's is `RECEIVE`. The legacy `stowPressure.anchor_location: 'RECEIVE-1'`
+constant matches no production location and is dead weight kept only for
+contract compatibility.
+
+**Marker key rows are conditional.** A row renders only when its total is
+above zero, so the key never explains a glyph that isn't on screen. Rows are
+ordered by material flow: dock → stow.
+
 ---
 
 ## 7. Pulse card — merged layout
@@ -299,6 +326,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | OV-129b | Bare integer badge could not say what it counted | Arrow-into-tray glyph prefix | ✅ |
 | OV-129c | Glyph alone does not teach meaning | `showMarkerKey` — glyph + words, independent of `showLegend` | ✅ |
 | OV-129d | No floor-wide total | Summed from `by_location` units | ✅ |
+| OV-131 | Receive had no signal on the map; receive_jobs has no location column | Badge from inventory_units.current_location_code where status='received'; key row "N units at dock" | ✅ |
 
 ---
 

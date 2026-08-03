@@ -304,6 +304,15 @@ export interface IsometricCanvasProps {
    * Units, not task count — must reconcile with the sum of the badges.
    */
   stowPendingTotal?: number;
+  /**
+   * OV-131: units physically at a dock, keyed by location_code. Sourced from
+   * inventory_units.current_location_code where status='received' — receive_jobs
+   * has no location column, and its totals are expected PO quantities rather
+   * than observations. See overview-live-map-playbook §6.5.
+   */
+  receiveAtDock?: Record<string, number>;
+  /** OV-131: floor-wide units at dock, for the marker key. */
+  receiveAtDockTotal?: number;
   awaitingPackCount?: number;
   /**
    * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
@@ -366,6 +375,8 @@ export function IsometricCanvas({
     stowPending,
     showMarkerKey = false,
     stowPendingTotal,
+    receiveAtDock,
+    receiveAtDockTotal,
     onUnplacedZonesClick,
     overlay,
     summaryCounts,
@@ -743,6 +754,17 @@ export function IsometricCanvas({
               ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
               : null;
 
+            // OV-131: dock zones are flat (wh = 0 for frames, low for bins), so
+            // the badge sits just above the face rather than on a tower top.
+            const dockUnits = zone.active ? receiveAtDock?.[zone.location_code] : undefined;
+            // Offset to the near corner like the stow badge — the dock face
+            // carries its own location label at centre, so 0.5 buries it.
+            // Lower lift than stow (0.15 vs 0.35) because dock zones are flat:
+            // there is no tower to clear.
+            const dockPt = (dockUnits ?? 0) > 0 && !activity?.hasActivePick
+              ? project(wx + ww * 0.82, wy + wd * 0.82, wh + 0.15, zoom, flipped)
+              : null;
+
             // OV-128: anchor at the slab's near-left corner and run the label
             // along the adjacent edge. The angle is derived from the two
             // projected corners rather than hardcoded, so it stays correct
@@ -881,6 +903,39 @@ export function IsometricCanvas({
                       fill="var(--bg)" fontFamily="monospace"
                     >
                       {stowUnits}
+                    </text>
+                  </g>
+                )}
+
+                {/* OV-131: units physically at the dock. */}
+                {dockPt && (
+                  <g style={{ pointerEvents: 'none' }}>
+                    <rect
+                      x={dockPt.sx - 10 * zoom} y={dockPt.sy - 5 * zoom}
+                      width={20 * zoom} height={10 * zoom} rx={2 * zoom}
+                      fill="var(--ink)" opacity={0.78}
+                    />
+                    {/* Receive glyph: box with an arrow entering from above. */}
+                    <g stroke="var(--bg)" strokeWidth={0.9 * zoom} fill="none" strokeLinecap="round">
+                      <rect
+                        x={dockPt.sx - 8.4 * zoom} y={dockPt.sy - 0.4 * zoom}
+                        width={5 * zoom} height={3.8 * zoom} rx={0.5 * zoom}
+                      />
+                      <line
+                        x1={dockPt.sx - 5.9 * zoom} y1={dockPt.sy - 4.2 * zoom}
+                        x2={dockPt.sx - 5.9 * zoom} y2={dockPt.sy - 1.4 * zoom}
+                      />
+                      <polyline
+                        points={`${dockPt.sx - 7.3 * zoom},${dockPt.sy - 2.6 * zoom} ${dockPt.sx - 5.9 * zoom},${dockPt.sy - 1.2 * zoom} ${dockPt.sx - 4.5 * zoom},${dockPt.sy - 2.6 * zoom}`}
+                      />
+                    </g>
+                    <text
+                      x={dockPt.sx + 3 * zoom} y={dockPt.sy}
+                      textAnchor="middle" dominantBaseline="middle"
+                      fontSize={Math.round(6 * zoom)} fontWeight="600"
+                      fill="var(--bg)" fontFamily="monospace"
+                    >
+                      {dockUnits}
                     </text>
                   </g>
                 )}
@@ -1032,24 +1087,43 @@ export function IsometricCanvas({
       }
 
       {/* OV-129c: live-marker key. Rendered only when markers can appear. */}
-      {showMarkerKey && stowPending && Object.keys(stowPending).length > 0 && (
+      {/* OV-129c/OV-131: marker key. One row per live marker type present on
+          the floor — a row is omitted entirely when its count is zero, so the
+          key never explains a glyph the user cannot see. */}
+      {showMarkerKey && ((stowPendingTotal ?? 0) > 0 || (receiveAtDockTotal ?? 0) > 0) && (
         <Box sx={{
-          position: 'absolute', bottom: 12, left: 12, display: 'flex', alignItems: 'center', gap: 0.75,
+          position: 'absolute', bottom: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 0.25,
           px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
           bgcolor: 'var(--bg)', opacity: 0.92,
         }}>
-          <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
-            <g stroke="var(--ink-3)" strokeWidth={1} fill="none" strokeLinecap="round">
-              <line x1={7} y1={2} x2={7} y2={6.5} />
-              <polyline points="5.2,4.6 7,6.7 8.8,4.6" />
-              <polyline points="4,8 4,10 10,10 10,8" />
-            </g>
-          </svg>
-          <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
-            {(stowPendingTotal ?? 0) > 0
-              ? `${stowPendingTotal} units awaiting stow`
-              : 'units awaiting stow'}
-          </Typography>
+          {(receiveAtDockTotal ?? 0) > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
+                <g stroke="var(--ink-3)" strokeWidth={1} fill="none" strokeLinecap="round">
+                  <rect x={4.5} y={6} width={5} height={4} rx={0.5} />
+                  <line x1={7} y1={1.5} x2={7} y2={4.5} />
+                  <polyline points="5.6,3.2 7,4.7 8.4,3.2" />
+                </g>
+              </svg>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+                {`${receiveAtDockTotal} units at dock`}
+              </Typography>
+            </Box>
+          )}
+          {(stowPendingTotal ?? 0) > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
+                <g stroke="var(--ink-3)" strokeWidth={1} fill="none" strokeLinecap="round">
+                  <line x1={7} y1={2} x2={7} y2={6.5} />
+                  <polyline points="5.2,4.6 7,6.7 8.8,4.6" />
+                  <polyline points="4,8 4,10 10,10 10,8" />
+                </g>
+              </svg>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+                {`${stowPendingTotal} units awaiting stow`}
+              </Typography>
+            </Box>
+          )}
         </Box>
       )}
 

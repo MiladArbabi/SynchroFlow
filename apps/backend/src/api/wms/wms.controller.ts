@@ -3785,7 +3785,7 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [pickerRows, batchRows, stowRow, stowByBinRows, awaitingPackRow] = await Promise.all([
+    const [pickerRows, batchRows, stowRow, stowByBinRows, receiveByBinRows, awaitingPackRow] = await Promise.all([
       // Last scan location per operator — within 4-hour recency window only.
       trx('pick_scan_log as psl')
         .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
@@ -3832,6 +3832,19 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .sum('quantity as pending_units')
         .count('stow_task_id as pending_tasks'),
 
+      // OV-131: units physically sitting at a dock, keyed by their actual
+      // recorded location. Deliberately NOT derived from receive_jobs —
+      // that table has no location column at all, and its total_units is an
+      // EXPECTED quantity from the PO, not an observation. The map reports
+      // physical truth; job-level progress lives in the Warehouse module.
+      trx('inventory_units')
+        .where('shop_id', shopId)
+        .where('status', 'received')
+        .whereNotNull('current_location_code')
+        .groupBy('current_location_code')
+        .select('current_location_code as location_code')
+        .count('lasyncro_unit_id as units'),
+
       trx('pick_batches')
         .where('shop_id', shopId)
         .where('status', 'pick_complete')
@@ -3863,6 +3876,10 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
           pending_tasks: Number(r.pending_tasks),
         })),
       },
+      receiveAtDock: receiveByBinRows.map(r => ({
+        location_code: r.location_code as string,
+        units: Number(r.units),
+      })),
       awaitingPackUnits: Number(awaitingPackRow?.total ?? 0),
       });
   });
