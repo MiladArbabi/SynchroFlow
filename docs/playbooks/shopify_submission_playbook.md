@@ -18,7 +18,7 @@ This playbook documents the full process of getting LaSyncro listed on the Shopi
 LaSyncro is a monorepo with three distinct production surfaces:
 
 | Surface | URL | Platform |
-|---|---|---|
+| --- | --- | --- |
 | Marketing / landing | `www.lasyncro.com` | Vercel |
 | App (frontend + API) | `app.lasyncro.com` | Fly.io (`synchroflow`) |
 | Database | Internal Fly network | Fly Postgres (`synchroflow-db`) |
@@ -94,7 +94,7 @@ No changes required. Passed from the start once URLs were corrected.
 During the sprint, several production secrets were found mismatched or stale:
 
 | Secret | Issue | Fix |
-|---|---|---|
+| --- | --- | --- |
 | `SHOPIFY_API_KEY` | Pointed to old/wrong app key | Updated to `990bd1711ae1152021d12901d45a7951` |
 | `SHOPIFY_API_SECRET` / `SHOPIFY_API_SECRET_KEY` | Mismatched from local `.env` | Synced from `.env` |
 | `ENCRYPTION_KEY` | Different length/value from local | Synced from `.env` (`wc -c` comparison) |
@@ -134,7 +134,9 @@ Fixes:
 ---
 
 ## Shopify Billing — Managed Pricing Sync (verified 2026-07-18)
+
 ### Background
+
 The original `/api/v1/shopify-billing/change-plan` endpoint (using `appSubscriptionCreate` directly) was retired June 2026 — Shopify rejects direct Billing API charge creation for apps on Managed Pricing ("Managed Pricing Apps cannot use the Billing API to create charges"). Plan selection now happens entirely on Shopify's hosted pricing page (`https://admin.shopify.com/store/:store_handle/charges/:app_handle/pricing_plans`). The retirement left a gap: nothing synced the resulting plan state back into `shop_subscriptions`. Closed this session (SHB-01, SHB-07, SHB-13, SHB-16).
 
 ### Architecture
@@ -144,6 +146,7 @@ The original `/api/v1/shopify-billing/change-plan` endpoint (using `appSubscript
 - Registered in `shopifyWebhooks.core.ts` (topic `app_subscriptions/update` → GraphQL enum `APP_SUBSCRIPTIONS_UPDATE`) and dispatched via `shopify.webhook.ts` / `shopify.webhook.router.ts`.
 
 ### Plan name → tier mapping
+
 `AppSubscription` has **no `handle` field** (confirmed via GraphQL introspection) — mapping keys on the invoice-facing `name` string, normalized (trim, lowercase, hyphens/underscores collapsed to spaces) to tolerate formatting drift:
 "Early-access" -> starter
 "Core"         -> core
@@ -152,6 +155,7 @@ The original `/api/v1/shopify-billing/change-plan` endpoint (using `appSubscript
 Partner Dashboard "Internal plan handle" values (`early-access`, `core`, `growth`, `scale`) are NOT used for mapping — they're invisible to the Admin API.
 
 ### Status mapping
+
 `shop_subscriptions.status` has a DB check constraint written for Stripe's lowercase vocabulary (`trialing, active, past_due, canceled, unpaid`). Shopify's `AppSubscriptionStatus` enum (`ACTIVE, PENDING, DECLINED, EXPIRED, FROZEN, CANCELLED`) has no exact equivalents and is case-mismatched even for the success case — writing it raw violated the constraint on every status including `ACTIVE`. Mapped by semantic fit:
 ACTIVE    -> active
 PENDING   -> unpaid     (no payment collected, awaiting merchant decision)
@@ -162,9 +166,11 @@ CANCELLED -> canceled
 (no sub)  -> canceled
 
 ### SHB-13: forced-starter on non-active status
+
 `resolveTierForShop` (used for the JWT `tier` claim on every token issuance, 15-min expiry) reads `shop_subscriptions.tier` verbatim — no code anywhere reads `status` for gating. So the reconciliation service forces `tier: 'starter'` whenever Shopify status isn't `ACTIVE`, regardless of the plan name on the (inactive) subscription, and the handler revokes the resulting downgrade diff. This is provider-agnostic risk in principle — see monetization_billing_playbook.md §24 for the equivalent open gap on the Stripe side (SHB-14, not yet fixed).
 
 ### SHB-16: webhook router shop-resolution bug (systemic, not billing-specific)
+
 `WebhookRouter.dispatch` resolved `shopId` from `shopDomain` into a local variable but never wrote it back onto `envelope.shopId`. Latent since no prior Shopify handler read `envelope.shopId` directly; surfaced by `handleAppSubscriptionUpdate`. Fixed at the router (single point, mirrors ISS-B06 precedent) — `envelope.shopId = resolvedShopId` added immediately after resolution.
 
 ### Redirect URLs (Partner Dashboard, per plan)
@@ -249,7 +255,7 @@ Health check passing
 
 To verify end-to-end install works, watch for this sequence in `fly logs`:
 
-```
+```bash
 🔵 Starting OAuth callback for platform: shopify
 [SYNC_JOB_ENQUEUED]
 [sync.worker] Received sync job for integration ID: N
@@ -270,7 +276,7 @@ LaSyncro selected **"My app doesn't have any of these capabilities"** — it is 
 
 Both production and local dev URLs must be in the Shopify Partner Dashboard redirect list:
 
-```
+```bash
 https://app.lasyncro.com/api/v1/integrations/oauth/callback/shopify
 http://localhost:3000/api/v1/integrations/oauth/callback/shopify
 ```
@@ -297,7 +303,7 @@ App Store reviews don't require a published listing — reviewers install via OA
 
 The frontend connect UI is gated, but the backend endpoint `GET /api/v1/integrations/oauth/initiate` is live. With a logged-in bearer token:
 \`\`\`bash
-curl -G "https://app.lasyncro.com/api/v1/integrations/oauth/initiate" \
+curl -G "<https://app.lasyncro.com/api/v1/integrations/oauth/initiate>" \
   --data-urlencode "platform=shopify" \
   --data-urlencode "shop=development-store-15820042357" \
   -H "Authorization: Bearer <TOKEN>"
@@ -318,9 +324,10 @@ Then log out/in to refresh the JWT `tier` claim.
 
 - Test account: `contact@lasyncro.com` + password
 - Testing instructions: log in → lands directly on connected FT2 dashboard (no store-connect step, by design)
+
 ### ROUTE-01 closed (verified 2026-07-23)
 
-Shopify sends real App Store install requests as GET to the exact App URL configured in the Partner Dashboard (this app's is the bare root, https://app.lasyncro.com) with shop, hmac, and timestamp query params appended, per Shopify's own OAuth documentation. The backend's handleShopifyInstall handler existed and was correctly implemented (HMAC validation, ghost-shop creation, billing_provider stamped at birth per SHB-01/03/04), but was only mounted at /api/v1/integrations/shopify/install. Nothing routed root-path traffic there, so a real install request would have silently fallen through to the SPA and served the login page instead, with the install parameters discarded entirely.
+Shopify sends real App Store install requests as GET to the exact App URL configured in the Partner Dashboard (this app's is the bare root, <https://app.lasyncro.com>) with shop, hmac, and timestamp query params appended, per Shopify's own OAuth documentation. The backend's handleShopifyInstall handler existed and was correctly implemented (HMAC validation, ghost-shop creation, billing_provider stamped at birth per SHB-01/03/04), but was only mounted at /api/v1/integrations/shopify/install. Nothing routed root-path traffic there, so a real install request would have silently fallen through to the SPA and served the login page instead, with the install parameters discarded entirely.
 
 First fix attempt placed the install-detection check inside the app.get(*) catch-all, positioned after app.use(express.static(...)). Deployed cleanly but did not fix the issue — verified via response headers (etag, last-modified) showing express.static intercepts and serves index.html for bare / before any handler registered after it ever runs. Corrected by moving the check to its own app.get('/') handler registered before express.static, calling next() to fall through to normal SPA serving for any request that isn't install-shaped.
 
@@ -349,15 +356,25 @@ transaction. Result: 3 suppliers, 4 POs, 2 receive jobs, 20 inventory units,
 Prod discovery found 12 variants and 6 pick bins; all five zone types
 (pick 6, pack 3, receive 1, ship 1, returns 1) present.
 
+**Deployment status — 2026-08-03.** The local Overview screenshot contains the
+committed OV-128/OV-129/OV-131 live-map presentation: the warehouse name is
+moved to the slab edge, stow work is shown per bin, receive work is shown at
+the dock, and the marker key explains both signals. These commits have not yet
+been deployed to Fly.io. Production therefore still shows the older warehouse
+label placement and has no stow badges, receive badge, or marker key. This is
+an expected deployment gap, not a new production regression.
+
 **Running it against prod.** `database.config.ts` selects its connection by
 `NODE_ENV`. The `development` branch reads discrete `PGHOST`/`PGPORT`/`PGUSER`/
 `PGPASSWORD`/`PGDATABASE` and **ignores `DATABASE_URL` entirely** — only the
 `production` branch uses it. Exporting `DATABASE_URL` therefore does nothing;
 export the `PG*` vars instead (dotenv does not overwrite existing env vars):
 
+```bash
     export PGHOST=localhost PGPORT=5434 PGUSER=synchroflow PGDATABASE=synchroflow
     export PGPASSWORD=$(printf '%s' "$PGURL" | sed -E 's|^postgresql://[^:]+:([^@]+)@.*|\1|')
     SEED_SHOP_ID=1 npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_activity.ts
+```
 
 **Two guard lines before trusting the run.** `[DB_IDENTITY]` must show
 `database: 'synchroflow'` (local is `synchroflow_db`), and `[ACTIVITY_SEED]
@@ -371,10 +388,30 @@ address (`fdaa:…:5433`), not the proxy endpoint.
 single-string raw query. A wrong `SEED_SHOP_ID` passes it. Real isolation comes
 from RLS — verified here: seeded rows landed on shop 1 only.
 
-**Data staleness.** `pick_scan_log` rows drive the operator dots on the
-isometric map and go stale within hours. Re-run the seeder the morning of a
-review. `npm run rebuild` overwrites `revenue_projection_daily` from the event
-ledger — re-run after any rebuild.
+**Data staleness.** `pickerPositions` only includes `pick_scan_log` rows from
+the preceding four hours, while idle detection uses the shop's shorter idle
+threshold. Production can therefore show operator dots and simultaneously
+report those operators as idle; this remains open as OV-132.
 
-**Open:** OV-125 (P1) — prod produced 1 `pick_scan_log` row where local produced
-6, so the floor map is under-populated. Not yet audited.
+Do not use `seed_reviewer_activity.ts` as a morning-of-review refresh command.
+Its supplier marker makes subsequent runs exit without changing timestamps.
+`npm run rebuild` also overwrites the seeded `revenue_projection_daily` rows,
+and the marker prevents the seeder from restoring them. A dedicated,
+non-destructive reviewer refresh procedure is still required under OV-132.
+
+**Resolved locally; deployment pending: OV-125 (P1).** Production
+contained 42 orders, of which the six newest unbatched orders had no
+`order_line_items`. The committed selector claimed those six orders, but
+`pick_scan_log` requires a real `lasyncro_line_item_id`, so the picking and
+packing batches produced no usable scan activity.
+
+The permanent fix adds a `whereExists` requirement for `order_line_items`
+before an order can be claimed. Local verification produced three batches,
+zero invalid claims, three scans for picking, and three scans for packing.
+`GET /api/v1/wms/live-activity` returned one picker position and two active
+batches; unauthenticated access remained `401`.
+
+Production data was repaired once: both active batches now have three valid
+claims and three scan rows. The one-off repair script was not retained in the
+repository because its deletion scope was unsafe for reuse. The permanent
+seeder fix is the only OV-125 source change.

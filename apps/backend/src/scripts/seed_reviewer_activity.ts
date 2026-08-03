@@ -208,11 +208,20 @@ async function main(): Promise<void> {
 
     // pick_batch_orders has a UNIQUE constraint on lasyncro_order_id alone —
     // an order can belong to exactly one batch ever. Only take unbatched ones.
+    // OV-125: an order with no order_line_items rows cannot produce pick scans —
+    // pick_scan_log requires a real lasyncro_line_item_id FK. Ordering by
+    // order_created_at DESC alone selected prod's six newest orders, which are
+    // precisely the six (of 42) that have no line items, so every scan loop ran
+    // zero times and the floor map showed no picking. Require line items.
     const unbatched = await trx('orders as o')
       .where('o.shop_id', SHOP_ID)
       .whereNotExists(function () {
         this.select(1).from('pick_batch_orders as p')
           .whereRaw('p.lasyncro_order_id = o.lasyncro_order_id');
+      })
+      .whereExists(function () {
+        this.select(1).from('order_line_items as l')
+          .whereRaw('l.lasyncro_order_id = o.lasyncro_order_id');
       })
       .orderBy('o.order_created_at', 'desc')
       .limit(9)
