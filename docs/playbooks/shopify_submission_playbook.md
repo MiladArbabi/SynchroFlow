@@ -288,6 +288,23 @@ http://localhost:3000/api/v1/integrations/oauth/callback/shopify
 - Webhook "address already taken" errors on re-install — non-fatal, webhooks already registered
 - `[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing` — resolved by setting `APP_BASE_URL` secret
 - `[INGESTION_STALLED]` watchdog fires after sync on stores with stable order counts — false positive, harmless
+**SHOP-REV-01f — pack stage unreachable without wms_barcode.**
+orders.wms_barcode was written in exactly one place: a closure inside
+releasePickBatch (pickBatch.service.ts). Any order reaching pack by another
+route — seeded fixtures, or orders predating the WMS rollout — had none, and
+GET /wms/orders/:orderId/invoice returned 409 "batch not yet released". Since
+the LSO- scan is what advances packing -> packed, those orders could never be
+packed at all.
+
+Confirmed on the reviewer tenant 2026-08-03: of 4 batches on shop 1, only the
+2 orders in pick_complete carried barcodes. The packing batch's 3 orders had
+none, so the reviewer could not complete a pack.
+
+Fixed by extracting the generator to wmsOrderBarcode.service.ts and having the
+invoice endpoint mint on demand. The 409 now fires only for genuinely unbatched
+orders, where it is correct.
+
+Local verification requires a shopify_app_installations row — see below.
 
 ## Reviewer Test Account Setup
 

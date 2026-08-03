@@ -107,3 +107,27 @@ Long enough to start a build, not long enough to finish one. Grab the token
 after the deploy completes, not before:
 
 copy(localStorage.getItem('accessToken')) // DevTools console
+
+**Rotating the production DB password requires updating TWO secrets.**
+The app reads credentials from both DATABASE_URL and the discrete PGPASSWORD /
+PGHOST / PGPORT / PGUSER / PGDATABASE set (database.config.ts selects by
+NODE_ENV). Updating only DATABASE_URL leaves the app unable to authenticate and
+takes production down with FATAL: password authentication failed. Set both in
+one `flyctl secrets set` invocation.
+
+Also: psql does not expand shell variables. `ALTER ROLE x WITH PASSWORD
+'$MYVAR';` sets the password to the literal string $MYVAR. Run the ALTER
+non-interactively via `psql -c "..."` with double quotes so the shell expands.
+
+**flyctl secrets set reports false deploy failures.** "smoke checks failed: the
+app appears to be crashing" fired while the app was healthy — same root cause as
+the listening-address false alarm: server.ts awaits five async initializers
+before app.listen. Verify with `flyctl status` and curl, not flyctl's verdict.
+
+**Local invoice testing needs a shopify_app_installations row.**
+httpGetOrderInvoice inner-joins shops to shopify_app_installations for
+shop_domain. Seeded dev shops skip OAuth so the row never exists, and the
+endpoint throws SHOP_NOT_FOUND -> 500 on every call. Prod shop 1 has the row;
+this is local-only. Insert a fixture row with a clearly fake access_token.
+Registered separately as INV-01 (P2): the inner join also means an uninstalled
+merchant loses invoice printing for existing orders.

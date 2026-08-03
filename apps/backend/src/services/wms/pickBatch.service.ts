@@ -5,6 +5,7 @@ import { v5 as uuidv5 } from 'uuid';
 import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 import { fireBatchReleasedAlert } from './wmsAlerts.service.js';
 import { reserveBatchInventory } from './batchReservation.service.js';
+import { generateWmsBarcode } from './wmsOrderBarcode.service.js';
 
 /**
  * PICK BATCH SERVICE (WM-07)
@@ -341,21 +342,6 @@ export async function releaseBatch(
         ? { targetUserId: assignedOperatorId }
         : { broadcastToRole: 'operator' as const }),
   }).catch((err) => console.error('[PICK_BATCH_RELEASED_PUSH_FAILED]', err.message));
-
-  // 6. Generate WMS barcode per order (WM-34)
-  //    LSO-{8 char uppercase alphanumeric} — physical order identity
-  //    from warehouse entry to ship confirmation.
-  //    Generated at batch release (not claim) — orders need a barcode
-  //    before the packer touches them.
-  //    onConflict: ignore — idempotent if batch is re-released.
-  const generateWmsBarcode = (): string => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = 'LSO-';
-    for (let i = 0; i < 8; i++) {
-      code += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return code;
-  };
 
   for (const orderId of selectedOrderIds) {
     await trx('orders')

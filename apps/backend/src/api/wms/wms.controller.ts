@@ -33,6 +33,7 @@ import { encrypt } from '../../security/encryption.service.js';
 import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service.js';
 import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
 import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.service.js';
+import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
 // ─────────────────────────────────────────
@@ -2237,8 +2238,13 @@ export const httpGetOrderInvoice = async (req: Request, res: Response) => {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
+  // SHOP-REV-01f: req.params types as string | string[]. Narrowing here rather
+  // than casting at the call site keeps the invariant at the boundary — a
+  // repeated param is a malformed request, not something to coerce.
   const { orderId } = req.params;
-  if (!orderId) return res.status(400).json({ error: 'orderId is required' });
+  if (!orderId || typeof orderId !== 'string') {
+    return res.status(400).json({ error: 'orderId is required' });
+  }
 
   try {
     const result = await db.transaction(async (trx) => {
@@ -2265,8 +2271,18 @@ export const httpGetOrderInvoice = async (req: Request, res: Response) => {
         )
         .first();
 
-      if (!order) throw new Error('ORDER_NOT_FOUND');
-      if (!order.wms_barcode) throw new Error('ORDER_NO_WMS_BARCODE');
+        if (!order) throw new Error('ORDER_NOT_FOUND');
+
+      // SHOP-REV-01f: mint on demand rather than dead-ending. Orders that
+      // reached pack without passing through releasePickBatch had no barcode,
+      // so the packer could neither print an invoice nor scan LSO- to advance
+      // the order to packed. ensureOrderWmsBarcode returns null only when the
+      // order is unbatched, where the 409 below is still the right answer.
+      if (!order.wms_barcode) {
+        const minted = await ensureOrderWmsBarcode(trx, shopId, orderId);
+        if (!minted) throw new Error('ORDER_NO_WMS_BARCODE');
+        order.wms_barcode = minted;
+      }
 
       // Fetch line items with product info and image
       const lineItems = await trx('order_line_items as oli')
