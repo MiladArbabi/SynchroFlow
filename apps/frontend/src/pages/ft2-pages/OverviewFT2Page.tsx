@@ -266,6 +266,14 @@ export default function OverviewPageFT2() {
     (acc, b) => { acc[b.batch_id] = b.status; return acc; },
     {}
   );
+    // OV-132: staleness is graded here, not filtered server-side. An operator
+  // who stopped moving is the case a merchant most needs to see — the old
+  // 4-hour window hid exactly that. Grade on last_scan_at where present
+  // (null for packers by design, and for pickers yet to scan) and fall back
+  // to batch_activity_at, which is never null on a live batch.
+  const staleThresholdMs =
+    (liveActivityQuery.data?.staleThresholdMinutes ?? 15) * 60 * 1000;
+
     const liveActivity = liveActivityQuery.data?.pickerPositions.reduce<Record<string, LiveBinActivity>>(
     (acc, p) => {
       const existing = acc[p.location_code];
@@ -274,12 +282,16 @@ export default function OverviewPageFT2() {
         (existing?.pickingCount ?? 0) + (status === 'picking' ? 1 : 0);
       const packingCount =
         (existing?.packingCount ?? 0) + (status === 'packing' ? 1 : 0);
+      const freshnessAt = p.last_scan_at ?? p.batch_activity_at;
+      const isStale =
+        Date.now() - new Date(freshnessAt).getTime() > staleThresholdMs;
 
       acc[p.location_code] = {
         operatorCount: (existing?.operatorCount ?? 0) + 1,
         hasActivePick: true,
         pickingCount,
         packingCount,
+        staleCount: (existing?.staleCount ?? 0) + (isStale ? 1 : 0),
         // OV-136: phase is homogeneous only when exactly one phase is present.
         status:
           pickingCount > 0 && packingCount === 0

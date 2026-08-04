@@ -548,8 +548,10 @@ export function IsometricCanvas({
             summary.packing +
             (activity.packingCount ??
               (activity.status === 'packing' ? activity.operatorCount : 0)),
+          // OV-132: legacy callers omit staleCount — absent means not stale.
+          stale: summary.stale + (activity.staleCount ?? 0),
         }),
-        { total: 0, picking: 0, packing: 0 }
+        { total: 0, picking: 0, packing: 0, stale: 0 }
       ),
     [liveActivity]
   );
@@ -884,6 +886,11 @@ export function IsometricCanvas({
             const packingOperatorCount =
               activity?.packingCount ??
               (activity?.status === 'packing' ? operatorCount : 0);
+            // OV-132: stale operators render amber, never hidden. Legacy
+            // callers omit staleCount — absent means not stale.
+            const staleOperatorCount = activity?.staleCount ?? 0;
+            const allStale =
+              operatorCount > 0 && staleOperatorCount === operatorCount;
             const operatorStatusText = [
               pickingOperatorCount > 0
                 ? `${pickingOperatorCount} picking`
@@ -897,7 +904,10 @@ export function IsometricCanvas({
             const operatorAriaLabel =
               `${operatorCount} active ${operatorCount === 1 ? 'operator' : 'operators'} ` +
               `at ${zone.location_code}` +
-              (operatorStatusText ? `: ${operatorStatusText}` : '');
+              (operatorStatusText ? `: ${operatorStatusText}` : '') +
+              (staleOperatorCount > 0
+                ? `. ${staleOperatorCount} with no recent scan`
+                : '');
             const dotPt = activity?.hasActivePick
               ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
               : null;
@@ -1015,7 +1025,7 @@ export function IsometricCanvas({
                       dominantBaseline="middle"
                       fontSize={Math.round(6 * zoom)}
                       fontWeight="600"
-                      fill="var(--ink-2)"
+                      fill={allStale ? '#D9A23B' : 'var(--ink-2)'}
                       fontFamily="monospace"
                     >
                       {`${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}`}
@@ -1351,6 +1361,8 @@ export function IsometricCanvas({
                 )}
               </svg>
               <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+                {/* OV-132: stale is reported, never subtracted — an operator
+                    who stopped moving still occupies the floor. */}
                 {`${operatorSummary.total} active ${
                   operatorSummary.total === 1 ? 'operator' : 'operators'
                 }${
@@ -1360,6 +1372,10 @@ export function IsometricCanvas({
                 }${
                   operatorSummary.packing > 0
                     ? ` · ${operatorSummary.packing} packing`
+                    : ''
+                }${
+                  operatorSummary.stale > 0
+                    ? ` · ${operatorSummary.stale} idle`
                     : ''
                 }`}
               </Typography>

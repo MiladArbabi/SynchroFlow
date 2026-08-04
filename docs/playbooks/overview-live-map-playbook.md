@@ -193,9 +193,12 @@ with them (8 tasks vs 132 units on the dev tenant).
 
 ### 6.2 Derivation queries
 
-- `pickerPositions` is the legacy response-field name for active picking and packing operator positions.
-- Picking positions use each current picker's latest confirmed `pick_scan_log` row within four hours. The scan operator must match `pick_batches.picked_by`, and the recorded `location_code` remains the physical bin position.
-- Packing positions use each current packer's latest confirmed `pack_scan_log` row within four hours. The scan operator must match `COALESCE(pick_batches.packed_by, pick_batches.assigned_packer_id)`.
+- `pickerPositions` is the legacy response-field name for active picking and packing operator positions (OV-142).
+- OV-132: liveness is a property of the BATCH, not of scan recency. Presence comes from `pick_batches` in `picking`/`packing` status. The former four-hour filter on `scanned_at` made an operator vanish mid-batch whenever a walk between bins outran the window, and no single value satisfies both "picker crossing a long aisle" and "batch genuinely abandoned". Production ran at 1785 minutes idle and showed an empty floor.
+- Picking positions: identity and liveness from `pick_batches.picked_by` / `pick_last_activity_at`. Position from a LATERAL lookup of the latest confirmed `pick_scan_log` row for that batch and operator — **unbounded**, no time filter. A picker with no scan yet anchors to the first active `zone_type='pick'` location; if neither resolves, the row is dropped rather than rendered at a nonexistent bin.
+- Packing positions: identity from `COALESCE(packed_by, assigned_packer_id)`, liveness from `COALESCE(pack_last_activity_at, pick_last_activity_at)` — a batch in `packing` has necessarily been picked, so the pick clock is a valid floor (OV-149). `pack_scan_log` is **not joined**: it carries no location (OV-139), so position already came from the pack zone, and identity plus recency both live on `pick_batches`. Joining it only added a failure mode — prod has zero pack scans (OV-147).
+- Freshness is reported, never filtered. Each entry carries `last_scan_at` (null for packers by design, and for pickers yet to scan) and `batch_activity_at` (never null on a live batch). The response also carries `staleThresholdMinutes` from `shop_wms_settings.idle_alert_threshold_minutes`, default 15 — `idleAlert.service.ts:52` returns early when the row is missing, which the map cannot do, since that would mean nothing is ever stale.
+- The client grades on `last_scan_at ?? batch_activity_at`. A bin where every operator is stale renders its pill in `#D9A23B`; mixed bins stay default. The marker key appends `· N idle`. Stale operators are never hidden — an operator who stopped moving is the case a merchant most needs to see.
 - `pack_scan_log` has no station or location field. Packing activity is therefore phase-level: it anchors to the first active pack zone ordered by `location_code`. No packing position is emitted when the warehouse has no active pack zone. Exact multi-station attribution requires a future station-assignment data model.
 - `activeBatches`: `pick_batches` where `status IN ('picking', 'packing')`, exposing batch progress from `units_picked`, `total_line_items`, `total_units`, and `units_packed`.
 - `stowPressure.by_location`: pending `stow_tasks` grouped by `location_code`; badges use summed units while `pending_count` remains a task count.
@@ -260,7 +263,7 @@ that needs it.
 from `stowPressure.pending_count`. See the warning in §6.1.
 
 **Staleness.** Badges reflect `stow_tasks` with `status = 'pending'` and update
-on the 15s poll. Unlike `pick_scan_log`-derived markers, they have no recency
+on the 15s poll. Unlike batch-derived operator markers, they have no recency
 window — a task pending for a week still shows.
 
 **Receive (OV-131).** Badged from `inventory_units.current_location_code` where
@@ -372,3 +375,13 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | **v3** — Parked | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill from tokens | FP-OV-07 (remaining) |
 
 Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.
+
+| OV-132 | P1 | Operators vanished after 4h; markers and idle alerts disagreed | CLOSED — liveness from pick_batches, freshness graded client-side |
+| OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
+| OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
+| OV-148 | P1 | Batches b8ad06f2 and 99495ddc attributed to user 1 (contact@lasyncro.com) — the reviewer is seeded as their own operator. seed_reviewer_activity.ts falls back to owner?.id | Open |
+| OV-149 | P2 | pack_last_activity_at NULL on all prod batches incl. the active packing one | Open — non-blocking, packer query falls back to pick_last_activity_at |
+| OV-150 | P2 | "2 active operators · 2 idle" is self-contradictory when stale === total | Open |
+| OV-151 | P2 | Pack queue badge and operator pill are two unlabelled numbers on one zone. Relocate packQueueCount to the flow rail — not a deletion | Held, coupled to the rail |
+| CANVAS-COLOR-01 | P3 | Five hardcoded colour literals in IsometricCanvas vs ZONE_COLORS' var(--zone-{type}) | Open |
+| BUILD-01 | P2 | No tsc --noEmit gate between commit and Docker build; tsx strips types without checking | Open |

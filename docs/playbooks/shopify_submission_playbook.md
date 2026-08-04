@@ -407,14 +407,19 @@ from RLS — verified here: seeded rows landed on shop 1 only.
 
 **Data staleness.** `pickerPositions` only includes `pick_scan_log` rows from
 the preceding four hours, while idle detection uses the shop's shorter idle
-threshold. Production can therefore show operator dots and simultaneously
-report those operators as idle; this remains open as OV-132.
+threshold. That divergence is resolved: markers and idle alerts now read the
+same source. Presence comes from pick_batches; freshness is graded against
+shop_wms_settings.idle_alert_threshold_minutes, the value the idle alert uses.
+OV-132 is closed in source.
 
 Do not use `seed_reviewer_activity.ts` as a morning-of-review refresh command.
 Its supplier marker makes subsequent runs exit without changing timestamps.
 `npm run rebuild` also overwrites the seeded `revenue_projection_daily` rows,
 and the marker prevents the seeder from restoring them. A dedicated,
-non-destructive reviewer refresh procedure is still required under OV-132.
+non-destructive reviewer refresh is now a plain UPDATE on pick_batches
+(pick_last_activity_at, pack_last_activity_at). Scan logs are append-only —
+tgtype 19 triggers reject UPDATE on every column — so no freshness procedure
+may touch them. Two nullable timestamps, no immutable history, no counter drift.
 
 ### Canonical outbound reviewer seed — OV-135
 
@@ -515,6 +520,6 @@ exposed credentials.
 
 The Overview live map now renders active operators as semantic pills rather than ambiguous numeric circles. Each marker shows a person glyph, operator count, and separate blue picking or orange packing indicators. The marker key reports the floor-wide operator total and phase breakdown.
 
-Picking operators remain at their latest confirmed physical pick-scan location. Packing operators are now derived from confirmed pack scans instead of inheriting their final picking location. Because `pack_scan_log` does not record a station, packing activity anchors to the first active pack zone ordered by `location_code`; exact attribution across multiple pack stations remains a future data-model requirement.
+Picking operators remain at their latest confirmed physical pick-scan location. Packing operators anchor to the first active pack zone ordered by `location_code`; `pack_scan_log` is no longer joined (OV-132) since it records no station and identity lives on the batch. Exact attribution across multiple pack stations remains a data-model requirement — prod has three (PACK-01/02/03), so every packer stacks on PACK-01 there (OV-146).
 
 Local verification returned the picker at `A-1` and the packer at `PACK-1`. `GET /api/v1/wms/live-activity` returned `200`, `GET /api/v1/wms/order-pool` remained `200` with two ready orders, and unauthenticated live-activity access remained `401`.

@@ -233,7 +233,9 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
         packing: summary.packing +
             (activity.packingCount ??
                 (activity.status === 'packing' ? activity.operatorCount : 0)),
-    }), { total: 0, picking: 0, packing: 0 }), [liveActivity]);
+        // OV-132: legacy callers omit staleCount — absent means not stale.
+        stale: summary.stale + (activity.staleCount ?? 0),
+    }), { total: 0, picking: 0, packing: 0, stale: 0 }), [liveActivity]);
     const worldBounds = useMemo(() => {
         if (positionedZones.length === 0)
             return null;
@@ -561,6 +563,10 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                 (activity?.status === 'picking' ? operatorCount : 0);
                             const packingOperatorCount = activity?.packingCount ??
                                 (activity?.status === 'packing' ? operatorCount : 0);
+                            // OV-132: stale operators render amber, never hidden. Legacy
+                            // callers omit staleCount — absent means not stale.
+                            const staleOperatorCount = activity?.staleCount ?? 0;
+                            const allStale = operatorCount > 0 && staleOperatorCount === operatorCount;
                             const operatorStatusText = [
                                 pickingOperatorCount > 0
                                     ? `${pickingOperatorCount} picking`
@@ -573,7 +579,10 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                 .join(', ');
                             const operatorAriaLabel = `${operatorCount} active ${operatorCount === 1 ? 'operator' : 'operators'} ` +
                                 `at ${zone.location_code}` +
-                                (operatorStatusText ? `: ${operatorStatusText}` : '');
+                                (operatorStatusText ? `: ${operatorStatusText}` : '') +
+                                (staleOperatorCount > 0
+                                    ? `. ${staleOperatorCount} with no recent scan`
+                                    : '');
                             const dotPt = activity?.hasActivePick
                                 ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
                                 : null;
@@ -625,7 +634,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone
-                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' ? '' : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { role: "img", "aria-label": operatorAriaLabel, children: [_jsx("title", { children: operatorAriaLabel }), _jsx("rect", { x: dotPt.sx - 19 * zoom, y: dotPt.sy - 6.5 * zoom, width: 38 * zoom, height: 13 * zoom, rx: 6.5 * zoom, fill: "var(--bg)", stroke: "var(--rule)", strokeWidth: 0.8 * zoom, opacity: 0.96 }), _jsx("circle", { cx: dotPt.sx - 13.5 * zoom, cy: dotPt.sy - 2.2 * zoom, r: 1.6 * zoom, fill: "var(--ink-2)" }), _jsx("rect", { x: dotPt.sx - 16 * zoom, y: dotPt.sy + 0.2 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 1.9 * zoom, fill: "var(--ink-2)" }), _jsx("text", { x: dotPt.sx - 1.5 * zoom, y: dotPt.sy + 0.5 * zoom, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--ink-2)", fontFamily: "monospace", children: `${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}` }), pickingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: packingOperatorCount > 0
+                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' ? '' : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { role: "img", "aria-label": operatorAriaLabel, children: [_jsx("title", { children: operatorAriaLabel }), _jsx("rect", { x: dotPt.sx - 19 * zoom, y: dotPt.sy - 6.5 * zoom, width: 38 * zoom, height: 13 * zoom, rx: 6.5 * zoom, fill: "var(--bg)", stroke: "var(--rule)", strokeWidth: 0.8 * zoom, opacity: 0.96 }), _jsx("circle", { cx: dotPt.sx - 13.5 * zoom, cy: dotPt.sy - 2.2 * zoom, r: 1.6 * zoom, fill: "var(--ink-2)" }), _jsx("rect", { x: dotPt.sx - 16 * zoom, y: dotPt.sy + 0.2 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 1.9 * zoom, fill: "var(--ink-2)" }), _jsx("text", { x: dotPt.sx - 1.5 * zoom, y: dotPt.sy + 0.5 * zoom, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: allStale ? '#D9A23B' : 'var(--ink-2)', fontFamily: "monospace", children: `${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}` }), pickingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: packingOperatorCount > 0
                                                     ? dotPt.sy - 2.2 * zoom
                                                     : dotPt.sy, r: 1.6 * zoom, fill: "#1FA8FF" })), packingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: pickingOperatorCount > 0
                                                     ? dotPt.sy + 2.2 * zoom

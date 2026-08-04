@@ -19,12 +19,20 @@ export type WarehouseZone = {
 };
 /**
  * LiveBinActivity — keyed by location_code.
- * Derived from pick_scan_log last-scan-per-operator aggregation.
+ * OV-132: derived from active pick_batches. Position comes from the last
+ * confirmed scan (pickers) or the pack zone (packers); presence does not.
  * See overview-live-map-playbook.md §6.4.
  */
 export interface LiveBinActivity {
     operatorCount: number;
     hasActivePick: boolean;
+    /**
+     * OV-132: operators at this bin whose freshness exceeds the shop's
+     * idle_alert_threshold_minutes. Rendered amber rather than hidden — an
+     * operator who stopped moving is the case a merchant most needs to see.
+     * Optional so older WarehouseGrid callers remain compatible.
+     */
+    staleCount?: number;
     /**
      * OV-136: preserve phase counts when multiple operators share a bin.
      * A single status cannot represent one picker and one packer together.

@@ -10,10 +10,24 @@
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
+/**
+ * OV-142: named for pickers, carries packers too since OV-136.
+ */
 export interface PickerPosition {
   operator_id: string;
   location_code: string;
-  last_scan_at: string;
+  /**
+   * OV-132: null for packers (pack scans carry no location — OV-139) and for
+   * pickers on a live batch who have not scanned a bin yet. Was typed
+   * non-nullable before chunk 1, which the response never honoured.
+   */
+  last_scan_at: string | null;
+  /**
+   * OV-132: the batch's last activity. Never null on a live batch — presence
+   * is derived from this, not from scan recency. Grade freshness on
+   * last_scan_at where present, falling back to this when it is null.
+   */
+  batch_activity_at: string;
   batch_id: string;
 }
 
@@ -51,6 +65,11 @@ export interface WmsLiveActivity {
   stowPressure: StowPressure;
   receiveAtDock: ReceiveAtDock[];
   awaitingPackUnits: number;
+  /**
+   * OV-132: minutes after which an operator marker renders stale (amber).
+   * From shop_wms_settings.idle_alert_threshold_minutes, default 15.
+   */
+  staleThresholdMinutes: number;
 }
 
 export function useWmsLiveActivity(enabled = true) {

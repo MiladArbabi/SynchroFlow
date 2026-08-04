@@ -34,6 +34,23 @@ function ZoneCard({ zone, onDelete, onToggleActive }) {
                                         border: `1px solid ${ZONE_STROKE[zone.zone_type] ?? 'var(--ink-4)'}`,
                                     } }))] })] }), _jsxs(Box, { sx: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.75 }, children: [_jsxs(Box, { sx: { display: 'flex', gap: 0.5, alignItems: 'center' }, children: [_jsx(IconButton, { size: "small", title: zone.active ? 'Deactivate' : 'Activate', onClick: () => onToggleActive?.(zone.location_code, !zone.active), sx: { color: zone.active ? 'var(--accent)' : 'var(--ink-4)' }, children: zone.active ? _jsx(EyeOff, { size: 14 }) : _jsx(Eye, { size: 14 }) }), zone.parent_location_code !== null && (_jsx(IconButton, { size: "small", title: "Delete zone", onClick: () => onDelete?.(zone.location_code), sx: { color: 'var(--ink-4)', '&:hover': { color: 'error.main' } }, children: _jsx(Trash2, { size: 14 }) }))] }), _jsx(Typography, { variant: "caption", color: "text.secondary", sx: { fontFamily: 'monospace', textAlign: 'right' }, children: metaParts.map((part, i) => (_jsxs("span", { children: [i > 0 && _jsx("span", { style: { opacity: 0.5 }, children: " \u00B7 " }), part] }, i))) })] })] }) }));
 }
+/**
+ * ProductBarcodesTable — assigned (supplier EAN present) + unassigned sections.
+ *
+ * SHOP-REV-01m: selection spans BOTH sections. LSP- is a parallel namespace to
+ * the supplier EAN, not a substitute — a barcoded product can still need a
+ * laSyncro label (shelf-edge identifier, damaged original). Scoping selection
+ * to unassigned-only would make batch print decay to useless as a merchant's
+ * catalog fills in with supplier data.
+ *
+ * Selecting inside the collapsed unassigned section forces it open
+ * (toggleUnassigned / toggleAllUnassigned) — a select-all that silently
+ * includes invisible rows is worse than no select-all.
+ *
+ * Select-all is per-table, not per-tab. A master control across two
+ * semantically different groups has no analogue in the Locations tab and
+ * would obscure which rows it affects.
+ */
 function ProductBarcodesTable({ items, onUpdateProductBarcode, onPrintProductBarcode, onBatchPrintProductBarcodes, selectedIds, onToggleOne, onToggleAll, }) {
     const [filter, setFilter] = useState('');
     const [showUnassigned, setShowUnassigned] = useState(false);

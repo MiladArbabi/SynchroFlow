@@ -3805,49 +3805,73 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
       pickerRows,
       packerRows,
       packZoneRow,
+      pickZoneRow,
       batchRows,
       stowRow,
       stowByBinRows,
       receiveByBinRows,
       awaitingPackRow,
+      wmsSettingsRow,
     ] = await Promise.all([
       // Pickers retain physical precision from their latest confirmed bin scan.
-      trx('pick_scan_log as psl')
-        .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
+      // OV-132: liveness is a property of the BATCH, not of scan recency.
+      // The old 4-hour filter on psl.scanned_at made an operator vanish
+      // mid-batch whenever a walk between bins outran the window, and no
+      // single value can satisfy both "picker crossing a long aisle" and
+      // "batch genuinely abandoned". The batch decides presence; the scan
+      // only supplies position, unbounded. Staleness is returned to the
+      // client as last_scan_at and graded there (amber), never hidden.
+      trx('pick_batches as pb')
         .select(
-          'psl.scanned_by as operator_id',
+          'pb.picked_by as operator_id',
           'psl.location_code',
-          'psl.scanned_at',
-          'psl.pick_batch_id'
+          'psl.scanned_at as last_scan_at',
+          'pb.pick_batch_id',
+          'pb.pick_last_activity_at as batch_activity_at'
         )
-        .where('psl.shop_id', shopId)
-        .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
-        .whereNotNull('psl.location_code')
+        .joinRaw(`
+          LEFT JOIN LATERAL (
+            SELECT s.location_code, s.scanned_at
+            FROM pick_scan_log s
+            WHERE s.pick_batch_id = pb.pick_batch_id
+              AND s.scanned_by = pb.picked_by
+              AND s.status = 'confirmed'
+              AND s.location_code IS NOT NULL
+            ORDER BY s.scanned_at DESC
+            LIMIT 1
+          ) psl ON TRUE
+        `)
+        .where('pb.shop_id', shopId)
         .where('pb.status', 'picking')
-        .whereRaw('psl.scanned_by = pb.picked_by')
-        .orderBy('psl.scanned_by')
-        .orderBy('psl.scanned_at', 'desc')
-        .distinctOn('psl.scanned_by'),
+        .whereNotNull('pb.picked_by')
+        .orderBy('pb.picked_by')
+        .orderBy('pb.pick_last_activity_at', 'desc')
+        .distinctOn('pb.picked_by'),
 
-      // OV-136: pack scans identify the active packer but carry no location.
-      // Match the batch's current packer so reassigned operators do not remain visible.
-      trx('pack_scan_log as psl')
-        .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
+      // OV-132: pack_scan_log contributed nothing this query needed. It has no
+      // location column (OV-139), so position already came from the pack zone,
+      // and identity + recency both live on pick_batches. Joining it only added
+      // a failure mode — OV-147 found prod has zero pack scans, so the packer
+      // could never render there regardless of the time window. Assignment is
+      // the authority; the scan log was a proxy for it.
+      //
+      // pack_last_activity_at falls back to pick_last_activity_at: a batch in
+      // 'packing' has necessarily been picked, so the pick clock is a valid
+      // floor when the pack clock was never written (OV-149).
+      trx('pick_batches as pb')
         .select(
-          'psl.scanned_by as operator_id',
-          'psl.scanned_at',
-          'psl.pick_batch_id'
+          trx.raw('COALESCE(pb.packed_by, pb.assigned_packer_id) AS operator_id'),
+          'pb.pick_batch_id',
+          trx.raw(
+            'COALESCE(pb.pack_last_activity_at, pb.pick_last_activity_at) AS batch_activity_at'
+          )
         )
-        .where('psl.shop_id', shopId)
-        .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
-        .where('psl.status', 'confirmed')
+        .where('pb.shop_id', shopId)
         .where('pb.status', 'packing')
-        .whereRaw(
-          'psl.scanned_by = COALESCE(pb.packed_by, pb.assigned_packer_id)'
-        )
-        .orderBy('psl.scanned_by')
-        .orderBy('psl.scanned_at', 'desc')
-        .distinctOn('psl.scanned_by'),
+        .whereRaw('COALESCE(pb.packed_by, pb.assigned_packer_id) IS NOT NULL')
+        .orderByRaw(
+          'COALESCE(pb.pack_last_activity_at, pb.pick_last_activity_at) DESC'
+        ),
 
       // Pack scans currently have no station field. Anchor phase-level activity to
       // the first active pack zone rather than falsely leaving the packer in picking.
@@ -3860,7 +3884,18 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         })
         .orderBy('wl.location_code', 'asc')
         .first(),
-
+      // OV-132: a picker whose batch is live but who has not scanned yet has
+      // no bin. Same treatment as packers — anchor to the pick zone rather
+      // than dropping them from the floor. Presence is the batch's fact.
+      trx('warehouse_locations as wl')
+        .select('wl.location_code')
+        .where({
+          'wl.shop_id': shopId,
+          'wl.zone_type': 'pick',
+          'wl.active': true,
+        })
+        .orderBy('wl.location_code', 'asc')
+        .first(),
       // Active batches with line-level progress.
       trx('pick_batches as pb')
         .select(
@@ -3913,26 +3948,60 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .where('status', 'pick_complete')
         .sum('total_units as total')
         .first(),
+      // OV-132: staleness threshold, shared with the idle alert.
+      trx('shop_wms_settings')
+        .where('shop_id', shopId)
+        .select('idle_alert_threshold_minutes')
+        .first(),
     ]);
 
-    const operatorPositions = [
-      ...pickerRows.map(r => ({
-      operator_id: String(r.operator_id),
-      location_code: r.location_code as string,
-      last_scan_at: r.scanned_at,
-      batch_id: r.pick_batch_id,
-    })),
-    ...(packZoneRow?.location_code
+    // OV-132: presence comes from the batch; position and freshness are
+    // reported separately so the client can grade staleness instead of the
+    // server hiding it. last_scan_at is null for packers by design — pack
+    // scans carry no location (OV-139), so there is no bin to be stale about.
+    const pickerPositionRows = pickerRows
+      .map(r => ({
+        operator_id: String(r.operator_id),
+        location_code: (r.location_code ?? pickZoneRow?.location_code) as
+          | string
+          | undefined,
+        last_scan_at: r.last_scan_at ?? null,
+        batch_activity_at: r.batch_activity_at,
+        batch_id: r.pick_batch_id,
+      }))
+      .filter(r => Boolean(r.location_code));
+
+    const packerPositionRows = packZoneRow?.location_code
       ? packerRows.map(r => ({
           operator_id: String(r.operator_id),
           location_code: packZoneRow.location_code as string,
-          last_scan_at: r.scanned_at,
+          last_scan_at: null,
+          batch_activity_at: r.batch_activity_at,
           batch_id: r.pick_batch_id,
         }))
-      : []),
-  ];
+      : [];
+
+    // The packer query dropped DISTINCT ON — Postgres requires its expressions
+    // to lead ORDER BY, and a COALESCE there is fragile in knex. Both queries
+    // already order most-recent-first, so keeping the first row per operator
+    // is equivalent. Pickers precede packers: an operator holding both roles
+    // on different batches belongs at their physical bin, not the pack zone.
+    const seenOperators = new Set<string>();
+    const operatorPositions = [
+      ...pickerPositionRows,
+      ...packerPositionRows,
+    ].filter(r => {
+      if (seenOperators.has(r.operator_id)) return false;
+      seenOperators.add(r.operator_id);
+      return true;
+    });
 
   return res.status(200).json({
+    // OV-142: field name retained for compatibility — it carries packers too.
+    // OV-132: each entry now reports last_scan_at (null for packers, and for
+    // pickers who have not scanned yet) alongside batch_activity_at, which is
+    // never null on a live batch. The client grades freshness from these; the
+    // server no longer withholds a marker for being stale.
     pickerPositions: operatorPositions,
     activeBatches: batchRows.map(r => ({
         batch_id: r.pick_batch_id,
@@ -3956,6 +4025,14 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         units: Number(r.units),
       })),
       awaitingPackUnits: Number(awaitingPackRow?.total ?? 0),
+      // OV-132: the client grades marker staleness against this. Sourced from
+      // shop_wms_settings so one tenant-configurable definition drives both the
+      // idle alert and the map. idleAlert.service.ts bails when the row is
+      // missing (:52) — the map cannot, since that would mean nothing is ever
+      // stale, so it falls back to 15 minutes.
+      staleThresholdMinutes: Number(
+        wmsSettingsRow?.idle_alert_threshold_minutes ?? 15
+      ),
       });
   });
 };
