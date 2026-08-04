@@ -17,7 +17,8 @@ import {
   httpUpdateZone,
   httpPrintBarcode,
   httpBatchPrintBarcodes,
-  httpPrintProductBarcode
+  httpPrintProductBarcode,
+  httpBatchPrintProductBarcodes
 } from './floor-planning.controller.js';
 
 /**
@@ -171,6 +172,15 @@ router.post(
   requireTier('starter'),
   requireAction('floor-planning:write'),
   httpPrintProductBarcode
+);
+
+router.post(
+  '/products/print-batch',
+  authenticateToken,
+  requireFt2,
+  requireTier('starter'),
+  requireAction('floor-planning:write'),
+  httpBatchPrintProductBarcodes
 );
 
 export default router;

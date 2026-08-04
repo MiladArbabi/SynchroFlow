@@ -51,6 +51,7 @@ export type FloorPlanningPageProps = {
     onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
     onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
     onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+    onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
     /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
     activeTab?: 'map' | 'setup' | 'barcodes';
     onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;

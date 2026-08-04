@@ -9,6 +9,7 @@ import {
 } from '../../services/wms/warehouseLabelPdf.service.js';
 import {
   generateProductLabelPdf,
+  generateProductLabelSheetPdf,
   ProductLabelVariant
 } from '../../services/wms/productLabelPdf.service.js';
 import { ensureVariantBarcode } from '../../services/wms/productBarcode.service.js';
@@ -909,5 +910,61 @@ export async function httpBatchPrintBarcodes(req: Request, res: Response) {
   } catch (err) {
     console.error('[floor-planning] httpBatchPrintBarcodes failed', err);
     return res.status(500).json({ error: 'Failed to generate label sheet' });
+  }
+}
+
+/**
+ * POST /api/v1/floor-planning/products/print-batch
+ * -------------------------------------------------
+ * SHOP-REV-01m. Re-fetches variants by id rather than trusting client
+ * payload — same principle as httpBatchPrintBarcodes.
+ *
+ * Mints LSP- for any selected variant that lacks one, so a merchant can
+ * select 200 unlabelled products and get 200 labels in one action rather
+ * than printing each to trigger its mint.
+ * 
+ * The mint loop is sequential per variant, reusing ensureVariantBarcode's
+ * savepoint path rather than a bulk UPDATE. At catalog scale (50k SKUs) this
+ * is the obvious optimisation target — measure before changing it.
+ */
+export async function httpBatchPrintProductBarcodes(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const { lasyncroVariantIds, formatId } = req.body as { lasyncroVariantIds?: string[]; formatId?: string };
+  if (!Array.isArray(lasyncroVariantIds) || lasyncroVariantIds.length === 0) {
+    return res.status(400).json({ error: 'lasyncroVariantIds required' });
+  }
+
+  try {
+    const variants = await db.transaction<ProductLabelVariant[]>(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      for (const id of lasyncroVariantIds) {
+        await ensureVariantBarcode(trx, shopId, id);
+      }
+
+      const rows = await trx('variants as v')
+        .leftJoin('products as p', function () {
+          this.on('p.lasyncro_product_id', 'v.lasyncro_product_id')
+              .andOn('p.shop_id', trx.raw('?', [shopId]));
+        })
+        .where('v.shop_id', shopId)
+        .whereIn('v.lasyncro_variant_id', lasyncroVariantIds)
+        .whereNotNull('v.lasyncro_barcode')
+        .orderBy('v.sku')
+        .select('v.lasyncro_variant_id', 'v.lasyncro_barcode', 'v.sku', 'p.title as product_title', 'v.title as variant_title');
+      return rows as ProductLabelVariant[];
+    });
+
+    if (!variants.length) return res.status(404).json({ error: 'No printable products in selection' });
+
+    const pdfBuffer = await generateProductLabelSheetPdf(variants, formatId ?? 'thermal-50x25');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="product-labels.pdf"');
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[floor-planning] httpBatchPrintProductBarcodes failed', err);
+    return res.status(500).json({ error: 'Failed to generate product label sheet' });
   }
 }
