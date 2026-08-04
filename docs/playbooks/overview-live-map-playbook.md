@@ -3,9 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** August 4, 2026 — OV-135 canonical reviewer outbound lifecycle verified locally.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 local ✅ · v3 parked.
-
+> **Last updated:** August 4, 2026 — OV-136 active operator markers and phase placement verified locally.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · v3 parked.
 ---
 
 ## 1. Why this exists — the product thesis
@@ -20,7 +19,7 @@ The current Overview (triage-first signals + Business Pulse rail) solves the *de
 
 ## 2. Locked layout
 
-```
+```ts
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  HEADER: greeting · date · summary line · Export brief                  │
 ├──────────────────────────────────────────┬──────────────────────────────┤
@@ -194,7 +193,10 @@ with them (8 tasks vs 132 units on the dev tenant).
 
 ### 6.2 Derivation queries
 
-- `pickerPositions`: latest confirmed `pick_scan_log` row per operator within four hours, joined to a batch currently in `picking` or `packing`. The scan operator must still match `pick_batches.picked_by`.
+- `pickerPositions` is the legacy response-field name for active picking and packing operator positions.
+- Picking positions use each current picker's latest confirmed `pick_scan_log` row within four hours. The scan operator must match `pick_batches.picked_by`, and the recorded `location_code` remains the physical bin position.
+- Packing positions use each current packer's latest confirmed `pack_scan_log` row within four hours. The scan operator must match `COALESCE(pick_batches.packed_by, pick_batches.assigned_packer_id)`.
+- `pack_scan_log` has no station or location field. Packing activity is therefore phase-level: it anchors to the first active pack zone ordered by `location_code`. No packing position is emitted when the warehouse has no active pack zone. Exact multi-station attribution requires a future station-assignment data model.
 - `activeBatches`: `pick_batches` where `status IN ('picking', 'packing')`, exposing batch progress from `units_picked`, `total_line_items`, `total_units`, and `units_packed`.
 - `stowPressure.by_location`: pending `stow_tasks` grouped by `location_code`; badges use summed units while `pending_count` remains a task count.
 - `receiveAtDock`: `inventory_units` where `status = 'received'`, grouped by `current_location_code`.
@@ -208,12 +210,21 @@ Overview polls every 15s. `useWarehouseGridOccupancy` already polls 60s — live
 
 ### 6.4 `liveActivity` prop wiring
 
-`IsometricCanvas` currently has no `liveActivity` prop — that lives on `WarehouseGrid` (the 2D grid, WG-11). For the isometric canvas, picker positions render as small dot markers at the bin's centroid (projected x,y). Add to `IsometricCanvasProps`:
+`OverviewFT2Page` reduces the API positions by `location_code` into `LiveBinActivity`. It preserves separate `pickingCount` and `packingCount` values so co-located mixed-phase operators are not collapsed into one ambiguous status.
+
+`IsometricCanvas` renders a semantic operator pill at the projected zone centroid:
+
+- person glyph plus `1 op` or `N ops`
+- blue phase dot for picking
+- orange phase dot for packing
+- native SVG title and accessible label with the phase breakdown
+- floor-wide marker-key row such as `2 active operators · 1 picking · 1 packing`
 
 ```typescript
-liveActivity?: Record<string, { operatorCount: number; hasActivePick: boolean }>;
-// keyed by location_code — same shape as WarehouseGrid.liveActivity for consistency
+liveActivity?: Record<string, LiveBinActivity>;
 ```
+
+The marker communicates operator count and operational phase. Picking placement is scan-precise; packing placement is currently pack-zone-level because pack scans do not identify a station.
 
 ---
 
@@ -344,6 +355,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | OV-129d | No floor-wide total | Summed from `by_location` units | ✅ |
 | OV-131 | Receive had no signal on the map; receive_jobs has no location column | Badge from inventory_units.current_location_code where status='received'; key row "N units at dock" | ✅ |
 | OV-135 | Reviewer batches used fabricated totals and omitted canonical order, line-item and pack-scan state | Seed only eligible orders; derive real totals; create picking, picked, packing and packed states with reconciling scan evidence | ✅ local |
+| OV-136 | Active operator markers were ambiguous, and packing operators inherited their final picking location | Add semantic operator pills and phase counts; derive packers from pack scans and anchor them to the active pack zone | ✅ local |
 
 ---
 
@@ -356,6 +368,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | **v2** ✅ | `GET /api/v1/wms/live-activity` · `useWmsLiveActivity` 15s poll · picker dot markers on `IsometricCanvas` | FP-OV-04, FP-OV-07 (partial) |
 | **v2.1** ✅ | Core triage-preserving Growth teaser · static `IsometricCanvas` preview · session dismissal · billing CTA · conversion events | FP-OV-09 / OV-MAP-001 |
 | **v2.2 data foundation** ✅ local | Canonical reviewer seed for Ready · Picking · Picked · Packing · Packed, with real line-item totals and scan reconciliation | OV-135 |
+| **v2.3 operator clarity** ✅ local | Self-explanatory operator pills · picking/packing phase breakdown · correct pack-zone placement · accessible marker labels | OV-136 |
 | **v3** — Parked | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill from tokens | FP-OV-07 (remaining) |
 
 Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.

@@ -477,6 +477,7 @@ operator attribution after insertion is prohibited.
 For a fresh reviewer seed, operators must be created before operational
 activity:
 
+```ts
     SEED_SHOP_ID=1 \
     EXPECTED_DATABASE_NAME=synchroflow_db \
     EXPECTED_SHOP_NAME='Default Dev Shop' \
@@ -484,6 +485,7 @@ activity:
 
     SEED_SHOP_ID=1 \
     npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_activity.ts
+```
 
 `seed_reviewer_activity.ts` refuses to create activity when either reviewer
 operator is missing. It assigns the picking batch to Elin Vargas and the
@@ -506,3 +508,13 @@ Before deploying the live-activity ownership filter, verify production’s
 immutable `scanned_by` values match each active batch’s `picked_by`. Production
 database access must use newly rotated credentials; do not reuse previously
 exposed credentials.
+
+### Live-map operator clarity — OV-136
+
+**Verified locally on 2026-08-04; pending commit, deployment and production verification.**
+
+The Overview live map now renders active operators as semantic pills rather than ambiguous numeric circles. Each marker shows a person glyph, operator count, and separate blue picking or orange packing indicators. The marker key reports the floor-wide operator total and phase breakdown.
+
+Picking operators remain at their latest confirmed physical pick-scan location. Packing operators are now derived from confirmed pack scans instead of inheriting their final picking location. Because `pack_scan_log` does not record a station, packing activity anchors to the first active pack zone ordered by `location_code`; exact attribution across multiple pack stations remains a future data-model requirement.
+
+Local verification returned the picker at `A-1` and the packer at `PACK-1`. `GET /api/v1/wms/live-activity` returned `200`, `GET /api/v1/wms/order-pool` remained `200` with two ready orders, and unauthenticated live-activity access remained `401`.

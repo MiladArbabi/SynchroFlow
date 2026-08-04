@@ -266,14 +266,29 @@ export default function OverviewPageFT2() {
     (acc, b) => { acc[b.batch_id] = b.status; return acc; },
     {}
   );
-  const liveActivity = liveActivityQuery.data?.pickerPositions.reduce<Record<string, LiveBinActivity>>(
+    const liveActivity = liveActivityQuery.data?.pickerPositions.reduce<Record<string, LiveBinActivity>>(
     (acc, p) => {
       const existing = acc[p.location_code];
+      const status = batchStatusById[p.batch_id];
+      const pickingCount =
+        (existing?.pickingCount ?? 0) + (status === 'picking' ? 1 : 0);
+      const packingCount =
+        (existing?.packingCount ?? 0) + (status === 'packing' ? 1 : 0);
+
       acc[p.location_code] = {
         operatorCount: (existing?.operatorCount ?? 0) + 1,
         hasActivePick: true,
-        status: batchStatusById[p.batch_id] ?? existing?.status,
+        pickingCount,
+        packingCount,
+        // OV-136: phase is homogeneous only when exactly one phase is present.
+        status:
+          pickingCount > 0 && packingCount === 0
+            ? 'picking'
+            : packingCount > 0 && pickingCount === 0
+              ? 'packing'
+              : undefined,
       };
+
       return acc;
     },
     {}

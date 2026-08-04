@@ -3791,7 +3791,7 @@ export const httpBulkGenerateShippingLabels = async (req: Request, res: Response
 
 // GET /api/v1/wms/live-activity
 // Derives real-time floor state from existing tables — no new writers.
-// picker_positions: last scan per operator within 4h window.
+// operator_positions: pickers use physical scans; packers use the active pack zone.
 // active_batches: pick_batches in picking/packing status + line progress.
 // stow_pressure: pending stow_tasks count anchored to RECEIVE-1.
 // Closes WG-11. See overview-live-map-playbook.md §6.
@@ -3801,21 +3801,65 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
   await db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const [pickerRows, batchRows, stowRow, stowByBinRows, receiveByBinRows, awaitingPackRow] = await Promise.all([
-      // Last scan location per current picker — within 4-hour recency window.
-      // Scan rows are immutable, so filter against picked_by to prevent a
-      // reassigned batch's former picker from remaining visible on the map.
+    const [
+      pickerRows,
+      packerRows,
+      packZoneRow,
+      batchRows,
+      stowRow,
+      stowByBinRows,
+      receiveByBinRows,
+      awaitingPackRow,
+    ] = await Promise.all([
+      // Pickers retain physical precision from their latest confirmed bin scan.
       trx('pick_scan_log as psl')
         .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
-        .select('psl.scanned_by as operator_id', 'psl.location_code', 'psl.scanned_at', 'psl.pick_batch_id')
+        .select(
+          'psl.scanned_by as operator_id',
+          'psl.location_code',
+          'psl.scanned_at',
+          'psl.pick_batch_id'
+        )
         .where('psl.shop_id', shopId)
         .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
         .whereNotNull('psl.location_code')
-        .whereIn('pb.status', ['picking', 'packing'])
+        .where('pb.status', 'picking')
         .whereRaw('psl.scanned_by = pb.picked_by')
         .orderBy('psl.scanned_by')
         .orderBy('psl.scanned_at', 'desc')
         .distinctOn('psl.scanned_by'),
+
+      // OV-136: pack scans identify the active packer but carry no location.
+      // Match the batch's current packer so reassigned operators do not remain visible.
+      trx('pack_scan_log as psl')
+        .join('pick_batches as pb', 'pb.pick_batch_id', 'psl.pick_batch_id')
+        .select(
+          'psl.scanned_by as operator_id',
+          'psl.scanned_at',
+          'psl.pick_batch_id'
+        )
+        .where('psl.shop_id', shopId)
+        .where('psl.scanned_at', '>=', trx.raw("NOW() - INTERVAL '4 hours'"))
+        .where('psl.status', 'confirmed')
+        .where('pb.status', 'packing')
+        .whereRaw(
+          'psl.scanned_by = COALESCE(pb.packed_by, pb.assigned_packer_id)'
+        )
+        .orderBy('psl.scanned_by')
+        .orderBy('psl.scanned_at', 'desc')
+        .distinctOn('psl.scanned_by'),
+
+      // Pack scans currently have no station field. Anchor phase-level activity to
+      // the first active pack zone rather than falsely leaving the packer in picking.
+      trx('warehouse_locations as wl')
+        .select('wl.location_code')
+        .where({
+          'wl.shop_id': shopId,
+          'wl.zone_type': 'pack',
+          'wl.active': true,
+        })
+        .orderBy('wl.location_code', 'asc')
+        .first(),
 
       // Active batches with line-level progress.
       trx('pick_batches as pb')
@@ -3871,14 +3915,26 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .first(),
     ]);
 
-    return res.status(200).json({
-      pickerPositions: pickerRows.map(r => ({
-        operator_id: String(r.operator_id),
-        location_code: r.location_code,
-        last_scan_at: r.scanned_at,
-        batch_id: r.pick_batch_id,
-      })),
-      activeBatches: batchRows.map(r => ({
+    const operatorPositions = [
+      ...pickerRows.map(r => ({
+      operator_id: String(r.operator_id),
+      location_code: r.location_code as string,
+      last_scan_at: r.scanned_at,
+      batch_id: r.pick_batch_id,
+    })),
+    ...(packZoneRow?.location_code
+      ? packerRows.map(r => ({
+          operator_id: String(r.operator_id),
+          location_code: packZoneRow.location_code as string,
+          last_scan_at: r.scanned_at,
+          batch_id: r.pick_batch_id,
+        }))
+      : []),
+  ];
+
+  return res.status(200).json({
+    pickerPositions: operatorPositions,
+    activeBatches: batchRows.map(r => ({
         batch_id: r.pick_batch_id,
         status: r.status,
         picked_lines: Number(r.picked_lines),

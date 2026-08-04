@@ -515,7 +515,7 @@ export function IsometricCanvas({
   // FP-LEGEND1: mirrors IsometricBox's fillOverride/focusFill thresholds
   // exactly — same zoneRGBVar keys, same alpha values — so the legend
   // can never show a color that doesn't match what's actually painted.
-  const legendItems = (() => {
+    const legendItems = (() => {
     if (overlay === 'stockout') {
       return [{ label: 'At risk · ≤3 units', rgba: `rgba(${zoneRGBVar('quarantine')},0.72)` }];
     }
@@ -532,6 +532,27 @@ export function IsometricCanvas({
     }
     return null; // 'none' or omitted — no legend
   })();
+
+  // OV-136: the map marker explains one location; the key explains the
+  // floor-wide meaning. Legacy callers without phase counts fall back to status.
+  const operatorSummary = useMemo(
+    () =>
+      Object.values(liveActivity ?? {}).reduce(
+        (summary, activity) => ({
+          total: summary.total + activity.operatorCount,
+          picking:
+            summary.picking +
+            (activity.pickingCount ??
+              (activity.status === 'picking' ? activity.operatorCount : 0)),
+          packing:
+            summary.packing +
+            (activity.packingCount ??
+              (activity.status === 'packing' ? activity.operatorCount : 0)),
+        }),
+        { total: 0, picking: 0, packing: 0 }
+      ),
+    [liveActivity]
+  );
 
   const worldBounds = useMemo(() => {
     if (positionedZones.length === 0) return null;
@@ -855,7 +876,28 @@ export function IsometricCanvas({
             const occupancyFraction = !isFrame && zone.active && occupancy
               ? Math.min(1, (occ?.on_hand_quantity ?? 0) / capacity)
               : undefined;
-            const activity = liveActivity?.[zone.location_code];
+                        const activity = liveActivity?.[zone.location_code];
+            const operatorCount = activity?.operatorCount ?? 0;
+            const pickingOperatorCount =
+              activity?.pickingCount ??
+              (activity?.status === 'picking' ? operatorCount : 0);
+            const packingOperatorCount =
+              activity?.packingCount ??
+              (activity?.status === 'packing' ? operatorCount : 0);
+            const operatorStatusText = [
+              pickingOperatorCount > 0
+                ? `${pickingOperatorCount} picking`
+                : null,
+              packingOperatorCount > 0
+                ? `${packingOperatorCount} packing`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(', ');
+            const operatorAriaLabel =
+              `${operatorCount} active ${operatorCount === 1 ? 'operator' : 'operators'} ` +
+              `at ${zone.location_code}` +
+              (operatorStatusText ? `: ${operatorStatusText}` : '');
             const dotPt = activity?.hasActivePick
               ? project(wx + ww / 2, wy + wd / 2, wh + 0.35, zoom, flipped)
               : null;
@@ -935,21 +977,73 @@ export function IsometricCanvas({
                   onClick={() => handleSelect(zone.location_code)}
                   occupancyFraction={occupancyFraction}
                 />
-                {/* Picker activity dot — rendered above bin top face when operator is active */}
+                                {/* OV-136: semantic operator pill replaces the ambiguous count dot. */}
                 {dotPt && (
-                  <g>
-                    <circle
-                      cx={dotPt.sx} cy={dotPt.sy} r={5 * zoom}
-                      fill={activity?.status === 'packing' ? '#D9A23B' : '#4CAF7A'}
-                      opacity={0.9}
+                  <g role="img" aria-label={operatorAriaLabel}>
+                    <title>{operatorAriaLabel}</title>
+                    <rect
+                      x={dotPt.sx - 19 * zoom}
+                      y={dotPt.sy - 6.5 * zoom}
+                      width={38 * zoom}
+                      height={13 * zoom}
+                      rx={6.5 * zoom}
+                      fill="var(--bg)"
+                      stroke="var(--rule)"
+                      strokeWidth={0.8 * zoom}
+                      opacity={0.96}
                     />
-                    {(activity?.operatorCount ?? 0) > 1 && (
-                      <text x={dotPt.sx} y={dotPt.sy + 1} textAnchor="middle"
-                        dominantBaseline="middle"
-                        fontSize={Math.round(6 * zoom)} fontWeight="600"
-                        fill="var(--bg)" fontFamily="monospace">
-                        {activity!.operatorCount}
-                      </text>
+
+                    <circle
+                      cx={dotPt.sx - 13.5 * zoom}
+                      cy={dotPt.sy - 2.2 * zoom}
+                      r={1.6 * zoom}
+                      fill="var(--ink-2)"
+                    />
+                    <rect
+                      x={dotPt.sx - 16 * zoom}
+                      y={dotPt.sy + 0.2 * zoom}
+                      width={5 * zoom}
+                      height={3.8 * zoom}
+                      rx={1.9 * zoom}
+                      fill="var(--ink-2)"
+                    />
+
+                    <text
+                      x={dotPt.sx - 1.5 * zoom}
+                      y={dotPt.sy + 0.5 * zoom}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={Math.round(6 * zoom)}
+                      fontWeight="600"
+                      fill="var(--ink-2)"
+                      fontFamily="monospace"
+                    >
+                      {`${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}`}
+                    </text>
+
+                    {pickingOperatorCount > 0 && (
+                      <circle
+                        cx={dotPt.sx + 14.5 * zoom}
+                        cy={
+                          packingOperatorCount > 0
+                            ? dotPt.sy - 2.2 * zoom
+                            : dotPt.sy
+                        }
+                        r={1.6 * zoom}
+                        fill="#1FA8FF"
+                      />
+                    )}
+                    {packingOperatorCount > 0 && (
+                      <circle
+                        cx={dotPt.sx + 14.5 * zoom}
+                        cy={
+                          pickingOperatorCount > 0
+                            ? dotPt.sy + 2.2 * zoom
+                            : dotPt.sy
+                        }
+                        r={1.6 * zoom}
+                        fill="#FF6B2B"
+                      />
                     )}
                   </g>
                 )}
@@ -1195,7 +1289,11 @@ export function IsometricCanvas({
       {/* OV-129c/OV-131: marker key. One row per live marker type present on
           the floor — a row is omitted entirely when its count is zero, so the
           key never explains a glyph the user cannot see. */}
-      {showMarkerKey && ((stowPendingTotal ?? 0) > 0 || (receiveAtDockTotal ?? 0) > 0) && (
+      {showMarkerKey && (
+        operatorSummary.total > 0 ||
+        (stowPendingTotal ?? 0) > 0 ||
+        (receiveAtDockTotal ?? 0) > 0
+      ) && (
         <Box sx={{
           position: 'absolute', bottom: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 0.25,
           px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
@@ -1215,7 +1313,7 @@ export function IsometricCanvas({
               </Typography>
             </Box>
           )}
-          {(stowPendingTotal ?? 0) > 0 && (
+                    {(stowPendingTotal ?? 0) > 0 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
                 <g stroke="var(--ink-3)" strokeWidth={1} fill="none" strokeLinecap="round">
@@ -1226,6 +1324,44 @@ export function IsometricCanvas({
               </svg>
               <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
                 {`${stowPendingTotal} units awaiting stow`}
+              </Typography>
+            </Box>
+          )}
+
+          {operatorSummary.total > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>
+                <circle cx={4} cy={3} r={1.5} fill="var(--ink-3)" />
+                <rect x={1.5} y={5.5} width={5} height={4} rx={2} fill="var(--ink-3)" />
+                {operatorSummary.picking > 0 && (
+                  <circle
+                    cx={10.5}
+                    cy={operatorSummary.packing > 0 ? 3.5 : 6}
+                    r={1.5}
+                    fill="#1FA8FF"
+                  />
+                )}
+                {operatorSummary.packing > 0 && (
+                  <circle
+                    cx={10.5}
+                    cy={operatorSummary.picking > 0 ? 8.5 : 6}
+                    r={1.5}
+                    fill="#FF6B2B"
+                  />
+                )}
+              </svg>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+                {`${operatorSummary.total} active ${
+                  operatorSummary.total === 1 ? 'operator' : 'operators'
+                }${
+                  operatorSummary.picking > 0
+                    ? ` · ${operatorSummary.picking} picking`
+                    : ''
+                }${
+                  operatorSummary.packing > 0
+                    ? ` · ${operatorSummary.packing} packing`
+                    : ''
+                }`}
               </Typography>
             </Box>
           )}

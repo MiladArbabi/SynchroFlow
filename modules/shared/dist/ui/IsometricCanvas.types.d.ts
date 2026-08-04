@@ -26,11 +26,15 @@ export interface LiveBinActivity {
     operatorCount: number;
     hasActivePick: boolean;
     /**
-     * Phase of the batch currently active at this bin, joined from
-     * activeBatches (pick_batches.status) via pick_scan_log.pick_batch_id.
-     * Optional for backward compatibility with callers that only know
-     * "someone is here" (e.g. WarehouseGrid) without batch phase.
-     * See overview-live-map-playbook.md §6.4 (OV-14).
+     * OV-136: preserve phase counts when multiple operators share a bin.
+     * A single status cannot represent one picker and one packer together.
+     * Optional so older WarehouseGrid callers remain compatible.
+     */
+    pickingCount?: number;
+    packingCount?: number;
+    /**
+     * Homogeneous phase when every operator at the bin shares one status.
+     * Undefined for mixed picking/packing activity.
      */
     status?: 'picking' | 'packing';
 }
