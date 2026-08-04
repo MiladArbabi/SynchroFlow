@@ -7,6 +7,11 @@ import {
   generateWarehouseLabelSheetPdf, 
   WarehouseLabelZone
 } from '../../services/wms/warehouseLabelPdf.service.js';
+import {
+  generateProductLabelPdf,
+  ProductLabelVariant
+} from '../../services/wms/productLabelPdf.service.js';
+import { ensureVariantBarcode } from '../../services/wms/productBarcode.service.js';
 
 /**
  * FLOOR PLANNING CONTROLLERS
@@ -158,7 +163,8 @@ export async function httpGetLayout(req: Request, res: Response) {
           'v.sku',
           'p.title as product_title',
           trx.raw(`null as variant_title`),
-          'ep.barcode'
+          'ep.barcode',
+          'v.lasyncro_barcode'
         );
 
       return { zones, product_barcodes: productBarcodes };
@@ -206,6 +212,65 @@ export async function httpUpdateProductBarcode(req: Request, res: Response) {
     }
     console.error('[floor-planning] httpUpdateProductBarcode failed', err);
     return res.status(500).json({ error: 'Failed to update barcode' });
+  }
+}
+
+/**
+ * POST /api/v1/floor-planning/products/:lasyncroVariantId/print
+ * ---------------------------------------------------------------
+ * SHOP-REV-01g — the endpoint whose absence produced Shopify review
+ * citation 2.1.1 (ref 102766). Mints the LSP- identity on demand if the
+ * variant has none, then renders a scannable thermal label.
+ *
+ * Mint-on-demand mirrors ensureOrderWmsBarcode (SHOP-REV-01f): the
+ * merchant never has to trigger generation as a separate step, and a
+ * reprint returns the same barcode because the value is persisted, not
+ * derived.
+ *
+ * variants is FORCE ROW LEVEL SECURITY (migration 0027) — every read and
+ * write here must run inside the SET LOCAL tenant context or the policy
+ * returns zero rows.
+ */
+export async function httpPrintProductBarcode(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const lasyncroVariantId = req.params.lasyncroVariantId as string;
+
+  try {
+    const variant = await db.transaction<ProductLabelVariant | null>(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const barcode = await ensureVariantBarcode(trx, shopId, lasyncroVariantId);
+      if (!barcode) return null;
+
+      const row = await trx('variants as v')
+        .leftJoin('products as p', function () {
+          this.on('p.lasyncro_product_id', 'v.lasyncro_product_id')
+              .andOn('p.shop_id', trx.raw('?', [shopId]));
+        })
+        .where({ 'v.lasyncro_variant_id': lasyncroVariantId, 'v.shop_id': shopId })
+        .select(
+          'v.lasyncro_variant_id',
+          'v.lasyncro_barcode',
+          'v.sku',
+          'p.title as product_title',
+          'v.title as variant_title'
+        )
+        .first();
+
+      return row ?? null;
+    });
+
+    if (!variant) return res.status(404).json({ error: 'Variant not found' });
+
+    const pdfBuffer = await generateProductLabelPdf(variant);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${variant.lasyncro_barcode}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[floor-planning] httpPrintProductBarcode failed', err);
+    return res.status(500).json({ error: 'Failed to generate product label' });
   }
 }
 

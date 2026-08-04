@@ -16,7 +16,8 @@ import {
   httpDeleteZone,
   httpUpdateZone,
   httpPrintBarcode,
-  httpBatchPrintBarcodes
+  httpBatchPrintBarcodes,
+  httpPrintProductBarcode
 } from './floor-planning.controller.js';
 
 /**
@@ -156,6 +157,20 @@ router.post(
   requireTier('starter'),
   requireAction('floor-planning:write'),
   httpBatchPrintBarcodes
+);
+
+// SHOP-REV-01g: product label print. Mirrors /zones/:locationCode/print —
+// same starter tier, same floor-planning:write action. Label printing is
+// never metered (R-BILL1), and product barcodes are as fundamental to the
+// Starter WMS pipeline as location labels: without them the scan-based
+// pick/pack/receive flow has nothing to scan.
+router.post(
+  '/products/:lasyncroVariantId/print',
+  authenticateToken,
+  requireFt2,
+  requireTier('starter'),
+  requireAction('floor-planning:write'),
+  httpPrintProductBarcode
 );
 
 export default router;
