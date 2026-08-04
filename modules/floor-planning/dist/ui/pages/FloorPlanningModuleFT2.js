@@ -104,6 +104,14 @@ function ProductBarcodesTable({ items, onUpdateProductBarcode, onPrintProductBar
                                                                     '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
                                                                 }, children: [_jsx(Tag, { size: 11 }), printingId === item.lasyncro_variant_id ? 'Printing…' : printError === item.lasyncro_variant_id ? 'Retry' : 'Print label'] })) })] }, item.lasyncro_variant_id))) })] })] })] }))] }))] }));
 }
+// SHOP-REV-01m cycle 2: moved out of PrintPreviewPanel so products can supply
+// their own list. Must match SHEET_FORMATS in warehouseLabelPdf.service.ts.
+const LOCATION_LABEL_FORMATS = [
+    { id: 'avery-5160', label: 'Avery 5160 · 24/sheet', labelsPerSheet: 24, columns: 3, labelWidthMm: 66, labelHeightMm: 25, paperSize: 'A4' },
+    { id: 'avery-5163', label: 'Avery 5163 · 10/sheet · large', labelsPerSheet: 10, columns: 2, labelWidthMm: 101, labelHeightMm: 51, paperSize: 'A4' },
+    { id: 'zebra-4x6', label: 'Zebra 4×6 thermal', labelsPerSheet: 1, columns: 1, labelWidthMm: 101, labelHeightMm: 152, paperSize: '4x6' },
+    { id: 'dymo-1x2', label: 'Dymo 1×2.125', labelsPerSheet: 1, columns: 1, labelWidthMm: 25, labelHeightMm: 54, paperSize: '1x2' },
+];
 const FILTER_PILLS = [
     { label: 'ALL', value: 'all' },
     { label: 'BIN', value: 'bin' },
@@ -135,7 +143,11 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
         const matchesSearch = !locSearch || z.location_code.toLowerCase().includes(locSearch.toLowerCase()) || z.barcode?.toLowerCase().includes(locSearch.toLowerCase());
         return matchesType && matchesSearch;
     });
-    const selectedZoneObjects = zones.filter((z) => selected.has(z.location_code));
+    // SHOP-REV-01m: the barcoded + active filter moved here from inside
+    // PrintPreviewPanel — it is a location concept with no product equivalent.
+    const selectedZoneLabels = zones
+        .filter((z) => selected.has(z.location_code) && z.barcode !== null && z.active)
+        .map((z) => ({ id: z.location_code, code: z.location_code, caption: z.location_code }));
     const allFilteredCodes = filteredZones.map((z) => z.location_code);
     const allSelected = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
     return (_jsxs(Box, { children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)', mb: 1.5 }, children: ["Unit labels (LSU) are generated at receiving and tracked in", ' ', _jsx(Box, { component: "a", href: "/settings/warehouse", sx: { color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }, children: "Settings \u2192 Warehouse" }), ". Codes below locate stock (location codes) and identify products (Shopify EAN/UPC, a camera-scan fallback)."] }), _jsx(Box, { sx: { display: 'flex', gap: 1, mb: 3 }, children: ['locations', 'products'].map((st) => (_jsx(Box, { onClick: () => { setSubTab(st); onSubTabChange?.(st); }, sx: {
@@ -168,7 +180,7 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
                             overflow: 'hidden',
                             transition: 'width 0.25s ease, opacity 0.2s ease',
                             flexShrink: 0,
-                        }, children: _jsx(PrintPreviewPanel, { selectedZones: selectedZoneObjects, onBatchPrint: onBatchPrintBarcodes }) })] })), subTab === 'products' && (_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 2 }, children: [_jsx(PackageSearch, { size: 18 }), _jsx(Typography, { variant: "subtitle1", fontWeight: 700, children: "Product Barcodes" }), _jsx(Chip, { label: productBarcodes.length, size: "small" })] }), _jsx(ProductBarcodesTable, { items: productBarcodes, onUpdateProductBarcode: onUpdateProductBarcode, onPrintProductBarcode: onPrintProductBarcode })] }))] }));
+                        }, children: _jsx(PrintPreviewPanel, { items: selectedZoneLabels, formats: LOCATION_LABEL_FORMATS, defaultFormatId: "avery-5160", emptyMessage: "No barcoded locations", onBatchPrint: onBatchPrintBarcodes }) })] })), subTab === 'products' && (_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 2 }, children: [_jsx(PackageSearch, { size: 18 }), _jsx(Typography, { variant: "subtitle1", fontWeight: 700, children: "Product Barcodes" }), _jsx(Chip, { label: productBarcodes.length, size: "small" })] }), _jsx(ProductBarcodesTable, { items: productBarcodes, onUpdateProductBarcode: onUpdateProductBarcode, onPrintProductBarcode: onPrintProductBarcode })] }))] }));
 }
 function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, gridOccupancy, isGridLoading, onRefresh, binLog, isBinLogLoading, onBinLogOpen, binStats, onBinSelect, variantFocusBins, onCreateZone, onDeleteZone, onPrintBarcode, onToggleZoneActive, onUpdateZone, onUpdateProductBarcode, onPrintProductBarcode, onTabChange, activeTab, activeView, onViewChange, activeSubTab, onSubTabChange, onBatchPrintBarcodes, }) {
     const zones = data?.zones ?? [];

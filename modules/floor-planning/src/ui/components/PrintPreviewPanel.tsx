@@ -1,4 +1,25 @@
 // modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx
+
+/**
+ * PrintPreviewPanel — Barcodes tab right panel.
+ *
+ * Renders a live label sheet preview for any printable code. Data-shape
+ * agnostic since SHOP-REV-01m cycle 2: callers map their rows to
+ * PrintableLabel and supply their own format list, so the same panel serves
+ * both the Locations and Products sub-tabs without forking.
+ *
+ * Callers own printability filtering — "barcoded and active" is a location
+ * concept with no product equivalent — and own the format list, because
+ * location labels run up to Zebra 4x6 while product labels are 30-60mm.
+ *
+ * Barcode type is Code128 for all formats.
+ *
+ * PRINT-02: format geometry here is duplicated server-side in
+ * warehouseLabelPdf.SHEET_FORMATS and productLabelPdf.PRODUCT_FORMATS,
+ * kept in sync by comment only. Drift means the preview lies about the
+ * printed sheet.
+ */
+
 import { useEffect, useRef, useState } from 'react';
 import {
   Box,
@@ -12,7 +33,6 @@ import {
 } from '@mui/material';
 import { Printer } from 'lucide-react';
 import JsBarcode from 'jsbarcode';
-import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 /**
  * PrintPreviewPanel — Barcodes tab right panel.
@@ -28,22 +48,37 @@ import type { WarehouseZone } from '@lasyncro/shared/ui';
  * during window.print() — all other app chrome is hidden via @media print.
  */
 
-interface LabelFormat {
+// SHOP-REV-01m cycle 2: LABEL_FORMATS moved to the caller. Location labels
+// (bin/lane, up to Zebra 4x6) and product labels (30-60mm, thermal-first)
+// need different format lists, and hardcoding both here would make this
+// component know about its callers.
+//
+// PRINT-02: this geometry is duplicated in warehouseLabelPdf.SHEET_FORMATS
+// and productLabelPdf.PRODUCT_FORMATS server-side, kept in sync by comment
+// only. A drift means the operator's preview does not match the printed
+// sheet. Consolidating into a shared package is registered, not done.
+export interface LabelFormat {
   id: string;
   label: string;
   labelsPerSheet: number;
   columns: number;
   labelWidthMm: number;
   labelHeightMm: number;
-  paperSize: 'A4' | '4x6' | '1x2';
+  paperSize: 'A4' | '4x6' | '1x2' | 'thermal';
 }
 
-const LABEL_FORMATS: LabelFormat[] = [
-  { id: 'avery-5160', label: 'Avery 5160 · 24/sheet',  labelsPerSheet: 24, columns: 3, labelWidthMm: 66,  labelHeightMm: 25,  paperSize: 'A4'  },
-  { id: 'avery-5163', label: 'Avery 5163 · 10/sheet · large', labelsPerSheet: 10, columns: 2, labelWidthMm: 101, labelHeightMm: 51,  paperSize: 'A4'  },
-  { id: 'zebra-4x6',  label: 'Zebra 4×6 thermal',      labelsPerSheet: 1,  columns: 1, labelWidthMm: 101, labelHeightMm: 152, paperSize: '4x6' },
-  { id: 'dymo-1x2',   label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25,  labelHeightMm: 54,  paperSize: '1x2' },
-];
+/**
+ * One printable label, decoupled from any particular row shape.
+ *
+ * `id` is the batch-print lookup key — location_code for locations,
+ * lasyncro_variant_id for products. It is deliberately separate from `code`:
+ * httpBatchPrintProductBarcodes looks variants up by id, not by barcode.
+ */
+export interface PrintableLabel {
+  id: string;
+  code: string;
+  caption: string;
+}
 
 /** Pixels per mm at 96dpi screen resolution */
 const MM_TO_PX = 96 / 25.4;
@@ -83,7 +118,10 @@ function BarcodeSVG({ value, widthMm, heightMm }: BarcodeSVGProps) {
 }
 
 interface PrintPreviewPanelProps {
-  selectedZones: WarehouseZone[];
+  items: PrintableLabel[];
+  formats: LabelFormat[];
+  defaultFormatId: string;
+  emptyMessage: string;
   // FP-16: callback prop rather than direct axios import — this module
   // lives across the modules/floor-planning <-> apps/frontend package
   // boundary, which doesn't resolve a direct import of the host app's
@@ -91,13 +129,15 @@ interface PrintPreviewPanelProps {
   // returns the PDF blob here for opening.
   // FP-17b: a null resolution means FloorPlanningPage already dispatched
   // the print silently via QZ Tray — nothing further to do here.
-  onBatchPrint?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
+  // SHOP-REV-01m: takes ids, not codes — see PrintableLabel.
+  onBatchPrint?: (ids: string[], formatId: string) => Promise<Blob | null>;
 }
-export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewPanelProps) {
-  const [formatId, setFormatId] = useState<string>('avery-5160');
-  const format = LABEL_FORMATS.find((f) => f.id === formatId) ?? LABEL_FORMATS[0];
-  const barcoded = selectedZones.filter((z) => z.barcode !== null && z.active);
-  const sheet    = barcoded.slice(0, format.labelsPerSheet);
+export function PrintPreviewPanel({ items, formats, defaultFormatId, emptyMessage, onBatchPrint }: PrintPreviewPanelProps) {
+  const [formatId, setFormatId] = useState<string>(defaultFormatId);
+  const format = formats.find((f) => f.id === formatId) ?? formats[0];
+  // Printability filtering is the caller's job — "barcoded and active" is a
+  // location concept with no product equivalent.
+  const sheet = items.slice(0, format.labelsPerSheet);
   const labelPxW = format.labelWidthMm  * MM_TO_PX * 0.6; // 0.6 = previewscale
   const labelPxH = format.labelHeightMm * MM_TO_PX * 0.6;
   // FP-16: was window.print() against a #lasyncro-print-root selector
@@ -105,7 +145,7 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
   // in the print-system architecture audit). Now generates a real
   // server-rendered PDF, same pattern as FP-15's single-zone print.
   async function handlePrint() {
-    const codes = sheet.map((z) => z.location_code);
+    const codes = sheet.map((i) => i.id);
     if (codes.length === 0 || !onBatchPrint) return;
     try {
       const blob = await onBatchPrint(codes, formatId);
@@ -146,12 +186,12 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
       >
         {sheet.length === 0 ? (
           <Box sx={{ gridColumn: `1 / -1`, py: 4, textAlign: 'center' }}>
-            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>No barcoded locations</Typography>
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{emptyMessage}</Typography>
           </Box>
         ) : (
-          sheet.map((zone) => (
+          sheet.map((item) => (
             <Box
-              key={zone.location_code}
+              key={item.id}
               className="lsy-label"
               sx={{
                 width: labelPxW,
@@ -168,12 +208,12 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
               }}
             >
               <BarcodeSVG
-                value={zone.location_code}
+                value={item.code}
                 widthMm={format.labelWidthMm}
                 heightMm={format.labelHeightMm}
               />
               <Typography sx={{ fontSize: 7, fontFamily: 'monospace', color: '#000', mt: 0.25, textAlign: 'center', lineHeight: 1.2 }}>
-                {zone.location_code}
+                {item.caption}
               </Typography>
             </Box>
           ))
@@ -182,7 +222,7 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
 
       {/* Label count */}
       <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
-        {sheet.length} label{sheet.length !== 1 ? 's' : ''} · {Math.ceil(barcoded.length / format.labelsPerSheet)} sheet{Math.ceil(barcoded.length / format.labelsPerSheet) !== 1 ? 's' : ''} · CODE128 · {format.paperSize === 'A4' ? 'A4' : format.paperSize}
+        {sheet.length} label{sheet.length !== 1 ? 's' : ''} · {Math.ceil(items.length / format.labelsPerSheet)} sheet{Math.ceil(items.length / format.labelsPerSheet) !== 1 ? 's' : ''} · CODE128 · {format.paperSize === 'A4' ? 'A4' : format.paperSize}
       </Typography>
 
       <Divider />
@@ -193,7 +233,7 @@ export function PrintPreviewPanel({ selectedZones, onBatchPrint }: PrintPreviewP
           Format
         </Typography>
         <RadioGroup value={formatId} onChange={(_, v) => setFormatId(v)}>
-          {LABEL_FORMATS.map((f) => (
+          {formats.map((f) => (
             <FormControlLabel
               key={f.id}
               value={f.id}

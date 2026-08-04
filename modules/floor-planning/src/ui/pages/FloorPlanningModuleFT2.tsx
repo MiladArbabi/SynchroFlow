@@ -37,6 +37,7 @@ import type {
   LocationType 
 } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
+import type { LabelFormat, PrintableLabel } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 // FP-01: shared zone_type colour map, single source of truth with Canvas.
 import { ZONE_COLORS, ZONE_STROKE } from '../components/CanvasEditor.js';
@@ -455,6 +456,15 @@ function ProductBarcodesTable({
  * Products data sourced from variants + external_product_identity_map.
  */
 type LocationFilter = 'all' | 'bin' | 'lane' | 'shelf' | 'warehouse' | 'tote' | 'dock' | 'ship' | 'pack' | 'ret' | 'kit';
+// SHOP-REV-01m cycle 2: moved out of PrintPreviewPanel so products can supply
+// their own list. Must match SHEET_FORMATS in warehouseLabelPdf.service.ts.
+const LOCATION_LABEL_FORMATS: LabelFormat[] = [
+  { id: 'avery-5160', label: 'Avery 5160 · 24/sheet',  labelsPerSheet: 24, columns: 3, labelWidthMm: 66,  labelHeightMm: 25,  paperSize: 'A4'  },
+  { id: 'avery-5163', label: 'Avery 5163 · 10/sheet · large', labelsPerSheet: 10, columns: 2, labelWidthMm: 101, labelHeightMm: 51,  paperSize: 'A4'  },
+  { id: 'zebra-4x6',  label: 'Zebra 4×6 thermal',      labelsPerSheet: 1,  columns: 1, labelWidthMm: 101, labelHeightMm: 152, paperSize: '4x6' },
+  { id: 'dymo-1x2',   label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25,  labelHeightMm: 54,  paperSize: '1x2' },
+];
+
 const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
   { label: 'ALL',       value: 'all'       },
   { label: 'BIN',       value: 'bin'       },
@@ -508,7 +518,11 @@ function BarcodesTab({
     const matchesSearch = !locSearch || z.location_code.toLowerCase().includes(locSearch.toLowerCase()) || z.barcode?.toLowerCase().includes(locSearch.toLowerCase());
     return matchesType && matchesSearch;
   });
-  const selectedZoneObjects = zones.filter((z) => selected.has(z.location_code));
+  // SHOP-REV-01m: the barcoded + active filter moved here from inside
+  // PrintPreviewPanel — it is a location concept with no product equivalent.
+  const selectedZoneLabels: PrintableLabel[] = zones
+    .filter((z) => selected.has(z.location_code) && z.barcode !== null && z.active)
+    .map((z) => ({ id: z.location_code, code: z.location_code, caption: z.location_code }));
   const allFilteredCodes    = filteredZones.map((z) => z.location_code);
   const allSelected         = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
 
@@ -680,7 +694,13 @@ function BarcodesTab({
             transition: 'width 0.25s ease, opacity 0.2s ease',
             flexShrink: 0,
           }}>
-            <PrintPreviewPanel selectedZones={selectedZoneObjects} onBatchPrint={onBatchPrintBarcodes} />
+            <PrintPreviewPanel
+              items={selectedZoneLabels}
+              formats={LOCATION_LABEL_FORMATS}
+              defaultFormatId="avery-5160"
+              emptyMessage="No barcoded locations"
+              onBatchPrint={onBatchPrintBarcodes}
+            />
           </Box>
         </Box>
       )}
