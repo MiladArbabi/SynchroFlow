@@ -416,6 +416,33 @@ Its supplier marker makes subsequent runs exit without changing timestamps.
 and the marker prevents the seeder from restoring them. A dedicated,
 non-destructive reviewer refresh procedure is still required under OV-132.
 
+### Canonical outbound reviewer seed — OV-135
+
+**Verified locally on 2026-08-04; pending commit, deployment and production-data reconciliation.**
+
+The reviewer activity seed now selects only constraint-free `pending` or
+`processing` orders that are still eligible for the Order Pool. It derives
+`total_line_items` and `total_units` from the selected orders instead of
+fabricating fixed per-order totals.
+
+A fresh seed creates four mutually exclusive batches:
+
+- `picking`: two orders with partial pick progress
+- `pick_complete`: one picked order awaiting packing
+- `packing`: one order with partial pack progress
+- `pack_complete`: two packed orders awaiting shipment
+
+Every batched order receives a matching `order_warehouse_status` row. Line-item
+warehouse states, confirmed pick scans and confirmed pack scans reconcile with
+the batch counters. Local verification produced six batched orders, two orders
+remaining in the Order Pool, two live operator positions, one unit awaiting
+packing and two packed-not-shipped orders.
+
+Production still contains the earlier three-batch seed shape. Deploying the
+updated source will not rewrite that data because the supplier marker makes
+subsequent runs exit. Production requires a separate, controlled reconciliation;
+the activity seeder must not be forced or made destructive.
+
 **Resolved and committed, pending deployment: OV-125 (P1).**
 Permanent fix: `4a3ce9eb`.
 

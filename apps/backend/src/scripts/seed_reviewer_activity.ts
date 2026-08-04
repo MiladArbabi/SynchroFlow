@@ -232,122 +232,266 @@ async function main(): Promise<void> {
     await trx('stow_tasks').insert(stowRows);
     log(`Phase C: ${stowRows.length} stow tasks`);
 
-    // pick_batch_orders has a UNIQUE constraint on lasyncro_order_id alone —
-    // an order can belong to exactly one batch ever. Only take unbatched ones.
-    // OV-125: an order with no order_line_items rows cannot produce pick scans —
-    // pick_scan_log requires a real lasyncro_line_item_id FK. Ordering by
-    // order_created_at DESC alone selected prod's six newest orders, which are
-    // precisely the six (of 42) that have no line items, so every scan loop ran
-    // zero times and the floor map showed no picking. Require line items.
-    const unbatched = await trx('orders as o')
-      .where('o.shop_id', SHOP_ID)
-      .whereNotExists(function () {
-        this.select(1).from('pick_batch_orders as p')
-          .whereRaw('p.lasyncro_order_id = o.lasyncro_order_id');
-      })
-      .whereExists(function () {
-        this.select(1).from('order_line_items as l')
-          .whereRaw('l.lasyncro_order_id = o.lasyncro_order_id');
-      })
-      .orderBy('o.order_created_at', 'desc')
-      .limit(9)
-      .select('o.lasyncro_order_id');
+          // OV-135: seed the same mutually exclusive lifecycle that real WMS
+      // writers produce. Orders must be eligible for the Order Pool, and every
+      // batch total must reconcile with its actual order_line_items rows.
+      const batchSpecs = [
+        {
+          status: 'picking',
+          orders: 2,
+          pickedRatio: 0.5,
+          packedRatio: 0,
+          pickerId: primaryPicker.id,
+          packerId: null,
+        },
+        {
+          status: 'pick_complete',
+          orders: 1,
+          pickedRatio: 1.0,
+          packedRatio: 0,
+          pickerId: primaryPicker.id,
+          packerId: null,
+        },
+        {
+          status: 'packing',
+          orders: 1,
+          pickedRatio: 1.0,
+          packedRatio: 0.5,
+          pickerId: secondaryPicker.id,
+          packerId: secondaryPicker.id,
+        },
+        {
+          status: 'pack_complete',
+          orders: 2,
+          pickedRatio: 1.0,
+          packedRatio: 1.0,
+          pickerId: primaryPicker.id,
+          packerId: secondaryPicker.id,
+        },
+      ];
 
-    if (unbatched.length < 3) {
-      log(`WARNING: only ${unbatched.length} unbatched orders — skipping pick batches`);
-    } else {
-      // pick_batch_status: pending | picking | pick_complete | packing
-      //                  | pack_complete | cancelled
-              const batchSpecs = [
-          {
-            status: 'picking',
-            orders: 3,
-            pickedRatio: 0.4,
-            packedRatio: 0,
-            pickerId: primaryPicker.id,
-            packerId: null,
-          },
-          {
-            status: 'packing',
-            orders: 3,
-            pickedRatio: 1.0,
-            packedRatio: 0.5,
-            pickerId: secondaryPicker.id,
-            packerId: secondaryPicker.id,
-          },
-          {
-            status: 'pack_complete',
-            orders: 3,
-            pickedRatio: 1.0,
-            packedRatio: 1.0,
-            pickerId: primaryPicker.id,
-            packerId: secondaryPicker.id,
-          },
-        ];
+      const requiredOrderCount = batchSpecs.reduce(
+        (total, spec) => total + spec.orders,
+        0
+      );
 
-      let cursor = 0;
-      for (const spec of batchSpecs) {
-        const slice = unbatched.slice(cursor, cursor + spec.orders);
-        cursor += spec.orders;
-        if (slice.length === 0) break;
+      const unbatched = await trx('orders as o')
+        .join(
+          'order_fulfillment_status as ofs',
+          'ofs.lasyncro_order_id',
+          'o.lasyncro_order_id'
+        )
+        .where('o.shop_id', SHOP_ID)
+        .whereIn('ofs.status', ['pending', 'processing'])
+        .whereNotExists(function () {
+          this.select(1)
+            .from('pick_batch_orders as pbo')
+            .whereRaw('pbo.lasyncro_order_id = o.lasyncro_order_id');
+        })
+        .whereNotExists(function () {
+          this.select(1)
+            .from('order_constraints as oc')
+            .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+            .where('oc.is_active', true);
+        })
+        .whereNotExists(function () {
+          this.select(1)
+            .from('order_warehouse_status as ows')
+            .whereRaw('ows.lasyncro_order_id = o.lasyncro_order_id');
+        })
+        .whereExists(function () {
+          this.select(1)
+            .from('order_line_items as oli')
+            .whereRaw('oli.lasyncro_order_id = o.lasyncro_order_id');
+        })
+        .orderBy('o.order_created_at', 'desc')
+        .limit(requiredOrderCount)
+        .select('o.lasyncro_order_id');
 
-        const totalUnits = slice.length * 4;
-        const [batch] = await trx('pick_batches').insert({
-          shop_id: SHOP_ID,
-          status: spec.status,
-          release_trigger: 'auto',
-          max_line_items: 20,
-          total_line_items: slice.length * 2,
-          total_units: totalUnits,
-          units_picked: Math.floor(totalUnits * spec.pickedRatio),
-          units_packed: Math.floor(totalUnits * spec.packedRatio),
-          picked_by: spec.pickedRatio > 0 ? spec.pickerId : null,
-          packed_by: spec.packedRatio > 0 ? spec.packerId : null,
-          assigned_operator_id: spec.pickerId,
-          pick_claimed_at: trx.raw(`NOW() - INTERVAL '90 minutes'`),
-          pick_last_activity_at: trx.raw(`NOW() - INTERVAL '4 minutes'`),
-          pick_completed_at: spec.pickedRatio >= 1 ? trx.raw(`NOW() - INTERVAL '40 minutes'`) : null,
-          pack_completed_at: spec.packedRatio >= 1 ? trx.raw(`NOW() - INTERVAL '10 minutes'`) : null,
-          released_by: owner?.id ?? null,
-          released_at: trx.raw(`NOW() - INTERVAL '2 hours'`),
-        }).returning('pick_batch_id');
-
-        await trx('pick_batch_orders').insert(
-          slice.map(o => ({
-            pick_batch_id: batch.pick_batch_id,
-            lasyncro_order_id: o.lasyncro_order_id,
-            shop_id: SHOP_ID,
-          }))
+      if (unbatched.length < requiredOrderCount) {
+        log(
+          `WARNING: need ${requiredOrderCount} eligible orders, found ${unbatched.length} — skipping pick batches`
         );
+      } else {
+        const warehouseStatusByBatchStatus = {
+          picking: 'picking',
+          pick_complete: 'picked',
+          packing: 'packing',
+          pack_complete: 'packed',
+        } as const;
 
-        // Recent scans drive the operator dots on the isometric map
-        // (LiveBinActivity.hasActivePick). These go stale within hours —
-        // re-run this script the morning of a review.
-        // pick_scan_log requires a real order_line_items FK, so scans are
-        // derived from this batch's own orders rather than invented.
-        if ((spec.status === 'picking' || spec.status === 'packing') && owner?.id) {
+        let cursor = 0;
+
+        for (const spec of batchSpecs) {
+          const slice = unbatched.slice(cursor, cursor + spec.orders);
+          cursor += spec.orders;
+
+          const orderIds = slice.map(order => order.lasyncro_order_id);
           const lineItems = await trx('order_line_items')
-            .whereIn('lasyncro_order_id', slice.map(o => o.lasyncro_order_id))
-            .limit(3)
-            .select('lasyncro_line_item_id', 'lasyncro_variant_id');
+            .whereIn('lasyncro_order_id', orderIds)
+            .orderBy('lasyncro_order_id')
+            .orderBy('lasyncro_line_item_id')
+            .select(
+              'lasyncro_line_item_id',
+              'lasyncro_order_id',
+              'lasyncro_variant_id',
+              'quantity'
+            );
+
+          const totalUnits = lineItems.reduce(
+            (total, lineItem) => total + Number(lineItem.quantity),
+            0
+          );
+
+          const unitsPicked = Math.min(
+            totalUnits,
+            Math.max(1, Math.floor(totalUnits * spec.pickedRatio))
+          );
+
+          const unitsPacked =
+            spec.packedRatio > 0
+              ? Math.min(
+                  unitsPicked,
+                  Math.max(1, Math.floor(totalUnits * spec.packedRatio))
+                )
+              : 0;
+
+          const [batch] = await trx('pick_batches')
+            .insert({
+              shop_id: SHOP_ID,
+              status: spec.status,
+              release_trigger: 'auto',
+              max_line_items: 20,
+              total_line_items: lineItems.length,
+              total_units: totalUnits,
+              units_picked: unitsPicked,
+              units_packed: unitsPacked,
+              picked_by: spec.pickerId,
+              packed_by: unitsPacked > 0 ? spec.packerId : null,
+              assigned_operator_id: spec.pickerId,
+              assigned_packer_id: spec.packerId,
+              pick_claimed_at: trx.raw(`NOW() - INTERVAL '90 minutes'`),
+              pick_last_activity_at: trx.raw(`NOW() - INTERVAL '4 minutes'`),
+              pack_last_activity_at:
+                unitsPacked > 0
+                  ? trx.raw(`NOW() - INTERVAL '3 minutes'`)
+                  : null,
+              pick_completed_at:
+                spec.pickedRatio >= 1
+                  ? trx.raw(`NOW() - INTERVAL '40 minutes'`)
+                  : null,
+              pack_completed_at:
+                spec.status === 'pack_complete'
+                  ? trx.raw(`NOW() - INTERVAL '10 minutes'`)
+                  : null,
+              released_by: owner?.id ?? null,
+              released_at: trx.raw(`NOW() - INTERVAL '2 hours'`),
+            })
+            .returning('pick_batch_id');
+
+          await trx('pick_batch_orders').insert(
+            slice.map(order => ({
+              pick_batch_id: batch.pick_batch_id,
+              lasyncro_order_id: order.lasyncro_order_id,
+              shop_id: SHOP_ID,
+            }))
+          );
+
+          const warehouseStatus =
+            warehouseStatusByBatchStatus[spec.status];
+
+          await trx('order_warehouse_status').insert(
+            slice.map(order => ({
+              lasyncro_order_id: order.lasyncro_order_id,
+              status: warehouseStatus,
+              pick_batch_id: batch.pick_batch_id,
+              status_updated_at: trx.raw(`NOW() - INTERVAL '3 minutes'`),
+              picked_at:
+                spec.status === 'picking'
+                  ? null
+                  : trx.raw(`NOW() - INTERVAL '40 minutes'`),
+              packed_at:
+                spec.status === 'pack_complete'
+                  ? trx.raw(`NOW() - INTERVAL '10 minutes'`)
+                  : null,
+              created_at: trx.raw(`NOW() - INTERVAL '2 hours'`),
+              updated_at: trx.raw(`NOW() - INTERVAL '3 minutes'`),
+            }))
+          );
+
+          await trx('order_line_item_warehouse_status').insert(
+            lineItems.map(lineItem => ({
+              lasyncro_line_item_id: lineItem.lasyncro_line_item_id,
+              lasyncro_order_id: lineItem.lasyncro_order_id,
+              shop_id: SHOP_ID,
+              status: warehouseStatus,
+              status_updated_at: trx.raw(`NOW() - INTERVAL '3 minutes'`),
+              created_at: trx.raw(`NOW() - INTERVAL '2 hours'`),
+              updated_at: trx.raw(`NOW() - INTERVAL '3 minutes'`),
+            }))
+          );
+
+          let remainingPickedUnits = unitsPicked;
 
           for (let i = 0; i < lineItems.length; i++) {
+            if (remainingPickedUnits <= 0) break;
+
+            const quantityConfirmed = Math.min(
+              Number(lineItems[i].quantity),
+              remainingPickedUnits
+            );
+
             await trx('pick_scan_log').insert({
               shop_id: SHOP_ID,
               pick_batch_id: batch.pick_batch_id,
               lasyncro_line_item_id: lineItems[i].lasyncro_line_item_id,
               lasyncro_variant_id: lineItems[i].lasyncro_variant_id,
               location_code: pickBins[i % pickBins.length],
-              quantity_confirmed: 1,
+              quantity_confirmed: quantityConfirmed,
               status: 'confirmed',
               scanned_by: spec.pickerId,
-              scanned_at: trx.raw(`NOW() - INTERVAL '${2 + i} minutes'`),
+              scanned_at: trx.raw(
+                `NOW() - INTERVAL '${2 + i} minutes'`
+              ),
             });
+
+            remainingPickedUnits -= quantityConfirmed;
+          }
+
+          let remainingPackedUnits = unitsPacked;
+
+          for (let i = 0; i < lineItems.length; i++) {
+            if (remainingPackedUnits <= 0) break;
+
+            const quantityConfirmed = Math.min(
+              Number(lineItems[i].quantity),
+              remainingPackedUnits
+            );
+
+            await trx('pack_scan_log').insert({
+              shop_id: SHOP_ID,
+              pick_batch_id: batch.pick_batch_id,
+              lasyncro_order_id: lineItems[i].lasyncro_order_id,
+              lasyncro_line_item_id: lineItems[i].lasyncro_line_item_id,
+              lasyncro_variant_id: lineItems[i].lasyncro_variant_id,
+              lasyncro_unit_id: null,
+              quantity_confirmed: quantityConfirmed,
+              status: 'confirmed',
+              scanned_by: spec.packerId,
+              scanned_at: trx.raw(
+                `NOW() - INTERVAL '${1 + i} minutes'`
+              ),
+            });
+
+            remainingPackedUnits -= quantityConfirmed;
           }
         }
-     }
-      log(`Phase C: ${batchSpecs.length} pick batches`);
-    }
+
+        // Recent scan timestamps intentionally make only picking/packing batches
+        // active. The marker guard prevents this script from being a freshness
+        // command; review-day refresh remains a separate OV-132 responsibility.
+        log(`Phase C: ${batchSpecs.length} canonical outbound batches`);
+      }
 
     // ── PHASE E: PULSE FRESHNESS ────────────────────────────────────────────
     // NOTE: revenue_projection_daily is a PROJECTION table with no writer

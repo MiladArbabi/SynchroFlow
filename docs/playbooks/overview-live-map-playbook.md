@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** July 13, 2026 — Growth+ live-map gate and Core upgrade teaser shipped and visually verified.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · v3 parked.
+> **Last updated:** August 4, 2026 — OV-135 canonical reviewer outbound lifecycle verified locally.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 local ✅ · v3 parked.
 
 ---
 
@@ -163,28 +163,44 @@ with them (8 tasks vs 132 units on the dev tenant).
 {
   pickerPositions: {
     operator_id: string;
-    location_code: string;      // last scan location from pick_scan_log
+    location_code: string;      // last confirmed pick scan location
     last_scan_at: string;       // ISO timestamp
     batch_id: string;
   }[];
   activeBatches: {
     batch_id: string;
     status: 'picking' | 'packing';
-    picked_lines: number;
+    picked_lines: number;       // legacy field name; value is units_picked
     total_lines: number;
+    total_units: number;
+    units_packed: number;
   }[];
   stowPressure: {
-    pending_count: number;      // stow_tasks WHERE status = 'pending'
-    anchor_location: string;    // 'RECEIVE-1' — the physical stow zone
+    pending_count: number;      // pending task count
+    anchor_location: string;    // legacy compatibility field
+    by_location: {
+      location_code: string;
+      pending_units: number;
+      pending_tasks: number;
+    }[];
   };
+  receiveAtDock: {
+    location_code: string;
+    units: number;
+  }[];
+  awaitingPackUnits: number;
 }
 ```
 
 ### 6.2 Derivation queries
 
-- `pickerPositions`: `SELECT DISTINCT ON (operator_id) operator_id, location_code, scanned_at FROM pick_scan_log WHERE shop_id = $shopId AND scanned_at > NOW() - INTERVAL '4 hours' ORDER BY operator_id, scanned_at DESC`
-- `activeBatches`: `pick_batches` WHERE `status IN ('picking','packing')` + line counts from `pick_batch_orders`
-- `stowPressure`: `COUNT(*) FROM stow_tasks WHERE shop_id = $shopId AND status = 'pending'` + hardcoded anchor `RECEIVE-1` (single warehouse phase)
+- `pickerPositions`: latest confirmed `pick_scan_log` row per operator within four hours, joined to a batch currently in `picking` or `packing`. The scan operator must still match `pick_batches.picked_by`.
+- `activeBatches`: `pick_batches` where `status IN ('picking', 'packing')`, exposing batch progress from `units_picked`, `total_line_items`, `total_units`, and `units_packed`.
+- `stowPressure.by_location`: pending `stow_tasks` grouped by `location_code`; badges use summed units while `pending_count` remains a task count.
+- `receiveAtDock`: `inventory_units` where `status = 'received'`, grouped by `current_location_code`.
+- `awaitingPackUnits`: summed `pick_batches.total_units` where `status = 'pick_complete'`.
+
+Ready-for-release orders remain authoritative in `GET /api/v1/wms/order-pool`. Packed-not-shipped orders are represented by `order_warehouse_status.status = 'packed'` but are not yet exposed by the live-activity response.
 
 ### 6.3 Poll interval
 
@@ -327,6 +343,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | OV-129c | Glyph alone does not teach meaning | `showMarkerKey` — glyph + words, independent of `showLegend` | ✅ |
 | OV-129d | No floor-wide total | Summed from `by_location` units | ✅ |
 | OV-131 | Receive had no signal on the map; receive_jobs has no location column | Badge from inventory_units.current_location_code where status='received'; key row "N units at dock" | ✅ |
+| OV-135 | Reviewer batches used fabricated totals and omitted canonical order, line-item and pack-scan state | Seed only eligible orders; derive real totals; create picking, picked, packing and packed states with reconciling scan evidence | ✅ local |
 
 ---
 
@@ -338,6 +355,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | **v1-B** ✅ | Page-level grid+occupancy hooks · `useOrderPool` wired · `IsometricCanvas` embed · `SyntheticStation` apron (inbound pool + blocked sub-stack) · `LiveBinActivity` type | FP-OV-01, FP-OV-02, FP-OV-03 |
 | **v2** ✅ | `GET /api/v1/wms/live-activity` · `useWmsLiveActivity` 15s poll · picker dot markers on `IsometricCanvas` | FP-OV-04, FP-OV-07 (partial) |
 | **v2.1** ✅ | Core triage-preserving Growth teaser · static `IsometricCanvas` preview · session dismissal · billing CTA · conversion events | FP-OV-09 / OV-MAP-001 |
+| **v2.2 data foundation** ✅ local | Canonical reviewer seed for Ready · Picking · Picked · Packing · Packed, with real line-item totals and scan reconciliation | OV-135 |
 | **v3** — Parked | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill from tokens | FP-OV-07 (remaining) |
 
 Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.
