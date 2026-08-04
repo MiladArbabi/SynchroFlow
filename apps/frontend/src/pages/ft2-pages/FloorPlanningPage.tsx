@@ -15,7 +15,8 @@ import {
   useUpdateProductBarcode, 
   usePrintBarcode,
   useBatchPrintBarcodes,
-  usePrintProductBarcode
+  usePrintProductBarcode,
+  useBatchPrintProductBarcodes
 } from '../floor-planning/useZoneManagement';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
@@ -52,6 +53,7 @@ export default function FloorPlanningPage() {
   const deleteZone    = useDeleteZone();
   const updateZone           = useUpdateZone();
   const updateProductBarcode = useUpdateProductBarcode();
+  const batchPrintProductBarcodes = useBatchPrintProductBarcodes();
 
   useEffect(() => {
     if (!variantId) { setVariantFocusBins([]); return; }
@@ -99,6 +101,14 @@ export default function FloorPlanningPage() {
         }}
         onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
         onPrintProductBarcode={(variantId) => printProductBarcode.mutateAsync(variantId).then(() => undefined)}
+        // SHOP-REV-01m: mirrors onBatchPrintBarcodes — null means QZ already
+        // dispatched silently, so PrintPreviewPanel skips the browser tab and
+        // the sheet isn't printed twice.
+        onBatchPrintProductBarcodes={async (ids, formatId) => {
+          const blob = await batchPrintProductBarcodes.mutateAsync({ lasyncroVariantIds: ids, formatId });
+          const dispatched = await printViaQz(blob, 'product_label', axiosInstance);
+          return dispatched ? null : blob;
+        }}
         activeTab={activeTab}
         onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}
         activeView={activeView}

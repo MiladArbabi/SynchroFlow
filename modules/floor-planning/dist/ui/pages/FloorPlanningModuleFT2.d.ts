@@ -20,7 +20,12 @@ export type ProductBarcode = {
     sku: string | null;
     product_title: string;
     variant_title: string | null;
+    /** Supplier EAN/UPC from Shopify — external namespace, migration 0027. */
     barcode: string | null;
+    /** SHOP-REV-01g: laSyncro-minted LSP- identity. Independent of `barcode`;
+     *  a product may legitimately carry both. Returned by httpGetLayout since
+     *  01i but missing from this type until 01m cycle 3. */
+    lasyncro_barcode: string | null;
 };
 export type FloorPlanningData = {
     zones: WarehouseZone[];
@@ -52,6 +57,7 @@ export type FloorPlanningPageProps = {
     onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
     onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
     onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
+    onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
     /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
     activeTab?: 'map' | 'setup' | 'barcodes';
     onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;

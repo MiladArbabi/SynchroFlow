@@ -166,3 +166,16 @@ export function usePrintProductBarcode() {
     },
   });
 }
+
+// SHOP-REV-01m: batch product label print. Mirrors useBatchPrintBarcodes —
+// mutationFn returns the raw Blob and the caller (FloorPlanningPage) attempts
+// QZ dispatch, returning null when it succeeded so PrintPreviewPanel skips
+// opening a browser tab and the label isn't printed twice.
+export function useBatchPrintProductBarcodes() {
+  return useMutation({
+    mutationFn: ({ lasyncroVariantIds, formatId }: { lasyncroVariantIds: string[]; formatId: string }) =>
+      axiosInstance
+        .post('/api/v1/floor-planning/products/print-batch', { lasyncroVariantIds, formatId }, { responseType: 'blob' })
+        .then(r => r.data as Blob),
+  });
+}

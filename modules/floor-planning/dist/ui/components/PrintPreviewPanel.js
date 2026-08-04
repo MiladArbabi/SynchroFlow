@@ -1,5 +1,24 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 // modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx
+/**
+ * PrintPreviewPanel — Barcodes tab right panel.
+ *
+ * Renders a live label sheet preview for any printable code. Data-shape
+ * agnostic since SHOP-REV-01m cycle 2: callers map their rows to
+ * PrintableLabel and supply their own format list, so the same panel serves
+ * both the Locations and Products sub-tabs without forking.
+ *
+ * Callers own printability filtering — "barcoded and active" is a location
+ * concept with no product equivalent — and own the format list, because
+ * location labels run up to Zebra 4x6 while product labels are 30-60mm.
+ *
+ * Barcode type is Code128 for all formats.
+ *
+ * PRINT-02: format geometry here is duplicated server-side in
+ * warehouseLabelPdf.SHEET_FORMATS and productLabelPdf.PRODUCT_FORMATS,
+ * kept in sync by comment only. Drift means the preview lies about the
+ * printed sheet.
+ */
 import { useEffect, useRef, useState } from 'react';
 import { Box, Typography, Paper, Radio, RadioGroup, FormControlLabel, Button, Divider, } from '@mui/material';
 import { Printer } from 'lucide-react';

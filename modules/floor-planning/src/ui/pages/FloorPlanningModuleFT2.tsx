@@ -68,7 +68,12 @@ export type ProductBarcode = {
   sku: string | null;
   product_title: string;
   variant_title: string | null;
+  /** Supplier EAN/UPC from Shopify — external namespace, migration 0027. */
   barcode: string | null;
+  /** SHOP-REV-01g: laSyncro-minted LSP- identity. Independent of `barcode`;
+   *  a product may legitimately carry both. Returned by httpGetLayout since
+   *  01i but missing from this type until 01m cycle 3. */
+  lasyncro_barcode: string | null;
 };
 
 export type FloorPlanningData = {
@@ -110,6 +115,9 @@ export type FloorPlanningPageProps = {
   // SHOP-REV-01i: mints the LSP- identity on demand and returns a printable
   // label for products with no supplier barcode.
   onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
+  // SHOP-REV-01m: null means already dispatched via QZ Tray, same contract as
+  // onBatchPrintBarcodes.
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
   activeTab?: 'map' | 'setup' | 'barcodes';
   onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;
@@ -220,12 +228,40 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
   );
 }
 
+/**
+ * ProductBarcodesTable — assigned (supplier EAN present) + unassigned sections.
+ *
+ * SHOP-REV-01m: selection spans BOTH sections. LSP- is a parallel namespace to
+ * the supplier EAN, not a substitute — a barcoded product can still need a
+ * laSyncro label (shelf-edge identifier, damaged original). Scoping selection
+ * to unassigned-only would make batch print decay to useless as a merchant's
+ * catalog fills in with supplier data.
+ *
+ * Selecting inside the collapsed unassigned section forces it open
+ * (toggleUnassigned / toggleAllUnassigned) — a select-all that silently
+ * includes invisible rows is worse than no select-all.
+ *
+ * Select-all is per-table, not per-tab. A master control across two
+ * semantically different groups has no analogue in the Locations tab and
+ * would obscure which rows it affects.
+ */
+
 function ProductBarcodesTable({ 
-  items, onUpdateProductBarcode, onPrintProductBarcode 
+  items, 
+  onUpdateProductBarcode, 
+  onPrintProductBarcode,
+  onBatchPrintProductBarcodes,
+  selectedIds, 
+  onToggleOne, 
+  onToggleAll,
 } : { items: ProductBarcode[]; onUpdateProductBarcode?: (
   lasyncroVariantId: string, 
   barcode: string) => Promise<void>;
   onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
+  selectedIds?: Set<string>;
+  onToggleOne?: (id: string) => void;
+  onToggleAll?: (ids: string[]) => void;
 }) {
   const [filter, setFilter]                 = useState('');
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -281,6 +317,22 @@ function ProductBarcodesTable({
     );
   });
 
+  // SHOP-REV-01m: selecting inside the collapsed section forces it open — a
+  // select-all that silently includes rows the user cannot see is a worse
+  // affordance than no select-all. Selection spans BOTH tables because LSP-
+  // is a parallel namespace to the supplier EAN, not a substitute for it: a
+  // barcoded product can still need a laSyncro label (shelf-edge identifier,
+  // damaged original). Scoping to unassigned-only would make batch print
+  // decay to useless as a merchant's catalog fills in.
+  const sel = selectedIds ?? new Set<string>();
+  const selectable = !!onToggleOne;
+
+  function toggleUnassigned(id: string) { setShowUnassigned(true); onToggleOne?.(id); }
+  function toggleAllUnassigned(ids: string[]) { setShowUnassigned(true); onToggleAll?.(ids); }
+
+  const assignedAllOn   = filtered.length > 0 && filtered.every((i) => sel.has(i.lasyncro_variant_id));
+  const unassignedAllOn = unassigned.length > 0 && unassigned.every((i) => sel.has(i.lasyncro_variant_id));
+
   return (
     <Box>
       <TextField
@@ -308,15 +360,36 @@ function ProductBarcodesTable({
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncro ID</TableCell>
+                    {selectable && (
+                      <TableCell padding="checkbox" sx={{ width: 40 }}>
+                        <Checkbox
+                          size="small"
+                          checked={assignedAllOn}
+                          indeterminate={filtered.some((i) => sel.has(i.lasyncro_variant_id)) && !assignedAllOn}
+                          onChange={() => onToggleAll?.(filtered.map((i) => i.lasyncro_variant_id))}
+                          sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
+                        />
+                      </TableCell>
+                    )}
+                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncroID</TableCell>
                     <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
-                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Supplier Barcode</TableCell>
+                    <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SupplierBarcode</TableCell>
                     <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 80 }} />
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {filtered.map((item) => (
-                    <TableRow key={item.lasyncro_variant_id} hover>
+                    <TableRow key={item.lasyncro_variant_id} hover selected={sel.has(item.lasyncro_variant_id)}>
+                      {selectable && (
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            size="small"
+                            checked={sel.has(item.lasyncro_variant_id)}
+                            onChange={() => onToggleOne?.(item.lasyncro_variant_id)}
+                            sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } }}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
                         {item.lasyncro_variant_id.slice(0, 8)}…
                       </TableCell>
@@ -364,7 +437,7 @@ function ProductBarcodesTable({
                   ))}
                   {filtered.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} sx={{ textAlign: 'center', color: 'text.secondary', py: 3 }}>
+                      <TableCell colSpan={selectable ? 5 : 4} sx={{ textAlign: 'center', color: 'text.secondary', py: 3 }}>
                         No results match your filter.
                       </TableCell>
                     </TableRow>
@@ -396,6 +469,17 @@ function ProductBarcodesTable({
                 <Table size="small">
                   <TableHead>
                     <TableRow>
+                      {selectable && (
+                        <TableCell padding="checkbox" sx={{ width: 40 }}>
+                          <Checkbox
+                            size="small"
+                            checked={unassignedAllOn}
+                            indeterminate={unassigned.some((i) => sel.has(i.lasyncro_variant_id)) && !unassignedAllOn}
+                            onChange={() => toggleAllUnassigned(unassigned.map((i) => i.lasyncro_variant_id))}
+                            sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } }}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncro ID</TableCell>
                       <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
                       <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 160 }} />
@@ -403,8 +487,18 @@ function ProductBarcodesTable({
                   </TableHead>
                   <TableBody>
                     {unassigned.map((item) => (
-                      <TableRow key={item.lasyncro_variant_id} hover>
-                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 11 }}>
+                      <TableRow key={item.lasyncro_variant_id} hover selected={sel.has(item.lasyncro_variant_id)}>
+                        {selectable && (
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              size="small"
+                              checked={sel.has(item.lasyncro_variant_id)}
+                              onChange={() => toggleUnassigned(item.lasyncro_variant_id)}
+                              sx={{ color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } }}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 11}}>
                           {item.lasyncro_variant_id.slice(0, 8)}…
                         </TableCell>
                         <TableCell sx={{ fontSize: 12 }}>
@@ -465,6 +559,15 @@ const LOCATION_LABEL_FORMATS: LabelFormat[] = [
   { id: 'dymo-1x2',   label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25,  labelHeightMm: 54,  paperSize: '1x2' },
 ];
 
+// SHOP-REV-01m cycle 3: must match PRODUCT_FORMATS in productLabelPdf.service.ts
+// (PRINT-02 — synced by comment only). Deliberately not the location list:
+// Zebra 4x6 has no product use, and product labels are 30-60mm by convention.
+const PRODUCT_LABEL_FORMATS: LabelFormat[] = [
+  { id: 'thermal-50x25', label: 'Thermal 50×25mm',        labelsPerSheet: 1,  columns: 1, labelWidthMm: 50, labelHeightMm: 25, paperSize: 'thermal' },
+  { id: 'dymo-1x2',      label: 'Dymo 1×2.125',           labelsPerSheet: 1,  columns: 1, labelWidthMm: 25, labelHeightMm: 54, paperSize: '1x2'     },
+  { id: 'avery-5160',    label: 'Avery 5160 · 24/sheet',  labelsPerSheet: 24, columns: 3, labelWidthMm: 66, labelHeightMm: 25, paperSize: 'A4'      },
+];
+
 const FILTER_PILLS: { label: string; value: LocationFilter }[] = [
   { label: 'ALL',       value: 'all'       },
   { label: 'BIN',       value: 'bin'       },
@@ -486,6 +589,7 @@ function BarcodesTab({
   activeSubTab,
   onSubTabChange,
   onBatchPrintBarcodes,
+  onBatchPrintProductBarcodes,
   onPrintProductBarcode
 }: { 
   zones: WarehouseZone[]; 
@@ -497,14 +601,28 @@ function BarcodesTab({
   // comment above for full rationale.
   onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
   onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
 }) {
   const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
   const [locSearch, setLocSearch]     = useState('');
   const [selected, setSelected]       = useState<Set<string>>(new Set());
+  // SHOP-REV-01m: products get their own Set. A shared one would leak
+  // selections across sub-tabs — a variant id and a location code are both
+  // bare strings with nothing distinguishing them — and the preview panel's
+  // visibility keys on size > 0, so the wrong panel would appear.
+  const [prodSelected, setProdSelected] = useState<Set<string>>(new Set());
 
   const toggleOne  = (code: string) => setSelected((prev) => { const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s; });
   const toggleAll  = (codes: string[]) => setSelected((prev) => prev.size === codes.length ? new Set() : new Set(codes));
+
+  const prodToggleOne = (id: string) => setProdSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  const prodToggleAll = (ids: string[]) => setProdSelected((prev) => {
+    const allOn = ids.length > 0 && ids.every((i) => prev.has(i));
+    const s = new Set(prev);
+    ids.forEach((i) => allOn ? s.delete(i) : s.add(i));
+    return s;
+  });
 
   const barcoded      = zones.filter((z) => z.barcode !== null);
   const missing       = zones.filter((z) => z.barcode === null);
@@ -525,6 +643,22 @@ function BarcodesTab({
     .map((z) => ({ id: z.location_code, code: z.location_code, caption: z.location_code }));
   const allFilteredCodes    = filteredZones.map((z) => z.location_code);
   const allSelected         = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
+
+  // SHOP-REV-01m: three honest metrics. Locations has a fourth (aisles fully
+  // labelled) with no product equivalent — inventing one would be parity
+  // theatre.
+  const prodWithSupplier = productBarcodes.filter((p) => p.barcode !== null);
+  const prodWithLasyncro = productBarcodes.filter((p) => p.lasyncro_barcode !== null);
+
+  const selectedProductLabels: PrintableLabel[] = productBarcodes
+    .filter((p) => prodSelected.has(p.lasyncro_variant_id))
+    .map((p) => ({
+      id: p.lasyncro_variant_id,
+      // Preview shows the LSP- code where one exists; a variant with none yet
+      // shows its SKU as a placeholder — the mint happens server-side on print.
+      code: p.lasyncro_barcode ?? p.sku ?? p.lasyncro_variant_id.slice(0, 8),
+      caption: [p.sku, p.product_title].filter(Boolean).join(' · ').slice(0, 36),
+    }));
 
   return (
     <Box>
@@ -706,17 +840,60 @@ function BarcodesTab({
       )}
 
       {subTab === 'products' && (
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <PackageSearch size={18} />
-            <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
-            <Chip label={productBarcodes.length} size="small" />
+        <Box sx={{ display: 'flex', gap: 3, alignItems: 'flex-start' }}>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <PackageSearch size={18} />
+              <Typography variant="subtitle1" fontWeight={700}>Product Barcodes</Typography>
+              <Chip label={productBarcodes.length} size="small" />
+            </Box>
+
+            <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1.5 }}>
+              Product barcodes · Supplier EAN &amp; laSyncro labels · This shop
+            </Typography>
+
+            {/* Stat row — mirrors the Locations layout exactly */}
+            <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+              {[
+                { label: 'Total variants',      value: productBarcodes.length,   color: 'var(--ink)'    },
+                { label: 'Supplier barcode',    value: prodWithSupplier.length,  color: 'var(--accent)' },
+                { label: 'laSyncro label',      value: prodWithLasyncro.length,  color: prodWithLasyncro.length > 0 ? 'var(--accent)' : 'var(--ink-3)' },
+              ].map(({ label, value, color }) => (
+                <Box key={label} sx={{ flex: 1, p: 2, border: '1px solid var(--rule)', borderRadius: 2, bgcolor: 'var(--bg-2)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
+                    {label}
+                  </Typography>
+                  <Typography sx={{ fontSize: 28, fontWeight: 500, color, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums' }}>
+                    {value}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+
+            <ProductBarcodesTable 
+              items={productBarcodes} 
+              onUpdateProductBarcode={onUpdateProductBarcode} 
+              onPrintProductBarcode={onPrintProductBarcode}
+              selectedIds={prodSelected}
+              onToggleOne={prodToggleOne}
+              onToggleAll={prodToggleAll}
+            />
           </Box>
-          <ProductBarcodesTable 
-            items={productBarcodes} 
-            onUpdateProductBarcode={onUpdateProductBarcode} 
-            onPrintProductBarcode={onPrintProductBarcode}
-          />
+          <Box sx={{
+            width: prodSelected.size > 0 ? 260 : 0,
+            opacity: prodSelected.size > 0 ? 1 : 0,
+            overflow: 'hidden',
+            transition: 'width 0.25s ease, opacity 0.2s ease',
+            flexShrink: 0,
+          }}>
+            <PrintPreviewPanel
+              items={selectedProductLabels}
+              formats={PRODUCT_LABEL_FORMATS}
+              defaultFormatId="thermal-50x25"
+              emptyMessage="No products selected"
+              onBatchPrint={onBatchPrintProductBarcodes}
+            />
+          </Box>
         </Box>
       )}
     </Box>
@@ -744,6 +921,7 @@ function FloorPlanningModuleFT2Inner({
   onUpdateZone,
   onUpdateProductBarcode,
   onPrintProductBarcode,
+  onBatchPrintProductBarcodes,
   onTabChange,
   activeTab,
   activeView,
@@ -1394,6 +1572,7 @@ function FloorPlanningModuleFT2Inner({
           productBarcodes={productBarcodes}
           onUpdateProductBarcode={onUpdateProductBarcode}
           onPrintProductBarcode={onPrintProductBarcode}
+          onBatchPrintProductBarcodes={onBatchPrintProductBarcodes}
           activeSubTab={activeSubTab}
           onSubTabChange={onSubTabChange}
           onBatchPrintBarcodes={onBatchPrintBarcodes}
