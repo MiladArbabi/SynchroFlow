@@ -376,15 +376,17 @@ function UnitLabelCoverageSection() {
   );
 }
 
-// FP-17 (issue 1047): location_label added for Floor Planning bin/lane
-// barcode labels, routed via printViaQz in FP-17a/FP-17b.
-type PrinterRole = 'unit_label' | 'invoice' | 'problem_label' | 'location_label' | 'general';
+// SHOP-REV-01j: product_label added by migration 0136 — LSP- product
+// identity labels. Without it here the role is unassignable in the UI and
+// printViaQz finds no default printer, silently falling back to a tab.
+type PrinterRole = 'unit_label' | 'invoice' | 'problem_label' | 'location_label' | 'product_label' | 'general';
 type ConnectionType = 'usb' | 'wifi' | 'bluetooth';
 const ROLE_LABELS: Record<PrinterRole, string> = {
   unit_label:     'Unit labels (LSU-)',
   invoice:        'Invoices (A4)',
   problem_label:  'Problem bin labels',
   location_label: 'Location labels (bin/lane)',
+  product_label:  'Product labels (LSP-)',
   general:        'General',
 };
 
@@ -393,6 +395,7 @@ const ROLE_COLORS: Record<PrinterRole, string> = {
   invoice:        'var(--accent)',
   problem_label:  '#EAB308',
   location_label: '#3B82F6',
+  product_label:  '#A855F7',
   general:        'var(--ink-3)',
 };
 

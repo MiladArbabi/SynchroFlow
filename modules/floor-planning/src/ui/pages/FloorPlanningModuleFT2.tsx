@@ -106,6 +106,9 @@ export type FloorPlanningPageProps = {
   onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
+  // SHOP-REV-01i: mints the LSP- identity on demand and returns a printable
+  // label for products with no supplier barcode.
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
   activeTab?: 'map' | 'setup' | 'barcodes';
   onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;
@@ -217,10 +220,11 @@ function ZoneCard({ zone, onDelete, onToggleActive }: {
 }
 
 function ProductBarcodesTable({ 
-  items, onUpdateProductBarcode 
+  items, onUpdateProductBarcode, onPrintProductBarcode 
 } : { items: ProductBarcode[]; onUpdateProductBarcode?: (
   lasyncroVariantId: string, 
-  barcode: string) => Promise<void> 
+  barcode: string) => Promise<void>;
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
 }) {
   const [filter, setFilter]                 = useState('');
   const [showUnassigned, setShowUnassigned] = useState(false);
@@ -229,6 +233,25 @@ function ProductBarcodesTable({
   const [editValue, setEditValue]           = useState('');
   const [saving, setSaving]                 = useState(false);
   const [saveError, setSaveError]           = useState<string | null>(null);
+  // SHOP-REV-01i: per-row print state — a product with no supplier barcode
+  // has no scannable identity until laSyncro mints one. Deliberately scoped
+  // to the unassigned section: products that already carry a supplier
+  // EAN/UPC scan fine and need no laSyncro label.
+  const [printingId, setPrintingId]         = useState<string | null>(null);
+  const [printError, setPrintError]         = useState<string | null>(null);
+
+  async function handlePrint(lasyncroVariantId: string) {
+    if (!onPrintProductBarcode) return;
+    setPrintingId(lasyncroVariantId);
+    setPrintError(null);
+    try {
+      await onPrintProductBarcode(lasyncroVariantId);
+    } catch {
+      setPrintError(lasyncroVariantId);
+    } finally {
+      setPrintingId(null);
+    }
+  }
 
   async function handleSave(lasyncroVariantId: string) {
     if (!editValue.trim() || !onUpdateProductBarcode) return;
@@ -374,6 +397,7 @@ function ProductBarcodesTable({
                     <TableRow>
                       <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>LaSyncro ID</TableCell>
                       <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>SKU</TableCell>
+                      <TableCell sx={{ fontWeight: 700, fontSize: 11, width: 160 }} />
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -384,6 +408,33 @@ function ProductBarcodesTable({
                         </TableCell>
                         <TableCell sx={{ fontSize: 12 }}>
                           {item.sku ?? <Typography variant="caption" color="text.disabled">—</Typography>}
+                        </TableCell>
+                        <TableCell>
+                          {/* Tier 1 filled accent per playbook §2/§12 — printing
+                              commits a write (mints the LSP- identity and
+                              dispatches to the printer), unlike the Edit action
+                              above which only opens an inline editor. Error uses
+                              --critical-ink per §18; never hardcode severity hex. */}
+                          {onPrintProductBarcode && (
+                            <Box
+                              onClick={() => { if (printingId !== item.lasyncro_variant_id) void handlePrint(item.lasyncro_variant_id); }}
+                              sx={{
+                                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                px: 1.25, py: 0.5,
+                                fontSize: 11, fontWeight: 600,
+                                whiteSpace: 'nowrap',
+                                bgcolor: printError === item.lasyncro_variant_id ? 'var(--critical-ink)' : 'var(--accent)',
+                                color: 'var(--accent-ink)',
+                                borderRadius: '6px',
+                                cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
+                                opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
+                                '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
+                              }}
+                            >
+                              <Tag size={11} />
+                              {printingId === item.lasyncro_variant_id ? 'Printing…' : printError === item.lasyncro_variant_id ? 'Retry' : 'Print label'}
+                            </Box>
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -425,6 +476,7 @@ function BarcodesTab({
   activeSubTab,
   onSubTabChange,
   onBatchPrintBarcodes,
+  onPrintProductBarcode
 }: { 
   zones: WarehouseZone[]; 
   productBarcodes: ProductBarcode[]; 
@@ -434,6 +486,7 @@ function BarcodesTab({
   // FP-17b: null means already printed via QZ Tray, see outer interface
   // comment above for full rationale.
   onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
 }) {
   const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
@@ -642,6 +695,7 @@ function BarcodesTab({
           <ProductBarcodesTable 
             items={productBarcodes} 
             onUpdateProductBarcode={onUpdateProductBarcode} 
+            onPrintProductBarcode={onPrintProductBarcode}
           />
         </Box>
       )}
@@ -669,6 +723,7 @@ function FloorPlanningModuleFT2Inner({
   onToggleZoneActive,
   onUpdateZone,
   onUpdateProductBarcode,
+  onPrintProductBarcode,
   onTabChange,
   activeTab,
   activeView,
@@ -847,7 +902,11 @@ function FloorPlanningModuleFT2Inner({
         const missingProducts  = productBarcodes.filter((p) => p.barcode === null).length;
         // Two systems kept separate — never co-mingled into one "missing" count (WMS-FP-04).
         const subLine = zones.length > 0 || productBarcodes.length > 0
-          ? `Location codes: ${barcodedLocs}/${zones.length} labelled${missingLocs > 0 ? ` · ${missingLocs} missing` : ''}  —  Product barcodes: ${barcodedProducts}/${productBarcodes.length}${missingProducts > 0 ? ` · ${missingProducts} missing` : ''}. Generate or import to clear.`
+          // SHOP-REV-01h: previously ended "Generate or import to clear."
+          // Products are not cleared by bulk generation — unit identity comes
+          // from receive (LSU-). A product without a supplier barcode gets a
+          // printable laSyncro label (LSP-) on demand instead.
+          ? `Location codes: ${barcodedLocs}/${zones.length} labelled${missingLocs > 0 ? ` · ${missingLocs} missing` : ''}  —  Product barcodes: ${barcodedProducts}/${productBarcodes.length}${missingProducts > 0 ? ` · ${missingProducts} without a supplier barcode — print a laSyncro label for these` : ''}.`
           : 'No locations or products found. Add zones in Setup and sync products.';
         return <>
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>            Every location, every product.
@@ -1314,6 +1373,7 @@ function FloorPlanningModuleFT2Inner({
           zones={zones}
           productBarcodes={productBarcodes}
           onUpdateProductBarcode={onUpdateProductBarcode}
+          onPrintProductBarcode={onPrintProductBarcode}
           activeSubTab={activeSubTab}
           onSubTabChange={onSubTabChange}
           onBatchPrintBarcodes={onBatchPrintBarcodes}

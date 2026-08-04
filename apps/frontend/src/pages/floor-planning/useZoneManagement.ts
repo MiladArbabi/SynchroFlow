@@ -140,3 +140,29 @@ export function useBatchPrintBarcodes() {
         .then(r => r.data as Blob),
   });
 }
+
+// SHOP-REV-01i: product label print. Mirrors usePrintBarcode's delivery
+// path exactly — silent QZ dispatch first (role product_label), browser
+// tab fallback when QZ Tray isn't running or has no printer for the role.
+//
+// The endpoint mints the LSP- identity on demand, so a product that has
+// never had a barcode gets one on first print and the same value on every
+// reprint. Invalidates floor-planning so the Barcodes tab reflects the
+// newly minted code without a manual refresh.
+export function usePrintProductBarcode() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (lasyncroVariantId: string) =>
+      axiosInstance
+        .post(`/api/v1/floor-planning/products/${lasyncroVariantId}/print`, {}, { responseType: 'blob' })
+        .then(r => r.data as Blob),
+    onSuccess: async (blob) => {
+      const dispatched = await printViaQz(blob, 'product_label', axiosInstance);
+      if (!dispatched) {
+        const win = window.open(URL.createObjectURL(blob), '_blank');
+        if (!win) console.warn('[SHOP-REV-01i] Product label popup blocked — check browser popup settings');
+      }
+      void qc.invalidateQueries({ queryKey: ['floor-planning'] });
+    },
+  });
+}
