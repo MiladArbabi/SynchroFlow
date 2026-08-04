@@ -232,10 +232,28 @@ async function main(): Promise<void> {
     await trx('stow_tasks').insert(stowRows);
     log(`Phase C: ${stowRows.length} stow tasks`);
 
-          // OV-135: seed the same mutually exclusive lifecycle that real WMS
+      // OV-135: seed the same mutually exclusive lifecycle that real WMS
       // writers produce. Orders must be eligible for the Order Pool, and every
       // batch total must reconcile with its actual order_line_items rows.
-      const batchSpecs = [
+      /**
+       * DEPLOY-BLOCK-0007: `status` must be the literal union, not `string`.
+       * Without it the array widens, line ~401 cannot index
+       * warehouseStatusByBatchStatus (keyed by the same literals via
+       * `as const`), and the `spec.status === '...'` comparisons below become
+       * unchecked — a typo would silently write wrong picked_at/packed_at
+       * timestamps with no error anywhere. tsx strips types without checking,
+       * so this only ever surfaces in the Docker build.
+       */
+      type BatchSpec = {
+        status: 'picking' | 'pick_complete' | 'packing' | 'pack_complete';
+        orders: number;
+        pickedRatio: number;
+        packedRatio: number;
+        pickerId: number;
+        packerId: number | null;
+      };
+
+      const batchSpecs: BatchSpec[] = [
         {
           status: 'picking',
           orders: 2,
