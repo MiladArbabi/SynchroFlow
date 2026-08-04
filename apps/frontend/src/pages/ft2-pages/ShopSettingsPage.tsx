@@ -16,7 +16,6 @@
 
 import { Routes, Route } from 'react-router-dom';
 import { Box } from '@mui/material';
-import { ModuleTabBar } from '../../components/ModuleTabBar';
 import ShopSettingsGeneralPage      from './ShopSettingsGeneralPage';
 import ShopSettingsCarriersPage     from './ShopSettingsCarriersPage';
 import ShopSettingsWarehousePage    from './ShopSettingsWarehousePage';
@@ -25,14 +24,12 @@ import BillingSettings              from '../account-settings/BillingSettings';
 import ShopSettingsReportsPage      from './ShopSettingsReportsPage';
 import { PlaceholderTab }           from './ShopSettingsShared';
 import LocalizationSettings         from '../account-settings/LocalizationSettings';
-import { SETTINGS_TABS } from './settingsTabs';
 import { SettingsShellHeader } from './SettingsShellHeader';
 
 export default function ShopSettingsPage() {
   return (
     <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <SettingsShellHeader />
-      <ModuleTabBar tabs={SETTINGS_TABS} />
 
       <Routes>
         <Route path="/"              element={<ShopSettingsGeneralPage />}   />

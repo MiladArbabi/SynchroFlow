@@ -1,12 +1,9 @@
 // apps/frontend/src/pages/ft2-pages/settingsTabs.ts
 //
-// Shared tab config for Shop Settings surfaces.
-// Extracted from ShopSettingsPage.tsx (ISS-052) because co-locating a
-// plain-value export with a component export breaks
-// react-refresh/only-export-components. Consumed by:
-//   - ShopSettingsPage.tsx  (renders the /settings/* subtree)
-//   - MembersPage.tsx       (renders /team, outside that subtree —
-//                             see ISS-048/ISS-051, product-structure.md §4/§5)
+// Shared navigation contract for the searchable settings modal.
+// Route paths remain unchanged because banners, operational CTAs, billing
+// redirects, and Team details already deep-link into these destinations.
+// Kept separate from the component to satisfy react-refresh boundaries.
 export const SETTINGS_TABS = [
   { id: 'general',       label: 'General',       path: '/settings'      },
   { id: 'carriers',      label: 'Carriers',       path: '/settings/carriers'      },

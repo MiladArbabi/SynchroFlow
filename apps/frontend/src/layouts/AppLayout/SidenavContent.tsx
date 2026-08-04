@@ -9,9 +9,10 @@ import {
   ListItemText,
   Typography,
   Tooltip,
+  Grow,
 } from '@mui/material';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { ArrowUp, ChevronDown, Settings, LogOut } from 'lucide-react';
+import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Plug } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
 import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
@@ -36,7 +37,8 @@ interface SidenavProps {
 
 const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) => {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const { groups } = useResolvedNavigation();
   const moduleHealth = useModuleHealth();
   const theme = useTheme();
@@ -59,17 +61,51 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   // ModuleTabBar.tsx.
   const [upgradeTier, setUpgradeTier] = useState<'core' | 'growth' | 'scale'>('growth');
 
-  // Profile popover
-  const profileAnchorRef = useRef<HTMLDivElement | null>(null);
-  const [profileOpen, setProfileOpen] = useState(false);
+  // ISS-269-B: the clicked element is the source of truth for both anchoring
+  // and visibility. Popper must never open with a null/stale ref and fall back
+  // to the viewport origin.
+  const [profileAnchorEl, setProfileAnchorEl] = useState<HTMLElement | null>(null);
+  const profileOpen = Boolean(profileAnchorEl);
 
-  const handleProfileClose = (e: MouseEvent | TouchEvent) => {
-    if (profileAnchorRef.current?.contains(e.target as Node)) return;
-    setProfileOpen(false);
+  const toggleProfileMenu = (anchor: HTMLElement) => {
+    setProfileAnchorEl((current) => current ? null : anchor);
+  };
+
+  const handleProfileClose = (event: MouseEvent | TouchEvent) => {
+    if (profileAnchorEl?.contains(event.target as Node)) return;
+    setProfileAnchorEl(null);
+  };
+
+  useEffect(() => {
+    if (!profileOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+
+      const anchor = profileAnchorEl;
+      setProfileAnchorEl(null);
+      anchor?.focus();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [profileOpen, profileAnchorEl]);
+
+  const handleProfileNavigate = (path: string) => {
+    setProfileAnchorEl(null);
+    navigate(path, { state: { backgroundLocation: location } });
+  };
+
+  const handleGetHelp = () => {
+    setProfileAnchorEl(null);
+    window.location.href = 'mailto:support@lasyncro.com';
   };
 
   const handleLogout = async () => {
-    setProfileOpen(false);
+    setProfileAnchorEl(null);
     try {
       await axiosInstance.post('/api/v1/auth/logout');
     } catch (err) {
@@ -83,6 +119,17 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const displayName = user?.first_name
     ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
     : user?.email ?? 'Account';
+
+  const profileMenuItemSx = {
+    minHeight: 44,
+    px: 2,
+    py: 0.75,
+    gap: 1.25,
+    color: 'var(--ink)',
+    '&:hover': {
+      bgcolor: 'var(--bg-2)',
+    },
+  };
 
   // Tracks which top-level item has its accordion open in expanded mode.
   // Only one item open at a time. Null = all collapsed.
@@ -332,8 +379,17 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
       {/* PROFILE TRIGGER — bottom of sidenav */}
       {isFt2Ready && (
         <Box
-          ref={profileAnchorRef}
-          onClick={() => setProfileOpen(prev => !prev)}
+          role="button"
+          tabIndex={0}
+          aria-haspopup="menu"
+          aria-expanded={profileOpen}
+          aria-controls={profileOpen ? 'profile-menu' : undefined}
+          onClick={(event) => toggleProfileMenu(event.currentTarget)}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            event.preventDefault();
+            toggleProfileMenu(event.currentTarget);
+          }}
           sx={{
             px: isExpanded ? 1.5 : 0,
             py: 1,
@@ -346,7 +402,11 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
             cursor: 'pointer',
             borderRadius: isExpanded ? 0 : '8px',
             justifyContent: isCompact ? 'center' : 'flex-start',
+            outline: 'none',
             '&:hover': { bgcolor: 'var(--bg-2)' },
+            '&:focus-visible': {
+              boxShadow: 'inset 0 0 0 2px var(--accent)',
+            },
             transition: 'background 0.15s',
             flexShrink: 0,
           }}
@@ -363,6 +423,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
               {initial}
             </Typography>
           </Box>
+
           {/* NAME — expanded only */}
           {isExpanded && (
             <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -377,57 +438,148 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         </Box>
       )}
 
-      {/* PROFILE POPOVER — opens right of sidenav */}
+      {/* PROFILE POPOVER — target parity: above and left-aligned to trigger */}
       <Popper
         open={profileOpen}
-        anchorEl={profileAnchorRef.current}
-        placement="right-end"
+        anchorEl={profileAnchorEl}
+        placement="top-start"
         transition
         disablePortal={false}
-        popperOptions={{ modifiers: [{ name: 'offset', options: { offset: [0, 8] } }] }}
-        sx={{ zIndex: 1300 }}
+        popperOptions={{
+          strategy: 'fixed',
+          modifiers: [
+            {
+              name: 'offset',
+              options: { offset: [0, 8] },
+            },
+            {
+              name: 'flip',
+              options: {
+                fallbackPlacements: ['top-end', 'right-end'],
+              },
+            },
+            {
+              name: 'preventOverflow',
+              options: { padding: 8 },
+            },
+          ],
+        }}
+        sx={{ zIndex: theme.zIndex.modal + 1 }}
       >
         {({ TransitionProps }) => (
-          <ClickAwayListener onClickAway={handleProfileClose}>
-            <Box {...TransitionProps} sx={{
-              bgcolor: 'var(--surface)',
-              border: '0.5px solid var(--rule)',
-              borderRadius: '10px',
-              boxShadow: theme.shadows[8],
-              minWidth: 220,
-              overflow: 'hidden',
-            }}>
-              {/* IDENTITY */}
-              <Box sx={{ px: 2, pt: 1.75, pb: 1.25 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', lineHeight: 1.3 }}>
-                  {displayName}
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-3)', mt: '2px' }}>
-                  {user?.email}
-                </Typography>
-              </Box>
-
-              <Divider sx={{ borderColor: 'var(--rule)' }} />
-
-              {/* ACTIONS */}
-              <Box sx={{ py: 0.5 }}>
+          <Grow
+            {...TransitionProps}
+            timeout={120}
+            style={{ transformOrigin: 'bottom left' }}
+          >
+            <Paper
+              elevation={0}
+              sx={{
+                width: 272,
+                maxWidth: 'calc(100vw - 16px)',
+                overflow: 'hidden',
+                bgcolor: 'var(--surface)',
+                backgroundImage: 'none',
+                border: '0.5px solid var(--rule)',
+                borderRadius: '14px',
+                boxShadow: '0 14px 38px rgba(0, 0, 0, 0.32)',
+              }}
+            >
+              <ClickAwayListener onClickAway={handleProfileClose}>
                 <Box
-                  onClick={() => { setProfileOpen(false); navigate('/settings'); }}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 0.875, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
+                  id="profile-menu"
+                  role="menu"
+                  aria-label="Account menu"
                 >
-                  <Settings size={15} strokeWidth={1.75} color="var(--ink-3)" />
-                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>Settings</Typography>
+                  {/* Target hierarchy uses the account identity as a quiet header. */}
+                  <Box
+                    sx={{
+                      minHeight: 40,
+                      px: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Typography
+                      noWrap
+                      sx={{
+                        width: '100%',
+                        fontSize: 12,
+                        color: 'var(--ink-3)',
+                      }}
+                    >
+                      {user?.email}
+                    </Typography>
+                  </Box>
+
+                  <Box sx={{ py: 0.5 }}>
+                    <ListItemButton
+                      role="menuitem"
+                      onClick={() => handleProfileNavigate('/settings')}
+                      sx={profileMenuItemSx}
+                    >
+                      <Settings size={18} strokeWidth={1.75} />
+                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
+                        Settings
+                      </Typography>
+                    </ListItemButton>
+
+                    <ListItemButton
+                      role="menuitem"
+                      onClick={handleGetHelp}
+                      sx={profileMenuItemSx}
+                    >
+                      <CircleHelp size={18} strokeWidth={1.75} />
+                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
+                        Get help
+                      </Typography>
+                    </ListItemButton>
+                  </Box>
+
+                  <Divider sx={{ mx: 1.5, borderColor: 'var(--rule)' }} />
+
+                  <Box sx={{ py: 0.5 }}>
+                    <ListItemButton
+                      role="menuitem"
+                      onClick={() => handleProfileNavigate('/settings/billing')}
+                      sx={profileMenuItemSx}
+                    >
+                      <CircleArrowUp size={18} strokeWidth={1.75} />
+                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
+                        Upgrade plan
+                      </Typography>
+                    </ListItemButton>
+
+                    <ListItemButton
+                      role="menuitem"
+                      onClick={() => handleProfileNavigate('/settings/integrations')}
+                      sx={profileMenuItemSx}
+                    >
+                      <Plug size={18} strokeWidth={1.75} />
+                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
+                        Integrations
+                      </Typography>
+                    </ListItemButton>
+                  </Box>
+
+                  <Divider sx={{ mx: 1.5, borderColor: 'var(--rule)' }} />
+
+                  <Box sx={{ py: 0.5 }}>
+                    <ListItemButton
+                      role="menuitem"
+                      onClick={handleLogout}
+                      sx={profileMenuItemSx}
+                    >
+                      <LogOut size={18} strokeWidth={1.75} />
+                      <Typography sx={{ fontSize: 14, color: 'inherit' }}>
+                        Log out
+                      </Typography>
+                    </ListItemButton>
+                  </Box>
                 </Box>
-                <Box
-                  onClick={handleLogout}
-                  sx={{ display: 'flex', alignItems: 'center', gap: 1.25, px: 2, py: 0.875, cursor: 'pointer', '&:hover': { bgcolor: 'var(--bg-2)' } }}
-                >
-                  <LogOut size={15} strokeWidth={1.75} color="var(--ink-3)" />
-                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>Log out</Typography>
-                </Box>
-              </Box>
-            </Box>
-          </ClickAwayListener>
+              </ClickAwayListener>
+            </Paper>
+          </Grow>
         )}
       </Popper>
 

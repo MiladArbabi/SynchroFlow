@@ -81,6 +81,8 @@ export interface IsometricCanvasProps {
      * than observations. See overview-live-map-playbook §6.5.
      */
     receiveAtDock?: Record<string, number>;
+    /** OV-131: floor-wide units at dock, for the marker key. */
+    receiveAtDockTotal?: number;
     awaitingPackCount?: number;
     /**
      * FP-NULL1: called when the unplaced-zones badge is clicked. Provide on
@@ -124,7 +126,7 @@ export interface IsometricCanvasProps {
      */
     onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, stowPending, showMarkerKey, stowPendingTotal, receiveAtDock, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, stowPending, showMarkerKey, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map

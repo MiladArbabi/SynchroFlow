@@ -315,7 +315,7 @@ export default function OverviewPageFT2() {
   const stations: SyntheticStation[] = hasMapTier ? [
     {
       id: 'inbound',
-      label: 'Order pool',
+      label: 'Order Pool',
       side: 'inbound',
       count: orderPool.data?.eligible_order_count ?? 0,
       urgentCount: orderPool.data?.summary?.blocked_count ?? 0,

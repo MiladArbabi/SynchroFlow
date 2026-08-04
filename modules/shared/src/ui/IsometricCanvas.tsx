@@ -95,6 +95,108 @@ function project(wx: number, wy: number, wz: number, zoom: number, flipped = fal
   };
 }
 
+type ScreenPoint = ReturnType<typeof project>;
+
+function rotateScreenPoint(
+  point: ScreenPoint,
+  origin: ScreenPoint,
+  angle: number
+): ScreenPoint {
+  const radians = (angle * Math.PI) / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  const dx = point.sx - origin.sx;
+  const dy = point.sy - origin.sy;
+
+  return {
+    sx: origin.sx + dx * cos - dy * sin,
+    sy: origin.sy + dx * sin + dy * cos,
+  };
+}
+
+/**
+ * OV-133: shared edge-label geometry for warehouse frames and synthetic
+ * stations. The same metrics drive SVG rendering and station fit bounds so a
+ * detached plate can never be clipped or drift away from its measured area.
+ */
+function getEdgeLabelGeometry(
+  label: string,
+  start: ScreenPoint,
+  end: ScreenPoint,
+  zoom: number
+) {
+  const angle =
+    (Math.atan2(end.sy - start.sy, end.sx - start.sx) * 180) / Math.PI;
+  const fontSize = Math.round(8 * zoom);
+  const textWidth = label.length * (fontSize * 0.6 + 0.5);
+  const plateX = start.sx - 4 * zoom;
+  const plateY = start.sy + 11 * zoom;
+  const plateWidth = textWidth + 8 * zoom;
+  const plateHeight = fontSize + 6 * zoom;
+
+  const plateCorners = [
+    { sx: plateX, sy: plateY },
+    { sx: plateX + plateWidth, sy: plateY },
+    { sx: plateX + plateWidth, sy: plateY + plateHeight },
+    { sx: plateX, sy: plateY + plateHeight },
+  ].map(point => rotateScreenPoint(point, start, angle));
+
+  return {
+    angle,
+    fontSize,
+    plateX,
+    plateY,
+    plateWidth,
+    plateHeight,
+    plateCorners,
+  };
+}
+
+function EdgeLabelPlate({
+  label,
+  start,
+  end,
+  zoom,
+}: {
+  label: string;
+  start: ScreenPoint;
+  end: ScreenPoint;
+  zoom: number;
+}) {
+  const geometry = getEdgeLabelGeometry(label, start, end, zoom);
+
+  return (
+    <g
+      transform={`rotate(${geometry.angle} ${start.sx} ${start.sy})`}
+      style={{ pointerEvents: 'none' }}
+    >
+      <rect
+        x={geometry.plateX}
+        y={geometry.plateY}
+        width={geometry.plateWidth}
+        height={geometry.plateHeight}
+        rx={2 * zoom}
+        fill="var(--ink)"
+        opacity={0.82}
+      />
+      <text
+        x={start.sx}
+        y={geometry.plateY}
+        dy={geometry.plateHeight / 2}
+        textAnchor="start"
+        dominantBaseline="middle"
+        fontSize={geometry.fontSize}
+        fontWeight="600"
+        fill="var(--bg)"
+        fontFamily="monospace"
+        letterSpacing={0.5}
+      >
+        {label}
+      </text>
+    </g>
+  );
+}
+
 /** Convert 6 projected corners to SVG polygon points string */
 function pts(...coords: { sx: number; sy: number }[]): string {
   return coords.map(c => `${c.sx.toFixed(1)},${c.sy.toFixed(1)}`).join(' ');
@@ -508,8 +610,10 @@ export function IsometricCanvas({
   // Apron height and visibility track the counts, so the fit must react to
   // count changes exactly as it reacts to layout changes.
   const stationSig = stationPlacements
-    .map(p => `${p.station.id}:${p.station.count}:${p.station.urgentCount ?? 0}`)
-    .join('|');
+  .map(p =>
+    `${p.station.id}:${p.station.label}:${p.station.side}:${p.station.count}:${p.station.urgentCount ?? 0}`
+  )
+  .join('|');
 
   // Signature of what's drawn — refit only when the layout actually changes,
   // never on every render (so manual pan/zoom survives between changes).
@@ -556,21 +660,40 @@ export function IsometricCanvas({
     // them off-canvas. +0.6 m of headroom covers the count badge and label
     // text drawn above the bar top face.
     for (const p of stationPlacements) {
-      const top = p.totalBarH + 0.6;
-      const corners: Array<[number, number, number]> = [
-        [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
-        [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
-        [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
-        [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
-      ];
-      for (const [px, py, pz] of corners) {
-        const { sx, sy } = project(px, py, pz, 1, flipped);
-        if (sx < minX) minX = sx;
-        if (sx > maxX) maxX = sx;
-        if (sy < minY) minY = sy;
-        if (sy > maxY) maxY = sy;
-      }
+    const top = p.totalBarH + 0.6;
+    const corners: Array<[number, number, number]> = [
+      [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
+      [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
+      [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
+      [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
+    ];
+
+    for (const [px, py, pz] of corners) {
+      const { sx, sy } = project(px, py, pz, 1, flipped);
+      if (sx < minX) minX = sx;
+      if (sx > maxX) maxX = sx;
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
     }
+
+    // OV-133: the label sits below the near edge and extends beyond the
+    // footprint, so its rotated plate must participate in both fit bounds.
+    const labelStart = project(p.wx, p.wy + p.td, 0, 1, flipped);
+    const labelEnd = project(p.wx + p.tw, p.wy + p.td, 0, 1, flipped);
+    const { plateCorners } = getEdgeLabelGeometry(
+      p.station.label,
+      labelStart,
+      labelEnd,
+      1
+    );
+
+    for (const { sx, sy } of plateCorners) {
+      if (sx < minX) minX = sx;
+      if (sx > maxX) maxX = sx;
+      if (sy < minY) minY = sy;
+      if (sy > maxY) maxY = sy;
+    }
+  }
     bboxRef.current = { minX, maxX, minY, maxY };
   }, [zoneSig, stationSig, flipped]);
 
@@ -776,15 +899,8 @@ export function IsometricCanvas({
             const nameEdgePt = namePt
               ? project(wx + ww, wy + wd, 0, zoom, flipped)
               : null;
-            const nameAngle = namePt && nameEdgePt
-              ? (Math.atan2(nameEdgePt.sy - namePt.sy, nameEdgePt.sx - namePt.sx) * 180) / Math.PI
-              : 0;
-            // OV-128: plate width is derived from character count — safe because
-            // the label is monospace, so no DOM measurement is needed.
-            const nameFontSize = Math.round(8 * zoom);
-            const nameTextW = namePt
-              ? (zone.warehouse_name?.length ?? 0) * (nameFontSize * 0.6 + 0.5)
-              : 0;
+            // OV-133: warehouse and synthetic-station labels share one plate primitive
+            // so edge alignment and light/dark contrast cannot diverge.
 
             return (
               <g key={zone.location_code}>
@@ -838,35 +954,13 @@ export function IsometricCanvas({
                   </g>
                 )}
 
-                {/* OV-128: warehouse name at the near corner, not the centre. */}
-                {namePt && (
-                  <g
-                    transform={`rotate(${nameAngle} ${namePt.sx} ${namePt.sy})`}
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    {/* OV-128: solid plate so the name reads against slab, bins
-                        or page background alike. Fill --ink / text --bg inverts
-                        automatically between light and dark themes. */}
-                    <rect
-                      x={namePt.sx - 4 * zoom}
-                      y={namePt.sy + 11 * zoom}
-                      width={nameTextW + 8 * zoom}
-                      height={nameFontSize + 6 * zoom}
-                      rx={2 * zoom}
-                      fill="var(--ink)"
-                      opacity={0.82}
-                    />
-                    <text
-                      x={namePt.sx} y={namePt.sy + 11 * zoom}
-                      dy={(nameFontSize + 6 * zoom) / 2}
-                      textAnchor="start" dominantBaseline="middle"
-                      fontSize={nameFontSize} fontWeight="600"
-                      fill="var(--bg)" fontFamily="monospace"
-                      letterSpacing={0.5}
-                    >
-                      {zone.warehouse_name}
-                    </text>
-                  </g>
+                {namePt && nameEdgePt && zone.warehouse_name && (
+                  <EdgeLabelPlate
+                    label={zone.warehouse_name}
+                    start={namePt}
+                    end={nameEdgePt}
+                    zoom={zoom}
+                  />
                 )}
 
                 {/* OV-129: pending stow units on the bin's top face.
@@ -994,8 +1088,17 @@ export function IsometricCanvas({
             const ut11 = project(wx + tw, wy + td,      totalBarH,         zoom, flipped);
             const ut01 = project(wx,      wy + td,      totalBarH,         zoom, flipped);
 
-            const countPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.45, zoom, flipped);
-            const labelPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.15, zoom, flipped);
+            const countPt = project(
+              wx + tw / 2,
+              wy + td / 2,
+              totalBarH + 0.45,
+              zoom,
+              flipped
+            );
+            // OV-133: station identity belongs on the near footprint edge, not over
+            // the variable-height bar. The projected endpoints also handle flipped mode.
+            const labelPt = project(wx, wy + td, 0, zoom, flipped);
+            const labelEdgePt = project(wx + tw, wy + td, 0, zoom, flipped);
             const countColor = urgentH > 0.01 ? '#E5484D' : 'var(--accent)';
             const accentFill = 'var(--accent)';
 
@@ -1035,10 +1138,12 @@ export function IsometricCanvas({
                   fontSize={Math.round(11 * zoom)} fontWeight="600" fill={countColor} fontFamily="monospace">
                   {station.count}
                 </text>
-                <text x={labelPt.sx} y={labelPt.sy} textAnchor="middle"
-                  fontSize={Math.round(8 * zoom)} fontWeight="400" fill="var(--ink-3)" fontFamily="monospace">
-                  {station.label}
-                </text>
+                <EdgeLabelPlate
+                  label={station.label}
+                  start={labelPt}
+                  end={labelEdgePt}
+                  zoom={zoom}
+                />
               </g>
             );
           })}

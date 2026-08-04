@@ -20,7 +20,7 @@
 // - Pages MUST NOT inspect lifecycle
 // - Routing is the single source of truth
 //
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useShopLifecycle } from './ShopLifecycleContext';
 import { CircularProgress, Box } from '@mui/material';
@@ -75,6 +75,7 @@ const FloorPlanningPage = lazy(() => import('pages/ft2-pages/FloorPlanningPage')
 const ShopSettingsPage = lazy(() => import('pages/ft2-pages/ShopSettingsPage'));
 const MembersPage = lazy(() => import('pages/ft2-pages/MembersPage'));
 const MemberDetailPage = lazy(() => import('pages/ft2-pages/MemberDetailPage'));
+const SettingsModalShell = lazy(() => import('pages/ft2-pages/SettingsModalShell'));
 const ProblemCenterPage = lazy(() => import('pages/ft2-pages/ProblemCenterPage'));
 
 /**
@@ -98,6 +99,37 @@ function PageLoader() {
 export function LifecycleRouteHost() {
   const { phase, readiness, isBooting } = useShopLifecycle();
   const location = useLocation();
+
+  const isSettingsLocation =
+    location.pathname === '/settings' ||
+    location.pathname.startsWith('/settings/') ||
+    location.pathname === '/team' ||
+    location.pathname.startsWith('/team/');
+
+  /**
+   * ISS-269: older internal settings links do not carry route state.
+   * Retaining the latest non-settings location lets those links open the
+   * modal without unmounting the application screen beneath it.
+   */
+  const lastNonSettingsLocation = useRef(
+    isSettingsLocation ? null : location
+  );
+
+  useEffect(() => {
+    if (!isSettingsLocation) {
+      lastNonSettingsLocation.current = location;
+    }
+  }, [isSettingsLocation, location]);
+
+  const stateBackgroundLocation = (
+    location.state as {
+      backgroundLocation?: typeof location;
+    } | null
+  )?.backgroundLocation;
+
+  const backgroundLocation = isSettingsLocation
+    ? stateBackgroundLocation ?? lastNonSettingsLocation.current
+    : null;
 
   console.log('[ROUTE_HOST_RENDER]', {
     phase,
@@ -223,8 +255,9 @@ export function LifecycleRouteHost() {
   // - Mixed mental models
   if (phase === 'FT2_READY') {
   return (
-    <Suspense fallback={<PageLoader />}>
-      <Routes>
+    <>
+      <Suspense fallback={<PageLoader />}>
+        <Routes location={backgroundLocation ?? location}>
         {/* Root → canonical Overview */}
         <Route path="/" element={<Navigate to="/overview" replace />} />
         {/* RO — Reality Overview */}
@@ -278,16 +311,68 @@ export function LifecycleRouteHost() {
       <Route path="/problem-center/*" element={<ProblemCenterPage />} />
 
       {/* SHOP SETTINGS */}
-      <Route path="/settings/*" element={<ShopSettingsPage />} />
-      
-      {/* TEAM — member & role management (WM-31) */}
-      <Route path="/team/:userId" element={<MemberDetailPage />} />
-      <Route path="/team/*" element={<MembersPage />} />
+      <Route
+            path="/settings/*"
+            element={
+              <SettingsModalShell>
+                <ShopSettingsPage />
+              </SettingsModalShell>
+            }
+          />
 
-      {/* Catch-all → Overview */}
-      <Route path="*" element={<Navigate to="/overview" replace />} />
-    </Routes>
-    </Suspense>
+          <Route
+            path="/team/:userId"
+            element={
+              <SettingsModalShell>
+                <MemberDetailPage />
+              </SettingsModalShell>
+            }
+          />
+          <Route
+            path="/team/*"
+            element={
+              <SettingsModalShell>
+                <MembersPage />
+              </SettingsModalShell>
+            }
+          />
+
+          <Route path="*" element={<Navigate to="/overview" replace />} />
+        </Routes>
+      </Suspense>
+
+      {backgroundLocation && (
+        <Suspense fallback={null}>
+          <Routes>
+            <Route
+              path="/settings/*"
+              element={
+                <SettingsModalShell returnLocation={backgroundLocation}>
+                  <ShopSettingsPage />
+                </SettingsModalShell>
+              }
+            />
+
+            <Route
+              path="/team/:userId"
+              element={
+                <SettingsModalShell returnLocation={backgroundLocation}>
+                  <MemberDetailPage />
+                </SettingsModalShell>
+              }
+            />
+            <Route
+              path="/team/*"
+              element={
+                <SettingsModalShell returnLocation={backgroundLocation}>
+                  <MembersPage />
+                </SettingsModalShell>
+              }
+            />
+          </Routes>
+        </Suspense>
+      )}
+    </>
   );
 }
 
