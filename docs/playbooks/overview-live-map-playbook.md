@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** August 5, 2026 — OV-152 headline warning consistency verified locally.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-152 ✅ local · v3 parked.
+> **Last updated:** August 5, 2026 — OV-145 one-level bin geometry verified locally.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · v3 parked.
 ---
 
 ## 1. Why this exists — the product thesis
@@ -387,6 +387,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | OV-131 | Receive had no signal on the map; receive_jobs has no location column | Badge from inventory_units.current_location_code where status='received'; key row "N units at dock" | ✅ |
 | OV-135 | Reviewer batches used fabricated totals and omitted canonical order, line-item and pack-scan state | Seed only eligible orders; derive real totals; create picking, picked, packing and packed states with reconciling scan evidence | ✅ local |
 | OV-136 | Active operator markers were ambiguous, and packing operators inherited their final picking location | Add semantic operator pills and phase counts; derive packers from pack scans and anchor them to the active pack zone | ✅ local |
+| OV-145 | One-level bins rendered as raised top faces without closed vertical sides | Normalize rendered rack levels to at least one and draw one filled side-face tier for every non-flat bin | ✅ local |
 
 ---
 
@@ -400,6 +401,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | **v2.1** ✅ | Core triage-preserving Growth teaser · static `IsometricCanvas` preview · session dismissal · billing CTA · conversion events | FP-OV-09 / OV-MAP-001 |
 | **v2.2 data foundation** ✅ local | Canonical reviewer seed for Ready · Picking · Picked · Packing · Packed, with real line-item totals and scan reconciliation | OV-135 |
 | **v2.3 operator clarity** ✅ local | Self-explanatory operator pills · picking/packing phase breakdown · correct pack-zone placement · accessible marker labels | OV-136 |
+| **OV-145 geometry repair** ✅ local | Close one-level bins with a filled vertical tier while preserving existing multi-level bands, occupancy and zone styling | OV-145 |
 | **v3** — Parked | WMS strip in pulse card (Pool · Batches · Stow chips) · token animation · wave release from apron · order-detail drill from tokens | FP-OV-07 (remaining) |
 
 Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.

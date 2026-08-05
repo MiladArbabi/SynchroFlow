@@ -155,13 +155,16 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
     const leftFill = fill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 1.4)})`).replace('rgba', 'rgba').replace(/,[\d.]+\)/, `,${0.55})`);
     const rightFill = fill.replace(/,[\d.]+\)/, `,${0.40})`);
     const isFlat = wh < 0.01;
+    // OV-145: bin height already treats a missing rack_levels value as one level.
+    // Apply the same fallback to the side slices so every non-flat bin is closed.
+    const renderedRackLevels = Math.max(1, rackLevels ?? 1);
     return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
     _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed ? 0.25 : isInactive ? 0.4 : 1, children: [_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: fill, stroke: isSelected ? selStroke : stroke, strokeWidth: isSelected ? 2 : 1, strokeDasharray: isInactive ? '3 2' : undefined, opacity: isFlat ? 0.6 : 1 }), isSelected && (_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
                 const centre = project(wx + ww / 2, wy + wd / 2, wh + 0.05, zoom, flipped);
                 const fontSize = Math.max(7, Math.min(10, TILE_W * zoom * ww * 0.12));
                 return (_jsx("text", { x: centre.sx, y: centre.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: fontSize, fontFamily: "monospace", fontWeight: isSelected ? 700 : 600, fill: isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)', style: { pointerEvents: 'none', userSelect: 'none' }, children: label }));
-            })(), !isFlat && rackLevels != null && rackLevels > 1 && Array.from({ length: rackLevels }, (_, i) => {
+            })(), !isFlat && Array.from({ length: renderedRackLevels }, (_, i) => {
                 const z0 = i * LEVEL_HEIGHT;
                 const z1 = (i + 1) * LEVEL_HEIGHT;
                 const lFill = levelFill(i);

@@ -280,6 +280,10 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
 
   const isFlat = wh < 0.01;
 
+  // OV-145: bin height already treats a missing rack_levels value as one level.
+  // Apply the same fallback to the side slices so every non-flat bin is closed.
+  const renderedRackLevels = Math.max(1, rackLevels ?? 1);
+
   return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
     <g onClick={onClick} style={{ cursor: 'pointer' }} opacity={isDimmed ? 0.25 : isInactive ? 0.4 : 1}>
@@ -321,9 +325,9 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
           </text>
         );
       })()}
-      {/* Rack level bands — each level rendered as a distinct filled slice on left+right faces.
-          Alpha cycles dark→light→default every 3 levels so operators can count levels visually. */}
-      {!isFlat && rackLevels != null && rackLevels > 1 && Array.from({ length: rackLevels }, (_, i) => {
+      {/* Rack level faces — every non-flat bin receives at least one filled slice.
+          Additional levels retain the existing dark→light→default cycle. */}
+      {!isFlat && Array.from({ length: renderedRackLevels }, (_, i) => {
         const z0 = i * LEVEL_HEIGHT;
         const z1 = (i + 1) * LEVEL_HEIGHT;
         const lFill = levelFill(i);
