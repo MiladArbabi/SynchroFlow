@@ -305,6 +305,24 @@ export async function startWorkers(): Promise<void> {
     );
   }
 
+  // OV-153: optional Shopify-review tenant freshness. The worker is inert
+  // unless explicitly enabled and independently verifies seed ownership.
+  try {
+    const reviewerActivity = await import('../workers/reviewer-activity-refresh.worker.js');
+    if (typeof reviewerActivity.startReviewerActivityRefreshWorker === 'function') {
+      void reviewerActivity.startReviewerActivityRefreshWorker();
+      if (typeof reviewerActivity.stopReviewerActivityRefreshWorker === 'function') {
+        workerStopFns.push(async () => reviewerActivity.stopReviewerActivityRefreshWorker());
+      }
+      console.log('[bootstrap/workers] Reviewer activity refresh worker registered');
+    }
+  } catch (err) {
+    console.warn(
+      '[bootstrap/workers] Reviewer activity refresh worker not available:',
+      err && (err as Error).message ? (err as Error).message : err
+    );
+  }
+
   // start trial expiry worker (MON-07)
   try {
     const trialExpiry = await import('../workers/trial-expiry.worker.js');

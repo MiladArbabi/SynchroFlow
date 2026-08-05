@@ -266,11 +266,11 @@ export default function OverviewPageFT2() {
     (acc, b) => { acc[b.batch_id] = b.status; return acc; },
     {}
   );
-    // OV-132: staleness is graded here, not filtered server-side. An operator
-  // who stopped moving is the case a merchant most needs to see — the old
-  // 4-hour window hid exactly that. Grade on last_scan_at where present
-  // (null for packers by design, and for pickers yet to scan) and fall back
-  // to batch_activity_at, which is never null on a live batch.
+  // OV-132/OV-153: staleness is graded here, not filtered server-side. An
+  // operator who stopped moving is the case a merchant most needs to see — the
+  // old 4-hour window hid exactly that. The latest legitimate scan or batch
+  // activity timestamp is authoritative; batch_activity_at is never null on a
+  // live batch.
   const staleThresholdMs =
     (liveActivityQuery.data?.staleThresholdMinutes ?? 15) * 60 * 1000;
 
@@ -282,9 +282,17 @@ export default function OverviewPageFT2() {
         (existing?.pickingCount ?? 0) + (status === 'picking' ? 1 : 0);
       const packingCount =
         (existing?.packingCount ?? 0) + (status === 'packing' ? 1 : 0);
-      const freshnessAt = p.last_scan_at ?? p.batch_activity_at;
+      // OV-153: both clocks represent legitimate operator activity. Claims and
+      // confirmed scans are the only real-tenant writers; the guarded reviewer
+      // worker advances only batch activity because scan logs are immutable.
+      // Using the latest clock keeps that tenant fresh without allowing an old
+      // position scan to override newer batch activity.
+      const freshnessAt = Math.max(
+        p.last_scan_at ? new Date(p.last_scan_at).getTime() : 0,
+        new Date(p.batch_activity_at).getTime()
+      );
       const isStale =
-        Date.now() - new Date(freshnessAt).getTime() > staleThresholdMs;
+        Date.now() - freshnessAt > staleThresholdMs;
 
       acc[p.location_code] = {
         operatorCount: (existing?.operatorCount ?? 0) + 1,
