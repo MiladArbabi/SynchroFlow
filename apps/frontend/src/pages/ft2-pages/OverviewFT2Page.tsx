@@ -260,6 +260,34 @@ export default function OverviewPageFT2() {
   // Disabled for non-scale tenants — avoids unnecessary polling.
   const liveActivityQuery = useWmsLiveActivity(hasMapTier);
   const activeBatches = liveActivityQuery.data?.activeBatches ?? [];
+    // OV-152: unify visible warehouse warnings with the Overview headline.
+  // Unknown prevents positive messaging while relevant queries are loading
+  // or failed; disabled map-only sources do not block non-map tiers.
+  const operationalMapEnabled = hasMapTier && zones.length > 0;
+
+  const operationalWarningsUnresolved =
+    !entitlementsResolved ||
+    (hasMapTier && (floorPlanning.isLoading || floorPlanning.isError)) ||
+    (
+      operationalMapEnabled &&
+      (
+        idleAlerts.isLoading ||
+        idleAlerts.isError ||
+        orderPool.isPending ||
+        orderPool.isError
+      )
+    );
+
+  const operationalWarningState: 'clear' | 'warning' | 'unknown' =
+    operationalWarningsUnresolved
+      ? 'unknown'
+      : operationalMapEnabled &&
+          (
+            idleAlerts.alerts.length > 0 ||
+            (orderPool.data?.summary?.blocked_count ?? 0) > 0
+          )
+        ? 'warning'
+        : 'clear';
   // batch_id -> status, so pickerPositions (which only carry batch_id) can
   // resolve which phase is happening at their bin. See playbook §6.4 (OV-14).
   const batchStatusById = activeBatches.reduce<Record<string, 'picking' | 'packing'>>(
@@ -636,8 +664,9 @@ export default function OverviewPageFT2() {
   return (
     <>
       <ProfileCompletionBanner />
-      <OverviewModuleFT2
+        <OverviewModuleFT2
           {...overviewProps}
+          operationalWarningState={operationalWarningState}
           userName={user?.first_name ?? null}
           morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}
           currency={displayCurrency}

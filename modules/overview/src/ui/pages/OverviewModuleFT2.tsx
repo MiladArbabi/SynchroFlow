@@ -81,6 +81,11 @@ export interface OverviewModuleFT2DataProps {
 }
 
 export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
+  /**
+   * Consolidated state for operational warnings rendered outside Morning Brief.
+   * `unknown` prevents positive copy while those sources are loading or failed.
+   */
+  operationalWarningState: 'clear' | 'warning' | 'unknown';
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
   onExportBrief?: () => void;
@@ -446,9 +451,10 @@ function MergedPulseCard({
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 
 function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
-  const {
+    const {
     morningBrief,
     pulse,
+    operationalWarningState,
     onNavigate,
     onRefreshBrief,
     onExportBrief,
@@ -489,13 +495,41 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
   const subText = (() => {
     if (isLoading) return null;
-    if (isTrustGated) return 'Your morning brief will appear here once your first sync completes.';
-    const urgent = criticalSignals.length + watchSignals.length;
-    if (!urgent) return summaryLine ?? 'All operations are on track.';
-    const atStake = pulse?.blockedRevenue
-      ? ` · ${formatCurrencyCompact(Number(pulse.blockedRevenue), currency)} at stake`
-      : '';
-    return `${urgent} decision${urgent !== 1 ? 's' : ''} pending ${atStake} — everything else is on track.`;
+    if (isTrustGated) {
+      return 'Your morning brief will appear here once your first sync completes.';
+    }
+
+    const decisionCount = criticalSignals.length + watchSignals.length;
+    const hasBriefWarnings =
+      morningBrief.hasUrgentIssues || decisionCount > 0;
+    const blockedRevenue = Number(pulse?.blockedRevenue ?? 0);
+    const hasBlockedRevenue = blockedRevenue > 0;
+    const hasExternalWarnings = operationalWarningState === 'warning';
+    const externalWarningsResolved = operationalWarningState !== 'unknown';
+
+    const hasOperationalWarnings =
+      hasBriefWarnings ||
+      hasBlockedRevenue ||
+      hasExternalWarnings;
+
+    if (!hasOperationalWarnings) {
+      if (!externalWarningsResolved) return null;
+      return summaryLine ?? 'All operations are on track.';
+    }
+
+    if (decisionCount > 0) {
+      const atStake = hasBlockedRevenue
+        ? ` · ${formatCurrencyCompact(blockedRevenue, currency)} at stake`
+        : '';
+
+      return `${decisionCount} decision${decisionCount !== 1 ? 's' : ''} pending${atStake}. Review the issues below.`;
+    }
+
+    if (hasBlockedRevenue) {
+      return `${formatCurrencyCompact(blockedRevenue, currency)} in blocked revenue needs attention.`;
+    }
+
+    return 'Warehouse warnings need your attention.';
   })();
 
   return (

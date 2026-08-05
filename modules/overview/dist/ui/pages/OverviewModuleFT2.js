@@ -156,7 +156,7 @@ function MergedPulseCard({ criticalSignals, watchSignals, pulse, currency, onNav
 }
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 function OverviewModuleFT2Inner(props) {
-    const { morningBrief, pulse, onNavigate, onRefreshBrief, onExportBrief, mapContent, upgradeTeaser, } = props;
+    const { morningBrief, pulse, operationalWarningState, onNavigate, onRefreshBrief, onExportBrief, mapContent, upgradeTeaser, } = props;
     const isLoading = morningBrief === undefined;
     const isTrustGated = morningBrief === null;
     const signals = morningBrief?.signals ?? [];
@@ -184,15 +184,33 @@ function OverviewModuleFT2Inner(props) {
     const subText = (() => {
         if (isLoading)
             return null;
-        if (isTrustGated)
+        if (isTrustGated) {
             return 'Your morning brief will appear here once your first sync completes.';
-        const urgent = criticalSignals.length + watchSignals.length;
-        if (!urgent)
+        }
+        const decisionCount = criticalSignals.length + watchSignals.length;
+        const hasBriefWarnings = morningBrief.hasUrgentIssues || decisionCount > 0;
+        const blockedRevenue = Number(pulse?.blockedRevenue ?? 0);
+        const hasBlockedRevenue = blockedRevenue > 0;
+        const hasExternalWarnings = operationalWarningState === 'warning';
+        const externalWarningsResolved = operationalWarningState !== 'unknown';
+        const hasOperationalWarnings = hasBriefWarnings ||
+            hasBlockedRevenue ||
+            hasExternalWarnings;
+        if (!hasOperationalWarnings) {
+            if (!externalWarningsResolved)
+                return null;
             return summaryLine ?? 'All operations are on track.';
-        const atStake = pulse?.blockedRevenue
-            ? ` · ${formatCurrencyCompact(Number(pulse.blockedRevenue), currency)} at stake`
-            : '';
-        return `${urgent} decision${urgent !== 1 ? 's' : ''} pending ${atStake} — everything else is on track.`;
+        }
+        if (decisionCount > 0) {
+            const atStake = hasBlockedRevenue
+                ? ` · ${formatCurrencyCompact(blockedRevenue, currency)} at stake`
+                : '';
+            return `${decisionCount} decision${decisionCount !== 1 ? 's' : ''} pending${atStake}. Review the issues below.`;
+        }
+        if (hasBlockedRevenue) {
+            return `${formatCurrencyCompact(blockedRevenue, currency)} in blocked revenue needs attention.`;
+        }
+        return 'Warehouse warnings need your attention.';
     })();
     return (_jsxs(Box, { sx: { p: { xs: 2, md: '28px 32px' }, display: 'flex', flexDirection: 'column', gap: '20px', bgcolor: 'var(--bg)', minHeight: '100%' }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: '10px', flexWrap: 'wrap', gap: 1 }, children: [_jsxs(Typography, { sx: { fontSize: 10.5, fontWeight: 500, color: brandGreen, textTransform: 'uppercase', letterSpacing: '0.12em', lineHeight: 2 }, children: [new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }), ' · ', isLoading ? 'Syncing…' : 'Live'] }), !isLoading && !isTrustGated && onExportBrief && (_jsx(Box, { onClick: onExportBrief, sx: { display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Export brief \u2192" }))] }), isLoading ? (_jsxs(_Fragment, { children: [_jsx(Skeleton, { width: "52%", height: 38, sx: { mb: '8px' } }), _jsx(Skeleton, { width: "72%", height: 18 })] })) : isTrustGated ? (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 22, fontWeight: 700, color: 'var(--ink)', mb: '8px', lineHeight: 1.2, letterSpacing: '-0.01em' }, children: "Setting things up" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }, children: subText })] })) : (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 32, fontWeight: 700, color: 'var(--ink)', mb: '8px', lineHeight: 1.1, letterSpacing: '-0.02em' }, children: greetingText }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', lineHeight: 1.6 }, children: subText })] }))] }), !isLoading && (mapContent ? (
             /* MAP LAYOUT — 75% live map + 25% merged pulse card */

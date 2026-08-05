@@ -64,6 +64,11 @@ export interface OverviewModuleFT2DataProps {
     } | null;
 }
 export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
+    /**
+     * Consolidated state for operational warnings rendered outside Morning Brief.
+     * `unknown` prevents positive copy while those sources are loading or failed.
+     */
+    operationalWarningState: 'clear' | 'warning' | 'unknown';
     onNavigate?: (deepLink: string) => void;
     onRefreshBrief?: () => void;
     onExportBrief?: () => void;
@@ -76,4 +81,4 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
     mapContent?: ReactNode;
     upgradeTeaser?: ReactNode;
 };
-export default function OverviewModuleFT2(props: OverviewModuleFT2Props): import("react/jsx-runtime").JSX.Element;
+export default function OverviewModuleFT2(props: OverviewModuleFT2Props): import("react").JSX.Element;

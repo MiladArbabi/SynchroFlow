@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** August 4, 2026 — OV-136 active operator markers and phase placement verified locally.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · v3 parked.
+> **Last updated:** August 5, 2026 — OV-152 headline warning consistency verified locally.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-152 ✅ local · v3 parked.
 ---
 
 ## 1. Why this exists — the product thesis
@@ -233,7 +233,33 @@ The marker communicates operator count and operational phase. Picking placement 
 
 ---
 
-### 6.5 Live markers on bins (OV-129, OV-129b/c/d)
+### 6.5 Headline warning consistency
+
+The Morning Brief is not the only source of operational warnings on Overview.
+OV-152 therefore prevents the positive headline from relying on
+`morningBrief.hasUrgentIssues` alone.
+
+`OverviewFT2Page` consolidates the relevant page-level state into
+`operationalWarningState`:
+
+- `warning` when visible idle-operator alerts or blocked order-pool items exist
+- `clear` when those sources have resolved without warnings
+- `unknown` while entitlements, floor planning, or enabled warning sources are
+  loading or have failed
+
+`OverviewModuleFT2` combines that state with Morning Brief decisions and blocked
+revenue. Positive copy such as “All operations are on track” is rendered only
+when every relevant source is resolved and clear. Warning states use
+action-oriented copy and never claim that everything else is on track.
+
+Verification completed locally on August 5, 2026: the module build passed, the
+focused TypeScript error was resolved, and the rendered Overview showed
+“3 decisions pending. Review the issues below.” alongside the visible warehouse
+warning. Automated regression coverage remains optional and non-blocking.
+
+---
+
+### 6.6 Live markers on bins (OV-129, OV-129b/c/d)
 
 Identity stays inline, live state goes on the box face. Bins keep their
 `location_code` label from `IsometricBox`; work state renders as a badge on the
@@ -384,12 +410,13 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-157b | P1 | Apron suppressed whenever shippedToday was 0 | CLOSED — stationPlacements filters on either stack having weight; divisor moved to stackTotal |
 | OV-158 | P1 | No shipped or staged orders existed on the reviewer tenant | CLOSED — seed_reviewer_outbound.ts |
 | OV-159 | P2 | Urgent stack fills the whole bar when it meets or exceeds count | OPEN — needs a different encoding, not a tweak |
-| OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | OPEN — possibly correct; pool predicate is stricter than the seed's |
+| OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
-| OV-148 | P1 | Batches b8ad06f2 and 99495ddc attributed to user 1 (contact@lasyncro.com) — the reviewer is seeded as their own operator. seed_reviewer_activity.ts falls back to owner?.id | Open |
+| OV-148 | P1 | Batches b8ad06f2 and 99495ddc attributed to user 1 (<contact@lasyncro.com>) — the reviewer is seeded as their own operator. seed_reviewer_activity.ts falls back to owner?.id | Open |
 | OV-149 | P2 | pack_last_activity_at NULL on all prod batches incl. the active packing one | Open — non-blocking, packer query falls back to pick_last_activity_at |
 | OV-150 | P2 | "2 active operators · 2 idle" is self-contradictory when stale === total | Open |
 | OV-151 | P2 | Pack queue badge and operator pill are two unlabelled numbers on one zone. Relocate packQueueCount to the flow rail — not a deletion | Held, coupled to the rail |
+| OV-152 | P1 | Positive headline could contradict visible idle-operator or blocked-order warnings | CLOSED — consolidated operational warning state now suppresses positive copy while warnings exist or relevant sources are unresolved; build and visual verification passed locally |
 | CANVAS-COLOR-01 | P3 | Five hardcoded colour literals in IsometricCanvas vs ZONE_COLORS' var(--zone-{type}) | Open |
 | BUILD-01 | P2 | No tsc --noEmit gate between commit and Docker build; tsx strips types without checking | Open |
