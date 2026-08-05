@@ -101,6 +101,42 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
       idleMinutes,
     });
   }
+
+  /**
+   * OV-154: resolution sweep for completed and cancelled batches.
+   * Steps 3 and 4 only scan status IN ('picking','packing'), so once a batch
+   * leaves those states its alert key is never passed to upsertIdleAlert
+   * again — not even with isActive:false. The row stays is_active=true
+   * indefinitely and the Overview footer keeps rendering its frozen message.
+   * Observed on prod: wms:idle:pick:1 stranded on a pick_complete batch,
+   * updated_at ~2 days old, still displayed. The header has always claimed
+   * "alerts auto-resolve when the batch is completed or cancelled"; this is
+   * the code that makes it true. Keyed on entity_id, so only alerts whose
+   * own batch is inactive are touched.
+   */
+  const stranded = await db('alerts')
+    .where({ shop_id: shopId, alert_type: 'wms_operator_idle', is_active: true })
+    .whereIn(
+      'entity_id',
+      db('pick_batches')
+        .where({ shop_id: shopId })
+        .whereNotIn('status', ['picking', 'packing'])
+        .select('pick_batch_id')
+    )
+    .update({
+      is_active: false,
+      dismissed_at: db.fn.now(),
+      updated_at: db.fn.now(),
+    })
+    .returning('alert_key');
+
+  if (stranded.length > 0) {
+    console.warn('[WMS_IDLE_ALERT_STRANDED_RESOLVED]', {
+      shopId,
+      count: stranded.length,
+      alertKeys: stranded.map((r) => r.alert_key),
+    });
+  }
 }
 
 async function upsertIdleAlert({
