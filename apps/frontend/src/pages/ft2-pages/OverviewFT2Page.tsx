@@ -346,7 +346,13 @@ export default function OverviewPageFT2() {
     .reduce((sum, r) => sum + r.units, 0);
 
   // Inbound apron — order pool count + constrained (blocked) sub-stack.
-  // Outbound apron wired in v2 once useLiveCapacity is added to this page.
+  // OV-157: outbound apron no longer waits on useLiveCapacity — the counts
+  // come from useWmsLiveActivity, already on this page. IsometricCanvas has
+  // always placed side:'outbound' on the left rail (stationPlacements :612);
+  // nothing was missing but the station itself.
+  const shippedToday = liveActivityQuery.data?.shippedToday ?? 0;
+  const packedNotShipped = liveActivityQuery.data?.packedNotShipped ?? 0;
+
   const stations: SyntheticStation[] = hasMapTier ? [
     {
       id: 'inbound',
@@ -354,6 +360,16 @@ export default function OverviewPageFT2() {
       side: 'inbound',
       count: orderPool.data?.eligible_order_count ?? 0,
       urgentCount: orderPool.data?.summary?.blocked_count ?? 0,
+      deepLink: '/order-flow',
+    },
+    // Rendered even at zero: an empty outbound apron on a working floor is
+    // itself the signal. Suppressing it would hide a day with no shipments.
+    {
+      id: 'outbound',
+      label: 'Shipped Today',
+      side: 'outbound',
+      count: shippedToday,
+      urgentCount: packedNotShipped,
       deepLink: '/order-flow',
     },
   ] : [];

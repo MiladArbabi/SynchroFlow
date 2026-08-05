@@ -65,6 +65,10 @@ export interface WmsLiveActivity {
   stowPressure: StowPressure;
   receiveAtDock: ReceiveAtDock[];
   awaitingPackUnits: number;
+  /** OV-157: orders with shipped_at today — the outbound apron's main stack. */
+  shippedToday: number;
+  /** OV-157: packed but not shipped — staged, carrier hasn't collected. */
+  packedNotShipped: number;
   /**
    * OV-132: minutes after which an operator marker renders stale (amber).
    * From shop_wms_settings.idle_alert_threshold_minutes, default 15.

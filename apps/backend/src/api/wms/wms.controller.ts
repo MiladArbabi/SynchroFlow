@@ -3812,6 +3812,7 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
       receiveByBinRows,
       awaitingPackRow,
       wmsSettingsRow,
+      outboundRow,
     ] = await Promise.all([
       // Pickers retain physical precision from their latest confirmed bin scan.
       // OV-132: liveness is a property of the BATCH, not of scan recency.
@@ -3953,6 +3954,30 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .where('shop_id', shopId)
         .select('idle_alert_threshold_minutes')
         .first(),
+      /**
+       * OV-157: outbound apron. Playbook §5 reserved 'Shipped today' in the
+       * layout from the start; §208 recorded that packed-not-shipped lived in
+       * order_warehouse_status but was never exposed. Both ship here.
+       *
+       * order_warehouse_status has NO shop_id column — tenancy joins through
+       * orders. Every other query here filters shopId directly; this one
+       * cannot, and a missing join would leak across tenants.
+       *
+       * shipped_at is monotonic (migration 0088 trigger), so a row that
+       * reports shipped today cannot silently revert.
+       */
+      trx('order_warehouse_status as ows')
+        .join('orders as o', 'o.lasyncro_order_id', 'ows.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .select(
+          trx.raw(
+            "COUNT(*) FILTER (WHERE ows.shipped_at::date = CURRENT_DATE) AS shipped_today"
+          ),
+          trx.raw(
+            "COUNT(*) FILTER (WHERE ows.packed_at IS NOT NULL AND ows.shipped_at IS NULL) AS packed_not_shipped"
+          )
+        )
+        .first(),
     ]);
 
     // OV-132: presence comes from the batch; position and freshness are
@@ -4025,6 +4050,11 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         units: Number(r.units),
       })),
       awaitingPackUnits: Number(awaitingPackRow?.total ?? 0),
+      // OV-157: outbound apron counts. shippedToday is the only completion
+      // signal on the Overview — every other number is a problem. packedNotShipped
+      // is the urgent sub-stack: staged but not collected by the carrier.
+      shippedToday: Number(outboundRow?.shipped_today ?? 0),
+      packedNotShipped: Number(outboundRow?.packed_not_shipped ?? 0),
       // OV-132: the client grades marker staleness against this. Sourced from
       // shop_wms_settings so one tenant-configurable definition drives both the
       // idle alert and the map. idleAlert.service.ts bails when the row is
