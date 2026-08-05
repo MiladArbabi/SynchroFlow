@@ -287,7 +287,13 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
         const vRight = flipped ? vMin - GUTTER - tw : vMax + GUTTER + td;
         const vLeft = flipped ? vMax + GUTTER + td : vMin - GUTTER - tw;
         return stations
-            .filter(s => s.count > 0)
+            // OV-157b: a station earns its place if EITHER stack has weight. The
+            // original count>0 test suppressed the outbound apron whenever nothing
+            // had shipped — precisely the day packed-not-shipped matters, since
+            // orders staged and uncollected are the reason shipping stalled. An
+            // apron reading 0 shipped with an urgent stack is the alarm state, not
+            // an empty one.
+            .filter(s => s.count > 0 || (s.urgentCount ?? 0) > 0)
             .map(station => {
             // Order pool ('inbound') rides the RIGHT rail — it represents orders
             // waiting to be released to the floor, read before the floor itself.
@@ -297,9 +303,18 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
             // and can legitimately exceed the pool count. Left unclamped it gave
             // urgentFrac > 1 → negative normalH → inverted, self-intersecting
             // polygons drawn below the floor plane: the "red arch" defect.
-            const urgentCount = Math.min(station.count, Math.max(0, station.urgentCount ?? 0));
-            const totalBarH = Math.min(MAX_BAR_H, 0.4 + station.count * 0.06);
-            const urgentH = totalBarH * (urgentCount / station.count);
+            // OV-157b: clamp to the STACK total, not to count. Under the old
+            // count>0 filter these could never disagree; now that a station may
+            // arrive with count 0, clamping to count would zero the urgent stack
+            // and render nothing. stackTotal is also the divisor — count alone
+            // was a latent divide-by-zero the filter happened to be hiding.
+            const urgentCount = Math.max(0, station.urgentCount ?? 0);
+            const stackTotal = Math.max(station.count, urgentCount);
+            const clampedUrgent = Math.min(stackTotal, urgentCount);
+            const totalBarH = Math.min(MAX_BAR_H, 0.4 + stackTotal * 0.06);
+            const urgentH = stackTotal > 0
+                ? totalBarH * (clampedUrgent / stackTotal)
+                : 0;
             const normalH = Math.max(0, totalBarH - urgentH);
             return {
                 station,
@@ -690,6 +705,8 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                     ? ` · ${operatorSummary.picking} picking`
                                     : ''}${operatorSummary.packing > 0
                                     ? ` · ${operatorSummary.packing} packing`
+                                    : ''}${operatorSummary.stale > 0
+                                    ? ` · ${operatorSummary.stale} idle`
                                     : ''}` })] }))] })), showLegend && legendItems && (_jsx(Box, { sx: { position: 'absolute', top: 8, right: 8, display: 'flex', flexDirection: 'column', gap: 0.5,
                     bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: 1.5, p: 1, opacity: 0.85 }, children: legendItems.map((item) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(Box, { sx: { width: 12, height: 12, borderRadius: 0.5, bgcolor: item.rgba, border: '1px solid var(--rule)' } }), _jsx(Typography, { sx: { fontSize: 9, fontWeight: 500, color: 'var(--ink-4)' }, children: item.label })] }, item.label))) })), summaryCounts && (_jsxs(Box, { sx: {
                     position: 'absolute', top: 8, left: 8,

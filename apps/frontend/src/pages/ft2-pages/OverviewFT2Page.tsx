@@ -362,8 +362,10 @@ export default function OverviewPageFT2() {
       urgentCount: orderPool.data?.summary?.blocked_count ?? 0,
       deepLink: '/order-flow',
     },
-    // Rendered even at zero: an empty outbound apron on a working floor is
-    // itself the signal. Suppressing it would hide a day with no shipments.
+    // OV-157b: renders when either stack has weight (IsometricCanvas :607).
+    // Nothing shipped AND nothing staged is a genuinely quiet outbound lane,
+    // so the apron stays hidden. Nothing shipped WITH orders staged is the
+    // alarm, and that renders.
     {
       id: 'outbound',
       label: 'Shipped Today',
