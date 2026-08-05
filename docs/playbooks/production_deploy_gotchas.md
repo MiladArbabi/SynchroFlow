@@ -1,9 +1,10 @@
 # Production Deploy — Gotchas
 
-## Failed releases are silent
+## Failed migration jobs block runtime deployment
 
-A failing `release_command` aborts the deploy *before* machine swap. Production
-keeps serving the previous version with passing health checks and no alert.
+A failing external migration job aborts the GitHub workflow before `flyctl
+deploy`. Production keeps serving the previous version with passing health
+checks, so inspect both the migration step and the final deployment step.
 On 2026-08-01 we found v238–v242 had all failed on Jul 29, leaving production
 on the **Jul 28 build for four days** while the app was under App Store review.
 
@@ -87,10 +88,9 @@ changes. Hash the `.ts` instead.
 ## Prod database access
 
 flyctl proxy 5434:5432 -a synchroflow-db # terminal 1, foreground
-export PGURL=$(flyctl ssh console -a synchroflow -C "printenv DATABASE_URL" 2>/dev/null
-| tr -d '\r' | grep '^postgresql://'
-| sed 's/synchroflow-db.flycast/localhost/' | sed 's/:5432/:5434/')
-psql "$PGURL" # terminal 2
+# terminal 2: use the privileged URL from the approved operator secret store,
+# replacing its host/port with localhost:5434. Never retrieve it from runtime.
+psql "postgresql://<migration-user>:<password>@localhost:5434/<database>"
 
 The app machine has no `psql` binary — use the proxy, not `ssh console`.
 
@@ -108,12 +108,18 @@ after the deploy completes, not before:
 
 copy(localStorage.getItem('accessToken')) // DevTools console
 
-**Rotating the production DB password requires updating TWO secrets.**
-The app reads credentials from both DATABASE_URL and the discrete PGPASSWORD /
-PGHOST / PGPORT / PGUSER / PGDATABASE set (database.config.ts selects by
-NODE_ENV). Updating only DATABASE_URL leaves the app unable to authenticate and
-takes production down with FATAL: password authentication failed. Set both in
-one `flyctl secrets set` invocation.
+**Runtime and migration database credentials are intentionally separated.**
+The Fly runtime app contains only `APP_DATABASE_URL` for restricted `sf_app`.
+The privileged `MIGRATION_DATABASE_URL` exists only in GitHub Actions (and the
+approved operator secret store) and reaches Postgres through a temporary Fly
+proxy. Runtime startup fails if `DATABASE_URL` is present.
+
+After a credential change, require both startup evidence and an RLS probe:
+
+    [DB_RUNTIME_IDENTITY_VERIFIED] { current_user: 'sf_app', ... }
+    [migration-runner] RLS release gate passed
+
+If either is absent, the cutover is not verified.
 
 Also: psql does not expand shell variables. `ALTER ROLE x WITH PASSWORD
 '$MYVAR';` sets the password to the literal string $MYVAR. Run the ALTER
@@ -131,3 +137,19 @@ endpoint throws SHOP_NOT_FOUND -> 500 on every call. Prod shop 1 has the row;
 this is local-only. Insert a fixture row with a clearly fake access_token.
 Registered separately as INV-01 (P2): the inner join also means an uninstalled
 merchant loses invoice printing for existing orders.
+
+### Applied migration followed by a failed RLS gate
+
+A post-migration RLS gate failure does not mean the migration was rolled
+back. Confirm the migration and checksum records before taking further
+action.
+
+When the migration is already recorded:
+
+- keep the applied migration immutable;
+- do not delete or rewrite migration history;
+- do not deploy the application;
+- create a new forward-only corrective migration;
+- rerun the migration runner and require the RLS release gate to pass.
+
+The `0138` to `0139` sequence is the reference recovery case.

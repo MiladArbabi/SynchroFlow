@@ -17,15 +17,15 @@ export declare class ShopifyAppService {
     /**
      * Get app installation by shop domain
      */
-    static getAppInstallation(shopDomain: string): Promise<ShopifyAppInstallation | null>;
+    static getAppInstallation(shopDomain: string, shopId: number): Promise<ShopifyAppInstallation | null>;
     /**
      * Mark app as uninstalled
      */
-    static markAppUninstalled(shopDomain: string): Promise<void>;
+    static markAppUninstalled(shopDomain: string, shopId: number): Promise<void>;
     /**
      * Register app uninstall webhook
      */
-    static registerAppUninstallWebhook(shopDomain: string): Promise<void>;
+    static registerAppUninstallWebhook(shopDomain: string, shopId: number): Promise<void>;
     /**
      * Post-installation hooks.
      *
@@ -68,7 +68,7 @@ export declare class ShopifyAppService {
     /**
      * Get decrypted access token
      */
-    static getDecryptedAccessToken(shopDomain: string): Promise<string | null>;
+    static getDecryptedAccessToken(shopDomain: string, shopId: number): Promise<string | null>;
     /**
      * RETIRED (June 2026): generateSpecterConfig, createSpecterScript, and
      * installSpecterSDK are fully removed. Specter is deprecated — it
@@ -92,5 +92,5 @@ export declare class ShopifyAppService {
      * Topic:
      * - refunds/create (authoritative financial regression signal)
      */
-    static registerRefundsCreateWebhook(shopDomain: string): Promise<void>;
+    static registerRefundsCreateWebhook(shopDomain: string, shopId: number): Promise<void>;
 }

@@ -1,4 +1,4 @@
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { registerShopifyWebhooks } from './shopifyWebhooks.core.js';
 import { decrypt } from '../../security/encryption.service.js';
 
@@ -14,10 +14,12 @@ import { decrypt } from '../../security/encryption.service.js';
  */
 
 export const registerWebhooksForShop = async (shopId: number) => {
-  const installationRow = await db('shopify_app_installations')
-    .where({ shop_id: shopId })
-    .select('shop_domain', 'access_token')
-    .first();
+  const installationRow = await withTenant(shopId, (trx) =>
+    trx('shopify_app_installations')
+      .where({ shop_id: shopId })
+      .select('shop_domain', 'access_token')
+      .first()
+  );
 
   if (!installationRow?.shop_domain || !installationRow?.access_token) {
     throw new Error('[WEBHOOK_REGISTRATION_FAILED] Missing shop domain or token');

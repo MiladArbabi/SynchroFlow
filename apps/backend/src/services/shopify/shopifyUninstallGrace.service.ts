@@ -20,29 +20,24 @@
 //
 // Mirrors trial-expiry.service.ts's structure and polling pattern.
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { forceDowngradeShopToStarter } from './forceDowngradeToStarter.service.js';
 
-// Statuses eligible for grace-period downgrade — must match the mapping
-// in shopifyBillingReconciliation.service.ts's GRACE_PERIOD_STATUSES
-// (Shopify CANCELLED -> 'canceled', FROZEN -> 'past_due'). ACTIVE shops
-// ('active' status) are correctly excluded by this filter.
-const GRACE_ELIGIBLE_DB_STATUSES = ['canceled', 'past_due'];
-
 export async function runShopifyUninstallGraceCycle(): Promise<void> {
-  const expiredShops = await db('shop_subscriptions')
-    .where({ billing_provider: 'shopify' })
-    .whereNot({ tier: 'starter' })
-    .whereIn('status', GRACE_ELIGIBLE_DB_STATUSES)
-    .whereNotNull('current_period_end')
-    .where('current_period_end', '<', new Date())
-    .select('shop_id');
+  const result = await systemQuery(
+    db.raw('SELECT * FROM public.list_expired_shopify_grace_tenants()')
+  );
+  const expiredShops: Array<{ shop_id: number }> = result.rows;
 
   for (const row of expiredShops) {
     try {
-      await db.transaction(async (trx) => {
-        await forceDowngradeShopToStarter(row.shop_id, trx, 'shopify_grace_period_expired');
-      });
+      await withTenant(row.shop_id, (trx) =>
+        forceDowngradeShopToStarter(
+          row.shop_id,
+          trx,
+          'shopify_grace_period_expired'
+        )
+      );
     } catch (err) {
       console.error('[shopify-uninstall-grace] downgrade failed (isolated)', {
         shopId: row.shop_id,

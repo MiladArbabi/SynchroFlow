@@ -1,11 +1,11 @@
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { projectionContracts } from './projectionContracts.js';
 
 export async function validateProjectionContracts() {
 
   for (const contract of projectionContracts) {
 
-    const columns = await db(contract.table).columnInfo();
+    const columns = await systemQuery(db(contract.table).columnInfo());
 
     const missing = contract.requiredColumns.filter(
       (c) => !columns[c]

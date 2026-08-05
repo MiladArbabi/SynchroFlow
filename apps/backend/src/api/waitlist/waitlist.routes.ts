@@ -3,7 +3,7 @@
 // Source of truth: waitlist_signups table. Resend email is secondary/non-blocking.
 import { Router } from 'express';
 import { z } from 'zod';
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 
 const router = Router();
 
@@ -23,14 +23,16 @@ router.post('/', async (req, res) => {
   const { email, store, source } = parsed.data;
 
   try {
-    await db('waitlist_signups')
-      .insert({
-        email,
-        store_url: store ?? null,
-        source: source ?? 'landing_page',
-      })
-      .onConflict('email')
-      .ignore(); // Duplicate email — silently ignore, user may retry
+    await systemQuery(
+      db('waitlist_signups')
+        .insert({
+          email,
+          store_url: store ?? null,
+          source: source ?? 'landing_page',
+        })
+        .onConflict('email')
+        .ignore()
+    ); // Pre-tenant system table; duplicate email is intentionally ignored.
   } catch (err) {
     console.error('[waitlist] DB insert error:', err);
     return res.status(500).json({ error: 'Server error' });

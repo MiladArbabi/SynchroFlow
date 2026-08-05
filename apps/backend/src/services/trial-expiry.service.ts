@@ -15,7 +15,11 @@
 //   - Idempotent: re-running on an already-downgraded shop is a no-op
 //   - No direct entitlement deletes — revocation via valid_until only
 
-import db from '@lasyncro/backend-core/db.js';
+import db, {
+  runWithTenantContext,
+  systemQuery,
+  withTenant,
+} from '@lasyncro/backend-core/db.js';
 import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementRevocationService } from './entitlement-revocation.service.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
@@ -35,7 +39,7 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
   const modulesToRevoke = growthConfig.modules.filter((m) => !starterModuleSet.has(m));
   const flagsToRevoke = [...growthConfig.flags];
 
-  await db.transaction(async (trx) => {
+  await withTenant(shopId, async (trx) => {
     // 1. Downgrade subscription record
     const updated = await trx('shop_subscriptions')
       .where({ shop_id: shopId, status: 'trialing' })
@@ -88,10 +92,12 @@ console.log('[trial-expiry] shop downgraded to starter', { shopId });
 
   // 4. Send expiry email — non-fatal
   try {
-    const user = await db('users')
-      .where({ shop_id: shopId })
-      .orderBy('created_at', 'asc')
-      .first('email', 'first_name');
+    const user = await withTenant(shopId, (trx) =>
+      trx('users')
+        .where({ shop_id: shopId })
+        .orderBy('created_at', 'asc')
+        .first('email', 'first_name')
+    );
 
     if (user) {
       await sendTrialExpiryEmail({ toEmail: user.email, firstName: user.first_name ?? 'there' });
@@ -106,22 +112,29 @@ console.log('[trial-expiry] shop downgraded to starter', { shopId });
  */
 async function sendTrialReminders(): Promise<void> {
   const now = new Date();
+  const tenantResult = await systemQuery(
+    db.raw('SELECT * FROM public.list_trialing_tenants()')
+  );
+  const trialingTenants: Array<{ shop_id: number; trial_ends_at: Date }> =
+    tenantResult.rows;
 
   for (const daysLeft of [3, 1]) {
     const windowStart = new Date(now.getTime() + (daysLeft - 1) * 24 * 60 * 60 * 1000);
     const windowEnd = new Date(now.getTime() + daysLeft * 24 * 60 * 60 * 1000);
 
-    const shops = await db('shop_subscriptions')
-      .where({ status: 'trialing' })
-      .whereBetween('trial_ends_at', [windowStart, windowEnd])
-      .select('shop_id', 'trial_ends_at');
+    const shops = trialingTenants.filter((row) => {
+      const endsAt = new Date(row.trial_ends_at);
+      return endsAt >= windowStart && endsAt <= windowEnd;
+    });
 
     for (const row of shops) {
       try {
-        const user = await db('users')
-          .where({ shop_id: row.shop_id })
-          .orderBy('created_at', 'asc')
-          .first('email', 'first_name');
+        const user = await withTenant(row.shop_id, (trx) =>
+          trx('users')
+            .where({ shop_id: row.shop_id })
+            .orderBy('created_at', 'asc')
+            .first('email', 'first_name')
+        );
 
         if (user) {
           await sendTrialReminderEmail({
@@ -156,14 +169,18 @@ async function sendTrialReminders(): Promise<void> {
  */
 export async function runTrialExpiryCycle(): Promise<void> {
   // --- Expire trials ---
-  const expiredShops = await db('shop_subscriptions')
-    .where({ status: 'trialing' })
-    .where('trial_ends_at', '<', new Date())
-    .select('shop_id');
+  const tenantResult = await systemQuery(
+    db.raw('SELECT * FROM public.list_trialing_tenants()')
+  );
+  const expiredShops: Array<{ shop_id: number }> = tenantResult.rows.filter(
+    (row: { trial_ends_at: Date }) => new Date(row.trial_ends_at) < new Date()
+  );
 
   for (const row of expiredShops) {
     try {
-      await downgradeTrialShop(row.shop_id);
+      await runWithTenantContext(row.shop_id, () =>
+        downgradeTrialShop(row.shop_id)
+      );
     } catch (err) {
       console.error('[trial-expiry] downgrade failed (isolated)', {
         shopId: row.shop_id,

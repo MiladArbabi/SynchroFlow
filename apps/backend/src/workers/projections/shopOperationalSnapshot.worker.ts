@@ -1,4 +1,7 @@
-import db from '@lasyncro/backend-core/db.js';
+import {
+  runWithTenantContext,
+  withTenant,
+} from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
 
 import { computeRevenueMetrics } from './metric-engine/revenue.metrics.js';
@@ -61,7 +64,7 @@ export async function computeShopOperationalSnapshot(
 
   try {
 
-  await db.transaction(async (trx) => {
+  await withTenant(Number(shopId), async (trx) => {
 
     /**
      * TENANT CONTEXT (RLS REQUIRED)
@@ -70,8 +73,6 @@ export async function computeShopOperationalSnapshot(
      * Must be set at the start of every transaction that writes
      * to tenant-scoped tables.
      */
-    await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
-
     /**
      * MUTATION BYPASS — FORBIDDEN IN RUNTIME
      * --------------------------------------
@@ -284,10 +285,12 @@ export async function computeShopOperationalSnapshot(
      * projection pipeline has produced its first snapshot.
      */
 
-    const snapshotCount = await db('orders_operational_control_snapshot')
+    const snapshotCount = await withTenant(Number(shopId), (trx) =>
+      trx('orders_operational_control_snapshot')
         .where({ shop_id: shopId })
         .count('* as count')
-        .first();
+        .first()
+    );
 
     /**
      * PROJECTION CATCHUP GUARD (CRITICAL)
@@ -300,13 +303,18 @@ export async function computeShopOperationalSnapshot(
      * Only trigger backfill when projection is fully caught up.
      */
     if (Number(snapshotCount?.count ?? 0) === 1 && !snapshotDateOverride) {
-      const cursorRow = await db('projection_cursors')
-        .select('last_processed_event_id')
-        .first();
-      const latestEventRow = await db('domain_events')
-        .where({ shop_id: shopId })
-        .max('id as max_id')
-        .first();
+      const { cursorRow, latestEventRow } = await withTenant(
+        Number(shopId),
+        async (trx) => ({
+          cursorRow: await trx('projection_cursors')
+            .select('last_processed_event_id')
+            .first(),
+          latestEventRow: await trx('domain_events')
+            .where({ shop_id: shopId })
+            .max('id as max_id')
+            .first(),
+        })
+      );
       const cursorId = Number(cursorRow?.last_processed_event_id ?? 0);
       const latestId = Number(latestEventRow?.max_id ?? 0);
       if (cursorId < latestId) {
@@ -315,7 +323,9 @@ export async function computeShopOperationalSnapshot(
         log.info('SNAPSHOT_BACKFILL_TRIGGERED', { shopId });
         const { backfillShopOperationalSnapshots } =
           await import('./shopOperationalSnapshot.backfill.js');
-        await backfillShopOperationalSnapshots(Number(shopId));
+        await runWithTenantContext(Number(shopId), () =>
+          backfillShopOperationalSnapshots(Number(shopId))
+        );
       }
     }
 
@@ -340,10 +350,12 @@ export async function computeShopOperationalSnapshot(
 if (process.env.SNAPSHOT_HEALTH_CHECK !== 'true') {
     log.debug('SNAPSHOT_HEALTH_CHECK_SKIPPED', { shopId });
         } else {
-        const latestSnapshot = await db('orders_operational_control_snapshot')
+        const latestSnapshot = await withTenant(Number(shopId), (trx) =>
+          trx('orders_operational_control_snapshot')
             .where({ shop_id: shopId })
             .max('snapshot_date as last')
-            .first();
+            .first()
+        );
 
         if (!latestSnapshot?.last) {
             log.warn('SNAPSHOT_HEALTH_NO_DATA', { shopId });

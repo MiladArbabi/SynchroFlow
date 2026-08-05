@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "prebuild": "sh -c 'if [ \"$SKIP_DEPS\" = \"1\" ]; then echo \"Skipping build:deps (SKIP_DEPS=1)\"; else npm --prefix ../.. run build:deps; fi'",
-    "build": "tsc --project tsconfig.json --incremental false; tsc --project tsconfig.migrations.json --incremental false",
+    "build": "tsc --project tsconfig.json --incremental false && tsc --project tsconfig.migrations.json --incremental false",
     "build:dev": "tsc --project tsconfig.json && tsc --project tsconfig.migrations.json || true",
     "start": "node ./scripts/node-start.js",
     "dev": "nodemon --watch src --ext ts --exec \"npm run build:dev && node ./scripts/node-start.js\"",
@@ -12,6 +12,8 @@
     "start:worker": "node dist/apps/backend/src/worker-entry.js",
     "seed": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs seed:run --specific=dev_seed.js",
     "check:rls": "bash scripts/check_rls.sh",
+    "test:rls-boundary": "node --test scripts/rls-runtime-boundary.test.mjs",
+    "test:rls-live": "node --test scripts/rls-live-regression.test.mjs",
     "migrate": "bash ../../scripts/check-conflict-usage.sh && mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/src/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",

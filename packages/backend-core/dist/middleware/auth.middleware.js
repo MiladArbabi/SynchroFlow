@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { runWithTenantContext } from '../tenant-context.js';
 export const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -42,6 +43,12 @@ export const authenticateToken = (req, res, next) => {
             roles: payload.shop_roles,
             tier: payload.tier ?? 'starter',
         };
-        return next();
+        if (!Number.isInteger(req.user.shopId) || Number(req.user.shopId) <= 0) {
+            return res.status(401).json({
+                error: 'INVALID_TOKEN_TENANT',
+                action: 'LOGOUT_REQUIRED',
+            });
+        }
+        return runWithTenantContext(Number(req.user.shopId), next);
     });
 };

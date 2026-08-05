@@ -16,7 +16,7 @@
 // - Fail-fast, fail-closed
 
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
 import { performInitialSync } from '@lasyncro/backend-core/services/shopify.service.js';
@@ -38,9 +38,11 @@ export async function triggerManualInitialSync(
     }
 
     // 1. Load integration (authoritative)
-    const integration = await db('integrations')
-      .where({ id: integrationId, shop_id: shopId })
-      .first();
+    const integration = await withTenant(Number(shopId), (trx) =>
+      trx('integrations')
+        .where({ id: integrationId, shop_id: shopId })
+        .first()
+    );
 
     if (!integration) {
       return res.status(404).json({
@@ -49,13 +51,15 @@ export async function triggerManualInitialSync(
     }
 
     // 2. Resolve Shopify domain (NOT from shops)
-    const installation = await db('shopify_app_installations')
-      .where({
-        shop_id: shopId,
-        uninstalled_at: null,
-      })
-      .select('shop_domain')
-      .first();
+    const installation = await withTenant(Number(shopId), (trx) =>
+      trx('shopify_app_installations')
+        .where({
+          shop_id: shopId,
+          uninstalled_at: null,
+        })
+        .select('shop_domain')
+        .first()
+    );
 
     if (!installation?.shop_domain) {
       return res.status(400).json({
@@ -67,7 +71,7 @@ export async function triggerManualInitialSync(
 
     // 3. Resolve decrypted access token
     const accessToken =
-      await ShopifyAppService.getDecryptedAccessToken(shopDomain);
+      await ShopifyAppService.getDecryptedAccessToken(shopDomain, Number(shopId));
 
     if (!accessToken) {
       return res.status(400).json({

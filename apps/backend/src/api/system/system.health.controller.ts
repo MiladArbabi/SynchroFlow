@@ -40,9 +40,10 @@ export const httpGetSystemHealth = async (
       )
     );
 
-    const latestEventRow = await systemQuery(
-      db('domain_events').max('id as latest_id').first()
+    const latestEventResult = await systemQuery(
+      db.raw('SELECT max_event_id AS latest_id FROM public.get_projection_worker_state()')
     );
+    const latestEventRow = latestEventResult.rows[0];
 
     const latestEventId = Number(latestEventRow?.latest_id ?? 0);
 
@@ -88,11 +89,12 @@ export const httpGetSystemHealth = async (
      * Age of the most recent operational control snapshot.
      * Sourced from orders_operational_control_snapshot.updated_at.
      */
-    const snapshotRow = await systemQuery(
-      db('orders_operational_control_snapshot')
-        .max('updated_at as last_snapshot_at')
-        .first()
+    const snapshotResult = await systemQuery(
+      db.raw(`
+        SELECT public.get_latest_operational_snapshot_at() AS last_snapshot_at
+      `)
     );
+    const snapshotRow = snapshotResult.rows[0];
 
     const lastSnapshotAt = snapshotRow?.last_snapshot_at
       ? new Date(snapshotRow.last_snapshot_at).toISOString()

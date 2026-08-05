@@ -34,6 +34,231 @@ function hashFile(filePath: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, '""')}"`;
+}
+
+async function assertProductionRlsBoundary(): Promise<void> {
+  const roleResult = await db.raw(`
+    SELECT rolname, rolsuper, rolbypassrls
+    FROM pg_roles
+    WHERE rolname = 'sf_app'
+  `);
+  const appRole = roleResult.rows[0];
+
+  if (
+    !appRole ||
+    appRole.rolsuper !== false ||
+    appRole.rolbypassrls !== false
+  ) {
+    throw new Error(
+      `[RLS_RELEASE_GATE_FAILED] sf_app must be NOSUPERUSER/NOBYPASSRLS: ${JSON.stringify(appRole ?? null)}`
+    );
+  }
+
+  const invariantResult = await db.raw(`
+    SELECT
+      ARRAY_AGG(c.relname ORDER BY c.relname) FILTER (
+        WHERE c.relrowsecurity AND NOT c.relforcerowsecurity
+      ) AS enabled_not_forced,
+      ARRAY_AGG(c.relname ORDER BY c.relname) FILTER (
+        WHERE NOT c.relrowsecurity
+          AND EXISTS (
+            SELECT 1
+            FROM pg_attribute a
+            WHERE a.attrelid = c.oid
+              AND a.attname = 'shop_id'
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+          )
+      ) AS shop_id_without_rls,
+      ARRAY_AGG(c.relname ORDER BY c.relname) FILTER (
+        WHERE c.relrowsecurity
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_policy p WHERE p.polrelid = c.oid
+          )
+      ) AS rls_without_policy
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+  `);
+
+  const invariants = invariantResult.rows[0];
+
+  const unsafePolicyResult = await db.raw(`
+    SELECT
+      c.relname AS table_name,
+      p.polname AS policy_name,
+      p.polcmd AS policy_command,
+      pg_get_expr(p.polqual, p.polrelid) AS using_expression,
+      pg_get_expr(p.polwithcheck, p.polrelid) AS check_expression
+    FROM pg_policy p
+    JOIN pg_class c ON c.oid = p.polrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND (
+        c.relname = 'shops'
+        OR EXISTS (
+          SELECT 1
+          FROM pg_attribute a
+          WHERE a.attrelid = c.oid
+            AND a.attname = 'shop_id'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+        )
+      )
+      AND (
+        (
+          COALESCE(pg_get_expr(p.polqual, p.polrelid), '') ~* 'current_tenant'
+          AND COALESCE(pg_get_expr(p.polqual, p.polrelid), '')
+            ~* '(''0''::text|IS NULL|= ANY)'
+        )
+        OR (
+          p.polcmd IN ('*', 'a')
+          AND COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '') = 'true'
+        )
+      )
+    ORDER BY c.relname, p.polname
+  `);
+
+  const violations = {
+    enabledNotForced: invariants.enabled_not_forced ?? [],
+    shopIdWithoutRls: invariants.shop_id_without_rls ?? [],
+    rlsWithoutPolicy: invariants.rls_without_policy ?? [],
+    unsafePolicies: unsafePolicyResult.rows,
+  };
+
+  if (Object.values(violations).some((tables) => tables.length > 0)) {
+    throw new Error(
+      `[RLS_RELEASE_GATE_FAILED] schema invariants: ${JSON.stringify(violations)}`
+    );
+  }
+
+  const tenantTablesResult = await db.raw(`
+    SELECT c.relname AS table_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public'
+      AND c.relkind IN ('r', 'p')
+      AND c.relrowsecurity
+      AND (
+        c.relname = 'shops'
+        OR EXISTS (
+          SELECT 1
+          FROM pg_attribute a
+          WHERE a.attrelid = c.oid
+            AND a.attname = 'shop_id'
+            AND a.attnum > 0
+            AND NOT a.attisdropped
+        )
+      )
+    ORDER BY c.relname
+  `);
+
+  const tenantTables: Array<{ table_name: string }> = tenantTablesResult.rows;
+  const visibleTables: string[] = [];
+  const visibleAtZero: string[] = [];
+  const visibleWithoutTenant: string[] = [];
+
+  await db.transaction(async (trx) => {
+    await trx.raw('SET LOCAL ROLE sf_app');
+    await trx.raw(
+      `SELECT set_config('app.current_tenant', '2147483647', true)`
+    );
+
+    const identityResult = await trx.raw(`
+      SELECT current_user,
+             current_setting('app.current_tenant', true) AS current_tenant
+    `);
+    const identity = identityResult.rows[0];
+
+    if (
+      identity.current_user !== 'sf_app' ||
+      identity.current_tenant !== '2147483647'
+    ) {
+      throw new Error(
+        `[RLS_RELEASE_GATE_FAILED] invalid probe identity: ${JSON.stringify(identity)}`
+      );
+    }
+
+    for (const { table_name: tableName } of tenantTables) {
+      const result = await trx.raw(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM public.${quoteIdentifier(tableName)}
+          LIMIT 1
+        ) AS visible
+      `);
+
+      if (result.rows[0]?.visible === true) {
+        visibleTables.push(tableName);
+      }
+    }
+
+    if (visibleTables.length > 0) {
+      throw new Error(
+        `[RLS_RELEASE_GATE_FAILED] sf_app invalid-tenant visibility: ${JSON.stringify(visibleTables)}`
+      );
+    }
+
+    await trx.raw(`SELECT set_config('app.current_tenant', '0', true)`);
+    for (const { table_name: tableName } of tenantTables) {
+      const result = await trx.raw(`
+        SELECT EXISTS (
+          SELECT 1
+          FROM public.${quoteIdentifier(tableName)}
+          LIMIT 1
+        ) AS visible
+      `);
+      if (result.rows[0]?.visible === true) visibleAtZero.push(tableName);
+    }
+
+    if (visibleAtZero.length > 0) {
+      throw new Error(
+        `[RLS_RELEASE_GATE_FAILED] sf_app tenant-zero visibility: ${JSON.stringify(visibleAtZero)}`
+      );
+    }
+
+    await trx.raw(`SELECT set_config('app.current_tenant', '', true)`);
+    for (const { table_name: tableName } of tenantTables) {
+      try {
+        const result = await trx.transaction((probe) =>
+          probe.raw(`
+            SELECT EXISTS (
+              SELECT 1
+              FROM public.${quoteIdentifier(tableName)}
+              LIMIT 1
+            ) AS visible
+          `)
+        );
+        if (result.rows[0]?.visible === true) {
+          visibleWithoutTenant.push(tableName);
+        }
+      } catch (error: any) {
+        // Older strict policies cast the empty setting to integer and raise
+        // 22P02. That is fail-closed, not visibility; every other error is a
+        // release blocker.
+        if (error?.code !== '22P02') throw error;
+      }
+    }
+
+    if (visibleWithoutTenant.length > 0) {
+      throw new Error(
+        `[RLS_RELEASE_GATE_FAILED] sf_app missing-tenant visibility: ${JSON.stringify(visibleWithoutTenant)}`
+      );
+    }
+  });
+
+  console.info('[migration-runner] RLS release gate passed', {
+    appRole,
+    testedTenant: 2147483647,
+    testedTables: tenantTables.length,
+    tenantZeroTables: tenantTables.length,
+    missingTenantTables: tenantTables.length,
+  });
+}
+
 async function main() {
   console.info('[migration-runner] start');
 
@@ -128,6 +353,8 @@ for (const { name: file } of appliedMigrations) {
 }
 
   console.info('[migration-runner] checksum sync complete');
+
+  await assertProductionRlsBoundary();
 
   await db.destroy();
 }

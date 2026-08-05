@@ -1,5 +1,5 @@
 // apps/backend/src/services/shopify.service.ts
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { createShopifyGraphQLClient } from './shopify/shopifyClient.service.js';
 import { GET_PRODUCTS_QUERY, GET_ORDERS_QUERY } from './shopify/shopify.queries.js';
 import { paginateShopify } from './shopify/shopifyPagination.service.js';
@@ -31,9 +31,11 @@ export const performInitialSync = async (
    * Once COMPLETED, sync must not restart.
    * DB enforces this invariant — we mirror it here.
    */
-  const integration = await db('integrations')
-    .where({ id: integrationId })
-    .first();
+  const integration = await withTenant(shopId, (trx) =>
+    trx('integrations')
+      .where({ id: integrationId, shop_id: shopId })
+      .first()
+  );
 
   if (integration?.sync_status === 'COMPLETED') {
     console.warn('[SHOPIFY_SYNC_SKIPPED_ALREADY_COMPLETED]', {
@@ -65,6 +67,7 @@ export const performInitialSync = async (
     // --- Report: STARTING (Products) ---
     await updateIntegrationStatus({
       integrationId,
+      shopId,
       status: 'SYNCING_PRODUCTS',
       progressCurrent: 0,
       progressTotal: totalProgress,
@@ -155,6 +158,7 @@ export const performInitialSync = async (
 
     await updateIntegrationStatus({
       integrationId,
+      shopId,
       status: 'SYNCING_ORDERS',
       progressCurrent: totalProducts,
     });
@@ -185,7 +189,7 @@ export const performInitialSync = async (
             orderEdges,
           });
 
-          const dbOrderCount = await db('orders')
+          const dbOrderCount = await trx('orders')
             .where({ shop_id: shopId })
             .count('* as count')
             .first();
@@ -213,6 +217,7 @@ export const performInitialSync = async (
     // --- Report: COMPLETED ---
     await updateIntegrationStatus({
       integrationId,
+      shopId,
       status: 'COMPLETED',
       error: null,
     });
@@ -235,11 +240,13 @@ export const performInitialSync = async (
         );
 
         // Wait for projection to catch up — poll every 2s, max 60s
-        const latestEvent = await db('domain_events')
-          .where({ shop_id: shopId })
-          .orderBy('id', 'desc')
-          .select('id')
-          .first();
+        const latestEvent = await withTenant(shopId, (trx) =>
+          trx('domain_events')
+            .where({ shop_id: shopId })
+            .orderBy('id', 'desc')
+            .select('id')
+            .first()
+        );
 
         if (latestEvent?.id) {
           const targetEventId = Number(latestEvent.id);
@@ -248,10 +255,12 @@ export const performInitialSync = async (
           const start = Date.now();
 
           while (Date.now() - start < maxWaitMs) {
-            const cursor = await db('projection_cursors')
-              .where({ projection_name: 'orders_projection' })
-              .select('last_processed_event_id')
-              .first();
+            const cursor = await withTenant(shopId, (trx) =>
+              trx('projection_cursors')
+                .where({ projection_name: 'orders_projection' })
+                .select('last_processed_event_id')
+                .first()
+            );
 
             const processed = Number(cursor?.last_processed_event_id ?? 0);
             if (processed >= targetEventId) break;
@@ -306,6 +315,7 @@ export const performInitialSync = async (
     // Update integration status to FAILED
     await updateIntegrationStatus({
       integrationId,
+      shopId,
       status: 'FAILED',
       error: error.message,
     });

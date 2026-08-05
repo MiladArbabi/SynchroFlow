@@ -1,5 +1,6 @@
 // apps/backend/src/services/wms/idleAlert.service.ts
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
+import type { Knex } from 'knex';
 
 /**
  * WMS IDLE ALERT SERVICE (WM-17)
@@ -23,10 +24,10 @@ import db from '@lasyncro/backend-core/db.js';
 
 export async function runIdleAlertCycle(): Promise<void> {
   // 1. Load all shops with active pick or pack sessions
-  const activeShops = await db('pick_batches')
-    .whereIn('status', ['picking', 'packing'])
-    .distinct('shop_id')
-    .select('shop_id');
+  const tenantLookup = await systemQuery(
+    db.raw('SELECT shop_id FROM public.list_active_wms_tenants()')
+  );
+  const activeShops: Array<{ shop_id: number }> = tenantLookup.rows;
 
   if (activeShops.length === 0) return;
 
@@ -43,8 +44,9 @@ export async function runIdleAlertCycle(): Promise<void> {
 }
 
 async function processShopIdleAlerts(shopId: number): Promise<void> {
+  return withTenant(shopId, async (trx) => {
   // 2. Load idle threshold for this shop
-  const settings = await db('shop_wms_settings')
+  const settings = await trx('shop_wms_settings')
     .where({ shop_id: shopId })
     .select('idle_alert_threshold_minutes')
     .first();
@@ -55,7 +57,7 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
   const now = Date.now();
 
   // 3. Find active picking batches past idle threshold
-  const pickingBatches = await db('pick_batches')
+  const pickingBatches = await trx('pick_batches')
     .where({ shop_id: shopId, status: 'picking' })
     .whereNotNull('pick_last_activity_at')
     .whereNotNull('picked_by')
@@ -68,6 +70,7 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
     const idleMinutes = Math.round(idleMs / 60_000);
 
     await upsertIdleAlert({
+      trx,
       shopId,
       alertKey,
       isActive: isIdle,
@@ -79,7 +82,7 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
   }
 
   // 4. Find active packing batches past idle threshold
-  const packingBatches = await db('pick_batches')
+  const packingBatches = await trx('pick_batches')
     .where({ shop_id: shopId, status: 'packing' })
     .whereNotNull('pack_last_activity_at')
     .whereNotNull('packed_by')
@@ -92,6 +95,7 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
     const idleMinutes = Math.round(idleMs / 60_000);
 
     await upsertIdleAlert({
+      trx,
       shopId,
       alertKey,
       isActive: isIdle,
@@ -114,23 +118,23 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
    * the code that makes it true. Keyed on entity_id, so only alerts whose
    * own batch is inactive are touched.
    */
-  const stranded = await db('alerts')
+  const stranded = await trx('alerts')
     .where({ shop_id: shopId, alert_type: 'wms_operator_idle', is_active: true })
     .whereIn(
       'entity_id',
-      db('pick_batches')
+      trx('pick_batches')
         .where({ shop_id: shopId })
         .whereNotIn('status', ['picking', 'packing'])
         // alerts.entity_id is varchar, pick_batches.pick_batch_id is uuid.
         // Postgres has no varchar = uuid operator, so the subquery must
         // return text. Cast here rather than on entity_id: casting the
         // left side would defeat any index on it.
-        .select(db.raw('pick_batch_id::text'))
+        .select(trx.raw('pick_batch_id::text'))
     )
     .update({
       is_active: false,
-      dismissed_at: db.fn.now(),
-      updated_at: db.fn.now(),
+      dismissed_at: trx.fn.now(),
+      updated_at: trx.fn.now(),
     })
     .returning('alert_key');
 
@@ -141,9 +145,11 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
       alertKeys: stranded.map((r) => r.alert_key),
     });
   }
+  });
 }
 
 async function upsertIdleAlert({
+  trx,
   shopId,
   alertKey,
   isActive,
@@ -152,6 +158,7 @@ async function upsertIdleAlert({
   stage,
   idleMinutes,
 }: {
+  trx: Knex.Transaction;
   shopId: number;
   alertKey: string;
   isActive: boolean;
@@ -163,7 +170,7 @@ async function upsertIdleAlert({
   const title = `Operator idle during ${stage}`;
   const message = `Operator has been inactive for ${idleMinutes} minute${idleMinutes !== 1 ? 's' : ''} on batch ${batchId.slice(0, 8).toUpperCase()}.`;
 
-  const result = await db.raw(`
+  const result = await trx.raw(`
     WITH previous AS (
       SELECT is_active FROM alerts WHERE shop_id = ? AND alert_key = ?
     )

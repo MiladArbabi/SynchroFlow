@@ -54,9 +54,10 @@ async function checkProjectionHealth(): Promise<void> {
     return;
   }
 
-  const latestEventRow = await systemQuery(
-    db('domain_events').max('id as latest_id').first()
+  const latestEventResult = await systemQuery(
+    db.raw('SELECT max_event_id AS latest_id FROM public.get_projection_worker_state()')
   );
+  const latestEventRow = latestEventResult.rows[0];
 
   const latestEventId = Number(latestEventRow?.latest_id ?? 0);
 

@@ -1,10 +1,7 @@
-import db from '@lasyncro/backend-core/db.js';
-import { getQueueChannel } from '../queue.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 
-const QUEUE = 'events';
 const POLL_INTERVAL_MS = 500;
 const BATCH_SIZE = 20;
-const RETRY_CEILING = 10;
 
 let running = false;
 let isLeader = false;
@@ -15,17 +12,11 @@ export async function startDomainEventOutboxDispatcher() {
 
   console.log('[domain-event-outbox] Dispatcher started');
 
-  /**
-   * RMQ CHANNEL REMOVED (ARCHITECTURE LOCK)
-   * ---------------------------------------
-   * This service no longer depends on RabbitMQ.
-   * Prevents accidental reintroduction of queue publishing.
-   */
-  const channel = null as any;
-
   while (running) {
 
-    const lock = await db.raw('SELECT pg_try_advisory_lock(987654321) as locked');
+    const lock = await systemQuery(
+      db.raw('SELECT pg_try_advisory_lock(987654321) as locked')
+    );
 
       if (!lock.rows[0].locked) {
 
@@ -44,64 +35,11 @@ export async function startDomainEventOutboxDispatcher() {
       }
 
     try {
-      await db.transaction(async (trx) => {
-
-        const rows = await trx('domain_event_outbox')
-          .whereNull('published_at')
-          .orderBy('id', 'asc')
-          .limit(BATCH_SIZE)
-          .forUpdate();
-
-        /**
-         * STRICT ORDERING GUARANTEE (CRITICAL FIX)
-         * ----------------------------------------
-         * Removed skipLocked to enforce:
-         * - no gaps in dispatch
-         * - strict sequential publishing
-         *
-         * Tradeoff:
-         * - lower concurrency
-         * - but guarantees deterministic projection
-         */
-
-        for (const row of rows) {
-
-          try {
-
-            await trx('domain_event_outbox')
-              .where({ id: row.id })
-              .update({
-                published_at: trx.fn.now(),
-                last_error: null,
-              });
-
-          } catch (err: any) {
-
-            /**
-             * RETRY TRACKING (RESTORED — SAFE)
-             * --------------------------------
-             * Still FAIL-FAST:
-             * - we rethrow → stops batch
-             * But we record state for debugging + observability
-             */
-            await trx('domain_event_outbox')
-              .where({ id: row.id })
-              .update({
-                retry_count: trx.raw('retry_count + 1'),
-                last_error: String(err?.message ?? err),
-              });
-
-            console.error('[OUTBOX_DISPATCH_FAILED]', {
-              outbox_id: row.id,
-              domain_event_id: row.domain_event_id,
-              error: err?.message ?? err,
-            });
-
-            throw err; // CRITICAL: stop batch (preserve ordering)
-          }
-
-        }
-      });
+      await systemQuery(
+        db.raw('SELECT * FROM public.dispatch_domain_event_outbox_batch(?)', [
+          BATCH_SIZE,
+        ])
+      );
 
     } catch (err) {
       console.error('[domain-event-outbox] error:', err);

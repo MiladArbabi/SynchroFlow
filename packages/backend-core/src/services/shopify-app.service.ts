@@ -1,4 +1,4 @@
-import db from '../db.js';
+import { withTenant } from '../db.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import CryptoJS from 'crypto-js';
@@ -20,9 +20,11 @@ export class ShopifyAppService {
    * Create a new app installation record
    */
   static async createAppInstallation(installation: Omit<ShopifyAppInstallation, 'id' | 'created_at' | 'updated_at'>): Promise<ShopifyAppInstallation> {
-    const [newInstallation] = await db('shopify_app_installations')
-      .insert(installation)
-      .returning('*');
+    const [newInstallation] = await withTenant(installation.shop_id, (trx) =>
+      trx('shopify_app_installations')
+        .insert(installation)
+        .returning('*')
+    );
 
     return newInstallation;
   }
@@ -30,11 +32,16 @@ export class ShopifyAppService {
   /**
    * Get app installation by shop domain
    */
-  static async getAppInstallation(shopDomain: string): Promise<ShopifyAppInstallation | null> {
-    const installation = await db('shopify_app_installations')
-      .where('shop_domain', shopDomain)
-      .andWhere('uninstalled_at', null)
-      .first();
+  static async getAppInstallation(
+    shopDomain: string,
+    shopId: number,
+  ): Promise<ShopifyAppInstallation | null> {
+    const installation = await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations')
+        .where({ shop_id: shopId, shop_domain: shopDomain })
+        .whereNull('uninstalled_at')
+        .first()
+    );
 
     return installation || null;
   }
@@ -42,10 +49,12 @@ export class ShopifyAppService {
   /**
    * Mark app as uninstalled
    */
-  static async markAppUninstalled(shopDomain: string): Promise<void> {
-    await db('shopify_app_installations')
-      .where('shop_domain', shopDomain)
-      .update({ uninstalled_at: new Date() });
+  static async markAppUninstalled(shopDomain: string, shopId: number): Promise<void> {
+    await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations')
+        .where({ shop_id: shopId, shop_domain: shopDomain })
+        .update({ uninstalled_at: new Date() })
+    );
   }
 
   /**
@@ -53,9 +62,10 @@ export class ShopifyAppService {
    */
   static async registerAppUninstallWebhook(
     shopDomain: string,
+    shopId: number,
   ): Promise<void> {
     try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
 
       if (!accessToken) {
         console.warn('[ShopifyAppService] Missing access token; skipping uninstall webhook registration', {
@@ -139,13 +149,13 @@ export class ShopifyAppService {
     shopDomain: string,
     shopId: number,
   ): Promise<void> {
-    await this.registerAppUninstallWebhook(shopDomain);
-    await this.registerRefundsCreateWebhook(shopDomain);
+    await this.registerAppUninstallWebhook(shopDomain, shopId);
+    await this.registerRefundsCreateWebhook(shopDomain, shopId);
 
-    const existing = await this.getAppInstallation(shopDomain);
+    const existing = await this.getAppInstallation(shopDomain, shopId);
 
     if (!existing) {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
       if (!accessToken) return;
 
       await this.createAppInstallation({
@@ -251,9 +261,11 @@ export class ShopifyAppService {
   static async getDecryptedAccessTokenByShopId(
     shopId: number
   ): Promise<{ token: string; shopDomain: string } | null> {
-    const installation = await db('shopify_app_installations')
-      .where({ shop_id: shopId, uninstalled_at: null })
-      .first();
+    const installation = await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations')
+        .where({ shop_id: shopId, uninstalled_at: null })
+        .first()
+    );
 
     if (!installation) return null;
 
@@ -271,8 +283,11 @@ export class ShopifyAppService {
   /**
    * Get decrypted access token
    */
-  static async getDecryptedAccessToken(shopDomain: string): Promise<string | null> {
-    const installation = await this.getAppInstallation(shopDomain);
+  static async getDecryptedAccessToken(
+    shopDomain: string,
+    shopId: number,
+  ): Promise<string | null> {
+    const installation = await this.getAppInstallation(shopDomain, shopId);
     if (!installation) {
       return null;
     }
@@ -311,9 +326,10 @@ export class ShopifyAppService {
    */
   static async registerRefundsCreateWebhook(
     shopDomain: string,
+    shopId: number,
   ): Promise<void> {
     try {
-      const accessToken = await this.getDecryptedAccessToken(shopDomain);
+      const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
       if (!accessToken) return;
 
       const baseUrl =

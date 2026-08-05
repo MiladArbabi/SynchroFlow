@@ -11,6 +11,7 @@ import path from 'path';
 import { runSchemaGuard } from './utils/schemaGuard.js';
 import { initRedisClient, closeRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
 import { flushAnalytics } from './utils/analytics.js';
+import { assertRuntimeDatabaseIdentity } from '@lasyncro/backend-core/db.js';
 
 const port = Number(process.env.PORT) || 3000;
 const HOST = process.env.HOST || '127.0.0.1';
@@ -24,6 +25,9 @@ const __filename = fileURLToPath(import.meta.url);
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 
 async function start() {
+  // SEC-RLS-P0: fail before any infrastructure or worker starts if the HTTP
+  // runtime is connected with the privileged migration identity.
+  await assertRuntimeDatabaseIdentity();
   await initRedisClient();
   await initSpecterStore();
   // schema verification FIRST

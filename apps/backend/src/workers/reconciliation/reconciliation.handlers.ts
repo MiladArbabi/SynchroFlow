@@ -1,5 +1,5 @@
 // apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 
 import { evaluateOrderConstraints } from '../../services/constraints/constraintEngine.js';
 import { resolveExecutionQueues } from '../../services/order-execution-intelligence/orderExecutionQueueResolver.js';
@@ -851,16 +851,18 @@ export async function reconcileOrderFulfillment(
      * CRITICAL:
      * - log when duplicate occurs → observability of race conditions
      */
-    const inserted = await db('decision_execution_queue')
-      .insert({
-        decision_id: d.id,
-        shop_id: d.shop_id,
-        status: 'pending',
-        created_at: db.fn.now(),
-      })
-      .onConflict('decision_id')
-      .ignore()
-      .returning('decision_id');
+    const inserted = await withTenant(d.shop_id, (trx) =>
+      trx('decision_execution_queue')
+        .insert({
+          decision_id: d.id,
+          shop_id: d.shop_id,
+          status: 'pending',
+          created_at: trx.fn.now(),
+        })
+        .onConflict('decision_id')
+        .ignore()
+        .returning('decision_id')
+    );
 
     if (!inserted.length) {
       console.warn('[EXECUTION_INTENT_DUPLICATE_SKIPPED]', {

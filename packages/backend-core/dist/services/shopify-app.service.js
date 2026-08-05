@@ -1,4 +1,4 @@
-import db from '../db.js';
+import { withTenant } from '../db.js';
 import axios from 'axios';
 import crypto from 'crypto';
 import CryptoJS from 'crypto-js';
@@ -7,35 +7,35 @@ export class ShopifyAppService {
      * Create a new app installation record
      */
     static async createAppInstallation(installation) {
-        const [newInstallation] = await db('shopify_app_installations')
+        const [newInstallation] = await withTenant(installation.shop_id, (trx) => trx('shopify_app_installations')
             .insert(installation)
-            .returning('*');
+            .returning('*'));
         return newInstallation;
     }
     /**
      * Get app installation by shop domain
      */
-    static async getAppInstallation(shopDomain) {
-        const installation = await db('shopify_app_installations')
-            .where('shop_domain', shopDomain)
-            .andWhere('uninstalled_at', null)
-            .first();
+    static async getAppInstallation(shopDomain, shopId) {
+        const installation = await withTenant(shopId, (trx) => trx('shopify_app_installations')
+            .where({ shop_id: shopId, shop_domain: shopDomain })
+            .whereNull('uninstalled_at')
+            .first());
         return installation || null;
     }
     /**
      * Mark app as uninstalled
      */
-    static async markAppUninstalled(shopDomain) {
-        await db('shopify_app_installations')
-            .where('shop_domain', shopDomain)
-            .update({ uninstalled_at: new Date() });
+    static async markAppUninstalled(shopDomain, shopId) {
+        await withTenant(shopId, (trx) => trx('shopify_app_installations')
+            .where({ shop_id: shopId, shop_domain: shopDomain })
+            .update({ uninstalled_at: new Date() }));
     }
     /**
      * Register app uninstall webhook
      */
-    static async registerAppUninstallWebhook(shopDomain) {
+    static async registerAppUninstallWebhook(shopDomain, shopId) {
         try {
-            const accessToken = await this.getDecryptedAccessToken(shopDomain);
+            const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
             if (!accessToken) {
                 console.warn('[ShopifyAppService] Missing access token; skipping uninstall webhook registration', {
                     shopDomain,
@@ -101,11 +101,11 @@ export class ShopifyAppService {
      * replacement script-tag call needed here.
      */
     static async completePostInstallation(shopDomain, shopId) {
-        await this.registerAppUninstallWebhook(shopDomain);
-        await this.registerRefundsCreateWebhook(shopDomain);
-        const existing = await this.getAppInstallation(shopDomain);
+        await this.registerAppUninstallWebhook(shopDomain, shopId);
+        await this.registerRefundsCreateWebhook(shopDomain, shopId);
+        const existing = await this.getAppInstallation(shopDomain, shopId);
         if (!existing) {
-            const accessToken = await this.getDecryptedAccessToken(shopDomain);
+            const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
             if (!accessToken)
                 return;
             await this.createAppInstallation({
@@ -199,9 +199,9 @@ export class ShopifyAppService {
    * - NEVER throws
    */
     static async getDecryptedAccessTokenByShopId(shopId) {
-        const installation = await db('shopify_app_installations')
+        const installation = await withTenant(shopId, (trx) => trx('shopify_app_installations')
             .where({ shop_id: shopId, uninstalled_at: null })
-            .first();
+            .first());
         if (!installation)
             return null;
         try {
@@ -218,8 +218,8 @@ export class ShopifyAppService {
     /**
      * Get decrypted access token
      */
-    static async getDecryptedAccessToken(shopDomain) {
-        const installation = await this.getAppInstallation(shopDomain);
+    static async getDecryptedAccessToken(shopDomain, shopId) {
+        const installation = await this.getAppInstallation(shopDomain, shopId);
         if (!installation) {
             return null;
         }
@@ -252,9 +252,9 @@ export class ShopifyAppService {
      * Topic:
      * - refunds/create (authoritative financial regression signal)
      */
-    static async registerRefundsCreateWebhook(shopDomain) {
+    static async registerRefundsCreateWebhook(shopDomain, shopId) {
         try {
-            const accessToken = await this.getDecryptedAccessToken(shopDomain);
+            const accessToken = await this.getDecryptedAccessToken(shopDomain, shopId);
             if (!accessToken)
                 return;
             const baseUrl = process.env.SHOPIFY_WEBHOOK_BASE_URL || process.env.API_URL;

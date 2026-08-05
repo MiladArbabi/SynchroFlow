@@ -1,6 +1,7 @@
 // apps/backend/src/api/members/members.controller.ts
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
+import { authEmailExists } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import bcrypt from 'bcrypt';
 import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
 
@@ -26,18 +27,20 @@ export const listMembers = async (req: Request, res: Response) => {
   try {
     const shopId = req.user!.shopId;
 
-    const members = await db('shop_memberships as sm')
-      .join('users as u', 'u.id', 'sm.user_id')
-      .where('sm.shop_id', shopId)
-      .whereNull('sm.revoked_at')
-      .select(
-        'u.id as user_id',
-        'u.email',
-        'u.first_name',
-        'u.last_name',
-        'sm.role',
-        'sm.created_at as member_since',
-      );
+    const members = await withTenant(shopId!, (trx) =>
+      trx('shop_memberships as sm')
+        .join('users as u', 'u.id', 'sm.user_id')
+        .where('sm.shop_id', shopId)
+        .whereNull('sm.revoked_at')
+        .select(
+          'u.id as user_id',
+          'u.email',
+          'u.first_name',
+          'u.last_name',
+          'sm.role',
+          'sm.created_at as member_since',
+        )
+    );
 
     return res.json({ members });
   } catch (err) {
@@ -80,7 +83,7 @@ export const updateMemberRole = async (req: Request, res: Response) => {
   }
 
   try {
-    await db.transaction(async (trx) => {
+    await withTenant(shopId!, async (trx) => {
       // 1. Verify target is an active member of this shop
       const membership = await trx('shop_memberships')
         .where({ shop_id: shopId, user_id: targetUserId })
@@ -147,8 +150,7 @@ export const createMember = async (req: Request, res: Response) => {
 
   try {
     // Check email not already in use
-    const existing = await db('users').where({ email: email.toLowerCase() }).first('id');
-    if (existing) {
+    if (await authEmailExists(email)) {
       return res.status(409).json({ error: 'EMAIL_ALREADY_IN_USE' });
     }
 
@@ -160,13 +162,14 @@ export const createMember = async (req: Request, res: Response) => {
     const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
     const { seatLimit } = getTierConfig(currentTier);
 
-    await db.raw(`SET app.current_tenant = '${shopId}'`);
-    const activeSeatCount = await db('shop_memberships')
-      .where({ shop_id: shopId })
-      .whereNull('revoked_at')
-      .whereNot('role', 'owner')
-      .count('id as count')
-      .first();
+    const activeSeatCount = await withTenant(shopId, (trx) =>
+      trx('shop_memberships')
+        .where({ shop_id: shopId })
+        .whereNull('revoked_at')
+        .whereNot('role', 'owner')
+        .count('id as count')
+        .first()
+    );
 
     const currentSeats = Number(activeSeatCount?.count ?? 0);
 
@@ -181,8 +184,12 @@ export const createMember = async (req: Request, res: Response) => {
     }
 
     // Resolve shop name + creator name for invite email
-    const shop = await db('shops').where({ id: shopId }).first('name');
-    const creator = await db('users').where({ id: creatorUserId }).first('first_name', 'last_name', 'email');
+    const [shop, creator] = await withTenant(shopId, (trx) => Promise.all([
+      trx('shops').where({ id: shopId }).first('name'),
+      trx('users')
+        .where({ id: creatorUserId, shop_id: shopId })
+        .first('first_name', 'last_name', 'email'),
+    ]));
     const invitedByName = creator
       ? `${creator.first_name ?? ''} ${creator.last_name ?? ''}`.trim() || creator.email
       : 'Your team admin';
@@ -193,8 +200,7 @@ export const createMember = async (req: Request, res: Response) => {
 
     let newUser: { id: number; email: string };
 
-    await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    await withTenant(shopId, async (trx) => {
       // 1. Create user (shop_id = existing shop, NOT a new shop)
       const [created] = await trx('users')
         .insert({
@@ -300,10 +306,12 @@ export const getMyPreferences = async (req: Request, res: Response) => {
   const shopId = req.user!.shopId!;
 
   try {
-    const membership = await db('shop_memberships')
-      .where({ user_id: userId, shop_id: shopId })
-      .whereNull('revoked_at')
-      .first('notification_preferences');
+    const membership = await withTenant(shopId, (trx) =>
+      trx('shop_memberships')
+        .where({ user_id: userId, shop_id: shopId })
+        .whereNull('revoked_at')
+        .first('notification_preferences')
+    );
 
     if (!membership) return res.status(404).json({ error: 'Membership not found' });
 
@@ -437,10 +445,12 @@ export const updateMyPreferences = async (req: Request, res: Response) => {
 
   try {
     // Fetch existing prefs and merge — partial updates supported
-    const membership = await db('shop_memberships')
-      .where({ user_id: userId, shop_id: shopId })
-      .whereNull('revoked_at')
-      .first('notification_preferences');
+    const membership = await withTenant(shopId, (trx) =>
+      trx('shop_memberships')
+        .where({ user_id: userId, shop_id: shopId })
+        .whereNull('revoked_at')
+        .first('notification_preferences')
+    );
 
     if (!membership) return res.status(404).json({ error: 'Membership not found' });
 
@@ -452,10 +462,12 @@ export const updateMyPreferences = async (req: Request, res: Response) => {
       ...(alert_types !== undefined && { alert_types: { ...existing.alert_types, ...alert_types } }),
     };
 
-    await db('shop_memberships')
-      .where({ user_id: userId, shop_id: shopId })
-      .whereNull('revoked_at')
-      .update({ notification_preferences: JSON.stringify(updated), updated_at: new Date() });
+    await withTenant(shopId, (trx) =>
+      trx('shop_memberships')
+        .where({ user_id: userId, shop_id: shopId })
+        .whereNull('revoked_at')
+        .update({ notification_preferences: JSON.stringify(updated), updated_at: new Date() })
+    );
 
     console.info('[MEMBERS] Preferences updated', { userId, shopId });
     return res.json({ success: true, preferences: updated });
@@ -480,6 +492,8 @@ export const updateMyCurrencyPreference = async (req: Request, res: Response) =>
   try {
     const userId = req.user?.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
     const { displayCurrency, locale } = req.body as {
       displayCurrency?: string;
@@ -499,10 +513,12 @@ export const updateMyCurrencyPreference = async (req: Request, res: Response) =>
     if (displayCurrency) updates.display_currency = displayCurrency;
     if (locale) updates.locale = locale;
 
-    await db('shop_memberships')
-      .where({ user_id: userId })
-      .whereNull('revoked_at')
-      .update(updates);
+    await withTenant(shopId, (trx) =>
+      trx('shop_memberships')
+        .where({ user_id: userId, shop_id: shopId })
+        .whereNull('revoked_at')
+        .update(updates)
+    );
 
     console.info('[MEMBERS] Currency preference updated', { userId, displayCurrency, locale });
 
@@ -746,12 +762,13 @@ export const getMemberSchedule = async (req: Request, res: Response) => {
   }
 
   try {
-    await db.raw(`SET app.current_tenant = '${shopId}'`);
-    const schedule = await db('operator_schedules')
-      .where({ shop_id: shopId, user_id: targetUserId })
-      .whereNull('effective_to')
-      .orderBy('weekday', 'asc')
-      .select('id', 'weekday', 'start_time', 'end_time', 'effective_from');
+    const schedule = await withTenant(shopId, (trx) =>
+      trx('operator_schedules')
+        .where({ shop_id: shopId, user_id: targetUserId })
+        .whereNull('effective_to')
+        .orderBy('weekday', 'asc')
+        .select('id', 'weekday', 'start_time', 'end_time', 'effective_from')
+    );
 
     return res.json({ user_id: targetUserId, schedule });
   } catch (err) {

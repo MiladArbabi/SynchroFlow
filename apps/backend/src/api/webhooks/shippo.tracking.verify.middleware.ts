@@ -12,7 +12,8 @@
 
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { resolveCarrierWebhookToken } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 
 function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -33,22 +34,20 @@ export async function verifyShippoTrackingWebhook(
 
     const tokenHash = hashToken(rawToken);
 
-    const tokenRow = await db('shop_carrier_webhook_tokens')
-      .where({ token_hash: tokenHash, carrier_code: 'shippo' })
-      .first();
+    const tokenRow = await resolveCarrierWebhookToken(tokenHash, 'shippo');
 
     if (!tokenRow) {
       return res.status(404).json({ error: 'Unknown webhook token' });
     }
 
     const shopId = tokenRow.shop_id;
-    await db.raw(`SET app.current_tenant = '${shopId}'`);
-
     (req as any).resolvedShopId = shopId;
 
-    db('shop_carrier_webhook_tokens')
-      .where({ id: tokenRow.id })
-      .update({ last_seen_at: new Date() })
+    withTenant(shopId, (trx) =>
+      trx('shop_carrier_webhook_tokens')
+        .where({ id: tokenRow.id, shop_id: shopId })
+        .update({ last_seen_at: new Date() })
+    )
       .catch((err: any) => console.error('[SHIPPO_WEBHOOK_HEARTBEAT_FAILED]', err?.message));
 
     return next();

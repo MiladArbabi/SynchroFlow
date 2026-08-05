@@ -44,7 +44,7 @@ const { processDomainEvent } = await import('../events/processDomainEvent.js');
  * as PGMIGRATION_USER (sf_user, table owner + BYPASSRLS). Aliased to `db` so
  * the rest of the CLI is unchanged.
  */
-const { systemDb: db } = await import('@lasyncro/backend-core/db.js');
+const { systemDb: db } = await import('@lasyncro/backend-core/system-db.js');
 
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');

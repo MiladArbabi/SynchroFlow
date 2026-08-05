@@ -15,8 +15,13 @@ import { startWorkers } from './bootstrap/workers.js';
 
 import { startDomainEventOutboxDispatcher } from './workers/domain-event-outbox.dispatcher.js';
 import { startProjectionHealthWorker } from './workers/projection.health.worker.js';
+import { assertRuntimeDatabaseIdentity } from '@lasyncro/backend-core/db.js';
 
 async function start() {
+
+  // SEC-RLS-P0: the standalone worker must enforce the same restricted
+  // database identity as the HTTP runtime.
+  await assertRuntimeDatabaseIdentity();
 
   console.log('[WORKER ENV]', {
     WORKER_RUNTIME: process.env.WORKER_RUNTIME,

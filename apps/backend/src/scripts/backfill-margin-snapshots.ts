@@ -18,7 +18,8 @@
 // USAGE: node dist/src/scripts/backfill-margin-snapshots.js  [shopId=1]
 // Wired into dev:setup after the full_data seed.
 
-import db, { systemDb, withTenant } from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
+import { systemDb } from '@lasyncro/backend-core/system-db.js';
 import { computeOrderMargin } from '../services/margin/computeOrderMargin.service.js';
 
 async function backfillMarginSnapshots(): Promise<void> {

@@ -29,7 +29,7 @@
 import { Request, Response } from 'express';
 import { format as csvFormat } from '@fast-csv/format';
 import PDFDocument from 'pdfkit';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
 import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
@@ -61,40 +61,37 @@ export async function exportOrders(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    const rows = await withTenant(shopId, async (trx) => {
+      let query = trx('orders as o')
+        .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
+        .leftJoin(
+          trx('order_revenue_units').select('lasyncro_order_id').count('* as sku_count').groupBy('lasyncro_order_id').as('ru'),
+          'ru.lasyncro_order_id', 'o.lasyncro_order_id'
+        )
+        .where('o.shop_id', shopId)
+        .select(
+          'o.lasyncro_order_id as order_id',
+          'o.order_created_at as created_at',
+          'o.total_price',
+          'o.currency',
+          'o.payment_state',
+          trx.raw("COALESCE(ofs.status, 'pending') as fulfillment_status"),
+          trx.raw("COALESCE(o.source, '—') as channel"),
+          trx.raw("COALESCE(ru.sku_count, 0) as sku_count"),
+          trx.raw("COALESCE(o.shipping_country_code, '—') as shipping_country")
+        )
+        .orderBy('o.order_created_at', 'desc');
 
-    let query = db('orders as o')
-      .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
-      .leftJoin(
-        db('order_revenue_units').select('lasyncro_order_id').count('* as sku_count').groupBy('lasyncro_order_id').as('ru'),
-        'ru.lasyncro_order_id', 'o.lasyncro_order_id'
-      )
-      .where('o.shop_id', shopId)
-      .select(
-        'o.lasyncro_order_id as order_id',
-        'o.order_created_at as created_at',
-        'o.total_price',
-        'o.currency',
-        'o.payment_state',
-        db.raw("COALESCE(ofs.status, 'pending') as fulfillment_status"),
-        db.raw("COALESCE(o.source, '—') as channel"),
-        db.raw("COALESCE(ru.sku_count, 0) as sku_count"),
-        db.raw("COALESCE(o.shipping_country_code, '—') as shipping_country")
-      )
-      .orderBy('o.order_created_at', 'desc');
+      if (since) query = query.where('o.order_created_at', '>=', since);
 
-    if (since) {
-      query = query.where('o.order_created_at', '>=', since);
-    }
+      const { date_from, date_to, status, payment_state } = req.body?.filters ?? {};
+      if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
+      if (date_to) query = query.where('o.order_created_at', '<=', new Date(date_to));
+      if (status?.length) query = query.whereIn('ofs.status', status);
+      if (payment_state?.length) query = query.whereIn('o.payment_state', payment_state);
 
-    // Apply optional filters from request body
-    const { date_from, date_to, status, payment_state } = req.body?.filters ?? {};
-    if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
-    if (date_to)   query = query.where('o.order_created_at', '<=', new Date(date_to));
-    if (status?.length)        query = query.whereIn('ofs.status', status);
-    if (payment_state?.length) query = query.whereIn('o.payment_state', payment_state);
-
-    const rows = await query;
+      return query;
+    });
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('orders', 'csv')}"`);
@@ -127,9 +124,8 @@ export async function exportReturns(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    let query = db('refund_executions as re')
+    const rows = await withTenant(shopId, async (trx) => {
+    let query = trx('refund_executions as re')
       .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
       .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
       .leftJoin('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
@@ -138,10 +134,10 @@ export async function exportReturns(req: Request, res: Response) {
         're.lasyncro_refund_execution_id as return_id',
         're.executed_at as created_at',
         're.lasyncro_order_id as order_id',
-        db.raw("COALESCE(ru.title, '—') as item_title"),
-        db.raw("COALESCE(ru.sku, '—') as sku"),
-        db.raw("COALESCE(reli.refunded_quantity, 0) as units_returned"),
-        db.raw("COALESCE(re.return_reason, '—') as return_reason"),
+        trx.raw("COALESCE(ru.title, '—') as item_title"),
+        trx.raw("COALESCE(ru.sku, '—') as sku"),
+        trx.raw("COALESCE(reli.refunded_quantity, 0) as units_returned"),
+        trx.raw("COALESCE(re.return_reason, '—') as return_reason"),
         're.total_refund_amount'
       )
       .orderBy('re.executed_at', 'desc');
@@ -152,7 +148,8 @@ export async function exportReturns(req: Request, res: Response) {
     if (date_from) query = query.where('re.executed_at', '>=', new Date(date_from));
     if (date_to)   query = query.where('re.executed_at', '<=', new Date(date_to));
 
-    const rows = await query;
+      return query;
+    });
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('returns', 'csv')}"`);
@@ -185,9 +182,8 @@ export async function exportFinances(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    let query = db('order_margin_snapshot as oms')
+    const rows = await withTenant(shopId, async (trx) => {
+    let query = trx('order_margin_snapshot as oms')
       .join('orders as o', 'o.lasyncro_order_id', 'oms.lasyncro_order_id')
       .where('oms.shop_id', shopId)
       .select(
@@ -198,7 +194,7 @@ export async function exportFinances(req: Request, res: Response) {
         'oms.gross_revenue',
         'oms.estimated_cost',
         'oms.gross_margin',
-        db.raw("ROUND((oms.margin_pct * 100)::numeric, 2) as margin_pct")
+        trx.raw("ROUND((oms.margin_pct * 100)::numeric, 2) as margin_pct")
       )
       .orderBy('o.order_created_at', 'desc');
 
@@ -208,7 +204,8 @@ export async function exportFinances(req: Request, res: Response) {
     if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
     if (date_to)   query = query.where('o.order_created_at', '<=', new Date(date_to));
 
-    const rows = await query;
+      return query;
+    });
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('finances', 'csv')}"`);
@@ -242,11 +239,11 @@ export async function exportBrief(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
 
   try {
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
-    const brief = await db('morning_brief_snapshots')
-      .where({ shop_id: shopId })
-      .first('signals', 'summary_line', 'generated_at', 'greeting');
+    const brief = await withTenant(shopId, (trx) =>
+      trx('morning_brief_snapshots')
+        .where({ shop_id: shopId })
+        .first('signals', 'summary_line', 'generated_at', 'greeting')
+    );
 
     if (!brief) {
       return res.status(404).json({ error: 'BRIEF_NOT_FOUND' });
@@ -338,8 +335,7 @@ export async function exportBrief(req: Request, res: Response) {
     // T2 — onboarding: emit brief_exported audit event on first successful export.
     //    — tenant context required for RLS on activation_audit_events.
     // Fire-and-forget — audit failure must never block the PDF response.
-    db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    withTenant(shopId, async (trx) => {
       await trx('activation_audit_events').insert({
         event_id:    crypto.randomUUID(),
         event_type:  'brief_exported',
@@ -348,7 +344,9 @@ export async function exportBrief(req: Request, res: Response) {
         occurred_at: new Date(),
         payload:     JSON.stringify({ schema: 'activation_audit.v1', event: 'brief_exported', occurredAt: new Date().toISOString() }),
       });
-    }).catch((err: unknown) => console.error('[ACTIVATION_AUDIT] brief_exported failed', err));
+    }).catch((err: unknown) =>
+      console.error('[ACTIVATION_AUDIT] brief_exported failed', err)
+    );
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';

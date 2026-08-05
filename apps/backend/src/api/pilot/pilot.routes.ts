@@ -4,7 +4,7 @@
 // Mirrors apps/backend/src/api/waitlist/waitlist.routes.ts pattern exactly.
 import { Router } from 'express';
 import { z } from 'zod';
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { sendPilotApplicationNotification } from '../../services/email/email.service.js';
 
 const router = Router();
@@ -35,24 +35,26 @@ router.post('/', async (req, res) => {
   const data = parsed.data;
 
   try {
-    await db('pilot_applications')
-      .insert({
-        name: data.name,
-        email: data.email,
-        company: data.company,
-        store_url: data.storeUrl,
-        country: data.country,
-        orders_per_day: data.ordersPerDay,
-        sku_count: data.skuCount,
-        fulfillment: data.fulfillment,
-        biggest_issue: data.biggestIssue,
-        uses_stocky: data.usesStocky,
-        current_tools: data.currentTools,
-        open_to_paid_pilot: data.openToPaidPilot,
-        contact_method: data.contactMethod,
-      })
-      .onConflict('email')
-      .ignore(); // Duplicate email — silently ignore, applicant may retry
+    await systemQuery(
+      db('pilot_applications')
+        .insert({
+          name: data.name,
+          email: data.email,
+          company: data.company,
+          store_url: data.storeUrl,
+          country: data.country,
+          orders_per_day: data.ordersPerDay,
+          sku_count: data.skuCount,
+          fulfillment: data.fulfillment,
+          biggest_issue: data.biggestIssue,
+          uses_stocky: data.usesStocky,
+          current_tools: data.currentTools,
+          open_to_paid_pilot: data.openToPaidPilot,
+          contact_method: data.contactMethod,
+        })
+        .onConflict('email')
+        .ignore()
+    ); // Pre-tenant system table; duplicate email is intentionally ignored.
   } catch (err) {
     console.error('[pilot] DB insert error:', err);
     return res.status(500).json({ error: 'Server error' });

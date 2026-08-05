@@ -19,7 +19,7 @@
  * - Called once manually via CLI or admin endpoint after installation.
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { decrypt } from '../../security/encryption.service.js';
 import { createShopifyGraphQLClient } from './shopifyClient.service.js';
 
@@ -60,10 +60,12 @@ export async function backfillShopifyRefunds(shopId: number): Promise<{
   errors: number;
 }> {
 
-  const integration = await db('integrations')
-    .where({ shop_id: shopId, platform: 'shopify' })
-    .select('access_token_encrypted', 'platform_shop_name')
-    .first();
+  const integration = await withTenant(shopId, (trx) =>
+    trx('integrations')
+      .where({ shop_id: shopId, platform: 'shopify' })
+      .select('access_token_encrypted', 'platform_shop_name')
+      .first()
+  );
 
   if (!integration?.access_token_encrypted) {
     throw new Error(`[REFUND_BACKFILL] No access token for shop ${shopId}`);
@@ -78,9 +80,11 @@ export async function backfillShopifyRefunds(shopId: number): Promise<{
   });
 
   // Fetch all external order IDs for this shop
-  const orderRows = await db('external_order_identity_map')
-    .where({ shop_id: shopId, platform: 'shopify' })
-    .select('external_order_id');
+  const orderRows = await withTenant(shopId, (trx) =>
+    trx('external_order_identity_map')
+      .where({ shop_id: shopId, platform: 'shopify' })
+      .select('external_order_id')
+  );
 
   let processed = 0;
   let skipped = 0;
@@ -114,19 +118,21 @@ export async function backfillShopifyRefunds(shopId: number): Promise<{
         );
 
         try {
-          await db('domain_events').insert({
-            shop_id: shopId,
-            event_type: 'refunds/create',
-            event_payload: {
-              id: externalRefundId,
-              order_id: external_order_id,
-              created_at: refund.createdAt,
-              refund_line_items: refundLineItems,
-            },
-            event_time: new Date(refund.createdAt),
-            event_version: 1,
-            external_event_id: externalEventId,
-          });
+          await withTenant(shopId, (trx) =>
+            trx('domain_events').insert({
+              shop_id: shopId,
+              event_type: 'refunds/create',
+              event_payload: {
+                id: externalRefundId,
+                order_id: external_order_id,
+                created_at: refund.createdAt,
+                refund_line_items: refundLineItems,
+              },
+              event_time: new Date(refund.createdAt),
+              event_version: 1,
+              external_event_id: externalEventId,
+            })
+          );
 
           processed++;
 

@@ -1,4 +1,4 @@
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 
 import { validateProjectionContracts } from '../projections/contracts/projectionContractRegistry.js';
 import {
@@ -107,7 +107,7 @@ function assertProjectionCoverage() {
  * Fetch column metadata
  */
 async function getColumns(table: string): Promise<Set<string>> {
-  const info = await db(table).columnInfo();
+  const info = await systemQuery(db(table).columnInfo());
   return new Set(Object.keys(info));
 }
 
@@ -115,7 +115,7 @@ async function getColumns(table: string): Promise<Set<string>> {
  * Fetch primary key columns
  */
 async function getPrimaryKey(table: string): Promise<string[]> {
-  const rows = await db.raw(`
+  const rows = await systemQuery(db.raw(`
     SELECT kcu.column_name
     FROM information_schema.table_constraints tc
     JOIN information_schema.key_column_usage kcu
@@ -123,7 +123,7 @@ async function getPrimaryKey(table: string): Promise<string[]> {
     WHERE tc.table_name = ?
       AND tc.constraint_type = 'PRIMARY KEY'
     ORDER BY kcu.ordinal_position
-  `, [table]);
+  `, [table]));
 
   return rows.rows.map((r: any) => r.column_name);
 }
