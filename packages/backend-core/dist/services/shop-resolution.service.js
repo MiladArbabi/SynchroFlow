@@ -17,7 +17,7 @@
  *
  * ✅ All shop context flows through this file.
  */
-import db from '../db.js';
+import db, { systemQuery, withTenant } from '../db.js';
 /**
  * Resolve the ACTIVE shop membership for a user.
  *
@@ -39,10 +39,12 @@ export async function resolveShopContextForUser(userId) {
     // ─────────────────────────────────────────────────────────────
     // 🔍 Resolve active membership
     // ─────────────────────────────────────────────────────────────
-    const memberships = await db('shop_memberships')
+    // Authentication starts before a tenant is known. This is the one
+    // authoritative pre-tenant membership lookup and returns no credentials.
+    const memberships = await systemQuery(db('shop_memberships')
         .where({ user_id: userId })
         .whereNull('revoked_at')
-        .select('shop_id as shopId', 'role', 'display_currency as displayCurrency', 'locale');
+        .select('shop_id as shopId', 'role', 'display_currency as displayCurrency', 'locale'));
     if (memberships.length === 0) {
         return null;
     }
@@ -105,9 +107,9 @@ export async function requireShopIdForUser(userId) {
  *   - require-entitlement middleware (MON-03)
  */
 export async function resolveTierForShop(shopId) {
-    const row = await db('shop_subscriptions')
+    const row = await withTenant(shopId, (trx) => trx('shop_subscriptions')
         .where({ shop_id: shopId })
-        .first('tier');
+        .first('tier'));
     if (!row) {
         console.warn('[shop-resolution] no subscription row for shop, defaulting to starter', { shopId });
         return 'starter';

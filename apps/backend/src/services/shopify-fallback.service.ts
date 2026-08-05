@@ -1,7 +1,7 @@
 // apps/backend/src/services/shopify-fallback.service.ts
 import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
 
 // Add required scopes for non-PCD data
@@ -101,13 +101,15 @@ export const performNonPCDSync = async (accessToken: string, platformShopName: s
     integrationId
   });
 
-  await db('integrations')
-    .where({ id: integrationId })
-    .update({
-      sync_status: 'DISABLED_ARCHITECTURE_GUARD',
-      sync_last_error:
-        'Fallback sync disabled — products/inventory must enter via domain events'
-    });
+  await withTenant(shopId, (trx) =>
+    trx('integrations')
+      .where({ id: integrationId, shop_id: shopId })
+      .update({
+        sync_status: 'DISABLED_ARCHITECTURE_GUARD',
+        sync_last_error:
+          'Fallback sync disabled — products/inventory must enter via domain events'
+      })
+  );
 
   return;
 
@@ -123,14 +125,16 @@ export const performNonPCDSync = async (accessToken: string, platformShopName: s
 
   try {
     // Update sync status
-    await db('integrations').where({ id: integrationId }).update({
-      sync_status: 'SYNCING_PRODUCTS',
-      sync_last_error: null,
-      sync_progress_current: 0,
-      sync_progress_total: 3, // products, inventory, shop
-    });
+    await withTenant(shopId, (trx) =>
+      trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
+        sync_status: 'SYNCING_PRODUCTS',
+        sync_last_error: null,
+        sync_progress_current: 0,
+        sync_progress_total: 3, // products, inventory, shop
+      })
+    );
 
-    await db.transaction(async (trx) => {
+    await withTenant(shopId, async (trx) => {
       // Sync products (non-PCD)
       console.log(`[ShopifyFallback] Syncing products...`);
       const productsResponse = await client.request(NON_PCD_QUERIES.products, {
@@ -167,20 +171,24 @@ export const performNonPCDSync = async (accessToken: string, platformShopName: s
     });
 
     // Mark sync as completed (partial data)
-    await db('integrations').where({ id: integrationId }).update({
-      sync_status: 'COMPLETED',
-      sync_last_error: 'PCD access required for orders and customers',
-    });
+    await withTenant(shopId, (trx) =>
+      trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
+        sync_status: 'COMPLETED',
+        sync_last_error: 'PCD access required for orders and customers',
+      })
+    );
 
     console.log(`[ShopifyFallback] Non-PCD sync COMPLETED for shopId: ${shopId}`);
 
   } catch (error: any) {
     console.error(`[ShopifyFallback] FAILED to sync shopId: ${shopId}`, error);
     
-    await db('integrations').where({ id: integrationId }).update({
-      sync_status: 'FAILED',
-      sync_last_error: error.message,
-    });
+    await withTenant(shopId, (trx) =>
+      trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
+        sync_status: 'FAILED',
+        sync_last_error: error.message,
+      })
+    );
     
     throw error;
   }

@@ -11,8 +11,10 @@ dotenv.config({
 
 const environment = process.env.NODE_ENV || 'development';
 
-if (environment === 'production' && !process.env.DATABASE_URL) {
-  throw new Error('FATAL: DATABASE_URL must be set in production.');
+if (environment === 'production' && !process.env.APP_DATABASE_URL) {
+  throw new Error(
+    'FATAL: APP_DATABASE_URL must be set to the restricted sf_app connection in production.'
+  );
 }
 
 const baseConfig: Knex.Config = {
@@ -59,7 +61,9 @@ const config: Record<string, Knex.Config> = {
   },
   production: {
     ...baseConfig,
-    connection: process.env.DATABASE_URL,
+    // DATABASE_URL is reserved for the release-command migration runner.
+    // Runtime processes must never inherit that privileged connection.
+    connection: process.env.APP_DATABASE_URL,
   },
 };
 

@@ -1,6 +1,6 @@
 import { shopifyApi, Session } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
-import db from '../db.js';
+import { withTenant } from '../db.js';
 const REQUIRED_SCOPES = [
     'read_orders',
     'read_returns',
@@ -31,22 +31,22 @@ export const performInitialSync = async (accessToken, platformShopName, shopId, 
     try {
         const response = await client.request(query);
         const data = response.data;
-        await db('integrations')
-            .where({ id: integrationId })
+        await withTenant(shopId, (trx) => trx('integrations')
+            .where({ id: integrationId, shop_id: shopId })
             .update({
             sync_status: 'COMPLETED',
             sync_last_error: null,
-        });
+        }));
         console.log(`[ShopifyService] Sync COMPLETED for shopId: ${shopId}`);
     }
     catch (error) {
         console.error(`[ShopifyService] FAILED to sync shopId: ${shopId}`, error);
-        await db('integrations')
-            .where({ id: integrationId })
+        await withTenant(shopId, (trx) => trx('integrations')
+            .where({ id: integrationId, shop_id: shopId })
             .update({
             sync_status: 'FAILED',
             sync_last_error: error?.message ?? 'Unknown error',
-        });
+        }));
         throw error;
     }
 };

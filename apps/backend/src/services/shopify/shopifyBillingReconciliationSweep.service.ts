@@ -30,19 +30,20 @@
 //
 // Mirrors shopifyUninstallGrace.service.ts's structure and polling pattern.
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { applyShopifyBillingState } from './applyShopifyBillingState.service.js';
 
 export async function runShopifyBillingReconciliationCycle(): Promise<void> {
-  const shopifyBilledShops = await db('shop_subscriptions')
-    .where({ billing_provider: 'shopify' })
-    .select('shop_id');
+  const result = await systemQuery(
+    db.raw('SELECT * FROM public.list_shopify_billed_tenants()')
+  );
+  const shopifyBilledShops: Array<{ shop_id: number }> = result.rows;
 
   for (const row of shopifyBilledShops) {
     try {
-      await db.transaction(async (trx) => {
-        await applyShopifyBillingState(row.shop_id, trx);
-      });
+      await withTenant(row.shop_id, (trx) =>
+        applyShopifyBillingState(row.shop_id, trx)
+      );
     } catch (err) {
       console.error('[shopify-billing-reconciliation-sweep] reconcile failed (isolated)', {
         shopId: row.shop_id,

@@ -21,8 +21,7 @@
 // - All signals derived from existing snapshots — no heavy computation
 
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
-import { requireShopContextForUser } from '@lasyncro/backend-core/services/shop-resolution.service.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { computeDemandIntelligence } from '../../services/demand/demandIntelligence.service.js';
 
 // ─── Signal shape ─────────────────────────────────────────────────────────────
@@ -60,21 +59,19 @@ export interface AhaSignalResponse {
 
 export async function getAhaSignal(req: Request, res: Response) {
   try {
-    const userId = req.user?.userId;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const { shopId } = await requireShopContextForUser(userId);
-
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
     // ── Signal 1: Stock-out risk ─────────────────────────────────────────────
     // Condition: any SKU with < 7 days of stock at current 30-day velocity
 
-    const stockOutAlert = await db('alerts')
-      .where({ shop_id: shopId, alert_type: 'inventory', is_active: true })
-      .whereNull('dismissed_at')
-      .orderBy('revenue_impact', 'desc')
-      .first('title', 'message', 'revenue_impact');
+    const stockOutAlert = await withTenant(shopId, (trx) =>
+      trx('alerts')
+        .where({ shop_id: shopId, alert_type: 'inventory', is_active: true })
+        .whereNull('dismissed_at')
+        .orderBy('revenue_impact', 'desc')
+        .first('title', 'message', 'revenue_impact')
+    );
 
     if (stockOutAlert) {
       // Get supporting demand data for cards
@@ -117,26 +114,32 @@ export async function getAhaSignal(req: Request, res: Response) {
     // ── Signal 2: SLA risk ───────────────────────────────────────────────────
     // Condition: any orders where carrier ETA > promised delivery date
 
-    const slaAlert = await db('alerts')
-      .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
-      .whereNull('dismissed_at')
-      .orderBy('revenue_impact', 'desc')
-      .first('title', 'message', 'revenue_impact');
+    const slaAlert = await withTenant(shopId, (trx) =>
+      trx('alerts')
+        .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
+        .whereNull('dismissed_at')
+        .orderBy('revenue_impact', 'desc')
+        .first('title', 'message', 'revenue_impact')
+    );
 
     if (slaAlert) {
       // Count SLA breach alerts for supporting cards
-      const slaCount = await db('alerts')
-        .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
-        .whereNull('dismissed_at')
-        .count('* as count')
-        .first();
+      const [slaCount, totalRevenue] = await withTenant(shopId, (trx) =>
+        Promise.all([
+          trx('alerts')
+            .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
+            .whereNull('dismissed_at')
+            .count('* as count')
+            .first(),
+          trx('alerts')
+            .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
+            .whereNull('dismissed_at')
+            .sum('revenue_impact as total')
+            .first(),
+        ])
+      );
 
       const count = Number((slaCount as any)?.count ?? 0);
-      const totalRevenue = await db('alerts')
-        .where({ shop_id: shopId, alert_type: 'sla_breach', is_active: true })
-        .whereNull('dismissed_at')
-        .sum('revenue_impact as total')
-        .first();
 
       const signal: AhaSignal = {
         priority: 2,
@@ -172,18 +175,22 @@ export async function getAhaSignal(req: Request, res: Response) {
     // ── Signal 3: Revenue concentration risk ─────────────────────────────────
     // Condition: top 10% customers represent > 30% of revenue
 
-    const revenueAlert = await db('alerts')
-      .where({ shop_id: shopId, alert_type: 'revenue_at_risk', is_active: true })
-      .whereNull('dismissed_at')
-      .orderBy('revenue_impact', 'desc')
-      .first('title', 'message', 'revenue_impact');
+    const revenueAlert = await withTenant(shopId, (trx) =>
+      trx('alerts')
+        .where({ shop_id: shopId, alert_type: 'revenue_at_risk', is_active: true })
+        .whereNull('dismissed_at')
+        .orderBy('revenue_impact', 'desc')
+        .first('title', 'message', 'revenue_impact')
+    );
 
     if (revenueAlert) {
       // Get customer count for supporting cards
-      const customerCount = await db('customers')
-        .where({ shop_id: shopId })
-        .count('* as count')
-        .first();
+      const customerCount = await withTenant(shopId, (trx) =>
+        trx('customers')
+          .where({ shop_id: shopId })
+          .count('* as count')
+          .first()
+      );
 
       const totalCustomers = Number((customerCount as any)?.count ?? 0);
       const topTenPct = Math.max(1, Math.round(totalCustomers * 0.1));
@@ -222,15 +229,17 @@ export async function getAhaSignal(req: Request, res: Response) {
     // ── Signal 4: Fulfilment gap ──────────────────────────────────────────────
     // Condition: aging_72h_plus > 0 with queue_ready_to_ship contrast
 
-    const opControl = await db('orders_operational_control_snapshot')
-      .where({ shop_id: shopId })
-      .orderBy('snapshot_date', 'desc')
-      .first(
-        'aging_72h_plus',
-        'queue_ready_to_ship',
-        'constrained_orders',
-        'at_risk_revenue'
-      );
+    const opControl = await withTenant(shopId, (trx) =>
+      trx('orders_operational_control_snapshot')
+        .where({ shop_id: shopId })
+        .orderBy('snapshot_date', 'desc')
+        .first(
+          'aging_72h_plus',
+          'queue_ready_to_ship',
+          'constrained_orders',
+          'at_risk_revenue'
+        )
+    );
 
     if (opControl && Number(opControl.aging_72h_plus ?? 0) > 0) {
       const aging = Number(opControl.aging_72h_plus);

@@ -1,4 +1,4 @@
-import { systemDb } from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { computeShopOperationalSnapshot } from './shopOperationalSnapshot.worker.js';
 import { aggregateAlertsForShop } from '../../services/alerts/alerts.aggregator.js';
 
@@ -46,10 +46,10 @@ export async function startShopSnapshotJobDispatcher() {
      * Wait 10 seconds after scheduling before processing,
      * giving the projection worker time to catch up.
      */
-    const jobs = await systemDb('shop_snapshot_jobs')
-      .select('shop_id')
-      .where('scheduled_at', '<=', systemDb.raw(`NOW() - INTERVAL '2 seconds'`))
-      .limit(20);
+    const dueTenants = await systemQuery(
+      db.raw('SELECT shop_id FROM public.list_due_shop_snapshot_tenants(?)', [20])
+    );
+    const jobs: Array<{ shop_id: number }> = dueTenants.rows;
 
     for (const job of jobs) {
 
@@ -78,15 +78,16 @@ export async function startShopSnapshotJobDispatcher() {
          * aggregateVersion is accepted by the function signature but
          * unused in its body — passing 0 is safe, not a placeholder hack.
          */
-        await systemDb.transaction(async (trx) => {
-          await trx.raw(`SET LOCAL "app.current_tenant" = '${job.shop_id}'`);
+        await withTenant(job.shop_id, async (trx) => {
           const { projectDailyOperationalBrief } = await import('../../projections/dailyOperationalBriefProjection.js');
           await projectDailyOperationalBrief(trx, String(job.shop_id), 0, new Date());
         });
         
-        await systemDb('shop_snapshot_jobs')
-          .where({ shop_id: job.shop_id })
-          .delete();
+        await withTenant(job.shop_id, (trx) =>
+          trx('shop_snapshot_jobs')
+            .where({ shop_id: job.shop_id })
+            .delete()
+        );
 
         console.info('[snapshot-dispatcher] snapshot completed', {
           shopId: job.shop_id

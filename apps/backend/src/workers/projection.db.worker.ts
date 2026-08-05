@@ -1,4 +1,9 @@
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
+import db, {
+  runWithTenantContext,
+  setTenantContext,
+  systemQuery,
+  withTenant,
+} from '@lasyncro/backend-core/db.js';
 import { projectDomainEventCore } from '../projection/projection.engine.js';
 import { debugLog } from '../projection/projection.utils.js';
 import { reconcileOrderFulfillment } from './reconciliation/reconciliation.handlers.js';
@@ -35,9 +40,10 @@ export async function startDbProjectionWorker() {
  * --------------------------------
  * Lightweight read to determine next event.
  */
-const cursorRow = await db('projection_cursors')
-  .where({ projection_name: 'orders_projection' })
-  .first<{ last_processed_event_id: number }>();
+const workerStateResult = await systemQuery(
+  db.raw('SELECT * FROM public.get_projection_worker_state()')
+);
+const cursorRow = workerStateResult.rows[0];
 
 const lastProcessed = Number(cursorRow?.last_processed_event_id ?? 0);
 
@@ -54,11 +60,7 @@ const lastProcessed = Number(cursorRow?.last_processed_event_id ?? 0);
  * Invariant:
  *   cursor <= MAX(domain_events.id)
  */
-const maxEventRow = await db('domain_events')
-  .max<{ max: number }>('id as max')
-  .first();
-
-const maxEventId = Number(maxEventRow?.max ?? 0);
+const maxEventId = Number(cursorRow?.max_event_id ?? 0);
 
 if (lastProcessed > maxEventId) {
   console.error('[PROJECTION_CURSOR_CORRUPTION_FATAL]', {
@@ -74,10 +76,13 @@ if (lastProcessed > maxEventId) {
 /**
  * STEP 2 — FETCH NEXT EVENT (NO LOCK)
  */
-const nextEvents = await db('domain_events')
-  .where('id', '>', lastProcessed)
-  .orderBy('id', 'asc')
-  .limit(BATCH_SIZE);
+const nextEventResult = await systemQuery(
+  db.raw(
+    'SELECT * FROM public.list_projection_event_tenants(?, ?)',
+    [lastProcessed, BATCH_SIZE]
+  )
+);
+const nextEvents: Array<{ id: number; shop_id: number }> = nextEventResult.rows;
 
 if (nextEvents.length === 0) {
   /**
@@ -100,12 +105,13 @@ if (nextEvents.length === 0) {
  */
 for (const event of nextEvents) {
 
-    await db.transaction(async (trx) => {
+    await runWithTenantContext(Number(event.shop_id), () =>
+      db.transaction(async (trx) => {
 
         /**
          * TENANT INSERTION (CRITICAL)
          */
-        await trx.raw(`SET LOCAL app.current_tenant = '${event.shop_id}'`);
+        await setTenantContext(trx, Number(event.shop_id));
 
         /**
          * LOCK CURSOR ROW (CRITICAL — INSIDE PER-EVENT TX)
@@ -329,7 +335,8 @@ for (const event of nextEvents) {
         debugLog('[DB_PROJECTION_EXECUTED]', {
           domain_event_id: eventId,
         });
-      });
+      })
+    );
     }
 
     // THREAD A-2 (2026-06-29): FOR UPDATE was silently filtering this query
@@ -347,8 +354,26 @@ for (const event of nextEvents) {
     // these rows, unlike the disabled queue-based dispatcher this pattern
     // was originally copied from). Each intent is acted on individually,
     // synchronously, right after being read here.
-    const pendingIntents = await db('order_reconciliation_intents')
-      .orderBy('created_at', 'asc');
+    const intentLocatorResult = await systemQuery(
+      db.raw('SELECT * FROM public.list_reconciliation_intent_tenants()')
+    );
+    const intentLocators: Array<{
+      reconciliation_intent_id: string;
+      shop_id: number;
+    }> = intentLocatorResult.rows;
+
+    const pendingIntents: any[] = [];
+    for (const locator of intentLocators) {
+      const intent = await withTenant(locator.shop_id, (trx) =>
+        trx('order_reconciliation_intents')
+          .where({
+            reconciliation_intent_id: locator.reconciliation_intent_id,
+            shop_id: locator.shop_id,
+          })
+          .first()
+      );
+      if (intent) pendingIntents.push(intent);
+    }
 
     for (const intent of pendingIntents) {
       let observed:
@@ -442,11 +467,10 @@ for (const event of nextEvents) {
       });
     }
 
-    const remainingIntentsRow = await db('order_reconciliation_intents')
-      .count<{ count: string }>('reconciliation_intent_id as count')
-      .first();
-
-    const remainingIntents = Number(remainingIntentsRow?.count ?? 0);
+    const remainingIntentResult = await systemQuery(
+      db.raw('SELECT * FROM public.list_reconciliation_intent_tenants()')
+    );
+    const remainingIntents = remainingIntentResult.rows.length;
 
     if (remainingIntents > 0) {
       throw new Error(

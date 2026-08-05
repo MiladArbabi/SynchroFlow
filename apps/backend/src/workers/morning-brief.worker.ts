@@ -13,7 +13,7 @@
 //   Schedule is hardcoded to 5am UTC — adjust if timezone-aware
 //   delivery is required in future (OVR-04).
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import {
   computeMorningBrief,
   persistMorningBrief,
@@ -40,9 +40,10 @@ function msUntilNextRun(): number {
 
 async function runMorningBriefCycle(): Promise<void> {
   // Fetch all active shops with a subscription row
-  const shops = await db('shop_subscriptions')
-    .whereIn('status', ['active', 'trialing'])
-    .select('shop_id');
+  const tenantLookup = await systemQuery(
+    db.raw('SELECT shop_id FROM public.list_morning_brief_tenants()')
+  );
+  const shops: Array<{ shop_id: number }> = tenantLookup.rows;
 
   console.info('[morning-brief-worker] cycle started', { shopCount: shops.length });
 
@@ -51,12 +52,9 @@ async function runMorningBriefCycle(): Promise<void> {
 
   for (const { shop_id } of shops) {
     try {
-      await db.raw(`SET LOCAL "app.current_tenant" = '${shop_id}'`);
-
       const brief = await computeMorningBrief({ shopId: shop_id });
 
-      await db.transaction(async (trx) => {
-        await trx.raw(`SET LOCAL "app.current_tenant" = '${shop_id}'`);
+      await withTenant(shop_id, async (trx) => {
         await persistMorningBrief(shop_id, brief, trx);
       });
 

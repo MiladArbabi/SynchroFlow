@@ -12,7 +12,7 @@
 //   Deep links must stay in sync with frontend router.
 
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import {
   computeMorningBrief,
   persistMorningBrief,
@@ -25,14 +25,14 @@ export async function getMorningBrief(req: Request, res: Response) {
   const force = req.query.force === 'true';
 
   try {
-    await db.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-
     // --- Cache-first ---
     // Serve cached brief unless expired or force refresh requested.
     if (!force) {
-      const cached = await db('morning_brief_snapshots')
-        .where({ shop_id: shopId })
-        .first();
+      const cached = await withTenant(shopId, (trx) =>
+        trx('morning_brief_snapshots')
+          .where({ shop_id: shopId })
+          .first()
+      );
 
       if (cached && new Date(cached.next_refresh_at) > new Date()) {
         return res.status(200).json({
@@ -56,8 +56,7 @@ export async function getMorningBrief(req: Request, res: Response) {
     }
 
     // --- Persist to cache ---
-    await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    await withTenant(shopId, async (trx) => {
       await persistMorningBrief(shopId, brief, trx);
     });
 

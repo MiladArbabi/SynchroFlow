@@ -1,6 +1,10 @@
 // apps/backend/src/api/auth/auth.controller.ts
 import { Request, Response } from 'express';
-import db, { systemDb } from '@lasyncro/backend-core/db.js';
+import db, {
+  setTenantContext,
+  systemQuery,
+  withTenant,
+} from '@lasyncro/backend-core/db.js';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import jwt, { JwtPayload } from 'jsonwebtoken';
@@ -35,9 +39,9 @@ export const registerUser = async (req: Request, res: Response) => {
 
   try {
     // --- Check if user already exists ---
-    const existingUser = await db<User>('users')
-      .where({ email: email.toLowerCase() })
-      .first();
+    const existingUser = await systemQuery(
+      db<User>('users').where({ email: email.toLowerCase() }).first()
+    );
     if (existingUser) {
       return res.status(409).json({ error: 'Email already in use.' }); // 409 Conflict
     }
@@ -45,9 +49,9 @@ export const registerUser = async (req: Request, res: Response) => {
     // --- Hash the password ---
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    // AUTH-006: registration is pre-tenant — uses systemDb (sf_user, BYPASSRLS=true)
-    // sf_app cannot bypass RLS; SET LOCAL row_security = off has no effect for non-superusers.
-    const { user: newUser, shopId } = await systemDb.transaction<{ user: User; shopId: number }>(async trx => {
+    // Registration starts pre-tenant only long enough to create the tenant root.
+    // Every dependent write adopts that shop on the same restricted transaction.
+    const { user: newUser, shopId } = await db.transaction<{ user: User; shopId: number }>(async trx => {
     
     // 1️⃣ Create shop
     
@@ -56,6 +60,8 @@ export const registerUser = async (req: Request, res: Response) => {
         name: `${firstName || email}'s Shop`,
       })
       .returning('*');
+
+    await setTenantContext(trx, newShop.id);
 
     const rootLocationCode = `WH-${newShop.id}-ROOT`;
 
@@ -221,13 +227,14 @@ export const registerUser = async (req: Request, res: Response) => {
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
 
-    // AUTH-007: use systemDb — registration context has no tenant set yet
-    await systemDb('users')
-      .where({ id: newUser.id })
-      .update({
-        email_verification_token: verificationToken,
-        email_verification_expires_at: expiresAt,
-      });
+    await withTenant(shopId, (trx) =>
+      trx('users')
+        .where({ id: newUser.id, shop_id: shopId })
+        .update({
+          email_verification_token: verificationToken,
+          email_verification_expires_at: expiresAt,
+        })
+    );
 
     sendVerificationEmail({
       toEmail: newUser.email,
@@ -257,9 +264,9 @@ export const loginUser = async (req: Request, res: Response) => {
   }
 
   try {
-    const user = await db<User>('users')
-      .where({ email: email.toLowerCase() })
-      .first();
+    const user = await systemQuery(
+      db<User>('users').where({ email: email.toLowerCase() }).first()
+    );
 
     if (!user) {
       return res.status(401).json({ error: 'Invalid email or password.' });
@@ -289,9 +296,11 @@ export const loginUser = async (req: Request, res: Response) => {
     }
 
     // 🔥 HARD SESSION RESET (THE FIX)
-    await db('refresh_tokens')
-      .where({ user_id: user.id, revoked_at: null })
-      .update({ revoked_at: new Date() });
+    await withTenant(shopContext.shopId, (trx) =>
+      trx('refresh_tokens')
+        .where({ user_id: user.id, revoked_at: null })
+        .update({ revoked_at: new Date() })
+    );
 
     audit({
       level: 'INFO',
@@ -386,13 +395,15 @@ export const refreshToken = async (req: Request, res: Response) => {
 
     const incomingHash = hashRefreshToken(incomingRefreshToken);
  
-    const existingToken = await db('refresh_tokens')
-      .where({
-        token_hash: incomingHash,
-        session_id,
-        token_version,
-      })
-      .first();
+    const existingToken = await systemQuery(
+      db('refresh_tokens')
+        .where({
+          token_hash: incomingHash,
+          session_id,
+          token_version,
+        })
+        .first()
+    );
 
     // 🔒 No record → expired or invalid
     if (!existingToken) {
@@ -459,9 +470,11 @@ export const refreshToken = async (req: Request, res: Response) => {
       });
     };
 
-    const userExists = await db('users')
-      .where({ id: user_id })
-      .first();
+    const userExists = await withTenant(existingToken.shop_id, (trx) =>
+      trx('users')
+        .where({ id: user_id, shop_id: existingToken.shop_id })
+        .first()
+    );
 
     if (!userExists) {
       return res.status(401).json({
@@ -510,9 +523,11 @@ export const refreshToken = async (req: Request, res: Response) => {
     }
 
     // 2️⃣ Now revoke OLD token (must succeed)
-    const revoked = await db('refresh_tokens')
-      .where({ id: existingToken.id, revoked_at: null })
-      .update({ revoked_at: new Date() });
+    const revoked = await withTenant(existingToken.shop_id, (trx) =>
+      trx('refresh_tokens')
+        .where({ id: existingToken.id, revoked_at: null })
+        .update({ revoked_at: new Date() })
+    );
 
     if (revoked !== 1) {
       return res.status(403).json({
@@ -551,9 +566,11 @@ export const logoutUser = (req: Request, res: Response) => {
 
   if (refreshToken) {
     const hash = hashRefreshToken(refreshToken);
-    db('refresh_tokens')
-      .where({ token_hash: hash, revoked_at: null })
-      .update({ revoked_at: new Date() })
+    systemQuery(
+      db('refresh_tokens')
+        .where({ token_hash: hash, revoked_at: null })
+        .update({ revoked_at: new Date() })
+    )
       .catch(() => {});
   }
 
@@ -617,9 +634,9 @@ export const verifyEmail = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Missing verification token.' });
   }
 
-  const user = await systemDb<User>('users')
-    .where({ email_verification_token: token })
-    .first();
+  const user = await systemQuery(
+    db<User>('users').where({ email_verification_token: token }).first()
+  );
 
   if (!user) {
     return res.status(400).json({ error: 'Invalid or expired verification link.' });
@@ -633,13 +650,15 @@ export const verifyEmail = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Verification link has expired. Please request a new one.' });
   }
 
-  await db('users')
-    .where({ id: user.id })
-    .update({
-      email_verified_at: new Date(),
-      email_verification_token: null,
-      email_verification_expires_at: null,
-    });
+  await withTenant(user.shop_id, (trx) =>
+    trx('users')
+      .where({ id: user.id, shop_id: user.shop_id })
+      .update({
+        email_verified_at: new Date(),
+        email_verification_token: null,
+        email_verification_expires_at: null,
+      })
+  );
 
   console.info('[AUTH][VERIFY_EMAIL] verified', { userId: user.id });
 
@@ -661,7 +680,14 @@ export const resendVerificationEmail = async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized.' });
   }
 
-  const user = await systemDb<User>('users').where({ id: userId }).first();
+  const shopId = req.user?.shopId;
+  if (!shopId) {
+    return res.status(401).json({ error: 'Unauthorized.' });
+  }
+
+  const user = await withTenant(shopId, (trx) =>
+    trx<User>('users').where({ id: userId, shop_id: shopId }).first()
+  );
 
   if (!user) {
     return res.status(404).json({ error: 'User not found.' });
@@ -680,12 +706,14 @@ export const resendVerificationEmail = async (req: Request, res: Response) => {
   const verificationToken = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
-  await db('users')
-    .where({ id: userId })
-    .update({
-      email_verification_token: verificationToken,
-      email_verification_expires_at: expiresAt,
-    });
+  await withTenant(shopId, (trx) =>
+    trx('users')
+      .where({ id: userId, shop_id: shopId })
+      .update({
+        email_verification_token: verificationToken,
+        email_verification_expires_at: expiresAt,
+      })
+  );
 
   sendVerificationEmail({
     toEmail: user.email,
@@ -723,20 +751,22 @@ export const forgotPassword = async (req: Request, res: Response) => {
 
   // Always return 200 — never reveal whether email exists
   try {
-    const user = await systemDb<User>('users')
-      .where({ email: email.toLowerCase() })
-      .first();
+    const user = await systemQuery(
+      db<User>('users').where({ email: email.toLowerCase() }).first()
+    );
 
     if (user) {
       const resetToken = crypto.randomBytes(32).toString('hex');
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
-      await systemDb('users')
-        .where({ id: user.id })
-        .update({
-          password_reset_token: resetToken,
-          password_reset_expires_at: expiresAt,
-        });
+      await withTenant(user.shop_id, (trx) =>
+        trx('users')
+          .where({ id: user.id, shop_id: user.shop_id })
+          .update({
+            password_reset_token: resetToken,
+            password_reset_expires_at: expiresAt,
+          })
+      );
 
       sendPasswordResetEmail({
         toEmail: user.email,
@@ -774,9 +804,9 @@ export const resetPassword = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Password must be 8–72 characters.' });
   }
 
-  const user = await systemDb<User>('users')
-    .where({ password_reset_token: token })
-    .first();
+  const user = await systemQuery(
+    db<User>('users').where({ password_reset_token: token }).first()
+  );
 
   if (!user) {
     return res.status(400).json({ error: 'Invalid or expired reset link.' });
@@ -788,18 +818,20 @@ export const resetPassword = async (req: Request, res: Response) => {
 
   const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-  await systemDb('users')
-    .where({ id: user.id })
-    .update({
-      password_hash: passwordHash,
-      password_reset_token: null,
-      password_reset_expires_at: null,
-    });
+  await withTenant(user.shop_id, async (trx) => {
+    await trx('users')
+      .where({ id: user.id, shop_id: user.shop_id })
+      .update({
+        password_hash: passwordHash,
+        password_reset_token: null,
+        password_reset_expires_at: null,
+      });
 
-  // Revoke all active sessions on password reset — security best practice
-  await db('refresh_tokens')
-    .where({ user_id: user.id, revoked_at: null })
-    .update({ revoked_at: new Date() });
+    // Revoke all active sessions on password reset — security best practice
+    await trx('refresh_tokens')
+      .where({ user_id: user.id, revoked_at: null })
+      .update({ revoked_at: new Date() });
+  });
 
   console.info('[AUTH][RESET_PASSWORD] password reset successful', { userId: user.id });
 

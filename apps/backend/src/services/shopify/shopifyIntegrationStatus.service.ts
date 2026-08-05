@@ -1,4 +1,4 @@
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 
 /**
  * SHOPIFY INTEGRATION STATUS SERVICE
@@ -13,12 +13,14 @@ import db from '@lasyncro/backend-core/db.js';
 
 export const updateIntegrationStatus = async ({
   integrationId,
+  shopId,
   status,
   progressCurrent,
   progressTotal,
   error,
 }: {
   integrationId: number;
+  shopId: number;
   status: string;
   progressCurrent?: number;
   progressTotal?: number;
@@ -43,9 +45,11 @@ export const updateIntegrationStatus = async ({
     updatePayload.sync_progress_total = progressTotal;
     }
 
-    await db('integrations')
-    .where({ id: integrationId })
-    .update(updatePayload);
+    await withTenant(shopId, (trx) =>
+      trx('integrations')
+        .where({ id: integrationId, shop_id: shopId })
+        .update(updatePayload)
+    );
 
   /**
      * LOG ACTUAL WRITTEN STATE
@@ -54,6 +58,7 @@ export const updateIntegrationStatus = async ({
      */
     console.info('[SHOPIFY_INTEGRATION_STATUS_UPDATED]', {
     integrationId,
+    shopId,
     status,
     ...(progressCurrent !== undefined && { progressCurrent }),
     ...(progressTotal !== undefined && { progressTotal }),

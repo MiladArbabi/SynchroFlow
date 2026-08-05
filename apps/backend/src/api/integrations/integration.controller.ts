@@ -18,7 +18,12 @@ import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { encrypt } from '../../security/encryption.service.js';
 
-import db, { systemDb } from '@lasyncro/backend-core/db.js';
+import db, {
+  setTenantContext,
+  systemQuery,
+  systemTransaction,
+  withTenant,
+} from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
 import { issueAuthTokens } from '../../api/auth/token.service.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
@@ -108,11 +113,16 @@ export const initiateOAuth = async (req: Request, res: Response) => {
   // check.
   
   if (platform === 'shopify') {
-    const ownedInstallation = await db('shopify_app_installations')
-      .join('shop_memberships', 'shop_memberships.shop_id', 'shopify_app_installations.shop_id')
-      .where('shop_memberships.user_id', userId)
-      .andWhere('shopify_app_installations.shop_domain', shopDomain)
-      .first('shopify_app_installations.shop_id');
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const ownedInstallation = await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations')
+        .join('shop_memberships', 'shop_memberships.shop_id', 'shopify_app_installations.shop_id')
+        .where('shop_memberships.user_id', userId)
+        .andWhere('shopify_app_installations.shop_domain', shopDomain)
+        .first('shopify_app_installations.shop_id')
+    );
 
     if (!ownedInstallation) {
       console.warn('[OAUTH_RECONNECT_DENIED]', { userId, shopDomain });
@@ -126,20 +136,24 @@ export const initiateOAuth = async (req: Request, res: Response) => {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   // --- Opportunistic cleanup of expired OAuth states (defensive) ---
-  await db('integration_oauth_states')
-    .where('expires_at', '<', new Date())
-    .andWhere({ user_id: userId, platform })
-    .delete();
+  await systemQuery(
+    db('integration_oauth_states')
+      .where('expires_at', '<', new Date())
+      .andWhere({ user_id: userId, platform })
+      .delete()
+  );
 
   // --- Persist OAuth intent (stateless) ---
-  await db('integration_oauth_states').insert({
-    user_id: userId,
-    platform,
-    state,
-    shop_domain: shopDomain,
-    expires_at: expiresAt,
-    install_source: platform === 'shopify' ? 'reconnect' : null,
-  });
+  await systemQuery(
+    db('integration_oauth_states').insert({
+      user_id: userId,
+      platform,
+      state,
+      shop_domain: shopDomain,
+      expires_at: expiresAt,
+      install_source: platform === 'shopify' ? 'reconnect' : null,
+    })
+  );
 
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/${platform}`;
 
@@ -247,7 +261,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
     };
 
   try {
-    oauthContext = await db.transaction(async trx => {
+    oauthContext = await systemTransaction(async trx => {
       const row = await trx('integration_oauth_states')
         .where({
           platform,
@@ -390,8 +404,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
 
   // --- Step 2.2.2.b: Persist integration atomically ---
   try {
-    const result = await db.transaction(async trx => {
-      const { shopId } = await requireShopContextForUser(oauthContext.userId);
+    const { shopId } = await requireShopContextForUser(oauthContext.userId);
+    const result = await withTenant(shopId, async trx => {
 
       // Persist shop base currency captured from Shopify at OAuth time.
       await trx('shops')
@@ -460,19 +474,25 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
      * callback. Failure here is non-fatal; OAuth has already succeeded.
      */
     try {
-      const currentUser = await db('users')
-        .where({ id: oauthContext.userId })
-        .first('email');
+      const currentUser = await withTenant(result.shopId, (trx) =>
+        trx('users')
+          .where({ id: oauthContext.userId, shop_id: result.shopId })
+          .first('email')
+      );
       const isGhostEmail = currentUser?.email?.startsWith('shopify-install+') && currentUser.email.endsWith('@lasyncro.internal');
       if (isGhostEmail && shopContactEmail) {
-        await db('users')
-          .where({ id: oauthContext.userId })
-          .update({ email: shopContactEmail, updated_at: new Date() });
+        await withTenant(result.shopId, (trx) =>
+          trx('users')
+            .where({ id: oauthContext.userId, shop_id: result.shopId })
+            .update({ email: shopContactEmail, updated_at: new Date() })
+        );
       }
       if (isGhostEmail && shopRealName) {
-        await db('shops')
-          .where({ id: result.shopId })
-          .update({ name: shopRealName });
+        await withTenant(result.shopId, (trx) =>
+          trx('shops')
+            .where({ id: result.shopId })
+            .update({ name: shopRealName })
+        );
       }
     } catch (err) {
       console.warn('[OAuth] Ghost identity backfill failed (non-fatal)', { shopId: result.shopId, err });
@@ -510,7 +530,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
      * Sync must originate from immutable domain event.
      * Projection or downstream worker is responsible for execution.
      */
-    await db.transaction(async trx => {
+    await withTenant(result.shopId, async trx => {
       /**
        * TENANT CONTEXT (REQUIRED)
        * -------------------------
@@ -518,7 +538,6 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
        * trigger can pass the outbox RLS policy check (subquery scoped to current_tenant).
        * Without this, the trigger fires as sf_app with tenant=0 → RLS violation.
        */
-      await trx.raw(`SET LOCAL app.current_tenant = '${result.shopId}'`);
       const externalEventId = `internal:integration/sync_requested:${result.integration.id}:${Date.now()}`;
       const traceId = `sync:${result.integration.id}:${Date.now()}`;
 
@@ -613,9 +632,11 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       oauthContext.installSource === 'app_store' ||
       oauthContext.installSource === 'reconnect'
     ) {
-      await db('shop_subscriptions')
-        .where({ shop_id: result.shopId })
-        .update({ billing_provider: 'shopify', updated_at: new Date() });
+      await withTenant(result.shopId, (trx) =>
+        trx('shop_subscriptions')
+          .where({ shop_id: result.shopId })
+          .update({ billing_provider: 'shopify', updated_at: new Date() })
+      );
     }
 
     const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
@@ -639,7 +660,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  *   1. Validate Shopify HMAC + timestamp (replay protection)
  *   2. Resolve or create shop + owner user
  *      - Reinstall: find existing owner via shopify_app_installations
- *      - New install: create ghost shop + user via systemDb (billing_provider: 'shopify')
+ *      - New install: create ghost shop + user, then set tenant context
  *   3. Seed integration_oauth_states with install_source: 'app_store'
  *   4. Redirect directly to Shopify OAuth (no frontend step)
  *
@@ -711,15 +732,21 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
   try {
     // Check for any existing installation (reinstall case — with or without uninstalled_at)
-    const existing = await db('shopify_app_installations')
-      .where({ shop_domain: shopDomain })
-      .first('shop_id');
+    const reinstallLookup = await systemQuery(
+      db.raw(
+        'SELECT shop_id FROM public.resolve_shopify_reinstall_shop(?)',
+        [shopDomain]
+      )
+    );
+    const existing = reinstallLookup.rows?.[0];
 
     if (existing) {
       // Reinstall — reuse existing owner, re-stamp billing_provider
-      const membership = await db('shop_memberships')
-        .where({ shop_id: existing.shop_id, role: 'owner' })
-        .first('user_id');
+      const membership = await withTenant(existing.shop_id, (trx) =>
+        trx('shop_memberships')
+          .where({ shop_id: existing.shop_id, role: 'owner' })
+          .first('user_id')
+      );
 
       if (!membership) {
         console.error('[shopify-install] No owner found for reinstall', { shopDomain, shopId: existing.shop_id });
@@ -734,11 +761,14 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         userId,
       });
     } else {
-      // New install — create ghost shop + user atomically via systemDb (bypasses RLS)
-      const result = await systemDb.transaction(async (trx) => {
+      // New install — create the tenant root, then adopt it on the same
+      // restricted transaction before any tenant-owned write.
+      const result = await db.transaction(async (trx) => {
         const [newShop] = await trx('shops')
          .insert({ name: shopDomain })
          .returning('*');
+
+       await setTenantContext(trx, newShop.id);
 
        const rootLocationCode = `WH-${newShop.id}-ROOT`;
 
@@ -861,7 +891,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           shopDomain,
         });
 
-        return { userId: ghostUser.id };
+        return { userId: ghostUser.id, shopId: newShop.id };
       });
 
       userId = result.userId;
@@ -876,19 +906,23 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
   try {
-    await db('integration_oauth_states')
-      .where('expires_at', '<', new Date())
-      .andWhere({ user_id: userId, platform: 'shopify' })
-      .delete();
+    await systemQuery(
+      db('integration_oauth_states')
+        .where('expires_at', '<', new Date())
+        .andWhere({ user_id: userId, platform: 'shopify' })
+        .delete()
+    );
 
-    await db('integration_oauth_states').insert({
-      user_id: userId,
-      platform: 'shopify',
-      state,
-      shop_domain: shopDomain,
-      install_source: 'app_store',
-      expires_at: expiresAt,
-    });
+    await systemQuery(
+      db('integration_oauth_states').insert({
+        user_id: userId,
+        platform: 'shopify',
+        state,
+        shop_domain: shopDomain,
+        install_source: 'app_store',
+        expires_at: expiresAt,
+      })
+    );
   } catch (err) {
     console.error('[shopify-install] Failed to seed OAuth state', { shopDomain, userId, err });
     return res.status(500).send('Installation error — please try again');
@@ -951,16 +985,18 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 
     // Find the primary Shopify integration for this shop
     // In the future, we might support multiple, but for MVP, we take the first.
-    const integration = await db('integrations')
-      .where({ shop_id: shopId, platform: 'shopify' })
-      .first(
-        'id',
-        'sync_status',
-        'sync_progress_current',
-        'sync_progress_total',
-        'sync_last_error',
-        'updated_at'
-      );
+    const integration = await withTenant(shopId, (trx) =>
+      trx('integrations')
+        .where({ shop_id: shopId, platform: 'shopify' })
+        .first(
+          'id',
+          'sync_status',
+          'sync_progress_current',
+          'sync_progress_total',
+          'sync_last_error',
+          'updated_at'
+        )
+    );
 
     if (!integration) {
       // This user has no integration, which is fine, but not what this endpoint is for.
@@ -983,28 +1019,29 @@ export const getSyncStatus = async (req: Request, res: Response) => {
 
     // Fetch real entity counts for sync animation counters.
     // These are cheap COUNT queries — no joins, PK-indexed by shop_id.
-    const [orderCount, variantCount, customerCount, productCount, recentProducts] = await Promise.all([
-      db('orders').where({ shop_id: shopId }).count('* as count').first(),
-      db('variants').where({ shop_id: shopId }).count('* as count').first(),
-      db('customers').where({ shop_id: shopId }).count('* as count').first(),
-      db('products').where({ shop_id: shopId }).count('* as count').first(),
-      // DISTINCT ON: deduplicate products updated by both products/create and products/update
-      db('products')
-        .where({ shop_id: shopId })
-        .select('title', 'status', 'updated_at')
-        .orderBy('updated_at', 'desc')
-        .limit(10)
-        .then((rows) => {
-          const seen = new Set<string>();
-          return rows
-            .filter((r) => {
-              if (seen.has(r.title)) return false;
-              seen.add(r.title);
-              return true;
-            })
-            .slice(0, 5);
-        }),
-    ]);
+    const [orderCount, variantCount, customerCount, productCount, recentProducts] =
+      await withTenant(shopId, (trx) => Promise.all([
+        trx('orders').where({ shop_id: shopId }).count('* as count').first(),
+        trx('variants').where({ shop_id: shopId }).count('* as count').first(),
+        trx('customers').where({ shop_id: shopId }).count('* as count').first(),
+        trx('products').where({ shop_id: shopId }).count('* as count').first(),
+        // Deduplicate products updated by both products/create and products/update.
+        trx('products')
+          .where({ shop_id: shopId })
+          .select('title', 'status', 'updated_at')
+          .orderBy('updated_at', 'desc')
+          .limit(10)
+          .then((rows) => {
+            const seen = new Set<string>();
+            return rows
+              .filter((r) => {
+                if (seen.has(r.title)) return false;
+                seen.add(r.title);
+                return true;
+              })
+              .slice(0, 5);
+          }),
+      ]));
     res.json({
       integrationId: integration.id,
       status: integration.sync_status,
@@ -1040,7 +1077,7 @@ export const preFlightCheck = async (req: Request, res: Response) => {
 
   // 1. Check DB Connection
   try {
-    await db.raw('SELECT 1');
+    await systemQuery(db.raw('SELECT 1'));
     dbReady = true;
   } catch (error) {
     console.error('[preFlightCheck] DB connection failed:', (error as Error).message);
@@ -1087,9 +1124,11 @@ export const triggerManualSync = async (req: Request, res: Response) => {
     }
 
     // Verify the integration belongs to the user's shop
-    const integration = await db('integrations')
-      .where({ id: integrationId, shop_id: shopId })
-      .first();
+    const integration = await withTenant(shopId, (trx) =>
+      trx('integrations')
+        .where({ id: integrationId, shop_id: shopId })
+        .first()
+    );
 
     if (!integration) {
       return res.status(404).json({ error: 'Integration not found.' });
@@ -1101,7 +1140,7 @@ export const triggerManualSync = async (req: Request, res: Response) => {
      * Direct queue publishing is forbidden.
      * Manual sync must originate from immutable domain event.
      */
-    await db.transaction(async trx => {
+    await withTenant(shopId, async trx => {
       const externalEventId = `internal:integration/manual_sync_requested:${integrationId}:${Date.now()}`;
 
       const [event] = await trx('domain_events')
@@ -1162,21 +1201,24 @@ export const requestSyncNotification = async (req: Request, res: Response) => {
     const { notifyEmail } = req.body as { notifyEmail?: string };
     const customEmail = notifyEmail?.trim() || null;
 
-    const user = await db('users')
-      .where({ id: userId })
-      .first('email', 'first_name');
+    const { shopId } = await requireShopContextForUser(userId);
+    const user = await withTenant(shopId, (trx) =>
+      trx('users')
+        .where({ id: userId, shop_id: shopId })
+        .first('email', 'first_name')
+    );
 
     if (!user?.email) {
       return res.status(400).json({ error: 'User email not found' });
     }
 
-    const { shopId } = await requireShopContextForUser(userId);
-
     if (customEmail) {
       // Store for FT0 completion handler
-      await db('integrations')
-        .where({ shop_id: shopId })
-        .update({ sync_notify_email: customEmail });
+      await withTenant(shopId, (trx) =>
+        trx('integrations')
+          .where({ shop_id: shopId })
+          .update({ sync_notify_email: customEmail })
+      );
 
       // Send acknowledgement to custom email immediately
       const { sendSyncAcknowledgementEmail } = await import(

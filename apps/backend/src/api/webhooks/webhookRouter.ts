@@ -15,7 +15,7 @@
 // - Payload parsing
 //
 import type { Knex } from 'knex';
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import { WebhookEnvelope } from './types.js';
 import { WebhookLedgerService } from '@lasyncro/backend-core/services/webhook-ledger.service.js';
 import { getWebhookDispatchMode } from './dispatchMode.js';
@@ -98,9 +98,8 @@ export class WebhookRouter {
        * - webhook ledger ↔ domain_events joinability
        * - full ingestion traceability
        *
-       * shopify_app_installations is an OAuth-path table with a split
-       * RLS policy (see RLS_blueprint.md §4b) — SELECT is permitted
-       * pre-tenant, so this bare db() read is safe as-is.
+       * Pre-tenant resolution returns only shop_id through the same narrow
+       * SECURITY DEFINER function used by the App Store reinstall path.
        */
       let shopId: number | null = null;
     /**
@@ -118,10 +117,13 @@ export class WebhookRouter {
         // was even built — no shopDomain concept exists for this provider).
         shopId = envelope.shopId;
       } else if (envelope.shopDomain) {
-        const installation = await db('shopify_app_installations')
-          .where({ shop_domain: envelope.shopDomain })
-          .select('shop_id')
-          .first();
+        const lookup = await systemQuery(
+          db.raw(
+            'SELECT shop_id FROM public.resolve_shopify_reinstall_shop(?)',
+            [envelope.shopDomain]
+          )
+        );
+        const installation = lookup.rows[0];
         if (installation) {
           shopId = installation.shop_id;
         } else {

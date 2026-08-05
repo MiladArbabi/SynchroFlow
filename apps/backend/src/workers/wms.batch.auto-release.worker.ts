@@ -1,5 +1,5 @@
 // apps/backend/src/workers/wms.batch.auto-release.worker.ts
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { releaseBatch } from '../services/wms/pickBatch.service.js';
 
 /**
@@ -56,9 +56,13 @@ export function stopWmsBatchAutoReleaseWorker() {
 
 async function runAutoReleaseCycle(): Promise<void> {
   // 1. Load all shops with auto-release enabled
-  const shops = await db('shop_wms_settings')
-    .where({ auto_release_enabled: true })
-    .select('shop_id', 'auto_release_interval_minutes');
+  const result = await systemQuery(
+    db.raw('SELECT * FROM public.list_wms_auto_release_tenants()')
+  );
+  const shops: Array<{
+    shop_id: number;
+    auto_release_interval_minutes: number;
+  }> = result.rows;
 
   if (shops.length === 0) return;
 
@@ -80,11 +84,13 @@ async function processShop(
   intervalMinutes: number
 ): Promise<void> {
   // 2. Check last released batch for this shop — enforce interval
-  const lastBatch = await db('pick_batches')
-    .where({ shop_id: shopId, release_trigger: 'auto' })
-    .orderBy('released_at', 'desc')
-    .select('released_at')
-    .first();
+  const lastBatch = await withTenant(shopId, (trx) =>
+    trx('pick_batches')
+      .where({ shop_id: shopId, release_trigger: 'auto' })
+      .orderBy('released_at', 'desc')
+      .select('released_at')
+      .first()
+  );
 
   if (lastBatch) {
     const minutesSinceLastRelease =
@@ -96,10 +102,9 @@ async function processShop(
   }
 
   // 3. Release batch within tenant-scoped transaction
-  const result = await db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
-    return releaseBatch(trx, shopId, 'auto', null);
-  });
+  const result = await withTenant(shopId, (trx) =>
+    releaseBatch(trx, shopId, 'auto', null)
+  );
 
   if (result) {
     console.info('[WMS_AUTO_RELEASE_BATCH_RELEASED]', {

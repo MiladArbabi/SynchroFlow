@@ -214,16 +214,15 @@ USING (
 
 ## 4b. OAuth-Path Tables
 
-These tables are accessed during the Shopify OAuth flow **after** a shop exists but **before** a stable tenant context is guaranteed. They use the same split-policy pattern as auth-path tables.
+OAuth is not an RLS bypass. `shopify_app_installations`, `integrations`, and
+`domain_events` require a positive, matching `app.current_tenant` for reads and
+writes. Pre-tenant callbacks may use narrowly scoped `SECURITY DEFINER`
+functions that return tenant identifiers only; credential and payload access
+then runs inside `withTenant()`.
 
-| Table | Why Pre-Tenant Access Needed |
-|---|---------|
-| `shopify_app_installations` | Written during OAuth callback before tenant context is set |
-| `integrations` | Written during OAuth token exchange before tenant context is set |
-| `domain_events` | Read/written during OAuth-triggered sync bootstrap |
-| `integration_oauth_states` | CSRF state token read during OAuth callback (no shop context yet) |
-| `shop_module_entitlements` | Read during post-OAuth entitlement grant before tenant context |
-**Verification:** All five tables confirmed to have split SELECT + ALL policies via `current_setting('\''app.current_tenant'\'', true)` in their migrations.\
+`integration_oauth_states` is a deliberate pre-tenant CSRF-token boundary and
+must be marked with the explicit application `systemQuery`/`systemTransaction`
+exception. Entitlement reads and writes occur only after tenant resolution.
 
 ---
 
@@ -231,7 +230,11 @@ These tables are accessed during the Shopify OAuth flow **after** a shop exists 
 
 ### Every New Table Must Have RLS
 
-The migration runner runs `scripts/check_rls.sh` before applying migrations. It fails if a `createTable` migration does not include `ENABLE ROW LEVEL SECURITY`. This is enforced at CI level — migrations without RLS will not run.
+The migration runner runs `scripts/check_rls.sh` before applying migrations and
+then interrogates the migrated database. The post-migration release gate
+requires `sf_app` to be non-superuser/non-bypass, requires every RLS table to be
+forced, rejects public `shop_id` tables without RLS, rejects RLS tables without
+policies, and proves an invalid tenant sees no rows as `sf_app`.
 
 ### Standard Migration Template
 

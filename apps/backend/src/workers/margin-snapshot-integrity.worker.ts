@@ -1,6 +1,6 @@
 // apps/backend/src/workers/margin-snapshot-integrity.worker.ts
 
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 
 /**
  * MARGIN SNAPSHOT INTEGRITY WORKER (FIN-02 hardening — 2026-06-23)
@@ -37,28 +37,47 @@ const POLL_INTERVAL_MS = 300_000; // 5 minutes
  * so any mismatch is a genuine integrity gap, not a rounding artefact.
  */
 async function checkMarginSnapshotIntegrity(): Promise<void> {
-  const drift = await systemQuery(
-    db.raw(`
-      SELECT oms.shop_id,
-             oms.lasyncro_order_id,
-             ROUND(oms.gross_revenue::numeric, 2)        AS snapshot_revenue,
-             ROUND(n.live::numeric, 2)                   AS live_revenue
-      FROM order_margin_snapshot oms
-      JOIN (
-        SELECT lasyncro_order_id, SUM(net_revenue) AS live
-        FROM order_revenue_units_net
-        GROUP BY lasyncro_order_id
-      ) n ON n.lasyncro_order_id = oms.lasyncro_order_id
-      WHERE ROUND(oms.gross_revenue::numeric, 2) <> ROUND(n.live::numeric, 2)
-    `)
+  const locatorResult = await systemQuery(
+    db.raw('SELECT * FROM public.list_margin_drift_tenants()')
   );
-
-  const rows = (drift?.rows ?? []) as Array<{
+  const locators = locatorResult.rows as Array<{
+    shop_id: number;
+    lasyncro_order_id: string;
+  }>;
+  const rows: Array<{
     shop_id: number;
     lasyncro_order_id: string;
     snapshot_revenue: string;
     live_revenue: string;
-  }>;
+  }> = [];
+
+  for (const locator of locators) {
+    const row = await withTenant(locator.shop_id, (trx) =>
+      trx('order_margin_snapshot AS snapshot')
+        .join(
+          'order_revenue_units_net AS net',
+          'net.lasyncro_order_id',
+          'snapshot.lasyncro_order_id'
+        )
+        .where({
+          'snapshot.shop_id': locator.shop_id,
+          'snapshot.lasyncro_order_id': locator.lasyncro_order_id,
+        })
+        .groupBy(
+          'snapshot.shop_id',
+          'snapshot.lasyncro_order_id',
+          'snapshot.gross_revenue'
+        )
+        .select(
+          'snapshot.shop_id',
+          'snapshot.lasyncro_order_id',
+          trx.raw('ROUND(snapshot.gross_revenue::numeric, 2) AS snapshot_revenue'),
+          trx.raw('ROUND(SUM(net.net_revenue)::numeric, 2) AS live_revenue')
+        )
+        .first()
+    );
+    if (row) rows.push(row);
+  }
 
   if (rows.length === 0) {
     console.info('[MARGIN_SNAPSHOT_INTEGRITY_OK]', { drifted_orders: 0 });

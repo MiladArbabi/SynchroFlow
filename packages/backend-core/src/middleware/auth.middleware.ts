@@ -1,6 +1,7 @@
 // apps/backend/src/middleware/auth.middleware.ts
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { runWithTenantContext } from '../tenant-context.js';
 
 /**
  * Canonical Auth Context extracted from JWT.
@@ -79,6 +80,13 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
       tier: payload.tier ?? 'starter',
     };
 
-    return next();
+    if (!Number.isInteger(req.user.shopId) || Number(req.user.shopId) <= 0) {
+      return res.status(401).json({
+        error: 'INVALID_TOKEN_TENANT',
+        action: 'LOGOUT_REQUIRED',
+      });
+    }
+
+    return runWithTenantContext(Number(req.user.shopId), next);
   });
 };

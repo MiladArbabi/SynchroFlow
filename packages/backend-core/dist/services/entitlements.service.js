@@ -50,7 +50,7 @@
  * If you are adding plans, lifecycle inference, billing shortcuts,
  * or deletes — you are breaking the system. Stop.
  */
-import db from '../db.js';
+import { withTenant } from '../db.js';
 import { requireShopIdForUser } from './shop-resolution.service.js';
 export class EntitlementsService {
     /**
@@ -69,11 +69,11 @@ export class EntitlementsService {
             return null;
         }
         // 2) Load all entitlements for this shop
-        const rows = await db('shop_module_entitlements')
+        const rows = await withTenant(shopId, (trx) => trx('shop_module_entitlements')
             .where({ shop_id: shopId })
-            .andWhere('valid_from', '<=', db.fn.now())
-            .andWhere((qb) => qb.whereNull('valid_until').orWhere('valid_until', '>', db.fn.now()))
-            .select('module_key', 'flag_key');
+            .andWhere('valid_from', '<=', trx.fn.now())
+            .andWhere((qb) => qb.whereNull('valid_until').orWhere('valid_until', '>', trx.fn.now()))
+            .select('module_key', 'flag_key'));
         if (!rows || rows.length === 0) {
             return {
                 shopId,
@@ -136,7 +136,7 @@ export class EntitlementsService {
                 source: 'free_tier_default',
             },
         ];
-        await EntitlementsService.applyEntitlementRows(db, baseRows);
+        await withTenant(shopId, (trx) => EntitlementsService.applyEntitlementRows(trx, baseRows));
     }
     /**
    * Grant the FT2-Free baseline entitlements for a given shop.
@@ -158,7 +158,7 @@ export class EntitlementsService {
             { shop_id: shopId, module_key: 'customers', flag_key: null, source: 'ft2_free_baseline' },
             { shop_id: shopId, module_key: 'finances', flag_key: null, source: 'ft2_free_baseline' },
         ];
-        await EntitlementsService.applyEntitlementRows(db, rows);
+        await withTenant(shopId, (trx) => EntitlementsService.applyEntitlementRows(trx, rows));
     }
     /**
      * Apply entitlement rows from a trusted system service.

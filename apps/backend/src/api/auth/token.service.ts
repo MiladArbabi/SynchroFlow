@@ -25,7 +25,7 @@
 
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { resolveTierForShop } from '@lasyncro/backend-core/services/shop-resolution.service.js';
 
 console.log('[AUTH][ENV_CHECK]', {
@@ -80,9 +80,11 @@ export async function persistRefreshToken(record: {
   token_hash: string;
   expires_at: Date;
 }): Promise<{ id: number }[]> {
-  return db('refresh_tokens')
-    .insert(record)
-    .returning('id');
+  return withTenant(record.shop_id, (trx) =>
+    trx('refresh_tokens')
+      .insert(record)
+      .returning('id')
+  );
 }
 
 /**
@@ -157,9 +159,11 @@ export async function issueAuthTokens(
   // 🔒 User existence invariant
   // ─────────────────────────────────────────────────────────────
 
-  const userExists = await db('users')
-    .where({ id: userId })
-    .first('id', 'email', 'first_name');
+  const userExists = await withTenant(shopId, (trx) =>
+    trx('users')
+      .where({ id: userId, shop_id: shopId })
+      .first('id', 'email', 'first_name')
+  );
 
   if (!userExists) {
     throw new Error('AUTH_INVARIANT_VIOLATION: user does not exist');

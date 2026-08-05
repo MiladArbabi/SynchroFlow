@@ -1,6 +1,6 @@
 # Fly.io Production Playbook
 
-**Last updated:** June 16, 2026
+**Last updated:** August 5, 2026
 
 ---
 
@@ -25,7 +25,8 @@ fly secrets list --app synchroflow
 
 | Secret | Notes |
 |---|---|
-| `DATABASE_URL` | Fly internal Postgres URL |
+| `DATABASE_URL` | Privileged Fly Postgres URL; release-command migrations only |
+| `APP_DATABASE_URL` | Restricted Fly Postgres URL using `sf_app`; API and worker runtime only |
 | `ENCRYPTION_KEY` | Min 32 chars. Must match `.env` exactly — use `wc -c` to verify |
 | `SHOPIFY_API_KEY` | Public app client ID |
 | `SHOPIFY_API_SECRET` | Public app client secret |
@@ -63,6 +64,11 @@ fly secrets set KEY=value --app synchroflow
 fly deploy --app synchroflow
 ```
 
+The database credential split is mandatory. Rotate `sf_app`, set
+`APP_DATABASE_URL` to that restricted connection, and leave `DATABASE_URL`
+available only to the release command. API and worker startup abort unless the
+runtime identity is exactly `sf_app`, `NOSUPERUSER`, and `NOBYPASSRLS`.
+
 ### Force Fresh Build (bypass cache)
 ```bash
 fly deploy --app synchroflow --no-cache
@@ -78,6 +84,11 @@ The `fly.toml` `release_command` runs DB migrations before the new machine start
 > **Checksum drift guard (added 2026-07-28, CHECKSUM-GUARD-01):** this runner hashes every migration file and compares it against `migration_checksums`. If a file was amended after it ran, the release phase fails with `[MIGRATION_DRIFT_DETECTED]` instead of silently skipping the change (see PROD-ZONE1 for what happens without this guard). Previously `release_command` ran a bare `migrate-prod.mjs` with no drift detection — that file has been deleted.
 >
 > `migration_checksums` was empty in prod before this change. The **first** deploy after this switch establishes baselines for all ~127 existing migrations as-is — it does **not** retroactively detect drift that happened before this guard existed. A handful of other migrations are still suspected (not confirmed) to have drifted the same way `0048`/`0049` did; this guard only protects going forward from here.
+
+After migrations, the same runner executes the non-bypassable RLS release gate.
+It fails the release if `sf_app` is privileged, any RLS table is not forced,
+any public `shop_id` table lacks RLS, any RLS table lacks a policy, or an
+invalid-tenant probe can see rows as `sf_app`.
 
 ---
 
@@ -102,6 +113,7 @@ The `fly.toml` `release_command` runs DB migrations before the new machine start
 The correct boot order in `server.ts`:
 
 ```
+assertRuntimeDatabaseIdentity()
 initRedisClient()
 initSpecterStore()
 runSchemaGuard()
@@ -175,8 +187,8 @@ fly proxy 5434:5432 --app synchroflow-db &
 # Connect
 psql "postgresql://synchroflow:<password>@localhost:5434/synchroflow"
 
-# Get password
-fly ssh console --app synchroflow -C "printenv DATABASE_URL"
+# Inspect migration and runtime connection identities separately
+fly ssh console --app synchroflow -C "node -e \"for (const k of ['DATABASE_URL','APP_DATABASE_URL']) { const u = new URL(process.env[k]); console.log(k, u.username, u.hostname, u.pathname); }\""
 ```
 
 > Note: `domain_events` is immutable — DELETE will fail. Work around by deleting dependent tables first.

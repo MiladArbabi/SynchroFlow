@@ -1,6 +1,6 @@
 // apps/backend/src/sync.worker.ts (add integration validation)
 import { getQueueChannel } from './queue.js';
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import { decrypt } from './security/encryption.service.js';
 import { performSmartSync } from './services/shopify-sync-orchestrator.service.js';
 
@@ -51,6 +51,7 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
   const content = msg.content.toString();
   let integrationId: number | undefined;
+  let shopId: number | undefined;
 
   try {
     // Parse JSON first and handle parsing errors
@@ -72,16 +73,27 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
     console.log(`[sync.worker] Received sync job for integration ID: ${integrationId}`);
 
-    // Fetch the integration to get the token
-    const integration = await db('integrations')
-      .where({ id: integrationId })
-      .first<{ 
-          id: number; 
-          shop_id: number; 
-          platform: string; 
-          platform_shop_name: string;
-          access_token_encrypted: string 
-        }>();
+    // Resolve only the tenant identifier before opening a tenant-scoped read.
+    const tenantLookup = await systemQuery(
+      db.raw('SELECT shop_id FROM public.resolve_integration_tenant(?)', [
+        integrationId,
+      ])
+    );
+    shopId = tenantLookup.rows?.[0]?.shop_id;
+
+    const integration = shopId
+      ? await withTenant(shopId, (trx) =>
+          trx('integrations')
+            .where({ id: integrationId, shop_id: shopId })
+            .first<{
+              id: number;
+              shop_id: number;
+              platform: string;
+              platform_shop_name: string;
+              access_token_encrypted: string;
+            }>()
+        )
+      : undefined;
 
     // Validate integration data
     const validation = validateIntegration(integration);
@@ -89,10 +101,14 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
       console.error(`[sync.worker] Invalid integration data: ${validation.error}`);
       
       // Update integration status to reflect the error
-      await db('integrations').where({ id: integrationId }).update({
-        sync_status: 'FAILED',
-        sync_last_error: validation.error,
-      });
+      if (shopId) {
+        await withTenant(shopId, (trx) =>
+          trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
+            sync_status: 'FAILED',
+            sync_last_error: validation.error,
+          })
+        );
+      }
       
       syncChannel.nack(msg as any, false, false);
       return;
@@ -111,15 +127,12 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
     // --- The sync logic ---
     if (integration!.platform === 'shopify') {
-      // Set tenant context for all RLS-enforced writes during sync
-      await db.raw(`SET app.current_tenant = '${integration!.shop_id}'`);
        await performSmartSync(
          accessToken, 
          integration!.platform_shop_name, 
          integration!.shop_id,
          integration!.id
        );
-      await db.raw(`SET app.current_tenant = '0'`);
      } else {
        console.warn(`[sync.worker] No sync logic implemented for platform: ${integration!.platform}`);
      }
@@ -130,11 +143,13 @@ export async function processSyncJob(msg: { content: Buffer } | null) {
 
   } catch (error) {
     // --- START: Pizza Dropped Reporting ---
-    if (integrationId) {
-      await db('integrations').where({ id: integrationId }).update({
-        sync_status: 'FAILED',
-        sync_last_error: (error as Error).message || 'An unknown sync error occurred.',
-      });
+    if (integrationId && shopId) {
+      await withTenant(shopId, (trx) =>
+        trx('integrations').where({ id: integrationId, shop_id: shopId }).update({
+          sync_status: 'FAILED',
+          sync_last_error: (error as Error).message || 'An unknown sync error occurred.',
+        })
+      );
     }
     // --- END: Pizza Dropped Reporting ---
 

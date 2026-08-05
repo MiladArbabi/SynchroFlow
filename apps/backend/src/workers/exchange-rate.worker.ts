@@ -18,7 +18,7 @@
  * Provider: https://open.er-api.com/v6/latest/USD (free tier, ~1500 req/month)
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import axios from 'axios';
 
 const SUPPORTED_TARGET_CURRENCIES = [
@@ -36,10 +36,12 @@ async function fetchAndUpsertRates(): Promise<void> {
   const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 
   // Skip if today's rates already exist
-  const existing = await db('exchange_rates')
-    .where({ base_currency: BASE_CURRENCY, valid_on: today })
-    .count<{ count: string }[]>('id as count')
-    .first();
+  const existing = await systemQuery(
+    db('exchange_rates')
+      .where({ base_currency: BASE_CURRENCY, valid_on: today })
+      .count<{ count: string }[]>('id as count')
+      .first()
+  );
 
   if (existing && Number(existing.count) >= SUPPORTED_TARGET_CURRENCIES.length) {
     console.info('[exchange-rate-worker] rates already current, skipping fetch', { date: today });
@@ -64,10 +66,15 @@ async function fetchAndUpsertRates(): Promise<void> {
         valid_on: today,
       }));
 
-    await db('exchange_rates')
-      .insert(rows)
-      .onConflict(['base_currency', 'target_currency', 'valid_on'])
-      .merge({ rate: db.raw('EXCLUDED.rate'), fetched_at: db.raw('EXCLUDED.fetched_at') });
+    await systemQuery(
+      db('exchange_rates')
+        .insert(rows)
+        .onConflict(['base_currency', 'target_currency', 'valid_on'])
+        .merge({
+          rate: db.raw('EXCLUDED.rate'),
+          fetched_at: db.raw('EXCLUDED.fetched_at'),
+        })
+    );
 
     console.info('[exchange-rate-worker] rates upserted', {
       date: today,

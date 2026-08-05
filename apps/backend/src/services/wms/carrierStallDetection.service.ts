@@ -12,29 +12,40 @@
 // regardless of which trigger fired, and the webhook handler clears
 // the alert on any subsequent non-exception event (shipment resumed).
 
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
-
-const STALL_THRESHOLD_HOURS = 72; // fixed default — see carrier-integration.md WM-40 notes
+import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 
 export async function runCarrierStallDetectionCycle(): Promise<void> {
-  const result = await systemQuery(
-    db.raw(`
-      SELECT id, shop_id, lasyncro_order_id, tracking_number, carrier_code, latest_event_at
-      FROM order_shipment_tracking
-      WHERE is_stalled = false
-        AND latest_status IN ('in_transit', 'out_for_delivery', 'announced')
-        AND latest_event_at < NOW() - INTERVAL '${STALL_THRESHOLD_HOURS} hours'
-    `)
+  const locatorResult = await systemQuery(
+    db.raw('SELECT * FROM public.list_stalled_shipment_tenants()')
   );
-
-  const rows = (result?.rows ?? []) as Array<{
+  const rows: Array<{
     id: string;
     shop_id: number;
     lasyncro_order_id: string;
     tracking_number: string | null;
     carrier_code: string;
     latest_event_at: string;
-  }>;
+  }> = [];
+
+  for (const locator of locatorResult.rows as Array<{
+    id: string;
+    shop_id: number;
+  }>) {
+    const row = await withTenant(locator.shop_id, (trx) =>
+      trx('order_shipment_tracking')
+        .where({ id: locator.id, shop_id: locator.shop_id })
+        .select(
+          'id',
+          'shop_id',
+          'lasyncro_order_id',
+          'tracking_number',
+          'carrier_code',
+          'latest_event_at'
+        )
+        .first()
+    );
+    if (row) rows.push(row);
+  }
 
   if (rows.length === 0) {
     console.info('[CARRIER_STALL_DETECTION_OK]', { newly_stalled: 0 });
@@ -65,9 +76,7 @@ async function flagShipmentStalled(row: {
 }): Promise<void> {
   const idleHours = Math.round((Date.now() - new Date(row.latest_event_at).getTime()) / 3_600_000);
 
-  await db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL app.current_tenant = '${row.shop_id}'`);
-
+  await withTenant(row.shop_id, async (trx) => {
     await trx('order_shipment_tracking').where({ id: row.id }).update({ is_stalled: true });
 
     await trx('alerts')

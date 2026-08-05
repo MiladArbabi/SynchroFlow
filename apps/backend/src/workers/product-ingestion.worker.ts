@@ -21,7 +21,7 @@
  * is fully deprecated.
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import { withTenant } from '@lasyncro/backend-core/db.js';
 import { getQueueChannel } from '../queue.js';
 
 const QUEUE_NAME = 'product_ingestion';
@@ -85,7 +85,8 @@ await channel.consume(
      * deterministic replay.
      */
 
-    await db('domain_events').insert({
+    await withTenant(Number(parsed.shopId), (trx) =>
+      trx('domain_events').insert({
       shop_id: parsed.shopId,
       event_type: 'catalog/product_sync_received',
       /**
@@ -106,7 +107,8 @@ await channel.consume(
       event_time: new Date(),
       event_version: 1,
       external_event_id: `catalog_sync:${parsed.shopId}:${parsed.rawProduct?.id}`,
-    });
+      })
+    );
       } catch {
         // swallow
       } finally {

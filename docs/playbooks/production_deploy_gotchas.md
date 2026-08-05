@@ -108,12 +108,19 @@ after the deploy completes, not before:
 
 copy(localStorage.getItem('accessToken')) // DevTools console
 
-**Rotating the production DB password requires updating TWO secrets.**
-The app reads credentials from both DATABASE_URL and the discrete PGPASSWORD /
-PGHOST / PGPORT / PGUSER / PGDATABASE set (database.config.ts selects by
-NODE_ENV). Updating only DATABASE_URL leaves the app unable to authenticate and
-takes production down with FATAL: password authentication failed. Set both in
-one `flyctl secrets set` invocation.
+**Runtime and migration database credentials are intentionally different.**
+`DATABASE_URL` is privileged and is consumed only by the release-command
+migration runner. `APP_DATABASE_URL` must authenticate as restricted role
+`sf_app` and is consumed by API and worker processes. Rotating `sf_app` requires
+updating `APP_DATABASE_URL`; do not replace `DATABASE_URL` with the restricted
+credential because migrations require schema privileges.
+
+After a credential change, require both startup evidence and an RLS probe:
+
+    [DB_RUNTIME_IDENTITY_VERIFIED] { current_user: 'sf_app', ... }
+    [migration-runner] RLS release gate passed
+
+If either is absent, the cutover is not verified.
 
 Also: psql does not expand shell variables. `ALTER ROLE x WITH PASSWORD
 '$MYVAR';` sets the password to the literal string $MYVAR. Run the ALTER

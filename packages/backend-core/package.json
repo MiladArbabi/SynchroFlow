@@ -16,6 +16,11 @@
       "default": "./dist/db.js"
     },
 
+    "./system-db.js": {
+      "types": "./dist/system-db.d.ts",
+      "default": "./dist/system-db.js"
+    },
+
     "./utils/*.js": {
       "types": "./dist/utils/*.d.ts",
       "default": "./dist/utils/*.js"
