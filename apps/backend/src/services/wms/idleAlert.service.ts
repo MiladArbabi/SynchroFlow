@@ -121,7 +121,11 @@ async function processShopIdleAlerts(shopId: number): Promise<void> {
       db('pick_batches')
         .where({ shop_id: shopId })
         .whereNotIn('status', ['picking', 'packing'])
-        .select('pick_batch_id')
+        // alerts.entity_id is varchar, pick_batches.pick_batch_id is uuid.
+        // Postgres has no varchar = uuid operator, so the subquery must
+        // return text. Cast here rather than on entity_id: casting the
+        // left side would defeat any index on it.
+        .select(db.raw('pick_batch_id::text'))
     )
     .update({
       is_active: false,
