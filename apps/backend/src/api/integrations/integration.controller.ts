@@ -35,6 +35,7 @@ import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
+import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 
 // CENTRALIZED ENCRYPTION
 // NOTE: Delegates to encryption.service (single source of truth)
@@ -763,18 +764,15 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
     } else {
       // New install — create the tenant root, then adopt it on the same
       // restricted transaction before any tenant-owned write.
-      const result = await db.transaction(async (trx) => {
-        const [newShop] = await trx('shops')
-         .insert({ name: shopDomain })
-         .returning('*');
+      const result = await systemTransaction(async (trx) => {
+       const shopId = await createTenantShop(trx, shopDomain);
+       await setTenantContext(trx, shopId);
 
-       await setTenantContext(trx, newShop.id);
-
-       const rootLocationCode = `WH-${newShop.id}-ROOT`;
+       const rootLocationCode = `WH-${shopId}-ROOT`;
 
        const [warehouse] = await trx('warehouses')
          .insert({
-           shop_id: newShop.id,
+           shop_id: shopId,
            name: 'Main warehouse',
            root_location_code: rootLocationCode,
            is_default: true,
@@ -787,7 +785,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
        }
 
        await trx('warehouse_locations').insert({
-         shop_id: newShop.id,
+         shop_id: shopId,
          warehouse_id: warehouse.warehouse_id,
          location_code: rootLocationCode,
          type: 'warehouse',
@@ -797,7 +795,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
        console.info('[shopify-install] Warehouse bootstrapped', {
          shopDomain,
-         shopId: newShop.id,
+         shopId,
          warehouseId: warehouse.warehouse_id,
          rootLocationCode,
        });
@@ -806,7 +804,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         // every shop hit "No WMS settings found" on first batch release.
         // All columns except shop_id have NOT NULL defaults (confirmed via
         // information_schema), so this minimal insert is safe.
-        await trx('shop_wms_settings').insert({ shop_id: newShop.id });
+        await trx('shop_wms_settings').insert({ shop_id: shopId });
 
         // Ghost user — password-login-disabled via random irreversible hash
         const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
@@ -817,7 +815,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         const [ghostUser] = await trx('users')
           .insert({
-            shop_id: newShop.id,
+            shop_id: shopId,
             email: ghostEmail,
             password_hash: ghostPasswordHash,
             first_name: '',
@@ -827,7 +825,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           .returning('*');
 
         await trx('shop_memberships').insert({
-          shop_id: newShop.id,
+          shop_id: shopId,
           user_id: ghostUser.id,
           role: 'owner',
         });
@@ -836,7 +834,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
           '../../services/lifecycle-projection.service.js'
         );
         await LifecycleProjectionService.projectForMembership(
-          { shopId: newShop.id, userId: ghostUser.id },
+          { shopId, userId: ghostUser.id },
           trx
         );
 
@@ -844,7 +842,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         // billing_provider: 'shopify' stamped at birth — never routes to Stripe
         await trx('shop_subscriptions').insert({
-          shop_id: newShop.id,
+          shop_id: shopId,
           tier: 'growth',
           billing_interval: 'monthly',
           billing_currency: 'USD',
@@ -854,7 +852,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         });
 
         await trx('shop_usage_metrics').insert({
-          shop_id: newShop.id,
+          shop_id: shopId,
           tier_at_period_start: 'growth',
           period_starts_at: new Date(),
           period_ends_at: null,
@@ -862,7 +860,7 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         await trx('shop_operational_settings')
           .insert({
-            shop_id: newShop.id,
+            shop_id: shopId,
             fulfillment_sla_hours: 24,
             monthly_overhead_amount: 0,
             starting_cash_balance: 0,
@@ -872,13 +870,13 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
 
         const growthConfig = getTierConfig('growth');
         const moduleRows = growthConfig.modules.map((moduleKey) => ({
-          shop_id: newShop.id,
+          shop_id: shopId,
           module_key: moduleKey,
           flag_key: null as string | null,
           source: 'trial:growth',
         }));
         const flagRows = growthConfig.flags.map((flagKey) => ({
-          shop_id: newShop.id,
+          shop_id: shopId,
           module_key: flagKey.split('.')[0],
           flag_key: flagKey,
           source: 'trial:growth',
@@ -886,12 +884,12 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         await EntitlementsService.applyFromCommercialGrant(trx, [...moduleRows, ...flagRows]);
 
         console.info('[shopify-install] Ghost shop + user created', {
-          shopId: newShop.id,
+          shopId,
           userId: ghostUser.id,
           shopDomain,
         });
 
-        return { userId: ghostUser.id, shopId: newShop.id };
+        return { userId: ghostUser.id, shopId };
       });
 
       userId = result.userId;

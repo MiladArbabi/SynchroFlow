@@ -13,7 +13,7 @@
  * - Queue integration will replace direct invocation
  */
 
-import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { ExecutionJob } from '../domain/decision/Decision.js';
 import { getExecutionHandler } from '../execution/execution.registry.js';
 import { DecisionRepository } from '../domain/decision/decision.repository.js';
@@ -190,14 +190,10 @@ async function processExecutionMessage(
      * - If already executed → skip
      * - If already started → skip (in-flight protection)
      */
-    // THREAD A-2 cont'd (2026-06-30): systemQuery() doesn't bypass real
-    // RLS — only the app-level guard (see RLS_blueprint.md §7). This
-    // table's SELECT policy is now permissive cross-tenant (split
-    // policy, see 0075 migration), so this specific read is actually
-    // safe as-is. Kept on systemQuery() deliberately — job.shop_id
-    // isn't needed here since the SELECT policy already allows it.
-    const existing = await systemQuery(
-      db('decision_execution_queue')
+    // The queue message already carries its tenant identity, so the
+    // idempotency read must use that tenant instead of a cross-tenant policy.
+    const existing = await withTenant(job.shop_id, (trx) =>
+      trx('decision_execution_queue')
         .where({ decision_id: job.decision_id })
         .first()
     );

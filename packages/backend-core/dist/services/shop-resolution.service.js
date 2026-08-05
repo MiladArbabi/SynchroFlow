@@ -17,7 +17,8 @@
  *
  * ✅ All shop context flows through this file.
  */
-import db, { systemQuery, withTenant } from '../db.js';
+import { withTenant } from '../db.js';
+import { resolveActiveShopMemberships } from './pre-tenant.service.js';
 /**
  * Resolve the ACTIVE shop membership for a user.
  *
@@ -39,12 +40,10 @@ export async function resolveShopContextForUser(userId) {
     // ─────────────────────────────────────────────────────────────
     // 🔍 Resolve active membership
     // ─────────────────────────────────────────────────────────────
-    // Authentication starts before a tenant is known. This is the one
-    // authoritative pre-tenant membership lookup and returns no credentials.
-    const memberships = await systemQuery(db('shop_memberships')
-        .where({ user_id: userId })
-        .whereNull('revoked_at')
-        .select('shop_id as shopId', 'role', 'display_currency as displayCurrency', 'locale'));
+    // Authentication starts before a tenant is known. The resolver is a narrow
+    // SECURITY DEFINER function that returns membership metadata only; the
+    // runtime role never receives cross-tenant table visibility.
+    const memberships = await resolveActiveShopMemberships(userId);
     if (memberships.length === 0) {
         return null;
     }

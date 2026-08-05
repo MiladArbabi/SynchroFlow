@@ -1,6 +1,7 @@
 // apps/backend/src/api/members/members.controller.ts
 import { Request, Response } from 'express';
-import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
+import { authEmailExists } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import bcrypt from 'bcrypt';
 import { sendOperatorInviteEmail } from '../../services/email/email.service.js';
 
@@ -149,10 +150,7 @@ export const createMember = async (req: Request, res: Response) => {
 
   try {
     // Check email not already in use
-    const existing = await systemQuery(
-      db('users').where({ email: email.toLowerCase() }).first('id')
-    );
-    if (existing) {
+    if (await authEmailExists(email)) {
       return res.status(409).json({ error: 'EMAIL_ALREADY_IN_USE' });
     }
 

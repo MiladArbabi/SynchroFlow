@@ -1,0 +1,87 @@
+name: CI / RLS Security Boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/backend/**'
+      - 'packages/backend-core/**'
+      - 'scripts/check-conflict-usage.sh'
+      - '.github/workflows/ci-security.yml'
+      - 'fly.toml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/backend/**'
+      - 'packages/backend-core/**'
+      - 'scripts/check-conflict-usage.sh'
+      - '.github/workflows/ci-security.yml'
+      - 'fly.toml'
+
+jobs:
+  rls-security:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sf_user
+          POSTGRES_PASSWORD: sf_pass
+          POSTGRES_DB: synchroflow_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sf_user -d synchroflow_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGDATABASE: synchroflow_db
+      PGUSER: sf_user
+      PGPASSWORD: sf_pass
+      PGMIGRATION_USER: sf_user
+      PGMIGRATION_PASSWORD: sf_pass
+      JWT_SECRET: ci-jwt-secret
+      JWT_REFRESH_SECRET: ci-refresh-secret
+      ENCRYPTION_KEY: ci-encryption-key
+      SHOPIFY_API_KEY: ci-shopify-key
+      SHOPIFY_API_SECRET: ci-shopify-secret
+      SHOPIFY_API_VERSION: '2025-04'
+      DISABLE_QUEUE: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build security boundary
+        run: |
+          npm run build -w packages/backend-core
+          SKIP_DEPS=1 npm run build -w apps/backend
+
+      - name: Run static RLS gates
+        run: |
+          npm run check:rls -w apps/backend
+          npm run test:rls-boundary -w apps/backend
+
+      - name: Apply migrations and release assertions
+        run: npm run migrate -w apps/backend
+
+      - name: Run live RLS and endpoint regressions
+        env:
+          NODE_ENV: production
+          DATABASE_URL: ''
+          MIGRATION_DATABASE_URL: postgresql://sf_user:sf_pass@127.0.0.1:5432/synchroflow_db
+          APP_DATABASE_URL: postgresql://sf_app:sf_app_pass@127.0.0.1:5432/synchroflow_db
+        run: npm run test:rls-live -w apps/backend

@@ -118,4 +118,104 @@ test('release command contains schema and invalid-tenant gates', () => {
   assert.match(runner, /'2147483647'/);
   assert.match(runner, /sf_app invalid-tenant visibility/);
   assert.match(runner, /sf_app tenant-zero visibility/);
+  assert.match(runner, /sf_app missing-tenant visibility/);
+  assert.match(runner, /unsafePolicies/);
+  assert.match(runner, /tenantZeroTables: tenantTables\.length/);
+});
+
+test('0138 removes tenant-zero policies and exposes only narrow resolvers', () => {
+  const migration = read(
+    'apps/backend/migrations/20260805200000_0138_close_tenant_zero_rls_paths.ts'
+  );
+
+  for (const table of [
+    'users',
+    'refresh_tokens',
+    'shop_memberships',
+    'shop_subscriptions',
+    'shop_module_entitlements',
+    'commands',
+    'decision_execution_queue',
+    'order_reconciliation_intents',
+    'user_lifecycle_snapshot',
+    'shop_carrier_webhook_tokens',
+  ]) {
+    assert.match(migration, new RegExp(`table: '${table}'`));
+  }
+
+  assert.match(migration, /DROP POLICY IF EXISTS shops_insert_open ON shops/);
+  assert.match(migration, /CREATE POLICY shops_tenant_isolation_policy/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.create_tenant_shop/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.resolve_auth_user_by_email/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.resolve_refresh_token/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.revoke_refresh_token/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.list_pending_commands/);
+  assert.match(migration, /CREATE OR REPLACE FUNCTION public\.resolve_carrier_webhook_token/);
+  assert.doesNotMatch(migration, /WITH CHECK \(true\)/);
+});
+
+test('0139 strictly tenant-scopes activation audit events', () => {
+  const migration = read(
+    'apps/backend/migrations/20260805210000_0139_enforce_activation_audit_tenant_scope.ts'
+  );
+
+  assert.match(migration, /\[0139_NULL_SHOP_ROWS\]/);
+
+  assert.match(
+    migration,
+    /ALTER TABLE activation_audit_events[\s\S]*ALTER COLUMN shop_id SET NOT NULL;/
+  );
+
+  assert.match(
+    migration,
+    /DROP POLICY IF EXISTS\s+activation_audit_events_tenant_isolation_policy\s+ON activation_audit_events;/
+  );
+
+  assert.match(
+    migration,
+    /CREATE POLICY activation_audit_events_tenant_isolation_policy[\s\S]*FOR ALL/
+  );
+
+  assert.match(
+    migration,
+    /USING\s*\(\s*shop_id\s*=\s*NULLIF\([\s\S]*current_setting\('app\.current_tenant', true\)[\s\S]*\)::integer\s*\)/
+  );
+
+  assert.match(
+    migration,
+    /WITH CHECK\s*\(\s*shop_id\s*=\s*NULLIF\([\s\S]*current_setting\('app\.current_tenant', true\)[\s\S]*\)::integer\s*\)/
+  );
+
+  const policySql = migration.match(
+    /CREATE POLICY activation_audit_events_tenant_isolation_policy[\s\S]*?;/
+  );
+
+  assert.ok(policySql);
+  assert.doesNotMatch(policySql[0], /\bshop_id\s+IS\s+NULL\b/i);
+  assert.match(migration, /\[0139_DOWN_UNSUPPORTED\]/);
+});
+
+test('runtime call sites do not query repaired pre-tenant tables directly', () => {
+  const auth = read('apps/backend/src/api/auth/auth.controller.ts');
+  const memberships = read(
+    'packages/backend-core/src/services/shop-resolution.service.ts'
+  );
+  const commands = read('apps/backend/src/workers/commands.consumer.ts');
+  const executions = read(
+    'apps/backend/src/workers/execution.dispatcher.worker.ts'
+  );
+
+  assert.doesNotMatch(auth, /systemQuery\([\s\S]{0,120}db(?:<[^>]+>)?\('users'\)/);
+  assert.doesNotMatch(auth, /systemQuery\([\s\S]{0,120}db\('refresh_tokens'\)/);
+  assert.doesNotMatch(memberships, /db\('shop_memberships'\)/);
+  assert.doesNotMatch(commands, /systemQuery\(/);
+  assert.doesNotMatch(executions, /systemQuery\(/);
+});
+
+test('production runtime rejects privileged migration credentials', () => {
+  const db = read('packages/backend-core/src/db.ts');
+  const fly = read('fly.toml');
+
+  assert.match(db, /FATAL_PRIVILEGED_DATABASE_CREDENTIAL_PRESENT/);
+  assert.doesNotMatch(fly, /release_command/);
 });

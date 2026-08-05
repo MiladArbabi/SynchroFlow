@@ -15,7 +15,8 @@
  * - Can be replaced with LISTEN/NOTIFY later
  */
 
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
+import db from '@lasyncro/backend-core/db.js';
+import { listPendingDecisionExecutions } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { enqueueExecutionJob } from '../queues/execution.queue.js';
 
 const POLL_INTERVAL_MS = 1000;
@@ -26,14 +27,16 @@ export async function startExecutionDispatcher() {
   while (true) {
     try {
         /**
-         * SYSTEM QUERY — no tenant context required.
-         * Dispatcher reads across all shops; RLS bypassed intentionally.
+         * Bounded discovery — no tenant context exists yet. The resolver
+         * returns pending locator rows without opening the table policy.
          */
-        const pending = await systemQuery(
-          db('decision_execution_queue')
-            .where({ status: 'pending' })
-            .limit(50)
-        );
+        const pending = await listPendingDecisionExecutions<{
+          id: string;
+          decision_id: string;
+          shop_id: number;
+          status: string;
+          created_at: string;
+        }>(50);
 
       for (const row of pending) {
         try {
@@ -43,8 +46,7 @@ export async function startExecutionDispatcher() {
          * decision_execution_queue is NOT sufficient to build ExecutionJob.
          * Must hydrate from decisions table (same as manual execution).
          *
-         * THREAD A-2 cont'd (2026-06-30): was systemQuery() — only skips
-         * the app-level guard, not real RLS. decisions has the standard
+         * THREAD A-2 cont'd (2026-06-30): decisions has the standard
          * strict policy (no permissive carve-out, unlike the queue table
          * above). row.shop_id is already known from the queue row just
          * read — use it to scope this read properly instead of adding

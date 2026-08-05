@@ -25,7 +25,6 @@ fly secrets list --app synchroflow
 
 | Secret | Notes |
 |---|---|
-| `DATABASE_URL` | Privileged Fly Postgres URL; release-command migrations only |
 | `APP_DATABASE_URL` | Restricted Fly Postgres URL using `sf_app`; API and worker runtime only |
 | `ENCRYPTION_KEY` | Min 32 chars. Must match `.env` exactly — use `wc -c` to verify |
 | `SHOPIFY_API_KEY` | Public app client ID |
@@ -38,6 +37,11 @@ fly secrets list --app synchroflow
 | `APP_BASE_URL` | `https://app.lasyncro.com` |
 | `JWT_SECRET` | Min 32 chars |
 | `JWT_REFRESH_SECRET` | Min 32 chars |
+
+`DATABASE_URL` must not appear in `fly secrets list --app synchroflow`.
+Privileged migration access is stored as the GitHub Actions secret
+`MIGRATION_DATABASE_URL`; `FLY_POSTGRES_APP` identifies the database app used by
+the temporary `flyctl proxy` tunnel.
 
 ### Verifying Secret Sync
 
@@ -61,34 +65,44 @@ fly secrets set KEY=value --app synchroflow
 
 ### Standard Deploy
 ```bash
-fly deploy --app synchroflow
+gh workflow run fly-deploy.yml --repo MiladArbabi/SynchroFlow
 ```
 
-The database credential split is mandatory. Rotate `sf_app`, set
-`APP_DATABASE_URL` to that restricted connection, and leave `DATABASE_URL`
-available only to the release command. API and worker startup abort unless the
-runtime identity is exactly `sf_app`, `NOSUPERUSER`, and `NOBYPASSRLS`.
+The workflow opens a temporary Fly proxy, runs checksum-guarded migrations from
+the GitHub runner, verifies that the runtime Fly app has no `DATABASE_URL`
+secret, and only then deploys the runtime. API and worker startup abort unless
+the runtime identity is exactly `sf_app`, `NOSUPERUSER`, and `NOBYPASSRLS`, and
+also abort if a privileged `DATABASE_URL` is present in the process environment.
 
 ### Force Fresh Build (bypass cache)
 ```bash
 fly deploy --app synchroflow --no-cache
 ```
 
-### Release Migration
-The `fly.toml` `release_command` runs DB migrations before the new machine starts:
-```toml
-[deploy]
-  release_command = "node /app/apps/backend/dist/src/scripts/runMigrationsWithChecksum.js"
-```
+### Migration Job
+`fly.toml` intentionally has no `release_command`: Fly release Machines inherit
+the app's secrets, which would place the privileged credential on every runtime
+Machine. `.github/workflows/fly-deploy.yml` runs the migration runner externally
+through `flyctl proxy` before calling `flyctl deploy`.
 
 > **Checksum drift guard (added 2026-07-28, CHECKSUM-GUARD-01):** this runner hashes every migration file and compares it against `migration_checksums`. If a file was amended after it ran, the release phase fails with `[MIGRATION_DRIFT_DETECTED]` instead of silently skipping the change (see PROD-ZONE1 for what happens without this guard). Previously `release_command` ran a bare `migrate-prod.mjs` with no drift detection — that file has been deleted.
 >
 > `migration_checksums` was empty in prod before this change. The **first** deploy after this switch establishes baselines for all ~127 existing migrations as-is — it does **not** retroactively detect drift that happened before this guard existed. A handful of other migrations are still suspected (not confirmed) to have drifted the same way `0048`/`0049` did; this guard only protects going forward from here.
 
-After migrations, the same runner executes the non-bypassable RLS release gate.
+After migrations, the runner executes the non-bypassable RLS release gate.
 It fails the release if `sf_app` is privileged, any RLS table is not forced,
 any public `shop_id` table lacks RLS, any RLS table lacks a policy, or an
-invalid-tenant probe can see rows as `sf_app`.
+invalid/zero/missing-tenant probe can see rows as `sf_app`, or a policy still
+contains a known tenant-zero/open-write predicate.
+
+If Knex reports migrations as applied but the post-migration RLS release
+gate fails, treat the database as migrated but release-gated. Do not edit
+or roll back the applied migration, and do not delete its Knex or checksum
+records.
+
+Create a new forward-only corrective migration, apply it, and rerun the
+release gate. Application deployment must remain blocked until the gate
+passes. Migrations `0138` and `0139` document this recovery sequence.
 
 ---
 
@@ -187,8 +201,8 @@ fly proxy 5434:5432 --app synchroflow-db &
 # Connect
 psql "postgresql://synchroflow:<password>@localhost:5434/synchroflow"
 
-# Inspect migration and runtime connection identities separately
-fly ssh console --app synchroflow -C "node -e \"for (const k of ['DATABASE_URL','APP_DATABASE_URL']) { const u = new URL(process.env[k]); console.log(k, u.username, u.hostname, u.pathname); }\""
+# Inspect the runtime identity only; privileged credentials must be absent.
+fly ssh console --app synchroflow -C "node -e \"console.log('DATABASE_URL', process.env.DATABASE_URL ? 'PRESENT' : 'ABSENT'); const u = new URL(process.env.APP_DATABASE_URL); console.log('APP_DATABASE_URL', u.username, u.hostname, u.pathname);\""
 ```
 
 > Note: `domain_events` is immutable — DELETE will fail. Work around by deleting dependent tables first.

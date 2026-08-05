@@ -164,6 +164,9 @@ export async function getRuntimeDatabaseIdentity() {
 export async function assertRuntimeDatabaseIdentity() {
     if (process.env.NODE_ENV !== 'production')
         return;
+    if (process.env.DATABASE_URL) {
+        throw new Error('FATAL_PRIVILEGED_DATABASE_CREDENTIAL_PRESENT: DATABASE_URL must not exist in an application runtime.');
+    }
     const identity = await getRuntimeDatabaseIdentity();
     if (identity.current_user !== 'sf_app' ||
         identity.rolsuper !== false ||

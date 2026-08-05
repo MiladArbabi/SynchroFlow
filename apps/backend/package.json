@@ -13,6 +13,7 @@
     "seed": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs seed:run --specific=dev_seed.js",
     "check:rls": "bash scripts/check_rls.sh",
     "test:rls-boundary": "node --test scripts/rls-runtime-boundary.test.mjs",
+    "test:rls-live": "node --test scripts/rls-live-regression.test.mjs",
     "migrate": "bash ../../scripts/check-conflict-usage.sh && mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/src/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",

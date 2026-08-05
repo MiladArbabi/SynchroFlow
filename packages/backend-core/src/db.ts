@@ -233,6 +233,12 @@ export async function getRuntimeDatabaseIdentity(): Promise<RuntimeDatabaseIdent
 export async function assertRuntimeDatabaseIdentity(): Promise<void> {
   if (process.env.NODE_ENV !== 'production') return;
 
+  if (process.env.DATABASE_URL) {
+    throw new Error(
+      'FATAL_PRIVILEGED_DATABASE_CREDENTIAL_PRESENT: DATABASE_URL must not exist in an application runtime.'
+    );
+  }
+
   const identity = await getRuntimeDatabaseIdentity();
   if (
     identity.current_user !== 'sf_app' ||

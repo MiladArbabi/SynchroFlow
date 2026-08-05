@@ -27,6 +27,3 @@ primary_region = 'arn'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
-
-[deploy]
-  release_command = "node /app/apps/backend/dist/src/scripts/runMigrationsWithChecksum.js"

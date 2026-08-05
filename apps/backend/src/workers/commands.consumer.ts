@@ -13,25 +13,17 @@
  *
  * Pattern modeled directly on execution.dispatcher.worker.ts (the only
  * other "poll a table, hydrate, act" worker in this codebase) — same
- * polling shape, same systemQuery() usage for the cross-tenant SELECT
- * (commands has no shop_id known until the row is read, same chicken/egg
- * as auth-path tables), same explicit SET LOCAL app.current_tenant
- * before any tenant-scoped write.
+ * polling shape, bounded cross-tenant discovery through
+ * list_pending_commands(), and explicit tenant context before every write.
  *
  * RLS NOTE (the entire reason tonight's session took as long as it did):
- * systemQuery() only bypasses this codebase's own app-level guard, NOT
- * real Postgres RLS (see RLS_blueprint.md §7). Safe here for the poll
- * ONLY because commands now has a split policy with a permissive SELECT
- * (added alongside this file — see 0078 migration). Every WRITE in this
- * file explicitly sets app.current_tenant first, using shopId already
- * present in the command's own payload — no cross-tenant orders/shops
- * lookup needed anywhere in this file. No .forUpdate() is used on the
- * poll, so the write policy is never implicated by the SELECT itself
- * (see order_reconciliation_intents incident — FOR UPDATE pulls in the
- * write policy even on a read).
+ * The runtime role never receives a permissive cross-tenant table policy.
+ * The SECURITY DEFINER resolver returns bounded pending work; every write in
+ * this file uses the shop_id from that result to establish tenant context.
  */
 
-import db, { systemQuery } from '@lasyncro/backend-core/db.js';
+import db from '@lasyncro/backend-core/db.js';
+import { listPendingCommands } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { generateDecisions } from '../domain/decision/decision.engine.js';
 import { DecisionRepository } from '../domain/decision/decision.repository.js';
 import type { Decision } from '../domain/decision/Decision.js';
@@ -307,9 +299,7 @@ export async function startCommandsConsumer(): Promise<void> {
 
   while (running) {
     try {
-      const pending: CommandRow[] = await systemQuery(
-        db('commands').where({ status: 'pending' }).limit(50)
-      );
+      const pending = await listPendingCommands<CommandRow>(50);
 
       for (const command of pending) {
         try {

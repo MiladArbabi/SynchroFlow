@@ -122,67 +122,48 @@ This means:
 - **INSERT:** only allowed if `shop_id` matches current tenant
 - **UPDATE/DELETE:** only rows where `shop_id` matches current tenant
 
-### Auth-Path Tables (Split Policies)
+### Pre-Tenant Authentication
 
-Some tables are read during the authentication flow **before** a tenant context exists. These require split policies:
+Some operations begin before a tenant context exists. Their tables still use
+the same strict positive-tenant policy as every other tenant-owned table.
 
 | Table | Why Pre-Tenant Access Needed |
 |---|---|
 | `shops` | Registration creates a shop before tenant ID exists |
 | `users` | Login queries user by email before tenant is known |
 | `shop_memberships` | Login checks membership before tenant context is set |
-| `refresh_tokens` | Token issuance writes before tenant context is set |
+| `refresh_tokens` | Refresh/logout resolves an opaque token hash before tenant context is set |
 | `user_sessions` | Session management is pre-tenant |
 | `user_lifecycle_snapshot` | Read during JWT issuance to determine phase |
 | `shop_subscriptions` | Read during JWT issuance to determine tier |
 
-**Split policy pattern for auth tables:**
+Pre-tenant access uses narrow `SECURITY DEFINER` functions. Each function accepts
+one normalized identifier or high-entropy token, returns only the minimum fields
+needed for that operation, revokes `PUBLIC`, and grants execution only to
+`sf_app`:
 
 ```sql
--- SELECT: allow when no tenant context (auth flow) or correct tenant (authenticated flow)
-CREATE POLICY table_select_policy
-ON table_name FOR SELECT
-USING (
-  shop_id = current_setting('app.current_tenant', true)::int
-  OR current_setting('app.current_tenant', true) IN ('', '0')
-  OR current_setting('app.current_tenant', true) IS NULL
-);
+CREATE FUNCTION resolve_auth_user_by_email(p_email text)
+RETURNS jsonb
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+...;
 
--- ALL (INSERT/UPDATE/DELETE): strictly tenant-scoped
-CREATE POLICY table_write_policy
-ON table_name FOR ALL
-USING (shop_id = current_setting('app.current_tenant', true)::int)
-WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int);
+REVOKE ALL ON FUNCTION resolve_auth_user_by_email(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION resolve_auth_user_by_email(text) TO sf_app;
 ```
 
-The `current_setting('app.current_tenant', true)` — note the `true` second argument — returns NULL instead of throwing an error when the setting doesn't exist. This is required for auth-path tables to function before tenant context is established.
+The function owner bypasses RLS only inside that audited function. The runtime
+role never gains table-wide visibility at tenant `0`, empty, or missing context.
 
 ### The `shops` Table Special Case
 
 `shops` is the root tenant entity — it has no `shop_id` column (it IS the shop). Its isolation policy uses `id`:
 
-```sql
--- SELECT: allow when no tenant or correct tenant (for auth/registration)
-CREATE POLICY shops_select_tenant_isolation
-ON shops FOR SELECT
-USING (
-  id = current_setting('app.current_tenant', true)::int
-  OR current_setting('app.current_tenant', true) IN ('', '0')
-  OR current_setting('app.current_tenant', true) IS NULL
-);
-
--- INSERT: open (registration creates a shop with no prior tenant context)
-CREATE POLICY shops_insert_open
-ON shops FOR INSERT
-WITH CHECK (true);
-
--- UPDATE/DELETE: strictly tenant-scoped
-CREATE POLICY shops_update_tenant_isolation ON shops FOR UPDATE
-USING (id = current_setting('app.current_tenant', true)::int);
-
-CREATE POLICY shops_delete_tenant_isolation ON shops FOR DELETE
-USING (id = current_setting('app.current_tenant', true)::int);
-```
+`shops` uses a strict `id = app.current_tenant` policy for every command.
+Registration calls `create_tenant_shop(name)`, receives only the new ID, sets
+that tenant on the same transaction, and performs every dependent write under
+normal RLS.
 
 ### RLS-Exempt Tables
 
@@ -264,7 +245,27 @@ await knex.raw(`
 
 ### When a New Table Is Auth-Path
 
-If the new table is read or written during login, token issuance, or registration — before a tenant context exists — use the split policy pattern from Section 4.
+If a table is read or written during login, token issuance, or registration
+before tenant context exists, keep strict RLS and add a narrow, explicitly
+granted `SECURITY DEFINER` function. Never add a tenant-zero split policy.
+
+### Forward-only release-gate recovery
+
+Migration `0138` closed the known tenant-zero access paths. After it was
+applied, the strengthened release gate identified one additional legacy
+policy on `activation_audit_events` that permitted `shop_id IS NULL`.
+
+Because `0138` was already applied and checksum-recorded, it must remain
+immutable. Migration `0139` is the forward-only correction:
+
+- abort when historical rows without `shop_id` exist;
+- make `activation_audit_events.shop_id` non-nullable;
+- enforce strict tenant equality in both `USING` and `WITH CHECK`;
+- preserve nullable `user_id`, existing events, keys, and indexes;
+- reject rollback because restoring the permissive policy is unsafe.
+
+Never edit, remove, roll back, or rewrite the checksum of an applied
+security-boundary migration. Add a new forward migration instead.
 
 ### Granting Access to sf_app
 
@@ -318,12 +319,14 @@ COMMIT;
 
 **Cause:** An INSERT is blocked because the table's `WITH CHECK` clause rejects it.
 **Common cause:** The inserting role is `sf_app` but `app.current_tenant` is not set (or set to `'0'`), and the table uses a strict ALL-command policy.
-**Fix:** Ensure `SET LOCAL app.current_tenant` is called before the INSERT, or if this is an auth-path table, apply the split policy pattern.
+**Fix:** Ensure `SET LOCAL app.current_tenant` is called before the INSERT. For a
+genuine pre-tenant operation, add or call the approved narrow resolver.
 
 ### "query would be affected by row-level security policy"
 
 **Cause:** `SET LOCAL row_security = off` was attempted by a non-superuser role.
-**Fix:** Only `sf_user` can disable row security. `sf_app` cannot. Use split policies instead.
+**Fix:** Only `sf_user` can disable row security. `sf_app` cannot. Use a narrow
+`SECURITY DEFINER` function for a genuine pre-tenant operation.
 
 ### All counts return data for wrong tenant
 
@@ -332,18 +335,20 @@ COMMIT;
 
 ### Login fails with AUTH_INVARIANT_VIOLATION
 
-**Cause:** `refresh_tokens` or `user_sessions` INSERT is blocked — auth-path table missing the open write policy.
-**Fix:** Apply split policy pattern to the affected table's migration.
+**Cause:** Auth code queried a tenant table directly before resolving its tenant.
+**Fix:** Route the operation through the approved pre-tenant resolver, then use
+`withTenant()` for all subsequent reads and writes.
 
 ### Tier shows "starter" after login despite growth subscription
 
-**Cause:** `shop_subscriptions` SELECT is blocked during JWT issuance — auth-path table missing the open SELECT policy.
-**Fix:** Apply split policy pattern to `shop_subscriptions`.
+**Cause:** Token issuance read subscriptions before resolving membership.
+**Fix:** Resolve membership through the narrow resolver, then read the
+subscription under `withTenant()`.
 
 ### Phase shows "FT_MINUS_ONE" despite FT2 seed
 
-**Cause:** `user_lifecycle_snapshot` SELECT is blocked during JWT issuance.
-**Fix:** Apply split policy pattern to `user_lifecycle_snapshot`.
+**Cause:** Lifecycle state was read before resolving membership.
+**Fix:** Resolve membership first and read lifecycle state under `withTenant()`.
 
 ### "FIRST_INSIGHT_POST_COMMIT_FAILED" — domain_event_outbox RLS violation
 
@@ -394,11 +399,15 @@ password: process.env.PGMIGRATION_PASSWORD ?? process.env.PGPASSWORD,
 **Why not use application-level tenant filtering instead of RLS?**
 Application-level filtering (e.g. always adding `.where({ shop_id })` to every query) is fragile — one missed WHERE clause leaks data. RLS enforces isolation at the database layer, independent of application code correctness. Defense in depth.
 
-**Why split policies for auth tables instead of making them fully open?**
-Fully open SELECT would allow any role to read all users, tokens, and subscriptions across all tenants — a significant privilege escalation risk. The split policy allows only the minimum pre-tenant access required for auth flows, while keeping writes strictly tenant-scoped.
+**Why strict policies plus SECURITY DEFINER resolvers for auth tables?**
+Tenant-zero SELECT policies expose every row to the runtime role, including
+password hashes and reset tokens. Narrow functions preserve the required
+chicken-and-egg lookup without granting table-wide visibility.
 
 **Why `current_setting('app.current_tenant', true)` with the true flag?**
-The second argument `true` makes `current_setting` return NULL instead of throwing an error when the GUC doesn't exist. This is required for auth-path tables where the setting may not be initialized yet.
+The second argument `true` makes `current_setting` return NULL instead of
+throwing when the GUC does not exist. Strict policies then fail closed; they do
+not treat NULL, empty, or zero as an access mode.
 
 **Why `FORCE ROW LEVEL SECURITY`?**
 Without it, the table owner (the role that created the table) bypasses RLS. In PostgreSQL, the role that runs migrations owns the tables. Using `FORCE RLS` ensures even the table owner is subject to policies when connecting as `sf_app`.
@@ -415,16 +424,15 @@ If `app.current_tenant` is genuinely at its database-level default `'0'`
 (see §3), a `systemQuery()`-wrapped read against a table with the
 standard strict RLS policy still silently returns zero rows — RLS
 itself is still active and evaluating `shop_id = 0`, which never
-matches. `systemQuery()` is only safe for tables that are RLS-exempt
-(§4, e.g. `projection_cursors`) or have a deliberately permissive policy
-(e.g. `domain_events`' write policy, `USING (true)`) — never for a
+matches. `systemQuery()` is only safe for explicitly RLS-exempt system tables
+or for calling an approved narrow resolver — never for a
 strict-policy table you're trying to read cross-tenant by a
 globally-unique key.
 
 **Real incident (2026-06-29, Thread A-2):** `projection.db.worker.ts`'s
 per-event-loop intent reconciliation looked up `orders.aggregate_version`
 by `lasyncro_order_id` (globally unique, shop_id not yet known — the
-exact chicken-and-egg case auth-path tables solve with split policies).
+exact chicken-and-egg case now solved by narrow resolver functions).
 Wrapped the read in `systemQuery()`, assuming it was a Postgres-level
 bypass like `sf_user`. It is not. The query silently returned `undefined`
 instead of throwing, was misread as a real version mismatch, and the
@@ -434,9 +442,8 @@ several poll cycles before being traced back to this.
 **Fix:** for a genuine chicken-and-egg lookup (global ID known, tenant
 not yet known, table has a strict policy) there is no safe generic
 bypass available to `sf_app` — `sf_app` has no `BYPASSRLS`. The two real
-options are: (a) add a split SELECT policy to the specific table,
-matching the auth-path pattern in §4, if this kind of tenant-blind
-lookup is a legitimate, recurring need; or (b) restructure the caller so
+options are: (a) add a narrow `SECURITY DEFINER` resolver that returns only the
+minimum locator fields; or (b) restructure the caller so
 shop_id is already known/passed in before this point, avoiding the
 lookup entirely. Reaching for `systemQuery()` as a default "make RLS go
 away" tool is the trap — confirm the target table's actual policy text
@@ -527,8 +534,8 @@ just applied by new call sites.
 **Cause:** `SELECT ... FOR UPDATE` does not only evaluate the table's
 SELECT policy — Postgres also requires the row to pass the table's
 UPDATE policy, because locking a row implies you might write to it. A
-table with a split policy (permissive SELECT for cross-tenant infra
-scans, strict ALL/write policy — see §4 pattern) will silently return
+table with the historical split-policy shape (permissive SELECT and strict
+write policy) will silently return
 **zero rows** from a `FOR UPDATE` query run with no tenant context set,
 even though a plain `SELECT count(*)` against the identical table, same
 connection, same missing context, correctly returns the real count.
@@ -545,27 +552,22 @@ SELECT count(*) FROM (
 
 **Real incident:** `projection.db.worker.ts`'s Step 4 polls
 `order_reconciliation_intents` cross-tenant (genuine infra scan, same
-shape as auth-path tables) using `.forUpdate().skipLocked()` — copied
+shape as pre-tenant resolvers) using `.forUpdate().skipLocked()` — copied
 from `processDomainEvent.ts`'s pattern without re-examining whether
-locking was actually needed in this context. The table's split policy
+locking was actually needed in this context. The table's historical split policy
 (permissive SELECT, strict write) meant this specific query always
 returned `[]`, silently — no crash, no error, no log output at all. The
 worker appeared completely healthy (cursor advancing, no errors) while
 genuinely doing nothing with the reconciliation backlog, for hours.
 
-**Fix:** if the query is read-only discovery (finding out what's pending
-before acting on individual rows one at a time, not racing other
-concurrent consumers for the same rows), drop `FOR UPDATE` entirely.
-Don't reach for it by default just because a similar-looking pattern
-elsewhere used it — confirm whether *this* call site actually has
-concurrent writers to guard against.
+**Fix:** use the bounded discovery resolver to obtain identifiers, then perform
+locking and mutation under `withTenant(shop_id)`. Do not restore a permissive
+cross-tenant SELECT policy.
 
-**Diagnostic:** if a cross-tenant poll against a split-policy table
-returns suspiciously empty with zero errors, test with and without
-`FOR UPDATE` as two separate `BEGIN; ... ROLLBACK;` blocks under
-`sf_app`, no tenant context, before assuming the table or its policy is
-broken. The policy is very likely fine — `FOR UPDATE` is invoking a
-second policy you didn't mean to invoke.
+**Diagnostic for historical incidents:** compare the old plain SELECT and
+`FOR UPDATE` behavior to explain a stuck worker, then replace the cross-tenant
+policy with a bounded resolver. The current architecture must not retain the
+split policy merely to support polling.
 
 ### ISS-RLS3/ISS-RLS4: Stripe and carrier webhook handlers had the same gap — one was a live revenue-path outage
 

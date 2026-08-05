@@ -6,13 +6,69 @@ on:
     branches:
       - main
 jobs:
-  deploy:
-    name: Deploy app
+  migrate-and-deploy:
+    name: Migrate then deploy restricted runtime
     runs-on: ubuntu-latest
-    concurrency: deploy-group    # optional: ensure only one action runs at a time
+    concurrency: deploy-group
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.0
+          cache: npm
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Build migration runner
+        run: |
+          npm run build -w packages/backend-core
+          SKIP_DEPS=1 npm run build -w apps/backend
+
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
+
+      - name: Run privileged migrations outside the runtime app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_POSTGRES_APP: ${{ secrets.FLY_POSTGRES_APP }}
+          PRIVILEGED_DATABASE_URL: ${{ secrets.MIGRATION_DATABASE_URL }}
+        run: |
+          test -n "$FLY_POSTGRES_APP"
+          test -n "$PRIVILEGED_DATABASE_URL"
+
+          flyctl proxy 15432:5432 -a "$FLY_POSTGRES_APP" > /tmp/fly-proxy.log 2>&1 &
+          PROXY_PID=$!
+          trap 'kill "$PROXY_PID" 2>/dev/null || true' EXIT
+
+          node <<'NODE'
+          const net = require('node:net');
+          const deadline = Date.now() + 30_000;
+          const probe = () => {
+            const socket = net.createConnection({ host: '127.0.0.1', port: 15432 });
+            socket.once('connect', () => { socket.end(); process.exit(0); });
+            socket.once('error', () => {
+              socket.destroy();
+              if (Date.now() >= deadline) process.exit(1);
+              setTimeout(probe, 500);
+            });
+          };
+          probe();
+          NODE
+
+          LOCAL_MIGRATION_DATABASE_URL=$(node -e "const u=new URL(process.env.PRIVILEGED_DATABASE_URL);u.hostname='127.0.0.1';u.port='15432';console.log(u.toString())")
+          NODE_ENV=production DATABASE_URL="$LOCAL_MIGRATION_DATABASE_URL" \
+            node apps/backend/dist/src/scripts/runMigrationsWithChecksum.js
+
+      - name: Reject privileged credentials on the runtime app
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if flyctl secrets list -a synchroflow | awk 'NR > 1 { print $1 }' | grep -qx DATABASE_URL; then
+            echo 'DATABASE_URL is still installed on the runtime app; deployment blocked.' >&2
+            exit 1
+          fi
+
+      - name: Deploy runtime
+        run: flyctl deploy --remote-only
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
