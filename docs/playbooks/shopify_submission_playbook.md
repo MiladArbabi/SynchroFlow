@@ -419,6 +419,9 @@ and the marker prevents the seeder from restoring them. A dedicated,
 non-destructive reviewer refresh is now a plain UPDATE on pick_batches
 (pick_last_activity_at, pack_last_activity_at). Scan logs are append-only —
 tgtype 19 triggers reject UPDATE on every column — so no freshness procedure
+touching those rows is possible. This constrains the mechanism, not the goal:
+OV-153 advances the mutable pick_batches activity clocks instead, which carry
+no such trigger. Immutable scan logs are never written by the worker.
 may touch them. Two nullable timestamps, no immutable history, no counter drift.
 
 ### Canonical outbound reviewer seed — OV-135
@@ -507,7 +510,8 @@ unauthenticated access remained `401`. Because both latest scans were at
 
 Do not rerun either script as a freshness mechanism. Both are sequentially
 idempotent, and the activity marker intentionally prevents timestamp refresh.
-Morning-of-review freshness remains tracked separately under OV-132.
+Freshness is no longer a morning-of-review procedure. OV-153 closed it with a
+guarded worker; see "Reviewer freshness worker — OV-153" below.
 
 Before deploying the live-activity ownership filter, verify production’s
 immutable `scanned_by` values match each active batch’s `picked_by`. Production
@@ -521,5 +525,41 @@ exposed credentials.
 The Overview live map now renders active operators as semantic pills rather than ambiguous numeric circles. Each marker shows a person glyph, operator count, and separate blue picking or orange packing indicators. The marker key reports the floor-wide operator total and phase breakdown.
 
 Picking operators remain at their latest confirmed physical pick-scan location. Packing operators anchor to the first active pack zone ordered by `location_code`; `pack_scan_log` is no longer joined (OV-132) since it records no station and identity lives on the batch. Exact attribution across multiple pack stations remains a data-model requirement — prod has three (PACK-01/02/03), so every packer stacks on PACK-01 there (OV-146).
+
+### Reviewer freshness worker — OV-153 (verified in production 2026-08-05, v260)
+
+Seeded reviewer data is static by construction. A one-shot `UPDATE` was observed
+decaying past the 20-minute threshold within ~103 minutes, so a reviewer landing
+at an unknown hour saw an idle floor. `apps/backend/src/workers/reviewer-activity-refresh.worker.ts`
+runs every 600s in-process (`server.ts:34` → `bootstrap/workers.ts:311`), advancing
+`pick_last_activity_at` on `picking` and `pack_last_activity_at` on `packing`
+batches only. It fires once immediately on boot, so a restart clears amber markers
+within seconds rather than ten minutes.
+
+**The code shipping is not the feature working.** `.env` is gitignored, so the
+worker is inert unless the two variables exist on Fly. Set both in one invocation
+— `ENABLED` alone hits the invalid-shop-id branch and the worker logs an error
+and does nothing:
+
+```zsh
+flyctl secrets set REVIEWER_ACTIVITY_REFRESH_ENABLED=true REVIEWER_ACTIVITY_REFRESH_SHOP_ID=1 -a synchroflow
+```
+
+Three guards must all hold on the target tenant or the worker returns zero:
+a `suppliers.notes LIKE 'SEED:REVIEWER_ACTIVITY%'` marker, both canonical
+operators (`elin.vargas@lasyncro.internal`, `marcus.boateng@lasyncro.internal`),
+and active batches attributing those ids via `picked_by` / `packed_by` /
+`assigned_packer_id`. Verified on prod shop 1: 3 markers, users 11 and 12,
+batches `8bea7259` (picking, picked_by 11) and `8f404c77` (packing, 12/12).
+
+Verify from a separate connection — an in-transaction SELECT proves nothing:
+
+```zsh
+PGOPTIONS="-c app.current_tenant=1" psql "$PGURL" -c "SELECT pick_batch_id, status, EXTRACT(EPOCH FROM (NOW() - COALESCE(pack_last_activity_at, pick_last_activity_at)))::int AS age_s FROM pick_batches WHERE shop_id=1 ORDER BY status"
+```
+
+Active batches under ~600s; `pick_complete` / `pack_complete` rows must be
+unchanged. Never enable this against a real merchant tenant — it would falsify
+genuine operator inactivity.
 
 Local verification returned the picker at `A-1` and the packer at `PACK-1`. `GET /api/v1/wms/live-activity` returned `200`, `GET /api/v1/wms/order-pool` remained `200` with two ready orders, and unauthenticated live-activity access remained `401`.
