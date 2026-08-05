@@ -205,7 +205,9 @@ with them (8 tasks vs 132 units on the dev tenant).
 - `receiveAtDock`: `inventory_units` where `status = 'received'`, grouped by `current_location_code`.
 - `awaitingPackUnits`: summed `pick_batches.total_units` where `status = 'pick_complete'`.
 
-Ready-for-release orders remain authoritative in `GET /api/v1/wms/order-pool`. Packed-not-shipped orders are represented by `order_warehouse_status.status = 'packed'` but are not yet exposed by the live-activity response.
+Ready-for-release orders remain authoritative in `GET /api/v1/wms/order-pool`. Packed-not-shipped orders are exposed as `packedNotShipped` on the live-activity response (OV-157), alongside `shippedToday`. Both derive from `order_warehouse_status`, which has no `shop_id` column — tenancy joins through `orders`, and a missing join would leak across tenants. `shipped_at` is monotonic per migration 0088's trigger, so a shipped-today count cannot silently revert.
+
+The two feed one outbound `SyntheticStation`: `count` from `shippedToday`, `urgentCount` from `packedNotShipped`. Known limitation (OV-159): the apron's two-segment bar computes the urgent height as a fraction of the stack total, so `urgentCount >= count` fills the bar entirely and `1 shipped / 3 staged` is indistinguishable from `0 shipped / 3 staged`. That encoding is sound for inbound, where blocked orders are a subset of the pool, but outbound's two counts are independent sets and a backlog can exceed a day's shipments.
 
 ### 6.3 Poll interval
 
@@ -377,6 +379,12 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 after each block ships.
 
 | OV-132 | P1 | Operators vanished after 4h; markers and idle alerts disagreed | CLOSED — liveness from pick_batches, freshness graded client-side |
+| OV-154 | P1 | Footer claimed an idle operator on a batch whose clock was 113s old | CLOSED — idle alerts stranded on completed batches now resolved by a sweep in idleAlert.service.ts |
+| OV-157 | P1 | Outbound apron never rendered; map ended at packing | CLOSED — shippedToday and packedNotShipped added to live-activity; outbound station constructed |
+| OV-157b | P1 | Apron suppressed whenever shippedToday was 0 | CLOSED — stationPlacements filters on either stack having weight; divisor moved to stackTotal |
+| OV-158 | P1 | No shipped or staged orders existed on the reviewer tenant | CLOSED — seed_reviewer_outbound.ts |
+| OV-159 | P2 | Urgent stack fills the whole bar when it meets or exceeds count | OPEN — needs a different encoding, not a tweak |
+| OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | OPEN — possibly correct; pool predicate is stricter than the seed's |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
 | OV-148 | P1 | Batches b8ad06f2 and 99495ddc attributed to user 1 (contact@lasyncro.com) — the reviewer is seeded as their own operator. seed_reviewer_activity.ts falls back to owner?.id | Open |

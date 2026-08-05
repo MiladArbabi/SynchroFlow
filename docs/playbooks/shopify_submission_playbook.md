@@ -562,4 +562,60 @@ Active batches under ~600s; `pick_complete` / `pack_complete` rows must be
 unchanged. Never enable this against a real merchant tenant — it would falsify
 genuine operator inactivity.
 
+### Reviewer outbound lane — OV-158 (verified in production 2026-08-05)
+
+`seed_reviewer_activity.ts` writes `order_warehouse_status`, but on production
+its batch block never ran: `unbatched` came up short of `requiredOrderCount`,
+the WARNING fired, every batch and every `ows` insert was skipped — and the
+supplier marker was written anyway, so re-running is a no-op. Four batches
+exist there with eleven orders and zero `ows` rows. The two rows that do exist
+came from earlier repair scripts, not from that seeder.
+
+Do not try to make that script re-runnable. Every phase below its marker guard
+assumes a fresh tenant and `suppliers_shop_name_unique` fires on re-entry.
+`seed_reviewer_outbound.ts` is a separate additive script, following the same
+pattern as `seed_reviewer_operators.ts` and `repair_reviewer_pick_scans.ts`.
+
+Run it with a proxy open and identity confirmed first:
+
+```zsh
+PGOPTIONS="-c app.current_tenant=1" psql "$PGURL" -c "SELECT current_database(), (SELECT name FROM shops WHERE id=1) AS shop"
+SEED_SHOP_ID=1 npx --yes tsx@4.19.2 apps/backend/src/scripts/seed_reviewer_outbound.ts
+```
+
+It seeds one packed-not-shipped order and one shipped-today order, each on its
+own `pack_complete` batch. It is idempotent without a marker — `pick_batches`
+has no `notes` column, so the guard is the data itself: it bails if any order
+on the shop already carries `shipped_at`. `pick_batch_orders` is UNIQUE on
+`lasyncro_order_id`, so a double-claim fails loudly rather than duplicating.
+
+Insufficient order supply is a hard failure, not a warning. That distinction is
+the whole point: the silent skip on that exact condition is what left
+production with no outbound rows for weeks.
+
+**`pick_batch_status` has no `shipped` value, and that is correct.** A batch is
+done when its orders are packed; shipping is an order-level fact on
+`order_warehouse_status.shipped_at`, because orders leave the building
+individually across several carrier pickups.
+
+Note that this seed permanently consumes eligible orders — `pick_batch_orders`
+UNIQUE means an order belongs to exactly one batch forever. On production it
+took the Order Pool apron from 2 to 0 (OV-160).
+
+### Gotchas that cost time
+
+**Seed scripts ignore exported `PG*` vars.** `seed_reviewer_outbound.ts`
+reported `[DB_IDENTITY] { database: 'synchroflow', host: 'fdaa:…', port: 5433 }`
+— it resolved `DATABASE_URL` and connected over Fly's private network, not the
+proxy. Right database, wrong assumption about the control. Always read the
+`[DB_IDENTITY]` line before trusting which database a seed reached.
+
+**`docker exec` without `-i` silently discards a heredoc.** No output, no
+error. Use `docker exec -i synchroflow_db psql …`.
+
+**`tsc` cannot see the database.** Two runtime failures in one session passed
+type-checking cleanly: a `varchar = uuid` comparison with no Postgres operator,
+and an insert naming a `pick_batches.notes` column that does not exist. Read
+`information_schema.columns` and `pg_enum` before writing an insert.
+
 Local verification returned the picker at `A-1` and the packer at `PACK-1`. `GET /api/v1/wms/live-activity` returned `200`, `GET /api/v1/wms/order-pool` remained `200` with two ready orders, and unauthenticated live-activity access remained `401`.
