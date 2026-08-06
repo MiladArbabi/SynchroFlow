@@ -34,20 +34,27 @@ describe('Shopify install flow', () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toContain(`${shopDomain}/admin/oauth/authorize`);
 
+    // Migrations 0137/0138 made RLS a real enforcement boundary: under sf_app,
+    // systemQuery only waives the application tenant guard — PostgreSQL still
+    // applies the strict positive-tenant policy on users/shop_memberships, so a
+    // pre-tenant read returns zero rows. Use the reviewed SECURITY DEFINER
+    // resolver 0138 introduced for exactly this lookup.
     const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;
-    const ghostUser = await systemQuery(
-      db('users').where({ email: ghostEmail }).first()
+    const ghostLookup = await systemQuery(
+      db.raw('SELECT public.resolve_auth_user_by_email(?) AS value', [ghostEmail])
     );
-    expect(ghostUser).toBeDefined();
-    expect(ghostUser?.shop_id).toBeTruthy();
+    const ghostUser = ghostLookup.rows?.[0]?.value;
 
-    const memberships = await systemQuery(
-      db('shop_memberships').where({ user_id: ghostUser.id })
+    expect(ghostUser).toBeTruthy();
+    expect(ghostUser.shop_id).toBeTruthy();
+
+    const shopId = ghostUser.shop_id as number;
+
+    const memberships = await withTenant(shopId, (trx) =>
+      trx('shop_memberships').where({ user_id: ghostUser.id })
     );
     expect(memberships).toHaveLength(1);
     expect(memberships[0].role).toBe('owner');
-
-    const shopId = memberships[0].shop_id;
     const wmsSettings = await withTenant(shopId, (trx) =>
       trx('shop_wms_settings').where({ shop_id: shopId }).first()
     );
