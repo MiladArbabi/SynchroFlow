@@ -11,7 +11,15 @@ import {
 const baseDb = knex(dbConfig);
 export { runWithTenantContext };
 
+// RUNTIME-BOOT-05: TENANT_CONTEXT_MISSING throws from queryBuilder.then, which
+// carries no frame from where the builder was constructed. Flag-gated capture of
+// the construction stack — new Error().stack per builder is too costly to leave on.
+const TRACE_TENANT_ORIGIN = process.env.TENANT_GUARD_TRACE === '1';
+
 function guardTenantQuery(target: Knex, queryBuilder: any) {
+  const originStack = TRACE_TENANT_ORIGIN
+    ? new Error('QUERY_ORIGIN').stack
+    : undefined;
   const originalThen = queryBuilder.then.bind(queryBuilder);
 
   queryBuilder.then = async function (...args: any[]) {
@@ -26,7 +34,8 @@ function guardTenantQuery(target: Knex, queryBuilder: any) {
 
     if (!Number.isInteger(expectedTenant) || expectedTenant <= 0) {
       throw new Error(
-        'TENANT_CONTEXT_MISSING: app.current_tenant is missing or zero. Query blocked.'
+        'TENANT_CONTEXT_MISSING: app.current_tenant is missing or zero. Query blocked.' +
+          (originStack ? `\n[QUERY_ORIGIN]\n${originStack}` : '')
       );
     }
 
@@ -183,7 +192,13 @@ export async function withTenant<T>(
 ): Promise<T> {
   assertValidShopId(shopId);
 
-  return baseDb.transaction(async (trx) => {
+  // SEC-RLS-P0-b: the transaction GUC alone is not tenant context. Callees that
+  // reach for the global db instead of the passed trx read AsyncLocalStorage,
+  // which withTenant never populated — so they threw TENANT_CONTEXT_MISSING from
+  // inside a correctly-scoped block (Shopify billing sweep, v270-v273).
+  // runWithTenantContext makes the two entry points in §6.1 actually equivalent.
+  return runWithTenantContext(shopId, () =>
+    baseDb.transaction(async (trx) => {
     // NOTE:
     // PostgreSQL SET does NOT support parameter binding.
     // shopId is numeric and controlled → safe to inline.
@@ -196,7 +211,8 @@ export async function withTenant<T>(
     await setTenantContext(trx, shopId);
 
     return fn(trx);
-  });
+    })
+  );
 }
 
 // NOTE:
