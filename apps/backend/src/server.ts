@@ -40,6 +40,14 @@ async function start() {
   // Bind the HTTP server after critical infrastructure readiness, but before
   // optional background-worker initialization. A slow or failed worker must
   // not prevent Fly health checks from reaching the API.
+  // RUNTIME-BOOT-02: bootstrap/workers.ts starts ten workers with `void`, so a
+  // rejection in any polling loop is unowned and Node 20 terminates the process.
+  // That killed v270 four seconds after the listener bound, past the reach of
+  // startWorkers().catch. Contain and log loudly — never exit on a worker fault.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED_REJECTION] contained, process kept alive:', reason);
+  });
+
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);
 
