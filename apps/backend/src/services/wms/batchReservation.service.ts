@@ -13,6 +13,13 @@ interface PickableInventoryRow {
   lasyncro_variant_id: string;
   location_code: string;
   available_quantity: number | string;
+  /**
+   * SHOP-REV-02: allocation preference. 0 = bin, 1 = warehouse root.
+   * Lower allocates first, so stowed stock is always consumed before
+   * unlocated root stock. Optional for callers of the exported
+   * buildBatchReservationAllocations, which get bin-priority by default.
+   */
+  location_rank?: number;
 }
 
 export interface BatchReservationAllocation {
@@ -107,11 +114,19 @@ function allocateRequiredQuantities(
     );
 
   for (const [variantId, requiredQuantity] of sortedRequiredVariants) {
+    /**
+     * SHOP-REV-02: rank first, then location_code. Sorting on
+     * location_code alone would have ordered WH-{n}-ROOT among the bins
+     * by alphabet — correct by luck for A-/B-/C- names, wrong for any
+     * bin sorting after "WH". Rank makes bins-first explicit.
+     */
     const rows = [
       ...(inventoryByVariant.get(variantId) ?? []),
-    ].sort((left, right) =>
-      left.location_code.localeCompare(right.location_code)
-    );
+    ].sort((left, right) => {
+      const rankDelta = (left.location_rank ?? 0) - (right.location_rank ?? 0);
+      if (rankDelta !== 0) return rankDelta;
+      return left.location_code.localeCompare(right.location_code);
+    });
 
     let remainingQuantity = requiredQuantity;
     let totalAvailable = 0;
@@ -143,7 +158,7 @@ function allocateRequiredQuantities(
 
     if (remainingQuantity > 0) {
       throw new Error(
-        `[PICK_BATCH_SERVICE] Insufficient active-bin inventory for variant ${variantId}. Required: ${requiredQuantity}, Available: ${totalAvailable}`
+        `[PICK_BATCH_SERVICE] Insufficient pickable inventory for variant ${variantId}. Required: ${requiredQuantity}, Available: ${totalAvailable}`
       );
     }
   }
@@ -184,34 +199,38 @@ export async function reserveBatchInventory(
   const variantIds = [...requiredByVariant.keys()];
 
   /**
-   * Match inventoryConstraintEvaluator exactly:
-   * only active warehouse locations of type "bin" are pickable.
+   * SHOP-REV-02: pickable = active bin OR warehouse root. Must match
+   * inventoryConstraintEvaluator's filter exactly — that one decides
+   * which orders are eligible, this one decides which are reservable.
+   * A bin-only filter here threw on every tenant whose stock had not
+   * been stowed, which is every tenant at install (Shopify ref 102766).
+   *
+   * location_rank drives bins-first allocation in
+   * allocateRequiredQuantities; root is the fallback, not the default.
    *
    * FOR UPDATE serializes competing releases against the same
    * inventory_truth rows inside the caller's transaction.
    */
   const inventoryRows: PickableInventoryRow[] =
-    await trx('inventory_truth')
-      .where({ shop_id: shopId })
-      .whereIn('lasyncro_variant_id', variantIds)
-      .whereIn(
-        'location_code',
-        trx('warehouse_locations')
-          .select('location_code')
-          .where({
-            shop_id: shopId,
-            active: true,
-            type: 'bin',
-          })
-      )
-      .where('available_quantity', '>', 0)
+    await trx('inventory_truth as it')
+      .join('warehouse_locations as wl', function () {
+        this.on('wl.location_code', '=', 'it.location_code')
+            .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+            .andOnVal('wl.active', true)
+            .andOn(trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse']));
+      })
+      .where('it.shop_id', shopId)
+      .whereIn('it.lasyncro_variant_id', variantIds)
+      .where('it.available_quantity', '>', 0)
       .select(
-        'lasyncro_variant_id',
-        'location_code',
-        'available_quantity'
+        'it.lasyncro_variant_id',
+        'it.location_code',
+        'it.available_quantity',
+        trx.raw(`CASE wl.type WHEN 'bin' THEN 0 ELSE 1 END as location_rank`)
       )
-      .orderBy('lasyncro_variant_id', 'asc')
-      .orderBy('location_code', 'asc')
+      .orderBy('it.lasyncro_variant_id', 'asc')
+      .orderBy('location_rank', 'asc')
+      .orderBy('it.location_code', 'asc')
       .forUpdate();
 
   const allocations = allocateRequiredQuantities(

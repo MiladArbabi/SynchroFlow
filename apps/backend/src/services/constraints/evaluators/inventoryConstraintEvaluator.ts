@@ -14,14 +14,27 @@ export async function evaluateInventoryConstraint(
    * NOT from previously projected constraints.
    */
   /*
-   * INVENTORY CONSTRAINT — MULTI-BIN AWARE (fixed May 2026)
-   * --------------------------------------------------------
-   * Previously hardcoded to WH-1-ROOT which caused false inventory
-   * blocks for variants stocked in specific bins (A-1, B-2, etc).
+   * INVENTORY CONSTRAINT — BIN + ROOT AWARE (SHOP-REV-02, Aug 2026)
+   * --------------------------------------------------------------
+   * History: originally hardcoded to WH-1-ROOT, which falsely blocked
+   * variants stocked in bins (A-1, B-2). The May 2026 fix counted ONLY
+   * bins — which inverted the bug: it falsely blocked variants whose
+   * stock sits at the warehouse root. Neither version counted both.
    *
-   * Now aggregates available_quantity across ALL active bin locations
-   * for the shop. Frame zones (warehouse/lane/shelf) are excluded —
-   * only bin-type locations hold pickable stock.
+   * Root stock is real and sellable. seedShopifyOpeningBalances and
+   * receiveJob both land stock at WH-{shopId}-ROOT as "available
+   * (unlocated)"; nothing moves it to a bin until the merchant builds a
+   * floor plan and stows. On a freshly installed tenant that is 100% of
+   * inventory — so bin-only counting made every order oversell-blocked
+   * and the order pool unreachable. Shopify review ref 102766.
+   *
+   * Now counts active bin AND warehouse-root locations. Lane and shelf
+   * stay excluded — frame geometry, never holds stock.
+   *
+   * MUST stay in sync with batchReservation.service.ts's pickable-location
+   * filter. That decides what is reservable; this decides what is
+   * eligible. If they diverge, orders either block with stock on hand or
+   * reach release and throw.
    *
    * shop_id scoping via RLS — SET LOCAL must be called by caller.
    */
@@ -32,9 +45,9 @@ export async function evaluateInventoryConstraint(
     })
     .leftJoin('warehouse_locations as wl', function () {
       this.on('wl.location_code', '=', 'it.location_code')
-          .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
-          .andOnVal('wl.active', true)
-          .andOnVal('wl.type', 'bin');
+        .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+        .andOnVal('wl.active', true)
+        .andOn(trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse']));
     })
     .where('ru.lasyncro_order_id', orderId)
     .select(
@@ -44,7 +57,7 @@ export async function evaluateInventoryConstraint(
        * Sum available_quantity across all active bins.
        * COALESCE to 0 when no bin stock exists — triggers constraint.
        */
-      trx.raw('COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type = ?), 0) as available_quantity', ['bin'])
+      trx.raw('COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type IN (?, ?)), 0) as available_quantity', ['bin', 'warehouse'])
     )
     .groupBy('ru.lasyncro_variant_id');
 
