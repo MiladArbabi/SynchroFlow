@@ -13,6 +13,18 @@ let workerStopFns: Array<() => Promise<void> | void> = [];
  * - idempotent
  * - each worker may optionally export a stop function which we push into workerStopFns
  */
+// RUNTIME-BOOT-03: worker starts were fire-and-forget, so a rejection was
+// unowned — Node 20 exited the process (v270 outage) and, once contained by
+// RUNTIME-BOOT-02, arrived unattributed. Promise.resolve().then() also traps
+// synchronous throws from starts that are not async.
+function superviseWorker(name: string, start: () => unknown): void {
+  void Promise.resolve()
+    .then(start)
+    .catch((err) => {
+      console.error(`[WORKER_FAULT] ${name}`, err);
+    });
+}
+
 export async function startWorkers(): Promise<void> {
   if (started) return;
   started = true;
@@ -21,7 +33,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const w = await import('../worker.js');
     if (typeof w.startWorker === 'function') {
-      w.startWorker();
+      superviseWorker('api-domain-events', () => w.startWorker());
       if ((w as any).stopWorker && typeof (w as any).stopWorker === 'function') {
         workerStopFns.push(async () => await (w as any).stopWorker());
       }
@@ -35,7 +47,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const s = await import('../sync.worker.js');
     if (typeof s.startSyncWorker === 'function') {
-      s.startSyncWorker();
+      superviseWorker('sync', () => s.startSyncWorker());
       if ((s as any).stopSyncWorker && typeof (s as any).stopSyncWorker === 'function') {
         workerStopFns.push(async () => await (s as any).stopSyncWorker());
       }
@@ -193,7 +205,7 @@ export async function startWorkers(): Promise<void> {
           const dispatcher = await import('../workers/execution.dispatcher.worker.js');
 
           if (typeof execution.startExecutionWorker === 'function') {
-            execution.startExecutionWorker();
+            superviseWorker('execution', () => execution.startExecutionWorker());
 
             console.log('[bootstrap/workers] Execution worker started');
           }
@@ -254,7 +266,7 @@ export async function startWorkers(): Promise<void> {
     const wmsAutoRelease = await import('../workers/wms.batch.auto-release.worker.js');
     if (typeof wmsAutoRelease.startWmsBatchAutoReleaseWorker === 'function') {
       // Fire-and-forget — polling loop runs indefinitely, must not block bootstrap
-      void wmsAutoRelease.startWmsBatchAutoReleaseWorker();
+      superviseWorker('wms-batch-auto-release', () => wmsAutoRelease.startWmsBatchAutoReleaseWorker());
 
       if (typeof wmsAutoRelease.stopWmsBatchAutoReleaseWorker === 'function') {
         workerStopFns.push(async () => await wmsAutoRelease.stopWmsBatchAutoReleaseWorker());
@@ -292,7 +304,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const wmsIdleAlert = await import('../workers/wms.idle.alert.worker.js');
     if (typeof wmsIdleAlert.startWmsIdleAlertWorker === 'function') {
-      void wmsIdleAlert.startWmsIdleAlertWorker();
+      superviseWorker('wms-idle-alert', () => wmsIdleAlert.startWmsIdleAlertWorker());
       if (typeof wmsIdleAlert.stopWmsIdleAlertWorker === 'function') {
         workerStopFns.push(async () => wmsIdleAlert.stopWmsIdleAlertWorker());
       }
@@ -310,7 +322,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const reviewerActivity = await import('../workers/reviewer-activity-refresh.worker.js');
     if (typeof reviewerActivity.startReviewerActivityRefreshWorker === 'function') {
-      void reviewerActivity.startReviewerActivityRefreshWorker();
+      superviseWorker('reviewer-activity-refresh', () => reviewerActivity.startReviewerActivityRefreshWorker());
       if (typeof reviewerActivity.stopReviewerActivityRefreshWorker === 'function') {
         workerStopFns.push(async () => reviewerActivity.stopReviewerActivityRefreshWorker());
       }
@@ -327,7 +339,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const trialExpiry = await import('../workers/trial-expiry.worker.js');
     if (typeof trialExpiry.startTrialExpiryWorker === 'function') {
-      void trialExpiry.startTrialExpiryWorker();
+      superviseWorker('trial-expiry', () => trialExpiry.startTrialExpiryWorker());
       if (typeof trialExpiry.stopTrialExpiryWorker === 'function') {
         workerStopFns.push(async () => trialExpiry.stopTrialExpiryWorker());
       }
@@ -344,7 +356,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const shopifyGrace = await import('../workers/shopifyUninstallGrace.worker.js');
     if (typeof shopifyGrace.startShopifyUninstallGraceWorker === 'function') {
-      void shopifyGrace.startShopifyUninstallGraceWorker();
+      superviseWorker('shopify-uninstall-grace', () => shopifyGrace.startShopifyUninstallGraceWorker());
       if (typeof shopifyGrace.stopShopifyUninstallGraceWorker === 'function') {
         workerStopFns.push(async () => shopifyGrace.stopShopifyUninstallGraceWorker());
       }
@@ -361,7 +373,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const shopifyBillingReconciliation = await import('../workers/shopifyBillingReconciliation.worker.js');
     if (typeof shopifyBillingReconciliation.startShopifyBillingReconciliationWorker === 'function') {
-      void shopifyBillingReconciliation.startShopifyBillingReconciliationWorker();
+      superviseWorker('shopify-billing-reconciliation', () => shopifyBillingReconciliation.startShopifyBillingReconciliationWorker());
       if (typeof shopifyBillingReconciliation.stopShopifyBillingReconciliationWorker === 'function') {
         workerStopFns.push(async () => shopifyBillingReconciliation.stopShopifyBillingReconciliationWorker());
       }
@@ -377,7 +389,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const marginIntegrity = await import('../workers/margin-snapshot-integrity.worker.js');
     if (typeof marginIntegrity.startMarginSnapshotIntegrityWorker === 'function') {
-      void marginIntegrity.startMarginSnapshotIntegrityWorker();
+      superviseWorker('margin-snapshot-integrity', () => marginIntegrity.startMarginSnapshotIntegrityWorker());
       if (typeof marginIntegrity.stopMarginSnapshotIntegrityWorker === 'function') {
         workerStopFns.push(async () => marginIntegrity.stopMarginSnapshotIntegrityWorker());
       }
@@ -394,7 +406,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const carrierStall = await import('../workers/carrier-stall-detection.worker.js');
     if (typeof carrierStall.startCarrierStallDetectionWorker === 'function') {
-      void carrierStall.startCarrierStallDetectionWorker();
+      superviseWorker('carrier-stall-detection', () => carrierStall.startCarrierStallDetectionWorker());
       if (typeof carrierStall.stopCarrierStallDetectionWorker === 'function') {
         workerStopFns.push(async () => carrierStall.stopCarrierStallDetectionWorker());
       }
@@ -411,7 +423,7 @@ export async function startWorkers(): Promise<void> {
   try {
     const morningBrief = await import('../workers/morning-brief.worker.js');
     if (typeof morningBrief.startMorningBriefWorker === 'function') {
-      void morningBrief.startMorningBriefWorker();
+      superviseWorker('morning-brief', () => morningBrief.startMorningBriefWorker());
       if (typeof morningBrief.stopMorningBriefWorker === 'function') {
         workerStopFns.push(async () => morningBrief.stopMorningBriefWorker());
       }
