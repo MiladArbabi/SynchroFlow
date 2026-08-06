@@ -46,6 +46,14 @@ const { processDomainEvent } = await import('../events/processDomainEvent.js');
  */
 const { systemDb: db } = await import('@lasyncro/backend-core/system-db.js');
 
+/**
+ * SEED-RLS-01b (2026-08-06): processDomainEvent reaches the *guarded* db
+ * (backend-core/db.js), not systemDb above. The guard reads the shop ID from
+ * AsyncLocalStorage; a CLI has no such frame, so replay threw
+ * TENANT_CONTEXT_MISSING on the first event.
+ */
+const { runWithTenantContext } = await import('@lasyncro/backend-core/db.js');
+
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
 
@@ -150,10 +158,16 @@ async function replayEvents() {
 
   while (true) {
 
+    /**
+     * REBUILD-01 (2026-08-06): select was 'id' only, so event.event_type and
+     * event.shop_id were undefined in the loop below — the
+     * REBUILD_INCOMPLETE_EVENT_STREAM guard could never fire. shop_id is also
+     * required for the per-event tenant frame (SEED-RLS-01b).
+     */
     const events = await db('domain_events')
       .where('id', '>', lastProcessed)
       .orderBy('id', 'asc')
-      .select('id')
+      .select('id', 'shop_id', 'event_type', 'event_payload')
       .limit(500);
 
     if (events.length === 0) break;
@@ -189,7 +203,9 @@ async function replayEvents() {
        * Rebuild must use the deterministic processor
        * to guarantee runtime/replay equivalence.
        */
-      await processDomainEvent(event.id);
+      // SEED-RLS-01b: per-event frame — rebuild replays across all shops,
+      // so a single outer wrap would attribute events to the wrong tenant.
+      await runWithTenantContext(event.shop_id, () => processDomainEvent(event.id));
       lastProcessed = event.id;
     }
   }
