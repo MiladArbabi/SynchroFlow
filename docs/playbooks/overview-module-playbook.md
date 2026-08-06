@@ -174,9 +174,11 @@ Do NOT use the value the fatal log suggests (it points to the pre-gap id, which 
 
 ---
 
-## 5. Known separate bug (file as its own ticket — NOT fixed here)
+## 5. Known separate bug — REBUILD-03 (P2, still open as of 2026-08-06)
 
 **`MARGIN_COMPUTATION_FAILED — [PROJECTION_WRITE_VIOLATION] order_margin_snapshot`**: during rebuild, reconciliation's `computeOrderMargin` writes to `order_margin_snapshot` **without** setting `SET LOCAL synchroflow.projection = 'true'`, so the projection-writer guard rejects every margin write. Non-fatal (logged + skipped), and the Overview does not read margin — but margin data is not being rebuilt. Fires on original AND seeded orders, so it predates this work. Fix = wrap the margin write in the projection-writer context, like the other projection writers.
+
+**REBUILD-03 (2026-08-06).** Still unfixed; re-confirmed firing on every order during `npm run dev:full-seed`. Two GUCs are required, not one — `synchroflow.projection` *and* `synchroflow.reconciliation`, set inside `withTenant`; see `docs/modules/finances-module-architecture.md:496` and the reference implementation at `rebuildInventoryProjection.ts:78`. Note the "Overview does not read margin" caveat above is now narrower than it was: the Finances module does read margin, so this is no longer purely cosmetic.
 
 ---
 

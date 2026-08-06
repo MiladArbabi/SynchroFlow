@@ -371,6 +371,8 @@ subscription under `withTenant()`.
 **Cause:** `rebuildInventoryProjectionForVariants` writes to `order_fulfillment_status`, which is guarded by `enforce_projection_writer` trigger requiring `synchroflow.projection = 'true'`. When called from sync (not projection engine), this GUC is not set.
 **Fix:** Add `await trx.raw("SET LOCAL \"synchroflow.projection\" = 'true'")` before any write to projection-guarded tables outside the projection engine.
 
+**Related — REBUILD-03:** the same class on `order_margin_snapshot`, via reconciliation's `computeOrderMargin` during rebuild. Open, non-fatal (logged and skipped, so rebuild still exits 0 — which is why it survives). That table needs **both** `synchroflow.projection` and `synchroflow.reconciliation`. Full writeup: `docs/playbooks/overview-module-playbook.md` §5.
+
 ---
 
 ## 8. Environment Configuration
