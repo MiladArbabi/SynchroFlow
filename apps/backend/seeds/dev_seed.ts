@@ -4,7 +4,7 @@ import bcrypt from 'bcrypt';
 import { encrypt } from '../src/security/encryption.service.js';
 import { getTierConfig } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
-
+import { runWithTenantContext } from '@lasyncro/backend-core/db.js';
 /**
  * DEV SEED — IDENTITY-AWARE
  * ------------------------
@@ -1179,7 +1179,15 @@ export async function seed(knex: Knex): Promise<void> {
     const ft0Event = ft0Result.rows[0];
 
     if (ft0Event) {
-      await processDomainEvent(ft0Event.id);
+      /**
+       * SEED-RLS-01 (2026-08-06): processDomainEvent reaches backend-core's
+       * guarded db proxy, which reads the shop ID from AsyncLocalStorage.
+       * A knex seed has no such frame, so every query inside threw
+       * TENANT_CONTEXT_MISSING and aborted dev:full-seed. Surfaced only once
+       * the migration runner's RLS release gate started enforcing sf_app as
+       * non-superuser — the seed itself did not change.
+       */
+      await runWithTenantContext(seededShop.id, () => processDomainEvent(ft0Event.id));
       console.log('[DEV_SEED] ✅ ft0_completed processed — system_readiness_state populated');
     } else {
       console.log('[DEV_SEED] ft0_completed already exists — skipped');
@@ -1208,7 +1216,8 @@ export async function seed(knex: Knex): Promise<void> {
     const ft2Event = ft2Result.rows[0];
 
     if (ft2Event) {
-      await processDomainEvent(ft2Event.id);
+      // SEED-RLS-01: same tenant frame requirement as ft0 above.
+      await runWithTenantContext(seededShop.id, () => processDomainEvent(ft2Event.id));
       console.log('[DEV_SEED] ✅ ft2_confirmed processed — FT2 readiness populated');
     } else {
       console.log('[DEV_SEED] ft2_confirmed already exists — skipped');
