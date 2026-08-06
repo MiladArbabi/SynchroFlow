@@ -35,9 +35,20 @@ async function start() {
   // infrastructure SECOND
   await initQueue();
   await declareTopology();
-  await startWorkers();
+
+  // RUNTIME-BOOT-01:
+  // Bind the HTTP server after critical infrastructure readiness, but before
+  // optional background-worker initialization. A slow or failed worker must
+  // not prevent Fly health checks from reaching the API.
   server = app.listen(port, HOST, () => {
     console.log(`Server is listening on http://${HOST}:${port}`);
+
+    void startWorkers().catch((err) => {
+      console.error(
+        '[server] Background worker startup failed after HTTP listener became ready:',
+        err
+      );
+    });
   });
 }
 
