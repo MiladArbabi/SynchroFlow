@@ -227,10 +227,18 @@ export async function processDomainEvent(
     continue;
   }
 
+  /**
+   * REBUILD-02 (2026-08-06): shop_id added for the reconcileOrderFulfillment
+   * call below. Without it that function falls into its bootstrap lookup,
+   * which uses systemQuery() — and systemQuery does NOT bypass real RLS
+   * (RLS_blueprint.md §7), so it threw RECONCILIATION_ORDER_NOT_FOUND on an
+   * order that exists. Masked until now because rebuild ran the whole replay
+   * under systemDb (BYPASSRLS); SEED-RLS-01b moved it to the guarded db.
+   */
   const domainEventRow = await db('domain_events')
-  .where({ id: domainEventId })
-  .select('event_time')
-  .first();
+    .where({ id: domainEventId })
+    .select('event_time', 'shop_id')
+    .first();
 
   if (!domainEventRow?.event_time) {
     throw new Error('[EVENT_TIME_INVARIANT] Missing domain event time');
@@ -241,11 +249,14 @@ export async function processDomainEvent(
    * ------------------------------------------
    * Intent row is locked, safe to execute without nested transaction.
    */
+  // REBUILD-02: fifth arg is knownShopId — same pattern as
+  // projection.db.worker.ts:453, which has always passed it.
   await reconcileOrderFulfillment(
     intent.lasyncro_order_id,
     intent.aggregate_version,
     observed,
-    new Date(domainEventRow.event_time)
+    new Date(domainEventRow.event_time),
+    domainEventRow.shop_id
   );
 
   /**
