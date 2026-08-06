@@ -99,7 +99,10 @@ export const registerUser = async (req: Request, res: Response) => {
     // install (integration.controller.ts:807) but never at registration, so
     // every organic signup hit "[PICK_BATCH_SERVICE] shop_wms_settings missing"
     // and failed its first batch release. Mirrors the install path exactly.
-    await trx('shop_wms_settings').insert({ shop_id: shopId });
+    await trx('shop_wms_settings')
+      .insert({ shop_id: shopId })
+      .onConflict('shop_id')
+      .ignore();
 
     // 3️⃣ Create user
     const [createdUser] = await trx<User>('users')
