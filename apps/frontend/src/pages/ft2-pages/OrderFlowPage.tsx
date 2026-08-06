@@ -370,6 +370,9 @@ export default function OrderFlowPage() {
   // --- Wave selection + release state --------------------------------------
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [operatorId, setOperatorId] = useState<string>('');
+  // SHOP-REV-03 (2026-08-06): surfaces release failures. Cleared on each attempt.
+  const [releaseError, setReleaseError] = useState<string | null>(null);
+
   const [releaseSuccess, setReleaseSuccess] = useState<{
     batchId: string | null;
     orderCount: number;
@@ -464,12 +467,25 @@ export default function OrderFlowPage() {
   }, [poolOrders]);
 
   const handleRelease = async () => {
+    setReleaseError(null);
     try {
       const result = await releaseBatch.mutateAsync({
         priority_order_ids: selected.size > 0 ? [...selected] : undefined,
         exclusive: selected.size > 0 ? true : undefined,
         assigned_operator_id: operatorId ? Number(operatorId) : undefined,
       });
+
+      /**
+       * SHOP-REV-03 (2026-08-06): httpReleaseBatch returns HTTP 200 with a bare
+       * { message } body when releaseBatch() resolves null. That resolves the
+       * promise, so this fell into the success banner and rendered
+       * "undefined orders released" — indistinguishable from a dead button.
+       * A missing order_count is not a success.
+       */
+      if (typeof result?.order_count !== 'number') {
+        setReleaseError('No batch was created — no orders were eligible for release.');
+        return;
+      }
 
       setSelected(new Set());
       setOperatorId('');
@@ -479,8 +495,19 @@ export default function OrderFlowPage() {
         skippedOrders: result.skipped_orders ?? [],
       });
       setTimeout(() => setReleaseSuccess(null), 9000);
-    } catch {
-      // Error state is rendered from releaseBatch.isError in the wave builder.
+    } catch (err) {
+      /**
+       * SHOP-REV-03: this catch was empty, deferring to "releaseBatch.isError
+       * in the wave builder". OF-10 (2026-07-21) removed that builder and the
+       * error surface went with it. The page-level isError union covers the
+       * three read queries only, never this mutation — so a 500 from
+       * /wms/batch/release rendered nothing at all. Shopify review ref 102766
+       * cited exactly this as an unresponsive button.
+       */
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err instanceof Error ? err.message : 'Unknown error');
+      setReleaseError(message);
     }
   };
 
@@ -580,6 +607,29 @@ export default function OrderFlowPage() {
           >
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
               Couldn’t load part of the order flow. Refresh to retry.
+            </Typography>
+          </Box>
+        )}
+
+        {/* SHOP-REV-03: release-action failures. Separate from isError above,
+            which covers the three read queries — a failed release must not
+            blank the page, but it must never fail silently either. */}
+        {releaseError && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              px: 2,
+              py: 1.25,
+              mb: 3,
+              bgcolor: 'var(--accent-ghost)',
+              border: '1px solid var(--accent-border)',
+              borderRadius: '10px',
+            }}
+          >
+            <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
+              Release failed — {releaseError}
             </Typography>
           </Box>
         )}
