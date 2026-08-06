@@ -742,7 +742,8 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
     const existing = reinstallLookup.rows?.[0];
 
     if (existing) {
-      // Reinstall — reuse existing owner, re-stamp billing_provider
+      // Reinstall — reuse existing owner, re-stamp billing_provider and ensure
+      // the tenant has a WMS configuration row for first release.
       const membership = await withTenant(existing.shop_id, (trx) =>
         trx('shop_memberships')
           .where({ shop_id: existing.shop_id, role: 'owner' })
@@ -753,6 +754,13 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         console.error('[shopify-install] No owner found for reinstall', { shopDomain, shopId: existing.shop_id });
         return res.status(500).send('Installation error');
       }
+
+      await withTenant(existing.shop_id, (trx) =>
+        trx('shop_wms_settings')
+          .insert({ shop_id: existing.shop_id })
+          .onConflict('shop_id')
+          .ignore()
+      );
 
       userId = membership.user_id;
 
@@ -804,7 +812,10 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         // every shop hit "No WMS settings found" on first batch release.
         // All columns except shop_id have NOT NULL defaults (confirmed via
         // information_schema), so this minimal insert is safe.
-        await trx('shop_wms_settings').insert({ shop_id: shopId });
+        await trx('shop_wms_settings')
+          .insert({ shop_id: shopId })
+          .onConflict('shop_id')
+          .ignore();
 
         // Ghost user — password-login-disabled via random irreversible hash
         const ghostEmail = `shopify-install+${shopDomain}@lasyncro.internal`;

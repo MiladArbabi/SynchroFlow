@@ -17,7 +17,7 @@ module.exports = {
       },
       transformIgnorePatterns: [
         // allow Jest to transform certain ESM packages that ship modern syntax
-        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es|@mui/x-data-grid))',
+        '/node_modules/(?!(react-github-btn|react-resizable-panels|lodash-es|@mui/x-data-grid|uuid|resend|postal-mime|expo-server-sdk))',
         '\\.pnp\\.[^\\/]+$'
       ],
       moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
@@ -43,6 +43,7 @@ module.exports = {
         '^wiring/(.*)$': '<rootDir>/apps/frontend/src/wiring/$1',
         '^layout/(.*)$': '<rootDir>/apps/frontend/src/layout/$1',
         '^api/(.*)$': '<rootDir>/apps/frontend/src/api/$1',
+        '^expo-server-sdk$': '<rootDir>/tests/__mocks__/expo-server-sdk.ts',
 
          // Static assets + css (important for node_modules CSS like @mui/x-data-grid)
         '\\.(css|less|scss|sass)$': 'jest-transform-stub',
@@ -56,8 +57,8 @@ module.exports = {
          * TypeScript ESM source imports use .js extensions at compile time.
          * Jest resolves from source (.ts) — strip .js so it finds the TS file.
          */
-        '^(api-src/.*)\.js$': '$1',
-        '^(\\.{1,2}/.*)\.js$': '$1',
+        '^(api-src/.*?)(?<!\\\\.c)\\.js$': '$1',
+        '^(\\.{1,2}/.*?)(?<!\\\\.c)\\.js$': '$1',
 
         // Shared modules alias (so imports like '@lasyncro/shared/...' resolve in tests)
         '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
@@ -83,6 +84,7 @@ module.exports = {
 
         '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
+        '^expo-server-sdk$': '<rootDir>/tests/__mocks__/expo-server-sdk.ts',
       },
     },
     /* paste this object into the `projects` array in jest.config.js */
