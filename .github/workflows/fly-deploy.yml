@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
 jobs:
   migrate-and-deploy:
     name: Migrate then deploy restricted runtime
