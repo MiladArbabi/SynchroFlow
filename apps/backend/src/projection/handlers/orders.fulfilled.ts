@@ -297,19 +297,15 @@ export async function handleOrdersFulfilled({
       .returning(['aggregate_version']);
 
     /**
-     * FULFILLED QUANTITY UPDATE (CRITICAL)
-     * -------------------------------------
-     * Mark all revenue units as fully fulfilled.
-     * Without this, inventory constraint evaluator sees
-     * remaining_quantity = quantity - 0 = quantity for all
-     * fulfilled orders, incorrectly marking them as constrained.
-     *
-     * Line-item atomic schema: fulfilled_quantity = quantity
-     * means no remaining demand for this order.
+     * REV-HARD-05 — only a genuinely fulfilled state consumes all demand.
+     * Pending/processing/partial updates must preserve remaining quantity
+     * so inventory constraints continue to reflect unfulfilled units.
      */
-    await trx('order_revenue_units')
-      .where({ lasyncro_order_id: lasyncroOrderId })
-      .update({ fulfilled_quantity: trx.raw('quantity') });
+    if (isFulfilled) {
+      await trx('order_revenue_units')
+        .where({ lasyncro_order_id: lasyncroOrderId })
+        .update({ fulfilled_quantity: trx.raw('quantity') });
+    }
 
     if (!updatedOrder?.aggregate_version) {
       console.error('[AGGREGATE_VERSION_UPDATE_FAILED_FATAL]', {
