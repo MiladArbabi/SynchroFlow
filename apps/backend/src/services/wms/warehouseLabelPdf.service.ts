@@ -24,6 +24,15 @@ export interface WarehouseLabelZone {
   location_code: string;
   type: string;
   zone_type: string | null;
+  /**
+   * REV-HARD-01 / REV-HARD-10 — optional merchant-supplied override for
+   * pre-existing rack labels. Nullable in `warehouse_locations` and unset
+   * on every row in every tenant today; the renderer falls back to
+   * `location_code`. Declared here because floor-planning.controller.ts:903
+   * selects it and casts the result to WarehouseLabelZone[] — omitting it
+   * broke the CI build (TS2339) while local incremental builds passed.
+   */
+  barcode: string | null;
 }
 
 const LABEL_WIDTH  = 288; // 4in thermal label stock, in points (72pt/in)
