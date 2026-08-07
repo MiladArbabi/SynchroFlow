@@ -47,8 +47,8 @@ import {
  * exists (Canvas persists via looped PATCH /zones/:locationCode).
  * Do not re-raise these literals without moving that guard too.
  *
- * FEAT-002: Extend with POST /zones, PATCH /zones/:code/barcode, etc.
- * once barcode column is added to warehouse_locations.
+ * REV-HARD-01: the `barcode` column exists but is an optional merchant
+ * override, not a printability precondition — labels render from location_code.
  */
 const router = Router();
 

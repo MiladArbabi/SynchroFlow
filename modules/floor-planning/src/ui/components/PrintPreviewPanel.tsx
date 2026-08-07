@@ -8,8 +8,8 @@
  * PrintableLabel and supply their own format list, so the same panel serves
  * both the Locations and Products sub-tabs without forking.
  *
- * Callers own printability filtering — "barcoded and active" is a location
- * concept with no product equivalent — and own the format list, because
+ * Callers own printability filtering — for locations that is "active"
+ * (REV-HARD-01), with no product equivalent — and own the format list, because
  * location labels run up to Zebra 4x6 while product labels are 30-60mm.
  *
  * Barcode type is Code128 for all formats.

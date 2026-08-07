@@ -37,7 +37,8 @@ async function generateBinLabel(zone: WarehouseLabelZone): Promise<Buffer> {
   const page = doc.addPage([LABEL_WIDTH, LABEL_HEIGHT]);
   const font = await doc.embedFont(StandardFonts.HelveticaBold);
 
-  const barcodePng   = await generateCode128Png(zone.location_code);
+  // REV-HARD-01: honour merchant-supplied override when present.
+  const barcodePng   = await generateCode128Png(zone.barcode ?? zone.location_code);
   const barcodeImage = await doc.embedPng(barcodePng);
   const barcodeWidth  = LABEL_WIDTH - 40;
   const barcodeHeight = 60;
@@ -91,7 +92,8 @@ async function generateLanePlacard(
     y -= 30;
   }
 
-  const barcodePng   = await generateCode128Png(zone.location_code);
+  // REV-HARD-01: honour merchant-supplied override when present.
+  const barcodePng   = await generateCode128Png(zone.barcode ?? zone.location_code);
   const barcodeImage = await doc.embedPng(barcodePng);
   const barcodeWidth  = A4_WIDTH - MARGIN * 2;
   const barcodeHeight = 80;
@@ -196,7 +198,8 @@ export async function generateWarehouseLabelSheetPdf(
       const x = marginPt + col * (labelWpt + gapPt);
       const y = pageH - marginPt - (row + 1) * (labelHpt + gapPt);
 
-      const barcodePng   = await generateCode128Png(zone.location_code);
+      // REV-HARD-01: honour merchant-supplied override when present.
+  const barcodePng   = await generateCode128Png(zone.barcode ?? zone.location_code);
       const barcodeImage = await doc.embedPng(barcodePng);
       const barcodeH = labelHpt * 0.6;
 

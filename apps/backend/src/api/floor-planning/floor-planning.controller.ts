@@ -22,7 +22,7 @@ import { ensureVariantBarcode } from '../../services/wms/productBarcode.service.
  * warehouse_locations table exists (migration 0048).
  * variants table used for product barcode lookup.
  *
- * FEAT-002: Add barcode column to warehouse_locations migration.
+ * REV-HARD-01: barcode column present; nullable by design (override only).
  * FEAT-002: Join products table for product_title on variants query.
  */
 
@@ -891,11 +891,14 @@ export async function httpBatchPrintBarcodes(req: Request, res: Response) {
   try {
     const zones = await db.transaction<WarehouseLabelZone[]>(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      // REV-HARD-01: printability is NOT gated on `barcode`. The renderer
+      // (warehouseLabelPdf.service) draws Code128 from location_code, which is
+      // non-null and part of the PK — every active location is printable.
+      // `barcode` is an optional merchant override for pre-existing rack labels.
       const rows = await trx('warehouse_locations')
         .where({ shop_id: shopId })
         .whereIn('location_code', locationCodes)
         .andWhere({ active: true })
-        .whereNotNull('barcode')
         .orderBy('location_code')
         .select('location_code', 'type', 'zone_type', 'barcode');
       return rows;
