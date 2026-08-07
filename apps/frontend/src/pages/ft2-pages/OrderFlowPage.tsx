@@ -989,25 +989,35 @@ export default function OrderFlowPage() {
                       <Box
                         component="button"
                         type="button"
-                        disabled={releaseBatch.isPending}
+                        /* REV-HARD-03a: releaseDisabled (line ~412) was computed
+                            but never applied — an empty pool left the CTA live and
+                            reading "Release all 0". A press could only 204 or 500,
+                            which reads as an unresponsive button (Shopify ref 102766). */
+                        disabled={releaseDisabled}
                         onClick={handleRelease}
                         sx={{
                           flexShrink: 0, px: '14px', py: '7px',
                           border: 0, borderRadius: '8px',
                           bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
                           fontSize: 12, fontWeight: 600,
-                          cursor: releaseBatch.isPending ? 'wait' : 'pointer',
-                          opacity: releaseBatch.isPending ? 0.6 : 1,
+                          cursor: releaseBatch.isPending
+                            ? 'wait'
+                            : waveOrders === 0
+                            ? 'not-allowed'
+                            : 'pointer',
+                          opacity: releaseDisabled ? 0.5 : 1,
                           transition: 'opacity 0.12s',
-                          '&:hover': { opacity: 0.88 },
+                          '&:hover': { opacity: releaseDisabled ? 0.5 : 0.88 },
                           whiteSpace: 'nowrap',
                         }}
                       >
                         {releaseBatch.isPending
                           ? 'Releasing…'
+                          : waveOrders === 0
+                          ? 'Nothing to release'
                           : selected.size > 0
-                          ? `Release ${selected.size} order${selected.size !== 1 ? 's' : ''}`
-                          : `Release all ${poolOrders.length}`}
+                          ? `Release ${selected.size} order${selected.size !==1 ? 's' : ''}`
+                          : `Release all ${waveOrders}`}
                       </Box>
                     </Box>
 
