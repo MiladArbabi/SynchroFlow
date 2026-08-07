@@ -421,8 +421,8 @@ export async function seed(knex: Knex): Promise<void> {
           lasyncro_variant_id: variant.lasyncro_variant_id,
           shop_id: shop.id,
           platform: 'shopify',
-          external_product_id: `100000${idx}`,
-          external_variant_id: `200000${idx}`,
+          external_product_id: `gid://shopify/Product/100000${idx}`,
+          external_variant_id: `gid://shopify/ProductVariant/200000${idx}`,
           external_sku: variant.sku ?? null,
           barcode: barcodeValue,
         })
@@ -432,88 +432,111 @@ export async function seed(knex: Knex): Promise<void> {
 
     console.log(`[DEV_SEED] QA barcodes registered for ${qaVariants.length} variants`);
 
-    // 6. Seed 3 orders in the pool (pending, no batch, no constraints)
+    // 6. Seed 3 zero-stock QA orders through the canonical event pipeline.
+    // REV-HARD-05: direct order/projection writes are erased by rebuild and
+    // bypass the same constraint lifecycle exercised by real Shopify orders.
     for (let i = 0; i < 3; i++) {
-        const variant = qaVariants[i]; // each order gets a unique variant
+      const externalOrderId = `${800001 + i}`;
+      const externalProductId = `100000${i}`;
+      const externalVariantId = `200000${i}`;
+      const eventTime = new Date();
 
-      const variantRow = await trx('variants')
-        .where({ lasyncro_variant_id: variant.lasyncro_variant_id })
-        .first();
+      await trx('domain_events')
+        .insert([
+          {
+            shop_id: shop.id,
+            event_type: 'orders/paid',
+            event_payload: {
+              id: externalOrderId,
+            },
+            event_time: eventTime,
+            external_event_id: `${externalOrderId}:paid`,
+          },
+          {
+            shop_id: shop.id,
+            event_type: 'orders/sync',
+            event_payload: {
+              id: externalOrderId,
+              name: `#QA-${externalOrderId}`,
+              createdAt: eventTime.toISOString(),
+              updatedAt: eventTime.toISOString(),
+              processedAt: eventTime.toISOString(),
+              sourceName: 'web',
+              currencyCode: 'USD',
+              displayFinancialStatus: 'PAID',
+              displayFulfillmentStatus: 'UNFULFILLED',
 
-      const [order] = await trx('orders')
-        .insert({
-          shop_id: shop.id,
-          lasyncro_order_id: trx.raw('gen_random_uuid()'),
-          aggregate_version: 1,
-          last_projected_version: 1,
-          payment_state: 'paid',
-          currency: 'USD',
-          total_price: 59.95,
-          subtotal_price: 59.95,
-          total_tax: 0,
-          order_created_at: new Date(),
-          order_updated_at: new Date(),
-          created_at: new Date(),
-          updated_at: new Date(),
-        })
-        .returning('*');
+              // REV-HARD-05: keep this QA scenario inventory-only.
+              // A complete shipping address prevents an unrelated customer block.
+              shippingAddress: {
+                address1: '1 QA Street',
+                city: 'Stockholm',
+                zip: '111 22',
+                countryCode: 'SE',
+              },
 
-      // external_order_id must be numeric only
-      await trx('external_order_identity_map')
-        .insert({
-          lasyncro_order_id: order.lasyncro_order_id,
-          shop_id: shop.id,
-          platform: 'shopify',
-          // SEED COLLISION FIX (2026-06-30): was 900001+i, colliding
-          // directly with seed_overview.sql's cohort A1-A10 range
-          // (900001-900018). Both scripts run in the same dev:full-seed
-          // chain; external_order_identity_map's onConflict(...).ignore()
-          // meant whichever ran first silently won, routing any
-          // external_order_id=900001 lookup to the wrong order. Confirmed
-          // live during Thread A-2 testing via full hash verification.
-          external_order_id: `${800001 + i}`,
-        })
-        .onConflict(['shop_id', 'platform', 'external_order_id'])
-        .ignore();
-
-      await trx('order_line_items')
-        .insert({
-          lasyncro_line_item_id: trx.raw('gen_random_uuid()'),
-          lasyncro_order_id: order.lasyncro_order_id,
-          lasyncro_product_id: variantRow?.lasyncro_product_id,
-          lasyncro_variant_id: variant.lasyncro_variant_id,
-          title: variant.title ?? variant.sku ?? 'QA Product',
-          sku: variant.sku ?? null,
-          quantity: 1,
-          unit_price: 59.95,
-          line_total: 59.95,
-          platform: 'shopify',
-          external_line_item_id: `${800001 + i}`,
-          created_at: new Date(),
-          updated_at: new Date(),
-        })
-        .onConflict(['platform', 'external_line_item_id'])
-        .ignore();
-
-      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
-
-      await trx('order_fulfillment_status')
-        .insert({
-          lasyncro_fulfillment_id: trx.raw('gen_random_uuid()'),
-          lasyncro_order_id: order.lasyncro_order_id,
-          status: 'pending',
-          status_updated_at: new Date(),
-          created_at: new Date(),
-          updated_at: new Date(),
-        })
-        .onConflict('lasyncro_order_id')
+              totalTaxSet: {
+                shopMoney: { amount: '0.00' },
+              },
+              subtotalPriceSet: {
+                shopMoney: { amount: '59.95' },
+              },
+              totalPriceSet: {
+                shopMoney: {
+                  amount: '59.95',
+                  currencyCode: 'USD',
+                },
+              },
+              lineItems: {
+                edges: [
+                  {
+                    node: {
+                      id: `gid://shopify/LineItem/${externalOrderId}`,
+                      product: {
+                        id: `gid://shopify/Product/${externalProductId}`,
+                      },
+                      variant: {
+                        id: `gid://shopify/ProductVariant/${externalVariantId}`,
+                      },
+                      quantity: 1,
+                      originalTotalSet: {
+                        shopMoney: { amount: '59.95' },
+                      },
+                      originalUnitPriceSet: {
+                        shopMoney: { amount: '59.95' },
+                      },
+                      discountedUnitPriceSet: {
+                        shopMoney: { amount: '59.95' },
+                      },
+                    },
+                  },
+                ],
+              },
+            },
+            event_time: eventTime,
+            external_event_id: externalOrderId,
+          },
+          {
+            shop_id: shop.id,
+            event_type: 'orders/fulfillment_updated',
+            event_payload: {
+              status: 'pending',
+              order_id: externalOrderId,
+            },
+            event_time: eventTime,
+            external_event_id: `${externalOrderId}:fulfillment_updated`,
+          },
+        ])
+        .onConflict(
+          trx.raw('(shop_id, external_event_id) WHERE external_event_id IS NOT NULL')
+        )
         .ignore();
     }
 
-      console.log('[DEV_SEED] ✅ QA orders seeded (3 orders in pool)');
+      console.log('[DEV_SEED] ✅ QA orders seeded via domain events (3 zero-stock orders)');
       console.log('[DEV_SEED] ✅ QA flow ready:');
       console.log('[DEV_SEED]    Owner → Dispatch → Receive → create receive job from QA PO');
-      console.log('[DEV_SEED]    Owner → Dispatch → Pick → release batch (3 orders in pool)');
+      console.log('[DEV_SEED]    Zero-stock QA orders remain blocked until inventory becomes pickable');
       console.log('[DEV_SEED]    Operator → claim receive job → inspect → close → barcodes generated');
       console.log('[DEV_SEED]    Operator → claim stow → scan LOC-A01 → scan product barcode');
       console.log('[DEV_SEED]    Operator → claim pick batch → scan product barcodes');
