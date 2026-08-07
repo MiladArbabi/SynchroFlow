@@ -102,6 +102,45 @@ export function mapShopifyOrderNodeToCanonical(
 
   const totalTax = Number(totalTaxRaw);
 
+    /**
+   * SHOPIFY ORDER SHAPE NORMALIZATION
+   * ---------------------------------
+   * orders/create webhooks use REST field names while initial sync uses
+   * GraphQL field names. Normalize both before building the canonical order
+   * so webhook ingestion cannot silently drop addresses or line items.
+   */
+  const rawShippingAddress =
+    node.shippingAddress ??
+    node.shipping_address ??
+    null;
+
+  const shippingAddress = rawShippingAddress
+    ? {
+        name: rawShippingAddress.name ?? null,
+        address1: rawShippingAddress.address1 ?? null,
+        address2: rawShippingAddress.address2 ?? null,
+        city: rawShippingAddress.city ?? null,
+        zip: rawShippingAddress.zip ?? null,
+        phone: rawShippingAddress.phone ?? null,
+        provinceCode:
+          rawShippingAddress.provinceCode ??
+          rawShippingAddress.province_code ??
+          null,
+        countryCode:
+          rawShippingAddress.countryCode ??
+          rawShippingAddress.country_code ??
+          null,
+      }
+    : null;
+
+  const rawLineItems = Array.isArray(node.lineItems)
+    ? node.lineItems
+    : Array.isArray(node.lineItems?.edges)
+      ? node.lineItems.edges.map((edge: any) => edge.node ?? edge)
+      : Array.isArray(node.line_items)
+        ? node.line_items
+        : [];
+
   return {
     id: orderId,
     shopId,
@@ -120,52 +159,85 @@ export function mapShopifyOrderNodeToCanonical(
     subtotalPrice,
     totalTax,
 
-    // ── Line items (structural only) ─────────────────
-    lineItems: (node.lineItems?.edges ?? []).map((edge: any) => {
-      const li = edge.node;
+        // ── Line items (GraphQL sync + REST webhook) ─────
+    lineItems: rawLineItems.map((li: any) => {
+      const unitPriceRaw =
+        li.discountedUnitPriceSet?.shopMoney?.amount ??
+        li.originalUnitPriceSet?.shopMoney?.amount ??
+        li.price_set?.shop_money?.amount ??
+        li.price ??
+        null;
 
-      const unitPrice =
-        li.discountedUnitPriceSet?.shopMoney?.amount != null
-          ? Number(li.discountedUnitPriceSet.shopMoney.amount)
-          : li.originalUnitPriceSet?.shopMoney?.amount != null
-            ? Number(li.originalUnitPriceSet.shopMoney.amount)
-            : null;
+      const totalPriceRaw =
+        li.originalTotalSet?.shopMoney?.amount ??
+        li.discountedTotalSet?.shopMoney?.amount ??
+        li.line_price_set?.shop_money?.amount ??
+        li.line_price ??
+        null;
 
-      const totalPrice =
-        li.originalTotalSet?.shopMoney?.amount != null
-          ? Number(li.originalTotalSet.shopMoney.amount)
-          : li.discountedTotalSet?.shopMoney?.amount != null
-            ? Number(li.discountedTotalSet.shopMoney.amount)
-            : null;
+      const productId =
+        li.product?.id ??
+        li.productId ??
+        li.product_id ??
+        null;
+
+      const variantId =
+        li.variant?.id ??
+        li.variantId ??
+        li.variant_id ??
+        null;
+
+      const lineItemId =
+        li.lineItemId ??
+        li.id;
 
       return {
-        lineItemId: li.id,
+        lineItemId: String(lineItemId),
         orderId,
-        productId: li.product?.id ?? null,
 
-        // 🔑 Identity (explicit, no synthesis)
-        variantId: li.variant?.id ?? null,
+        productId:
+          productId != null
+            ? String(productId)
+            : null,
 
-        title: li.variant?.title ?? li.title ?? '',
-        sku: li.sku ?? li.variant?.sku ?? null,
+        // Shopify REST sends variant_id; GraphQL sends variant.id.
+        variantId:
+          variantId != null
+            ? String(variantId)
+            : null,
+
+        title:
+          li.variant?.title ??
+          li.title ??
+          '',
+
+        sku:
+          li.sku ??
+          li.variant?.sku ??
+          null,
 
         quantity: li.quantity,
 
-        // 💰 Pricing primitives (platform-reported only)
-        unitPrice,
-        totalPrice,
+        unitPrice:
+          unitPriceRaw != null
+            ? Number(unitPriceRaw)
+            : null,
+
+        totalPrice:
+          totalPriceRaw != null
+            ? Number(totalPriceRaw)
+            : null,
 
         estimatedUnitCost: null,
 
         platform: 'shopify',
-        platformLineItemId: li.id,
+        platformLineItemId: String(lineItemId),
       };
     }),
 
     // ── Optional / absent signals ───────────────────
     shippingLines: [],
-    // ── Shipping address (WM-34 — invoice PDF generation) ────────────
-    shippingAddress: node.shippingAddress ?? null,
+    shippingAddress,
     /**
      * CUSTOMER IDENTITY
      * -----------------------------------

@@ -1,8 +1,8 @@
 # Shopify App Store Submission Playbook
 
-**Sprint:** LaSyncro Shopify App Store Listing  
-**Date:** June 15–16, 2026  
-**Last updated:** July 18, 2026  
+**Sprint:** LaSyncro Shopify App Store Listing
+**Date:** June 15–16, 2026
+**Last updated:** August 7, 2026
 **Status:** ✅ Submission-ready
 
 ---
@@ -60,17 +60,17 @@ No changes required. Passed from the start once URLs were corrected.
 
 ### ✅ Immediately redirects to app UI after authentication
 
-**Root cause:** App URL was set to `http://localhost:3000` in the dev dashboard.  
+**Root cause:** App URL was set to `http://localhost:3000` in the dev dashboard.
 **Fix:** Updated App URL to `https://app.lasyncro.com`.
 
 ### ✅ Uses a valid TLS certificate
 
-**Root cause:** `lasyncro.com` returned a 308 redirect to `www.lasyncro.com`. Shopify's checker saw no valid host.  
+**Root cause:** `lasyncro.com` returned a 308 redirect to `www.lasyncro.com`. Shopify's checker saw no valid host.
 **Fix:** App URL changed to `https://app.lasyncro.com` (backend on Fly, not Vercel).
 
 ### ✅ Provides mandatory compliance webhooks
 
-**Root cause:** No `shopify.app.toml` existed; webhooks were never registered.  
+**Root cause:** No `shopify.app.toml` existed; webhooks were never registered.
 **Fix:** Created `shopify.app.toml` with compliance topics; deployed via Shopify CLI.
 
 ### ✅ Verifies webhooks with HMAC signatures
@@ -105,24 +105,24 @@ During the sprint, several production secrets were found mismatched or stale:
 
 Several bugs prevented the sync worker from ever running in production:
 
-**I-01: `declareTopology()` missing from `server.ts`**  
-`server.ts` called `initQueue()` and `startWorkers()` but never `declareTopology()`. The `sync_jobs` queue was never asserted on the broker, so messages published to it were silently dropped.  
+**I-01: `declareTopology()` missing from `server.ts`**
+`server.ts` called `initQueue()` and `startWorkers()` but never `declareTopology()`. The `sync_jobs` queue was never asserted on the broker, so messages published to it were silently dropped.
 Fix: Added `await declareTopology()` between `initQueue()` and `startWorkers()` in `server.ts`.
 
-**I-02: `decryptToken()` couldn't handle AES-256-GCM tokens**  
-OAuth saves tokens using AES-256-GCM (`encryption.service.ts`), but `ShopifyAppService.decryptToken()` only knew CryptoJS legacy format. Webhook registration silently failed.  
+**I-02: `decryptToken()` couldn't handle AES-256-GCM tokens**
+OAuth saves tokens using AES-256-GCM (`encryption.service.ts`), but `ShopifyAppService.decryptToken()` only knew CryptoJS legacy format. Webhook registration silently failed.
 Fix: Updated `decryptToken()` in `packages/backend-core/src/services/shopify-app.service.ts` to try GCM first, fall back to CryptoJS.
 
-**I-03: `require('crypto')` in ESM module**  
-The GCM decrypt path used `require('crypto')` inside an ESM module — throws `ReferenceError` at runtime.  
+**I-03: `require('crypto')` in ESM module**
+The GCM decrypt path used `require('crypto')` inside an ESM module — throws `ReferenceError` at runtime.
 Fix: Replaced with top-level `import crypto from 'crypto'`.
 
-**I-04: `waitForConnect()` blocking boot**  
-`declareTopology()` used `channel.addSetup()` which only runs if a channel is already connected. Since RabbitMQ connects asynchronously, topology was never declared. Added `await channel.waitForConnect()` before `addSetup()`, but this blocked the HTTP server from starting before Fly's health check grace period expired.  
+**I-04: `waitForConnect()` blocking boot**
+`declareTopology()` used `channel.addSetup()` which only runs if a channel is already connected. Since RabbitMQ connects asynchronously, topology was never declared. Added `await channel.waitForConnect()` before `addSetup()`, but this blocked the HTTP server from starting before Fly's health check grace period expired.
 Final fix: `initQueue()` now awaits the actual `connect` event (25s timeout) before returning. `app.listen()` moved to run immediately after `initQueue()` while `declareTopology().then(() => startWorkers())` runs async.
 
-**I-05: RabbitMQ `PRECONDITION_FAILED` — queue argument conflicts**  
-The `events` queue was declared by `queue.topology.ts` with different `x-dead-letter-routing-key` and missing `x-single-active-consumer` vs what `worker.ts` expected. Same issue for `execution.jobs.v1` — topology used `execution.jobs.v1.dlx` as the DLX name but `execution.queue.ts` used `execution.dlx`.  
+**I-05: RabbitMQ `PRECONDITION_FAILED` — queue argument conflicts**
+The `events` queue was declared by `queue.topology.ts` with different `x-dead-letter-routing-key` and missing `x-single-active-consumer` vs what `worker.ts` expected. Same issue for `execution.jobs.v1` — topology used `execution.jobs.v1.dlx` as the DLX name but `execution.queue.ts` used `execution.dlx`.
 
 Fixes:
 
@@ -877,3 +877,126 @@ did not derive line-level quantities for genuine partial fulfilments, which now
 report remaining_quantity equal to full quantity. Reviewer-safe, since it
 blocks rather than over-releases, but operationally wrong: units already
 shipped can be re-released. Needs its own audit.
+
+---
+
+## SHOPIFY-CANON-REST-01 — REST order webhook canonicalization
+
+**Date:** August 7, 2026
+**Status:** Implementation verified locally; production deployment/remediation pending
+**Severity:** P1
+
+### Context
+
+This issue was discovered during post-recovery production verification of Shopify order `#1192` (`17041162174834`).
+
+The operational Shopify webhook subscriptions had already been restored, and both relevant webhook deliveries succeeded:
+
+- `orders/paid` — processed
+- `orders/create` — processed
+
+This issue is therefore distinct from webhook-registration drift. Shopify successfully delivered the order data to LaSyncro.
+
+### Production evidence
+
+For Shopify order `#1192`:
+
+- `integration_webhook_events` retained the full Shopify payload.
+- `domain_events` `orders/create` event `546` retained:
+  - a populated REST `shipping_address`;
+  - one REST `line_items` entry;
+  - SKU `sku-managed-1`;
+  - quantity `3`;
+  - Shopify variant `60837615501682`.
+- The projected `orders` row had all `shipping_*` fields set to `NULL`.
+- No `order_line_items` rows were materialized.
+- `orderConstraintProjection` consequently created an active:
+  - `constraint_type = customer`
+  - `block_type = incomplete_address`
+- The order was correctly excluded from the Order Pool because an active constraint existed.
+
+The Release CTA was not defective in this scenario. The order was legitimately excluded based on the incorrectly projected state.
+
+### Root cause
+
+`projection.engine.ts` canonicalizes full `orders/create` events through:
+
+`apps/backend/src/services/mappers/shopify-to-canonical-order.ts`
+
+The mapper supported GraphQL order structures:
+
+- `shippingAddress`
+- `lineItems.edges`
+
+but did not normalize the equivalent REST webhook structures:
+
+- `shipping_address`
+- `line_items`
+
+Shopify `orders/create` webhooks use the REST-shaped fields, so the mapper converted valid incoming data into:
+
+- `shippingAddress = null`
+- `lineItems = []`
+
+The downstream `orders.create` projection then operated on that incomplete canonical payload.
+
+### Implementation
+
+`shopify-to-canonical-order.ts` now normalizes both Shopify payload shapes before constructing the canonical order.
+
+Shipping address accepts:
+
+- GraphQL `shippingAddress`
+- REST `shipping_address`
+
+Line items accept:
+
+- GraphQL `lineItems.edges`
+- GraphQL-style line-item arrays where present
+- REST `line_items`
+
+REST line-item identity and pricing fields are mapped without fabricating values:
+
+- `product_id` / GraphQL product identity
+- `variant_id` / GraphQL variant identity
+- `price` / GraphQL unit-price sets
+- reported line totals when present
+
+The existing canonical contract remains unchanged.
+
+### Regression coverage
+
+Added:
+
+`apps/backend/scripts/shopify-canonical-rest.test.mjs`
+
+Added package script:
+
+`test:shopify-canonical-rest`
+
+Focused verification:
+
+```text
+tests 2
+pass 2
+fail 0
+```
+
+Coverage proves:
+
+1. REST `orders/create` payloads preserve shipping address and line items.
+2. Existing GraphQL order mapping remains functional.
+
+The final backend build also passed after the mapper correction.
+
+### Production remediation status
+
+At documentation time:
+
+- the mapper fix has NOT been deployed to production;
+- production event `546` has NOT been replayed;
+- order `#1192` has NOT been manually repaired;
+- its `incomplete_address` constraint has NOT been manually resolved;
+- no production Release CTA mutation has been performed for `#1192`.
+
+Production remediation must remain a separate verified step after deployment. Do not manually edit the projected order, line items, constraints, inventory, or batch state to simulate success.
