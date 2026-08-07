@@ -619,3 +619,261 @@ and an insert naming a `pick_batches.notes` column that does not exist. Read
 `information_schema.columns` and `pg_enum` before writing an insert.
 
 Local verification returned the picker at `A-1` and the packer at `PACK-1`. `GET /api/v1/wms/live-activity` returned `200`, `GET /api/v1/wms/order-pool` remained `200` with two ready orders, and unauthenticated live-activity access remained `401`.
+
+## REV-HARD-05 — Fresh-install order eligibility / inventory constraint hardening
+
+Status: CLOSED — IMPLEMENTATION VERIFIED
+Commit status: NOT YET COMMITTED
+Deployment status: NOT YET DEPLOYED
+
+### Reviewer-facing risk
+
+A fresh-install tenant could expose orders as releasable even when no pickable
+inventory existed.
+
+Before remediation:
+
+- the Order Pool could contain orders with no usable stock;
+- `POST /api/v1/wms/batch/release` could reach the reservation layer;
+- batch reservation would then throw an insufficient-inventory error;
+- the primary reviewer-facing Release Orders workflow could therefore fail.
+
+The intended architecture is:
+
+constraint evaluation
+→ order_constraints projection
+→ blocked orders excluded from Order Pool
+→ only eligible orders reach batch reservation.
+
+Batch reservation remains the race-condition/backstop layer and must not be the
+first place ordinary inventory shortages are discovered.
+
+### Root cause 1 — pending fulfillment updates consumed all demand
+
+`orders/fulfilled` and `orders/fulfillment_updated` both route through the
+orders fulfillment projection handler.
+
+The handler correctly distinguishes a genuinely fulfilled state with
+`isFulfilled`, but it previously updated every order revenue unit to:
+
+    fulfilled_quantity = quantity
+
+for every fulfillment update, including `pending`, `processing`, and partial
+states.
+
+This reduced remaining demand to zero and caused the inventory constraint
+evaluator to resolve the inventory shortage incorrectly.
+
+### Fix 1
+
+File:
+
+    apps/backend/src/projection/handlers/orders.fulfilled.ts
+
+Revenue units are now marked fully fulfilled only when the normalized
+fulfillment state is genuinely `fulfilled`.
+
+Pending/processing/partial updates preserve remaining demand.
+
+This preserves:
+
+    remaining_quantity = quantity - fulfilled_quantity
+
+for orders that have not actually been fulfilled.
+
+### Root cause 2 — development QA orders bypassed the canonical event pipeline
+
+The original three QA orders were inserted directly into projection tables by
+`dev_seed.ts`.
+
+`dev:full-seed` subsequently runs rebuild-from-events, which reconstructs
+projection state from `domain_events`.
+
+The direct seed therefore did not represent a real Shopify ingestion path and
+could leave orders without canonical revenue-unit / constraint state after a
+rebuild.
+
+### Fix 2
+
+File:
+
+    apps/backend/seeds/dev_seed.ts
+
+QA orders 800001, 800002, and 800003 are now seeded through canonical domain
+events:
+
+- orders/paid
+- orders/sync
+- orders/fulfillment_updated
+
+The QA product and variant identity rows now use full Shopify GIDs.
+
+Each QA order has:
+
+- quantity = 1
+- pending fulfillment
+- zero pickable inventory
+- complete shipping address
+- no unrelated customer-address blocker
+
+The complete address intentionally isolates the scenario to the inventory
+constraint.
+
+### Root cause 3 — reconciliation checkpoint conflicted with stale-decision reuse
+
+Reconciliation intentionally reuses equivalent pending decisions from an older
+aggregate version when the active constraint-action set has not changed.
+
+However, `writeReconciliationCheckpoint()` previously required a decision
+whose `aggregate_version` exactly matched the version being checkpointed.
+
+Example observed failure:
+
+- order aggregate version: 4
+- existing equivalent pending decisions: version 1
+- reconciliation correctly reused those pending decisions
+- checkpoint searched only for a version-4 decision
+- worker crashed with:
+
+    [CHECKPOINT_BLOCKED] Missing decision ...
+
+This created a contradiction between two existing invariants:
+
+1. suppress duplicate equivalent pending decisions;
+2. require decision evidence before advancing the reconciliation checkpoint.
+
+### Fix 3
+
+Files:
+
+    apps/backend/src/workers/reconciliation/reconciliation.handlers.ts
+    apps/backend/src/workers/reconciliation/reconciliationCheckpointWriter.ts
+
+The reconciliation handler now passes the exact decision IDs it has already
+validated/reused to the checkpoint writer.
+
+The checkpoint writer still prefers an exact-version decision.
+
+When no exact-version decision exists, it accepts only the explicitly supplied
+reused decision IDs after verifying that:
+
+- they belong to the same order;
+- they still exist;
+- they are still pending;
+- every supplied ID is present.
+
+The checkpoint therefore cannot advance without decision evidence, while
+equivalent pending decisions do not need to be duplicated solely because the
+order aggregate version advanced.
+
+### Final verification
+
+Fresh full-seed: PASS
+Development runtime startup: PASS
+Projection worker crash: NOT REPRODUCED after fix
+
+QA orders 800001–800003:
+
+- fulfillment status: pending
+- quantity: 1
+- fulfilled_quantity: 0
+- remaining_quantity: 1
+- complete shipping address: PASS
+- active customer constraint: none
+- active inventory constraint: inventory / oversell
+- pickable_available: 0
+
+Order Pool before release:
+
+- HTTP: 200
+- ready_for_release_count: 8
+- blocked_count: 3
+- QA 800001–800003 absent from ready orders
+
+Batch release:
+
+- HTTP: 201
+- released order_count: 8
+- skipped_orders: []
+- total_line_items: 8
+- total_units: 12
+
+Order Pool after release:
+
+- HTTP: 200
+- ready_for_release_count: 0
+- in_batch_order_count: 8
+- active_batch_count: 1
+- blocked_count: 3
+- empty_reason: ALL_ELIGIBLE_ORDERS_ALREADY_BATCHED
+
+Reconciliation recovery verification:
+
+- all three QA orders entered stale-decision reuse
+- inventory constraint remained active
+- checkpoint committed aggregate version 4
+- no CHECKPOINT_BLOCKED
+- no projection-db-worker FATAL crash
+
+### Architectural invariant after REV-HARD-05
+
+A normal inventory shortage must be detected by the constraint system before
+the order reaches batch release.
+
+The eligibility and reservation definitions of pickable inventory must remain
+aligned:
+
+    inventory_truth.available_quantity > 0
+
+at a warehouse location where:
+
+    warehouse_locations.active = true
+    AND warehouse_locations.type IN ('bin', 'warehouse')
+
+Batch reservation remains a transactional/race-condition backstop.
+
+### Deployment prerequisites
+
+Root cause 1 was diagnosed and verified against a rebuilt local seed only. Two
+things must happen before this ships, not after:
+
+1. Confirm the defect in production. Query shop 1 for orders in pending/
+   processing whose revenue units already claim full fulfilment. If no such
+   rows exist, the production failure has a different cause and this issue's
+   scope must be reassessed before deploying.
+
+2. Decide on backfill. The handler fix changes future writes only. Orders
+   already carrying fulfilled_quantity = quantity will remain wrong after
+   deploy and will continue to bypass the inventory constraint. Either
+   `npm run rebuild` or a targeted backfill is required; establish which
+   before the deploy window.
+
+### Explicitly outside REV-HARD-05
+
+The following observations were not folded into this issue:
+
+- duplicate Blocked Orders cards in the UI;
+- repeated EXECUTION_DISPATCH_SKIPPED_MANUAL logs;
+- repeated SNAPSHOT_WORKER_DISABLED logs;
+- repeated projection diagnostic logs;
+- development Redis permission-cache fallback warnings;
+- REV-HARD-03c reservation race/backstop work;
+- printer/QZ fresh-install behavior.
+
+These require separate audits before implementation.
+
+## REV-HARD-06
+
+Worker log spam / repeated stable-state polling
+Status: OPEN
+Phase: AUDIT NOT STARTED
+
+## REV-HARD-07 — Partial fulfilment quantity derivation
+
+Status: OPEN — AUDIT NOT STARTED
+
+REV-HARD-05 stopped pending/processing updates from consuming all demand. It
+did not derive line-level quantities for genuine partial fulfilments, which now
+report remaining_quantity equal to full quantity. Reviewer-safe, since it
+blocks rather than over-releases, but operationally wrong: units already
+shipped can be re-released. Needs its own audit.
