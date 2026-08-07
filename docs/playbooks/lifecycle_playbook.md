@@ -285,7 +285,126 @@ FT0 is edge-triggered and non-retrying. If it fails:
 
 ---
 
-## 8. Frontend Lifecycle Routing
+## 8. Bootstrapping a Test Tenant Offline (FT_MINUS_ONE → FT2)
+
+Verified end to end 2026-08-07 against a running `npm run dev` + `npm run dev:worker`.
+Produces the reviewer's exact tenant shape: one warehouse root, **zero bins**,
+stock unlocated at `WH-{shopId}-ROOT`. Use this instead of `dev_seed`, which
+builds 22 locations including 18 bins and hid SHOP-REV-02 for seven sprints.
+
+> ⚠️ **Step order is load-bearing.** The `integrations` row must exist BEFORE
+> the seeder runs. FT0 is edge-triggered and non-retrying (§5 rule 4): if
+> `first_insight_delivered` is consumed while no integration row exists,
+> `FT0CompletionService` logs `[FT0][BLOCKED][NO_INTEGRATION]` and the tenant is
+> **permanently stuck at FT0**. Only a full reset recovers it. Observed on a
+> throwaway tenant during REV-HARD verification.
+
+### Step 1 — FT_MINUS_ONE: HMAC install
+
+Creates the shop, the ghost owner user, and `WH-{shopId}-ROOT`. Sign with the
+secret the *running server* holds (`.env`), not a test fallback.
+
+```zsh
+SECRET=$(grep '^SHOPIFY_API_SECRET=' .env | cut -d= -f2-)
+SHOP="test-$(date +%s).myshopify.com"
+TS=$(date +%s)
+HMAC=$(printf '%s' "shop=$SHOP&timestamp=$TS" | openssl dgst -sha256 -hmac "$SECRET" | awk '{print $2}')
+curl -s -o /dev/null -w 'install %{http_code}\n' \
+  "http://localhost:3000/api/v1/integrations/shopify/install?shop=$SHOP&timestamp=$TS&hmac=$HMAC"
+```
+
+Expect `302`. Read back the new `shops.id` and `users.id` — both are needed below.
+
+### Step 2 — the integration row (must precede Step 3)
+
+The OAuth callback writes this row after exchanging a code with Shopify, so it
+cannot run offline (§2 step 2). Insert it directly, using the app's own
+`encrypt()` so `ENCRYPTION_KEY` handling stays identical.
+
+```zsh
+SHOP_NAME="$SHOP" npx tsx -e "
+import { withTenant } from '@lasyncro/backend-core/db.js';
+import { encrypt } from './apps/backend/src/security/encryption.service.js';
+(async () => {
+  await withTenant(SHOP_ID, (trx) => trx('integrations').insert({
+    shop_id: SHOP_ID,
+    platform: 'shopify',
+    platform_shop_name: process.env.SHOP_NAME,
+    access_token_encrypted: encrypt('offline-test-token-no-network-call'),
+    sync_status: 'COMPLETED',
+    updated_at: new Date(),
+  }));
+  process.exit(0);
+})();
+"
+```
+
+Top-level await fails under tsx's CJS output — the async IIFE is required.
+`sync_status: 'COMPLETED'` satisfies the unconditional SYNC GUARD at
+`ft2-evaluator.service.ts:70`, which runs above the `NODE_ENV=test` bypass.
+
+### Step 3 — FT0 → FT1: seed, then let the worker climb
+
+```zsh
+npx tsx apps/backend/src/scripts/seed_fresh_install.cli.ts SHOP_ID
+```
+
+The seeder refuses to bootstrap a tenant — it aborts with
+`FRESH_INSTALL_SEED_ABORTED` if `WH-{shopId}-ROOT` is absent. Steps 1–2 are its
+preconditions.
+
+The worker then drives `orders/create` → `first_insight_delivered` →
+`ft0.completed` → FT1 with no further input. Watch for
+`[FT0Completion] Preconditions passed`. Confirm with:
+
+```sql
+SELECT shop_id, phase FROM user_lifecycle_snapshot;
+SELECT shop_id, status FROM ft0_state;
+```
+
+> ⚠️ The seeder is idempotent on orders (`external_event_id` dedup) but **not**
+> on inventory — re-running it writes a second set of `opening_balance`
+> movements and inflates stock. Seed each tenant once.
+
+### Step 4 — FT1 → FT2: confirm
+
+Mint a token for the ghost owner (claims mirror `tests/unit/helpers/auth.ts`):
+
+```zsh
+TOKEN=$(node -e "
+const jwt=require('jsonwebtoken');
+console.log(jwt.sign({iss:'auth.lasyncro.com',aud:'api.lasyncro.com',actor_type:'shop_user',user_id:USER_ID,shop_id:SHOP_ID,shop_roles:['owner'],scopes:[],session_id:'test-session',token_version:1,auth_provider:'password'},'dev-jwt-secret',{expiresIn:'60m'}));
+")
+
+curl -s -w '\nreadiness %{http_code}\n' http://localhost:3000/api/v1/lifecycle/ft2/readiness \
+  -H "Authorization: Bearer $TOKEN"
+
+curl -s -w '\nconfirm %{http_code}\n' -X POST http://localhost:3000/api/v1/lifecycle/ft2/confirm \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{}'
+```
+
+`confirm` returns `{"phase":"FT2_READY"}`. Under `dev` the FT2 evaluator is
+**not** bypassed, so this exercises the real coverage checks a live merchant
+faces — `409 {"error":"FT2 not eligible", blockers:[...]}` is a genuine finding,
+not a harness problem.
+
+### Step 5 — verify the tenant is reviewer-shaped
+
+```zsh
+curl -s http://localhost:3000/api/v1/wms/order-pool -H "Authorization: Bearer $TOKEN" | jq
+```
+
+Expect `eligible_order_count: 5`, `blocked_count: 0`, and one `warehouse`-type
+location with no bins. WMS routes 403 with `{"error":"FT2 access requires
+confirmed FT2 lifecycle"}` until Step 4 lands — that is `requireFt2`, not a bug.
+
+> **No batch cancel endpoint exists** (REV-HARD-13). Released orders cannot be
+> returned to the pool, and `inventory_movements` is append-only by trigger.
+> Budget one throwaway tenant per release test rather than planning to reset one.
+
+---
+
+## 9. Frontend Lifecycle Routing
 
 `LifecycleProvider` polls `/api/v1/lifecycle` and drives all routing decisions:
 
@@ -302,7 +421,7 @@ The `SyncAnimationPage` polls `/api/v1/integrations/sync-status` every 2 seconds
 
 ---
 
-## 9. Entitlements and Plan Gating
+## 10. Entitlements and Plan Gating
 
 Lifecycle phase controls **access** to the platform. Plan tier controls **feature gating** within the platform. These are independent systems.
 
@@ -315,7 +434,7 @@ See `apps/frontend/src/hooks/usePlanEntitlement.ts` for the full feature registr
 
 ---
 
-## 10. Do Not Violate
+## 11. Do Not Violate
 
 1. **Never write lifecycle tables from controllers** — emit domain events only
 2. **Never skip tenant context on lifecycle service DB queries** — RLS silently returns 0 rows
