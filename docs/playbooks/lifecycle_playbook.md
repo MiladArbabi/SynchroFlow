@@ -30,7 +30,13 @@ This is the exact sequence that must complete for a new merchant to reach FT2. E
 ```
 1. User registers → shop created → phase = FT_MINUS_ONE
 
-2. OAuth initiated → integration row inserted (sync_status = PENDING)
+2. OAuth CALLBACK → integration row inserted (sync_status = PENDING)
+   └─ Written at the callback (integration.controller.ts:406,418), AFTER the
+      token exchange with Shopify — not when OAuth is initiated. A tenant that
+      has only started OAuth, or that arrived via handleShopifyInstall (which
+      seeds integration_oauth_states and 302s to Shopify), has NO integration
+      row yet. The callback 502s on ACCESS_TOKEN_MISSING, so it cannot be
+      driven offline.
    └─ domain event: integration/sync_requested → outbox → projection worker
 
 3. Shopify sync runs (shopify.service.ts)
@@ -75,6 +81,14 @@ This is the exact sequence that must complete for a new merchant to reach FT2. E
    └─ Transitions phase: FT1 → FT2
 
 10. Frontend lifecycle polling detects FT2 → routes to main app
+
+> ⚠️ **FT2 evaluator is bypassed under test.** `ft2-evaluator.service.ts:92`
+> returns `eligible: true` with all blockers skipped whenever
+> `NODE_ENV === 'test'`. Jest sets that by default, so a lifecycle test will
+> pass step 8 without exercising any data-coverage check. The SYNC GUARD at
+> line 70 runs *above* the bypass and is unconditional in every environment —
+> no `integrations` row with `sync_status = 'COMPLETED'` means blocked,
+> test or not. See `tests/integration/fresh-install-release-path.test.ts`.
 ```
 
 ---
@@ -97,7 +111,7 @@ This is the exact sequence that must complete for a new merchant to reach FT2. E
 |---|---|
 | `apps/backend/src/projection/handlers/orders.create.ts` | `orders/create` — triggers `FirstInsightService` post-commit |
 | `apps/backend/src/projection/handlers/lifecycle.first_insight_delivered.ts` | `lifecycle/first_insight_delivered` — calls `FT0CompletionService` |
-| `apps/backend/src/projection/handlers/lifecycle.ft0_completed.ts` | `ft0/completed` — writes `ft0_state`, `system_readiness_state`, transitions to FT1 |
+| `apps/backend/src/projection/handlers/lifecycle.ft0_completed.ts` | `ft0.completed` — writes `ft0_state`, `system_readiness_state`, transitions to FT1. Registered under the key `ft0/completed`: `projection.engine.ts:237` rewrites dots to slashes before the registry lookup, so emitted and registered spellings differ by design. Do not "fix" one to match the other. |
 | `apps/backend/src/projection/handlers/lifecycle.ft2_confirmed.ts` | `lifecycle/ft2_confirmed` — writes `ft2_state`, transitions to FT2 |
 
 ### Backend — API
@@ -144,11 +158,18 @@ const result = await withTenant(shopId, async (trx) => {
   return trx('orders').where({ shop_id: shopId }).count('* as count').first();
 });
 
-// ✅ ALSO CORRECT — manual transaction with SET LOCAL
+// ⚠️ INSUFFICIENT — sets the GUC but never enters AsyncLocalStorage
 const result = await db.transaction(async trx => {
   await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
   return trx('orders').where({ shop_id: shopId }).count('* as count').first();
 });
+// Queries on `trx` succeed. But any callee reaching for the global `db` throws
+// TENANT_CONTEXT_MISSING — backend-core's guarded proxy reads the shop ID from
+// AsyncLocalStorage, which this pattern never populates. That is the
+// SEC-RLS-P0-b class behind the 2026-08-06 production outage.
+// This doc previously marked it "ALSO CORRECT". It is not. Prefer withTenant().
+// Live sites still on it: lifecycle.controller.ts:288,
+// ft2-evaluator.service.ts:63 and :126 (LIFECYCLE-ALS-01).
 
 // ❌ WRONG — bare db() call on strict RLS table
 const result = await db('orders').where({ shop_id: shopId }).count('* as count').first();
@@ -159,16 +180,22 @@ const result = await db('orders').where({ shop_id: shopId }).count('* as count')
 
 `orders`, `products`, `variants`, `customers`, `order_revenue_units`, `order_fulfillment_status`, `system_readiness_state`, `user_lifecycle_snapshot`, `ft0_state`, `ft2_state`, `inventory_truth`, and all other data/projection tables.
 
-### Tables with open SELECT (auth/OAuth-path split policies)
+### There is no "open SELECT" class
 
-`shops`, `users`, `shop_memberships`, `refresh_tokens`, `user_sessions`, `user_lifecycle_snapshot` (SELECT only), `shop_subscriptions`, `shopify_app_installations`, `integrations`, `domain_events`, `integration_oauth_states`, `shop_module_entitlements`.
+Verified 2026-08-07 against the live schema: all twelve tables previously listed here as open have `relrowsecurity = true` AND `relforcerowsecurity = true`, as do the data and projection tables. Migrations 0137/0138 made enforcement universal.
+
+The real distinction is which command a policy covers, not whether one exists. Explicit SELECT-command policy: `domain_events`, `integrations`, `integration_oauth_states`, `shopify_app_installations`. ALL-command policy only: `shops`, `users`, `shop_memberships`, `refresh_tokens`, `user_sessions`, `user_lifecycle_snapshot`, `shop_subscriptions`, `shop_module_entitlements`.
+
+Both groups enforce. A pre-tenant read of `users` or `shop_memberships` returns zero rows — which is why 0138 introduced the SECURITY DEFINER resolver `public.resolve_auth_user_by_email` for the auth path. `systemQuery` waives the application-layer guard only; PostgreSQL RLS still applies.
 
 ### domain_events INSERT rule
 
 Every transaction that inserts into `domain_events` **must** set `SET LOCAL app.current_tenant = '${shopId}'` first. The `auto_create_domain_event_outbox` trigger fires on INSERT and writes to `domain_event_outbox` — which has a tenant-scoped INSERT policy that requires tenant context.
 
 ```typescript
-// ✅ CORRECT
+// ✅ CORRECT for this narrow case — a self-contained insert with no callees.
+// If anything downstream reaches for the global `db`, use withTenant() instead;
+// see the AsyncLocalStorage warning above.
 await db.transaction(async trx => {
   await trx.raw(`SET LOCAL app.current_tenant = '${shopId}'`);
   await trx('domain_events').insert({ shop_id: shopId, event_type: '...', ... });
