@@ -805,7 +805,10 @@ export async function reconcileOrderFulfillment(
     await writeReconciliationCheckpoint(
       trx,
       lasyncroOrderId,
-      aggregateVersion
+      aggregateVersion,
+      // REV-HARD-05: stale-duplicate reuse may intentionally reference
+      // equivalent pending decisions created at an earlier aggregate version.
+      decisions?.map((decision) => decision.id) ?? []
     );
 
     return {

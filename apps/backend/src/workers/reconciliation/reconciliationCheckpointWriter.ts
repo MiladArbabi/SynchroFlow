@@ -18,7 +18,8 @@ import { Knex } from 'knex';
 export async function writeReconciliationCheckpoint(
   trx: Knex.Transaction,
   orderId: string,
-  aggregateVersion: number
+  aggregateVersion: number,
+  reusedDecisionIds: string[] = []
 ) {
 
   /**
@@ -55,7 +56,8 @@ export async function writeReconciliationCheckpoint(
    * - index usage
    * - deterministic correctness
    */
-  // 2. Validate at least one decision exists
+    // 2. Prefer an exact-version decision; validated cross-version reuse is
+  // allowed when reconciliation intentionally suppresses stale duplicates.
   const decisionExists = await trx('decisions')
     .where({
       entity_id: orderId,
@@ -63,7 +65,22 @@ export async function writeReconciliationCheckpoint(
     })
     .first();
 
-  if (!decisionExists) {
+  let validatedReusedDecisions = false;
+
+  if (!decisionExists && reusedDecisionIds.length > 0) {
+    const reusedDecisions = await trx('decisions')
+      .where({
+        entity_id: orderId,
+        status: 'pending'
+      })
+      .whereIn('id', reusedDecisionIds)
+      .select('id');
+
+    validatedReusedDecisions =
+      reusedDecisions.length === reusedDecisionIds.length;
+  }
+
+  if (!decisionExists && !validatedReusedDecisions) {
     throw new Error(
       `[CHECKPOINT_BLOCKED] Missing decision for order=${orderId} version=${aggregateVersion}`
     );
