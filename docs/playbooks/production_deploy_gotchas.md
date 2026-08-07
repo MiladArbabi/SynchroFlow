@@ -153,3 +153,42 @@ When the migration is already recorded:
 - rerun the migration runner and require the RLS release gate to pass.
 
 The `0138` to `0139` sequence is the reference recovery case.
+
+## Forward migrations: local verification vs production application
+
+A successful local migration does **not** mean the migration has run in
+production.
+
+Local development uses the backend migration script against the local database.
+This is where a new forward migration should first be compiled, applied, entered
+into `knex_migrations`, registered in `migration_checksums`, and exercised
+against the RLS release gate.
+
+Production applies migrations separately through `.github/workflows/fly-deploy.yml`:
+
+1. build the migration runner;
+2. open the privileged temporary Fly Postgres proxy;
+3. run `runMigrationsWithChecksum.js` with the migration-only database
+   credentials;
+4. validate existing migration checksums before `db.migrate.latest()`;
+5. apply new migrations and register their checksums;
+6. require the production RLS release gate to pass;
+7. only then deploy the restricted runtime application.
+
+Therefore:
+
+- a migration applied locally has not changed production;
+- a new migration file may be finalized before its first production execution;
+- once production records that migration, its file is immutable;
+- if an applied migration is followed by a failed RLS/deploy step, verify
+  `knex_migrations` and `migration_checksums` before taking action;
+- never rewrite an already-applied production migration — use a new
+  forward-only migration;
+- production is not considered updated until both the migration workflow and
+  the subsequent runtime deployment/health verification are green.
+
+LIFECYCLE-ID-01 / migration `0141_repair_lifecycle_founder_identity` followed
+this sequence locally on 2026-08-07: the migration compiled, applied, registered
+its checksum, passed the 85-table RLS release gate, and repaired all observed
+founder/snapshot identity mismatches. Production remains unchanged until the
+migration reaches `main` and the production workflow executes it.

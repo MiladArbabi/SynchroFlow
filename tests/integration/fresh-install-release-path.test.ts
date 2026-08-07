@@ -139,7 +139,10 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
     const atFt1 = await withTenant(shopId, (trx) =>
       trx('user_lifecycle_snapshot').where({ shop_id: shopId }).first()
     );
+
     expect(atFt1?.phase).toBe('FT1');
+    // LIFECYCLE-ID-01: shop lifecycle remains anchored to its founding owner.
+    expect(atFt1?.user_id).toBe(ghostUser.id);
 
     // ---- 3. confirm FT2 through the real endpoint ----------------------
     const token = issueTestToken({ userId: ghostUser.id, shopId });
@@ -157,6 +160,7 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
       trx('user_lifecycle_snapshot').where({ shop_id: shopId }).first()
     );
     expect(atFt2?.phase).toBe('FT2');
+    expect(atFt2?.user_id).toBe(ghostUser.id);
 
     // ---- 4. the endpoint the reviewer hit ------------------------------
     const release = await request(app)

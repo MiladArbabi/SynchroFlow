@@ -19,6 +19,7 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 | `FT2` | Full platform access | User clicks "Unlock Insights" → `lifecycle/ft2_confirmed` emitted |
 
 **Source of truth:** `user_lifecycle_snapshot.phase` per shop.  
+**Lifecycle identity:** the snapshot is shop-scoped (`shop_id` is the uniqueness boundary) and its `user_id` is permanently anchored to that shop's founding owner. Different shops therefore progress independently even when the same platform contains many users/tenants.
 **Audit trail:** `lifecycle_events` table — every transition is logged.
 
 ---
@@ -388,6 +389,26 @@ curl -s -w '\nconfirm %{http_code}\n' -X POST http://localhost:3000/api/v1/lifec
 faces — `409 {"error":"FT2 not eligible", blockers:[...]}` is a genuine finding,
 not a harness problem.
 
+### Founding-owner lifecycle invariant
+
+`user_lifecycle_snapshot` contains one authoritative row per shop. Its `user_id`
+must identify the founding owner of that shop throughout the lifecycle ladder.
+
+LIFECYCLE-ID-01 (2026-08-07) found that first-order ingestion previously used
+`domainEvent.user_id ?? 1`. `domain_events` has no top-level `user_id` column,
+so every later shop could incorrectly create its initial FT0 snapshot under
+user 1. Later FT1/FT2 transitions changed the phase but did not replace that
+identity.
+
+The fix resolves the earliest `owner` membership for the shop before the
+initial FT0 transition. Migration `0141_repair_lifecycle_founder_identity`
+repairs existing snapshots to the earliest owner membership. The migration is
+forward-only because the previous fallback identities were corrupt data, not
+valid historical state.
+
+`tests/integration/fresh-install-release-path.test.ts` asserts the founding
+owner identity at both FT1 and FT2 on a real fresh-install lifecycle path.
+
 ### Step 5 — verify the tenant is reviewer-shaped
 
 ```zsh
@@ -442,3 +463,4 @@ See `apps/frontend/src/hooks/usePlanEntitlement.ts` for the full feature registr
 4. **Never add a retry loop to FT0** — it is intentionally edge-triggered for determinism
 5. **Never write to projection tables outside the projection engine** — trigger guards will throw
 6. **Never add `sync_status = COMPLETED` as a lifecycle precondition** — race condition with projection processing
+7. **Never infer or hardcode lifecycle `user_id` from an ingestion event** — resolve the shop's founding owner membership; lifecycle is shop-scoped but permanently anchored to that founder
