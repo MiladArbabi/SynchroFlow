@@ -15,7 +15,11 @@
  *   rebuild projection   -> inventory_truth
  *   syncShopifyOrders    -> domain_events -> projection worker builds the rest
  *
- * Usage: npx tsx apps/backend/src/scripts/seed_fresh_install.ts <shopId>
+ * Usage: npx tsx apps/backend/src/scripts/seed_fresh_install.cli.ts <shopId>
+ *
+ * FRESH-INSTALL-04: this module is import-safe — no argv parsing, no
+ * process.exit at module scope — so integration tests can call
+ * seedFreshInstall(shopId) directly. The CLI lives in seed_fresh_install.cli.ts.
  */
 import crypto from 'crypto';
 import { withTenant } from '@lasyncro/backend-core/db.js';
@@ -23,20 +27,13 @@ import { syncShopifyProducts } from '../services/shopify/shopifyProductSync.serv
 import { syncShopifyOrders } from '../services/shopify/shopifyOrderSync.service.js';
 import { rebuildInventoryProjectionForVariants } from '../services/inventory/rebuildInventoryProjection.js';
 
-const shopId = Number(process.argv[2]);
-
-if (!Number.isInteger(shopId) || shopId <= 0) {
-  console.error('Usage: seed_fresh_install.ts <shopId>');
-  process.exit(1);
-}
-
 const PRODUCTS = [
   { n: 1, title: 'Merino Crew Sweater', sku: 'MCS-001', cost: '18.00', price: '79.00', qty: 40 },
   { n: 2, title: 'Canvas Weekender Bag', sku: 'CWB-002', cost: '31.50', price: '129.00', qty: 25 },
   { n: 3, title: 'Wool Beanie', sku: 'WBE-003', cost: '6.25', price: '29.00', qty: 60 },
 ];
 
-const productEdges = PRODUCTS.map((p) => ({
+const buildProductEdges = (shopId: number) => PRODUCTS.map((p) => ({
   node: {
     id: `gid://shopify/Product/9${shopId}00${p.n}`,
     title: p.title,
@@ -71,7 +68,7 @@ const ORDERS = [
   { n: 5, p: 2, qty: 2 },
 ];
 
-function orderEdge(o: { n: number; p: number; qty: number }) {
+function orderEdge(shopId: number, o: { n: number; p: number; qty: number }) {
   const product = PRODUCTS[o.p];
   const lineTotal = (Number(product.price) * o.qty).toFixed(2);
   const created = new Date(Date.now() - o.n * 36e5).toISOString();
@@ -120,7 +117,11 @@ function orderEdge(o: { n: number; p: number; qty: number }) {
   };
 }
 
-async function main() {
+export async function seedFreshInstall(shopId: number) {
+  if (!Number.isInteger(shopId) || shopId <= 0) {
+    throw new Error(`FRESH_INSTALL_SEED_ABORTED: invalid shopId ${shopId}`);
+  }
+
   const rootLocationCode = `WH-${shopId}-ROOT`;
 
   await withTenant(shopId, async (trx) => {
@@ -141,7 +142,7 @@ async function main() {
       integrationId: 0,
       accessToken: 'offline-seed-no-network-call',
       platformShopName: `fresh-install-${shopId}`,
-      products: productEdges,
+      products: buildProductEdges(shopId),
     });
 
     const variants = await trx('variants')
@@ -183,7 +184,7 @@ async function main() {
     await syncShopifyOrders({
       trx,
       shopId,
-      orderEdges: ORDERS.map(orderEdge),
+      orderEdges: ORDERS.map((o) => orderEdge(shopId, o)),
     });
   });
 
@@ -194,10 +195,5 @@ async function main() {
     orders: ORDERS.length,
   });
 
-  process.exit(0);
+  return { shopId, rootLocationCode, products: PRODUCTS.length, orders: ORDERS.length };
 }
-
-main().catch((err) => {
-  console.error('[FRESH_INSTALL_SEED_FAILED]', err);
-  process.exit(1);
-});
