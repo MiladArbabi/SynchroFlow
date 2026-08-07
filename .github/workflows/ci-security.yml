@@ -56,6 +56,11 @@ jobs:
       # value is never used to send — the live regression only needs the module
       # to load. Absent it, subtest 3 has failed on every run since 2026-08-06.
       RESEND_API_KEY: re_ci_placeholder_not_used
+      # stripe.verify.middleware.ts:13 constructs a Stripe client at module
+      # scope. createApp() imports it transitively, so subtest 3 throws
+      # 'Neither apiKey nor config.authenticator provided' before asserting.
+      # Placeholder — no Stripe call is made. See BOOT-CRED-01.
+      STRIPE_SECRET_KEY: sk_test_ci_placeholder_not_used
 
     steps:
       - name: Checkout
