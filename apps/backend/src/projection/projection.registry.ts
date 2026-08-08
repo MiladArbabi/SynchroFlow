@@ -15,6 +15,7 @@ import { handleReconciliationIntentCaptured } from './handlers/reconciliation.in
 import { handleOrdersSyncStarted } from './handlers/orders.sync_started.js';
 import { rebuildInventoryProjectionForVariants } from '../services/inventory/rebuildInventoryProjection.js';
 import { handleCatalogProductSyncReceived } from './handlers/catalog.product_sync_received.js';
+import { handleOrdersConstraintsReevaluated } from './handlers/orders.constraints_reevaluated.js';
 
 /**
  * PROJECTION HANDLER CONTRACT
@@ -69,7 +70,14 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    * constraints and risk from the repaired state.
    */
   'orders/canonical_data_repaired': handleOrdersCanonicalDataRepaired,
-
+  /**
+   * BL-01a
+   * ------
+   * Pure re-evaluation trigger. Emitted for orders whose constraints were
+   * written by a superseded evaluator and which receive no further events.
+   * No mutation — see the handler header.
+   */
+  'orders/constraints_reevaluated': handleOrdersConstraintsReevaluated,
   'orders/fulfilled': handleOrdersFulfilled,
   'orders/fulfillment_updated': async (params) => {
   /**

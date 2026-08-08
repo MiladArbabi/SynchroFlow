@@ -18,6 +18,7 @@
     "test:shopify-canonical-repair": "node --loader ts-node/esm --test scripts/shopify-canonical-rest-repair.test.mjs",
     "verify:shopify-canonical-repair-writer": "node --loader ts-node/esm scripts/shopify-canonical-rest-repair-writer.verify.mjs",
     "repair:shopify-canonical-drift": "node --loader ts-node/esm src/scripts/repair-shopify-rest-canonical-drift.ts",
+    "reevaluate:order-constraints": "node --loader ts-node/esm src/scripts/reevaluate-order-constraints.ts",
     "migrate": "bash ../../scripts/check-conflict-usage.sh && mkdir -p dist && rm -rf dist/migrations dist/seeds && npx tsc --project tsconfig.migrations.json && node dist/src/scripts/runMigrationsWithChecksum.js",
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",

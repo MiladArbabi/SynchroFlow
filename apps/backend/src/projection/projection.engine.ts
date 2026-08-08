@@ -371,7 +371,16 @@ export async function projectDomainEventCore({
          * Treat it as an order-entity event so repaired orders receive the
          * same constraint/risk orchestration as normal order changes.
          */
-        'orders/canonical_data_repaired'
+        'orders/canonical_data_repaired',
+
+        /**
+         * BL-01a
+         * ------
+         * Re-evaluation trigger for orders frozen with constraints a
+         * superseded evaluator produced. Must be an order-entity event or
+         * the orchestration below never runs and the event is inert.
+         */
+        'orders/constraints_reevaluated'
       ].includes(normalizedEventType);
 
       if (isOrderEntityEvent) {
