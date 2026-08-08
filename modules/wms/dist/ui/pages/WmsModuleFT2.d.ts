@@ -87,7 +87,9 @@ export type WmsModuleFT2Props = {
         lasyncro_variant_id: string;
     } | null>;
     onConfirmScan: (batchId: string, params: ConfirmScanParams) => Promise<void>;
-    onReportException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
+    onReportException: (batchId: string, params: ReportExceptionParams) => Promise<{
+        pick_exception_id: string;
+    }>;
     onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
     onPickComplete: (batchId: string) => Promise<void>;
     onClaimPack: (batchId: string) => Promise<void>;
@@ -101,7 +103,9 @@ export type WmsModuleFT2Props = {
     }) => Promise<{
         order_complete: boolean;
     }>;
-    onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<void>;
+    onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<{
+        pick_exception_id: string;
+    }>;
     onPrintLabel: (orderId: string) => Promise<void>;
     onPrintInvoice: (orderId: string) => Promise<void>;
     onPackComplete: (batchId: string) => Promise<void>;

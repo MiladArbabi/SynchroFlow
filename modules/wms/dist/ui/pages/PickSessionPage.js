@@ -205,11 +205,12 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
             quantity_found: qtyFound,
             notes: exceptionNotes.trim() || undefined,
         })
-            .then(() => onCreateProblemTask({
+            .then((reported) => onCreateProblemTask({
             lasyncro_variant_id: currentItem.lasyncro_variant_id,
             quantity: currentItem.quantity - qtyFound,
             exception_type: exceptionType,
             source: 'pick',
+            source_exception_id: reported?.pick_exception_id,
         }))
             .then(() => {
             setPickResults(prev => [...prev, { lineItem: currentItem, status: 'exception', exceptionType }]);

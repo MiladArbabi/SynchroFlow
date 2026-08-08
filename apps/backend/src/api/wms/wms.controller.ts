@@ -1944,6 +1944,22 @@ export const httpResolveException = async (req: Request, res: Response) => {
           updated_at: new Date(),
         });
 
+      /**
+       * BL-05 — close the paired Problem Center task in the same transaction.
+       * Without this, resolving here would leave the task open forever and the
+       * two surfaces would disagree. Scoped by source_exception_id + shop_id.
+       */
+      await trx('problem_center_tasks')
+        .where({ source_exception_id: exceptionId, shop_id: shopId })
+        .whereIn('status', ['open', 'investigating'])
+        .update({
+          status: 'resolved',
+          resolved_by: userId,
+          resolved_at: new Date(),
+          resolution_notes: resolution_note.trim(),
+          updated_at: new Date(),
+        });
+
       // ISS-065: this handler previously never cleared the alert fired by
       // firePickExceptionAlert (wmsAlerts.service.ts) on exception report,
       // which is keyed on entity_id = pick_batch_id. Unlike the
@@ -2126,13 +2142,38 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // matching parent id directly in source_exception_id.
       if (task.source_exception_id) {
         let alertEntityId = task.source_exception_id;
-
         if (task.source === 'pick' || task.source === 'pack') {
           const pickException = await trx('pick_exceptions')
             .where({ pick_exception_id: task.source_exception_id, shop_id: shopId })
             .select('pick_batch_id')
             .first();
+
+          /**
+           * BL-08 — close the source pick_exception when the task resolves.
+           *
+           * This handler previously resolved problem_center_tasks and moved
+           * inventory but left pick_exceptions.resolved = false forever. The
+           * batch alert clears only when the last unresolved exception for a
+           * batch resolves, so a written-off exception kept its alert active
+           * permanently (verified: PROB-1-0007 write_off, pe.resolved still f).
+           *
+           * Only on a genuine resolution — 'investigating' is not one.
+           */
+          if (finalStatus !== 'investigating') {
+            await trx('pick_exceptions')
+              .where({ pick_exception_id: task.source_exception_id, shop_id: shopId })
+              .andWhere('resolved', false)
+              .update({
+                resolved: true,
+                resolved_by: userId,
+                resolved_at: new Date(),
+                resolution_note: `Problem Center: ${resolution_action}${resolution_notes?.trim() ? ` — ${resolution_notes.trim()}` : ''}`,
+                updated_at: new Date(),
+              });
+          }
+
           if (pickException) alertEntityId = pickException.pick_batch_id;
+          
         } else if (task.source === 'receive') {
           const receiveException = await trx('receive_exceptions')
             .where({ receive_exception_id: task.source_exception_id, shop_id: shopId })

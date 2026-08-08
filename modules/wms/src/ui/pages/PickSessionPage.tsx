@@ -87,6 +87,13 @@ export interface CreateProblemTaskParams {
   quantity: number;
   exception_type: string;
   source: 'pick' | 'pack';
+  /**
+   * BL-05 — links the task to the pick_exceptions row it came from.
+   * Without it httpResolveProblemTask cannot resolve back to the exception
+   * and the batch alert never clears. Optional: PackSessionPage reports
+   * standalone problems that have no pick_exception.
+   */
+  source_exception_id?: string;
 }
 
 export interface PickSessionPageProps {
@@ -95,7 +102,7 @@ export interface PickSessionPageProps {
   onComplete: () => void;
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string; lasyncro_unit_id?: string } | null>;
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
-  onReportException: (params: ReportExceptionParams) => Promise<void>;
+  onReportException: (params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
   onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
   onPickComplete: () => Promise<void>;
 }
@@ -331,12 +338,13 @@ export default function PickSessionPage({
       quantity_found:        qtyFound,
       notes:                 exceptionNotes.trim() || undefined,
     })
-      .then(() =>
+      .then((reported) =>
         onCreateProblemTask({
           lasyncro_variant_id: currentItem.lasyncro_variant_id,
           quantity:            currentItem.quantity - qtyFound,
           exception_type:      exceptionType,
           source:              'pick',
+          source_exception_id: reported?.pick_exception_id,
         })
       )
       .then(() => {

@@ -190,10 +190,11 @@ export default function WmsOperationsPage() {
   }, [submitScan]);
 
   const handleReportException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
-    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
+    const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
       ...params,
       stage: 'pick',
     });
+    return data as { pick_exception_id: string };
   }, []);
 
   const handleCreateProblemTask = useCallback(async (params: CreateProblemTaskParams) => {
@@ -235,10 +236,11 @@ export default function WmsOperationsPage() {
   }, []);
 
   const handleReportPackException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
-    await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
+    const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
       ...params,
       stage: 'pack',
     });
+    return data as { pick_exception_id: string };
   }, []);
 
   const openBlobInTab = useCallback((blob: Blob) => {
