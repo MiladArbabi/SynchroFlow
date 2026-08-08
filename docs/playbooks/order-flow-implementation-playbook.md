@@ -861,3 +861,58 @@ Clean work is releasable.
 Released work is trackable.
 Skipped work is explained.
 ```
+
+---
+
+## 12. Constraint re-evaluation (BL-01a)
+
+**Constraints are only re-evaluated when an order receives a domain event.**
+
+An order that stops receiving events keeps whatever `block_type` the evaluator
+of the day wrote — permanently. The order-pool query excludes on `is_active`
+regardless of `constraint_type` or `block_type`, so such an order is blocked
+forever with no supported path back.
+
+Concrete case: the operational evaluator was rewritten on 2026-06-20
+(`9e13b62f`) to derive blocks from unresolved `pick_exceptions`, and BL-01b
+later made it inert entirely. Seven shop-1 orders still carried
+`operational:sla_breach` — a `block_type` no current evaluator can produce —
+because no event had reached them since June.
+
+### Tool
+
+```text
+npm run reevaluate:order-constraints -w apps/backend -- --shop-id=<n>
+  dry-run by default
+  --apply requires explicit --order-ids=<uuid,...> and --confirm=BL-01A
+  there is no apply-all
+```
+
+Emits `orders/constraints_reevaluated`: a no-op order-entity event. The handler
+mutates nothing; `projectDomainEventCore` runs the standard
+age → constraints → risk → snapshot orchestration. Constraints are never
+cleared directly.
+
+### What re-evaluation does and does not do
+
+It asserts **nothing** about the outcome. A legitimate block is re-asserted; a
+wrong block is replaced by the correct one. Production 2026-08-08:
+`16895470436722` traded a false `sla_breach` for a genuine
+`customer:incomplete_address` and stayed blocked — it did not become
+releasable. Active customer constraints went 6 → 7 as a result.
+
+**Run this after any evaluator change.** Orders frozen before the change keep
+the old verdict otherwise.
+
+### Production run, 2026-08-08
+
+```text
+events 571-577, projection cursor 577
+operational:sla_breach   active 7 → 0 (32 resolved)
+customer:incomplete_address active 6 → 7
+inventory:oversell       active 7 unchanged
+ready_for_release        1 → 3
+```
+
+Five of the seven were already batched, so they resolved a false block without
+entering the pool — batch membership excludes independently of constraints.
