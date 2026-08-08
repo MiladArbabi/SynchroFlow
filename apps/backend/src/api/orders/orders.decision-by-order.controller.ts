@@ -76,6 +76,24 @@ export const httpGetOrderDecision = async (
         .orderBy('priority', 'desc');
 
       if (candidateDecisions.length === 0) {
+        /**
+         * BL-15 — constraints are truth; decisions are enrichment.
+         *
+         * Returning null here made the route 404, and OrderDetailModalBody
+         * derives hasAnyActiveConstraint from this response — so an order
+         * with a real active order_constraints row but no decision rendered
+         * "In pool" / "No open issues" while the Blocked column listed it
+         * (confirmed live: 16942808629618, 16942811840882, 16953881428338,
+         * all customer:incomplete_address, all repaired 2026-08-08 11:13
+         * with no decision generated).
+         *
+         * Mirrors the all-candidates-stale branch below: a missing decision
+         * must never suppress a real constraint. 404 now means only "no
+         * decision AND no constraint".
+         */
+        if (constraints.length > 0) {
+          return { decision: null, constraints };
+        }
         return null;
       }
 
