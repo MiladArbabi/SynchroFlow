@@ -362,7 +362,16 @@ export async function projectDomainEventCore({
          * order_constraints row — exactly the bug this whole issue
          * traces back to.
          */
-        'orders/shipping_address_corrected'
+        'orders/shipping_address_corrected',
+
+        /**
+         * SHOPIFY-CANON-REST-02
+         * ---------------------
+         * Canonical repair data is written before this event is emitted.
+         * Treat it as an order-entity event so repaired orders receive the
+         * same constraint/risk orchestration as normal order changes.
+         */
+        'orders/canonical_data_repaired'
       ].includes(normalizedEventType);
 
       if (isOrderEntityEvent) {

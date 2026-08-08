@@ -4,6 +4,7 @@ import { Knex } from 'knex';
 import { handleOrdersCreate } from './handlers/orders.create.js';
 import { handleOrdersPaid } from './handlers/orders.paid.js';
 import { handleOrdersShippingAddressCorrected } from './handlers/orders.shipping_address_corrected.js';
+import { handleOrdersCanonicalDataRepaired } from './handlers/orders.canonical_data_repaired.js';
 import { handleOrdersFulfilled } from './handlers/orders.fulfilled.js';
 import { handleRefundsCreate } from './handlers/refunds.create.js';
 import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.js';
@@ -59,6 +60,16 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    * being in the isOrderEntityEvent list too — see projection.engine.ts).
    */
   'orders/shipping_address_corrected': handleOrdersShippingAddressCorrected,
+
+  /**
+   * SHOPIFY-CANON-REST-02
+   * ---------------------
+   * Historical canonical repair writes canonical data first, then emits
+   * this event so the standard order projection orchestration re-evaluates
+   * constraints and risk from the repaired state.
+   */
+  'orders/canonical_data_repaired': handleOrdersCanonicalDataRepaired,
+
   'orders/fulfilled': handleOrdersFulfilled,
   'orders/fulfillment_updated': async (params) => {
   /**

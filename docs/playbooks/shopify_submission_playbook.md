@@ -2,7 +2,7 @@
 
 **Sprint:** LaSyncro Shopify App Store Listing
 **Date:** June 15–16, 2026
-**Last updated:** August 7, 2026
+**Last updated:** August 8, 2026
 **Status:** ✅ Submission-ready
 
 ---
@@ -883,7 +883,7 @@ shipped can be re-released. Needs its own audit.
 ## SHOPIFY-CANON-REST-01 — REST order webhook canonicalization
 
 **Date:** August 7, 2026
-**Status:** Implementation verified locally; production deployment/remediation pending
+**Status:** CLOSED — mapper fix deployed and production-verified; historical remediation tracked separately in SHOPIFY-CANON-REST-02
 **Severity:** P1
 
 ### Context
@@ -989,6 +989,121 @@ Coverage proves:
 
 The final backend build also passed after the mapper correction.
 
+### Production deployment and verification
+
+The mapper correction was committed as:
+
+`5c967eebdd22fd48d9a6a39ca2b470761c35df4a`
+`fix: preserve Shopify REST order fields in canonical mapping`
+
+The commit was pushed to `main` and deployed through Fly Deploy `#1043`.
+The deployment completed successfully and the production machine returned healthy.
+
+A fresh post-fix Shopify order subsequently confirmed that current REST-shaped
+order ingestion materializes line-item demand correctly. The fresh order used
+for lifecycle verification was Shopify order `17042035933554`, internal order
+`6eb76b1c-afb9-ecdc-9dff-b36d9b311a12`.
+
+That order:
+
+- materialized one canonical line item;
+- retained quantity `1`;
+- moved through the supported shipping-address correction lifecycle;
+- resolved its `incomplete_address` constraint through a normal domain event;
+- entered the Order Pool as Ready;
+- remained unbatched during canonical-remediation work.
+
+The historical order `#1192` was intentionally NOT repaired as part of
+SHOPIFY-CANON-REST-01.
+
+Deploying the mapper fixes future canonicalization but does not reconstruct
+line items already lost by older projections. Historical remediation therefore
+became a separate issue: SHOPIFY-CANON-REST-02.
+
+No manual projected-order edit, constraint edit, inventory edit, batch edit, or
+Release CTA mutation was used to simulate success.
+
+---
+
+## SHOPIFY-CANON-REST-02 — Historical REST canonical drift repair
+
+**Date:** August 8, 2026
+**Status:** IMPLEMENTATION COMPLETE — LOCAL VERIFICATION PASS
+**Deployment status:** NOT YET DEPLOYED
+**Production repair status:** NOT RUN
+**Severity:** P1
+
+### Purpose
+
+SHOPIFY-CANON-REST-01 corrected future REST order canonicalization.
+
+SHOPIFY-CANON-REST-02 addresses orders that were successfully received from
+Shopify before that fix but were already persisted with incomplete canonical
+state.
+
+The repair must restore retained Shopify source truth without:
+
+- fabricating address data;
+- duplicating line-item demand;
+- overwriting later operator corrections;
+- changing today's physical inventory merely because an old sale is being
+  reconstructed;
+- releasing or batching an order as a side effect of the repair;
+- manually resolving constraints outside the normal projection pipeline.
+
+### Historical blast-radius audit
+
+A production read-only comparison was run between retained Shopify
+`orders/create` domain-event payloads and current projected order state.
+
+Result:
+
+```json
+{
+  "total_mismatched_orders": 7,
+  "shipping_address_loss": 1,
+  "line_item_loss_or_mismatch": 7,
+  "both_shipping_and_line_items": 1
+}
+
+Worked for 1m 39s
+
+Documentation audit is complete. The correct existing record is docs/playbooks/shopify_submission_playbook.md: it already contains SHOPIFY-CANON-REST-01, but that section still says deployment/remediation were pending, and the file currently ends immediately after that issue.
+
+Only this documentation file needs updating for SHOPIFY-CANON-REST-02.
+
+DOCUMENTATION Change 1 — update playbook date
+
+File:
+
+docs/playbooks/shopify_submission_playbook.md
+
+BEFORE
+
+**Last updated:** August 7, 2026
+
+AFTER
+
+**Last updated:** August 8, 2026
+DOCUMENTATION Change 2 — close REST-01 implementation status
+
+Find:
+
+BEFORE
+
+**Status:** Implementation verified locally; production deployment/remediation pending
+
+Replace with:
+
+AFTER
+
+**Status:** CLOSED — mapper fix deployed and production-verified; historical remediation tracked separately in SHOPIFY-CANON-REST-02
+DOCUMENTATION Change 3 — replace the existing REST-01 remediation tail and append REST-02
+
+At the bottom of the file, replace this entire existing block.
+
+BEFORE
+
 ### Production remediation status
 
 At documentation time:
@@ -1000,3 +1115,446 @@ At documentation time:
 - no production Release CTA mutation has been performed for `#1192`.
 
 Production remediation must remain a separate verified step after deployment. Do not manually edit the projected order, line items, constraints, inventory, or batch state to simulate success.
+
+AFTER
+
+### Production deployment and verification
+
+The mapper correction was committed as:
+
+`5c967eebdd22fd48d9a6a39ca2b470761c35df4a`
+`fix: preserve Shopify REST order fields in canonical mapping`
+
+The commit was pushed to `main` and deployed through Fly Deploy `#1043`.
+The deployment completed successfully and the production machine returned healthy.
+
+A fresh post-fix Shopify order subsequently confirmed that current REST-shaped
+order ingestion materializes line-item demand correctly. The fresh order used
+for lifecycle verification was Shopify order `17042035933554`, internal order
+`6eb76b1c-afb9-ecdc-9dff-b36d9b311a12`.
+
+That order:
+
+- materialized one canonical line item;
+- retained quantity `1`;
+- moved through the supported shipping-address correction lifecycle;
+- resolved its `incomplete_address` constraint through a normal domain event;
+- entered the Order Pool as Ready;
+- remained unbatched during canonical-remediation work.
+
+The historical order `#1192` was intentionally NOT repaired as part of
+SHOPIFY-CANON-REST-01.
+
+Deploying the mapper fixes future canonicalization but does not reconstruct
+line items already lost by older projections. Historical remediation therefore
+became a separate issue: SHOPIFY-CANON-REST-02.
+
+No manual projected-order edit, constraint edit, inventory edit, batch edit, or
+Release CTA mutation was used to simulate success.
+
+---
+
+## SHOPIFY-CANON-REST-02 — Historical REST canonical drift repair
+
+**Date:** August 8, 2026
+**Status:** IMPLEMENTATION COMPLETE — LOCAL VERIFICATION PASS
+**Deployment status:** NOT YET DEPLOYED
+**Production repair status:** NOT RUN
+**Severity:** P1
+
+### Purpose
+
+SHOPIFY-CANON-REST-01 corrected future REST order canonicalization.
+
+SHOPIFY-CANON-REST-02 addresses orders that were successfully received from
+Shopify before that fix but were already persisted with incomplete canonical
+state.
+
+The repair must restore retained Shopify source truth without:
+
+- fabricating address data;
+- duplicating line-item demand;
+- overwriting later operator corrections;
+- changing today's physical inventory merely because an old sale is being
+  reconstructed;
+- releasing or batching an order as a side effect of the repair;
+- manually resolving constraints outside the normal projection pipeline.
+
+### Historical blast-radius audit
+
+A production read-only comparison was run between retained Shopify
+`orders/create` domain-event payloads and current projected order state.
+
+Result:
+
+```json
+{
+  "total_mismatched_orders": 7,
+  "shipping_address_loss": 1,
+  "line_item_loss_or_mismatch": 7,
+  "both_shipping_and_line_items": 1
+}
+
+Affected source events:
+
+domain event	Shopify order	source address	source demand	persisted demand
+191	16942725759346	incomplete	1 line / qty 1	0 lines
+202	16942964539762	missing	1 line / qty 1	0 lines
+205	16942808629618	incomplete	1 line / qty 1	0 lines
+213	16942811840882	incomplete	2 lines / qty 2	0 lines
+221	16953881428338	missing	2 lines / qty 2	0 lines
+228	16954223722866	missing	2 lines / qty 2	0 lines
+546	17041162174834 (#1192)	complete	1 line / qty 3	0 lines
+
+Six affected orders therefore have genuine source-side address deficiencies.
+Those address constraints must remain valid after canonical repair.
+
+Only event 546 / order #1192 lost a complete source shipping address in
+addition to losing its line-item demand.
+
+All seven orders have missing canonical demand and therefore require repair
+before any address-only correction can safely make them eligible for normal
+order flow.
+
+Why normal event replay is insufficient
+
+The existing orders/create projection path handles an already-existing order
+differently from a new order.
+
+For an existing order it can update shipping fields, but line-item insertion is
+performed only during new-order materialization.
+
+orders/sync routes through the same handler.
+
+Therefore:
+
+replay old orders/create
+    → shipping may change
+    → missing order_line_items remain missing
+
+A normal Shopify order sync has the same limitation.
+
+A full derived-state rebuild is also not the appropriate repair mechanism
+because the canonical orders / historical order identity already exists and
+the existing-order projection path still does not recreate absent line items.
+
+Directly replaying historical events or manually clearing constraints would
+therefore leave incomplete demand state and is prohibited for this repair.
+
+Repair architecture
+
+Added:
+
+apps/backend/src/services/shopify/historicalCanonicalRepair.service.ts
+apps/backend/src/scripts/repair-shopify-rest-canonical-drift.ts
+apps/backend/src/projection/handlers/orders.canonical_data_repaired.ts
+apps/backend/scripts/shopify-canonical-rest-repair.test.mjs
+apps/backend/scripts/shopify-canonical-rest-repair-writer.verify.mjs
+
+Updated:
+
+apps/backend/src/projection/projection.registry.ts
+apps/backend/src/projection/projection.engine.ts
+apps/backend/package.json
+
+The implementation separates planning from mutation.
+
+Dry-run planning:
+
+retained orders/create event
+    → current mapper
+    → source canonical state
+    → persisted canonical state
+    → repair candidate
+    → safety blockers / repairable result
+
+Apply:
+
+re-plan inside tenant transaction
+    → validate exact requested source events
+    → restore missing canonical lines
+    → restore source shipping only where safe
+    → materialize revenue units
+    → preserve current physical inventory
+    → verify ledger/truth invariant
+    → increment aggregate version
+    → append orders/canonical_data_repaired
+    → COMMIT
+
+The repair does not invoke projection directly.
+
+After commit, the authoritative DB projection worker consumes
+orders/canonical_data_repaired in normal global domain-event order and runs
+the standard order orchestration:
+
+age
+→ constraint evaluation
+→ constraint projection
+→ risk projection
+→ margin / revenue projections
+→ snapshot scheduling
+
+The CLI must not call processDomainEvent() directly because the DB-driven
+projection worker owns cursor ordering.
+
+Fail-closed planning invariants
+
+A candidate is blocked instead of guessed when any required invariant cannot
+be proven.
+
+Current guards include:
+
+MISSING_ORDER_IDENTITY
+MISSING_ORDER
+PARTIAL_LINE_ITEM_STATE
+EXISTING_REVENUE_UNITS
+ORDER_ALREADY_BATCHED
+DIVERGENT_STORED_SHIPPING_STATE
+DUPLICATE_SOURCE_VARIANT:<variant>
+INVENTORY_TRUTH_LEDGER_MISMATCH:<variant>
+missing Shopify variant identity
+missing sovereign variant
+invalid quantity
+invalid unit price
+
+DIVERGENT_STORED_SHIPPING_STATE is especially important: retained historical
+Shopify source must never overwrite a different non-empty shipping address,
+because that address may have been corrected later by an operator.
+
+Multiple source lines resolving to one sovereign variant also fail closed.
+The current revenue-unit model aggregates identity by (order, variant), so
+silently collapsing ambiguous line-level history would be unsafe.
+
+Shipping-address rule
+
+Shipping fields are restored only from retained source data.
+
+The repair does not synthesize missing address fields.
+
+Therefore:
+
+event 546 / #1192 can have its retained complete source address restored;
+genuinely partial historical addresses remain partial;
+source orders with no address remain without an address;
+later non-empty divergent persisted addresses are never overwritten.
+
+Constraint evaluation happens only after canonical demand is complete.
+
+Historical demand and inventory neutrality
+
+Restoring missing order_line_items causes the standard revenue-unit writer to
+materialize the economic sale that should have existed historically.
+
+That writer also creates the corresponding historical inventory sale
+movement.
+
+However, Shopify inventory reconciliation had already established later
+physical inventory state. Simply inserting an old sale now would subtract the
+historical quantity from today's stock a second time.
+
+The repair therefore writes an equal and opposite, explicitly auditable
+reconciliation_correction at the same root location and historical movement
+time:
+
+historical sale                  -Q
+canonical repair correction      +Q
+                                ---
+physical inventory net            0
+
+This preserves economic attribution while preventing historical reconstruction
+from silently changing current physical stock.
+
+Before repair, the planner requires current root inventory_truth to agree
+with the append-only movement ledger for every affected variant.
+
+After the sale + correction pair is inserted, that invariant is checked again.
+
+If ledger and truth disagree either before or after repair, the transaction
+fails.
+
+inventory_truth is not rebuilt by this repair.
+
+Idempotency and atomicity
+
+Canonical line-item IDs are generated with the same deterministic identity
+formula used by normal orders/create ingestion.
+
+Revenue-unit and inventory movement identities are deterministic.
+
+The repair domain event uses the deterministic external event identity:
+
+canonical_data_repair:<source_domain_event_id>
+
+The entire repair executes inside one tenant-scoped transaction.
+
+Any failure rolls back:
+
+order line inserts
+order shipping update
+aggregate-version increment
+revenue-unit materialization
+sale movements
+neutrality corrections
+repair domain event
+
+Once an order is canonical, a second invocation reports it as already clean
+instead of writing duplicate state.
+
+Apply-mode operator gates
+
+Dry-run remains the default:
+
+npm run repair:shopify-canonical-drift \
+  -w apps/backend \
+  -- \
+  --shop-id=<shop_id>
+
+Mutation requires all three explicit inputs:
+
+--apply
+--domain-event-ids=<exact audited source event ids>
+--confirm=SHOPIFY-CANON-REST-02
+
+There is intentionally no "repair all candidates" apply mode.
+
+--apply without explicit event IDs fails with:
+
+[SHOPIFY_CANONICAL_REPAIR_APPLY_REQUIRES_DOMAIN_EVENT_IDS]
+
+Providing event IDs without the issue-specific confirmation token fails with:
+
+[SHOPIFY_CANONICAL_REPAIR_APPLY_CONFIRMATION_REQUIRED]
+
+The actual apply command shape is:
+
+npm run repair:shopify-canonical-drift \
+  -w apps/backend \
+  -- \
+  --shop-id=<shop_id> \
+  --apply \
+  --domain-event-ids=<ids from the immediately preceding production dry-run> \
+  --confirm=SHOPIFY-CANON-REST-02
+
+Never copy historical event IDs from this document directly into an apply
+command.
+
+A fresh production dry-run must establish the current candidate set immediately
+before any approved production mutation.
+
+Regression verification
+
+Focused planner regression suite:
+
+tests 12
+pass 12
+fail 0
+
+Covered behavior:
+
+complete source address restoration
+partial source address preservation
+missing line-item demand detection
+already-canonical no-op
+partial persisted line state fail-closed
+existing revenue units fail-closed
+existing batch membership fail-closed
+unresolved variant identity fail-closed
+natural planner idempotency
+divergent stored shipping fail-closed
+duplicate source variant fail-closed
+inventory truth / ledger mismatch fail-closed
+Real PostgreSQL writer verification
+
+The writer was also exercised against the real local PostgreSQL schema using
+synthetic product, variant, Shopify identity and order fixtures.
+
+All fixture state ran inside rollback-only transactions.
+
+Final result:
+
+WRITER_SUCCESS_PATH=PASS
+SUCCESS_FIXTURE_ROLLBACK=PASS
+WRITER_ATOMIC_ROLLBACK=PASS
+FAILURE_FIXTURE_ROLLBACK=PASS
+SYNTHETIC_CATALOG_ROLLBACK=PASS
+SHOPIFY_CANONICAL_REPAIR_WRITER_VERIFY=PASS
+
+The success-path verification proved:
+
+canonical line restored
+shipping restored
+revenue unit created
+sale movement created
+equal repair correction created
+inventory truth unchanged
+ledger net unchanged
+repair event created
+second apply becomes alreadyClean
+
+The atomic-failure verification deliberately pre-created the final repair
+event's unique external identity so the repair failed with PostgreSQL 23505
+at the last write.
+
+That proved all earlier canonical, revenue and inventory writes roll back
+together rather than leaving a partially repaired order.
+
+The outer synthetic product and variant were then rolled back and independently
+verified absent.
+
+Current production state
+
+At documentation time:
+
+SHOPIFY-CANON-REST-02 implementation: COMPLETE
+planner regression: PASS 12/12
+real PostgreSQL writer verification: PASS
+apply fail-closed gates: PASS
+production deployment: NOT RUN
+production repair dry-run of this implementation: NOT RUN
+production apply: NOT RUN
+
+The historical production records have therefore not yet been changed by this
+implementation.
+
+Order #1192 remains a historical-remediation target until the repair is
+deployed, dry-run against current production state, explicitly approved for
+mutation, applied, and independently verified.
+
+The six orders with genuinely missing or incomplete Shopify source addresses
+must remain address-blocked after canonical line-item repair.
+
+#1192 must not be assumed Ready after repair. Its managed variant inventory
+must be evaluated from current state by the normal constraint pipeline.
+
+Production remediation procedure
+
+After this implementation is committed and deployed:
+
+1. Run the repair CLI in dry-run mode against production.
+2. Compare the complete candidate set and blockers with the audited historical
+   evidence.
+3. Stop if the candidate set, source event IDs, shipping classification,
+   inventory-neutrality checks, or batch/revenue state differs.
+4. Obtain explicit approval for the production mutation.
+5. Run apply using only the event IDs returned by the fresh dry-run and the
+   SHOPIFY-CANON-REST-02 confirmation token.
+6. Allow the DB projection worker to consume the appended repair events.
+7. Verify canonical lines, shipping fields, revenue units, sale/correction
+   pairs, aggregate versions, constraints, risk state and projection cursor.
+8. Verify current physical inventory did not change as a consequence of the
+   historical reconstruction.
+9. Rerun dry-run; repaired events must no longer appear as candidates.
+10. Only after canonical remediation is accepted should reviewer Release CTA
+    verification continue on an appropriate unbatched Ready order.
+
+Do not manually:
+
+replay event 546
+edit order_line_items
+clear incomplete_address constraints
+edit inventory_truth
+rewrite inventory_movements
+alter pick_batch_orders
+release #1192 to prove the repair
+
+Those actions bypass or distort the canonical repair invariants.
