@@ -1005,3 +1005,38 @@ This is the regression requirement for any future constraint lifecycle change: r
 
 The existing playbook already states that BL-01A re-evaluation re-runs normal evaluator/projection machinery rather than directly clearing constraints, so this lifecycle section extends that exact architecture rather than introducing another model. :contentReference[oaicite:4]{index=4}
 
+## 13. Snapshot metric truth — BL-18, 2026-08-08
+
+Defect: exception_orders counted every row ever written to
+order_constraint_events. No is_active filter, no per-order
+de-duplication. Monotonic growth; never fell on resolution.
+
+Production evidence, shop 1, snapshot 2026-08-08 14:02:47:
+  exception_orders    56
+  constrained_orders   9
+  distinct blocked orders (canonical)  9
+  bridge rows is_active=f              35 of 56
+Series: 48 → 49 → 49 → 55 → 56 while constrained_orders
+moved 15 → 16 → 15 → 15 → 9.
+
+Surfaced as "56 orders need intervention" via
+createOperationalExceptionSignal:47, on the same screen whose
+header read 9 blocked (BL-06a).
+
+Fix: misc.metrics.ts:63 now counts at ORDER level from canonical
+order_constraints via whereExists, matching constraint.metrics.ts:112.
+
+Local proof: exception_orders 4 → 3, equal to constrained_orders
+and to order-level truth. GET /api/v1/modules/order-nexus/ft2
+returned exception_orders 3, constrained_orders 3.
+
+RULE — any metric counting ORDERS:
+  count FROM orders, whereExists active order_constraints
+  never count constraint rows directly
+  never read order_constraint_events (deprecated bridge; its
+  is_active drifts from canonical — BL-17, 21 rows in production)
+Consistent with overview-live-map-playbook §"One fact source →
+one signal everywhere".
+
+Open: exception_orders now equals constrained_orders by
+construction (BL-19 — product call on whether to retire the field).

@@ -60,10 +60,32 @@ export async function computeMiscMetrics(
     requireRow(pendingFulfillmentRow as CountRow | undefined, 'pendingFulfillmentRow').count ?? 0
   );
 
-  const exceptionOrdersRow = await trx('order_constraint_events as oce')
-    .where('oce.shop_id', shopId)
-    .andWhere('oce.created_at', '<=', snapshotCutoff)
-    .count('oce.lasyncro_order_id as count')
+  /**
+   * BL-18 (2026-08-08): exception_orders previously counted EVERY row ever
+   * written to order_constraint_events — no is_active filter, no per-order
+   * de-duplication. It grew monotonically and never fell when blockers
+   * resolved. Production shop 1 served 56 against a canonical truth of 9,
+   * rendering "56 orders need intervention" on Orders Nexus while the same
+   * screen's header showed 9 blocked.
+   *
+   * WHY CANONICAL: order_constraints is the single source of blocking truth.
+   * order_constraint_events is a deprecated bridge whose is_active drifts
+   * from canonical (BL-17: 21 rows disagreeing in production).
+   *
+   * WHY ORDER LEVEL: an order may carry several constraint rows (inventory
+   * constraints are variant-scoped via target_id). Counting rows inflates.
+   * Same pattern as constraint.metrics.ts:112.
+   */
+  const exceptionOrdersRow = await trx('orders as o')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .whereExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.is_active', true)
+    )
+    .count('o.lasyncro_order_id as count')
     .first();
 
   const exceptionOrders = Number(
