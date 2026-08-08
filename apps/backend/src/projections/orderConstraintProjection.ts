@@ -186,17 +186,22 @@ export async function projectOrderConstraints(
       }
 
       /**
-       * SAFE UPSERT (PARTIAL INDEX COMPATIBLE)
-       * -------------------------------------
-       * Postgres cannot use partial index in ON CONFLICT.
-       * We must manually upsert.
+       * STABLE-SCOPE UPSERT
+       * -------------------
+       * BL-16-UX-BLK-01: resolved constraints retain their deterministic identity.
+       * Look across the full lifecycle so reactivation updates the existing row
+       * instead of inserting the same stable primary key again.
        */
+      const constraintId = uuidv5(
+        `constraint:${type}:${orderId}:${targetId}`,
+        CONSTRAINT_EVENT_NAMESPACE
+      );
+
       const existingConstraint = await trx('order_constraints')
         .where({
           lasyncro_order_id: orderId,
           constraint_type: type,
-          target_id: targetId,
-          is_active: true
+          target_id: targetId
         })
         .first();
 
@@ -209,29 +214,21 @@ export async function projectOrderConstraints(
            * Without this, system collapses to order-level blocking.
            */
           target_id: targetId,
+
           /**
            * WRITE ORIGIN TRACE
            * -------------------
            * Identifies which projection wrote this row.
            */
           write_source: 'orderConstraintProjection',
-          constraint_id: uuidv5(
-            /**
-             * IDENTITY INVARIANT
-             * ------------------
-             * constraint_id must represent a stable constraint scope:
-             * (order_id + type + target_id)
-             *
-             * MUST NOT include aggregateVersion.
-             *
-             * Including version causes:
-             * - duplicate rows
-             * - broken upsert logic
-             * - unbounded growth
-             */
-            `constraint:${type}:${orderId}:${targetId}`,
-            CONSTRAINT_EVENT_NAMESPACE
-          ),
+
+          /**
+           * IDENTITY INVARIANT
+           * ------------------
+           * constraint_id represents the stable logical constraint scope:
+           * (order_id + type + target_id).
+           */
+          constraint_id: constraintId,
           lasyncro_order_id: orderId,
           constraint_type: type,
           block_type: result.meta?.blockType ?? null,
@@ -240,88 +237,75 @@ export async function projectOrderConstraints(
           is_active: true,
           created_at: new Date()
         });
-
-        /**
-         * TEMP BRIDGE: WRITE TO order_constraint_events (ACTIVE)
-         * ------------------------------------------------------
-         * Required because downstream systems still depend on this table.
-         */
-        await trx('order_constraint_events')
-          .insert({
-            /**
-             * PRIMARY KEY (REQUIRED)
-             */
-            constraint_event_id: uuidv5(
-              `constraint-event:${type}:${orderId}:${targetId}`,
-              CONSTRAINT_EVENT_NAMESPACE
-            ),
-
-            /**
-             * TENANT BOUNDARY (REQUIRED)
-             */
-            shop_id: shopId,
-
-            lasyncro_order_id: orderId,
-            constraint_type: type,
-            target_id: targetId,
-
-            is_active: true,
-            started_at: eventAnchor,
-            evaluated_at: eventAnchor,
-            aggregate_version: aggregateVersion,
-
-            created_at: trx.fn.now(),
-            updated_at: trx.fn.now()
-          })
-
-          debugLog('[CONSTRAINT_EVENT_INSERTED]', {
-            orderId,
-            type,
-            targetId
-          });
-
       } else {
         await trx('order_constraints')
           .where({ constraint_id: existingConstraint.constraint_id })
           .update({
-            /**
-             * SCOPE INVARIANT (WRITE-THROUGH)
-             * --------------------------------
-             * target_id must always be persisted on update to avoid scope drift.
-             */
             target_id: targetId,
             block_type: result.meta?.blockType ?? null,
             started_at: eventAnchor,
             resolved_at: null,
             is_active: true,
-
-            /**
-             * WRITE ORIGIN TRACE
-             */
             write_source: 'orderConstraintProjection'
           });
-
-      /**
-       * TEMP BRIDGE: WRITE TO order_constraint_events (RESOLVED)
-       * --------------------------------------------------------
-       * Keeps legacy consumers in sync until full migration.
-       */
-      await trx('order_constraint_events')
-        .where({
-          lasyncro_order_id: orderId,
-          constraint_type: type,
-          target_id: targetId
-        })
-        .update({
-          is_active: false,
-          evaluated_at: eventAnchor,
-          aggregate_version: aggregateVersion,
-          updated_at: trx.fn.now()
-        });
       }
 
+      /**
+       * TEMP BRIDGE: WRITE TO order_constraint_events (ACTIVE)
+       * ------------------------------------------------------
+       * BL-16-UX-BLK-01: the bridge uses the same stable-scope lifecycle model.
+       * Reactivation updates its deterministic row instead of inserting its PK again.
+       */
+      const constraintEventId = uuidv5(
+        `constraint-event:${type}:${orderId}:${targetId}`,
+        CONSTRAINT_EVENT_NAMESPACE
+      );
 
+      const existingConstraintEvent = await trx('order_constraint_events')
+        .where({ constraint_event_id: constraintEventId })
+        .first();
 
+      if (!existingConstraintEvent) {
+        await trx('order_constraint_events').insert({
+          constraint_event_id: constraintEventId,
+          shop_id: shopId,
+          lasyncro_order_id: orderId,
+          constraint_type: type,
+          target_id: targetId,
+          is_active: true,
+          started_at: eventAnchor,
+          evaluated_at: eventAnchor,
+          resolved_at: null,
+          aggregate_version: aggregateVersion,
+          created_at: trx.fn.now(),
+          updated_at: trx.fn.now()
+        });
+
+        debugLog('[CONSTRAINT_EVENT_INSERTED]', {
+          orderId,
+          type,
+          targetId
+        });
+      } else {
+        await trx('order_constraint_events')
+          .where({ constraint_event_id: constraintEventId })
+          .update({
+            shop_id: shopId,
+            target_id: targetId,
+            is_active: true,
+            started_at: eventAnchor,
+            evaluated_at: eventAnchor,
+            resolved_at: null,
+            aggregate_version: aggregateVersion,
+            updated_at: trx.fn.now()
+          });
+
+        debugLog('[CONSTRAINT_EVENT_REACTIVATED]', {
+          orderId,
+          type,
+          targetId
+        });
+      }
     }
 
     if (!isActive) {
@@ -353,6 +337,27 @@ export async function projectOrderConstraints(
            * WRITE ORIGIN TRACE
            */
           write_source: 'orderConstraintProjection'
+        });
+
+      /**
+       * TEMP BRIDGE: RESOLVE WITH CANONICAL CONSTRAINT
+       * ------------------------------------------------
+       * BL-16-UX-BLK-01: canonical and bridge lifecycle state must transition
+       * together so downstream readers never observe contradictory blocker state.
+       */
+      await trx('order_constraint_events')
+        .where({
+          lasyncro_order_id: orderId,
+          constraint_type: type,
+          target_id: targetId,
+          is_active: true
+        })
+        .update({
+          resolved_at: eventAnchor,
+          is_active: false,
+          evaluated_at: eventAnchor,
+          aggregate_version: aggregateVersion,
+          updated_at: trx.fn.now()
         });
 
         /**

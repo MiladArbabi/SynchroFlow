@@ -26,7 +26,19 @@
 // onFooterReady callback prop — see that prop's own doc comment below.
 import { useState, useEffect, ReactNode, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, Typography, Button, CircularProgress, Alert, TextField } from '@mui/material';
+import {
+  Box,
+  Typography,
+  Button,
+  CircularProgress,
+  Alert,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Collapse,
+} from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { AlertCircle, AlertTriangle, ArrowRight, Clock, CheckCircle2, XCircle } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -256,27 +268,22 @@ function PackDecisionHistory({ lasyncroOrderId }: { lasyncroOrderId: string }) {
 }
 
 /**
- * ShippingAddressForm
+ * ShippingAddressDialog
  * ---------------------
- * OF-08 (2026-07-02): the real in-app resolution path for
- * customer/incomplete_address blocks — pre-fills from whatever partial
- * shipping data already exists on the order (order.shipping, from
- * VO-01), lets the operator correct/complete it, and submits via
- * useUpdateShippingAddress. Required fields match
- * customerConstraintEvaluator.ts's own definition of "complete"
- * exactly (address1, city, zip, countryCode) — submitting anything
- * short of that would just re-trigger the same block, so the Save
- * button stays disabled until all four are filled.
- *
- * Deliberately does NOT optimistically assume the block clears —
- * reconciliation re-evaluates asynchronously (~200ms poll cycle, see
- * useShippingAddress.ts's own comment). Shows a plain "Saved" success
- * state instead of pretending the constraint is already gone.
+ * BL-16-UX-01: customer/incomplete_address resolution stays on the existing
+ * shipping-address mutation, but moves into a focused child dialog so the
+ * Order Detail surface remains concise and the parent modal stays open.
  */
-function ShippingAddressForm({
+function ShippingAddressDialog({
+  open,
+  onClose,
+  onSaved,
   orderId,
   currentShipping,
 }: {
+  open: boolean;
+  onClose: () => void;
+  onSaved: () => void;
   orderId: string;
   currentShipping: OrderShipping | undefined;
 }) {
@@ -291,67 +298,206 @@ function ShippingAddressForm({
 
   const updateAddress = useUpdateShippingAddress();
 
-  const canSave = address1.trim() && city.trim() && zip.trim() && countryCode.trim();
+  const canSave = Boolean(
+    address1.trim() &&
+    city.trim() &&
+    zip.trim() &&
+    countryCode.trim()
+  );
+
+  const handleClose = () => {
+    if (!updateAddress.isPending) {
+      onClose();
+    }
+  };
+
+  const handleSave = () => {
+    updateAddress.mutate(
+      {
+        orderId,
+        name: name.trim() || undefined,
+        address1: address1.trim(),
+        address2: address2.trim() || undefined,
+        city: city.trim(),
+        zip: zip.trim(),
+        province: province.trim() || undefined,
+        countryCode: countryCode.trim(),
+        phone: phone.trim() || undefined,
+      },
+      {
+      // BL-16-UX-02: PATCH success confirms the address write, not constraint resolution.
+      onSuccess: onSaved,
+      }
+    );
+  };
 
   const fieldSx = { mb: 1.25 };
 
-  if (updateAddress.isSuccess) {
-    return (
-      <Box sx={{ mb: 3, display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'var(--confirm-ghost)', border: '1px solid var(--confirm-border)', borderRadius: '10px', p: 1.25 }}>
-        <Typography sx={{ fontSize: 12.5, color: 'var(--confirm-ink)' }}>
-          Address saved. This order will clear automatically once it's re-checked — no further action needed.
-        </Typography>
-      </Box>
-    );
-  }
-
   return (
-    <Box sx={{ mb: 3 }}>
-      <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-        Correct shipping address
-      </Typography>
-
-      {updateAddress.isError && (
-        <Alert severity="error" sx={{ mb: 1.25 }}>
-          {updateAddress.error?.message ?? 'Could not save the address. Please try again.'}
-        </Alert>
-      )}
-
-      <TextField size="small" fullWidth label="Recipient name" value={name} onChange={(e) => setName(e.target.value)} sx={fieldSx} />
-      <TextField size="small" fullWidth required label="Address line 1" value={address1} onChange={(e) => setAddress1(e.target.value)} sx={fieldSx} />
-      <TextField size="small" fullWidth label="Address line 2 (optional)" value={address2} onChange={(e) => setAddress2(e.target.value)} sx={fieldSx} />
-      <Box sx={{ display: 'flex', gap: 1.25, mb: 1.25 }}>
-        <TextField size="small" fullWidth required label="City" value={city} onChange={(e) => setCity(e.target.value)} />
-        <TextField size="small" fullWidth label="State / Province" value={province} onChange={(e) => setProvince(e.target.value)} />
-      </Box>
-      <Box sx={{ display: 'flex', gap: 1.25, mb: 1.75 }}>
-        <TextField size="small" fullWidth required label="ZIP / Postal code" value={zip} onChange={(e) => setZip(e.target.value)} />
-        <TextField size="small" fullWidth required label="Country code" placeholder="US" value={countryCode} onChange={(e) => setCountryCode(e.target.value.toUpperCase())} />
-      </Box>
-      <TextField size="small" fullWidth label="Phone (optional)" value={phone} onChange={(e) => setPhone(e.target.value)} sx={fieldSx} />
-
-      <Button
-        variant="contained"
-        fullWidth
-        disabled={!canSave || updateAddress.isPending}
-        onClick={() =>
-          updateAddress.mutate({
-            orderId,
-            name: name.trim() || undefined,
-            address1: address1.trim(),
-            address2: address2.trim() || undefined,
-            city: city.trim(),
-            zip: zip.trim(),
-            province: province.trim() || undefined,
-            countryCode: countryCode.trim(),
-            phone: phone.trim() || undefined,
-          })
-        }
-        sx={{ bgcolor: 'var(--accent)', color: 'var(--accent-ink)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      fullWidth
+      maxWidth="sm"
+      aria-labelledby="shipping-address-dialog-title"
+      PaperProps={{
+        sx: {
+          bgcolor: 'var(--surface)',
+          border: '1px solid var(--rule)',
+          borderRadius: '14px',
+          backgroundImage: 'none',
+        },
+      }}
+    >
+      <DialogTitle
+        id="shipping-address-dialog-title"
+        sx={{
+          px: 3,
+          py: 2,
+          fontSize: 16,
+          fontWeight: 500,
+          color: 'var(--ink)',
+          bgcolor: 'var(--bg-3)',
+          borderBottom: '1px solid var(--rule)',
+        }}
       >
-        {updateAddress.isPending ? 'Saving…' : 'Save address'}
-      </Button>
-    </Box>
+        Correct shipping address
+      </DialogTitle>
+
+      <DialogContent sx={{ p: '24px !important', bgcolor: 'var(--surface)' }}>
+        <Typography
+          sx={{
+            fontSize: 12.5,
+            fontWeight: 300,
+            color: 'var(--ink-3)',
+            mb: 2,
+          }}
+        >
+          Complete the required shipping fields so this order can be re-checked automatically.
+        </Typography>
+
+        {updateAddress.isError && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {updateAddress.error?.message ?? 'Could not save the address. Please try again.'}
+          </Alert>
+        )}
+
+        <TextField
+          size="small"
+          fullWidth
+          label="Recipient name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          sx={fieldSx}
+        />
+
+        <TextField
+          size="small"
+          fullWidth
+          required
+          label="Address line 1"
+          value={address1}
+          onChange={(e) => setAddress1(e.target.value)}
+          sx={fieldSx}
+        />
+
+        <TextField
+          size="small"
+          fullWidth
+          label="Address line 2 (optional)"
+          value={address2}
+          onChange={(e) => setAddress2(e.target.value)}
+          sx={fieldSx}
+        />
+
+        <Box sx={{ display: 'flex', gap: 1.25, mb: 1.25 }}>
+          <TextField
+            size="small"
+            fullWidth
+            required
+            label="City"
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+          />
+          <TextField
+            size="small"
+            fullWidth
+            label="State / Province"
+            value={province}
+            onChange={(e) => setProvince(e.target.value)}
+          />
+        </Box>
+
+        <Box sx={{ display: 'flex', gap: 1.25, mb: 1.25 }}>
+          <TextField
+            size="small"
+            fullWidth
+            required
+            label="ZIP / Postal code"
+            value={zip}
+            onChange={(e) => setZip(e.target.value)}
+          />
+          <TextField
+            size="small"
+            fullWidth
+            required
+            label="Country code"
+            placeholder="US"
+            value={countryCode}
+            onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+          />
+        </Box>
+
+        <TextField
+          size="small"
+          fullWidth
+          label="Phone (optional)"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+      </DialogContent>
+
+      <DialogActions
+        sx={{
+          px: 3,
+          py: 2,
+          gap: 1,
+          bgcolor: 'var(--bg-3)',
+          borderTop: '1px solid var(--rule)',
+        }}
+      >
+        <Button
+          onClick={handleClose}
+          disabled={updateAddress.isPending}
+          sx={{
+            color: 'var(--ink-3)',
+            textTransform: 'none',
+            borderRadius: '6px',
+          }}
+        >
+          Cancel
+        </Button>
+
+        <Button
+          variant="contained"
+          disabled={!canSave || updateAddress.isPending}
+          onClick={handleSave}
+          sx={{
+            bgcolor: 'var(--accent)',
+            color: 'var(--accent-ink)',
+            borderRadius: '6px',
+            fontWeight: 600,
+            textTransform: 'none',
+            '&:hover': {
+              bgcolor: 'var(--accent)',
+              opacity: 0.88,
+            },
+          }}
+        >
+          {updateAddress.isPending ? 'Saving…' : 'Save address'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -469,7 +615,28 @@ export function OrderDetailModalBody({
   const order = detailQuery.data;
 
   const hasActiveInventoryConstraint = constraints.some((c) => c.constraint_type === 'inventory');
+  // BL-16: constraints are canonical blocker truth; decision enrichment may be absent.
+  const hasActiveCustomerConstraint = constraints.some(
+    (c) => c.constraint_type === 'customer' && c.block_type === 'incomplete_address'
+  );
   const hasAnyActiveConstraint = constraints.length > 0;
+
+  // BL-16-UX-01: keep address correction focused without replacing the parent order modal.
+  const [shippingAddressDialogOpen, setShippingAddressDialogOpen] = useState(false);
+
+  // BL-16-UX-02: address persistence is immediate; blocker resolution remains server-confirmed.
+  const [addressRecheckPending, setAddressRecheckPending] = useState(false);
+
+  useEffect(() => {
+    if (addressRecheckPending && !hasActiveCustomerConstraint) {
+      setAddressRecheckPending(false);
+    }
+  }, [addressRecheckPending, hasActiveCustomerConstraint]);
+
+  useEffect(() => {
+    setShippingAddressDialogOpen(false);
+    setAddressRecheckPending(false);
+  }, [orderId]);
   /**
    * FOOTER LIFT (2026-07-02)
    * ------------------------
@@ -788,44 +955,184 @@ export function OrderDetailModalBody({
         actions keep the original execute-button behavior, unchanged
         below.
       */}
-      {recommendedAction?.type === 'resolve_customer_block' && !showInventoryResolvedBanner ? (
-        <ShippingAddressForm
+      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || recommendedAction) && (
+      <Box sx={{ mb: 3 }}>
+        <Typography
+          sx={{
+            fontSize: 11,
+            fontWeight: 500,
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-4)',
+            mb: 1,
+          }}
+        >
+          Recommended action
+        </Typography>
+
+        <Collapse
+          in={hasActiveCustomerConstraint && !addressRecheckPending}
+          timeout={180}
+          unmountOnExit
+        >
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={() => setShippingAddressDialogOpen(true)}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              textTransform: 'none',
+              '&:hover': {
+                bgcolor: 'var(--accent)',
+                opacity: 0.88,
+              },
+            }}
+          >
+            Correct shipping address
+          </Button>
+        </Collapse>
+
+        <Collapse
+          in={hasActiveCustomerConstraint && addressRecheckPending}
+          timeout={180}
+          unmountOnExit
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              p: 1.25,
+              bgcolor: 'var(--confirm-ghost)',
+              border: '1px solid var(--confirm-border)',
+              borderRadius: '10px',
+            }}
+          >
+            <CircularProgress
+              size={14}
+              thickness={5}
+              sx={{ color: 'var(--confirm-ink)', flexShrink: 0 }}
+            />
+
+            <Typography
+              sx={{
+                fontSize: 12.5,
+                fontWeight: 300,
+                color: 'var(--confirm-ink)',
+              }}
+            >
+              Address updated — rechecking order…
+            </Typography>
+          </Box>
+        </Collapse>
+
+        <Collapse
+          in={!hasActiveCustomerConstraint && Boolean(recommendedAction)}
+          timeout={180}
+          unmountOnExit
+        >
+          {recommendedAction && (
+            <>
+              {isExecError ? (
+                <>
+                  <Alert severity="error" sx={{ mb: 1 }}>
+                    {execError?.message ?? 'Execution failed. Please try again.'}
+                  </Alert>
+
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => execute(orderId)}
+                    sx={{
+                      bgcolor: 'var(--accent)',
+                      color: 'var(--accent-ink)',
+                      borderRadius: '6px',
+                      fontWeight: 600,
+                      textTransform: 'none',
+                      '&:hover': {
+                        bgcolor: 'var(--accent)',
+                        opacity: 0.88,
+                      },
+                    }}
+                  >
+                    {getActionLabel(recommendedAction.type)}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="contained"
+                  fullWidth
+                  disabled={isPending}
+                  onClick={() => execute(orderId)}
+                  startIcon={
+                    isPending
+                      ? <CircularProgress size={16} color="inherit" />
+                      : recommendedAction.type === 'resolve_inventory_block'
+                        ? <ArrowRight size={16} />
+                        : null
+                  }
+                  sx={{
+                    bgcolor: 'var(--accent)',
+                    color: 'var(--accent-ink)',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    '&:hover': {
+                      bgcolor: 'var(--accent)',
+                      opacity: 0.88,
+                    },
+                  }}
+                >
+                  {isPending ? 'Processing…' : getActionLabel(recommendedAction.type)}
+                </Button>
+              )}
+
+              {alternateActions.length > 0 && (
+                <Box sx={{ mt: 1.5 }}>
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mb: 0.75 }}>
+                    Other options
+                  </Typography>
+
+                  {alternateActions.map((a) => (
+                    <Button
+                      key={a.type}
+                      variant="outlined"
+                      fullWidth
+                      size="small"
+                      disabled={isPending}
+                      onClick={() => execute(orderId)}
+                      sx={{
+                        mb: 0.75,
+                        fontSize: 12.5,
+                        color: 'var(--ink-2)',
+                        borderColor: 'var(--rule)',
+                      }}
+                    >
+                      {getActionLabel(a.type)}
+                    </Button>
+                  ))}
+                </Box>
+              )}
+            </>
+          )}
+        </Collapse>
+
+        <ShippingAddressDialog
+          key={orderId}
+          open={shippingAddressDialogOpen}
+          onClose={() => setShippingAddressDialogOpen(false)}
+          onSaved={() => {
+            setShippingAddressDialogOpen(false);
+            setAddressRecheckPending(true);
+          }}
           orderId={orderId}
           currentShipping={order?.shipping}
         />
-      ) : recommendedAction && !showInventoryResolvedBanner && (
-        <Box sx={{ mb: 3 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-            Recommended action
-          </Typography>
-          {isExecError ? (
-            <>
-              <Alert severity="error" sx={{ mb: 1 }}>{execError?.message ?? 'Execution failed. Please try again.'}</Alert>
-              <Button variant="contained" fullWidth onClick={() => execute(orderId)}
-                sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
-                {getActionLabel(recommendedAction.type)}
-              </Button>
-            </>
-          ) : (
-            <Button variant="contained" fullWidth disabled={isPending} onClick={() => execute(orderId)}
-              startIcon={isPending ? <CircularProgress size={16} color="inherit" /> : recommendedAction.type === 'resolve_inventory_block' ? <ArrowRight size={16} /> : null}
-              sx={{ bgcolor: 'var(--accent)', '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 } }}>
-              {isPending ? 'Processing…' : getActionLabel(recommendedAction.type)}
-            </Button>
-          )}
-          {alternateActions.length > 0 && (
-            <Box sx={{ mt: 1.5 }}>
-              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mb: 0.75 }}>Other options</Typography>
-              {alternateActions.map((a) => (
-                <Button key={a.type} variant="outlined" fullWidth size="small" disabled={isPending} onClick={() => execute(orderId)}
-                  sx={{ mb: 0.75, fontSize: 12.5, color: 'var(--ink-2)', borderColor: 'var(--rule)' }}>
-                  {getActionLabel(a.type)}
-                </Button>
-              ))}
-            </Box>
-          )}
-        </Box>
-      )}
+      </Box>
+    )}
 
       {!exceptionsQuery.isLoading && exceptions.length > 0 && (
         <Box sx={{ mb: 3 }}>

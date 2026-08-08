@@ -166,7 +166,11 @@ System words should not leak to the operator when a more useful label exists.
 
 No "Phantom" category exists. `constraint_type` is a hard DB enum — inventory | customer | operational only (`order_constraint_events` migration). Any UI/design reference to a 4th "Phantom" category was based on the original target mockup, not actual data — confirmed false 2026-06-25.
 
-No advance/resolve action on this column yet — reason-specific resolution workflows (e.g. retry label, verify address) are explicitly deferred to a future, separate task. This column is read + triage only for now.
+Reason-specific resolution is supported only where a real canonical correction path exists.
+
+For `customer:incomplete_address`, the operator can open Order Detail and use **Correct shipping address**. The address correction writes through `PATCH /api/v1/orders/:orderId/shipping-address`; the active customer constraint remains authoritative until normal reconciliation re-evaluates and resolves it. The UI must never clear the blocker optimistically.
+
+Inventory and other blocker workflows remain separate and must not be inferred from the customer-address path.
 
 ### 3.4 Order pool column
 
@@ -916,3 +920,88 @@ ready_for_release        1 → 3
 
 Five of the seven were already batched, so they resolved a false block without
 entering the pool — batch membership excludes independently of constraints.
+
+### Blocked lifecycle source-of-truth and reactivation invariant — BL-15 / BL-16 family, 2026-08-08
+
+`order_constraints` is the canonical answer to **whether and why an order is blocked**.
+
+A row in `decisions` is enrichment for recommended/alternate actions. It must never be required in order to expose an existing blocker. Therefore:
+
+```text
+active constraint + current decision
+→ blocked; show constraint + decision enrichment
+
+active constraint + decision = null
+→ blocked; show constraint and any supported constraint-derived resolution path
+
+no active constraint
+→ do not present the order as blocked merely because a stale decision exists
+
+BL-15 corrected the decision endpoint so an order with active constraints but no current decision returns the constraint state rather than collapsing to a 404/no-issue presentation.
+
+BL-16 applies the same invariant to resolution UX. customer:incomplete_address exposes Correct shipping address from the active customer constraint itself, not from recommended_action.type. The address mutation is the supported correction path; the generic decision execution endpoint is not synthesized or used when no actionable decision exists.
+
+Constraint lifecycle identity
+
+orderConstraintProjection uses deterministic stable IDs for a logical constraint scope:
+
+constraint:
+(order_id + constraint_type + target_id)
+
+bridge constraint event:
+(order_id + constraint_type + target_id)
+
+A resolved logical constraint must therefore be reactivated by updating its existing stable row, not by attempting to insert that deterministic primary key again.
+
+BL-16-UX-BLK-01 fixed the lifecycle accordingly:
+
+first activation
+→ insert canonical row
+→ insert bridge row
+→ both active
+
+re-evaluation while active
+→ update same canonical row
+→ update same bridge row
+→ both remain active
+
+resolution
+→ canonical is_active=false + resolved_at
+→ bridge is_active=false + resolved_at
+
+later reactivation
+→ update same deterministic canonical row
+→ update same deterministic bridge row
+→ resolved_at cleared
+→ both active again
+
+The canonical and bridge rows must transition together. A state where one is active and the other resolved is lifecycle drift.
+
+Local regression proof — order #800003
+
+Controlled order:
+
+external order: 800003
+lasyncro_order_id: 9fdddd49-8d6b-fc1c-2bf2-c2e5a0563f4d
+customer constraint id: f328ebe4-b745-5301-a439-cdcf8326ddff
+customer bridge id: 665bb51b-a791-5eaa-8035-a42903de5ff7
+
+The test repeatedly removed only shipping_zip, then emitted the supported orders/constraints_reevaluated event.
+
+Before BL-16-UX-BLK-01, reactivation attempted to insert the already-existing deterministic customer constraint ID and crashed the DB projection worker with PostgreSQL 23505 order_constraints_pkey.
+
+After the fix:
+
+poisoned event 90 reprocessed successfully;
+canonical customer + inventory rows were both active;
+bridge customer + inventory rows were both active;
+each logical scope remained exactly one row in each table;
+no duplicate deterministic IDs were created;
+the projection worker remained running;
+later fresh re-evaluations, including events 92 and 94, repeatedly reactivated the same rows successfully.
+
+This is the regression requirement for any future constraint lifecycle change: resolve → reactivate → resolve → reactivate must remain idempotent and worker-safe.
+
+
+The existing playbook already states that BL-01A re-evaluation re-runs normal evaluator/projection machinery rather than directly clearing constraints, so this lifecycle section extends that exact architecture rather than introducing another model. :contentReference[oaicite:4]{index=4}
+

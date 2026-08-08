@@ -275,3 +275,114 @@ section) that depends on the 404 surfacing as a real `isError` state;
 converting it to a caught `null` return would have silently broken that
 existing, working logic. Confirmed live post-fix: modal opens
 immediately, no flicker, no unnecessary retry storm.
+
+Do **not** reuse `2.10`; that number already exists later in this playbook. Add the following dated section immediately after the existing Order Detail redesign material and before the later unrelated modal audit sections.
+
+```md
+### Order Detail customer-block resolution — BL-16 / BL-16-UX, 2026-08-08
+
+**Status:** local implementation and functional verification complete; commit/deployment handled separately.
+
+#### BL-16 — constraint truth must survive missing decision enrichment
+
+The Order Detail modal must derive blocked state and supported blocker-specific resolution from `constraints[]`, not solely from `decision.recommended_action`.
+
+Confirmed failure mode:
+
+```text
+order_constraints:
+  customer / incomplete_address = active
+
+decision:
+  null
+
+Before BL-16, the modal could render the Address Issue but expose no correction path because ShippingAddressForm was gated by:
+
+recommended_action.type === resolve_customer_block
+
+That was incorrect. A missing decision does not invalidate an active canonical constraint.
+
+The corrected gate is the active canonical blocker:
+
+constraint_type = customer
+block_type = incomplete_address
+is_active = true
+
+The existing PATCH /api/v1/orders/:orderId/shipping-address path remains the only address correction mechanism. No fake recommended_action is synthesized and the generic /execute path is not used for a decision-null customer blocker.
+
+BL-16-UX-01 — focused shipping-address child dialog
+
+The old inline address form was replaced with a focused child dialog launched by the Tier-1 Correct shipping address CTA.
+
+Interaction contract:
+
+Order Detail remains open
+→ Correct shipping address
+→ child dialog opens
+→ existing partial address is prefilled
+→ address1 / city / ZIP / country code are required
+→ Cancel closes only the child dialog
+→ Save address uses the existing PATCH mutation
+→ child dialog closes after persisted save
+→ parent Order Detail remains open
+
+The child dialog follows modules-ux-playbook.md:
+
+design tokens only;
+var(--surface) content;
+var(--bg-3) framing;
+1px solid var(--rule) borders;
+Tier-1 CTA uses var(--accent) + var(--accent-ink);
+actionable CTA radius 6px;
+no local fontFamily.
+BL-16-UX-02 — asynchronous resolution must remain visible
+
+Saving the corrected address and resolving the customer constraint are intentionally separate facts.
+
+useUpdateShippingAddress does not optimistically remove the blocker. PATCH success confirms only that the corrected address persisted; normal reconciliation still owns constraint resolution.
+
+The shipped transition is therefore:
+
+Save address
+→ Saving…
+→ PATCH succeeds
+→ child dialog closes
+→ Correct shipping address collapses out
+→ Address updated — rechecking order… appears
+→ canonical Address Issue remains visible while still active
+→ refreshed constraint state confirms resolution
+→ rechecking state collapses out
+→ next real recommendation appears
+
+For the controlled multi-constraint order #800003, the next recommendation was Go To Sourcing because the independent inventory:oversell constraint remained active.
+
+The transition uses the established Collapse timeout={180} pattern. The rechecking state uses --confirm-ghost, --confirm-border, and --confirm-ink. It ends from refreshed canonical constraint state, not from an arbitrary timer.
+
+Functional verification — #800003
+
+Controlled test order:
+
+#800003
+1 QA Street
+Stockholm
+ZIP intentionally removed
+SE
+
+Verified behavior:
+
+Order Detail showed both Address Issue / incomplete address and Out of Stock / oversell.
+No address fields were rendered inline.
+Correct shipping address opened the focused child dialog.
+Existing address fields were prefilled and ZIP was blank.
+Save remained disabled until ZIP was entered.
+Saving 111 22 persisted the address through the supported mutation.
+Parent Order Detail remained open.
+Address updated — rechecking order… covered the asynchronous reconciliation interval.
+The customer Address Issue disappeared only after canonical re-evaluation.
+Inventory oversell remained and the next real action became Go To Sourcing.
+
+Product invariant:
+
+The UI may optimistically acknowledge that a mutation succeeded, but it must never optimistically claim that a canonical blocker has resolved.
+
+This belongs in this playbook because its existing Order Detail section already establishes that active constraints—not decision execution success—are the modal’s ground truth. :contentReference[oaicite:5]{index=5}
