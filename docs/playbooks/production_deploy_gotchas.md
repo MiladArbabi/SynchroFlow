@@ -192,3 +192,38 @@ this sequence locally on 2026-08-07: the migration compiled, applied, registered
 its checksum, passed the 85-table RLS release gate, and repaired all observed
 founder/snapshot identity mismatches. Production remains unchanged until the
 migration reaches `main` and the production workflow executes it.
+
+## A "cancelled" GitHub job means the 6-hour limit, not a cancellation
+
+REV-HARD-11 (2026-08-09). CI / RLS Security Boundary runs #13-#20 all
+reported conclusion=cancelled. Nobody cancelled them and there is no
+concurrency key in ci-security.yml (only fly-deploy.yml has one,
+deploy-group).
+
+Run #20: created 17:16:21, updated 23:16:41 — exactly 6h00m20s. That is
+GitHub's hard per-job maximum. A job that exceeds it reports 'cancelled',
+not 'timed_out'. Read the created/updated delta before theorising.
+
+Steps 1-8 passed every time. Step 9 (test:rls-live) was where it died.
+
+Root cause: the suite's last subtest calls createApp(), loading the full
+route graph including backend-core db.ts:11 — knex(dbConfig) at module
+scope, no destroy anywhere in that file. The suite's after() hook closes
+the two pg.Client connections it opened itself; it cannot close a pool it
+never created. All three assertions completed in ~1.6s, then the process
+held the event loop open for six hours.
+
+Cost: ~48h of runner time, and the SEC-RLS-P0 gate never once reported.
+
+Fix: --test-force-exit on the test:rls-live script. Exit codes verified
+preserved — 0 green, 1 with an injected failing assertion.
+
+Two wrong hypotheses worth not repeating:
+
+- Not Jest. test:rls-live is `node --test`; --forceExit is not a valid
+    flag there. The --forceExit visible in the workflow belongs to an
+    uncommitted fresh-install step that has never run on main.
+- Not concurrency. Checked; no key in this workflow.
+
+REV-HARD-11-FU-01: destroy the Knex pool properly instead of relying on
+force-exit. Backend-core change, not a CI one.

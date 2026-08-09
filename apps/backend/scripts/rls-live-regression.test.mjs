@@ -4,6 +4,28 @@ import test, { after, before } from 'node:test';
 import pg from 'pg';
 import request from 'supertest';
 
+/**
+ * REV-HARD-11 (2026-08-09): this suite MUST run with --test-force-exit.
+ * See the test:rls-live script in apps/backend/package.json.
+ *
+ * The final subtest imports dist/bootstrap/express.js and calls createApp(),
+ * which loads the whole route graph — including backend-core's db.ts, where
+ * knex(dbConfig) is constructed at module scope and never destroyed. The
+ * after() hook below closes the two pg.Client connections THIS file opens;
+ * it cannot close a pool it never created. Idle pool connections hold the
+ * event loop open, so node --test completed every assertion in ~1.6s and
+ * then hung until GitHub's 6-hour job limit, reporting 'cancelled'.
+ *
+ * Runs #13-#20 all died this way. The assertions were passing the whole
+ * time — the gate simply could never report.
+ *
+ * --test-force-exit preserves exit codes (verified: 0 when green, 1 with an
+ * injected failure), so a real RLS regression still fails the build.
+ *
+ * FOLLOW-UP REV-HARD-11-FU-01: destroy the Knex pool properly rather than
+ * relying on force-exit. That is a backend-core change, not a CI one.
+ */
+
 const { Client } = pg;
 const migrationUrl = process.env.MIGRATION_DATABASE_URL;
 const appUrl = process.env.APP_DATABASE_URL;
