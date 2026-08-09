@@ -1070,3 +1070,51 @@ an unbatched filter. Now falls back to 0, matching its sibling counts.
 RULE — when two surfaces show counts of the same noun, either the
 predicates match or the labels must differ. A shared label across
 different predicates is a defect even when both numbers are right.
+
+## 16. Exception orders vs constrained orders — BL-19, 2026-08-09
+
+Two metrics, two lifecycle stages, deliberately disjoint:
+
+  constrained_orders   PRE-release. Orders held in the Blocked column by
+                       an active order_constraints row. Never released.
+                       constraint.metrics.ts:112
+
+  exception_orders     POST-release. Orders with an UNRESOLVED line-item
+                       exception raised on the floor, from release until
+                       shipped. misc.metrics.ts
+                       An order cannot hold both.
+
+BL-18 fixed this metric's arithmetic and left its semantics wrong: it
+counted the PRE-release side, duplicating constrained_orders. Two
+metrics equal by construction was the signal one measured the wrong set.
+
+Source is pick_exceptions, post-release by construction — BL-01b records
+that pick_exception_stage is ('pick','pack'), reachable only after
+/wms/batch/release then /claim.
+
+THE JOIN TRAP — read before touching this query.
+pick_exceptions is line-item scoped (lasyncro_line_item_id) but points at
+a BATCH (pick_batch_id). Resolving the order through pick_batch_orders
+fans out to every order in the batch. Measured: one unresolved exception
+on one line item of one order returned 3, because the batch held 3
+orders. countDistinct does not save you — the distinct order ids are
+real, they are simply the wrong ones.
+
+The order MUST come from order_line_items. pick_batches may be joined for
+the cancelled check only, never for order resolution.
+
+Exclusions: resolved=false; batch status <> 'cancelled'; order not
+shipped per order_warehouse_status.status (written by the Sendcloud and
+Shippo tracking handlers on carrier pickup). partially_shipped still
+counts — part of the order is still on the floor. LEFT JOIN because the
+status row may not exist yet.
+
+Verified end to end through real endpoints, not fixtures:
+  raise  POST /wms/batch/:batchId/exception     -> 0 then 1
+  resolve POST /wms/problem-center/pick-exceptions/:id/resolve -> 1 then 0
+constrained_orders held at 3 throughout.
+
+RULE: when a metric's source table has a finer grain than the metric,
+resolve the entity through the grain-matching join. Test that it counts
+UP, not only that it returns a plausible number — a 0-to-0 verification
+would have shipped the batch-fanout bug.

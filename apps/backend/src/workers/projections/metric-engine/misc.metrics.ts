@@ -61,31 +61,66 @@ export async function computeMiscMetrics(
   );
 
   /**
-   * BL-18 (2026-08-08): exception_orders previously counted EVERY row ever
-   * written to order_constraint_events — no is_active filter, no per-order
-   * de-duplication. It grew monotonically and never fell when blockers
-   * resolved. Production shop 1 served 56 against a canonical truth of 9,
-   * rendering "56 orders need intervention" on Orders Nexus while the same
-   * screen's header showed 9 blocked.
+   * EXCEPTION ORDERS — POST-RELEASE FLOOR EXCEPTIONS (BL-19, 2026-08-09)
+   * --------------------------------------------------------------------
+   * An exception order has an UNRESOLVED line-item exception raised during
+   * the warehouse lifecycle: released to the floor, not yet shipped.
    *
-   * WHY CANONICAL: order_constraints is the single source of blocking truth.
-   * order_constraint_events is a deprecated bridge whose is_active drifts
-   * from canonical (BL-17: 21 rows disagreeing in production).
+   * This is deliberately DISJOINT from constrained_orders
+   * (constraint.metrics.ts:112), which counts PRE-release blockers. An
+   * order cannot hold both: a constrained order was never released, and a
+   * released order is no longer constrained.
    *
-   * WHY ORDER LEVEL: an order may carry several constraint rows (inventory
-   * constraints are variant-scoped via target_id). Counting rows inflates.
-   * Same pattern as constraint.metrics.ts:112.
+   * HISTORY: BL-18 fixed this metric's arithmetic (it had counted every
+   * order_constraint_events row ever written, 56 vs a truth of 9) but left
+   * it reading the pre-release side, making it a duplicate of
+   * constrained_orders. Two metrics equal by construction was the signal
+   * that one measured the wrong thing.
+   *
+   * WHY pick_exceptions: post-release by construction. Per BL-01b in
+   * operationalConstraintEvaluator.ts, pick_exception_stage is
+   * ('pick','pack'), reachable only after /wms/batch/release then /claim.
+   *
+   * WHY ORDER LEVEL VIA LINE ITEM: pick_exceptions is line-item scoped
+   * (lasyncro_line_item_id). The order MUST be resolved through
+   * order_line_items, never through pick_batch_orders — a pick_exception
+   * points at a batch, and joining batch -> pick_batch_orders fans out to
+   * EVERY order in that batch. Verified: one unresolved exception on one
+   * line item of one order returned 3 (the batch held 3 orders) instead
+   * of 1. countDistinct does not save you; the distinct order ids are
+   * real, they are just the wrong ones.
+   *
+   * pick_batches is still joined, but only on pe.pick_batch_id for the
+   * cancelled check — it must not participate in order resolution.
+   *
+   * WHY THESE EXCLUSIONS:
+   * - resolved = false: a resolved exception needs no intervention.
+   * - batch not cancelled: the floor work it blocked no longer exists.
+   * - order not shipped: order_warehouse_status.status is the canonical
+   *   shipped fact, written by the Sendcloud/Shippo tracking handlers on
+   *   carrier pickup. partially_shipped still counts — part of the order
+   *   is on the floor. LEFT JOIN because a row may not exist yet.
    */
-  const exceptionOrdersRow = await trx('orders as o')
-    .where('o.shop_id', shopId)
-    .andWhere('o.order_created_at', '<=', snapshotCutoff)
-    .whereExists(
-      trx('order_constraints as oc')
-        .select(1)
-        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
-        .andWhere('oc.is_active', true)
+  const exceptionOrdersRow = await trx('pick_exceptions as pe')
+    .join(
+      'order_line_items as oli',
+      'oli.lasyncro_line_item_id',
+      'pe.lasyncro_line_item_id'
     )
-    .count('o.lasyncro_order_id as count')
+    .join('pick_batches as pb', 'pb.pick_batch_id', 'pe.pick_batch_id')
+    .leftJoin(
+      'order_warehouse_status as ows',
+      'ows.lasyncro_order_id',
+      'oli.lasyncro_order_id'
+    )
+    .where('pe.shop_id', shopId)
+    .andWhere('pe.raised_at', '<=', snapshotCutoff)
+    .andWhere('pe.resolved', false)
+    .andWhere('pb.status', '<>', 'cancelled')
+    .andWhere(function () {
+      this.whereNull('ows.status').orWhereNot('ows.status', 'shipped');
+    })
+    .countDistinct('oli.lasyncro_order_id as count')
     .first();
 
   const exceptionOrders = Number(
