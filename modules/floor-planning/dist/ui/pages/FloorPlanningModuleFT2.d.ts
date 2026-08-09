@@ -9,7 +9,8 @@ import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, Warehou
  * from apps/frontend HTTP layer.
  *
  * Data model:
- *   warehouse_locations — location_code, type, barcode (system-generated)
+ *   warehouse_locations — location_code (the printed symbol), type,
+ *   barcode (nullable merchant override — never system-generated)
  *   variants + external_product_identity_map — lasyncro_variant_id, sku, supplier barcode
  *
  * Theme-aware: Paper, theme.palette tokens, no hardcoded colors.

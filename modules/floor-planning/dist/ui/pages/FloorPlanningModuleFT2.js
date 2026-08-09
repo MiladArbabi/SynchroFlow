@@ -182,11 +182,12 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
         ids.forEach((i) => allOn ? s.delete(i) : s.add(i));
         return s;
     });
-    const barcoded = zones.filter((z) => z.barcode !== null);
-    const missing = zones.filter((z) => z.barcode === null);
-    // Aisles fully labelled: lane-type zones that have a barcode assigned
+    // REV-HARD-01: every active location is printable — location_code is the
+    // symbol. `barcode` is an override, not a precondition.
+    const barcoded = zones.filter((z) => z.active);
+    const missing = zones.filter((z) => !z.active);
     const aisles = zones.filter((z) => z.type === 'lane');
-    const aislesLabelled = aisles.filter((z) => z.barcode !== null);
+    const aislesLabelled = aisles.filter((z) => z.active);
     const fullLabelled = aisles.length;
     const filteredZones = zones.filter((z) => {
         const matchesType = locFilter === 'all' || z.type === locFilter;
@@ -196,8 +197,8 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
     // SHOP-REV-01m: the barcoded + active filter moved here from inside
     // PrintPreviewPanel — it is a location concept with no product equivalent.
     const selectedZoneLabels = zones
-        .filter((z) => selected.has(z.location_code) && z.barcode !== null && z.active)
-        .map((z) => ({ id: z.location_code, code: z.location_code, caption: z.location_code }));
+        .filter((z) => selected.has(z.location_code) && z.active)
+        .map((z) => ({ id: z.location_code, code: z.barcode ?? z.location_code, caption: z.location_code }));
     const allFilteredCodes = filteredZones.map((z) => z.location_code);
     const allSelected = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
     // SHOP-REV-01m: three honest metrics. Locations has a fourth (aisles fully
@@ -330,7 +331,8 @@ function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, 
     // Badge = location codes still MISSING a barcode (the to-do signal).
     // Never sum across barcode systems — location codes (WM-28) and product
     // codes (EAN/UPC coupling) are distinct namespaces; LSU unit labels live in Settings → Warehouse.
-    const barcodesCount = zones.filter((z) => z.barcode === null).length;
+    // REV-HARD-01: to-do signal is inactive locations, not missing barcodes.
+    const barcodesCount = zones.filter((z) => !z.active).length;
     const handleCreate = async () => {
         if (!createCode.trim()) {
             setCreateError('Location code is required');
@@ -377,8 +379,8 @@ function FloorPlanningModuleFT2Inner({ data, isLoading, isError, gridLocations, 
                         bgcolor: setupFilter === value ? 'var(--accent-ghost)' : 'transparent',
                         transition: 'all 0.12s',
                     }, children: label }, value))) })), tab === 'barcodes' && (() => {
-                const barcodedLocs = zones.filter((z) => z.barcode !== null).length;
-                const missingLocs = zones.filter((z) => z.barcode === null).length;
+                const barcodedLocs = zones.filter((z) => z.active).length;
+                const missingLocs = zones.filter((z) => !z.active).length;
                 const barcodedProducts = productBarcodes.filter((p) => p.barcode !== null).length;
                 const missingProducts = productBarcodes.filter((p) => p.barcode === null).length;
                 // Two systems kept separate — never co-mingled into one "missing" count (WMS-FP-04).
