@@ -145,7 +145,15 @@ export async function confirmStow(
   // 1. Validate task
   const task = await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId, shop_id: shopId })
-    .select('status', 'claimed_by', 'lasyncro_variant_id', 'quantity', 'location_code', 'trigger')
+    .select(
+      'status',
+      'claimed_by',
+      'lasyncro_variant_id',
+      'quantity',
+      'location_code',
+      'trigger',
+      'source_task_id'
+    )
     .first();
 
   if (!task) throw new Error(`[STOW_CONFIRM] Task not found: ${stowTaskId}`);
@@ -156,14 +164,60 @@ export async function confirmStow(
   const completedAt = new Date();
   const qty = quantityPlaced ?? task.quantity; // support partial stow
 
-  // WEB-STOW-UNIT-01: resolve source location from unit's current position when LSU- scanned;
-  // fall back to shop root for legacy (non-unit) stow path.
+  // INV-BLOCK-11: problem-center re-stow is a true problem-bin → bin transfer.
+  // Other stow triggers retain the existing LSU/root source resolution.
   let sourceLocation = `WH-${shopId}-ROOT`;
-  if (lasyncroUnitId) {
+
+  if (task.trigger === 'problem_center') {
+    const sourceTask = await trx('problem_center_tasks')
+      .where({
+        problem_task_id: task.source_task_id,
+        shop_id: shopId,
+      })
+      .select('problem_bin_location')
+      .first();
+
+    if (!sourceTask?.problem_bin_location) {
+      throw new Error(`[STOW_CONFIRM] Problem-center source location missing: ${stowTaskId}`);
+    }
+
+    sourceLocation = sourceTask.problem_bin_location;
+
+    if (sourceLocation === task.location_code) {
+      throw new Error('[STOW_CONFIRM] Re-stow source and destination must differ');
+    }
+
+    const destination = await trx('warehouse_locations')
+      .where({
+        shop_id: shopId,
+        location_code: task.location_code,
+        active: true,
+        type: 'bin',
+      })
+      .first('location_code');
+
+    if (!destination) {
+      throw new Error('[STOW_CONFIRM] Re-stow destination is not an active bin');
+    }
+
+    const sourceStock = await trx('inventory_truth')
+      .where({
+        shop_id: shopId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        location_code: sourceLocation,
+      })
+      .select('on_hand_quantity')
+      .first();
+
+    if (!sourceStock || Number(sourceStock.on_hand_quantity) < qty) {
+      throw new Error(`[STOW_CONFIRM] Insufficient stock at problem source ${sourceLocation}`);
+    }
+  } else if (lasyncroUnitId) {
     const unitRow = await trx('inventory_units')
       .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
       .select('current_location_code')
       .first();
+
     sourceLocation = unitRow?.current_location_code ?? `WH-${shopId}-ROOT`;
   }
 

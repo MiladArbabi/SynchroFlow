@@ -28,7 +28,7 @@ The Problem Center is LaSyncro's physical warehouse exception triage surface. It
 ## 2. Actors & Permissions
 
 | Actor | Capability |
-|---|---|
+| --- | --- |
 | **Operator** | Reports exceptions from pick/pack/stow/receive workflows. Sees tasks assigned to them or unassigned pool (first-to-claim). Physically moves items to problem bin. |
 | **Owner / Admin** | Sees all tasks across all operators. Resolves tasks with resolution action. Configures problem bin location. |
 
@@ -43,7 +43,7 @@ Role filtering is enforced in `httpGetProblemTasks` — operators only see pool 
 ### 3.1 Table: `problem_center_tasks`
 
 | Column | Type | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `problem_task_id` | uuid PK | `gen_random_uuid()` |
 | `shop_id` | integer FK → `shops` | RLS enforced |
 | `status` | `problem_center_status` | Enum — see lifecycle below |
@@ -68,19 +68,21 @@ Role filtering is enforced in `httpGetProblemTasks` — operators only see pool 
 ### 3.2 Enums
 
 **`problem_center_status`**
-```
+
+```ts
 open → investigating → resolved | discarded | returned_to_supplier
 ```
 
 **`problem_center_source`**
-```
+
+```ts
 pick | pack | stow | receive | returns
 ```
 
 ### 3.3 Related table: `shop_wms_settings` (relevant columns)
 
 | Column | Purpose |
-|---|---|
+| --- | --- |
 | `problem_bin_location` | Configurable per-shop (e.g. `WH-1-PROBLEM`). Copied into task at creation. |
 | `prob_label_sequence` | Auto-incrementing integer. Atomically incremented on each task creation. |
 
@@ -93,7 +95,7 @@ pick | pack | stow | receive | returns
 ### 4.1 Exception Types (by source)
 
 | Source | Exception Type | Meaning |
-|---|---|---|
+| --- | --- | --- |
 | `pick` | `item_missing` | Item not at expected bin location |
 | `pick` | `short_pick` | Fewer units found than required |
 | `pick` | `wrong_item` | Wrong product scanned at bin |
@@ -113,8 +115,8 @@ pick | pack | stow | receive | returns
 ### 4.2 Resolution Action Taxonomy
 
 | `resolution_action` | Final Status | Inventory Cascade | Built |
-|---|---|---|---|
-| `re_stow` | `resolved` | Creates new stow task — item re-enters inventory | ❌ PLANNED |
+| --- | --- | --- | --- |
+| `re_stow` | `resolved` | Creates pending stow task; operator assigns a valid active bin; confirm transfers stock from problem bin → destination bin | ✅ LIVE |
 | `discard` | `resolved` | Writes `damage` movement → decrements `inventory_truth` | ✅ LIVE |
 | `write_off` | `resolved` | Writes `shrinkage` movement → decrements `inventory_truth` | ✅ LIVE |
 | `return` | `returned_to_supplier` | Future: creates return PO line | ❌ PLANNED |
@@ -141,7 +143,7 @@ The PROB label is the physical tracking token. Operator prints and attaches it t
 All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 
 | Method | Path | Handler | Status | Notes |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `GET` | `/api/v1/wms/problem-center` | `httpGetProblemTasks` | ✅ LIVE | Role-filtered list of open/investigating tasks |
 | `POST` | `/api/v1/wms/problem-center` | `httpCreateProblemTask` | ✅ LIVE | Creates task + PROB label + print job |
 | `POST` | `/api/v1/wms/problem-center/:taskId/resolve` | `httpResolveProblemTask` | ✅ LIVE | Resolves with action + cascade |
@@ -152,6 +154,7 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 ### 6.1 Key Request/Response Shapes
 
 **`POST /api/v1/wms/problem-center`**
+
 ```json
 // Request
 {
@@ -170,6 +173,7 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 ```
 
 **`POST /api/v1/wms/problem-center/:taskId/resolve`**
+
 ```json
 // Request
 {
@@ -181,6 +185,7 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 ```
 
 **`GET /api/v1/wms/problem-center/:taskId/replacement`**
+
 ```json
 // Response 200
 {
@@ -205,7 +210,7 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 These are the flows that automatically create `problem_center_tasks` rows:
 
 | Workflow | Trigger | Handler | Inventory Movement Written |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Pick** | `POST /api/v1/wms/batch/:id/exception` | `httpReportPickException` | None at report time — on resolve |
 | **Stow** | `POST /api/v1/wms/stow-tasks/:taskId/exception` | `httpReportStowException` | `shrinkage` or `damage` written immediately |
 | **Pack** | Pack scan exception flow | Pack controller | ❌ `wms_pack_exception` alert not firing (ISSUE-006 — open) |
@@ -254,11 +259,11 @@ Tracked as **INV-PC-03** — highest priority open item.
 ## 9. Open Issues
 
 | ID | Priority | Status | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **INV-PC-01** | P2 | ✅ RESOLVED | Stow exceptions now defer inventory impact to resolve time — unified with pick exceptions. `httpReportStowException` no longer writes `inventory_movements` at report time. Movement written by `httpResolveProblemTask` on owner resolution. |
 | **INV-PC-02** | P3 | 🔴 OPEN | `ProblemCenterModuleFT2` uses legacy `PickException` type with stubbed fields (`quantity_found=0`, `lasyncro_line_item_id=task_id`). Module needs its own native type aligned to `problem_center_tasks` shape |
 | **INV-PC-03** | P1 | ✅ RESOLVED | Resolve modal correctly calls `POST /api/v1/wms/problem-center/:taskId/resolve` → `httpResolveProblemTask` with full action selector UI (re_stow / discard / write_off / quarantine / find_replacement) |
-| **INV-PC-04** | P1 | ✅ RESOLVED | `re_stow` cascade creates `stow_tasks` row — operator physically re-stows from problem bin. `discard`/`write_off` write `inventory_movements` and decrement `inventory_truth`. All cascades implemented in `httpResolveProblemTask`. |
+| **INV-PC-04** | P1 | ✅ RESOLVED | `re_stow` creates a pending `stow_tasks` row with no destination. Operator assigns a valid active bin, then confirmation transfers inventory from `problem_center_tasks.problem_bin_location` → assigned bin. INV-BLOCK-11 closed the former root-source / invalid-destination inventory creation defect. |
 | **INV-PC-05** | P2 | 🔴 OPEN | `return` resolution creates no PO return line — cascade not implemented |
 | **INV-PC-06** | P2 | 🔴 OPEN | Replacement finder (`GET /problem-center/:taskId/replacement`) has no frontend surface — when `find_replacement` action selected, replacement locations must render inline |
 | **INV-PC-07** | P2 | ✅ RESOLVED | `ProblemBinPrompt` banner shown in WmsPage when `problem_bin_location` is null/empty. Owner sets bin code inline (PATCH /wms/settings). `useWms` now fetches settings on load. |
@@ -270,7 +275,7 @@ Tracked as **INV-PC-03** — highest priority open item.
 
 ## 10. Intended Full Workflow (Target State)
 
-```
+```ts
 Operator encounters exception during pick/pack/stow/receive
   ↓
 Reports exception in WMS mobile UI
@@ -284,7 +289,7 @@ Operator sees instruction: "Move to {problem_bin_location}" (WH-1-PROBLEM)
 Owner/Admin opens Problem Center → sees all open tasks
   ↓
 Selects resolution action per task:
-  ├── re_stow      → new stow_task created → operator stows item correctly
+  ├── re_stow      → pending stow_task → operator selects valid active bin → problem bin → destination bin transfer
   ├── discard      → damage movement written → inventory decremented
   ├── write_off    → shrinkage movement written → inventory decremented
   ├── return       → return PO line created → supplier defect_rate updated
@@ -298,42 +303,66 @@ Inventory truth reflects reality
 
 ---
 
-## 11. Resolution Cascade — Target Implementation
+## 11. Resolution Cascade — Live Implementation
 
-### `re_stow` (not yet built — INV-PC-04)
-```
+### `re_stow` (LIVE — INV-PC-04 / INV-BLOCK-11)
+
+```ts
 problem_center_tasks.status → 'resolved'
+
 stow_tasks INSERT {
-  lasyncro_variant_id, quantity,
-  location_code: <operator-selected or auto-assigned>,
-  source: 'problem_center',
-  source_task_id: problem_task_id
+lasyncro_variant_id,
+quantity,
+location_code: null,
+trigger: 'problem_center',
+source_task_id: problem_task_id
 }
-```
+
+operator assigns destination:
+warehouse_locations.active = true
+warehouse_locations.type = 'bin'
+destination != problem_center_tasks.problem_bin_location
+
+confirm:
+source = problem_center_tasks.problem_bin_location
+destination = stow_tasks.location_code
+
+inventory_truth:
+source -= qty
+destination += qty
+
+inventory_movements:
+location_transfer source -qty
+location_transfer destination +qty
+````
 
 ### `discard` (LIVE)
-```
+
+```ts
 problem_center_tasks.status → 'resolved'
 inventory_movements INSERT { movement_type: 'damage', quantity_delta: -qty }
 inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
 ```
 
 ### `write_off` (LIVE)
-```
+
+```ts
 problem_center_tasks.status → 'resolved'
 inventory_movements INSERT { movement_type: 'shrinkage', quantity_delta: -qty }
 inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
 ```
 
 ### `return` (not yet built — INV-PC-05)
-```
+
+```ts
 problem_center_tasks.status → 'returned_to_supplier'
 purchase_order_line_items INSERT (return line)
 suppliers UPDATE { defect_rate recalculated }
 ```
 
 ### `find_replacement` (backend LIVE, frontend PLANNED — INV-PC-06)
-```
+
+```ts
 problem_center_tasks.status → 'investigating'
 GET /problem-center/:taskId/replacement → replacement_locations[]
 UI: operator directed to alt bin with available stock
@@ -346,7 +375,7 @@ UI: operator directed to alt bin with available stock
 All Problem Center UI must comply with LaSyncro FT2 DS:
 
 | Rule | Value |
-|---|---|
+| --- | --- |
 | Borders | `0.5px solid var(--color-border-secondary)` |
 | Font weight | Max `500` — never `600`, `700`, `bold` |
 | Colors | CSS vars only — no hardcoded hex |
@@ -370,8 +399,8 @@ All Problem Center UI must comply with LaSyncro FT2 DS:
 **Cascade corrections applied:**
 
 | Action | Previous behaviour | Correct behaviour |
-|---|---|---|
-| `re_stow` | Moved `inventory_truth.location_code` to PROBLEM bin | Creates `stow_tasks` row (`trigger=problem_center`, `source_task_id=taskId`). Item stays in problem bin physically; operator claims and confirms stow task to re-enter inventory. |
+| --- | --- | --- |
+| `re_stow` | Could create a stow destination from the problem-bin value and confirmation could fall back to warehouse root as source | Creates a pending `stow_tasks` row with `location_code=null`. Operator must assign a valid active bin. Confirmation resolves the source from `problem_center_tasks.problem_bin_location` and writes a net-zero `location_transfer` pair from problem bin → destination bin. |
 | `quarantine` | Shared branch with `re_stow` | Isolated: moves `inventory_truth.location_code` to problem bin only. No stow task created. |
 | `return` | In `VALID_ACTIONS` + `statusMap` | **Removed entirely.** Not a feasible workflow path — no return job infrastructure exists and shipping cost falls on owner. |
 
@@ -424,7 +453,7 @@ The Problem Center remains a supervisor resolution queue only. Operators interac
 **Type changes:**
 
 | Removed | Added |
-|---|---|
+| --- | --- |
 | `PickException` | `ProblemTask` |
 | `quantity_found` | — |
 | `pick_batch_id` | `prob_label` (maps to `notes` column — PROB label) |

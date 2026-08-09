@@ -1454,26 +1454,80 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
 
   try {
     await db.transaction(async (trx) => {
-      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      // Verify location exists in this shop's warehouse
-      const location = await trx('warehouse_locations')
-        .where({ shop_id: shopId, location_code: location_code.trim() })
+    const destination = location_code.trim();
+
+    const task = await trx('stow_tasks')
+      .where({ stow_task_id: taskId, shop_id: shopId, status: 'pending' })
+      .select('trigger', 'source_task_id')
+      .first();
+
+    if (!task) throw new Error('Stow task not found or not in pending status');
+
+    const location = await trx('warehouse_locations')
+    .where({ shop_id: shopId, location_code: destination })
+    .first();
+
+    if (!location) throw new Error('LOCATION_NOT_FOUND');
+
+    if (task.trigger === 'problem_center') {
+      if (!location.active || location.type !== 'bin') {
+        throw new Error('INVALID_RESTOW_DESTINATION');
+      }
+
+      const sourceTask = await trx('problem_center_tasks')
+        .where({
+          problem_task_id: task.source_task_id,
+          shop_id: shopId,
+        })
+        .select('problem_bin_location')
         .first();
-      if (!location) return res.status(404).json({ error: 'Location not found' });
 
-      const updated = await trx('stow_tasks')
+      if (!sourceTask?.problem_bin_location) {
+        throw new Error('PROBLEM_SOURCE_NOT_FOUND');
+      }
+
+      if (destination === sourceTask.problem_bin_location) {
+        throw new Error('RESTOW_SOURCE_EQUALS_DESTINATION');
+      }
+    }
+
+      await trx('stow_tasks')
         .where({ stow_task_id: taskId, shop_id: shopId, status: 'pending' })
-        .update({ location_code: location_code.trim(), updated_at: new Date() });
-
-      if (updated === 0) throw new Error('Stow task not found or not in pending status');
+        .update({ location_code: destination, updated_at: new Date() });
     });
 
     console.info('[STOW_LOCATION_ASSIGNED]', { shopId, taskId, location_code });
     return res.json({ success: true });
-  } catch (err: unknown) {
-    console.error('[STOW_LOCATION_ASSIGN_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
-    return res.status(500).json({ error: `Failed to assign location: ${getErrorMessage(err)}` });
+    } catch (err: unknown) {
+    const message = getErrorMessage(err);
+
+    if (message === 'LOCATION_NOT_FOUND') {
+      return res.status(404).json({ error: 'Location not found' });
+    }
+
+    if (message === 'INVALID_RESTOW_DESTINATION') {
+      return res.status(400).json({ error: 'Re-stow destination must be an active bin' });
+    }
+
+    if (message === 'RESTOW_SOURCE_EQUALS_DESTINATION') {
+      return res.status(400).json({ error: 'Re-stow destination must differ from problem bin' });
+    }
+
+    if (message === 'PROBLEM_SOURCE_NOT_FOUND') {
+      return res.status(409).json({ error: 'Problem-center source location not found' });
+    }
+
+    console.error('[STOW_LOCATION_ASSIGN_FAILED]', {
+      shopId,
+      taskId,
+      error: message,
+    });
+
+    return res.status(500).json({
+      error: `Failed to assign location: ${message}`,
+    });
   }
 }
 
@@ -2029,7 +2083,14 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
 
       const task = await trx('problem_center_tasks')
         .where({ problem_task_id: taskId, shop_id: shopId })
-        .select('status', 'lasyncro_variant_id', 'quantity', 'source_exception_id', 'source')
+        .select(
+          'status',
+          'lasyncro_variant_id',
+          'quantity',
+          'source_exception_id',
+          'source',
+          'problem_bin_location'
+        )
         .first();
 
       if (!task) throw new Error('TASK_NOT_FOUND');
@@ -2105,26 +2166,27 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         });
       }
 
-      // ── CASCADE: re_stow — create stow task so operator physically re-stows ─
-      // Item currently sits in the problem bin. Operator claims this stow task,
-      // walks to problem bin, picks the item, and stows it to the correct location.
-      // Stow confirmation writes inventory_movements (inbound_purchase) + updates inventory_truth.
+      // INV-BLOCK-11: problem_bin_location is the re-stow SOURCE.
+      // Destination stays null until the operator selects/scans a valid active bin.
       if (resolution_action === 're_stow') {
-        const problemBin = task.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
         await trx('stow_tasks').insert({
           shop_id: shopId,
           lasyncro_variant_id: task.lasyncro_variant_id,
           quantity: task.quantity,
-          location_code: problemBin,
+          location_code: null,
           status: 'pending',
           trigger: 'problem_center',
           source_task_id: taskId,
           created_at: new Date(),
           updated_at: new Date(),
         });
+
         console.info('[PROBLEM_CENTER_RE_STOW_TASK_CREATED]', {
-          problem_task_id: taskId, variant_id: task.lasyncro_variant_id,
-          quantity: task.quantity, problem_bin: problemBin, shopId,
+          problem_task_id: taskId,
+          variant_id: task.lasyncro_variant_id,
+          quantity: task.quantity,
+          source_problem_bin: task.problem_bin_location,
+          shopId,
         });
       }
 
