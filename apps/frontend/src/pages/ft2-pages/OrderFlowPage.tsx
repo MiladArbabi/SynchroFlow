@@ -400,7 +400,18 @@ export default function OrderFlowPage() {
   const heldRevenue = blockedOrders.reduce((sum, order) => sum + Number(order.revenue ?? 0), 0);
   const readyCount = orderPoolQuery.data?.eligible_order_count ?? poolOrders.length;
   const inBatchOrderCount = poolSummary?.in_batch_order_count ?? 0;
-  const poolBlockedCount = poolSummary?.blocked_count ?? blockedCount;
+  /**
+   * BL-06a (2026-08-09): falls back to 0, not blockedCount.
+   *
+   * blockedCount is blockedOrders.length — ALL constrained orders.
+   * blocked_count is constrained AND unbatched (wms.controller.ts:2540).
+   * Substituting one for the other made the chip display an
+   * all-constrained figure under a label promising an unbatched filter.
+   * A zero reads as "no data yet"; a wrong number under a precise label
+   * does not. Matches the sibling counts above and below, which already
+   * fall back to 0.
+   */
+  const poolBlockedCount = poolSummary?.blocked_count ?? 0;
   const fulfilledCount = poolSummary?.fulfilled_count ?? 0;
   const activeBatchCount = poolSummary?.active_batch_count ?? batches.length;
 
@@ -934,7 +945,16 @@ export default function OrderFlowPage() {
                         {[
                           { label: 'Ready', value: readyCount },
                           { label: 'In batch', value: inBatchOrderCount },
-                          { label: 'Blocked', value: poolBlockedCount },
+                          /*
+                            BL-06a: qualified because this chip and the page
+                            header at :568 both said "Blocked" while counting
+                            different sets — header is all constrained orders,
+                            this is constrained AND unbatched. All four pool
+                            chips share the pbo.lasyncro_order_id IS NULL
+                            predicate, so they partition unbatched orders;
+                            the count was right, the label was not.
+                          */
+                          { label: 'Blocked · unbatched', value: poolBlockedCount },
                           { label: 'Fulfilled', value: fulfilledCount },
                         ].map(({ label, value }) => (
                           <Box
