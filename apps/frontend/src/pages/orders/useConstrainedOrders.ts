@@ -30,6 +30,43 @@ export function getConstraintLabel(constraintType: string): string {
   return CONSTRAINT_LABELS[constraintType] ?? 'Needs Attention';
 }
 
+/**
+ * BLOCKER REASON — OPERATOR SENTENCE (BL-02a, 2026-08-09)
+ * -------------------------------------------------------
+ * Says what is wrong, in plain SMB-operator English, derived ONLY from
+ * canonical order_constraints fields (constraint_type + block_type).
+ *
+ * WHY NOT recommended_action: OrderFlowPage previously rendered
+ * recommended_action.type and fell back to the literal string
+ * 'Manual review required' when no decision existed. Production has
+ * decision=null on every blocked order, so all nine cards showed a
+ * workflow that does not exist. Same class as BL-15/BL-16 — decisions
+ * are enrichment, order_constraints is truth.
+ *
+ * WHY NOT the raw type: CONSTRAINT_LABELS' contract is that system
+ * vocabulary is never shown to operators. '.replace(/_/g, " ")' on
+ * 'resolve_customer_block' violated it.
+ *
+ * INVENTORY WORDING IS DELIBERATELY CONSERVATIVE (BL-02a-FU-01):
+ * 'Not enough stock to fulfill' is true regardless of how
+ * available_quantity / reserved_quantity / on_hand_quantity resolve.
+ * Stronger wording ('Oversold') must wait for BLOCKED-INV-01.
+ */
+export function getBlockerReason(order: ConstrainedOrder): string {
+  if (order.constraint_type === 'customer') {
+    return order.block_type === 'incomplete_address'
+      ? 'Shipping address incomplete'
+      : 'Customer details need attention';
+  }
+  if (order.constraint_type === 'inventory') {
+    return 'Not enough stock to fulfill';
+  }
+  if (order.constraint_type === 'operational') {
+    return 'Pick exception on the floor';
+  }
+  return 'Needs attention';
+}
+
 export type ConstrainedOrder = {
   order_id: string;
   external_order_id: string | null;

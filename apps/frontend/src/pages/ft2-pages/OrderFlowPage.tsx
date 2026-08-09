@@ -54,7 +54,12 @@ import { EntityDetailModal } from '@lasyncro/shared/ui';
 import { OrderDetailModalBody } from '../orders/OrderDetailModalBody';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
-import { getAgeLabel, getConstraintLabel, useConstrainedOrders } from '../orders/useConstrainedOrders';
+import { 
+  getAgeLabel, 
+  getBlockerReason, 
+  getConstraintLabel, 
+  useConstrainedOrders 
+} from '../orders/useConstrainedOrders';
 import {
   useOrderPool,
   useReleaseBatch,
@@ -836,31 +841,39 @@ export default function OrderFlowPage() {
                                     '&:hover': { borderColor: 'var(--accent-border)', bgcolor: 'var(--bg-2)' },
                                   }}
                                 >
-                                  <Box sx={{ display: 'flex', justifyContent:'space-between' }}>
-                                    <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
-                                      {order.external_order_id ? `#${order.external_order_id}` : order.order_id.slice(0, 8).toUpperCase()}
-                                    </Typography>
-                                    <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
-                                      {fmt$(Number(order.revenue ?? 0))}
-                                    </Typography>
-                                  </Box>
-                                  <Typography sx={{ fontSize: 12, fontWeight:300, color: 'var(--ink-3)' }}>
-                                    {order.recommended_action?.type ? order.recommended_action.type.replace(/_/g, ' ') : 'Manual review required'}
-                                  </Typography>
-                                  <Box sx={{ display: 'flex', justifyContent:'space-between', mt: 0.5 }}>
-                                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                                      {getAgeLabel(order)} open
-                                    </Typography>
-                                    <Typography
-                                      sx={{
-                                        fontSize: 11,
-                                        fontWeight: 600,
-                                        textTransform: 'capitalize',
-                                        color: blockedBucket(order) === 'overdue' ? 'var(--accent)' : 'var(--ink-4)',
-                                      }}
-                                    >
-                                      {blockedBucket(order)}
-                                    </Typography>
+                                  {/*
+                                    BL-02a: 2x2 card grid — identity/reason left,
+                                    value/age right. Both columns baseline-aligned
+                                    per row so the card reads as two stacked pairs
+                                    rather than three unrelated rows.
+
+                                    Reason comes from canonical constraint fields,
+                                    never from recommended_action: the old
+                                    'Manual review required' fallback fired on every
+                                    production card because decision=null.
+
+                                    The blockedBucket chip that sat beside the age
+                                    rendered 'Overdue', duplicating the age it sat
+                                    next to and reading as a blocker reason. Age
+                                    alone is the honest time signal.
+                                  */}
+                                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minWidth: 0 }}>
+                                      <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
+                                        {order.external_order_id ? `#${order.external_order_id}` : order.order_id.slice(0, 8).toUpperCase()}
+                                      </Typography>
+                                      <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
+                                        {getBlockerReason(order)}
+                                      </Typography>
+                                    </Box>
+                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-end', flexShrink: 0 }}>
+                                      <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
+                                        {fmt$(Number(order.revenue ?? 0))}
+                                      </Typography>
+                                      <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                                        {getAgeLabel(order)} open
+                                      </Typography>
+                                    </Box>
                                   </Box>
                                 </Box>
                               ))}

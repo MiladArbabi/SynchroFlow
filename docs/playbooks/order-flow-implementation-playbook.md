@@ -910,7 +910,7 @@ the old verdict otherwise.
 
 ### Production run, 2026-08-08
 
-```text
+```ts
 events 571-577, projection cursor 577
 operational:sla_breach   active 7 → 0 (32 resolved)
 customer:incomplete_address active 6 → 7
@@ -927,7 +927,7 @@ entering the pool — batch membership excludes independently of constraints.
 
 A row in `decisions` is enrichment for recommended/alternate actions. It must never be required in order to expose an existing blocker. Therefore:
 
-```text
+```ts
 active constraint + current decision
 → blocked; show constraint + decision enrichment
 
@@ -1002,7 +1002,6 @@ later fresh re-evaluations, including events 92 and 94, repeatedly reactivated t
 
 This is the regression requirement for any future constraint lifecycle change: resolve → reactivate → resolve → reactivate must remain idempotent and worker-safe.
 
-
 The existing playbook already states that BL-01A re-evaluation re-runs normal evaluator/projection machinery rather than directly clearing constraints, so this lifecycle section extends that exact architecture rather than introducing another model. :contentReference[oaicite:4]{index=4}
 
 ## 13. Snapshot metric truth — BL-18, 2026-08-08
@@ -1040,3 +1039,50 @@ one signal everywhere".
 
 Open: exception_orders now equals constrained_orders by
 construction (BL-19 — product call on whether to retire the field).
+
+## 14. Blocked card vocabulary — BL-02a, 2026-08-09
+
+Defect A — subtitle read from decisions.
+OrderFlowPage.tsx:848 rendered recommended_action.type with a hardcoded
+'Manual review required' fallback. Production has decision=null on every
+blocked order, so all 9 cards displayed a workflow that does not exist.
+When a decision did exist it leaked a raw system identifier through
+.replace(/_/g, ' ') — operators would read 'resolve customer block',
+violating CONSTRAINT_LABELS' stated contract that system vocabulary is
+never exposed.
+
+Third instance of the BL-15 / BL-16 pattern: a surface deriving blocked
+truth from decisions instead of order_constraints.
+
+Defect B — blockedBucket chip rendered 'Overdue'.
+useConstrainedOrders.ts:17 records that 'Overdue' was removed from the
+constraint label because it collided with this CPT time indicator. The
+collision was resolved on one side only. The chip duplicated the age
+shown beside it and read as a blocker reason. Removed; age alone is the
+honest time signal.
+
+Fix: getBlockerReason(order) in useConstrainedOrders.ts derives an
+operator sentence from canonical constraint_type + block_type only.
+
+  customer / incomplete_address  -> Shipping address incomplete
+  customer / other               -> Customer details need attention
+  inventory / *                  -> Not enough stock to fulfill
+  operational / *                -> Pick exception on the floor
+  unmapped                       -> Needs attention
+
+Card layout is now 2x2: identity + reason left, value + age right.
+
+RULE — any operator-facing blocked-order text:
+  derive from order_constraints (constraint_type, block_type)
+  never from decisions / recommended_action
+  never expose a raw system identifier
+  no hardcoded fallback that asserts a workflow
+
+Open:
+  BL-02a-FU-01  revisit inventory wording after BLOCKED-INV-01 settles
+                available_quantity / reserved_quantity / on_hand_quantity.
+                'Not enough stock to fulfill' is deliberately safe;
+                'Oversold' is not yet earned.
+  BL-02a-FU-02  blockedBucket (OrderFlowPage.tsx:331) is now dead, and its
+                liveCapacityQuery dependency may be too. Removal is a
+                dead-code change, deliberately not mixed into this fix.
