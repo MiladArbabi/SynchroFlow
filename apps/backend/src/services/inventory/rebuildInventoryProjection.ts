@@ -179,7 +179,6 @@ export async function rebuildInventoryProjectionForVariants(
           reserved_quantity: 0,
           committed_quantity: 0,
           available_quantity: 0,
-          sellable_quantity: 0,
           last_evaluated_at: now,
         };
       }
@@ -199,10 +198,9 @@ export async function rebuildInventoryProjectionForVariants(
         reserved_quantity: reserved,
         // PROJ-002: committed_quantity is deprecated (no commit movement type exists;
         // commitment is expressed via reservation_hold/release → reserved_quantity).
-        // Kept at 0 for schema stability. sellable == available by definition.
+        // Kept at 0 for schema stability. sellable_quantity is DB-derived from available_quantity.
         committed_quantity: 0,
         available_quantity: available,
-        sellable_quantity: available,
         last_evaluated_at: now,
       };
     });
@@ -215,7 +213,6 @@ export async function rebuildInventoryProjectionForVariants(
         reserved_quantity: trx.raw('EXCLUDED.reserved_quantity'),
         committed_quantity: trx.raw('EXCLUDED.committed_quantity'),
         available_quantity: trx.raw('EXCLUDED.available_quantity'),
-        sellable_quantity: trx.raw('EXCLUDED.sellable_quantity'),
         last_evaluated_at: trx.raw('EXCLUDED.last_evaluated_at'),
       });
   };

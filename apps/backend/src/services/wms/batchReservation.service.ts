@@ -430,12 +430,6 @@ export async function reserveBatchInventory(
           'reserved_quantity + ?',
           [allocation.quantity]
         ),
-        // PostgreSQL evaluates both expressions from the old row.
-        // This preserves sellable_quantity === available_quantity.
-        sellable_quantity: trx.raw(
-          'available_quantity - ?',
-          [allocation.quantity]
-        ),
         last_evaluated_at: reservedAt,
         updated_at: reservedAt,
       });

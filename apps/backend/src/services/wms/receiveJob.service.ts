@@ -452,22 +452,20 @@ export async function closeReceiveJob(
 
     // Upsert inventory_truth — increment on_hand and available at ROOT
     await trx('inventory_truth')
-      .insert({
-        shop_id: shopId,
-        lasyncro_variant_id: line.lasyncro_variant_id,
-        location_code: rootLocation,
-        on_hand_quantity: line.quantity_accepted,
-        reserved_quantity: 0,
-        committed_quantity: 0,
-        available_quantity: line.quantity_accepted,
-        sellable_quantity: line.quantity_accepted,
-        last_evaluated_at: new Date(),
-      })
+    .insert({
+      shop_id: shopId,
+      lasyncro_variant_id: line.lasyncro_variant_id,
+      location_code: rootLocation,
+      on_hand_quantity: line.quantity_accepted,
+      reserved_quantity: 0,
+      committed_quantity: 0,
+      available_quantity: line.quantity_accepted,
+      last_evaluated_at: new Date(),
+    })
       .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
       .merge({
         on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [line.quantity_accepted]),
         available_quantity: trx.raw('inventory_truth.available_quantity + ?', [line.quantity_accepted]),
-        sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [line.quantity_accepted]),
         last_evaluated_at: new Date(),
         updated_at: new Date(),
       });

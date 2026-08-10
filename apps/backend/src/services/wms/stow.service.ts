@@ -231,7 +231,6 @@ export async function confirmStow(
     .update({
       on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [qty]),
       available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [qty]),
-      sellable_quantity: trx.raw('GREATEST(0, sellable_quantity - ?)', [qty]),
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });
@@ -246,14 +245,12 @@ export async function confirmStow(
       reserved_quantity: 0,
       committed_quantity: 0,
       available_quantity: qty,
-      sellable_quantity: qty,
       last_evaluated_at: completedAt,
     })
     .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
     .merge({
       on_hand_quantity: trx.raw('inventory_truth.on_hand_quantity + ?', [qty]),
       available_quantity: trx.raw('inventory_truth.available_quantity + ?', [qty]),
-      sellable_quantity: trx.raw('inventory_truth.sellable_quantity + ?', [qty]),
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });

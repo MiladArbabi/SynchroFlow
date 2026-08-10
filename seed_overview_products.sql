@@ -53,29 +53,27 @@ INSERT INTO inventory_truth (
   reserved_quantity,
   committed_quantity,
   available_quantity,
-  sellable_quantity,
   last_evaluated_at
 ) VALUES
-  (1, '9ce05d1d-ee19-cfa5-9dcd-a7040928ccda', 'A-1',  2, 0, 0,  2,  2, CURRENT_TIMESTAMP),
-  (1, '5dca39bf-74c6-70eb-08d1-a4cb4604952d', 'A-2',  8, 0, 0,  8,  8, CURRENT_TIMESTAMP),
-  (1, '443850fb-1aec-f297-95d1-3162dc38d2e5', 'A-3', 18, 0, 0, 18, 18, CURRENT_TIMESTAMP),
-  (1, '6f12576c-54f3-f2f4-88fb-dc31720e26b7', 'A-4', 28, 0, 0, 28, 28, CURRENT_TIMESTAMP),
-  (1, 'f0ff9579-b29f-7434-3f63-fed4c9d825fe', 'B-1',  3, 0, 0,  3,  3, CURRENT_TIMESTAMP),
-  (1, 'ad93ba56-fc8b-407a-9ed5-4844cbe89b00', 'B-2', 12, 0, 0, 12, 12, CURRENT_TIMESTAMP),
-  (1, '7ea4ee28-fbe6-bfd1-a60a-04c88f2f697b', 'B-3', 20, 0, 0, 20, 20, CURRENT_TIMESTAMP),
-  (1, '42a5b986-ec3c-b94a-4cde-546b2eb2e2e0', 'B-4', 29, 0, 0, 29, 29, CURRENT_TIMESTAMP),
-  (1, 'b08871c4-ddb6-bbcf-aa01-ec1206a65a97', 'C-1',  5, 0, 0,  5,  5, CURRENT_TIMESTAMP),
-  (1, 'e9574afd-9b2e-2a35-6376-d45591358b54', 'C-2', 16, 0, 0, 16, 16, CURRENT_TIMESTAMP),
-  (1, 'e584aeb1-3348-a134-4e3c-407972257190', 'C-3', 24, 0, 0, 24, 24, CURRENT_TIMESTAMP),
-  (1, '4a2bf011-88dc-c9bb-9fb1-fa90007401e2', 'C-4', 30, 0, 0, 30, 30, CURRENT_TIMESTAMP),
-  (1, '45b3c077-f9c3-2da1-1ac7-612589bcbc54', 'A-1',  1, 0, 0,  1,  1, CURRENT_TIMESTAMP),
-  (1, '2b1e6dd5-1077-c023-53e8-98d0dba72bf1', 'A-2',  1, 0, 0,  1,  1, CURRENT_TIMESTAMP)
+  (1, '9ce05d1d-ee19-cfa5-9dcd-a7040928ccda', 'A-1',  2, 0, 0,  2, CURRENT_TIMESTAMP),
+  (1, '5dca39bf-74c6-70eb-08d1-a4cb4604952d', 'A-2',  8, 0, 0,  8, CURRENT_TIMESTAMP),
+  (1, '443850fb-1aec-f297-95d1-3162dc38d2e5', 'A-3', 18, 0, 0, 18, CURRENT_TIMESTAMP),
+  (1, '6f12576c-54f3-f2f4-88fb-dc31720e26b7', 'A-4', 28, 0, 0, 28, CURRENT_TIMESTAMP),
+  (1, 'f0ff9579-b29f-7434-3f63-fed4c9d825fe', 'B-1',  3, 0, 0,  3, CURRENT_TIMESTAMP),
+  (1, 'ad93ba56-fc8b-407a-9ed5-4844cbe89b00', 'B-2', 12, 0, 0, 12, CURRENT_TIMESTAMP),
+  (1, '7ea4ee28-fbe6-bfd1-a60a-04c88f2f697b', 'B-3', 20, 0, 0, 20, CURRENT_TIMESTAMP),
+  (1, '42a5b986-ec3c-b94a-4cde-546b2eb2e2e0', 'B-4', 29, 0, 0, 29, CURRENT_TIMESTAMP),
+  (1, 'b08871c4-ddb6-bbcf-aa01-ec1206a65a97', 'C-1',  5, 0, 0,  5, CURRENT_TIMESTAMP),
+  (1, 'e9574afd-9b2e-2a35-6376-d45591358b54', 'C-2', 16, 0, 0, 16, CURRENT_TIMESTAMP),
+  (1, 'e584aeb1-3348-a134-4e3c-407972257190', 'C-3', 24, 0, 0, 24, CURRENT_TIMESTAMP),
+  (1, '4a2bf011-88dc-c9bb-9fb1-fa90007401e2', 'C-4', 30, 0, 0, 30, CURRENT_TIMESTAMP),
+  (1, '45b3c077-f9c3-2da1-1ac7-612589bcbc54', 'A-1',  1, 0, 0,  1, CURRENT_TIMESTAMP),
+  (1, '2b1e6dd5-1077-c023-53e8-98d0dba72bf1', 'A-2',  1, 0, 0,  1, CURRENT_TIMESTAMP)
 ON CONFLICT (shop_id, lasyncro_variant_id, location_code) DO UPDATE SET
   on_hand_quantity   = EXCLUDED.on_hand_quantity,
   reserved_quantity  = EXCLUDED.reserved_quantity,
   committed_quantity = EXCLUDED.committed_quantity,
   available_quantity = EXCLUDED.available_quantity,
-  sellable_quantity  = EXCLUDED.sellable_quantity,
   last_evaluated_at  = EXCLUDED.last_evaluated_at,
   updated_at         = CURRENT_TIMESTAMP;
 

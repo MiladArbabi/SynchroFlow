@@ -916,7 +916,8 @@ export async function seed(knex: Knex): Promise<void> {
       const v = variantIds[vi];
       const binCode = binLocations[vi % binLocations.length];
       const qty = Math.floor(Math.random() * 80) + 20;
-      await trx('inventory_truth').insert({
+      await trx('inventory_truth')
+      .insert({
         shop_id: shop.id,
         lasyncro_variant_id: v.lasyncro_variant_id,
         location_code: binCode,
@@ -924,9 +925,10 @@ export async function seed(knex: Knex): Promise<void> {
         reserved_quantity: 0,
         committed_quantity: 0,
         available_quantity: qty,
-        sellable_quantity: qty,
         last_evaluated_at: now,
-      }).onConflict(['shop_id', 'lasyncro_variant_id', 'location_code']).merge();
+      })
+      .onConflict(['shop_id', 'lasyncro_variant_id', 'location_code'])
+      .merge();
     }
     console.log(`[DEV_SEED] Created inventory_truth for ${variantIds.length} variants across bins A-1..C-4`);
 

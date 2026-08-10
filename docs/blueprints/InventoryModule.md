@@ -30,7 +30,7 @@
 ## 2. Backend — Confirmed Endpoints
 
 | Method | Path | Status | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | GET | `/api/v1/modules/products/ft2` | ✅ Live | 12-key intelligence snapshot |
 | GET | `/api/v1/modules/products/operator-summary` | ✅ Live | Sellability, dead weight, top returned, demand signals |
 | GET | `/api/v1/modules/products/catalog` | ✅ Live | `{variants: [40 items]}` |
@@ -63,7 +63,7 @@
 ## 3. Schema — Inventory Tables
 
 | Table | Rows (shop_id=1) | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `products` | 21 | Product records |
 | `variants` | 40 | SKU-level variant records |
 | `inventory_truth` | 40 | Current stock per variant per location |
@@ -88,7 +88,7 @@ Key fields: `problem_task_id`, `status`, `source` (enum), `source_exception_id` 
 ## 4. Frontend — File Map
 
 | File | Role |
-|---|---|
+| --- | --- |
 | `apps/frontend/src/pages/ft2-pages/ProductsFT2Page.tsx` | Gate + tab router. Fetches FT2 snapshot + operator summary. Passes to ProductsModuleFT2. |
 | `apps/frontend/src/pages/ft2-pages/ProductsCatalogPage.tsx` | Catalog tab — variant grid with missing SKU section |
 | `apps/frontend/src/pages/ft2-pages/ProductsCostsPage.tsx` | Costs tab — inline cost entry + CSV bulk upload |
@@ -100,7 +100,7 @@ Key fields: `problem_task_id`, `status`, `source` (enum), `source_exception_id` 
 ### Design system violations
 
 | Location | Violation | Rule |
-|---|---|---|
+| --- | --- | --- |
 | `ProductsModuleFT2.tsx` line 15 | `cardBg: '#1C2740'` hardcoded dark hex | CSS variables only |
 | `ProductsModuleFT2.tsx` lines 17–18 | `textPrimary: '#F0EEE8'`, `textSecond: '#6B7280'` | CSS variables only |
 | `ProductsModuleFT2.tsx` lines 282, 315, 322, 329, 419, 506, 514, 522, 548, 571 | `border: '1px solid'` and `borderLeft: '4px solid'` | Must be `0.5px solid` |
@@ -112,7 +112,7 @@ Key fields: `problem_task_id`, `status`, `source` (enum), `source_exception_id` 
 ## 5. Visual Audit
 
 | Route | State | Notes |
-|---|---|---|
+| --- | --- | --- |
 | `/inventory` (Intelligence) | ✅ Live, data-rich | Multi-signal view: sellability, blocked reasons, non-moving stock, stockouts, return rates, cross-links |
 | `/inventory/catalog` | ✅ Live | 21 products, thumbnail images, missing SKU section, sellability summary |
 | `/inventory/costs` | ✅ Live | Inline cost entry, 8 missing banner, CSV upload working |
@@ -126,7 +126,7 @@ Key fields: `problem_task_id`, `status`, `source` (enum), `source_exception_id` 
 **Three distinct concepts — must never be conflated:**
 
 | Concept | Surface | Source | Actions |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Problem Center** | `/problem-center` | Pick/pack WMS exceptions (`pick_exceptions` → `problem_center_tasks`) | Resolve, Reassign, Mark resolved |
 | **PROBLEM bin** | Warehouse floor physical bin | Operator places defective/unidentifiable items here manually | Undesigned workflow — needs design sprint |
 | **Returns** | `/returns` | Customer order returns from Shopify | Restock, Discard, Donate |
@@ -138,7 +138,7 @@ The Problem Center is correctly scoped to WMS pick/pack exception escalation. Th
 ## 7. Known Issues
 
 | ID | Priority | Description |
-|---|---|---|
+| --- | --- | --- |
 | INV-01 | P2 | Hardcoded hex theme (`#1C2740`, `#F0EEE8`, `#6B7280`) in ProductsModuleFT2 — same pattern as Demand and WMS |
 | INV-02 | P2 | `fontWeight: 700` throughout ProductsModuleFT2 and ProblemCenterModuleFT2 |
 | INV-03 | P2 | `border: '1px solid'` and `borderLeft: '4px solid'` throughout ProductsModuleFT2 |
@@ -189,7 +189,7 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 **Resolved**
 
 | ID | Description |
-|---|---|
+| --- | --- |
 | INV-003 | Catalog subtitle read paged `products.length`; → `allProducts.length`. Kills 10-vs-19. |
 | INV-004 | No-SKU count had two sources (product 16 vs variant 25); unified to variant-level server `sellability` snapshot, relabelled "missing SKU". |
 | INV-005 | Catalog selected only `sellable_quantity`; now returns `on_hand`/`available`; rows show on-hand + available subtext. |
@@ -203,24 +203,46 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 | PROJ-005 | WMS-readiness variance check was a tautology (`available` is derived); gated to `1=0` until a real cycle-count source exists (ties to INV-04). |
 | PROJ-004 | Replay of sales-only ledger yields negative on_hand. Policy: store true on_hand (audit truth), clamp available/sellable at 0, surface negative as phantom signal. Shop 1 backfilled (17 rows, 14 phantom) via the existing projector aggregation. |
 
+### 2026-08-10 Hardening Follow-up — Sellable Truth
+
+| ID | Status | Description |
+| --- | --- | --- |
+| INV-BLOCK-08 | ✅ Resolved | Problem Center write-off previously decremented `on_hand_quantity` and `available_quantity` without updating `sellable_quantity`, allowing stored sellable stock to drift from available stock. |
+| INV-BLOCK-14 | ✅ Resolved | `sellable_quantity` previously had competing authorities: projection rebuild derived it from `available_quantity`, while incremental writers independently mutated it. Migration `0144_derive_sellable_quantity` makes `sellable_quantity` a PostgreSQL `GENERATED ALWAYS AS (available_quantity) STORED` column. Application, seed, receive, stow, reservation, and projection-rebuild paths no longer write it directly. |
+
+**Invariant:** `sellable_quantity` has no independent write authority. PostgreSQL derives it from `available_quantity`.
+
+**Verified behavior (2026-08-10):**
+
+- Problem Center `write_off` decremented only `on_hand_quantity` and `available_quantity`; PostgreSQL automatically changed `sellable_quantity` from `1` to `0`.
+- The affected row remained at `sellable_quantity - available_quantity = 0`.
+- Full-table verification returned `0` sellable/available mismatches.
+- `dev:full-seed` was updated so generated-column writes are not attempted by TypeScript or SQL seed paths.
+- A full database reset, migration, seed, projection rebuild, API restart, health check, and authentication check completed successfully.
+- Post-recovery `inventory_truth` contained 14 rows with `0` sellable/available mismatches.
+- The deterministic A-2 fixture was restored to `on_hand=1`, `available=1`, `sellable=1`.
+- The temporary Problem Center verification task and its append-only shrinkage movement were removed through the full database reset, not manual ledger mutation.
+
 **Reclassified / not-a-bug**
 
 | ID | Outcome |
-|---|---|
+| --- | --- |
 | INV-002 | WONT-FIX (code). Test products are `physical/active`, indistinguishable from real; hiding merchant products violates the mirror-Shopify principle. Count-inflation already fixed by INV-003/004. |
 | PROJ-001 | NOT-A-BUG. `quantity_delta` pre-signed; projector summing as-is is correct. |
 | PROJ-003 | NOT-A-CODE-GAP. Full-shop rebuild exists (`shopify.service` L133–150); never ran for shop 1 (no sync). |
 
 **Still open**
+
 | ID | Description |
-|---|---|
+| --- | --- |
 | INV-012 | `inventory_truth` durable trigger: one-shot backfill done; first-sync wiring for new shops still to verify. |
 | REPL-002 | 🟡 IN PROGRESS — MOQ guard in CreatePoDialog (warn + bump when total qty < supplier MOQ). Capture done (see Sprint 3); guard UI pending. |
 | REPL-004 | 🔴 Reorder-by date planner in the Demand bridge: `reorder_by = today + (days_of_stock − lead_time_days)`. Capture done; signal math pending. |
 
 **Resolved this sprint (Sprint 3 — Suppliers MOQ/lead-time + tab finalize, 2026-06-21)**
+
 | ID | Description |
-|---|---|
+| --- | --- |
 | REPL-003 | Supplier-level `moq` + `lead_time_days` captured (migration 0094, controller, supplier form). |
 | SUP-001 | Standalone supplier CRUD on the portal (add/edit/remove via reusable `SupplierFormDialog`); delete = soft (`active=false`). |
 | INV-TAB-01 | WMS Readiness moved Inventory → WMS (`/wms/readiness`, with WMS tab bar). Inventory now 4 tabs. |
@@ -229,12 +251,13 @@ Inventory's job is to be the single source of *what you have, what's sellable, a
 **Resolved this sprint (Sprint 2)**
 
 | ID | Description |
-|---|---|
+| --- | --- |
 | INV-016 | Intelligence subtitle + pulse rail adopt the phantom split — matches Catalog. |
 | INV-017 | Ready-to-sell sub regex mangled ("3 outSKU") → array-join; shows non-zero segments only. |
 | INV-018 | Intelligence re-housed to canonical decision-left / pulse-right (matches Orders Overview). 4 stat cards → "Inventory pulse" rail. |
 | PROJ-004b | Phantom signal surfaced beyond Catalog (now in Intelligence pulse + subtitle). |
 | REPL-001 | Demand → Create PO deep-link now prefills the New-PO draft (description + qty); qty stays editable (MOQ-aware-ready, no auto-send). |
+
 ---
 
 ## 9. UX Rebuild Directive
@@ -263,7 +286,7 @@ WMS Readiness → /inventory/wms-readiness
 Problem Center → /problem-center
 
 | ID | Priority | Description |
-|---|---|---|
+| --- | --- | --- |
 | INV-09 | P1 | Problem Center missing ModuleTabBar — navigation breaks when landing on `/problem-center` |
 | INV-10 | P1 | Full UX rebuild required for all 5 Inventory sub-tabs — current UI predates FT2 design language and is visually inconsistent with Overview and Orders |
 
@@ -272,7 +295,7 @@ Problem Center → /problem-center
 ## 10. Schema Corrections (Audit May 26, 2026)
 
 | Location | Error | Correction |
-|---|---|---|
+| --- | --- | --- |
 | Blueprint §3, all services | `estimated_unit_cost` | Actual column: `unit_cost numeric(12,2)` on `variants` table |
 | Blueprint §3 `inventory_truth` | `bin_location` column listed | Column does not exist on `inventory_truth`. Bin location lives in WMS layer (`warehouse_locations`) |
 | Blueprint §2 movements | `sale: 58, opening_balance: +623` | Quantities change with data — do not track in blueprint. Movement types confirmed: `opening_balance`, `sale`, `refund_return`, `reservation_hold`, `reconciliation_correction` |
@@ -319,7 +342,7 @@ Returns per-variant: `velocity_per_day`, `days_of_stock_remaining`, `reorder_urg
 ### Backend — New Services
 
 | Service | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | ProductsInboundBridge | `products-operator/ProductsInboundBridge.service.ts` | Pulls open PO pipeline into operator summary. Overdue detection via date string comparison. `covers_stocked_out_skus` cross-reference. |
 | ProductsWarehouseBridge | `products-operator/ProductsWarehouseBridge.service.ts` | Pick zone occupancy %, variants with stock but no pick bin. All stock at WH-1-ROOT on seed — 25 variants unpickable. |
 | ProductsFinancesBridge | `products-operator/ProductsFinancesBridge.service.ts` | Margin at risk per week (stocked-out × velocity × margin). `active_sellers_no_cost` count. Uses `variants.unit_cost` (authoritative). |
@@ -337,14 +360,14 @@ All three wired into `ProductsOperatorSummary.provider.ts` via parallel `Promise
 ### Frontend — Rebuilt Pages
 
 | Page | Changes |
-|---|---|
+| --- | --- |
 | `ProductsModuleFT2.tsx` | Full FT2 rebuild. 4-card stat row, warehouse banner, two-column layout (action queue + inbound pipeline/returns). All new bridge signals consumed. |
 | `ProductsCatalogPage.tsx` | FT2 rebuild. 4-card stat row, two-column layout, sortable columns, pagination (10/page), gift card filtered, images in both columns. |
 
 ### Issue Status Updates
 
 | ID | Status |
-|---|---|
+| --- | --- |
 | INV-01 | ✅ RESOLVED — no hardcoded hex in ProductsModuleFT2 |
 | INV-02 | ✅ RESOLVED — fontWeight max 500 throughout |
 | INV-03 | ✅ RESOLVED — 0.5px borders throughout |
@@ -356,20 +379,24 @@ All three wired into `ProductsOperatorSummary.provider.ts` via parallel `Promise
 | INV-04 | ✅ RESOLVED May 28, 2026 — variance_count returns 0 (not null). See section INV-04 resolution note. |
 | INV-06 | 🔴 OPEN — test/seed variants still in Costs tab |
 | INV-07 | 🔴 OPEN — image_url null for 3 products |
+
 ---
 
 ## 14. Problem Center — Final State (May 27, 2026)
 
 ### Scope expanded
+
 Sources: `pick | pack | stow | receive` (was `pick | pack` only)
 Exception types added: `stow_failure`, `receive_rejection`
 
 ### Data source
+
 `problem_center_tasks` table — NOT the legacy `pick_exceptions` table.
 Endpoint: `GET /api/v1/wms/problem-center` → `{ problem_tasks: [] }`
 Resolve: `POST /api/v1/wms/problem-center/:taskId/resolve` → `{ resolution_action, resolution_notes }`
 
 ### Shape mapping (frontend)
+
 `problem_task_id` → `pick_exception_id`
 `source` → `stage`
 `quantity` → `quantity_required`
@@ -377,15 +404,18 @@ Resolve: `POST /api/v1/wms/problem-center/:taskId/resolve` → `{ resolution_act
 `problem_bin_location` → `batch_short_id` (displayed as BATCH column)
 
 ### UX
+
 Table layout matching Returns module. Stage color tokens:
 Pick=teal (#14B8A6), Pack=blue (#3B82F6), Stow=purple (#8B5CF6), Receive=amber (#F59E0B)
 
 ### Issue Status
+
 | ID | Status |
 |---|---|
 | INV-02 (Problem Center) | ✅ RESOLVED — fontWeight max 500 |
 
 ### INV-04 — RESOLVED (May 28, 2026)
+
 `variance_count` and `total_variance_units` now return `0` (not null).
 Root cause was absence of `inventory_truth` data in dev seed — resolved when full_data seed was corrected.
 `0` is the correct signal: inventory data exists, no variance detected.
