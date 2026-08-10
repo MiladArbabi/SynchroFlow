@@ -15,7 +15,7 @@
  * - Can be replaced with LISTEN/NOTIFY later
  */
 
-import db from '@lasyncro/backend-core/db.js';
+import { runWithTenantContext, withTenant } from '@lasyncro/backend-core/db.js';
 import { listPendingDecisionExecutions } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { enqueueExecutionJob } from '../queues/execution.queue.js';
 
@@ -41,6 +41,24 @@ export async function startExecutionDispatcher() {
       for (const row of pending) {
         try {
         /**
+         * TENANT CONTEXT FRAME (WORKER-ALS-01)
+         * ------------------------------------
+         * Raw `SET LOCAL app.current_tenant` populates the Postgres GUC
+         * but NOT AsyncLocalStorage. enqueueExecutionJob below reads the
+         * global db singleton outside any transaction, and that path's
+         * guard (backend-core/db.js) resolves tenant from ALS — so it
+         * threw TENANT_CONTEXT_MISSING on every poll. The throw is
+         * off-chain, so the per-row catch below never saw it; it escaped
+         * to process level and was only contained by WORKER-CRASH-01.
+         *
+         * This frame spans the whole row so every DB touch inside it —
+         * including the enqueue — resolves the same tenant.
+         *
+         * NOTE: `continue` is illegal inside this callback; the early
+         * exits below are `return` and skip to the next row.
+         */
+        await runWithTenantContext(row.shop_id, async () => {
+        /**
          * LOAD DECISION (CRITICAL)
          * ------------------------
          * decision_execution_queue is NOT sufficient to build ExecutionJob.
@@ -53,19 +71,18 @@ export async function startExecutionDispatcher() {
          * another split policy to a table with other, unaudited
          * consumers.
          */
-          let decision: any;
-          await db.transaction(async (trx) => {
-            await trx.raw(`SET LOCAL app.current_tenant = '${row.shop_id}'`);
-            decision = await trx('decisions')
+          const decision = await withTenant(row.shop_id, (trx) =>
+            trx('decisions')
               .where({ id: row.decision_id })
-              .first();
-          });
+              .first()
+          );
 
         if (!decision) {
           console.error('[EXECUTION_DISPATCH_DECISION_NOT_FOUND]', {
               decision_id: row.decision_id,
           });
-          continue;
+
+          return;
         }
 
         /**
@@ -119,8 +136,9 @@ export async function startExecutionDispatcher() {
         console.error('[EXECUTION_DISPATCH_INVALID_ACTION_TYPE]', {
             decision_id: decision.id,
         });
-        continue;
-        }
+
+        return;
+      }
 
         await enqueueExecutionJob(job);
 
@@ -130,8 +148,7 @@ export async function startExecutionDispatcher() {
           // THREAD A-2 cont'd (2026-06-30): write needs real tenant
           // context now that this table has a strict write policy.
           // row.shop_id already known from the queue row.
-          await db.transaction(async (trx) => {
-            await trx.raw(`SET LOCAL app.current_tenant = '${row.shop_id}'`);
+          await withTenant(row.shop_id, async (trx) => {
             await trx('decision_execution_queue')
               .where({ decision_id: row.decision_id })
               /**
@@ -166,6 +183,7 @@ export async function startExecutionDispatcher() {
           console.info('[EXECUTION_DISPATCHED]', {
             decision_id: row.decision_id,
           });
+        });
 
         } catch (err) {
           console.error('[EXECUTION_DISPATCH_FAILED]', {
