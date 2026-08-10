@@ -117,8 +117,8 @@ pick | pack | stow | receive | returns
 | `resolution_action` | Final Status | Inventory Cascade | Built |
 | --- | --- | --- | --- |
 | `re_stow` | `resolved` | Creates pending stow task; operator assigns a valid active bin; confirm transfers stock from problem bin → destination bin | ✅ LIVE |
-| `discard` | `resolved` | Writes `damage` movement → decrements `inventory_truth` | ✅ LIVE |
-| `write_off` | `resolved` | Writes `shrinkage` movement → decrements `inventory_truth` | ✅ LIVE |
+| `discard`           | `resolved`             | Writes `damage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist          | ✅ LIVE                            |
+| `write_off`         | `resolved`             | Writes `shrinkage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist       | ✅ LIVE                            |
 | `return` | `returned_to_supplier` | Future: creates return PO line | ❌ PLANNED |
 | `quarantine` | `resolved` | No inventory movement — item held indefinitely | ✅ LIVE |
 | `find_replacement` | `investigating` | No movement — triggers replacement search | ✅ LIVE (backend) / ❌ PLANNED (UI) |
@@ -182,6 +182,9 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 }
 // Response 200
 { "problem_task_id": "uuid", "status": "resolved", "resolution_action": "discard" }
+
+// Response 409 for discard/write_off when stock location is ambiguous or absent
+{ "error": "Multiple stock locations exist; select the affected location before writing off inventory" }
 ```
 
 **`GET /api/v1/wms/problem-center/:taskId/replacement`**

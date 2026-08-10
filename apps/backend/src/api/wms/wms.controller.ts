@@ -2452,13 +2452,29 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // write_off = shrinkage (missing, unaccounted)
       if (resolution_action === 'discard' || resolution_action === 'write_off') {
         const movementType = resolution_action === 'discard' ? 'damage' : 'shrinkage';
-        const it = await trx('inventory_truth')
-          .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
-          .select('available_quantity', 'on_hand_quantity', 'location_code')
-          .first();
+
+        // INV-BLOCK-15: a write-off must own one physical stock location.
+        // Never apply one logical loss across every inventory_truth row for a variant.
+        const stockLocations = await trx('inventory_truth')
+          .where({
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            shop_id: shopId,
+          })
+          .where('on_hand_quantity', '>', 0)
+          .select('available_quantity', 'on_hand_quantity', 'location_code');
+
+        if (stockLocations.length === 0) {
+          throw new Error('WRITE_OFF_LOCATION_NOT_FOUND');
+        }
+
+        if (stockLocations.length > 1) {
+          throw new Error('WRITE_OFF_LOCATION_AMBIGUOUS');
+        }
+
+        const [it] = stockLocations;
 
         // Only write movement if stock exists — never create negative inventory_movements
-        const writeQty = Math.min(task.quantity, it?.available_quantity ?? 0);
+        const writeQty = Math.min(task.quantity, it.available_quantity);
         if (writeQty > 0) {
           await trx('inventory_movements').insert({
             lasyncro_inventory_movement_id: trx.raw('gen_random_uuid()'),
@@ -2467,15 +2483,19 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
             quantity_delta: -writeQty,
             reference_type: 'problem_center_task',
             reference_id: taskId,
-            location_code: it?.location_code ?? 'WH-1-ROOT',
+            location_code: it.location_code,
             shop_id: shopId,
             operator_id: userId,
             triggered_by: 'problem_center',
             occurred_at: new Date(),
           });
-          // Decrement inventory_truth
+
           await trx('inventory_truth')
-            .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
+            .where({
+              lasyncro_variant_id: task.lasyncro_variant_id,
+              shop_id: shopId,
+              location_code: it.location_code,
+            })
             .decrement('available_quantity', writeQty)
             .decrement('on_hand_quantity', writeQty);
         }
@@ -2591,6 +2611,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     const message = getErrorMessage(err);
     if (message === 'TASK_NOT_FOUND') return res.status(404).json({ error: 'Problem task not found' });
     if (message === 'TASK_ALREADY_RESOLVED') return res.status(409).json({ error: 'Task already resolved' });
+    if (message === 'WRITE_OFF_LOCATION_NOT_FOUND') {
+      return res.status(409).json({ error: 'No stock location exists for this write-off' });
+    }
+    if (message === 'WRITE_OFF_LOCATION_AMBIGUOUS') {
+      return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before writing off inventory' });
+    }
     console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Failed to resolve problem task: ${message}` });
   }
