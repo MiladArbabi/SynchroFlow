@@ -6,6 +6,7 @@ import { handleOrdersPaid } from './handlers/orders.paid.js';
 import { handleOrdersShippingAddressCorrected } from './handlers/orders.shipping_address_corrected.js';
 import { handleOrdersCanonicalDataRepaired } from './handlers/orders.canonical_data_repaired.js';
 import { handleOrdersFulfilled } from './handlers/orders.fulfilled.js';
+import { handleOrdersCancelled } from './handlers/orders.cancelled.js';
 import { handleRefundsCreate } from './handlers/refunds.create.js';
 import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.js';
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
@@ -79,6 +80,14 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
    */
   'orders/constraints_reevaluated': handleOrdersConstraintsReevaluated,
   'orders/fulfilled': handleOrdersFulfilled,
+  /**
+   * INV-BLOCK-10a
+   * -------------
+   * Commercial cancellation ingress. Must also be listed in
+   * isOrderEntityEvent (projection.engine.ts) or identity resolution
+   * and the constraint/risk orchestration never run for this event.
+   */
+  'orders/cancelled': handleOrdersCancelled,
   'orders/fulfillment_updated': async (params) => {
   /**
    * HANDLER CONTRACT GUARD (CRITICAL)

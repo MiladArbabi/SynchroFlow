@@ -350,6 +350,13 @@ export async function projectDomainEventCore({
         'orders/create',
         'orders/sync',
         'orders/paid',
+        /**
+         * INV-BLOCK-10a: cancellation is an order-entity event. Without
+         * membership here the handler runs but the order never receives
+         * a re-evaluated constraint/risk pass — same failure shape as
+         * GH-1036 below.
+         */
+        'orders/cancelled',
         'orders/fulfilled',
         'orders/fulfillment_updated',
         /**

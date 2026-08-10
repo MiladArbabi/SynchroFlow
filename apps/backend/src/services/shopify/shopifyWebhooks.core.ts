@@ -23,6 +23,10 @@ export async function registerShopifyWebhooks(
     'orders/create',
     'orders/paid',
     'orders/fulfilled',
+    // INV-BLOCK-10a: cancellation ingress. Without this topic laSyncro
+    // never learns an order was cancelled and will continue to release,
+    // pick, pack and ship it.
+    'orders/cancelled',
 
     // Fulfillment lifecycle
     'fulfillments/create',
@@ -64,6 +68,7 @@ export async function registerShopifyWebhooks(
     'orders/create': 'ORDERS_CREATE',
     'orders/paid': 'ORDERS_PAID',
     'orders/fulfilled': 'ORDERS_FULFILLED',
+    'orders/cancelled': 'ORDERS_CANCELLED',
     'fulfillments/create': 'FULFILLMENTS_CREATE',
     'fulfillments/update': 'FULFILLMENTS_UPDATE',
     'refunds/create': 'REFUNDS_CREATE',

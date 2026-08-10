@@ -17,6 +17,7 @@ import { onShopifyAppUninstalled } from './handlers/appUninstalled.handler.js';
 import { handleOrderCreated } from './handlers/handleOrderCreated.js';
 import { handleOrderFulfillment } from './handlers/handleOrderFulfillment.js';
 import { handleOrderPaid } from './handlers/handleOrderPaid.js';
+import { handleOrderCancelled } from './handlers/handleOrderCancelled.js';
 import { handleRefundCreated } from './handlers/handleRefundCreated.js';
 import { handleInventoryLevelUpdate } from './handlers/handleInventoryLevelUpdate.js';
 import { handleProductCreated } from './handlers/handleProductCreated.js';
@@ -71,6 +72,14 @@ WebhookRouter.register({
   integration: 'shopify',
   eventType: 'orders/paid',
   handle: handleOrderPaid,
+});
+
+// Order Cancelled (INV-BLOCK-10a) — commercial cancellation ingress.
+// Physical unwind of picked stock is INV-BLOCK-10b, not this handler.
+WebhookRouter.register({
+  integration: 'shopify',
+  eventType: 'orders/cancelled',
+  handle: handleOrderCancelled,
 });
 
 // Fulfillment lifecycle (execution truth)

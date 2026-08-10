@@ -39,6 +39,11 @@ router.post('/', async (req: Request, res: Response) => {
       return shopifyWebhookHandler(req, res);
     case 'orders/fulfilled': // defensive
       return shopifyWebhookHandler(req, res);
+    // INV-BLOCK-10a: without this case the topic falls to `default:` and
+    // returns 200-ignored WITHOUT reaching shopifyWebhookHandler — so not
+    // even the router's unsupported_event ledger/audit path runs.
+    case 'orders/cancelled':
+      return shopifyWebhookHandler(req, res);
     
     case 'refunds/create': 
       return shopifyWebhookHandler(req, res);
