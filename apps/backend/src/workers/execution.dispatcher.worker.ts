@@ -62,10 +62,10 @@ export async function startExecutionDispatcher() {
           });
 
         if (!decision) {
-        console.error('[EXECUTION_DISPATCH_DECISION_NOT_FOUND]', {
-            decision_id: row.decision_id,
-        });
-        continue;
+          console.error('[EXECUTION_DISPATCH_DECISION_NOT_FOUND]', {
+              decision_id: row.decision_id,
+          });
+          continue;
         }
 
         /**
@@ -86,12 +86,12 @@ export async function startExecutionDispatcher() {
          * EXECUTE_DECISION command path — skip them here entirely,
          * leave status untouched for that path to manage.
          */
-        if (decision.recommended_action?.execution_mode === 'manual') {
+        /* if (decision.recommended_action?.execution_mode === 'manual') {
           console.info('[EXECUTION_DISPATCH_SKIPPED_MANUAL]', {
             decision_id: row.decision_id,
           });
           continue;
-        }
+        } */
 
         /**
          * RECONSTRUCT EXECUTION JOB (CANONICAL)

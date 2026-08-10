@@ -157,11 +157,11 @@ export async function getFt2Readiness(req: Request, res: Response) {
      *
      * Allows tracing readiness decisions in logs.
      */
-    console.info('[FT2_READINESS_CHECK]', {
+    /* console.info('[FT2_READINESS_CHECK]', {
       shopId,
       ready: !!readiness,
       source: 'system_readiness_state',
-    });
+    }); */
 
     /**
      * PROGRESS SIGNAL (v0)

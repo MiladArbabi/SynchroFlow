@@ -95,3 +95,23 @@ jobs:
           MIGRATION_DATABASE_URL: postgresql://sf_user:sf_pass@127.0.0.1:5432/synchroflow_db
           APP_DATABASE_URL: postgresql://sf_app:sf_app_pass@127.0.0.1:5432/synchroflow_db
         run: npm run test:rls-live -w apps/backend
+
+      # FRESH-INSTALL-04 — functional gate, not a security one.
+      #
+      # Walks the reviewer's path: HMAC install -> seed -> lifecycle ladder ->
+      # POST /wms/batch/release, asserting 201 and reservation_hold movements at
+      # WH-{shopId}-ROOT. This is the endpoint that returned 500 eleven times
+      # during Shopify review (SHOP-REV-02).
+      #
+      # Runs under NODE_ENV=test, so database.config.ts:47 connects as PGUSER
+      # (sf_user — superuser, rolbypassrls). RLS is therefore NOT enforced here;
+      # that is what the three subtests above cover. Forcing sf_app would also
+      # disable the FT2 evaluator's NODE_ENV=test bypass and turn this into a
+      # data-coverage test, which is not what it asserts.
+      #
+      # jest is invoked directly rather than via 'npm test', because the root
+      # test:setup script runs db:reset and re-seeds with dev_seed — which would
+      # destroy the migrated database above and rebuild the bin-rich tenant
+      # shape this test exists to avoid.
+      - name: Run fresh-install release path
+        run: npx jest --runInBand --forceExit tests/integration/fresh-install-release-path.test.ts

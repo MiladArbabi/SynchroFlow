@@ -48,7 +48,7 @@ Thumbs.db
 /apps/core-engine/CMakeFiles
 
 # Copied build artifacts
-+**/dist/**/*.node
+**/dist/**/*.node
 
 # ----------------------------------------------------------------------
 # Python / AI Engine Artifacts
