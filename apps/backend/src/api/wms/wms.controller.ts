@@ -2508,11 +2508,41 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
       // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─
       if (resolution_action === 'quarantine') {
         const problemBin = task.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+        // INV-BLOCK-17: quarantine must own one physical stock location.
+        // Never rewrite every inventory_truth primary key for a split variant.
+        const stockLocations = await trx('inventory_truth')
+          .where({
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            shop_id: shopId,
+          })
+          .where('on_hand_quantity', '>', 0)
+          .select('location_code');
+
+        if (stockLocations.length === 0) {
+          throw new Error('QUARANTINE_LOCATION_NOT_FOUND');
+        }
+
+        if (stockLocations.length > 1) {
+          throw new Error('QUARANTINE_LOCATION_AMBIGUOUS');
+        }
+
+        const [it] = stockLocations;
+
         await trx('inventory_truth')
-          .where({ lasyncro_variant_id: task.lasyncro_variant_id, shop_id: shopId })
+          .where({
+            lasyncro_variant_id: task.lasyncro_variant_id,
+            shop_id: shopId,
+            location_code: it.location_code,
+          })
           .update({ location_code: problemBin, updated_at: new Date() });
+
         console.info('[PROBLEM_CENTER_QUARANTINE]', {
-          problem_task_id: taskId, variant_id: task.lasyncro_variant_id, shopId,
+          problem_task_id: taskId,
+          variant_id: task.lasyncro_variant_id,
+          source_location: it.location_code,
+          problem_bin: problemBin,
+          shopId,
         });
       }
 
@@ -2616,6 +2646,12 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     }
     if (message === 'WRITE_OFF_LOCATION_AMBIGUOUS') {
       return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before writing off inventory' });
+    }
+    if (message === 'QUARANTINE_LOCATION_NOT_FOUND') {
+      return res.status(409).json({ error: 'No stock location exists for this quarantine' });
+    }
+    if (message === 'QUARANTINE_LOCATION_AMBIGUOUS') {
+      return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before quarantining inventory' });
     }
     console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Failed to resolve problem task: ${message}` });

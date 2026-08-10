@@ -120,7 +120,7 @@ pick | pack | stow | receive | returns
 | `discard`           | `resolved`             | Writes `damage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist          | ✅ LIVE                            |
 | `write_off`         | `resolved`             | Writes `shrinkage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist       | ✅ LIVE                            |
 | `return` | `returned_to_supplier` | Future: creates return PO line | ❌ PLANNED |
-| `quarantine` | `resolved` | No inventory movement — item held indefinitely | ✅ LIVE |
+| `quarantine`        | `resolved`             | Moves the single stock-holding location to the problem bin; 409 if zero or multiple stock locations exist                  | ✅ LIVE                            |
 | `find_replacement` | `investigating` | No movement — triggers replacement search | ✅ LIVE (backend) / ❌ PLANNED (UI) |
 
 ---
@@ -296,7 +296,7 @@ Selects resolution action per task:
   ├── discard      → damage movement written → inventory decremented
   ├── write_off    → shrinkage movement written → inventory decremented
   ├── return       → return PO line created → supplier defect_rate updated
-  ├── quarantine   → item held, no movement
+  ├── quarantine   → single stock-holding location moved to problem bin; ambiguous or   missing location → 409
   └── find_replacement → replacement locations shown → operator picks from alt bin
   ↓
 Task status → resolved | discarded | returned_to_supplier
@@ -404,7 +404,7 @@ All Problem Center UI must comply with LaSyncro FT2 DS:
 | Action | Previous behaviour | Correct behaviour |
 | --- | --- | --- |
 | `re_stow` | Could create a stow destination from the problem-bin value and confirmation could fall back to warehouse root as source | Creates a pending `stow_tasks` row with `location_code=null`. Operator must assign a valid active bin. Confirmation resolves the source from `problem_center_tasks.problem_bin_location` and writes a net-zero `location_transfer` pair from problem bin → destination bin. |
-| `quarantine` | Shared branch with `re_stow` | Isolated: moves `inventory_truth.location_code` to problem bin only. No stow task created. |
+| `quarantine` | Shared branch with `re_stow`; later implementation rewrote every matching `inventory_truth.location_code`, causing split-stock primary-key collisions | Isolated: requires exactly one row with `on_hand_quantity > 0`, then moves only that row to the problem bin. Zero or multiple stock-holding locations return 409. No stow task or inventory movement is created. |
 | `return` | In `VALID_ACTIONS` + `statusMap` | **Removed entirely.** Not a feasible workflow path — no return job infrastructure exists and shipping cost falls on owner. |
 
 **Schema changes (base migration — dev reset applied):**
