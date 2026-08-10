@@ -18,6 +18,16 @@ import { startProjectionHealthWorker } from './workers/projection.health.worker.
 import { assertRuntimeDatabaseIdentity } from '@lasyncro/backend-core/db.js';
 
 async function start() {
+  // WORKER-CRASH-01: server.ts:47 contains unowned rejections for the HTTP
+  // runtime (RUNTIME-BOOT-02, v270). The worker runs the SAME startWorkers()
+  // fleet and had no such handler, so one fault killed every worker in the
+  // process. superviseWorker cannot cover this class: TENANT_CONTEXT_MISSING
+  // throws from the patched queryBuilder.then (db.ts, RUNTIME-BOOT-05), which
+  // rejects off-chain and reaches no caller's catch.
+  // Registered before any await — infrastructure boot can reject too.
+  process.on('unhandledRejection', (reason) => {
+    console.error('[UNHANDLED_REJECTION] contained, worker kept alive:', reason);
+  });
 
   // SEC-RLS-P0: the standalone worker must enforce the same restricted
   // database identity as the HTTP runtime.

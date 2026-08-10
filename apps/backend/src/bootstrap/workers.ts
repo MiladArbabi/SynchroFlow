@@ -218,7 +218,12 @@ export async function startWorkers(): Promise<void> {
            * Must start AFTER execution worker is ready.
            */
           if (typeof dispatcher.startExecutionDispatcher === 'function') {
-            dispatcher.startExecutionDispatcher();
+            // WORKER-CRASH-01: this start was the one worker missed by
+            // RUNTIME-BOOT-03. Unsupervised, its rejection was unowned and
+            // Node 20 exited the runtime — the dispatcher's own per-row
+            // catch never got to report. Contained now like every other
+            // worker; faults degrade to [WORKER_FAULT], not an outage.
+            superviseWorker('execution-dispatcher', () => dispatcher.startExecutionDispatcher());
             console.log('[bootstrap/workers] Execution dispatcher started');
           }
 
