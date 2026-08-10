@@ -371,6 +371,21 @@ Until then, fail-closed behavior remains intentional.
 
 ---
 
+## INV-BLOCK-13 — Obsolete reservation writer removed
+
+**Status:** CLOSED — 2026-08-10
+
+`apps/backend/src/services/inventory/reservationLedger.writer.ts` was removed after audit confirmed it had zero callers and no longer matched the transactional reservation model.
+
+Canonical reservation writers remain:
+
+- `batchReservation.service.ts` → `reservation_hold`
+- `pickScan.service.ts` → `reservation_release`
+
+Both remain transactionally coupled to their corresponding `inventory_truth` mutations and database uniqueness/sign constraints.
+
+---
+
 ## Final invariant
 
 > A batch is a workflow container, not the owner of inventory.  
