@@ -76,6 +76,63 @@ export async function projectOrderConstraints(
   }
 
   /**
+   * TERMINAL STATUS SHORT-CIRCUIT (INV-BLOCK-10c)
+   * ---------------------------------------------
+   * A cancelled order cannot be blocked — there is no fulfilment left to
+   * unblock. Without this, the evaluator re-affirms the order's inventory
+   * constraint on the very pass triggered by the cancellation event
+   * (INV-BLOCK-10a added orders/cancelled to isOrderEntityEvent), stamping
+   * a fresh started_at. The order then shows in Blocked Orders as "Not
+   * enough stock to fulfill" and inflates held revenue, because
+   * blocker.aggregates.ts and orderExecutionQueueResolver.ts both read
+   * order_constraints as canonical blocker truth.
+   *
+   * `evaluations` is deliberately ignored: this is lifecycle
+   * materialization, not evaluation, so it stays within this file's
+   * architectural contract (see header).
+   *
+   * Scope: 'cancelled' only. 'fulfilled' resolves through the normal
+   * evaluation path. 'failed' has no producer today.
+   *
+   * Constraint lifecycle only — reservation release and physical stock
+   * unwind for mid-pick cancellations are INV-BLOCK-10b.
+   */
+  if (ofs.status === 'cancelled') {
+    const resolvedConstraints = await trx('order_constraints')
+      .where({ lasyncro_order_id: orderId, is_active: true })
+      .update({
+        resolved_at: eventAnchor,
+        is_active: false,
+        write_source: 'orderConstraintProjection:cancelled',
+      });
+
+    /**
+     * TEMP BRIDGE PARITY (BL-16-UX-BLK-01)
+     * canonical and bridge lifecycle state must transition together.
+     */
+    const resolvedEvents = await trx('order_constraint_events')
+      .where({ lasyncro_order_id: orderId, is_active: true })
+      .update({
+        resolved_at: eventAnchor,
+        is_active: false,
+        evaluated_at: eventAnchor,
+        aggregate_version: aggregateVersion,
+        updated_at: trx.fn.now(),
+      });
+
+    if (resolvedConstraints > 0 || resolvedEvents > 0) {
+      console.info('[CONSTRAINTS_RESOLVED_ORDER_CANCELLED]', {
+        orderId,
+        shopId,
+        resolvedConstraints,
+        resolvedEvents,
+      });
+    }
+
+    return;
+  }
+
+  /**
    * VARIANT-SCOPED CONSTRAINT MAP
    * -----------------------------
    * Keyed by: constraint_type + targetId
