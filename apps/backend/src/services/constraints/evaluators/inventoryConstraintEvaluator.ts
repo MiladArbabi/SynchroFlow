@@ -1,11 +1,17 @@
 import { Knex } from 'knex';
 import { ConstraintEvaluationResult } from '../constraint.types.js';
+import {
+  hasActivePickBins,
+  pickableLocationCondition,
+} from '../../inventory/pickableLocation.js';
 
 export async function evaluateInventoryConstraint(
   trx: Knex.Transaction,
   orderId: string,
   shopId: number
 ): Promise<ConstraintEvaluationResult[]> {
+
+  const hasPickBins = await hasActivePickBins(trx, shopId);
 
   /**
    * SOURCE OF TRUTH: inventory_truth
@@ -28,8 +34,10 @@ export async function evaluateInventoryConstraint(
    * inventory — so bin-only counting made every order oversell-blocked
    * and the order pool unreachable. Shopify review ref 102766.
    *
-   * Now counts active bin AND warehouse-root locations. Lane and shelf
-   * stay excluded — frame geometry, never holds stock.
+   * INV-BLOCK-19: counts active PICK bins only. Warehouse-root counts
+   * solely as the fresh-install fallback — see pickableLocation.ts.
+   * Lanes stay excluded: zone_type='pick' but type='lane', frame
+   * geometry that never holds stock.
    *
    * MUST stay in sync with batchReservation.service.ts's pickable-location
    * filter. That decides what is reservable; this decides what is
@@ -62,21 +70,21 @@ export async function evaluateInventoryConstraint(
       this.on('wl.location_code', '=', 'it.location_code')
         .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
         .andOnVal('wl.active', true)
-        .andOn(
-          trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse'])
-        );
+        .andOn(pickableLocationCondition(trx, hasPickBins));
     })
     .select(
       'demand.lasyncro_variant_id',
       'demand.remaining_quantity',
       /**
-       * Sum pickable availability across all active bin and warehouse
-       * locations. Demand is already one row per variant, so joining
+       * Sum availability across matched pickable locations only. The
+       * leftJoin already applies the canonical predicate, so a non-null
+       * wl row IS a pickable row — filtering on the predicate again
+       * would be a second definition free to drift (INV-BLOCK-19).
+       * Demand is already one row per variant, so joining
        * location-level inventory cannot multiply required quantity.
        */
       trx.raw(
-        'COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type IN (?, ?)), 0) as available_quantity',
-        ['bin', 'warehouse']
+        'COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.location_code IS NOT NULL), 0) as available_quantity'
       )
     )
     .groupBy(

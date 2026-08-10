@@ -1,5 +1,9 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
+import {
+  hasActivePickBins,
+  pickableLocationCondition,
+} from '../inventory/pickableLocation.js';
 
 const RESERVATION_NAMESPACE =
   'c2d3e4f5-a6b7-8901-bcde-f12345678901';
@@ -312,6 +316,7 @@ export async function reserveBatchInventory(
     aggregateRequiredQuantities(lineItems);
 
   const variantIds = [...requiredByVariant.keys()];
+  const hasPickBins = await hasActivePickBins(trx, shopId);
 
   /**
    * SHOP-REV-02: pickable = active bin OR warehouse root. Must match
@@ -332,7 +337,7 @@ export async function reserveBatchInventory(
         this.on('wl.location_code', '=', 'it.location_code')
             .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
             .andOnVal('wl.active', true)
-            .andOn(trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse']));
+            .andOn(pickableLocationCondition(trx, hasPickBins));
       })
       .where('it.shop_id', shopId)
       .whereIn('it.lasyncro_variant_id', variantIds)

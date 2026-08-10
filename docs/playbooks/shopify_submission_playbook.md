@@ -828,7 +828,35 @@ aligned:
 at a warehouse location where:
 
     warehouse_locations.active = true
-    AND warehouse_locations.type IN ('bin', 'warehouse')
+    AND warehouse_locations.zone_type = 'pick'
+    AND warehouse_locations.type = 'bin'
+
+### INV-BLOCK-19 amendment (2026-08-10)
+
+The original rule read `type IN ('bin', 'warehouse')` and ignored
+`zone_type` entirely. Every staging and exception zone — receive, returns,
+pack, ship, kitting, problem, quarantine — is `type = 'bin'`, so all of
+them counted as sellable stock. Stock is pickable only once it has been
+stowed into an active pick bin: a received unit must be stowed, and a
+returned unit inspected and re-stowed, before either becomes pickable.
+`type = 'bin'` is required alongside `zone_type` because pick LANES also
+carry `zone_type = 'pick'` and are frame geometry, not storage.
+
+FRESH-INSTALL FALLBACK (preserves SHOP-REV-02, Shopify ref 102766):
+a tenant at install has one warehouse root and zero bins. Warehouse-root
+therefore counts as pickable ONLY while the tenant has no active pick bin
+at all. Once a pick bin exists, root stock is unstowed stock and is
+correctly excluded — it should surface as a stow task, not as availability.
+
+Both surfaces now call the shared helper in
+apps/backend/src/services/inventory/pickableLocation.ts. Do not re-inline
+the predicate: a single definition is what makes divergence between
+eligibility and reservation unreachable.
+
+Verified 2026-08-10 on both branches:
+  shop 1 (12 pick bins) — 3 blocked / 8 eligible, unchanged from baseline
+  shop 2 (0 pick bins, 125 units at WH-2-ROOT, 9 units real demand)
+    — 0 active inventory constraints, 5 eligible
 
 Batch reservation remains a transactional/race-condition backstop.
 
