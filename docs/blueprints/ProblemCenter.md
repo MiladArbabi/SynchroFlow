@@ -341,9 +341,6 @@ location_transfer source -qty
 location_transfer destination +qty
 ````
 
-**AFTER**
-
-```md
 ### `discard` (LIVE)
 
 The full task quantity must be available at the single stock-holding location. If `task.quantity > available_quantity`, resolution returns `409` and the transaction rolls back, leaving the task open with no inventory movement or truth mutation.
