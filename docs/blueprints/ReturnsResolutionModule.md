@@ -100,7 +100,7 @@ Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `W
 | `item_condition` | Cascade |
 |---|---|
 | `resellable` | `createStowTask()` called directly — inventory restored once stow completes |
-| `repackable` | Inserts into `problem_center_tasks` (`source: 'returns'`, `exception_type: 'repackaging_required'`) — **this is the actual code link between the two sub-surfaces**, not just a shared nav parent |
+| `repackable` | Requires the configured `shop_wms_settings.problem_bin_location`, then inserts into `problem_center_tasks` (`source: 'returns'`, `exception_type: 'repackaging_required'`). If the setting is missing, the transaction fails closed instead of generating a synthetic problem-bin location. |
 | `damaged` / `unsellable` | Job → `awaiting_decision`; alert fires for owner |
 
 | Shortfall (received < refunded qty) | Inserts `problem_center_tasks` row, `exception_type: 'return_shortfall'` — second direct Returns → Product Issues code link |
@@ -108,7 +108,7 @@ Required a related fix: `operator_audit_log.operator_id` (migration 0010) and `W
 | Owner decision | Cascade |
 |---|---|
 | `reship` | Resolves the `returned_undelivered` order constraint, job → `complete` |
-| `write_off` | For each damaged/unsellable line: inserts `inventory_movements` with `movement_type: 'write_off_return'`, `quantity_delta` negative, `reference_type: 'return_job'` — job → `complete` |
+| `write_off` | For each damaged/unsellable line: requires the configured problem-bin location, then inserts `inventory_movements` with `movement_type: 'write_off_return'` and negative `quantity_delta`. Missing problem-bin configuration fails closed instead of writing a movement against a synthetic location. |
 
 **This confirms §4's design rationale with code, not just intent** — `repackable` and shortfall handling don't just *conceptually* belong with Product Issues, they *write into the same table* (`problem_center_tasks`) at runtime. The two sub-surfaces are operationally linked, not just co-located in nav.
 

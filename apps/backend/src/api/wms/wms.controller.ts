@@ -2507,7 +2507,10 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
 
       // ── CASCADE: quarantine — move item to PROBLEM bin, no stow task ─
       if (resolution_action === 'quarantine') {
-        const problemBin = task.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+        if (!task.problem_bin_location) {
+          throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+        }
+        const problemBin = task.problem_bin_location;
 
         // INV-BLOCK-17: quarantine must own one physical stock location.
         // Never rewrite every inventory_truth primary key for a split variant.
@@ -2652,6 +2655,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     }
     if (message === 'QUARANTINE_LOCATION_AMBIGUOUS') {
       return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before quarantining inventory' });
+    }
+    if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+      return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
     }
     console.error('[PROBLEM_CENTER_RESOLVE_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Failed to resolve problem task: ${message}` });
@@ -3492,9 +3498,13 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
       `, [shopId]);
 
       const seqRow = seqResult.rows[0];
+      if (!seqRow?.problem_bin_location) {
+        throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+      }
+
       const seqNum = seqRow.prob_label_sequence;
       const probLabel = `PROB-${shopId}-${String(seqNum).padStart(4, '0')}`;
-      const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+      const problemBin = seqRow.problem_bin_location;
 
       // Create problem center task
       const [task] = await trx('problem_center_tasks')
@@ -3531,6 +3541,9 @@ export const httpCreateProblemTask = async (req: Request, res: Response) => {
     const message = getErrorMessage(err);
     if (message === 'SOURCE_EXCEPTION_NOT_FOUND') {
       return res.status(404).json({ error: 'source_exception_id does not reference a valid exception for this shop' });
+    }
+    if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+      return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
     }
     console.error('[PROBLEM_CENTER_CREATE_FAILED]', { shopId, error: message, stack: err instanceof Error ? err.stack : undefined });
     return res.status(500).json({ error: `Failed to create problem task: ${message}` });
@@ -3697,8 +3710,12 @@ export const httpReportStowException = async (req: Request, res: Response) => {
       `, [shopId]);
 
       const seqRow = seqResult.rows[0];
+      if (!seqRow?.problem_bin_location) {
+        throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+      }
+
       const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
-      const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+      const problemBin = seqRow.problem_bin_location;
 
       await trx('problem_center_tasks').insert({
         shop_id: shopId,
@@ -3734,10 +3751,15 @@ export const httpReportStowException = async (req: Request, res: Response) => {
     });
     console.info('[STOW_EXCEPTION_REPORTED]', { shopId, taskId, exception_type, quantity });
     return res.status(201).json(result);
-  } catch (err: unknown) {
-    console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: getErrorMessage(err) });
-    return res.status(500).json({ error: `Stow exception failed: ${getErrorMessage(err)}` });
-  }
+    
+    } catch (err: unknown) {
+      const message = getErrorMessage(err);
+      if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+        return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
+      }
+      console.error('[STOW_EXCEPTION_FAILED]', { shopId, taskId, error: message });
+      return res.status(500).json({ error: `Stow exception failed: ${message}` });
+    }
 };
 
 // ─────────────────────────────────────────

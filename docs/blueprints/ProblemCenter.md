@@ -83,10 +83,10 @@ pick | pack | stow | receive | returns
 
 | Column | Purpose |
 | --- | --- |
-| `problem_bin_location` | Configurable per-shop (e.g. `WH-1-PROBLEM`). Copied into task at creation. |
+| `problem_bin_location` | Configurable per-shop (e.g. `PROBLEM`). Required for Problem Center creation; copied into the task at creation. No synthetic fallback location is generated when unset. |
 | `prob_label_sequence` | Auto-incrementing integer. Atomically incremented on each task creation. |
 
-⚠️ **Known issue:** `problem_bin_location` is currently empty string `''` in seeded data (not `null`, not a valid location code). Must be configured by owner before tasks are meaningful.
+**INV-BLOCK-18:** Problem Center now fails closed when `shop_wms_settings.problem_bin_location` is null or empty. Task creation returns `409` and does not create a task, PROB label, or synthetic `WH-{shopId}-PROBLEM` location.
 
 ---
 
@@ -132,7 +132,7 @@ Every task creation atomically:
 1. Increments `shop_wms_settings.prob_label_sequence`
 2. Generates label: `PROB-{shopId}-{sequence padded to 4 digits}` (e.g. `PROB-1-0001`)
 3. Creates a `barcode_print_jobs` row for physical label printing
-4. Copies current `problem_bin_location` into the task row
+4. Requires `shop_wms_settings.problem_bin_location`; if missing, returns `409` and rolls back creation. Otherwise copies the configured value into the task row.
 
 The PROB label is the physical tracking token. Operator prints and attaches it to the item before moving to problem bin.
 
@@ -168,7 +168,7 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 {
   "problem_task_id": "uuid",
   "prob_label": "PROB-1-0004",
-  "problem_bin": "WH-1-PROBLEM"
+  "problem_bin": "PROBLEM"
 }
 ```
 
@@ -287,7 +287,7 @@ System creates problem_center_tasks row + PROB label print job
   ↓
 Operator prints PROB label → attaches to item → moves to problem bin
   ↓
-Operator sees instruction: "Move to {problem_bin_location}" (WH-1-PROBLEM)
+Operator sees instruction: "Move to {problem_bin_location}" (for example, `PROBLEM`)
   ↓
 Owner/Admin opens Problem Center → sees all open tasks
   ↓

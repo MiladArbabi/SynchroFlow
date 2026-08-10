@@ -406,8 +406,13 @@ async function applyReturnLineCascade(
       RETURNING prob_label_sequence, problem_bin_location
     `, [shopId]);
     const seqRow = seqResult.rows[0];
+    if (!seqRow?.problem_bin_location) {
+      throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+    }
+
     const probLabel = `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')}`;
-    const problemBin = seqRow.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+    const problemBin = seqRow.problem_bin_location;
+
     await trx('problem_center_tasks').insert({
       shop_id: shopId,
       status: 'open',
@@ -627,12 +632,17 @@ export async function setOwnerDecision(
         if (!line.quantity_received) continue;
         // Write-off inventory movement — negative quantity, distinct type for Finances traceability
         const { randomUUID } = await import('crypto');
-        // Write-off location: problem bin if configured, else shop root
+        // Write-off location must be the configured problem bin.
         const wmsSettings = await trx('shop_wms_settings')
           .where({ shop_id: shopId })
           .select('problem_bin_location')
           .first();
-        const writeOffLocation = wmsSettings?.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+        if (!wmsSettings?.problem_bin_location) {
+          throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+        }
+
+        const writeOffLocation = wmsSettings.problem_bin_location;
 
         await trx('inventory_movements').insert({
           lasyncro_inventory_movement_id: randomUUID(),
@@ -724,7 +734,12 @@ export async function setLineOwnerDecision(
         .where({ shop_id: shopId })
         .select('problem_bin_location')
         .first();
-      const writeOffLocation = wmsSettings?.problem_bin_location ?? `WH-${shopId}-PROBLEM`;
+
+      if (!wmsSettings?.problem_bin_location) {
+        throw new Error('PROBLEM_BIN_NOT_CONFIGURED');
+      }
+
+      const writeOffLocation = wmsSettings.problem_bin_location;
 
       await trx('inventory_movements').insert({
         lasyncro_inventory_movement_id: randomUUID(),

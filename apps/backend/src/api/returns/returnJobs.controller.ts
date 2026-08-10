@@ -167,6 +167,9 @@ export const httpProcessReturnLine = async (req: Request, res: Response) => {
     console.error('[RETURN_LINE_PROCESS_FAILED]', { shopId, returnJobId, refundLineItemId, error: message });
     if (message.includes('not found')) return res.status(404).json({ error: message });
     if (message.includes('not processable')) return res.status(409).json({ error: message });
+    if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+      return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
+    }
     return res.status(500).json({ error: `Failed to process return line: ${message}` });
   }
 };
@@ -210,6 +213,9 @@ export const httpAddManualReturnLine = async (req: Request, res: Response) => {
     }
     if (message.includes('not processable')) {
       return res.status(409).json({ error: message });
+    }
+    if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+      return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
     }
     return res.status(500).json({ error: `Failed to add return line: ${message}` });
   }
@@ -292,6 +298,9 @@ export const httpSetOwnerDecision = async (req: Request, res: Response) => {
     console.error('[RETURN_LINE_DECISION_FAILED]', { shopId, lineItemId, decision, error: message });
     if (message.includes('not found')) return res.status(404).json({ error: message });
     if (message.includes('does not require a decision')) return res.status(409).json({ error: message });
+    if (message === 'PROBLEM_BIN_NOT_CONFIGURED') {
+      return res.status(409).json({ error: 'Problem bin is not configured for this shop' });
+    }
     return res.status(500).json({ error: `Failed to set decision: ${message}` });
   }
 };
