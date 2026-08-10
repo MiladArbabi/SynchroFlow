@@ -301,7 +301,12 @@ export async function releaseBatch(
    */
   const allLineItems = await trx('order_line_items')
     .whereIn('lasyncro_order_id', selectedOrderIds)
-    .select('lasyncro_variant_id', 'quantity');
+    .select(
+      'lasyncro_order_id',
+      'lasyncro_line_item_id',
+      'lasyncro_variant_id',
+      'quantity'
+    );
 
   await reserveBatchInventory(trx, {
     shopId,

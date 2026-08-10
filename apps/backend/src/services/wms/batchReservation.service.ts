@@ -7,6 +7,22 @@ const RESERVATION_NAMESPACE =
 export interface BatchReservationLineItem {
   lasyncro_variant_id: string;
   quantity: number | string;
+
+  /**
+   * Reservation ownership provenance.
+   * Required by reserveBatchInventory(), optional here so the existing
+   * pure allocation helper remains backward-compatible for unit callers.
+   */
+  lasyncro_order_id?: string;
+  lasyncro_line_item_id?: string;
+}
+
+interface BatchReservationOwnershipAllocation {
+  lasyncroOrderId: string;
+  lasyncroLineItemId: string;
+  lasyncroVariantId: string;
+  locationCode: string;
+  quantity: number;
 }
 
 interface PickableInventoryRow {
@@ -176,6 +192,105 @@ export function buildBatchReservationAllocations(
   );
 }
 
+/**
+ * Split the already-computed aggregate batch allocations back across
+ * their owning order lines.
+ *
+ * Important: this does NOT choose different inventory. The aggregate
+ * allocator remains authoritative for variant + location quantities.
+ * This function only records who owns each piece of that allocation.
+ */
+function buildReservationOwnershipAllocations(
+  lineItems: BatchReservationLineItem[],
+  allocations: BatchReservationAllocation[]
+): BatchReservationOwnershipAllocation[] {
+  const allocationPools = new Map<
+    string,
+    Array<{ locationCode: string; remaining: number }>
+  >();
+
+  for (const allocation of allocations) {
+    const pool = allocationPools.get(allocation.lasyncroVariantId) ?? [];
+    pool.push({
+      locationCode: allocation.locationCode,
+      remaining: allocation.quantity,
+    });
+    allocationPools.set(allocation.lasyncroVariantId, pool);
+  }
+
+  const ownedLines = [...lineItems].sort((left, right) => {
+    const variantCompare = left.lasyncro_variant_id.localeCompare(
+      right.lasyncro_variant_id
+    );
+    if (variantCompare !== 0) return variantCompare;
+
+    const orderCompare = String(left.lasyncro_order_id ?? '').localeCompare(
+      String(right.lasyncro_order_id ?? '')
+    );
+    if (orderCompare !== 0) return orderCompare;
+
+    return String(left.lasyncro_line_item_id ?? '').localeCompare(
+      String(right.lasyncro_line_item_id ?? '')
+    );
+  });
+
+  const ownership: BatchReservationOwnershipAllocation[] = [];
+
+  for (const lineItem of ownedLines) {
+    if (!lineItem.lasyncro_order_id || !lineItem.lasyncro_line_item_id) {
+      throw new Error(
+        '[PICK_BATCH_SERVICE] Reservation ownership requires order and line-item IDs.'
+      );
+    }
+
+    let remaining = parsePositiveInteger(
+      lineItem.quantity,
+      `Reservation ownership quantity for line ${lineItem.lasyncro_line_item_id}`
+    );
+
+    const pool = allocationPools.get(lineItem.lasyncro_variant_id) ?? [];
+
+    for (const allocation of pool) {
+      if (remaining === 0) break;
+      if (allocation.remaining <= 0) continue;
+
+      const ownedQuantity = Math.min(remaining, allocation.remaining);
+
+      ownership.push({
+        lasyncroOrderId: lineItem.lasyncro_order_id,
+        lasyncroLineItemId: lineItem.lasyncro_line_item_id,
+        lasyncroVariantId: lineItem.lasyncro_variant_id,
+        locationCode: allocation.locationCode,
+        quantity: ownedQuantity,
+      });
+
+      allocation.remaining -= ownedQuantity;
+      remaining -= ownedQuantity;
+    }
+
+    if (remaining !== 0) {
+      throw new Error(
+        `[PICK_BATCH_SERVICE] Reservation ownership allocation mismatch for line ${lineItem.lasyncro_line_item_id}. Remaining: ${remaining}`
+      );
+    }
+  }
+
+  for (const [variantId, pool] of allocationPools.entries()) {
+    const remaining = pool.reduce(
+      (sum, allocation) => sum + allocation.remaining,
+      0
+    );
+
+    if (remaining !== 0) {
+      throw new Error(
+        `[PICK_BATCH_SERVICE] Reservation ownership left ${remaining} unowned units for variant ${variantId}.`
+      );
+    }
+  }
+
+  return ownership;
+}
+
 export async function reserveBatchInventory(
   trx: Knex.Transaction,
   input: ReserveBatchInventoryInput
@@ -237,6 +352,9 @@ export async function reserveBatchInventory(
     requiredByVariant,
     inventoryRows
   );
+
+  const ownershipAllocations =
+    buildReservationOwnershipAllocations(lineItems, allocations);
 
   const reservedAt = new Date();
 
@@ -322,6 +440,30 @@ export async function reserveBatchInventory(
         `[PICK_BATCH_SERVICE] Inventory changed while reserving variant ${allocation.lasyncroVariantId} at ${allocation.locationCode}.`
       );
     }
+  }
+
+  if (ownershipAllocations.length > 0) {
+    await trx('pick_reservation_allocations')
+      .insert(
+        ownershipAllocations.map((allocation) => ({
+          shop_id: shopId,
+          pick_batch_id: pickBatchId,
+          lasyncro_order_id: allocation.lasyncroOrderId,
+          lasyncro_line_item_id: allocation.lasyncroLineItemId,
+          lasyncro_variant_id: allocation.lasyncroVariantId,
+          location_code: allocation.locationCode,
+          quantity: allocation.quantity,
+          created_at: reservedAt,
+          updated_at: reservedAt,
+        }))
+      )
+      .onConflict([
+        'shop_id',
+        'pick_batch_id',
+        'lasyncro_line_item_id',
+        'location_code',
+      ])
+      .ignore();
   }
 
   return allocations;

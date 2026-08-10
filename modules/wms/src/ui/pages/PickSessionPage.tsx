@@ -52,6 +52,8 @@ export interface LineItem {
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
   lasyncro_order_id: string;
+  /** INV-RES-01: exact physical reservation task; null on legacy batches. */
+  reservation_allocation_id?: string | null;
   sku: string | null;
   product_title: string;
   variant_title: string | null;
@@ -66,6 +68,8 @@ export interface LineItem {
 export interface ConfirmScanParams {
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
+  /** INV-RES-01: exact reservation task; undefined on legacy batches. */
+  reservation_allocation_id?: string;
   location_code: string;
   quantity_confirmed: number;
   scan_source?: 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';
@@ -253,27 +257,37 @@ export default function PickSessionPage({
     if (!currentItem) return;
     setScanProcessing(true);
     setScanError(null);
-    try {
-      const result = await onResolveBarcode(value.trim());
-      if (result?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
-        resolvedUnitIdRef.current = result.lasyncro_unit_id;
-        if (currentItem.quantity > 1) {
-          setPhase('qty_confirm');
-        } else {
-          await onConfirmScan({
-            lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
-            lasyncro_variant_id:   currentItem.lasyncro_variant_id,
-            location_code:         currentItem.location_code,
-            quantity_confirmed:    currentItem.quantity,
-            scan_source:           detectSourceAndReset(),
-            lasyncro_unit_id:      result.lasyncro_unit_id,
-          });
-          setPickResults(prev => [...prev, { lineItem: currentItem, status: 'picked' }]);
-          setTimeout(advanceOrSummary, 400);
+try {
+        const scannedValue = value.trim();
+        const result = await onResolveBarcode(scannedValue);
+
+        if (result?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
+          const resolvedUnitId = scannedValue.startsWith('LSU-')
+            ? result.lasyncro_unit_id
+            : undefined;
+
+          resolvedUnitIdRef.current = resolvedUnitId;
+
+          if (currentItem.quantity > 1) {
+            setPhase('qty_confirm');
+          } else {
+            await onConfirmScan({
+              lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
+              lasyncro_variant_id:   currentItem.lasyncro_variant_id,
+              reservation_allocation_id:
+                currentItem.reservation_allocation_id ?? undefined,
+              location_code:         currentItem.location_code,
+              quantity_confirmed:    currentItem.quantity,
+              scan_source:           detectSourceAndReset(),
+              lasyncro_unit_id:      resolvedUnitId,
+            });
+            setPickResults(prev => [...prev, { lineItem: currentItem, status: 'picked' }]);
+            setTimeout(advanceOrSummary, 400);
         }
       } else {
         setScanError('Wrong item — barcode does not match. Check you are at the right bin.');
       }
+      
     } catch (err: unknown) {
       const msg = (err as any)?.response?.data?.error ?? (err instanceof Error ? err.message : 'Scan failed. Try again.');
       setScanError(msg);
@@ -298,6 +312,8 @@ export default function PickSessionPage({
     onConfirmScan({
       lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
       lasyncro_variant_id:   currentItem.lasyncro_variant_id,
+      reservation_allocation_id:
+        currentItem.reservation_allocation_id ?? undefined,
       location_code:         currentItem.location_code,
       quantity_confirmed:    currentItem.quantity,
       scan_source:           detectSourceAndReset(),

@@ -35,6 +35,7 @@ export interface PickScanInput {
   pickBatchId: string;
   lasyncroLineItemId: string;
   lasyncroVariantId: string;
+  reservationAllocationId?: string;
   locationCode: string;
   quantityConfirmed: number;
   scannedBy: number;
@@ -62,6 +63,7 @@ export async function confirmPickScan(
     pickBatchId,
     lasyncroLineItemId,
     lasyncroVariantId,
+    reservationAllocationId,
     locationCode,
     quantityConfirmed,
     scannedBy,
@@ -90,53 +92,166 @@ export async function confirmPickScan(
 
   // 2. Validate line item belongs to batch
   const lineItem = await trx('order_line_items as oli')
-    .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'oli.lasyncro_order_id')
+    .join(
+      'pick_batch_orders as pbo',
+      'pbo.lasyncro_order_id',
+      'oli.lasyncro_order_id'
+    )
     .where({
       'oli.lasyncro_line_item_id': lasyncroLineItemId,
       'pbo.pick_batch_id': pickBatchId,
     })
-    .select('oli.lasyncro_variant_id', 'oli.quantity', 'oli.lasyncro_order_id')
+    .select(
+      'oli.lasyncro_variant_id',
+      'oli.quantity',
+      'oli.lasyncro_order_id'
+    )
+    .forUpdate()
     .first();
 
-  if (!lineItem) {
-    throw new Error(`[PICK_SCAN] Line item not found in batch: ${lasyncroLineItemId}`);
-  }
+    if (!lineItem) {
+      throw new Error(
+        `[PICK_SCAN] Line item not found in batch: ${lasyncroLineItemId}`
+      );
+    }
 
-  // 3. Barcode gate — scanned variant must match line item variant
-  if (lineItem.lasyncro_variant_id !== lasyncroVariantId) {
+    // 3. Barcode gate — scanned variant must match the requested line item.
+    // Applies to both allocation-backed and legacy batches.
+    if (lineItem.lasyncro_variant_id !== lasyncroVariantId) {
+      throw new Error(
+        `[PICK_SCAN] Variant mismatch — scanned: ${lasyncroVariantId}, expected: ${lineItem.lasyncro_variant_id}`
+      );
+    }
+
+  /**
+   * INV-RES-01 Step 2C — allocation identity gate.
+   *
+   * Allocation-backed picks must identify the exact persisted reservation
+   * allocation. The old line-based mutation remains blocked until the
+   * allocation is fully validated and consumed atomically.
+   */
+  const allocationBackedLine =
+  await trx('pick_reservation_allocations')
+    .where({
+      shop_id: shopId,
+      pick_batch_id: pickBatchId,
+      lasyncro_line_item_id: lasyncroLineItemId,
+    })
+    .first('allocation_id');
+
+  if (allocationBackedLine && !reservationAllocationId) {
     throw new Error(
-      `[PICK_SCAN] Variant mismatch — scanned: ${lasyncroVariantId}, expected: ${lineItem.lasyncro_variant_id}`
+      '[PICK_SCAN] RESERVATION_ALLOCATION_REQUIRED'
     );
   }
 
-  // 4. Guard against duplicate confirmed scan for this line item
-  const existingScan = await trx('pick_scan_log')
-    .where({
-      pick_batch_id: pickBatchId,
-      lasyncro_line_item_id: lasyncroLineItemId,
-      status: 'confirmed',
-    })
-    .first();
+  if (allocationBackedLine) {
+    const reservationAllocation =
+      await trx('pick_reservation_allocations')
+        .where({
+          allocation_id: reservationAllocationId,
+          shop_id: shopId,
+          pick_batch_id: pickBatchId,
+          lasyncro_line_item_id: lasyncroLineItemId,
+          lasyncro_variant_id: lasyncroVariantId,
+          location_code: locationCode,
+          quantity: quantityConfirmed,
+        })
+        .forUpdate()
+        .first('allocation_id');
 
-  if (existingScan) {
-    throw new Error(`[PICK_SCAN] Line item already scanned: ${lasyncroLineItemId}`);
+    if (!reservationAllocation) {
+      throw new Error(
+        '[PICK_SCAN] RESERVATION_ALLOCATION_MISMATCH'
+      );
+    }
+
+    const inventoryTruth = await trx('inventory_truth')
+      .where({
+        shop_id: shopId,
+        lasyncro_variant_id: lasyncroVariantId,
+        location_code: locationCode,
+      })
+      .forUpdate()
+      .select(
+        'on_hand_quantity',
+        'reserved_quantity'
+      )
+      .first();
+
+    if (!inventoryTruth) {
+      throw new Error(
+        '[PICK_SCAN] INVENTORY_TRUTH_NOT_FOUND'
+      );
+    }
+
+    if (
+      Number(inventoryTruth.on_hand_quantity) <
+      quantityConfirmed
+    ) {
+      throw new Error(
+        '[PICK_SCAN] INSUFFICIENT_ON_HAND'
+      );
+    }
+
+    if (
+      Number(inventoryTruth.reserved_quantity) <
+      quantityConfirmed
+    ) {
+      throw new Error(
+        '[PICK_SCAN] INSUFFICIENT_RESERVED'
+      );
+    }
   }
 
-  // 5. Deterministic inventory movement id + device_event_id
+  // 4. Guard against duplicate confirmed scan for this pick task.
+  // Allocation-backed batches use allocation identity; legacy batches
+  // preserve the existing line-level duplicate guard.
+  const existingScan = allocationBackedLine
+    ? await trx('pick_scan_log')
+        .where({
+          pick_batch_id: pickBatchId,
+          reservation_allocation_id: reservationAllocationId,
+          status: 'confirmed',
+        })
+        .first()
+    : await trx('pick_scan_log')
+        .where({
+          pick_batch_id: pickBatchId,
+          lasyncro_line_item_id: lasyncroLineItemId,
+          status: 'confirmed',
+        })
+        .first();
+
+  if (existingScan) {
+    throw new Error(
+      allocationBackedLine
+        ? `[PICK_SCAN] Reservation allocation already scanned: ${reservationAllocationId}`
+        : `[PICK_SCAN] Line item already scanned: ${lasyncroLineItemId}`
+    );
+  }
+
+  // 5. Deterministic inventory movement id + device_event_id.
+  // Allocation-backed tasks use allocation identity so split line items
+  // produce independent, idempotent sale movements.
+  const pickTaskIdentity = allocationBackedLine
+    ? reservationAllocationId!
+    : lasyncroLineItemId;
+
   const inventoryMovementId = uuidv5(
-    `${pickBatchId}:${lasyncroLineItemId}:inventory:sale`,
+    `${pickBatchId}:${pickTaskIdentity}:inventory:sale`,
     PICK_SCAN_NAMESPACE
   );
 
   const deviceEventId = uuidv5(
-    `${pickBatchId}:${lasyncroLineItemId}:sale`,
+    `${pickBatchId}:${pickTaskIdentity}:sale`,
     PICK_SCAN_NAMESPACE
   );
 
   const scannedAt = new Date();
 
   // 6. Write sale movement to inventory ledger (at-scan deduction)
-  await trx('inventory_movements')
+  const insertedSaleMovements = await trx('inventory_movements')
     .insert({
       lasyncro_inventory_movement_id: inventoryMovementId,
       lasyncro_variant_id: lasyncroVariantId,
@@ -150,19 +265,104 @@ export async function confirmPickScan(
       scan_source: scanSource,
       occurred_at: scannedAt,
       device_event_id: deviceEventId,
-      operator_id: scannedBy,        // traceability: operator who confirmed pick
-      triggered_by: 'pick_scan',     // traceability: source of movement
+      operator_id: scannedBy,
+      triggered_by: 'pick_scan',
     })
     .onConflict(['device_event_id'])
-    .ignore();
+    .ignore()
+    .returning('lasyncro_inventory_movement_id');
 
-  console.info('[PICK_SCAN_MOVEMENT_WRITTEN]', {
-    inventoryMovementId,
-    lasyncroVariantId,
-    quantityConfirmed,
-    shopId,
-    pickBatchId,
-  });
+    if (
+      allocationBackedLine &&
+      insertedSaleMovements.length !== 1
+    ) {
+      throw new Error(
+        '[PICK_SCAN] SALE_MOVEMENT_ALREADY_EXISTS'
+      );
+    }
+
+    if (allocationBackedLine) {
+      const reservationReleaseMovementId = uuidv5(
+        `${pickBatchId}:${reservationAllocationId}:inventory:reservation_release`,
+        PICK_SCAN_NAMESPACE
+      );
+
+      const reservationReleaseDeviceEventId = uuidv5(
+        `${pickBatchId}:${reservationAllocationId}:reservation_release`,
+        PICK_SCAN_NAMESPACE
+      );
+
+      const insertedReservationReleases =
+        await trx('inventory_movements')
+          .insert({
+            lasyncro_inventory_movement_id:
+              reservationReleaseMovementId,
+            lasyncro_variant_id: lasyncroVariantId,
+            shop_id: shopId,
+            movement_type: 'reservation_release',
+            quantity_delta: -quantityConfirmed,
+            location_code: locationCode,
+            reference_type: 'pick_reservation_allocation',
+            reference_id: reservationAllocationId!,
+            platform: 'wms',
+            scan_source: scanSource,
+            occurred_at: scannedAt,
+            device_event_id: reservationReleaseDeviceEventId,
+            operator_id: scannedBy,
+            triggered_by: 'pick_scan',
+          })
+          .onConflict([
+            'shop_id',
+            'reference_type',
+            'reference_id',
+            'lasyncro_variant_id',
+            'location_code',
+            'movement_type',
+          ])
+          .ignore()
+          .returning('lasyncro_inventory_movement_id');
+
+      if (insertedReservationReleases.length !== 1) {
+        throw new Error(
+          '[PICK_SCAN] RESERVATION_RELEASE_ALREADY_EXISTS'
+        );
+      }
+
+      const updatedTruthRows = await trx('inventory_truth')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: lasyncroVariantId,
+          location_code: locationCode,
+        })
+        .where('on_hand_quantity', '>=', quantityConfirmed)
+        .where('reserved_quantity', '>=', quantityConfirmed)
+        .update({
+          on_hand_quantity: trx.raw(
+            'on_hand_quantity - ?',
+            [quantityConfirmed]
+          ),
+          reserved_quantity: trx.raw(
+            'reserved_quantity - ?',
+            [quantityConfirmed]
+          ),
+          last_evaluated_at: scannedAt,
+          updated_at: scannedAt,
+        });
+
+      if (updatedTruthRows !== 1) {
+        throw new Error(
+          '[PICK_SCAN] INVENTORY_TRUTH_UPDATE_FAILED'
+        );
+      }
+    }
+
+    console.info('[PICK_SCAN_MOVEMENT_WRITTEN]', {
+      inventoryMovementId,
+      lasyncroVariantId,
+      quantityConfirmed,
+      shopId,
+      pickBatchId,
+    });
 
   // 7. Write to pick_scan_log
   const scanId = randomUUID();
@@ -173,6 +373,9 @@ export async function confirmPickScan(
     pick_batch_id: pickBatchId,
     lasyncro_line_item_id: lasyncroLineItemId,
     lasyncro_variant_id: lasyncroVariantId,
+    reservation_allocation_id: allocationBackedLine
+      ? reservationAllocationId!
+      : null,
     lasyncro_unit_id: lasyncroUnitId ?? null,
     location_code: locationCode,
     quantity_confirmed: quantityConfirmed,
@@ -201,23 +404,59 @@ export async function confirmPickScan(
     shopId,
   });
 
-  // 9. Transition line item warehouse status → picked
-  await trx('order_line_item_warehouse_status')
-    .insert({
-      lasyncro_line_item_id: lasyncroLineItemId,
-      lasyncro_order_id: lineItem.lasyncro_order_id,
-      shop_id: shopId,
-      status: 'picked',
-      status_updated_at: scannedAt,
-      created_at: scannedAt,
-      updated_at: scannedAt,
-    })
-    .onConflict(['lasyncro_line_item_id'])
-    .merge({
-      status: 'picked',
-      status_updated_at: scannedAt,
-      updated_at: scannedAt,
-    });
+  // 9. Transition line item warehouse status → picked.
+  //
+  // Legacy lines preserve the existing one-scan-per-line behavior.
+  // Allocation-backed lines become picked only after every persisted
+  // allocation for the line has a confirmed scan.
+  let shouldMarkLinePicked = true;
+
+  if (allocationBackedLine) {
+    const totalAllocationRow =
+      await trx('pick_reservation_allocations')
+        .where({
+          shop_id: shopId,
+          pick_batch_id: pickBatchId,
+          lasyncro_line_item_id: lasyncroLineItemId,
+        })
+        .count({ count: 'allocation_id' })
+        .first();
+
+    const confirmedAllocationRow =
+      await trx('pick_scan_log')
+        .where({
+          shop_id: shopId,
+          pick_batch_id: pickBatchId,
+          lasyncro_line_item_id: lasyncroLineItemId,
+          status: 'confirmed',
+        })
+        .whereNotNull('reservation_allocation_id')
+        .countDistinct({ count: 'reservation_allocation_id' })
+        .first();
+
+    shouldMarkLinePicked =
+      Number(confirmedAllocationRow?.count ?? 0) ===
+      Number(totalAllocationRow?.count ?? 0);
+  }
+
+  if (shouldMarkLinePicked) {
+    await trx('order_line_item_warehouse_status')
+      .insert({
+        lasyncro_line_item_id: lasyncroLineItemId,
+        lasyncro_order_id: lineItem.lasyncro_order_id,
+        shop_id: shopId,
+        status: 'picked',
+        status_updated_at: scannedAt,
+        created_at: scannedAt,
+        updated_at: scannedAt,
+      })
+      .onConflict(['lasyncro_line_item_id'])
+      .merge({
+        status: 'picked',
+        status_updated_at: scannedAt,
+        updated_at: scannedAt,
+      });
+    }
 
     // 10. Transition legacy inventory_unit_status → picked (pre-WM-46 compat)
   await trx('inventory_unit_status')
@@ -242,10 +481,34 @@ export async function confirmPickScan(
   // then remaining qty-1 stowed siblings from same receive_job_line_id
   // updated in one pass. current_location_code nulled — unit left the shelf.
   if (lasyncroUnitId) {
-    const scannedUnit = await trx('inventory_units')
-      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-      .select('receive_job_line_id')
-      .first();
+    const scannedUnitQuery = trx('inventory_units')
+      .where({
+        shop_id: shopId,
+        lasyncro_unit_id: lasyncroUnitId,
+      });
+
+    if (allocationBackedLine) {
+      scannedUnitQuery.andWhere({
+        lasyncro_variant_id: lasyncroVariantId,
+        current_location_code: locationCode,
+        status: 'stowed',
+      });
+    }
+
+    const scannedUnit = allocationBackedLine
+      ? await scannedUnitQuery
+          .forUpdate()
+          .select('receive_job_line_id')
+          .first()
+      : await scannedUnitQuery
+          .select('receive_job_line_id')
+          .first();
+
+    if (allocationBackedLine && !scannedUnit) {
+      throw new Error(
+        '[PICK_SCAN] INVENTORY_UNIT_MISMATCH'
+      );
+    }
 
     if (scannedUnit?.receive_job_line_id) {
       await trx('inventory_units')
@@ -263,6 +526,7 @@ export async function confirmPickScan(
             shop_id: shopId,
             lasyncro_variant_id: lasyncroVariantId,
             receive_job_line_id: scannedUnit.receive_job_line_id,
+            current_location_code: locationCode,
             status: 'stowed',
           })
           .whereNot({ lasyncro_unit_id: lasyncroUnitId })

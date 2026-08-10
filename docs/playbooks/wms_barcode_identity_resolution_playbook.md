@@ -220,3 +220,92 @@ upgrade path if shops need it to fire without a page visit.
   lower risk since `shopId` originates from a trusted JWT claim.
   Flagged for a future dedicated pass, not part of barcode resolution
   work.
+
+---
+
+## 9. Pick-specific physical identity semantics — INV-RES-01
+
+**Status:** ✅ LIVE — verified 2026-08-10
+
+The shared resolver contract remains unchanged:
+
+```text
+legacy barcode / SKU / external variant ID
+→ resolve variant
+→ may also return a legacy inventory_units candidate
+```
+
+However, the meaning of that candidate is different from the meaning
+of an explicit LSU scan.
+
+### Generic product barcode
+
+A generic identifier proves:
+
+```text
+"The scanned product resolves to this variant."
+```
+
+It does **not** prove:
+
+```text
+"This specific inventory unit was physically scanned."
+```
+
+`pickLegacyUnit()` is allowed to return any suitable tracked unit for
+legacy downstream compatibility. That unit can therefore be at a
+different physical location from the reservation allocation being
+picked.
+
+For the Pick workflow, the UI must therefore behave as:
+
+```text
+EAN / UPC / SKU / external barcode
+→ resolve expected variant
+→ reservation_allocation_id remains authoritative physical task
+→ do NOT forward resolver-returned lasyncro_unit_id
+```
+
+### Explicit LSU
+
+If the operator's actual scanned input begins with:
+
+```text
+LSU-
+```
+
+then the scan is explicit physical-unit evidence.
+
+Pick may forward:
+
+```text
+lasyncro_unit_id
+```
+
+and the backend verifies that unit against:
+
+```text
+shop
++ expected variant
++ status = stowed
++ exact reservation allocation location
+```
+
+A tracked unit from another location is rejected.
+
+### Locked rule
+
+For picking:
+
+```text
+generic product barcode = variant evidence
+LSU-* barcode            = physical-unit evidence
+reservation_allocation_id = reservation ownership evidence
+```
+
+These identities must not be conflated.
+
+The backend LSU location guard must remain strict. Caller semantics,
+not the location guard, are responsible for preventing arbitrary
+legacy resolver candidates from being treated as physically scanned
+units.

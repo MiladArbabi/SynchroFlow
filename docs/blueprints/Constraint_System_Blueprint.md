@@ -119,6 +119,67 @@ NEVER:
   - `oversell`
   - `allocation_pending`
 
+#### Inventory demand aggregation invariant — corrected 2026-08-10 / INV-RES-01 supporting fix
+
+Order demand and physical inventory have different cardinalities.
+
+An order may contain one demand row for a variant while
+`inventory_truth` contains several rows for that same variant because
+stock exists at multiple physical locations.
+
+Demand must therefore be aggregated **before** joining location-level
+inventory.
+
+Canonical evaluation order:
+
+```text
+order_revenue_units
+→ calculate remaining demand
+→ aggregate remaining demand by lasyncro_variant_id
+→ one demand row per variant
+→ join inventory_truth
+→ aggregate pickable available inventory across active locations
+→ compare supply against demand
+```
+
+Forbidden pattern:
+
+```text
+raw demand rows
+→ join every inventory_truth location
+→ SUM(demand after join)
+```
+
+That pattern multiplies required quantity by inventory-location
+cardinality.
+
+Example:
+
+```text
+real remaining demand = 6
+matching inventory_truth rows = 3
+
+incorrect post-join SUM:
+6 + 6 + 6 = 18
+```
+
+The required quantity must remain:
+
+```text
+6
+```
+
+regardless of whether the stock exists in one location or ten.
+
+**Invariant:**
+
+> The number of physical inventory locations must never change an
+> order's required quantity.
+
+This is particularly important for split-location reservation because
+multi-location stock is a valid fulfillment source and must not create
+a false `oversell` constraint.
+
 ---
 
 ### Customer

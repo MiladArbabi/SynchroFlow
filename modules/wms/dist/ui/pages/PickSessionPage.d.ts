@@ -30,6 +30,8 @@ export interface LineItem {
     lasyncro_line_item_id: string;
     lasyncro_variant_id: string;
     lasyncro_order_id: string;
+    /** INV-RES-01: exact physical reservation task; null on legacy batches. */
+    reservation_allocation_id?: string | null;
     sku: string | null;
     product_title: string;
     variant_title: string | null;
@@ -43,6 +45,8 @@ export interface LineItem {
 export interface ConfirmScanParams {
     lasyncro_line_item_id: string;
     lasyncro_variant_id: string;
+    /** INV-RES-01: exact reservation task; undefined on legacy batches. */
+    reservation_allocation_id?: string;
     location_code: string;
     quantity_confirmed: number;
     scan_source?: 'camera' | 'nfc' | 'usb' | 'bt' | 'manual';

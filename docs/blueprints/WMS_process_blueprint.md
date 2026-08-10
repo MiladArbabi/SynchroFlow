@@ -245,35 +245,218 @@ All accepted units barcoded and confirmed → receive job transitions to `stow_r
 | `stow_auto_assign`                 | Auto‑assign stow tasks to specific operator      | false     |
 | `location_suggestion_mode`         | `suggest` or `pre_select`                        | `suggest` |
 
+### 2.3 BATCH ASSEMBLY & RELEASE  [LIVE — INV-RES-01 ✅ 2026-08-10]  
+
+✅ Manual and auto-release implemented. `pick_batches` + `pick_batch_orders` tables live.  
+✅ INV-RES-01 adds persisted physical reservation ownership through `pick_reservation_allocations`.
+
+- Full orders only — no split orders across batches.
+- A single order line **may** be split across multiple physical inventory locations when one location cannot satisfy the full quantity.
+- Assembly strategy: `fifo` or `optimized` (location-grouped).
+- Release triggers: manual (owner/admin) or auto (worker polling).
+- On release: alert `wms:batch:released:{batchId}` fired, push dispatched.
+
+**Reservation model — INV-RES-01**
+
+The batch is the workflow container; it is not the final owner of reserved inventory.
+
+Reservation ownership is persisted as:
+
+```text
+batch
+  → order
+    → order line
+      → variant
+        → location
+          → quantity
+```
+
+`reserveBatchInventory()` still computes the authoritative aggregate allocation of inventory by variant + location and writes the normal `reservation_hold` ledger movements.
+
+INV-RES-01 additionally maps that aggregate reservation back to its owning order lines and persists each physical reservation task in:
+
+```text
+pick_reservation_allocations
+```
+
+Each row records:
+
+```text
+allocation_id
+shop_id
+pick_batch_id
+lasyncro_order_id
+lasyncro_line_item_id
+lasyncro_variant_id
+location_code
+quantity
+```
+
+This means one commerce/order line may legally produce multiple physical pick tasks.
+
+Example:
+
+```text
+Order line quantity = 6
+
+A-4 available = 3
+C-1 available = 5
+
+Persisted physical allocations:
+
+A-4 → qty 3
+C-1 → qty 3
+```
+
+The aggregate reservation remains represented in `inventory_movements`; `pick_reservation_allocations` provides deterministic physical ownership and settlement identity.
+
 ---
 
-### 2.3 BATCH ASSEMBLY & RELEASE  [LIVE]  
+### 2.4 PICK EXECUTION  [LIVE — INV-RES-01 ✅ 2026-08-10]  
 
-✅ Manual and auto‑release implemented. `pick_batches` + `pick_batch_orders` tables live.
-
-- Full orders only — no split orders across batches  
-- Assembly strategy: `fifo` or `optimized` (location‑grouped)  
-- Release triggers: manual (owner/admin) or auto (worker polling)  
-- On release: alert `wms:batch:released:{batchId}` fired, push dispatched  
-
----
-
-### 2.4 PICK EXECUTION  [LIVE]  
-
-✅ Full pick session implemented. Offline resilience via IndexedDB + Background Sync. Pick exceptions live.
+✅ Full pick session implemented.  
+✅ Split-location reservation tasks implemented and runtime-verified.  
+✅ Allocation-backed pick settlement is atomic and location-specific.
 
 **Pick Session Lifecycle**  
 `pending → picking → pick_complete`
 
-**Pick Flow — per line item**  
+### Pick task contract
 
-- Operator arrives at location shown on screen  
-- Optional: scans location barcode to confirm correct bin (WM‑28, configurable)  
-- Scans product barcode — camera or manual input  
-- **Match** → green flash → **Confirm Pick** → `pick_scan_log` written, `inventory_movements` sale delta written  
-- **Mismatch** → full‑screen red flash → auto‑return after 2.5s → re‑scan  
-- **Problem** → exception dialog → `pick_exceptions` written → alert fired → push to owner/admin  
-- **Offline**: scans queued in IndexedDB → Background Sync flushes on reconnect → `device_event_id` prevents double‑write  
+For batches containing `pick_reservation_allocations`, the picker does not receive one synthetic task per order line.
+
+The read model emits one unresolved physical task per reservation allocation:
+
+```text
+reservation_allocation_id
++ order line
++ variant
++ exact location
++ exact quantity
+```
+
+Historical batches with zero reservation-allocation rows continue through the legacy line-item read path.
+
+### Pick Flow — per physical allocation
+
+1. Operator arrives at the exact allocation location.
+2. Operator scans/confirms the location.
+3. Operator scans the expected product.
+4. For quantities greater than one, operator confirms the required quantity.
+5. UI submits the exact `reservation_allocation_id`.
+6. Backend validates allocation identity and physical inventory before mutation.
+7. Successful confirmation atomically settles inventory and reservation truth.
+
+### Barcode identity rule
+
+Generic product identifiers such as:
+
+```text
+EAN
+UPC
+SKU
+Shopify/external variant barcode
+```
+
+prove **variant identity** only.
+
+They do not prove that a particular `inventory_units` row was physically scanned.
+
+Therefore a generic product scan does not forward an arbitrary resolver-returned `lasyncro_unit_id`.
+
+Only an explicit:
+
+```text
+LSU-*
+```
+
+scan is treated as tracked physical-unit evidence.
+
+When an LSU is explicitly supplied, the backend requires that the unit:
+
+- matches the expected variant;
+- is `stowed`;
+- is currently at the exact reservation-allocation location.
+
+### Atomic allocation settlement
+
+A successful allocation-backed pick transaction writes:
+
+```text
+confirmed allocation scan
+        ↓
+sale inventory movement
+        ↓
+reservation_release inventory movement
+        ↓
+inventory_truth.on_hand_quantity decrement
+        ↓
+inventory_truth.reserved_quantity decrement
+        ↓
+pick_scan_log.reservation_allocation_id
+```
+
+The `sale` and `reservation_release` movements use deterministic identities derived from the reservation allocation so split tasks remain independently replay-safe.
+
+### Line completion
+
+For allocation-backed lines:
+
+```text
+confirmed allocation count
+==
+persisted allocation count
+```
+
+is required before `order_line_item_warehouse_status.status` becomes:
+
+```text
+picked
+```
+
+Therefore one confirmed allocation of a two-location line does **not** mark the line picked.
+
+### Batch completion
+
+Allocation-backed batches complete according to physical reservation-task cardinality:
+
+```text
+required =
+COUNT(pick_reservation_allocations)
+
+resolved =
+COUNT(DISTINCT confirmed reservation_allocation_id)
+```
+
+The batch cannot transition to `pick_complete` while:
+
+```text
+resolved < required
+```
+
+Historical zero-allocation batches preserve the legacy completion contract:
+
+```text
+confirmed scans
++ distinct pick exception lines
+>= total_line_items
+```
+
+### Allocation-backed exceptions
+
+Pick exceptions against allocation-backed lines currently fail closed.
+
+The endpoint returns HTTP 409 and does not create a reservation-resolving exception.
+
+This is intentional until an allocation-aware exception workflow explicitly defines:
+
+```text
+reservation release
+or reassignment
+or replacement allocation
+```
+
+An exception must never silently satisfy the allocation completion guard.
 
 ---
 

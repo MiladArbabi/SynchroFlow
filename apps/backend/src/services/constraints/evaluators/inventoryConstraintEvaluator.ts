@@ -38,28 +38,51 @@ export async function evaluateInventoryConstraint(
    *
    * shop_id scoping via RLS — SET LOCAL must be called by caller.
    */
-  const rows = await trx('order_revenue_units as ru')
+  const demandByVariant = trx('order_revenue_units')
+    .where('lasyncro_order_id', orderId)
+    .select(
+      'lasyncro_variant_id',
+      trx.raw(
+        'SUM(quantity - fulfilled_quantity) as remaining_quantity'
+      )
+    )
+    .groupBy('lasyncro_variant_id')
+    .as('demand');
+
+  const rows = await trx
+    .from(demandByVariant)
     .leftJoin('inventory_truth as it', function () {
-      this.on('ru.lasyncro_variant_id', '=', 'it.lasyncro_variant_id')
-          .andOn('it.shop_id', '=', trx.raw('?', [shopId]));
+      this.on(
+        'demand.lasyncro_variant_id',
+        '=',
+        'it.lasyncro_variant_id'
+      ).andOn('it.shop_id', '=', trx.raw('?', [shopId]));
     })
     .leftJoin('warehouse_locations as wl', function () {
       this.on('wl.location_code', '=', 'it.location_code')
         .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
         .andOnVal('wl.active', true)
-        .andOn(trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse']));
+        .andOn(
+          trx.raw('wl.type IN (?, ?)', ['bin', 'warehouse'])
+        );
     })
-    .where('ru.lasyncro_order_id', orderId)
     .select(
-      'ru.lasyncro_variant_id',
-      trx.raw('SUM(ru.quantity - ru.fulfilled_quantity) as remaining_quantity'),
-      /*
-       * Sum available_quantity across all active bins.
-       * COALESCE to 0 when no bin stock exists — triggers constraint.
+      'demand.lasyncro_variant_id',
+      'demand.remaining_quantity',
+      /**
+       * Sum pickable availability across all active bin and warehouse
+       * locations. Demand is already one row per variant, so joining
+       * location-level inventory cannot multiply required quantity.
        */
-      trx.raw('COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type IN (?, ?)), 0) as available_quantity', ['bin', 'warehouse'])
+      trx.raw(
+        'COALESCE(SUM(it.available_quantity) FILTER (WHERE wl.type IN (?, ?)), 0) as available_quantity',
+        ['bin', 'warehouse']
+      )
     )
-    .groupBy('ru.lasyncro_variant_id');
+    .groupBy(
+      'demand.lasyncro_variant_id',
+      'demand.remaining_quantity'
+    );
 
     /* isOversell derived per-variant below — no aggregate needed */
 

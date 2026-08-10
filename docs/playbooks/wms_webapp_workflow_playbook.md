@@ -375,18 +375,70 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 - **Session key:** `?stowTaskId=` in URL
 - **Known gap:** `ScanInput` already implemented. Brief + Summary screens need adding.
 
-### Pick *(complete — June 1, 2026)*
+### Pick *(allocation-backed — INV-RES-01 complete 2026-08-10)*
 
-- **Brief:** batch summary (line item count, total units), optimized route instruction, Start Picking CTA
-- **Inspect:** single-item-per-screen, two-scan (or three-scan for qty > 1) pattern:
-  - `location_scan` — ScanInput matches against `location_code` (client-side, accepts `LOC-A-1-3-7` or `A-1-3-7`)
-  - `product_scan` — ScanInput resolved via `POST /api/v1/wms/barcode/resolve`
-  - `qty_confirm` — numeric input, only shown when `line_item.quantity > 1`, operator counts and confirms
+- **Brief:** batch summary (line item count, total units), optimized route instruction, Start Picking CTA.
+
+- **Inspect:** single physical reservation task per screen. A commerce line may appear more than once when its reservation spans multiple locations.
+
+- **Physical task identity:** allocation-aware line items expose:
+
+  ```ts
+  reservation_allocation_id?: string | null
+  ```
+
+  Allocation-backed tasks always carry the exact allocation ID. Legacy batches may omit it.
+
+- **Scan sequence:**
+  - `location_scan` — ScanInput matches the task's exact `location_code`.
+  - `product_scan` — ScanInput resolves through `POST /api/v1/wms/barcode/resolve`.
+  - `qty_confirm` — numeric confirmation when allocation quantity > 1.
+
+- **Generic product barcode rule:** EAN / UPC / SKU / external variant scans verify variant identity but do not forward an arbitrary resolver-returned `lasyncro_unit_id`.
+
+- **Explicit LSU rule:** only when the actual scanned value begins with `LSU-` does Pick forward `lasyncro_unit_id`.
+
+- **Pick submission contract:**
+
+  ```text
+  lasyncro_line_item_id
+  lasyncro_variant_id
+  reservation_allocation_id
+  location_code
+  quantity_confirmed
+  scan_source
+  lasyncro_unit_id?   ← explicit LSU scans only
+  ```
+
+- **Split-line behavior:** one order line may produce multiple physical tasks:
+
+  ```text
+  line qty 6
+
+  allocation A
+    A-4
+    qty 3
+
+  allocation B
+    C-1
+    qty 3
+  ```
+
+  The UI treats these as two independent tasks.
+
 - **Track UI:** 3-point animated progress track. Active node pulses orange. Confirmed node solid green. Inactive node faded grey. Line fills left→right as steps complete.
-- **Summary:** per-line results (picked vs exception), exception count warning, Confirm Pick Complete CTA
-- **Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`
-- **Exception:** full taxonomy (item_missing, short_pick, defect, packaging_damage, wrong_item, wrong_variant, wrong_quantity, barcode_mismatch, other). Problem Center called on every exception alongside `/batch/:id/exception`.
-- **Backend API:** `GET /api/v1/wms/batch/:id/line-items` returns `product_title` (from `products` join) + `variant_title` (from `order_line_items.title`). Items pre-sorted by `warehouse_locations.position_x/y` for optimized pick route.
+
+- **Summary:** results reflect physical task execution. Backend remains authoritative for completion.
+
+- **Completion contract:** for allocation-backed batches, `POST /api/v1/wms/batch/:id/pick-complete` requires every persisted reservation allocation to have a confirmed scan. Order-line cardinality alone is not sufficient.
+
+- **Legacy compatibility:** batches with zero `pick_reservation_allocations` retain the historical line-based completion behavior.
+
+- **Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`.
+
+- **Exception behavior — allocation-backed tasks:** current pick exceptions fail closed with HTTP 409 until reservation-aware exception settlement exists. They must not satisfy allocation completion or silently release held reservation quantity.
+
+- **Backend API:** `GET /api/v1/wms/batch/:id/line-items` emits allocation-backed physical tasks when allocations exist; legacy batches continue through the historical line-item path. Allocation tasks are ordered by warehouse location coordinates for the optimized route.
 
 ### Pack/Ship *(complete — June 2, 2026)*
 

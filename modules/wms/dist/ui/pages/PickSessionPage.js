@@ -118,9 +118,13 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
         setScanProcessing(true);
         setScanError(null);
         try {
-            const result = await onResolveBarcode(value.trim());
+            const scannedValue = value.trim();
+            const result = await onResolveBarcode(scannedValue);
             if (result?.lasyncro_variant_id === currentItem.lasyncro_variant_id) {
-                resolvedUnitIdRef.current = result.lasyncro_unit_id;
+                const resolvedUnitId = scannedValue.startsWith('LSU-')
+                    ? result.lasyncro_unit_id
+                    : undefined;
+                resolvedUnitIdRef.current = resolvedUnitId;
                 if (currentItem.quantity > 1) {
                     setPhase('qty_confirm');
                 }
@@ -128,10 +132,11 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
                     await onConfirmScan({
                         lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
                         lasyncro_variant_id: currentItem.lasyncro_variant_id,
+                        reservation_allocation_id: currentItem.reservation_allocation_id ?? undefined,
                         location_code: currentItem.location_code,
                         quantity_confirmed: currentItem.quantity,
                         scan_source: detectSourceAndReset(),
-                        lasyncro_unit_id: result.lasyncro_unit_id,
+                        lasyncro_unit_id: resolvedUnitId,
                     });
                     setPickResults(prev => [...prev, { lineItem: currentItem, status: 'picked' }]);
                     setTimeout(advanceOrSummary, 400);
@@ -166,6 +171,7 @@ export default function PickSessionPage({ pickBatchId, lineItems, onComplete, on
         onConfirmScan({
             lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
             lasyncro_variant_id: currentItem.lasyncro_variant_id,
+            reservation_allocation_id: currentItem.reservation_allocation_id ?? undefined,
             location_code: currentItem.location_code,
             quantity_confirmed: currentItem.quantity,
             scan_source: detectSourceAndReset(),

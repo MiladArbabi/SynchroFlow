@@ -32,6 +32,7 @@ export interface PickBatchLineItem {
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
   lasyncro_order_id: string;
+  reservation_allocation_id?: string | null;
   sku: string | null;
   title: string;
   quantity: number;

@@ -106,6 +106,152 @@ export const httpGetBatchLineItems = async (req: Request, res: Response) => {
        * location_code sourced from inventory_truth if available,
        * falls back to WH-{shopId}-ROOT default.
        */
+      /**
+       * INV-RES-01 — allocation-backed pick tasks.
+       *
+       * A persisted reservation allocation is the physical picker contract:
+       * one exact line + location + quantity.
+       *
+       * Historical batches without allocations continue through the legacy
+       * query below.
+       */
+      const allocationCountRow =
+        await trx('pick_reservation_allocations')
+          .where({
+            shop_id: shopId,
+            pick_batch_id: batchId,
+          })
+          .count<{ count: string }>('* as count')
+          .first();
+
+      const allocationCount =
+        Number(allocationCountRow?.count ?? 0);
+
+      if (allocationCount > 0) {
+        return trx('pick_reservation_allocations as pra')
+          .join(
+            'order_line_items as oli',
+            'oli.lasyncro_line_item_id',
+            'pra.lasyncro_line_item_id'
+          )
+          .leftJoin(
+            'products as p',
+            'p.lasyncro_product_id',
+            'oli.lasyncro_product_id'
+          )
+          .leftJoin(
+            'variants as v',
+            'v.lasyncro_variant_id',
+            'pra.lasyncro_variant_id'
+          )
+          .leftJoin(
+            trx.raw(`
+              (
+                SELECT
+                  lasyncro_variant_id,
+                  current_location_code AS location_code,
+                  array_agg(
+                    lasyncro_unit_id
+                    ORDER BY received_at
+                  ) FILTER (
+                    WHERE status = 'stowed'
+                  ) AS unit_ids
+                FROM inventory_units
+                WHERE shop_id = ?
+                GROUP BY
+                  lasyncro_variant_id,
+                  current_location_code
+              ) AS iu
+            `, [shopId]),
+            function () {
+              this
+                .on(
+                  'iu.lasyncro_variant_id',
+                  '=',
+                  'pra.lasyncro_variant_id'
+                )
+                .andOn(
+                  'iu.location_code',
+                  '=',
+                  'pra.location_code'
+                );
+            }
+          )
+          .leftJoin(
+            'pick_scan_log as psl',
+            function () {
+              this
+                .on(
+                  'psl.reservation_allocation_id',
+                  '=',
+                  'pra.allocation_id'
+                )
+                .andOnVal(
+                  'psl.status',
+                  'confirmed'
+                );
+            }
+          )
+          .leftJoin(
+            'pick_exceptions as pe',
+            function () {
+              this
+                .on(
+                  'pe.reservation_allocation_id',
+                  '=',
+                  'pra.allocation_id'
+                )
+                .andOnVal(
+                  'pe.stage',
+                  'pick'
+                );
+            }
+          )
+          .leftJoin(
+            'warehouse_locations as wl',
+            function () {
+              this
+                .on(
+                  'wl.location_code',
+                  '=',
+                  'pra.location_code'
+                )
+                .andOnVal(
+                  'wl.shop_id',
+                  shopId
+                );
+            }
+          )
+          .where({
+            'pra.shop_id': shopId,
+            'pra.pick_batch_id': batchId,
+          })
+          .whereNull('psl.scan_id')
+          .whereNull('pe.pick_exception_id')
+          .orderByRaw(`
+            COALESCE(wl.position_x, 9999) ASC,
+            COALESCE(wl.position_y, 9999) ASC,
+            pra.location_code ASC,
+            pra.allocation_id ASC
+          `)
+          .select(
+            'pra.allocation_id as reservation_allocation_id',
+            'pra.lasyncro_line_item_id',
+            'pra.lasyncro_variant_id',
+            'pra.lasyncro_order_id',
+            'oli.sku',
+            trx.raw(
+              `COALESCE(p.title, 'Unknown product') as product_title`
+            ),
+            'v.title as variant_title',
+            'pra.quantity',
+            'v.image_url',
+            'pra.location_code',
+            'iu.unit_ids'
+          );
+      }
+
+      // Legacy pre-INV-RES-01 batch path.
       return trx('order_line_items as oli')
         .join('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'oli.lasyncro_order_id')
         .leftJoin(
@@ -416,31 +562,77 @@ export const httpCompletePick = async (req: Request, res: Response) => {
       if (batch.status !== 'picking') throw new Error(`BATCH_NOT_IN_PICKING:${batch.status}`);
       if (batch.picked_by !== userId) throw new Error('BATCH_NOT_OWNED_BY_OPERATOR');
 
-      /**
-       * COMPLETION GUARD
-       * ----------------
-       * All line items must have a confirmed scan before
-       * pick_complete is allowed. Prevents partial pick acknowledgement.
-       * Count exceptions as a confirmed pick towards total picked items.
-       */
-      const confirmedScans = await trx('pick_scan_log')
-        .where({ pick_batch_id: batchId, status: 'confirmed' })
-        .count<{ count: string }>('scan_id as count')
-        .first();
-      const scannedCount = Number(confirmedScans?.count ?? 0);
+    /**
+     * COMPLETION GUARD
+     * ----------------
+     * Allocation-backed batches complete by physical reservation task.
+     * Legacy batches preserve the existing line-based completion rule.
+     */
+    const confirmedScans = await trx('pick_scan_log')
+      .where({
+        shop_id: shopId,
+        pick_batch_id: batchId,
+        status: 'confirmed',
+      })
+      .count<{ count: string }>('scan_id as count')
+      .first();
 
-      // Exceptions count as resolved line items — operator deliberately skipped them
+    const scannedCount = Number(confirmedScans?.count ?? 0);
+
+    const allocationCountRow =
+      await trx('pick_reservation_allocations')
+        .where({
+          shop_id: shopId,
+          pick_batch_id: batchId,
+        })
+        .count<{ count: string }>('allocation_id as count')
+        .first();
+
+    const allocationCount =
+      Number(allocationCountRow?.count ?? 0);
+
+    let resolvedCount: number;
+    let requiredCount: number;
+
+    if (allocationCount > 0) {
+      const confirmedAllocationScans =
+        await trx('pick_scan_log')
+          .where({
+            shop_id: shopId,
+            pick_batch_id: batchId,
+            status: 'confirmed',
+          })
+          .whereNotNull('reservation_allocation_id')
+          .countDistinct<{ count: string }>(
+            'reservation_allocation_id as count'
+          )
+          .first();
+
+      resolvedCount =
+        Number(confirmedAllocationScans?.count ?? 0);
+      requiredCount = allocationCount;
+    } else {
+      // Legacy batches: exceptions count as deliberately resolved lines.
       const exceptionCount = await trx('pick_exceptions')
-        .where({ pick_batch_id: batchId })
-        .countDistinct<{ count: string }>('lasyncro_line_item_id as count')
+        .where({
+          shop_id: shopId,
+          pick_batch_id: batchId,
+        })
+        .countDistinct<{ count: string }>(
+          'lasyncro_line_item_id as count'
+        )
         .first();
-      const resolvedCount = scannedCount + Number(exceptionCount?.count ?? 0);
 
-      if (resolvedCount < batch.total_line_items) {
-        throw new Error(
-          `INCOMPLETE_PICK:${resolvedCount}/${batch.total_line_items}`
-        );
-      }
+      resolvedCount =
+        scannedCount + Number(exceptionCount?.count ?? 0);
+      requiredCount = batch.total_line_items;
+    }
+
+    if (resolvedCount < requiredCount) {
+      throw new Error(
+        `INCOMPLETE_PICK:${resolvedCount}/${requiredCount}`
+      );
+    }
 
       const now = new Date();
 
@@ -1758,6 +1950,21 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         throw new Error(`BATCH_NOT_ACTIVE:${batch.status}`);
       }
 
+      if (stage === 'pick') {
+        const allocationBackedLine =
+          await trx('pick_reservation_allocations')
+            .where({
+              shop_id: shopId,
+              pick_batch_id: batchId,
+              lasyncro_line_item_id,
+            })
+            .first('allocation_id');
+
+        if (allocationBackedLine) {
+          throw new Error('ALLOCATION_PICK_EXCEPTION_NOT_READY');
+        }
+      }
+
       const { randomUUID } = await import('crypto');
       const pickExceptionId = randomUUID();
 
@@ -1805,6 +2012,13 @@ export const httpReportPickException = async (req: Request, res: Response) => {
     }
     if (message.startsWith('BATCH_NOT_ACTIVE')) {
       return res.status(409).json({ error: `Batch is not active: ${message.split(':')[1]}` });
+    }
+
+    if (message === 'ALLOCATION_PICK_EXCEPTION_NOT_READY') {
+      return res.status(409).json({
+        error:
+          'Allocation-backed pick exceptions are temporarily blocked until reservation settlement is enabled.',
+      });
     }
 
     console.error('[WMS_EXCEPTION_REPORT_FAILED]', { shopId, userId, batchId, error: message });
@@ -1857,6 +2071,7 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     pick_batch_id,
     lasyncro_line_item_id,
     lasyncro_variant_id,
+    reservation_allocation_id,
     location_code,
     quantity_confirmed,
     scan_source, // optional: 'camera' | 'usb' | 'bt' | 'manual' — defaults to 'camera' in service
@@ -1883,6 +2098,10 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
         pickBatchId: pick_batch_id,
         lasyncroLineItemId: lasyncro_line_item_id,
         lasyncroVariantId: lasyncro_variant_id,
+        reservationAllocationId:
+          typeof reservation_allocation_id === 'string'
+            ? reservation_allocation_id
+            : undefined,
         locationCode: location_code,
         quantityConfirmed: quantity_confirmed,
         scannedBy: userId,
@@ -1896,10 +2115,121 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
     });
 
     return res.status(201).json(result);
-  } catch (error) {
+    } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+
+    if (
+      message.includes(
+        'RESERVATION_ALLOCATION_REQUIRED'
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'reservation_allocation_id is required for allocation-backed picking.',
+      });
+    }
+
+    if (
+      message.includes(
+        'RESERVATION_ALLOCATION_MISMATCH'
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'reservation_allocation_id does not match the requested pick task.',
+      });
+    }
+
+    if (
+      message.includes(
+        'INVENTORY_UNIT_MISMATCH'
+      )
+    ) {
+      return res.status(400).json({
+        error:
+          'lasyncro_unit_id does not match the requested pick task.',
+      });
+    }
+
+    if (
+      message.includes(
+        'INVENTORY_TRUTH_NOT_FOUND'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'Inventory state for this pick location has changed. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (
+      message.includes(
+        'INSUFFICIENT_ON_HAND'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'Not enough stock remains at this location for the requested pick. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (
+      message.includes(
+        'INSUFFICIENT_RESERVED'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'This pick is no longer fully reserved. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (
+      message.includes(
+        'SALE_MOVEMENT_ALREADY_EXISTS'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'This pick may already have been recorded. Refresh the pick task before trying again.',
+      });
+    }
+
+    if (
+      message.includes(
+        'RESERVATION_RELEASE_ALREADY_EXISTS'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'This pick reservation may already have been consumed. Refresh the pick task before trying again.',
+      });
+    }
+
+    if (
+      message.includes(
+        'INVENTORY_TRUTH_UPDATE_FAILED'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'Inventory changed while this pick was being confirmed. Refresh the pick task before trying again.',
+      });
+    }
+
+    if (
+      message.includes(
+        'ALLOCATION_PICK_SCAN_NOT_READY'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'Allocation-backed picking is temporarily blocked until atomic reservation consumption is enabled.',
+      });
+    }
+
     console.error('[WMS_PICK_SCAN_FAILED]', { shopId, userId, error: message });
-    return res.status(500).json({ error: `Pick scan failed: ${message}` });
+    return res.status(500).json({ error: `Pick scan failed: ${message}`});
   }
 };
 
