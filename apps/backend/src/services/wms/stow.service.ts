@@ -161,81 +161,95 @@ export async function confirmStow(
   if (!task.location_code) throw new Error(`[STOW_CONFIRM] Cannot confirm stow: location_code not assigned to task ${stowTaskId}`);
   if (task.claimed_by !== claimedBy) throw new Error('[STOW_CONFIRM] Task owned by different operator');
 
-  const completedAt = new Date();
-  const qty = quantityPlaced ?? task.quantity; // support partial stow
+    const completedAt = new Date();
+    const qty = quantityPlaced ?? task.quantity; // support partial stow
 
-  // INV-BLOCK-11: problem-center re-stow is a true problem-bin → bin transfer.
-  // Other stow triggers retain the existing LSU/root source resolution.
-  let sourceLocation = `WH-${shopId}-ROOT`;
+    // INV-BLOCK-04:
+    // - return_restock is an inventory credit: no warehouse source is debited.
+    // - all other current stow paths are transfers and must conserve stock.
+    const isInventoryCredit = task.trigger === 'return_restock';
 
-  if (task.trigger === 'problem_center') {
-    const sourceTask = await trx('problem_center_tasks')
-      .where({
-        problem_task_id: task.source_task_id,
-        shop_id: shopId,
-      })
-      .select('problem_bin_location')
-      .first();
+    let sourceLocation: string | null = isInventoryCredit
+      ? null
+      : `WH-${shopId}-ROOT`;
 
-    if (!sourceTask?.problem_bin_location) {
-      throw new Error(`[STOW_CONFIRM] Problem-center source location missing: ${stowTaskId}`);
+    if (task.trigger === 'problem_center') {
+      const sourceTask = await trx('problem_center_tasks')
+        .where({
+          problem_task_id: task.source_task_id,
+          shop_id: shopId,
+        })
+        .select('problem_bin_location')
+        .first();
+
+      if (!sourceTask?.problem_bin_location) {
+        throw new Error(`[STOW_CONFIRM] Problem-center source location missing: ${stowTaskId}`);
+      }
+
+      sourceLocation = sourceTask.problem_bin_location;
+
+      if (sourceLocation === task.location_code) {
+        throw new Error('[STOW_CONFIRM] Re-stow source and destination must differ');
+      }
+
+      const destination = await trx('warehouse_locations')
+        .where({
+          shop_id: shopId,
+          location_code: task.location_code,
+          active: true,
+          type: 'bin',
+        })
+        .first('location_code');
+
+      if (!destination) {
+        throw new Error('[STOW_CONFIRM] Re-stow destination is not an active bin');
+      }
+    } else if (!isInventoryCredit && lasyncroUnitId) {
+      const unitRow = await trx('inventory_units')
+        .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+        .select('current_location_code')
+        .first();
+
+      if (!unitRow?.current_location_code) {
+        throw new Error(
+          `[STOW_CONFIRM] Source location missing for scanned unit ${lasyncroUnitId}`
+        );
+      }
+
+      sourceLocation = unitRow.current_location_code;
     }
 
-    sourceLocation = sourceTask.problem_bin_location;
+    // Transfer stows must debit the complete quantity atomically.
+    // The guarded UPDATE prevents two concurrent confirmations from both
+    // consuming the same source stock and removes the old GREATEST(0, ...)
+    // under-debit behaviour.
+    if (!isInventoryCredit) {
+      if (!sourceLocation) {
+        throw new Error(`[STOW_CONFIRM] Source location missing for transfer ${stowTaskId}`);
+      }
 
-    if (sourceLocation === task.location_code) {
-      throw new Error('[STOW_CONFIRM] Re-stow source and destination must differ');
+      const sourceUpdated = await trx('inventory_truth')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          location_code: sourceLocation,
+        })
+        .where('on_hand_quantity', '>=', qty)
+        .where('available_quantity', '>=', qty)
+        .update({
+          on_hand_quantity: trx.raw('on_hand_quantity - ?', [qty]),
+          available_quantity: trx.raw('available_quantity - ?', [qty]),
+          last_evaluated_at: completedAt,
+          updated_at: completedAt,
+        });
+
+      if (sourceUpdated !== 1) {
+        throw new Error(
+          `[STOW_CONFIRM] Insufficient source stock at ${sourceLocation}`
+        );
+      }
     }
-
-    const destination = await trx('warehouse_locations')
-      .where({
-        shop_id: shopId,
-        location_code: task.location_code,
-        active: true,
-        type: 'bin',
-      })
-      .first('location_code');
-
-    if (!destination) {
-      throw new Error('[STOW_CONFIRM] Re-stow destination is not an active bin');
-    }
-
-    const sourceStock = await trx('inventory_truth')
-      .where({
-        shop_id: shopId,
-        lasyncro_variant_id: task.lasyncro_variant_id,
-        location_code: sourceLocation,
-      })
-      .select('on_hand_quantity')
-      .first();
-
-    if (!sourceStock || Number(sourceStock.on_hand_quantity) < qty) {
-      throw new Error(`[STOW_CONFIRM] Insufficient stock at problem source ${sourceLocation}`);
-    }
-  } else if (lasyncroUnitId) {
-    const unitRow = await trx('inventory_units')
-      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-      .select('current_location_code')
-      .first();
-
-    sourceLocation = unitRow?.current_location_code ?? `WH-${shopId}-ROOT`;
-  }
-
-  // 2a. Decrement source location in inventory_truth
-  await trx('inventory_truth')
-    .where({
-      shop_id: shopId,
-      lasyncro_variant_id: task.lasyncro_variant_id,
-      location_code: sourceLocation,
-    })
-    .update({
-      on_hand_quantity: trx.raw('GREATEST(0, on_hand_quantity - ?)', [qty]),
-      available_quantity: trx.raw('GREATEST(0, available_quantity - ?)', [qty]),
-      last_evaluated_at: completedAt,
-      updated_at: completedAt,
-    });
-
-  // 2b. Upsert destination bin in inventory_truth
+    
   await trx('inventory_truth')
     .insert({
       shop_id: shopId,
@@ -254,42 +268,67 @@ export async function confirmStow(
       last_evaluated_at: completedAt,
       updated_at: completedAt,
     });
+  
+    console.info(
+    isInventoryCredit ? '[STOW_INVENTORY_CREDIT]' : '[STOW_LOCATION_TRANSFER]',
+    {
+      lasyncroVariantId: task.lasyncro_variant_id,
+      quantity: qty,
+      from: sourceLocation,
+      to: task.location_code,
+      shopId,
+    }
+  );
 
-  console.info('[STOW_LOCATION_TRANSFER]', {
-    lasyncroVariantId: task.lasyncro_variant_id,
-    quantity: qty,
-    from: sourceLocation,
-    to: task.location_code,
-    shopId,
-  });
+  // 3. Write inventory movements.
+  // Transfer stows write a debit + credit pair.
+  // return_restock is credit-only because the returned stock has no existing
+  // warehouse inventory_truth source before stow.
+  let debitMovementId: string | null = null;
 
-  // 3. Write location_transfer movements — one debit at source, one credit at destination.
-  //    Both are deterministic via uuidv5 so retries are idempotent.
-  //    Caller must have SET LOCAL "synchroflow.projection" = 'true' active.
-  const debitMovementId = uuidv5(`${stowTaskId}:location_transfer:debit`, STOW_NAMESPACE);
-  const debitDeviceEventId = uuidv5(`${stowTaskId}:device:debit`, STOW_NAMESPACE);
-  const creditMovementId = uuidv5(`${stowTaskId}:location_transfer:credit`, STOW_NAMESPACE);
-  const creditDeviceEventId = uuidv5(`${stowTaskId}:device:credit`, STOW_NAMESPACE);
+  const creditMovementId = uuidv5(
+    `${stowTaskId}:location_transfer:credit`,
+    STOW_NAMESPACE
+  );
+  const creditDeviceEventId = uuidv5(
+    `${stowTaskId}:device:credit`,
+    STOW_NAMESPACE
+  );
 
-  // 3a. Debit — stock leaves source location
-  await trx('inventory_movements')
-    .insert({
-      lasyncro_inventory_movement_id: debitMovementId,
-      lasyncro_variant_id: task.lasyncro_variant_id,
-      shop_id: shopId,
-      movement_type: 'location_transfer',
-      quantity_delta: -qty,
-      location_code: sourceLocation,
-      reference_type: 'stow_task',
-      reference_id: stowTaskId,
-      platform: 'wms',
-      occurred_at: completedAt,
-      device_event_id: debitDeviceEventId,
-      operator_id: claimedBy,
-      triggered_by: 'stow',
-    })
-    .onConflict(['device_event_id'])
-    .ignore();
+  if (!isInventoryCredit) {
+    if (!sourceLocation) {
+      throw new Error(`[STOW_CONFIRM] Source location missing for transfer ${stowTaskId}`);
+    }
+
+    debitMovementId = uuidv5(
+      `${stowTaskId}:location_transfer:debit`,
+      STOW_NAMESPACE
+    );
+    const debitDeviceEventId = uuidv5(
+      `${stowTaskId}:device:debit`,
+      STOW_NAMESPACE
+    );
+
+    // 3a. Debit — stock leaves source location
+    await trx('inventory_movements')
+      .insert({
+        lasyncro_inventory_movement_id: debitMovementId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        shop_id: shopId,
+        movement_type: 'location_transfer',
+        quantity_delta: -qty,
+        location_code: sourceLocation,
+        reference_type: 'stow_task',
+        reference_id: stowTaskId,
+        platform: 'wms',
+        occurred_at: completedAt,
+        device_event_id: debitDeviceEventId,
+        operator_id: claimedBy,
+        triggered_by: 'stow',
+      })
+      .onConflict(['device_event_id'])
+      .ignore();
+  }
 
   // 3b. Credit — stock arrives at destination bin
   //     return_restock trigger → refund_return movement so restock rate
@@ -299,7 +338,9 @@ export async function confirmStow(
       lasyncro_inventory_movement_id: creditMovementId,
       lasyncro_variant_id: task.lasyncro_variant_id,
       shop_id: shopId,
-      movement_type: task.trigger === 'return_restock' ? 'refund_return' : 'location_transfer',
+      movement_type: task.trigger === 'return_restock' 
+        ? 'refund_return' 
+        : 'location_transfer',
       quantity_delta: qty,
       location_code: task.location_code,
       reference_type: 'stow_task',

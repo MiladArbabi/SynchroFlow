@@ -1874,10 +1874,16 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     return res.status(200).json({ stow_task_id: taskId, status: 'completed' });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
-    if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });
-    if (message.includes('different operator')) return res.status(403).json({ error: 'Stow task owned by different operator' });
-    console.error('[WMS_STOW_CONFIRM_FAILED]', { shopId, userId, taskId, error: message });
+        if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });
+        if (message.includes('not in progress')) return res.status(409).json({ error: 'Stow task not in progress' });
+        if (message.includes('different operator')) return res.status(403).json({ error: 'Stow task owned by different operator' });
+        if (message.includes('Insufficient source stock')) {
+          return res.status(409).json({ error: 'Insufficient stock at stow source' });
+        }
+        if (message.includes('Source location missing')) {
+          return res.status(409).json({ error: 'Stow source location could not be resolved' });
+        }
+        console.error('[WMS_STOW_CONFIRM_FAILED]', { shopId, userId, taskId, error: message });
     return res.status(500).json({ error: `Stow confirmation failed: ${message}` });
   }
 };
