@@ -117,10 +117,10 @@ pick | pack | stow | receive | returns
 | `resolution_action` | Final Status | Inventory Cascade | Built |
 | --- | --- | --- | --- |
 | `re_stow` | `resolved` | Creates pending stow task; operator assigns a valid active bin; confirm transfers stock from problem bin → destination bin | ✅ LIVE |
-| `discard`           | `resolved`             | Writes `damage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist          | ✅ LIVE                            |
-| `write_off`         | `resolved`             | Writes `shrinkage` movement against the single stock-holding location; 409 if zero or multiple stock locations exist       | ✅ LIVE                            |
+| `discard` | `resolved` | Writes the full task quantity as a `damage` movement against the single stock-holding location; 409 if zero/multiple stock locations exist or available inventory is insufficient | ✅ LIVE |
+| `write_off` | `resolved` | Writes the full task quantity as a `shrinkage` movement against the single stock-holding location; 409 if zero/multiple stock locations exist or available inventory is insufficient | ✅ LIVE |
 | `return` | `returned_to_supplier` | Future: creates return PO line | ❌ PLANNED |
-| `quarantine`        | `resolved`             | Moves the single stock-holding location to the problem bin; 409 if zero or multiple stock locations exist                  | ✅ LIVE                            |
+| `quarantine` | `resolved` | Moves the single stock-holding location to the problem bin; 409 if zero or multiple stock locations exist | ✅ LIVE |
 | `find_replacement` | `investigating` | No movement — triggers replacement search | ✅ LIVE (backend) / ❌ PLANNED (UI) |
 
 ---
@@ -183,7 +183,9 @@ All routes: `authenticateToken` + `requireFt2` + `requireTier('core')`
 // Response 200
 { "problem_task_id": "uuid", "status": "resolved", "resolution_action": "discard" }
 
-// Response 409 for discard/write_off when stock location is ambiguous or absent
+// Response 409 for discard/write_off when stock location is ambiguous/absent
+// or when the full task quantity exceeds available inventory at that location.
+// Failed resolutions roll back: task stays open and no movement/truth mutation is written.
 { "error": "Multiple stock locations exist; select the affected location before writing off inventory" }
 ```
 
@@ -339,9 +341,15 @@ location_transfer source -qty
 location_transfer destination +qty
 ````
 
+**AFTER**
+
+```md
 ### `discard` (LIVE)
 
+The full task quantity must be available at the single stock-holding location. If `task.quantity > available_quantity`, resolution returns `409` and the transaction rolls back, leaving the task open with no inventory movement or truth mutation.
+
 ```ts
+require task.quantity <= available_quantity
 problem_center_tasks.status → 'resolved'
 inventory_movements INSERT { movement_type: 'damage', quantity_delta: -qty }
 inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
@@ -349,7 +357,10 @@ inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
 
 ### `write_off` (LIVE)
 
+**INV-BLOCK-16:** Write-offs are all-or-nothing. The full task quantity must be available at the single stock-holding location. The former `Math.min(task.quantity, available_quantity)` truncation was removed because it could partially write the ledger while resolving the full task. Insufficient available inventory now returns `409`; the transaction rolls back, the task remains open, and no movement or truth mutation is written.
+
 ```ts
+require task.quantity <= available_quantity
 problem_center_tasks.status → 'resolved'
 inventory_movements INSERT { movement_type: 'shrinkage', quantity_delta: -qty }
 inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }

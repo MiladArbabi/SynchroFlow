@@ -2473,8 +2473,13 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
 
         const [it] = stockLocations;
 
-        // Only write movement if stock exists — never create negative inventory_movements
-        const writeQty = Math.min(task.quantity, it.available_quantity);
+        // INV-BLOCK-16: never silently truncate a problem-task write-off.
+        // If the full task quantity cannot be written, keep the task unresolved.
+        if (task.quantity > it.available_quantity) {
+          throw new Error('WRITE_OFF_INSUFFICIENT_AVAILABLE');
+        }
+
+        const writeQty = task.quantity;
         if (writeQty > 0) {
           await trx('inventory_movements').insert({
             lasyncro_inventory_movement_id: trx.raw('gen_random_uuid()'),
@@ -2649,6 +2654,9 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
     }
     if (message === 'WRITE_OFF_LOCATION_AMBIGUOUS') {
       return res.status(409).json({ error: 'Multiple stock locations exist; select the affected location before writing off inventory' });
+    }
+    if (message === 'WRITE_OFF_INSUFFICIENT_AVAILABLE') {
+      return res.status(409).json({ error: 'Write-off quantity exceeds available inventory at the stock location' });
     }
     if (message === 'QUARANTINE_LOCATION_NOT_FOUND') {
       return res.status(409).json({ error: 'No stock location exists for this quarantine' });
