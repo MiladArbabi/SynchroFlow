@@ -103,12 +103,26 @@ export async function startExecutionDispatcher() {
          * EXECUTE_DECISION command path — skip them here entirely,
          * leave status untouched for that path to manage.
          */
-        /* if (decision.recommended_action?.execution_mode === 'manual') {
-          console.info('[EXECUTION_DISPATCH_SKIPPED_MANUAL]', {
-            decision_id: row.decision_id,
-          });
-          continue;
-        } */
+        /**
+         * RESTORED (EXEC-DISPATCH-01, 2026-08-10)
+         * ---------------------------------------
+         * Deliberately silent — do NOT add a log here.
+         *
+         * The original guard logged every skip, which fired once per
+         * pending manual decision per 1s poll with nothing changing
+         * between ticks (every dev decision is execution_mode 'manual'
+         * from source 'safe_fallback' — see DECISION-SAFE-01). That
+         * noise is why the guard was commented out, and the `continue`
+         * went with it. Skipping a manual decision is the expected
+         * steady state, not an exception; the row's own status already
+         * records the truth.
+         *
+         * WORKER-ALS-01 made this body a runWithTenantContext callback,
+         * so this is `return`, not `continue` — it skips to the next row.
+         */
+        if (decision.recommended_action?.execution_mode === 'manual') {
+          return;
+        }
 
         /**
          * RECONSTRUCT EXECUTION JOB (CANONICAL)
