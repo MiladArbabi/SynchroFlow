@@ -127,7 +127,8 @@ export async function rebuildInventoryProjectionForVariants(
               'refund_return',
               'manual_adjustment',
               'reconciliation_correction',
-              'opening_balance'
+              'opening_balance',
+              'location_transfer'
             ) THEN quantity_delta
 
             WHEN movement_type IN (
@@ -163,15 +164,37 @@ export async function rebuildInventoryProjectionForVariants(
      */
     const now = eventAnchor;
 
-    const aggregatedByVariant = new Map(
-      rows.map((r: any) => [r.lasyncro_variant_id, r])
+    const variantsWithLedgerRows = new Set<string>(
+      rows.map((r: any) => r.lasyncro_variant_id)
     );
 
-    const inserts = variantIds.map((variantId) => {
-      const r = aggregatedByVariant.get(variantId);
+    const inserts = [
+      ...rows.map((r: any) => {
+        const onHand = Number(r.on_hand ?? 0);
+        const reserved = Number(r.reserved ?? 0);
+        // PROJ-004: on_hand stores TRUE value (may be negative = sold without
+        // recorded receiving = "phantom stock" signal). available/sellable are
+        // clamped at 0 — you cannot sell negative stock. The negative survives
+        // only on on_hand_quantity, which downstream surfaces flag, not sum blindly.
+        const available = Math.max(0, onHand - reserved);
 
-      if (!r) {
         return {
+          shop_id: r.shop_id,
+          lasyncro_variant_id: r.lasyncro_variant_id,
+          location_code: r.location_code,
+          on_hand_quantity: onHand,
+          reserved_quantity: reserved,
+          // PROJ-002: committed_quantity is deprecated (no commit movement type exists;
+          // commitment is expressed via reservation_hold/release → reserved_quantity).
+          // Kept at 0 for schema stability. sellable_quantity is DB-derived from available_quantity.
+          committed_quantity: 0,
+          available_quantity: available,
+          last_evaluated_at: now,
+        };
+      }),
+      ...variantIds
+        .filter((variantId) => !variantsWithLedgerRows.has(variantId))
+        .map((variantId) => ({
           shop_id: shopId,
           lasyncro_variant_id: variantId,
           location_code: 'WH-' + shopId + '-ROOT',
@@ -180,30 +203,8 @@ export async function rebuildInventoryProjectionForVariants(
           committed_quantity: 0,
           available_quantity: 0,
           last_evaluated_at: now,
-        };
-      }
-
-      const onHand = Number(r.on_hand ?? 0);
-      const reserved = Number(r.reserved ?? 0);
-      // PROJ-004: on_hand stores TRUE value (may be negative = sold without
-      // recorded receiving = "phantom stock" signal). available/sellable are
-      // clamped at 0 — you cannot sell negative stock. The negative survives
-      // only on on_hand_quantity, which downstream surfaces flag, not sum blindly.
-      const available = Math.max(0, onHand - reserved);
-      return {
-        shop_id: r.shop_id,
-        lasyncro_variant_id: r.lasyncro_variant_id,
-        location_code: r.location_code,
-        on_hand_quantity: onHand,
-        reserved_quantity: reserved,
-        // PROJ-002: committed_quantity is deprecated (no commit movement type exists;
-        // commitment is expressed via reservation_hold/release → reserved_quantity).
-        // Kept at 0 for schema stability. sellable_quantity is DB-derived from available_quantity.
-        committed_quantity: 0,
-        available_quantity: available,
-        last_evaluated_at: now,
-      };
-    });
+        })),
+    ];
 
     await trx('inventory_truth')
       .insert(inserts)

@@ -148,6 +148,44 @@ See GitHub issue #1002. `WH-${shopId}-ROOT` is currently hardcoded. The fix requ
 - Split allocations for one order line remain independently identifiable and independently replay-safe.
 - A duplicate physical allocation confirmation must never create a second successful `sale` / `reservation_release` pair.
 
+### Deterministic multi-location replay — INV-PROJ-MULTILOC-01
+
+`rebuildInventoryProjectionForVariants()` must reconstruct the live
+`inventory_truth` read model without collapsing physical locations.
+
+The canonical replay identity is:
+
+    shop_id + lasyncro_variant_id + location_code
+
+The ledger aggregation may therefore produce multiple rows for the same
+variant, and every location row must survive projection rebuild independently.
+
+`location_transfer` participates in on-hand replay using its stored sign:
+
+    source location       location_transfer -qty
+    destination location  location_transfer +qty
+
+A stowed unit must consequently remain represented at its destination bin after
+a deterministic rebuild. Rebuild code must never reduce a multi-location
+variant to one arbitrary location merely because all rows share the same
+`lasyncro_variant_id`.
+
+Variants with no ledger rows may retain the warehouse-root zero fallback, but
+that fallback must not replace existing location-level ledger state.
+
+Runtime verification on 2026-08-11 proved:
+
+    A-1         expected +1  actual +1  PASS
+    C-4         expected +1  actual +1  PASS
+    WH-1-ROOT   expected -6  actual -6  PASS
+
+The verification ran under the canonical RLS tenant context
+`app.current_tenant = shopId`; the movement ledger remained append-only and LSU
+locations were unchanged.
+
+See:
+`docs/playbooks/inv_proj_multiloc_01_inventory_rebuild_2026_08_11.md`.
+
 ---
 
 ## Migration History
