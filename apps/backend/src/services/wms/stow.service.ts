@@ -207,16 +207,40 @@ export async function confirmStow(
     } else if (!isInventoryCredit && lasyncroUnitId) {
       const unitRow = await trx('inventory_units')
         .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-        .select('current_location_code')
+        .select('current_location_code', 'status')
         .first();
 
-      if (!unitRow?.current_location_code) {
+      if (!unitRow) {
         throw new Error(
           `[STOW_CONFIRM] Source location missing for scanned unit ${lasyncroUnitId}`
         );
       }
 
-      sourceLocation = unitRow.current_location_code;
+      /**
+       * STOW-LSU-01 (2026-08-11)
+       * -----------------------------------------------------------
+       * current_location_code is written BY stow confirm and nulled
+       * by pick ("unit left the shelf", pickScan.service.ts:518).
+       * A unit at status='received' has therefore never had one — its
+       * stock was credited to WH-{shopId}-ROOT by closeReceiveJob and
+       * has not moved. Requiring the column here made the first stow
+       * of any received unit impossible, and since the operator UI
+       * always scans an LSU, the entire inbound stow path was
+       * unreachable — only the no-LSU web fallback worked.
+       * NULL is not missing data; it is "not on a shelf". Fall back to
+       * ROOT for received units, matching branch 4e's FIFO handling of
+       * the same case. Still throw for a unit that is genuinely
+       * unlocatable (e.g. picked, mid-flight, owned by no location).
+       */
+      if (unitRow.current_location_code) {
+        sourceLocation = unitRow.current_location_code;
+      } else if (unitRow.status === 'received') {
+        sourceLocation = `WH-${shopId}-ROOT`;
+      } else {
+        throw new Error(
+          `[STOW_CONFIRM] Source location missing for scanned unit ${lasyncroUnitId}`
+        );
+      }
     }
 
     // Transfer stows must debit the complete quantity atomically.
