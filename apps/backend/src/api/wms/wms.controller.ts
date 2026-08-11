@@ -20,10 +20,9 @@ import {
   fireBatchReadyToPackAlert,
   fireBatchReadyToShipAlert,
 } from '../../services/wms/wmsAlerts.service.js';
-import { rebuildInventoryProjectionForVariants } from '../../services/inventory/rebuildInventoryProjection.js';
-import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
 import { generateInvoicePdf } from '../../services/wms/invoicePdf.service.js';
 import { syncStowedQuantityToShopify } from '../../services/wms/shopifyInventorySync.service.js';
+import { revalidateOrdersForReceivedVariants } from '../../services/wms/receiveJob.service.js';
 import {
   raisePackDecisionRequest,
   getPackDecisionRequest,
@@ -1833,6 +1832,25 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
             .onConflict(['lasyncro_order_id', 'aggregate_version'])
             .ignore();
         }
+
+        /**
+         * INV-BLOCK-20 (2026-08-11): revalidate synchronously.
+         * The intent insert above dedupes on
+         * (lasyncro_order_id, aggregate_version) — but stow is a
+         * warehouse event and never advances the order aggregate, so
+         * once an order's intent at a given version has been consumed
+         * and deleted, every later stow silently .ignore()s and the
+         * order is permanently unreachable by stock-arrival
+         * reconciliation. Proven live: order 9fdddd49 stayed blocked
+         * after 10 units of its exact variant landed in A-1.
+         * The GUC required by the projection-writer guard is already
+         * set at the top of this transaction.
+         */
+        await revalidateOrdersForReceivedVariants(
+          trx,
+          shopId,
+          [task.lasyncro_variant_id]
+        );
 
         if (constrainedOrders.length > 0) {
           console.info('[STOW_CASCADE_ORDERS_QUEUED]', {

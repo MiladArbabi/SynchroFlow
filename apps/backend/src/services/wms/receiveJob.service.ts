@@ -224,7 +224,15 @@ export interface CloseReceiveJobInput {
  * via a join to orders — see migration 0070) — joined explicitly here
  * rather than relying on RLS alone for a cross-order lookup.
  */
-async function revalidateOrdersForReceivedVariants(
+/**
+ * INV-BLOCK-20 (2026-08-11): exported for the stow-confirm cascade.
+ * Stock becoming *pickable* (stow into a pick bin) is the moment an
+ * inventory block can actually clear — receive close lands stock at
+ * ROOT, which the canonical pickable predicate excludes whenever the
+ * tenant has active pick bins. Same evaluate → persist pair, one
+ * definition, two triggers.
+ */
+export async function revalidateOrdersForReceivedVariants(
   trx: Knex.Transaction,
   shopId: number,
   receivedVariantIds: string[]
