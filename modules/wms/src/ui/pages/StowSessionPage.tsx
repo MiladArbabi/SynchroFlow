@@ -252,6 +252,33 @@ export default function StowSessionPage({
         response: { data: { error: 'Wrong product — does not match this stow task.' } },
       });
     }
+    // INV-BLOCK-10b-LSU-01 — cancellation recovery is unit-specific.
+    //
+    // Scoped deliberately to order_cancelled_mid_pick: inbound stow units of
+    // the same variant are fungible, and the receive→stow flow relies on a
+    // generic product barcode resolving to any received sibling. Widening
+    // this to all triggers would change that verified behaviour.
+    //
+    // Both LSUs of a variant share one shopify_barcode, so a generic scan
+    // cannot discriminate them. unit_ids (now trigger-aware server-side)
+    // is the task's declaration of which physical unit satisfies it. The
+    // backend guard in confirmStow remains authoritative; this check exists
+    // to fail fast at scan time with a message naming the required LSU.
+    if (
+      currentTask.trigger === 'order_cancelled_mid_pick' &&
+      (currentTask.unit_ids ?? []).length > 0 &&
+      (!resolved.lasyncro_unit_id ||
+        !(currentTask.unit_ids ?? []).includes(resolved.lasyncro_unit_id))
+    ) {
+      throw Object.assign(new Error('Wrong unit.'), {
+        response: {
+          data: {
+            error: `This task recovers a specific unit. Scan ${(currentTask.unit_ids ?? []).join(' or ')}.`,
+          },
+        },
+      });
+    }
+
     setScannedUnitId(resolved.lasyncro_unit_id ?? null);
     setPhase('location_scan');
   }, [currentTask, onResolveBarcode]);

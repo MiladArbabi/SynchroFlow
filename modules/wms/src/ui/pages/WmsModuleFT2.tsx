@@ -374,15 +374,27 @@ const BatchCard = memo(function BatchCard({
  */
 const StowTaskCard = memo(function StowTaskCard({
   task,
-  onClaim,
-  onConfirm,
+  onOpen,
 }: {
   task: WmsStowTask;
-  onClaim: (taskId: string) => void;
-  onConfirm: (taskId: string) => void;
+  onOpen: (taskId: string) => void;
 }) {
   const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
-  const isPending = task.status === 'pending';
+
+  // STOW-CARD-CTA-01 — the card is an entry point, never a confirm.
+  //
+  // Previously an in_progress task took a direct onConfirmStow(id) branch
+  // that passed neither quantity nor LSU. Inbound stow survived it only via
+  // the legacy no-LSU fallback in confirmStow; order_cancelled_mid_pick
+  // hard-requires an LSU scan (stow.service.ts) and could never complete.
+  // Once claimed, a task had no route back into the scan session at all.
+  //
+  // StowSessionPage already loads both pending and in_progress tasks, and
+  // the session-entry callback only writes a URL param, so a single route
+  // is safe for every status. The claim fires inside the session at the
+  // location-scan step, which is why the old 'Claim & stow' label was
+  // describing the session, not this button.
+  const isClaimed = task.status === 'in_progress';
 
   return (
     <Box sx={{
@@ -410,7 +422,7 @@ const StowTaskCard = memo(function StowTaskCard({
           )}
         </Box>
         <Box sx={{ px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }}>
-          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>Stow pending</Typography>
+          <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }}>{isClaimed ? 'In progress' : 'Stow pending'}</Typography>
         </Box>
       </Box>
 
@@ -424,7 +436,7 @@ const StowTaskCard = memo(function StowTaskCard({
       {/* CTA */}
       <Box
         component="button"
-        onClick={() => isPending ? onClaim(task.stow_task_id) : onConfirm(task.stow_task_id)}
+        onClick={() => onOpen(task.stow_task_id)}
         sx={{
           width: '100%', fontSize: 12, fontWeight: 600,
           color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
@@ -434,7 +446,7 @@ const StowTaskCard = memo(function StowTaskCard({
           transition: 'opacity 0.15s ease',
         }}
       >
-        {isPending ? 'Claim & stow →' : 'Confirm stowed →'}
+        {isClaimed ? 'Resume stow →' : 'Start stow →'}
       </Box>
     </Box>
   );
@@ -988,8 +1000,7 @@ function WmsModuleFT2Inner({
             <StowTaskCard
               key={task.stow_task_id}
               task={task}
-              onClaim={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
-              onConfirm={(id) => void onConfirmStow?.(id).then(onRefresh)}
+              onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
             />
           ))}
         </Box>

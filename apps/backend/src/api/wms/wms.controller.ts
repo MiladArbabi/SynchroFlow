@@ -1561,6 +1561,20 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'v.sku',
           'v.image_url',
           'p.title as product_title',
+          // INV-BLOCK-10b-LSU-01 — unit_ids must reflect the task's trigger.
+          //
+          // Inbound stow consumes freshly received units, so 'received' is
+          // correct there. Cancellation recovery (order_cancelled_mid_pick)
+          // recovers one SPECIFIC physical unit that was already picked: its
+          // status is 'picked' and current_location_code is NULL because pick
+          // nulls it. Filtering on 'received' returned NULL unit_ids for that
+          // task, so the UI had no expected-LSU set to validate against and
+          // forwarded whichever sibling the generic barcode resolver picked.
+          //
+          // Predicate mirrors the authoritative guard in
+          // stow.service.ts confirmStow (picked + NULL location). Kept in SQL
+          // rather than widening barcodeResolution.service.ts, which is shared
+          // by receive and pick and must not surface picked units globally.
           trx.raw(`
             (SELECT array_agg(iu.lasyncro_unit_id ORDER BY iu.received_at)
              FROM (
@@ -1568,7 +1582,11 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
                FROM inventory_units
                WHERE lasyncro_variant_id = st.lasyncro_variant_id
                AND shop_id = st.shop_id
-               AND status = 'received'
+               AND CASE
+                     WHEN st.trigger = 'order_cancelled_mid_pick'
+                       THEN status = 'picked' AND current_location_code IS NULL
+                     ELSE status = 'received'
+                   END
                LIMIT st.quantity
              ) iu
             ) as unit_ids
@@ -1662,7 +1680,10 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
 
     if (!location) throw new Error('LOCATION_NOT_FOUND');
 
-    if (task.trigger === 'problem_center') {
+    if (
+      task.trigger === 'problem_center' ||
+      task.trigger === 'order_cancelled_mid_pick'
+    ) {
       if (!location.active || location.type !== 'bin') {
         throw new Error('INVALID_RESTOW_DESTINATION');
       }
@@ -1767,7 +1788,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
-      await confirmStow(trx, {
+      const stowResult = await confirmStow(trx, {
         stowTaskId: taskId,
         shopId,
         claimedBy: userId,
@@ -1778,13 +1799,18 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
           ? lasyncro_unit_id
           : undefined,
       });
-      // Auto-resolve stow alert
-      await fireStowTaskAlert(trx, {
-        shopId,
-        stowTaskId: taskId,
-        isActive: false,
-        trigger: 'inbound_stock',
-      });
+      // STOW-ALERT-01 — the alert message reads "Stow task completed
+      // successfully", so it must only clear when the task actually
+      // completed. Under partial placement (STOW-COMPLETE-01) this fired
+      // on the first unit while the task was still open.
+      if (stowResult.isFullyPlaced) {
+        await fireStowTaskAlert(trx, {
+          shopId,
+          stowTaskId: taskId,
+          isActive: false,
+          trigger: 'inbound_stock',
+        });
+      }
 
       // CASCADE: Rebuild inventory projection for stowed variant so
       // constraint evaluator sees updated available_quantity on next reconciliation.
@@ -2443,6 +2469,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           'quantity',
           'source_exception_id',
           'source',
+          'exception_type',
           'problem_bin_location'
         )
         .first();
@@ -2578,17 +2605,29 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
         });
       }
 
-      // INV-BLOCK-11: problem_bin_location is the re-stow SOURCE.
-      // Destination stays null until the operator selects/scans a valid active bin.
+      // INV-BLOCK-11: problem_bin_location remains the operational staging source.
+      // INV-BLOCK-10b: an order-cancelled unit that was already picked has already
+      // left inventory_truth via the pick sale. Its recovery must therefore use the
+      // dedicated order_cancelled_mid_pick stow trigger so confirmStow can credit the
+      // destination without inventing a debit from PROBLEM.
       if (resolution_action === 're_stow') {
+        const stowTrigger =
+          task.exception_type === 'order_cancelled'
+            ? 'order_cancelled_mid_pick'
+            : 'problem_center';
+
         await trx('stow_tasks').insert({
           shop_id: shopId,
           lasyncro_variant_id: task.lasyncro_variant_id,
           quantity: task.quantity,
           location_code: null,
           status: 'pending',
-          trigger: 'problem_center',
+          trigger: stowTrigger,
           source_task_id: taskId,
+          lasyncro_order_id:
+            task.exception_type === 'order_cancelled'
+              ? task.source_exception_id
+              : null,
           created_at: new Date(),
           updated_at: new Date(),
         });
@@ -2597,6 +2636,7 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
           problem_task_id: taskId,
           variant_id: task.lasyncro_variant_id,
           quantity: task.quantity,
+          trigger: stowTrigger,
           source_problem_bin: task.problem_bin_location,
           shopId,
         });

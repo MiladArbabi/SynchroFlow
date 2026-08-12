@@ -76,7 +76,9 @@ const DEFAULT_ACTION: Record<string, string> = {
   product_defect:       'discard',
   packaging_defect:     're_stow',
   wrong_item:           'find_replacement',
-  order_cancelled:      'write_off',
+  // INV-BLOCK-10b: cancelled units are good stock in the problem bin,
+  // not shrinkage. Default to putting them back on a shelf.
+  order_cancelled:      're_stow',
   stow_failure:         're_stow',
   receive_rejection:    'quarantine',
   repackaging_required: 're_stow',
@@ -90,7 +92,7 @@ const RESOLUTION_OPTIONS: { action: string; label: string; description: string; 
     action: 're_stow',
     label: 'Re-stow',
     description: 'Item is fine — place it back into the correct bin location.',
-    forTypes: ['packaging_defect', 'stow_failure', 'wrong_item', 'repackaging_required'],
+    forTypes: ['packaging_defect', 'stow_failure', 'wrong_item', 'repackaging_required', 'order_cancelled'],
   },
   {
     action: 'find_replacement',

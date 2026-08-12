@@ -8,18 +8,25 @@
  * the one status allowed to override any prior state
  * (orderFulfillmentIngestion.service.ts — precedence guard).
  *
- * SCOPE — COMMERCIAL ONLY.
- * This handler mutates NO inventory. It does not release reservations
- * and does not create stow tasks. Physical unwind of stock already
- * picked at the moment of cancellation is INV-BLOCK-10b.
+ * SCOPE.
+ * Commercial status is ingested here. Physical unwind — releasing
+ * reservations and routing already-picked units to the Problem Center —
+ * is delegated to cancellationUnwind.service.ts (INV-BLOCK-10b). This
+ * handler is the only observer of orders/cancelled (projection.registry
+ * .ts:90), so the call sits here rather than in a queue job.
+ *
+ * Unpicked reservations are reversed with reservation_release movements.
+ * Already-picked units remain inventory-neutral here and are routed through
+ * Problem Center; their physical recovery is deferred to supervisor
+ * resolution, per INV-PC-01.
  *
  * Once status is 'cancelled', the release pool excludes the order:
  * pickBatch.service.ts filters whereIn(status, ['pending','processing']).
  */
 import { Knex } from 'knex';
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
-import orderFulfillmentIngestionService
-  from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+import orderFulfillmentIngestionService from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
+import { unwindCancelledOrder } from '../../services/wms/cancellationUnwind.service.js';
 import { debugLog } from '../projection.utils.js';
 
 export async function handleOrdersCancelled({
@@ -66,6 +73,8 @@ export async function handleOrdersCancelled({
     },
     trx
   );
+
+  await unwindCancelledOrder(trx, domainEvent.shop_id, lasyncroOrderId);
 
   debugLog('[ORDER_CANCELLED_INGESTED]', {
     lasyncroOrderId,

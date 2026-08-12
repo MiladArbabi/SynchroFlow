@@ -21,9 +21,12 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  * 5. Updates inventory_units → status=stowed, current_location_code (LSU-path only)
  * 6. Transitions stow_task → completed
  *
- * Idempotency:
- * - device_event_id = uuidv5(stow_task_id + ':device:debit|credit', STOW_NAMESPACE) — deterministic
- * - onConflict ignore prevents double-write on retry
+ * Idempotency (STOW-MOVEMENT-ID-01):
+ * - device_event_id = uuidv5(stow_task_id + ':' + unit_id + ':device:debit|credit')
+ * - one debit/credit movement pair PER PHYSICAL UNIT, quantity_delta ±1
+ * - reference_type='inventory_unit', reference_id=lasyncro_unit_id — required by
+ *   inventory_movements_shop_ref_unique, and matches pickScan's granularity
+ * - onConflict ignore prevents double-write on retry of the same unit
  *
  * Caller must:
  * - Operate within a transaction
@@ -139,7 +142,7 @@ export async function claimStowTask(
 export async function confirmStow(
   trx: Knex.Transaction,
   input: StowConfirmInput
-): Promise<void> {
+): Promise<{ isFullyPlaced: boolean; quantityPlaced: number; quantityTotal: number }> {
   const { stowTaskId, shopId, claimedBy, quantityPlaced, lasyncroUnitId } = input;
 
   // 1. Validate task
@@ -164,10 +167,18 @@ export async function confirmStow(
     const completedAt = new Date();
     const qty = quantityPlaced ?? task.quantity; // support partial stow
 
-    // INV-BLOCK-04:
-    // - return_restock is an inventory credit: no warehouse source is debited.
+    // INV-BLOCK-04 / INV-BLOCK-10b:
+    // - return_restock is an inventory credit because returned stock has no
+    //   existing warehouse source row before stow.
+    // - order_cancelled_mid_pick is also a credit: the pick sale already removed
+    //   the physical unit from inventory_truth, so PROBLEM is operational staging,
+    //   not an inventory-bearing source that can be debited.
     // - all other current stow paths are transfers and must conserve stock.
-    const isInventoryCredit = task.trigger === 'return_restock';
+    const isReturnRestockCredit = task.trigger === 'return_restock';
+    const isCancelledPickRecovery =
+      task.trigger === 'order_cancelled_mid_pick';
+    const isInventoryCredit =
+      isReturnRestockCredit || isCancelledPickRecovery;
 
     let sourceLocation: string | null = isInventoryCredit
       ? null
@@ -203,6 +214,65 @@ export async function confirmStow(
 
       if (!destination) {
         throw new Error('[STOW_CONFIRM] Re-stow destination is not an active bin');
+      }
+    } else if (isCancelledPickRecovery) {
+      if (!lasyncroUnitId) {
+        throw new Error(
+          '[STOW_CONFIRM] Cancelled-pick recovery requires an LSU scan'
+        );
+      }
+
+      const sourceTask = await trx('problem_center_tasks')
+        .where({
+          problem_task_id: task.source_task_id,
+          shop_id: shopId,
+        })
+        .select('problem_bin_location')
+        .first();
+
+      if (!sourceTask?.problem_bin_location) {
+        throw new Error(
+          `[STOW_CONFIRM] Problem-center source location missing: ${stowTaskId}`
+        );
+      }
+
+      if (sourceTask.problem_bin_location === task.location_code) {
+        throw new Error(
+          '[STOW_CONFIRM] Re-stow source and destination must differ'
+        );
+      }
+
+      const destination = await trx('warehouse_locations')
+        .where({
+          shop_id: shopId,
+          location_code: task.location_code,
+          active: true,
+          type: 'bin',
+        })
+        .first('location_code');
+
+      if (!destination) {
+        throw new Error(
+          '[STOW_CONFIRM] Re-stow destination is not an active bin'
+        );
+      }
+
+      const pickedUnit = await trx('inventory_units')
+        .where({
+          shop_id: shopId,
+          lasyncro_unit_id: lasyncroUnitId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          status: 'picked',
+        })
+        .whereNull('current_location_code')
+        .forUpdate()
+        .select('lasyncro_unit_id')
+        .first();
+
+      if (!pickedUnit) {
+        throw new Error(
+          `[STOW_CONFIRM] Cancelled-pick recovery LSU mismatch: ${lasyncroUnitId}`
+        );
       }
     } else if (!isInventoryCredit && lasyncroUnitId) {
       const unitRow = await trx('inventory_units')
@@ -304,49 +374,128 @@ export async function confirmStow(
     }
   );
 
-  // 3. Write inventory movements.
-  // Transfer stows write a debit + credit pair.
-  // return_restock is credit-only because the returned stock has no existing
-  // warehouse inventory_truth source before stow.
-  let debitMovementId: string | null = null;
+  // STOW-MOVEMENT-ID-01 — resolve the exact physical units BEFORE writing
+  // movements, so ledger identity is per unit rather than per task.
+  //
+  // Two independent uniqueness mechanisms previously collapsed any second
+  // movement for one task into a silent no-op:
+  //   1. device_event_id = uuidv5(stowTaskId:...) + onConflict.ignore()
+  //   2. inventory_movements_shop_ref_unique
+  //      (shop_id, reference_type, reference_id, variant, location, movement_type)
+  // Both are satisfied naturally once reference_id is the unit, matching the
+  // sub-parent granularity pickScan already uses (pick_reservation_allocation).
+  // movement_type stays 'location_transfer' — rebuildInventoryProjection
+  // filters on movement_type only (INV-PROJ-MULTILOC-01), so replay is unaffected.
+  const stowUnitIds: string[] = [];
 
-  const creditMovementId = uuidv5(
-    `${stowTaskId}:location_transfer:credit`,
-    STOW_NAMESPACE
-  );
-  const creditDeviceEventId = uuidv5(
-    `${stowTaskId}:device:credit`,
-    STOW_NAMESPACE
-  );
+  if (lasyncroUnitId) {
+    stowUnitIds.push(lasyncroUnitId);
 
-  if (!isInventoryCredit) {
-    if (!sourceLocation) {
-      throw new Error(`[STOW_CONFIRM] Source location missing for transfer ${stowTaskId}`);
+    const scannedUnit = await trx('inventory_units')
+      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
+      .select('receive_job_line_id')
+      .first();
+
+    const remaining = qty - 1;
+    if (remaining > 0 && scannedUnit?.receive_job_line_id) {
+      const siblingIds = await trx('inventory_units')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          receive_job_line_id: scannedUnit.receive_job_line_id,
+          status: isCancelledPickRecovery ? 'picked' : 'received',
+        })
+        .whereNot({ lasyncro_unit_id: lasyncroUnitId })
+        .limit(remaining)
+        .pluck('lasyncro_unit_id');
+
+      if (isCancelledPickRecovery && siblingIds.length !== remaining) {
+        throw new Error(
+          `[STOW_CONFIRM] Cancelled-pick recovery unit count mismatch: expected ${qty}, matched ${siblingIds.length + 1}`
+        );
+      }
+
+      stowUnitIds.push(...siblingIds);
+    }
+  } else {
+    // No LSU scanned — FIFO-resolve received units from the task itself.
+    const fifoIds = await trx('inventory_units')
+      .where({
+        shop_id: shopId,
+        lasyncro_variant_id: task.lasyncro_variant_id,
+        status: 'received',
+      })
+      .orderBy('received_at', 'asc')
+      .limit(qty)
+      .pluck('lasyncro_unit_id');
+
+    stowUnitIds.push(...fifoIds);
+  }
+
+  if (stowUnitIds.length === 0) {
+    throw new Error(
+      `[STOW_CONFIRM] No physical units resolved for task ${stowTaskId}`
+    );
+  }
+
+  // 3. Write inventory movements — one debit/credit pair PER UNIT.
+  let firstCreditMovementId: string | null = null;
+
+  for (const unitId of stowUnitIds) {
+    const creditMovementId = uuidv5(
+      `${stowTaskId}:${unitId}:location_transfer:credit`,
+      STOW_NAMESPACE
+    );
+    const creditDeviceEventId = uuidv5(
+      `${stowTaskId}:${unitId}:device:credit`,
+      STOW_NAMESPACE
+    );
+    if (!firstCreditMovementId) firstCreditMovementId = creditMovementId;
+
+    if (!isInventoryCredit) {
+      if (!sourceLocation) {
+        throw new Error(`[STOW_CONFIRM] Source location missing for transfer ${stowTaskId}`);
+      }
+
+      await trx('inventory_movements')
+        .insert({
+          lasyncro_inventory_movement_id: uuidv5(
+            `${stowTaskId}:${unitId}:location_transfer:debit`,
+            STOW_NAMESPACE
+          ),
+          lasyncro_variant_id: task.lasyncro_variant_id,
+          shop_id: shopId,
+          movement_type: 'location_transfer',
+          quantity_delta: -1,
+          location_code: sourceLocation,
+          reference_type: 'inventory_unit',
+          reference_id: unitId,
+          platform: 'wms',
+          occurred_at: completedAt,
+          device_event_id: uuidv5(
+            `${stowTaskId}:${unitId}:device:debit`,
+            STOW_NAMESPACE
+          ),
+          operator_id: claimedBy,
+          triggered_by: 'stow',
+        })
+        .onConflict(['device_event_id'])
+        .ignore();
     }
 
-    debitMovementId = uuidv5(
-      `${stowTaskId}:location_transfer:debit`,
-      STOW_NAMESPACE
-    );
-    const debitDeviceEventId = uuidv5(
-      `${stowTaskId}:device:debit`,
-      STOW_NAMESPACE
-    );
-
-    // 3a. Debit — stock leaves source location
     await trx('inventory_movements')
       .insert({
-        lasyncro_inventory_movement_id: debitMovementId,
+        lasyncro_inventory_movement_id: creditMovementId,
         lasyncro_variant_id: task.lasyncro_variant_id,
         shop_id: shopId,
-        movement_type: 'location_transfer',
-        quantity_delta: -qty,
-        location_code: sourceLocation,
-        reference_type: 'stow_task',
-        reference_id: stowTaskId,
+        movement_type: isReturnRestockCredit ? 'refund_return' : 'location_transfer',
+        quantity_delta: 1,
+        location_code: task.location_code,
+        reference_type: 'inventory_unit',
+        reference_id: unitId,
         platform: 'wms',
         occurred_at: completedAt,
-        device_event_id: debitDeviceEventId,
+        device_event_id: creditDeviceEventId,
         operator_id: claimedBy,
         triggered_by: 'stow',
       })
@@ -354,113 +503,32 @@ export async function confirmStow(
       .ignore();
   }
 
-  // 3b. Credit — stock arrives at destination bin
-  //     return_restock trigger → refund_return movement so restock rate
-  //     query in returnsIntelligence.service.ts can count it correctly.
-  await trx('inventory_movements')
-    .insert({
-      lasyncro_inventory_movement_id: creditMovementId,
-      lasyncro_variant_id: task.lasyncro_variant_id,
-      shop_id: shopId,
-      movement_type: task.trigger === 'return_restock' 
-        ? 'refund_return' 
-        : 'location_transfer',
-      quantity_delta: qty,
-      location_code: task.location_code,
-      reference_type: 'stow_task',
-      reference_id: stowTaskId,
-      platform: 'wms',
-      occurred_at: completedAt,
-      device_event_id: creditDeviceEventId,
-      operator_id: claimedBy,
-      triggered_by: 'stow',
-    })
-    .onConflict(['device_event_id'])
-    .ignore();
-
   // 3c. Link credit movement back to stow task for traceability
+  // Single-valued column, no readers in src — holds the first unit's credit.
   await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId })
-    .update({ inventory_movement_id: creditMovementId });
+    .update({ inventory_movement_id: firstCreditMovementId });
 
   console.info('[STOW_MOVEMENTS_WRITTEN]', {
     stowTaskId,
-    debitMovementId,
-    creditMovementId,
+    unitCount: stowUnitIds.length,
+    firstCreditMovementId,
     from: sourceLocation,
     to: task.location_code,
     qty,
   });
 
-  // 4. Bulk-update inventory_units → stowed (WEB-STOW-UNIT-01)
-  // LSU- path only. Scanned unit is updated first (guaranteed inclusion),
-  // then remaining qty-1 units from same variant+job line are updated in
-  // one pass. This supports box-stow: operator scans one LSU- from a box
-  // of identical units and confirms qty — all matching received units updated.
-  if (lasyncroUnitId) {
-    // 4a. Resolve receive_job_line_id from scanned unit
-    const scannedUnit = await trx('inventory_units')
-      .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-      .select('receive_job_line_id')
-      .first();
-
-    if (scannedUnit?.receive_job_line_id) {
-      // 4b. Always update the scanned unit first
-      await trx('inventory_units')
-        .where({ shop_id: shopId, lasyncro_unit_id: lasyncroUnitId })
-        .update({
-          status: 'stowed',
-          current_location_code: task.location_code,
-          updated_at: completedAt,
-        });
-
-      // 4c. Bulk-update remaining qty-1 units from same job line
-      const remaining = qty - 1;
-      if (remaining > 0) {
-        const siblingIds = await trx('inventory_units')
-          .where({
-            shop_id: shopId,
-            lasyncro_variant_id: task.lasyncro_variant_id,
-            receive_job_line_id: scannedUnit.receive_job_line_id,
-            status: 'received',
-          })
-          .whereNot({ lasyncro_unit_id: lasyncroUnitId })
-          .limit(remaining)
-          .pluck('lasyncro_unit_id');
-
-    if (siblingIds.length > 0) {
-          await trx('inventory_units')
-            .whereIn('lasyncro_unit_id', siblingIds)
-            .andWhere({ shop_id: shopId })
-            .update({
-              status: 'stowed',
-              current_location_code: task.location_code,
-              updated_at: completedAt,
-            });
-        }
-      }
-    }
-  } else {
-    // 4e. No LSU scanned (web task-confirm path) — resolve units from the task itself.
-    // Stow the variant's oldest `received` units (FIFO), limited to qty. This closes the
-    // gap where task-confirm completed the move but left inventory_units at 'received'.
-    const unitIds = await trx('inventory_units')
-      .where({ shop_id: shopId, lasyncro_variant_id: task.lasyncro_variant_id, status: 'received' })
-      .orderBy('received_at', 'asc')
-      .limit(qty)
-      .pluck('lasyncro_unit_id');
-
-    if (unitIds.length > 0) {
-      await trx('inventory_units')
-        .whereIn('lasyncro_unit_id', unitIds)
-        .andWhere({ shop_id: shopId })
-        .update({
-          status: 'stowed',
-          current_location_code: task.location_code,
-          updated_at: completedAt,
-        });
-    }
-  }
+  // 4. Mark the resolved units stowed. Unit resolution now happens above, in
+  // one place, so the ledger and inventory_units agree by construction — the
+  // old 4a/4c bulk-sibling pass could move units the movements never covered.
+  await trx('inventory_units')
+    .whereIn('lasyncro_unit_id', stowUnitIds)
+    .andWhere({ shop_id: shopId })
+    .update({
+      status: 'stowed',
+      current_location_code: task.location_code,
+      updated_at: completedAt,
+    });
 
   {
     // 4d. Soft capacity check — count all stowed units at this location.
@@ -516,19 +584,43 @@ export async function confirmStow(
     }
   }
 
-  // 5. Complete stow task
-  await trx('stow_tasks')
+ // 5. Record placement; complete only when the task's full quantity is placed.
+  //
+  // STOW-COMPLETE-01 — this previously completed unconditionally, so a
+  // partial placement closed the task and stranded the remaining units at
+  // status='received'. quantity_placed accumulates the units actually
+  // moved (stowUnitIds.length, not the requested qty), so a task survives
+  // across multiple confirms and stays visible to httpGetStowTasks, which
+  // filters on status IN ('pending','in_progress').
+  const placedNow = stowUnitIds.length;
+
+  const [updatedTask] = await trx('stow_tasks')
     .where({ stow_task_id: stowTaskId })
     .update({
-      status: 'completed',
-      completed_at: completedAt,
+      quantity_placed: trx.raw('quantity_placed + ?', [placedNow]),
       updated_at: completedAt,
-    });
+    })
+    .returning(['quantity', 'quantity_placed']);
 
-  console.info('[STOW_CONFIRMED]', {
+  const isFullyPlaced = updatedTask.quantity_placed >= updatedTask.quantity;
+
+  if (isFullyPlaced) {
+    await trx('stow_tasks')
+      .where({ stow_task_id: stowTaskId })
+      .update({
+        status: 'completed',
+        completed_at: completedAt,
+        updated_at: completedAt,
+      });
+  }
+
+  console.info(isFullyPlaced ? '[STOW_CONFIRMED]' : '[STOW_PARTIAL_PLACED]', {
     stowTaskId,
     shopId,
     claimedBy,
+    placedNow,
+    quantityPlaced: updatedTask.quantity_placed,
+    quantityTotal: updatedTask.quantity,
   });
 
   await writeAuditLog(trx, {
@@ -542,7 +634,17 @@ export async function confirmStow(
       quantity: qty,
       quantity_remaining: task.quantity - qty,
       lasyncro_variant_id: task.lasyncro_variant_id,
-      inventory_movement_id: creditMovementId,
+      // STOW-MOVEMENT-ID-01 — movements are now per unit; record the units
+      // actually moved rather than a single task-scoped movement id.
+      inventory_movement_id: firstCreditMovementId,
+      stowed_unit_ids: stowUnitIds,
+      quantity_placed_total: updatedTask.quantity_placed,
     },
   });
+
+  return {
+    isFullyPlaced,
+    quantityPlaced: updatedTask.quantity_placed,
+    quantityTotal: updatedTask.quantity,
+  };
 }
