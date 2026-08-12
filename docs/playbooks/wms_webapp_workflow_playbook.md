@@ -1,30 +1,41 @@
 # LaSyncro WMS — Webapp Workflow Playbook
 
-**Version:** 1.0  
-**Date:** May 31, 2026  
-**Status:** ✅ Live — derived from Receive workflow UI simulation and audit  
+**Version:** 1.1
+**Date:** August 12, 2026
+**Status:** ✅ Live — includes verified STOW-SPLIT-01 location-first per-unit Stow contract
 **Scope:** All WMS workflows on the webapp (Stow, Pick, Pack/Ship)  
 **Authority:** This document is the engineering and UX contract for all webapp WMS workflow surfaces.  
 Every workflow built after Receive MUST be audited against this playbook before shipping.
+
+**STOW-SPLIT-01 amendment:** The current webapp Stow contract is location-first,
+sticky-bin and per-physical-unit. The authoritative Stow definition in §9
+supersedes the historical quantity-confirm / review model retained in §12.
 
 ---
 
 ## 1. The Mandatory Session Structure
 
-Every WMS workflow on the webapp MUST follow this four-phase structure. No exceptions.
+Review-based WMS workflows on the webapp MUST follow this four-phase structure.
 
 ```
 Brief → Inspect → Summary → Done
 ```
 
 | Phase | Purpose | Required elements |
-|-------|---------|-------------------|
+| ------- | --------- | ------------------- |
 | **Brief** | Orient the operator before work begins | Job summary (supplier/batch/order info), expected counts, mode selector if applicable, single CTA to start |
 | **Inspect** | The active work phase | Progress indicator, item identity, action surface, exception reporting, mode toggle |
 | **Summary** | Review before committing | Per-line/per-item breakdown (expected vs actual), total row, warnings for shortfalls, single CTA to close/confirm |
 | **Done** | Confirmation + next step | Success state, what was created (stow tasks, fulfillment status, etc.), navigation back to Operations |
 
 **Rationale:** Without Brief, operators enter work blind. Without Summary, operators commit without reviewing. Both were missing in the initial Receive implementation and caused data integrity issues (0-qty accepts).
+
+**STOW-SPLIT-01 exception:** Stow commits each successful physical unit scan
+immediately. Its current contract is:
+
+```text
+Brief → location_scan → item_scan loop → complete
+```
 
 ---
 
@@ -92,7 +103,13 @@ useEffect(() => {
 
 ## 3. Exception Handling — Shortfall Modal Pattern
 
-When an operator reports fewer units than expected, the system MUST force full exception accounting before allowing confirmation. This pattern was established in Receive and MUST be replicated in Stow and Pick.
+When a count/review workflow allows an operator to confirm fewer units than
+expected, the system MUST force full exception accounting before allowing
+confirmation.
+
+This pattern applies to Receive and other quantity-review flows.
+STOW-SPLIT-01 Stow commits exactly one physical unit per successful scan and
+does not expose bulk quantity-confirm or shortfall accounting.
 
 ### The shortfall modal contract
 
@@ -145,7 +162,7 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 ### CTA hierarchy in workflow sessions
 
 | CTA | Style | When |
-|-----|-------|------|
+| ----- | ------- | ------ |
 | Primary action (Confirm, Close, Ship) | Filled accent — `var(--accent)`, `borderRadius: '6px'`, `fontWeight: 600` | One per screen maximum |
 | Mode toggle (Switch to scan, Switch to count) | Ghost pill — `var(--accent-border)` border, accent text | Inline in session header |
 | Escape hatch (I miscounted, Cancel) | Ghost pill — smaller, subdued | Bottom-left of modal, never prominent |
@@ -154,7 +171,7 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 ### CTA label standards
 
 | Situation | Label |
-|-----------|-------|
+| ----------- | ------- |
 | Confirming one item in count mode | `Confirm Batch` |
 | Confirming last item in count mode | `Confirm & Finish` |
 | Finishing scan mode (go to summary) | `Finish & Review` |
@@ -169,11 +186,15 @@ These rules are in addition to the global UX playbook (`docs/playbooks/modules-u
 
 ### Progress indicators
 
-Every inspect phase MUST show:
+Review-based inspect phases MUST show:
 
 - Linear progress bar (top of screen) showing `currentIndex / total` as percentage
 - Text label: `Variant N of M — SupplierName` or `Task N of M`
 - Per-item progress in scan mode: `N / expected` chip per line
+
+**STOW-SPLIT-01 exception:** Webapp Stow intentionally avoids a duplicate
+linear progress bar. Its persistent work context is `Stow N of M`, the active
+bin, `N placed here · M remaining`, and one next-action instruction.
 
 ---
 
@@ -227,11 +248,18 @@ Mid-scan progress (not yet confirmed to backend) cannot be restored. Show an inf
 ### What survives refresh
 
 | State | Survives? | How |
-|-------|-----------|-----|
+| ------- | ----------- | ----- |
 | Fully confirmed lines (inspection_complete = true) | ✅ Yes | Restored from backend |
 | Partially scanned lines (count < expected) | ❌ No | Pure React state — not persisted |
 | Session mode (count/scan) | ✅ Yes | sessionStorage |
 | Session phase (brief/inspect/summary) | ✅ Partial | Inferred from confirmed state |
+| Stow committed unit progress | ✅ Yes | Restored from `stow_tasks.quantity_placed` |
+| Stow remaining quantity | ✅ Yes | `quantity - quantity_placed` |
+
+**STOW-SPLIT-01:** Browser-local remaining state is never authoritative for
+Stow completion. `GET /api/v1/wms/stow-tasks` exposes cumulative
+`quantity_placed`, and the confirm response returns `is_fully_placed`,
+`quantity_placed`, `quantity_total`, and `placed_now`.
 
 ---
 
@@ -315,7 +343,7 @@ When scan count exceeds expected qty, pause and confirm:
 ### Barcode namespace reservation (WM-46)
 
 | Prefix | Namespace | Table | Notes |
-|--------|-----------|-------|-------|
+| -------- | ----------- | ------- | ------- |
 | `LSU-{8hex}` | Unit barcode | `inventory_units` | Generated at receive batch-confirm. Immutable. |
 | `LSO-{8hex}` | Order invoice | `orders.wms_barcode` | Generated at batch release (WM-34). |
 | Raw EAN/UPC/Shopify | Legacy variant | `external_product_identity_map` | Accepted while `legacy_barcode_fallback_enabled = true`. |
@@ -347,7 +375,7 @@ When scan count exceeds expected qty, pause and confirm:
 ### Test store barcodes (dev only)
 
 | SKU | Shopify barcode | LSU- format |
-|-----|----------------|-------------|
+| ----- | ---------------- | ------------- |
 | sku-hosted-1 | TEST-003 | LSU-{8hex} per unit |
 | sku-managed-1 | — (Class B) | LSU-{8hex} per unit |
 
@@ -367,13 +395,22 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 - **Summary:** per-line expected vs accepted table, total row, warning if shortfall, Close & Create Stow Tasks
 - **Session key:** `?receiveJobId=` in URL · `receive-mode-{jobId}` in sessionStorage
 
-### Stow *(next to audit)*
+### Stow *(STOW-SPLIT-01 — verified August 12, 2026)*
 
-- **Brief:** stow task summary (SKU, qty, source), assigned location if known, Start button
-- **Inspect:** location scan/type → product scan/type → qty confirm → shortfall modal
-- **Summary:** location confirmed, qty placed, exceptions logged
-- **Session key:** `?stowTaskId=` in URL
-- **Known gap:** `ScanInput` already implemented. Brief + Summary screens need adding.
+- **Brief:** task/SKU/unit orientation and one Start CTA.
+- **Location first:** a valid destination bin must be active before a unit can be placed.
+- **Sticky bin:** the active location survives successful unit scans and task auto-advance.
+- **Unified scanner:** while a bin is active, scanning another location switches the destination; scanning an LSU/product commits one physical unit.
+- **Per-unit commit:** each successful physical scan confirms exactly `quantity_placed = 1`.
+- **Persisted progress:** cumulative `stow_tasks.quantity_placed` is authoritative.
+- **Remaining quantity:** reconstructed as `quantity - quantity_placed`.
+- **Completion:** driven by the server's `is_fully_placed` response, never a browser-local decrement.
+- **Split-bin behavior:** changing the active bin does not move previously stowed units and does not itself create an inventory movement.
+- **Movement identity:** per-unit movements use `reference_type = inventory_unit` and UUID `inventory_units.id` as `reference_id`.
+- **Scanner safety:** synchronous scan lock prevents overlapping physical mutations.
+- **No qty-confirm phase, bulk Stow shortfall modal, review Summary, NodeTrack, or duplicate linear progress bar.**
+- **Session key:** `?stowTaskId=` in URL.
+- **Detailed contract:** `docs/playbooks/stow_split_01_location_first_per_unit_2026_08_12.md`.
 
 ### Pick *(allocation-backed — INV-RES-01 complete 2026-08-10)*
 
@@ -479,7 +516,7 @@ Before writing any code for a new webapp workflow, run through this checklist:
 ## 11. Open Backlog (Webapp WMS)
 
 | ID | Workflow | Description | Priority |
-|----|----------|-------------|----------|
+| ---- | ---------- | ------------- | ---------- |
 | WEB-STOW-03 | Stow | ✅ RESOLVED June 1, 2026 — Brief + Summary screens built, 15 bugs fixed, UI simulation complete. See §12. | P1 |
 | WEB-PICK-01 | Pick | ✅ RESOLVED June 1, 2026 — Brief screen added: batch ID, line item count, total units, optimized route instruction, Start Picking CTA. | P1 |
 | WEB-PICK-02 | Pick | ✅ RESOLVED June 1, 2026 — Two-scan pattern per item: location_scan (client-side match) → product_scan (barcode resolver) → optional qty_confirm (quantity > 1). Camera/BarcodeScanSurface removed. 3-point animated track UI with pulse animation. | P1 |
@@ -494,12 +531,18 @@ Before writing any code for a new webapp workflow, run through this checklist:
 
 ## 12. Stow Workflow — UI Simulation Findings (June 1, 2026)
 
+> **Historical record:** This section documents the June 1 Stow workflow.
+> STOW-SPLIT-01 superseded its quantity-confirm, shortfall, Summary, NodeTrack,
+> and linear-progress requirements on August 12, 2026. The current contract is
+> defined in §9 and
+> `docs/playbooks/stow_split_01_location_first_per_unit_2026_08_12.md`.
+
 Derived from full webapp UI simulation and audit. All findings apply to future workflows unless noted.
 
 ### Bugs Found & Resolved
 
 | ID | Description | Fix Applied |
-|----|-------------|-------------|
+| ---- | ------------- | ------------- |
 | STOW-AUD-01 | No Summary screen — operator committed directly from qty_confirm with no review step | Added `summary` phase between `qty_confirm` and `complete` |
 | STOW-AUD-02 | Scan errors silently swallowed — `void handler()` discarded rejected promises, `submitError` never set | Replaced with `.catch()` inline on both `ScanInput` call sites |
 | STOW-AUD-03 | Shortfall modal dismissible via backdrop click — operator could bypass mandatory exception flow | `onClose={() => undefined}` — backdrop and Escape both neutralised |
@@ -573,24 +616,22 @@ grep -n "fontWeight={700}\|fontWeight: 700" modules/wms/src/ui/pages/StowSession
 
 ---
 
-### Updated Stow Contract (§9 replacement)
+### Historical Stow Contract — superseded August 12, 2026
+
+The June 1 workflow was:
 
 Brief → location_scan → product_scan → qty_confirm → summary → complete
 
-| Phase | Chip | Color | ScanInput hint | Step banner |
-|-------|------|-------|----------------|-------------|
-| `brief` | — | — | — | — |
-| `location_scan` | Scan location | warning | "Scan bin barcode or type location code" | "Step 1 of 2 — Scan or type the bin barcode to confirm the destination location." |
-| `product_scan` | Scan product | info | "Scan product barcode or type barcode value" | "Step 2 of 2 — Scan or type the product barcode to verify you have the correct item." |
-| `qty_confirm` | Confirm quantity | success | — | — |
-| `summary` | Review & confirm | primary | — | — |
-| `complete` | — | — | — | — |
+STOW-SPLIT-01 replaced that active webapp contract with:
 
-**Session key:** `?stowTaskId=` in URL, set by `onStowSessionEnter`, cleared by `onSessionExit`
+Brief → location_scan → item_scan loop → complete
 
-**Shortfall modal:** mandatory, non-dismissible, blank qty, miscount escape hatch hidden after first exception committed
+The old quantity-confirm, Stow shortfall, Summary, NodeTrack and linear-progress
+requirements above are retained only as historical audit context.
 
-**Summary screen shows:** Location · Product · Units placing · Exceptions filed (if any) · Confirm & Stow CTA
+The authoritative current contract is §9 and
+docs/playbooks/stow_split_01_location_first_per_unit_2026_08_12.md.
+
 ---
 
 ## 13. Pick Workflow — UI Simulation Findings (June 1, 2026)
@@ -600,7 +641,7 @@ Derived from full webapp UI simulation and audit. All findings apply to future w
 ### Bugs Found & Resolved
 
 | ID | Description | Fix Applied |
-|----|-------------|-------------|
+| ---- | ------------- | ------------- |
 | PICK-AUD-01/02 | `BarcodeScanSurface` + `Camera` import in use — opened PC webcam on product scan | Removed entirely. All scan input is `ScanInput` (TextField + Enter-to-submit) per Playbook §2 |
 | PICK-AUD-03 | No Brief screen | Added `brief` phase: batch ID, line item count, total units, route instruction, Start Picking CTA |
 | PICK-AUD-04 | Single-item-per-screen with no location scan | Added `location_scan` phase with client-side barcode match. `product_scan` phase follows. Optional `qty_confirm` phase for quantity > 1 |
@@ -651,7 +692,7 @@ The track renders 2 nodes (qty=1) or 3 nodes (qty>1) dynamically via `needsQtyCo
 `brief → location_scan → product_scan → [qty_confirm] → summary → done`
 
 | Phase | Track node | Active color | Step banner |
-|-------|-----------|--------------|-------------|
+| ------- | ----------- | -------------- | ------------- |
 | `brief` | — | — | — |
 | `location_scan` | Node 1 at 25%/33% pulsing | orange (`var(--accent)`) | "Step 1 of 2/3 — Walk to the location and scan the bin barcode." |
 | `product_scan` | Node 2 at 50%/66% pulsing | orange (`var(--accent)`) | "Step 2 of 2/3 — Find the item and scan the product barcode." |
@@ -679,7 +720,7 @@ Derived from full audit and backend smoke test. All findings apply to future wor
 ### Bugs Found & Resolved
 
 | ID | Description | Fix Applied |
-|----|-------------|-------------|
+| ---- | ------------- | ------------- |
 | PACK-AUD-01 | `BarcodeScanSurface` imported and used — opened PC webcam | Removed. All scan input is `ScanInput` (TextField + Enter-to-submit) per Playbook §2 |
 | PACK-AUD-02 | No Brief screen | Added `brief` phase: order count, line item count, total units, Start Packing CTA |
 | PACK-AUD-03 | No Summary screen | Added `summary` phase: per-order shipped/partial/skipped results, counts strip, Confirm Pack Complete CTA |
@@ -725,7 +766,7 @@ Pick uses `?batchId=`. Pack uses `?packBatchId=`. Both can be active simultaneou
 `brief → active (order loop) → summary → done`
 
 | Phase | Content |
-|-------|---------|
+| ------- | --------- |
 | `brief` | Order count · Line item count · Total units · Start Packing CTA |
 | `active` | LinearProgress (order N of M) · Order header · Current item · Step banner · ScanInput · State feedback (processing/wrong_item/accepted) · Report Issue button · awaiting_decision screen when blocking exception pending |
 | `summary` | Shipped/partial/skipped counts strip · Per-order result rows with icons · Confirm Pack Complete CTA |
@@ -779,7 +820,7 @@ Adapter pattern — `ICarrierProvider` interface at `services/wms/carriers/ICarr
 ### Data model
 
 | Table | Purpose |
-|---|---|
+| --- | --- |
 | `shop_carrier_settings` | Per-shop, per-carrier encrypted credentials. PK: (shop_id, carrier_code). RLS enforced. |
 | `order_shipment_tracking` | One row per physical shipment. Supports partial shipments. Consumed by Outbound module + Shopify writeback. |
 
@@ -801,7 +842,7 @@ POST /orders/:orderId/generate-label
 ### Endpoints
 
 | Method | Path | Auth | Purpose |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `PUT` | `/api/v1/wms/carrier-settings` | `wms:batch:release` | Upsert carrier credentials |
 | `GET` | `/api/v1/wms/carrier-settings` | `wms:read` | List configured carriers (no raw keys) |
 | `DELETE` | `/api/v1/wms/carrier-settings/:carrierCode` | `wms:batch:release` | Remove carrier |

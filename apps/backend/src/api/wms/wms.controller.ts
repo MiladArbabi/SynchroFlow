@@ -1550,6 +1550,12 @@ export const httpGetStowTasks = async (req: Request, res: Response) => {
           'st.stow_task_id',
           'st.lasyncro_variant_id',
           'st.quantity',
+
+          // STOW-SPLIT-01 — active tasks must expose persisted progress so a resumed
+          // or hot-refreshed scanner reconstructs remaining work from database truth
+          // rather than assuming the full task quantity is still outstanding.
+          'st.quantity_placed',
+
           'st.location_code',
           'st.status',
           'st.trigger',
@@ -1668,11 +1674,12 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
     const destination = location_code.trim();
 
     const task = await trx('stow_tasks')
-      .where({ stow_task_id: taskId, shop_id: shopId, status: 'pending' })
+      .where({ stow_task_id: taskId, shop_id: shopId })
+      .whereIn('status', ['pending', 'in_progress'])
       .select('trigger', 'source_task_id')
       .first();
 
-    if (!task) throw new Error('Stow task not found or not in pending status');
+    if (!task) throw new Error('Stow task not found or not assignable');
 
     const location = await trx('warehouse_locations')
     .where({ shop_id: shopId, location_code: destination })
@@ -1706,7 +1713,8 @@ export async function httpAssignStowLocation(req: Request, res: Response) {
     }
 
       await trx('stow_tasks')
-        .where({ stow_task_id: taskId, shop_id: shopId, status: 'pending' })
+        .where({ stow_task_id: taskId, shop_id: shopId })
+        .whereIn('status', ['pending', 'in_progress'])
         .update({ location_code: destination, updated_at: new Date() });
     });
 
@@ -1785,7 +1793,10 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
   if (!taskId) return res.status(400).json({ error: 'taskId is required' });
 
   try {
-    await db.transaction(async (trx) => {
+    // STOW-SPLIT-01 — retain the committed service result outside the
+    // transaction callback. The API response and downstream Shopify sync must
+    // use authoritative database progress rather than reconstructing it later.
+    const confirmResult = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
       const stowResult = await confirmStow(trx, {
@@ -1888,6 +1899,10 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
           // CASCADE NOTE: inventory_truth updated directly by confirmStow — no rebuild needed.
         }
       }
+
+      // STOW-SPLIT-01 — propagate the exact committed placement totals out of
+      // the transaction. Consumers must not infer completion independently.
+      return stowResult;
     });
 
     // CASCADE: Sync stowed quantity to Shopify OUTSIDE transaction —
@@ -1895,7 +1910,7 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
     // Failure is logged but does not fail the stow confirmation.
     const stowedTask = await db('stow_tasks')
       .where({ stow_task_id: taskId, shop_id: shopId })
-      .select('lasyncro_variant_id', 'quantity', 'location_code')
+      .select('lasyncro_variant_id', 'location_code')
       .first();
 
     if (stowedTask?.lasyncro_variant_id && stowedTask?.location_code) {
@@ -1903,7 +1918,11 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         shopId,
         lasyncroVariantId: stowedTask.lasyncro_variant_id,
         locationCode: stowedTask.location_code,
-        quantityDelta: stowedTask.quantity,
+
+        // STOW-SPLIT-01 — each confirm moves exactly the physical units committed
+        // by this transaction. Using the task total here would double-count a task
+        // that is stowed incrementally or split across multiple bins.
+        quantityDelta: confirmResult.placedNow,
       }).catch((err: Error) => {
         // Non-fatal — internal inventory_truth is source of truth.
         // Shopify sync failure is recoverable via manual reconciliation.
@@ -1915,7 +1934,17 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
       });
     }
 
-    return res.status(200).json({ stow_task_id: taskId, status: 'completed' });
+    return res.status(200).json({
+      stow_task_id: taskId,
+      status: confirmResult.isFullyPlaced ? 'completed' : 'in_progress',
+
+      // STOW-SPLIT-01 — frontend progress and completion are driven by committed
+      // server state so refresh/resume cannot corrupt the operator's remaining count.
+      is_fully_placed: confirmResult.isFullyPlaced,
+      quantity_placed: confirmResult.quantityPlaced,
+      quantity_total: confirmResult.quantityTotal,
+      placed_now: confirmResult.placedNow,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
         if (message.includes('not found')) return res.status(404).json({ error: 'Stow task not found' });

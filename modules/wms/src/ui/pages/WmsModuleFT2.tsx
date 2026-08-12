@@ -63,6 +63,12 @@ export type WmsStowTask = {
   stow_task_id: string;
   lasyncro_variant_id: string;
   quantity: number;
+
+  // STOW-SPLIT-01 — cumulative committed progress comes from stow_tasks.
+  // Resume/refresh must reconstruct remaining work from persisted warehouse
+  // state rather than assuming the original task quantity is still outstanding.
+  quantity_placed: number;
+
   location_code: string | null;
   status: 'pending' | 'in_progress';
   trigger: string;
@@ -74,6 +80,15 @@ export type WmsStowTask = {
   product_title: string | null;
   image_url: string | null;       // WEB-STOW-UNIT-01: product image for item scan confirmation
   unit_ids: string[] | null;      // WEB-STOW-UNIT-01: LSU- IDs for units assigned to this task
+};
+
+export type WmsStowConfirmResult = {
+  stow_task_id: string;
+  status: 'in_progress' | 'completed';
+  is_fully_placed: boolean;
+  quantity_placed: number;
+  quantity_total: number;
+  placed_now: number;
 };
 
 export type WmsModuleFT2Props = {
@@ -130,12 +145,17 @@ export type WmsModuleFT2Props = {
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
-  onConfirmStow?: (taskId: string, quantityPlaced?: number, lasyncroUnitId?: string) => Promise<void>;
-  // Full stow session callbacks
+  onConfirmStow?: (
+    taskId: string,
+    quantityPlaced?: number,
+    lasyncroUnitId?: string
+  ) => Promise<WmsStowConfirmResult>;
+  // STOW-SPLIT-01 — the per-unit scanner commits each successful physical scan
+  // directly. The retired bulk-shortfall exception callback is no longer part
+  // of the stow session contract.
   onFetchStowTasks?: () => Promise<WmsStowTask[]>;
   onResolveLocation?: (scannedValue: string) => Promise<{ location_code: string } | null>;
   onAssignStowLocation?: (taskId: string, locationCode: string) => Promise<void>;
-  onReportStowException?: (taskId: string, params: { exception_type: string; quantity: number; notes?: string }) => Promise<{ prob_label?: string; problem_bin?: string }>;
   isOnline: boolean;
   queuedCount: number;
   /** Pre-fetched receive job from URL handoff (Suppliers → WMS). Auto-enters receive session on mount. */
@@ -549,7 +569,6 @@ function WmsModuleFT2Inner({
   onFetchStowTasks,
   onResolveLocation,
   onAssignStowLocation,
-  onReportStowException,
   gridLocations,
   pendingReceiveSession,
   pendingStowTaskId,
@@ -726,11 +745,24 @@ function WmsModuleFT2Inner({
         onComplete={exitSession}
         onFetchTasks={onFetchStowTasks ?? (() => Promise.resolve([]))}
         onResolveLocation={onResolveLocation ?? (() => Promise.resolve(null))}
-        onAssignLocation={(taskId, locationCode) => onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve()}
-        onClaimTask={(taskId) => onClaimStowTask?.(taskId) ?? Promise.resolve()}
+        onAssignLocation={(taskId, locationCode) =>
+          onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve()
+        }
+        onClaimTask={(taskId) =>
+          onClaimStowTask?.(taskId) ?? Promise.resolve()
+        }
         onResolveBarcode={onResolveBarcode}
-        onConfirmStow={(taskId, qty, lasyncroUnitId) => onConfirmStow?.(taskId, qty, lasyncroUnitId) ?? Promise.resolve()}
-        onReportException={(taskId, params) => onReportStowException?.(taskId, params) ?? Promise.resolve({})}
+        onConfirmStow={(taskId, qty, lasyncroUnitId) =>
+          onConfirmStow?.(taskId, qty, lasyncroUnitId) ??
+          // STOW-SPLIT-01 — StowSession requires the authoritative committed
+          // server result. Never silently resolve when the confirm adapter is absent,
+          // because that would let the scanner advance without a warehouse mutation.
+          Promise.reject(
+            new Error(
+              'Stow confirmation is unavailable. Return to Operations and try again.'
+            )
+          )
+        }
       />
     );
   }

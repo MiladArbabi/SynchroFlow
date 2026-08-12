@@ -384,11 +384,22 @@ export default function WmsOperationsPage() {
     await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/claim`);
   }, []);
 
-  const handleConfirmStow = useCallback(async (taskId: string, quantityPlaced?: number, lasyncroUnitId?: string) => {
-    await axiosInstance.post(`/api/v1/wms/stow-tasks/${taskId}/confirm`, {
-      ...(quantityPlaced !== undefined && { quantity_placed: quantityPlaced }),
-      ...(lasyncroUnitId ? { lasyncro_unit_id: lasyncroUnitId } : {}),
-    });
+  const handleConfirmStow = useCallback(async (
+  taskId: string,
+  quantityPlaced?: number,
+  lasyncroUnitId?: string
+) => {
+  // STOW-SPLIT-01 — propagate the committed server result back to the scanner.
+  // Browser-local counters must not decide whether warehouse work completed.
+  const { data } = await axiosInstance.post(
+      `/api/v1/wms/stow-tasks/${taskId}/confirm`,
+      {
+        ...(quantityPlaced !== undefined && { quantity_placed: quantityPlaced }),
+        ...(lasyncroUnitId ? { lasyncro_unit_id: lasyncroUnitId } : {}),
+      }
+    );
+
+    return data;
   }, []);
 
   const handleFetchStowTasks = useCallback(async () => {
@@ -413,20 +424,12 @@ export default function WmsOperationsPage() {
     });
   }, []);
 
-  const handleReportStowException = useCallback(async (
-    taskId: string,
-    params: { exception_type: string; quantity: number; notes?: string; lasyncro_unit_id?: string }
-  ) => {
-    // Stow exception endpoint handles PC task creation server-side.
-    // We only need to pass lasyncro_unit_id through for unit lifecycle tracking (XPLAT-02).
-    const { data } = await axiosInstance.post(
-      `/api/v1/wms/stow-tasks/${taskId}/exception`,
-      params
-    );
-    return data;
-  }, []);
+  // STOW-SPLIT-01 — stow no longer reports quantity shortfalls from a separate
+  // confirmation screen. Unit-placement failures remain scanner failures and
+  // do not create an exception through the retired bulk-stow callback.
 
-  const problemBinMissing = settings !== null && !settings?.problem_bin_location;
+  const problemBinMissing =
+    settings !== null && !settings?.problem_bin_location;
   const [binInput, setBinInput]     = useState('');
   const [binSaving, setBinSaving]   = useState(false);
   const [binError,  setBinError]    = useState<string | null>(null);
@@ -534,7 +537,6 @@ export default function WmsOperationsPage() {
       onFetchStowTasks={handleFetchStowTasks}
       onResolveLocation={handleResolveLocation}
       onAssignStowLocation={handleAssignStowLocation}
-      onReportStowException={handleReportStowException}
       onFetchReturnJob={handleFetchReturnJob}
       onAddReturnLine={handleAddReturnLine}
       onProcessReturnLine={handleProcessReturnLine}

@@ -142,7 +142,12 @@ export async function claimStowTask(
 export async function confirmStow(
   trx: Knex.Transaction,
   input: StowConfirmInput
-): Promise<{ isFullyPlaced: boolean; quantityPlaced: number; quantityTotal: number }> {
+): Promise<{
+    isFullyPlaced: boolean;
+    quantityPlaced: number;
+    quantityTotal: number;
+    placedNow: number;
+  }> {
   const { stowTaskId, shopId, claimedBy, quantityPlaced, lasyncroUnitId } = input;
 
   // 1. Validate task
@@ -438,10 +443,48 @@ export async function confirmStow(
     );
   }
 
+  // STOW-SPLIT-01 — inventory_units has two identities with different roles:
+  // - lasyncro_unit_id is the operator/scanner identity (for example LSU-1684134b)
+  // - id is the UUID database identity used by UUID-typed ledger references.
+  //
+  // inventory_movements.reference_id is UUID, so never write the LSU label into
+  // that column. Resolve the immutable inventory-unit row UUID once and retain
+  // the LSU string only for scanner identity and deterministic event hashing.
+  const unitReferenceRows = await trx('inventory_units')
+    .where({ shop_id: shopId })
+    .whereIn('lasyncro_unit_id', stowUnitIds)
+    .select('id', 'lasyncro_unit_id');
+
+  const unitReferenceIdByLsu = new Map<string, string>(
+    unitReferenceRows.map((row) => [
+      row.lasyncro_unit_id,
+      row.id,
+    ])
+  );
+
+  const unresolvedReferenceIds = stowUnitIds.filter(
+    (unitId) => !unitReferenceIdByLsu.has(unitId)
+  );
+
+  if (unresolvedReferenceIds.length > 0) {
+    throw new Error(
+      `[STOW_CONFIRM] Inventory-unit UUID missing for ${unresolvedReferenceIds.join(', ')}`
+    );
+  }
+
   // 3. Write inventory movements — one debit/credit pair PER UNIT.
   let firstCreditMovementId: string | null = null;
 
   for (const unitId of stowUnitIds) {
+    const unitReferenceId = unitReferenceIdByLsu.get(unitId);
+
+    if (!unitReferenceId) {
+      // Defensive invariant: the preflight above should make this unreachable.
+      // Keep the failure explicit rather than emitting an untraceable movement.
+      throw new Error(
+        `[STOW_CONFIRM] Inventory-unit UUID unresolved for ${unitId}`
+      );
+    }
     const creditMovementId = uuidv5(
       `${stowTaskId}:${unitId}:location_transfer:credit`,
       STOW_NAMESPACE
@@ -469,7 +512,11 @@ export async function confirmStow(
           quantity_delta: -1,
           location_code: sourceLocation,
           reference_type: 'inventory_unit',
-          reference_id: unitId,
+
+          // STOW-SPLIT-01 — ledger references are database identities, not printed
+          // LSU labels. The LSU remains part of the deterministic event key above.
+          reference_id: unitReferenceId,
+
           platform: 'wms',
           occurred_at: completedAt,
           device_event_id: uuidv5(
@@ -488,11 +535,17 @@ export async function confirmStow(
         lasyncro_inventory_movement_id: creditMovementId,
         lasyncro_variant_id: task.lasyncro_variant_id,
         shop_id: shopId,
-        movement_type: isReturnRestockCredit ? 'refund_return' : 'location_transfer',
+        movement_type: isReturnRestockCredit
+          ? 'refund_return'
+          : 'location_transfer',
         quantity_delta: 1,
         location_code: task.location_code,
         reference_type: 'inventory_unit',
-        reference_id: unitId,
+
+        // Same physical unit as the debit side of the transfer. Both ledger rows
+        // therefore reference one canonical inventory_units.id UUID.
+        reference_id: unitReferenceId,
+
         platform: 'wms',
         occurred_at: completedAt,
         device_event_id: creditDeviceEventId,
@@ -631,8 +684,13 @@ export async function confirmStow(
     entityId: stowTaskId,
     metadata: {
       location_code: task.location_code,
-      quantity: qty,
-      quantity_remaining: task.quantity - qty,
+
+      // STOW-SPLIT-01 — audit facts describe what this transaction actually moved
+      // and what remains after the persisted cumulative quantity is updated.
+      quantity: placedNow,
+      quantity_remaining:
+        updatedTask.quantity - updatedTask.quantity_placed,
+
       lasyncro_variant_id: task.lasyncro_variant_id,
       // STOW-MOVEMENT-ID-01 — movements are now per unit; record the units
       // actually moved rather than a single task-scoped movement id.
@@ -646,5 +704,6 @@ export async function confirmStow(
     isFullyPlaced,
     quantityPlaced: updatedTask.quantity_placed,
     quantityTotal: updatedTask.quantity,
+    placedNow,
   };
 }
