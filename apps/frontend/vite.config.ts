@@ -22,13 +22,7 @@ export default defineConfig({
       '/api': {
         // prefer IPv4 loopback explicitly to avoid ::1 vs 127.0.0.1 mismatch
         target: 'http://localhost:3000',
-        changeOrigin: true,
-        configure: (proxy, _options) => {
-          // Keep routine proxy traffic quiet; surface only actionable proxy failures.
-          proxy.on('error', (err, _req, _res) => {
-            console.error('proxy error', err);
-          });
-        }
+        changeOrigin: true
       }
     }
 },
