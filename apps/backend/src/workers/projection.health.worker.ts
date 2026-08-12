@@ -109,8 +109,6 @@ async function checkProjectionHealth(): Promise<void> {
       console.error('[PROJECTION_HEALTH_CRITICAL]', metric);
     } else if (status === 'warning') {
       console.warn('[PROJECTION_HEALTH_WARNING]', metric);
-    } else {
-      console.info('[PROJECTION_HEALTH_OK]', metric);
     }
   }
 }
