@@ -1,4 +1,4 @@
-import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
+import { shopifyApi, ApiVersion, Session, LogSeverity } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 
 const shopify = shopifyApi({
@@ -8,13 +8,16 @@ const shopify = shopifyApi({
   isEmbeddedApp: false,
   hostName: 'localhost',
   // NOTE (SCOPE-02): not authoritative/enforced — see shopify.app.toml. Kept as description only.
-  scopes: [
+    scopes: [
     'read_orders',
     'read_customers',
     'read_products',
     'read_inventory',
     'read_fulfillments'
   ],
+  logger: {
+    level: LogSeverity.Warning,
+  },
 });
 
 export function createShopifyGraphQLClient(

@@ -1,5 +1,5 @@
 // apps/backend/src/services/shopify-fallback.service.ts
-import { shopifyApi, ApiVersion, Session } from '@shopify/shopify-api';
+import { shopifyApi, ApiVersion, Session, LogSeverity } from '@shopify/shopify-api';
 import '@shopify/shopify-api/adapters/node';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { Knex } from 'knex';
@@ -18,6 +18,9 @@ const shopify = shopifyApi({
   isEmbeddedApp: false,
   hostName: 'localhost',
   scopes: REQUIRED_SCOPES,
+  logger: {
+    level: LogSeverity.Warning,
+  },
 });
 
 // Non-PCD queries that should work without special approval
