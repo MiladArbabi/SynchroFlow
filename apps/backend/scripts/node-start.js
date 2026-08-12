@@ -6,6 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import dotenv from 'dotenv';
+import { initRedisClient } from '@lasyncro/backend-core/services/redis.client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -81,6 +82,9 @@ if (!app || typeof app.listen !== 'function') {
 
 const port = Number(process.env.PORT) || 3000;
 const host = process.env.HOST || '127.0.0.1';
+
+// Dev bootstrap must initialize Redis before protected routes can use permission caching.
+await initRedisClient();
 
 const server = app.listen(port, host, async () => {
   console.log(`Server listening on http://${host}:${port}`);
