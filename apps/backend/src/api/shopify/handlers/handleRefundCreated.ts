@@ -221,7 +221,31 @@ export async function handleRefundCreated(
           device_event_id: null,
           triggered_by: 'shopify_webhook',
         })
-        .onConflict(['shop_id', 'reference_type', 'reference_id', 'lasyncro_variant_id', 'location_code'])
+        /**
+         * REFUND-MOVEMENT-CONFLICT-01 (2026-08-13)
+         * -----------------------------------------
+         * Conflict target must name all six columns of
+         * inventory_movements_shop_ref_unique — movement_type was omitted,
+         * so Postgres raised "no unique or exclusion constraint matching
+         * the ON CONFLICT specification" on every refund. That error
+         * aborted the surrounding transaction, which meant the
+         * integration_webhook_events row was never written either: the
+         * event left no trace and Shopify retried forever. Zero
+         * refund_return movements existed shop-wide before this fix.
+         *
+         * device_event_id is null here, so the ['device_event_id'] target
+         * other writers use is unavailable — this index is the only
+         * correct guard. Matches cancellationUnwind.service.ts:149,
+         * batchReservation.service.ts:395 and pickScan.service.ts:314.
+         */
+        .onConflict([
+          'shop_id',
+          'reference_type',
+          'reference_id',
+          'lasyncro_variant_id',
+          'location_code',
+          'movement_type',
+        ])
         .ignore();
 
       console.info('[REFUND_RETURN_MOVEMENT_WRITTEN]', {
