@@ -247,11 +247,20 @@ router.post(
 );
 
 // Resolve a problem_center_tasks row (re_stow / discard / return / write_off)
+//
+// PC-TIER-GATE-01: starter, not core. cancellationUnwind.service.ts runs in
+// the projection worker with no entitlement middleware, so it raises
+// problem_center_tasks rows for any tenant whose batch release (starter) and
+// pick scan (starter) are entitled. Gating resolution above the tier that
+// generates the row strands the physical unit permanently — the reservation
+// is already released and no stow task can ever be created to recover it.
+// The recovery path this hands off to (/stow-tasks/:taskId/claim|confirm) is
+// starter, so this is the only gate on the chain.
 router.post(
   '/problem-center/:taskId/resolve',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:exception:report'),
   httpResolveProblemTask
 );
@@ -370,11 +379,16 @@ router.post(
   httpCreateProblemTask
 );
 
+// PC-TIER-GATE-01: starter. A tenant must be able to SEE work the system
+// generated on its behalf. Resolving a task it cannot list is an API-only
+// fix — the merchant surface stays broken. Discretionary creation
+// (POST /problem-center), pick-exceptions and the replacement finder remain
+// core; only the see-and-clear pair is dropped.
 router.get(
   '/problem-center',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireTier('starter'),
   requireAction('wms:read'),
   httpGetProblemTasks
 );
