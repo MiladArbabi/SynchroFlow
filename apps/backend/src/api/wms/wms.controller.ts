@@ -3076,7 +3076,39 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
         const summaryRow = await trx('orders as o')
           .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
           .leftJoin('pick_batch_orders as pbo', 'pbo.lasyncro_order_id', 'o.lasyncro_order_id')
-          .leftJoin('pick_batches as pb', 'pb.pick_batch_id', 'pbo.pick_batch_id')
+          /*
+           * FLOW-COUNT-01 (2026-08-13)
+           * --------------------------
+           * active_batch_count below feeds the Order Flow header's
+           * "N batches active". The Fulfillment rail directly beneath it
+           * renders GET /wms/batches, which excludes pack_complete and
+           * cancelled (httpGetBatches, :50). This join had no status
+           * filter, so the header counted every batch still holding a
+           * pick_batch_orders row in ANY status. Production read 6
+           * against the rail's 3 — three completed or cancelled batches
+           * retaining their membership rows.
+           *
+           * The rail's rule is the correct one: a packed or cancelled
+           * batch is not work on the floor. One label, one definition.
+           *
+           * WHY ON THE JOIN CONDITION, NOT A TOP-LEVEL .where():
+           * pb is LEFT joined and the other five counters read pbo /
+           * ofs / active_constraints across ALL orders, including
+           * unbatched ones. A top-level WHERE on pb.status would filter
+           * NULL pb rows out of the result set entirely and silently
+           * corrupt ready_for_release_count, blocked_count and
+           * fulfilled_count. Placed here, non-matching batches simply
+           * yield NULL pb and only active_batch_count is affected.
+           *
+           * in_batch_order_count is deliberately NOT changed — it counts
+           * orders holding a membership regardless of batch status, and
+           * whether a packed batch's orders still count as "in batch"
+           * is a separate product question (see BATCH-CANCEL-ORPHAN-01).
+           */
+          .leftJoin('pick_batches as pb', function () {
+            this.on('pb.pick_batch_id', '=', 'pbo.pick_batch_id')
+              .andOnNotIn('pb.status', ['pack_complete', 'cancelled']);
+          })
           .leftJoin(activeConstraints, 'active_constraints.lasyncro_order_id', 'o.lasyncro_order_id')
           .where('o.shop_id', shopId)
           .select(
