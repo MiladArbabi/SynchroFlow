@@ -2,6 +2,7 @@ import { refreshReviewerActivity } from '../services/wms/reviewerActivityRefresh
 
 const POLL_INTERVAL_MS = 10 * 60_000;
 let running = false;
+let lastNoopReason: string | null = null;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -42,7 +43,17 @@ export async function startReviewerActivityRefreshWorker(): Promise<void> {
   while (running) {
     try {
       const result = await refreshReviewerActivity(shopId);
-      console.info('[REVIEWER_ACTIVITY_REFRESH]', result);
+
+      const refreshedBatchCount =
+        result.pickingBatchesRefreshed + result.packingBatchesRefreshed;
+
+      if (refreshedBatchCount > 0) {
+        console.info('[REVIEWER_ACTIVITY_REFRESH]', result);
+        lastNoopReason = null;
+      } else if (result.reason !== lastNoopReason) {
+        console.info('[REVIEWER_ACTIVITY_REFRESH]', result);
+        lastNoopReason = result.reason;
+      }
     } catch (error) {
       console.error('[reviewer-activity-refresh-worker] cycle error', {
         shopId,
