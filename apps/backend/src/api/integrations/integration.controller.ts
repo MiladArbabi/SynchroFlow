@@ -36,6 +36,10 @@ import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
+import {
+  SHOPIFY_REQUIRED_SCOPE_STRING,
+  normalizeAndValidateShopifyGrantedScopes,
+} from '../../services/shopify/shopifyScopes.js';
 
 // CENTRALIZED ENCRYPTION
 // NOTE: Delegates to encryption.service (single source of truth)
@@ -166,22 +170,10 @@ export const initiateOAuth = async (req: Request, res: Response) => {
       return res.status(500).json({ error: 'Shopify API key missing' });
     }
 
-    const scopes = [
-      'read_products',
-      'read_orders',
-      'read_customers',
-      'read_inventory',
-      'write_inventory',
-      'read_fulfillments',
-      'write_fulfillments',
-      'read_merchant_managed_fulfillment_orders',
-      'write_merchant_managed_fulfillment_orders',
-    ].join(',');
-
     authorizationUrl =
       `https://${shopDomain}/admin/oauth/authorize` +
       `?client_id=${shopifyApiKey}` +
-      `&scope=${encodeURIComponent(scopes)}` +
+      `&scope=${encodeURIComponent(SHOPIFY_REQUIRED_SCOPE_STRING)}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
       `&state=${state}`;
   } else {
@@ -332,7 +324,8 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   }
 
   let shopifyAccessToken: string;
-  let shopBaseCurrency = 'USD'; // set from Shopify at OAuth time, fallback to USD
+  let shopifyGrantedScopes: string;
+  let shopBaseCurrency = 'USD';
   let shopRealName: string | null = null;
   let shopContactEmail: string | null = null;
   let shopGid: string | null = null;
@@ -349,6 +342,10 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       });
 
       shopifyAccessToken = tokenResponse.data?.access_token;
+      shopifyGrantedScopes =
+        normalizeAndValidateShopifyGrantedScopes(
+          tokenResponse.data?.scope
+        );
 
       // Fetch store currency + identity via GraphQL Admin API (single round-trip).
       // id → canonical Shopify Shop GID required by App Events reporting.
@@ -437,14 +434,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           shop_domain: oauthContext.shopDomain,
           shop_gid: shopGid,
           access_token: encryptedToken,
-          scopes:
-            'read_products,read_orders,read_customers,read_inventory,write_inventory,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders',
+          scopes: shopifyGrantedScopes,
           installed_at: new Date(),
           uninstalled_at: null,
         })
         .onConflict(['shop_domain'])
         .merge({
           access_token: encryptedToken,
+          scopes: shopifyGrantedScopes,
           // Preserve a previously captured GID if this optional lookup fails.
           shop_gid: trx.raw(
             'COALESCE(EXCLUDED.shop_gid, shopify_app_installations.shop_gid)'
@@ -671,12 +668,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
  *   - Ghost user email is @lasyncro.internal and is password-login-disabled
  *   - billing_provider: 'shopify' is stamped at birth on new installs
  * 
- * SCOPE-01: scopes here MUST exactly match [access_scopes] in shopify.app.toml.
- * Shopify grants only the intersection of the two lists — a mismatch silently
- * breaks whatever feature depends on the missing scope. Last audited 2026-07-24:
- * write_inventory -> stow cascade sync. NOTE: refund data (shopifyRefundBackfill.service.ts)
- * is covered by read_orders — there is no separate "read_refunds" scope in Shopify's
- * system. Do not re-add it; Shopify's app deploy validation will reject it outright.
+ * OAUTH-SCOPES-01 / SHOPIFY-LOCATION-SCOPE-01 (2026-08-13)
+ * ---------------------------------------------------------
+ * App Store install and authenticated reconnect both consume
+ * SHOPIFY_REQUIRED_SCOPE_STRING from shopifyScopes.ts.
+ *
+ * Do not introduce an independently maintained scope list here.
+ * shopify.app.toml must represent the same required capability contract.
+ *
+ * The OAuth callback persists Shopify's normalized effective grant set rather
+ * than a hard-coded requested-scope approximation. `read_locations` is a core
+ * capability required for human-readable Shopify Location metadata used by
+ * warehouse-location mapping.
  */
 export const handleShopifyInstall = async (req: Request, res: Response) => {
   const query = req.query as Record<string, string>;
@@ -944,22 +947,11 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
   }
 
   const redirectUri = `${process.env.API_URL}/api/v1/integrations/oauth/callback/shopify`;
-  const scopes = [
-    'read_products',
-    'read_orders',
-    'read_customers',
-    'read_inventory',
-    'read_payouts',
-    'read_fulfillments',
-    'write_fulfillments',
-    'read_merchant_managed_fulfillment_orders',
-    'write_merchant_managed_fulfillment_orders',
-  ].join(',');
 
   const authorizationUrl =
     `https://${shopDomain}/admin/oauth/authorize` +
     `?client_id=${shopifyApiKey}` +
-    `&scope=${encodeURIComponent(scopes)}` +
+    `&scope=${encodeURIComponent(SHOPIFY_REQUIRED_SCOPE_STRING)}` +
     `&redirect_uri=${encodeURIComponent(redirectUri)}` +
     `&state=${state}`;
 

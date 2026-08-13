@@ -2,7 +2,7 @@
 
 **Sprint:** LaSyncro Shopify App Store Listing
 **Date:** June 15–16, 2026
-**Last updated:** August 8, 2026
+**Last updated:** August 13, 2026
 **Status:** ✅ Submission-ready
 
 ---
@@ -280,6 +280,62 @@ Both production and local dev URLs must be in the Shopify Partner Dashboard redi
 https://app.lasyncro.com/api/v1/integrations/oauth/callback/shopify
 http://localhost:3000/api/v1/integrations/oauth/callback/shopify
 ```
+
+---
+
+## Shopify OAuth Scope Contract — verified 2026-08-13
+
+The Shopify permission contract is centralized in:
+
+```text
+apps/backend/src/services/shopify/shopifyScopes.ts
+
+SHOPIFY_REQUIRED_SCOPES currently requires:
+
+read_products
+read_orders
+read_customers
+read_inventory
+write_inventory
+read_locations
+read_fulfillments
+write_fulfillments
+read_merchant_managed_fulfillment_orders
+write_merchant_managed_fulfillment_orders
+
+Both the authenticated reconnect path and App Store install path use
+SHOPIFY_REQUIRED_SCOPE_STRING; do not maintain independent scope arrays in
+either controller path.
+
+shopify.app.toml [access_scopes] must represent the same required contract.
+
+The OAuth callback persists Shopify's granted capabilities rather than a
+hard-coded approximation. Shopify's token-response scope may be a compact
+representation of effective permissions, so LaSyncro normalizes implied read
+capabilities before validation and persistence.
+
+Required invariant after OAuth:
+
+shopify_app_installations.scopes
+    =
+currentAppInstallation.accessScopes
+
+Runtime verification on 2026-08-13 proved:
+
+persisted scope count = 10
+runtime scope count   = 10
+persisted == runtime  = yes
+read_locations        = yes
+write_inventory       = yes
+
+read_locations is required for human-readable Shopify Location metadata.
+The development-store proof successfully resolved:
+
+gid://shopify/Location/110070792562 -> My Custom Location
+gid://shopify/Location/110070759794 -> Shop location
+
+This unblocks the permission prerequisite for SHOPIFY-LOCATION-MAP-01; it
+does not itself implement warehouse-to-Shopify-Location mapping.
 
 ---
 
@@ -1457,3 +1513,7 @@ alter pick_batch_orders
 release #1192 to prove the repair
 
 Those actions bypass or distort the canonical repair invariants.
+
+Detailed contract and runtime proof:
+
+docs/playbooks/oauth_scopes_location_scope_2026_08_13.md
