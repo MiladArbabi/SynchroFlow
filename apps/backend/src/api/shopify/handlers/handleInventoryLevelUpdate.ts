@@ -181,79 +181,18 @@ export async function handleInventoryLevelUpdate(
   }
 
   /**
-   * INVENTORY MOVEMENT — RECONCILIATION CORRECTION (IN-02)
-   * -------------------------------------------------------
-   * MUST run BEFORE domain event insert.
-   * The projection worker rebuilds inventory_truth after the domain
-   * event is processed — movement must already be in the ledger.
+   * SHOPIFY INVENTORY OBSERVATION CONTRACT
+   * --------------------------------------
+   * inventory_levels/update is an external observation only.
+   *
+   * It MUST NOT:
+   * - create inventory_movements
+   * - change physical inventory
+   * - reconcile against WH-{shopId}-ROOT
+   *
+   * Physical inventory remains authoritative in the laSyncro ledger.
+   * Drift detection/reconciliation is handled separately from ingestion.
    */
-  if (externalInventoryItemGid && typeof payload.available === 'number') {
-    await trx.raw('SAVEPOINT inventory_reconciliation_optional');
-    try {
-      const identityRow = await trx('external_product_identity_map')
-        .where({
-          shop_id: shopId,
-          external_inventory_item_id: externalInventoryItemGid,
-        })
-        .select('lasyncro_variant_id')
-        .first();
-
-      if (identityRow?.lasyncro_variant_id) {
-        const locationCode = `WH-${shopId}-ROOT`;
-        const currentTruth = await trx('inventory_truth')
-          .where({
-            shop_id: shopId,
-            lasyncro_variant_id: identityRow.lasyncro_variant_id,
-            location_code: locationCode,
-          })
-          .select('on_hand_quantity')
-          .first();
-
-        const currentOnHand = Number(currentTruth?.on_hand_quantity ?? 0);
-        const shopifyAvailable = Number(payload.available);
-        const delta = shopifyAvailable - currentOnHand;
-
-        if (delta !== 0) {
-          const { randomUUID } = await import('crypto');
-          await trx('inventory_movements')
-            .insert({
-              lasyncro_inventory_movement_id: randomUUID(),
-              lasyncro_variant_id: identityRow.lasyncro_variant_id,
-              shop_id: shopId,
-              movement_type: 'reconciliation_correction',
-              quantity_delta: delta,
-              location_code: locationCode,
-              reference_type: 'inventory_levels_update',
-              reference_id: randomUUID(),
-              occurred_at: eventTime,
-              device_event_id: null,
-              triggered_by: 'shopify_webhook', // traceability: Shopify inventory sync
-            })
-            .onConflict(['device_event_id'])
-            .ignore();
-
-          console.info('[INVENTORY_MOVEMENT_WRITTEN]', {
-            lasyncro_variant_id: identityRow.lasyncro_variant_id,
-            delta,
-            currentOnHand,
-            shopifyAvailable,
-            eventId: envelope.eventId,
-          });
-        }
-      }
-
-      await trx.raw('RELEASE SAVEPOINT inventory_reconciliation_optional');
-    } catch (err) {
-      await trx.raw('ROLLBACK TO SAVEPOINT inventory_reconciliation_optional');
-      await trx.raw('RELEASE SAVEPOINT inventory_reconciliation_optional');
-
-      console.error('[INVENTORY_MOVEMENT_WRITE_FAILED]', {
-        error: (err as Error).message,
-        eventId: envelope.eventId,
-      });
-    }
-  }
-
   let domainEventId: number;
   await trx.raw('SAVEPOINT inventory_level_domain_event');
   try {
