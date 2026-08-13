@@ -196,6 +196,7 @@ export async function handleOrderFulfillment(
     normalizedPayload.id = normalizedPayload.id.split('/').pop();
   }
 
+  await trx.raw('SAVEPOINT order_fulfilled_domain_event');
   try {
     const result = await trx('domain_events')
       .insert({
@@ -233,8 +234,11 @@ export async function handleOrderFulfillment(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+    await trx.raw('RELEASE SAVEPOINT order_fulfilled_domain_event');
     
   } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT order_fulfilled_domain_event');
+    await trx.raw('RELEASE SAVEPOINT order_fulfilled_domain_event');
 
     /**
      * DUPLICATE DELIVERY HANDLING

@@ -476,6 +476,38 @@ Handlers MUST use the transaction supplied by `WebhookRouter`. They must
 not open an independent transaction or use the bare database singleton
 for RLS-protected writes.
 
+### Transaction-abort recovery invariant (verified 2026-08-13)
+
+`WebhookRouter` is shared webhook infrastructure, so a PostgreSQL error inside
+a handler must not poison the transaction that still needs to finalize the
+webhook ledger.
+
+Registered handler execution is therefore isolated behind a router-level
+savepoint. If the handler throws, or returns while leaving PostgreSQL in an
+aborted transaction state, the router rolls back to that savepoint before
+writing the `failed` ledger state. The outer transaction can then commit the
+failure record before the captured error is rethrown.
+
+A handler that intentionally catches a PostgreSQL error and wants to continue
+or return successfully MUST protect that tolerated operation with its own
+local savepoint. The required sequence is:
+
+1. `SAVEPOINT` before the potentially failing database operation.
+2. On success, `RELEASE SAVEPOINT`.
+3. On a tolerated error, `ROLLBACK TO SAVEPOINT` and then
+   `RELEASE SAVEPOINT` before `return` or `continue`.
+4. Any non-tolerated error is rethrown after transaction state has been
+   restored.
+
+Catching a database error without local savepoint recovery is not sufficient:
+PostgreSQL keeps the transaction aborted. The router-level savepoint is the
+final backstop and will convert that unsafe swallowed error into a failed
+webhook rather than falsely marking it processed.
+
+Unsupported-event optional `domain_events` persistence follows the same
+isolation rule so an optional persistence error cannot roll back an already
+recorded `ignored` ledger state.
+
 ### Failure behavior
 
 - Missing or invalid Stripe signatures return `400` before ledger or

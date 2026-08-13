@@ -47,6 +47,7 @@ export async function handleReturnRequested(
     );
   }
   let domainEventId: number;
+  await trx.raw('SAVEPOINT return_requested_domain_event');
   try {
     const result = await trx('domain_events')
       .insert({
@@ -59,7 +60,10 @@ export async function handleReturnRequested(
       })
       .returning('id');
     domainEventId = result[0].id ?? result[0];
+    await trx.raw('RELEASE SAVEPOINT return_requested_domain_event');
   } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT return_requested_domain_event');
+    await trx.raw('RELEASE SAVEPOINT return_requested_domain_event');
     /**
      * DUPLICATE DELIVERY HANDLING
      * ---------------------------

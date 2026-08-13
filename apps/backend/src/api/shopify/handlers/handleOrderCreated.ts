@@ -166,6 +166,7 @@ export async function handleOrderCreated(
 
   let domainEventId: number;
 
+  await trx.raw('SAVEPOINT order_created_domain_event');
   try {
 
     const result = await trx('domain_events')
@@ -200,6 +201,24 @@ export async function handleOrderCreated(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+    await trx.raw('RELEASE SAVEPOINT order_created_domain_event');
+
+  } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT order_created_domain_event');
+    await trx.raw('RELEASE SAVEPOINT order_created_domain_event');
+
+    if (error?.code === '23505') {
+      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+        shopId,
+        externalEventId: envelope.eventId,
+        eventType: 'orders/create',
+      });
+
+      return;
+    }
+
+    throw error;
+  }
 
     // Increment ingested_orders on open billing period (MON-05)
     // Non-fatal — cap enforcement reads this value, not domain_events count.
@@ -233,7 +252,9 @@ export async function handleOrderCreated(
 
     if (financialStatus === 'paid') {
 
-      const paidEvent = await trx('domain_events')
+      await trx.raw('SAVEPOINT order_created_paid_event');
+      try {
+        const paidEvent = await trx('domain_events')
         .insert({
           shop_id: shopId,
           event_type: 'orders/paid',
@@ -265,31 +286,25 @@ export async function handleOrderCreated(
        * - no lost projections
        * - deterministic replay safety
        */
+        await trx.raw('RELEASE SAVEPOINT order_created_paid_event');
+
+      } catch (error: any) {
+        await trx.raw('ROLLBACK TO SAVEPOINT order_created_paid_event');
+        await trx.raw('RELEASE SAVEPOINT order_created_paid_event');
+
+        if (error?.code === '23505') {
+          console.warn('[DOMAIN_EVENT_DUPLICATE]', {
+            shopId,
+            externalEventId: envelope.eventId,
+            eventType: 'orders/create',
+          });
+
+          return;
+        }
+
+        throw error;
+      }
     }
-
-  } catch (error: any) {
-
-    /**
-     * DUPLICATE DELIVERY HANDLING
-     * ---------------------------
-     * Unique constraint:
-     * (shop_id, external_event_id)
-     *
-     * PostgreSQL error code 23505 = unique_violation
-     */
-    if (error?.code === '23505') {
-
-      console.warn('[DOMAIN_EVENT_DUPLICATE]', {
-        shopId,
-        externalEventId: envelope.eventId,
-        eventType: 'orders/create',
-      });
-
-      return; // Do NOT enqueue duplicate
-    }
-
-    throw error; // Unexpected DB error
-  }
 
   console.log('[DOMAIN_EVENT_INSERTED]', domainEventId);
 

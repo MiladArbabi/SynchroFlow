@@ -73,6 +73,7 @@ export async function handleOrderCancelled(
     throw new Error('[INGESTION_IDENTITY_VIOLATION] Missing external eventId');
   }
 
+  await trx.raw('SAVEPOINT order_cancelled_domain_event');
   try {
     await trx('domain_events').insert({
       shop_id: shopId,
@@ -87,7 +88,10 @@ export async function handleOrderCancelled(
         suffix: 'cancelled',
       }),
     });
+    await trx.raw('RELEASE SAVEPOINT order_cancelled_domain_event');
   } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT order_cancelled_domain_event');
+    await trx.raw('RELEASE SAVEPOINT order_cancelled_domain_event');
     // 23505 = unique_violation on (shop_id, external_event_id).
     // Shopify retries deliveries; replay must not create a second event.
     if (error?.code === '23505') {

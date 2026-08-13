@@ -294,6 +294,7 @@ export class WebhookRouter {
            * - future backfills
            * - replay when handlers are introduced
            */
+          await trx.raw('SAVEPOINT unsupported_event_persist');
           try {
             const installation = envelope.shopDomain
               ? await trx('shopify_app_installations')
@@ -322,7 +323,12 @@ export class WebhookRouter {
                 shopDomain: envelope.shopDomain,
               });
             }
+
+            await trx.raw('RELEASE SAVEPOINT unsupported_event_persist');
           } catch (err) {
+            await trx.raw('ROLLBACK TO SAVEPOINT unsupported_event_persist');
+            await trx.raw('RELEASE SAVEPOINT unsupported_event_persist');
+
             console.error('[UNSUPPORTED_EVENT_PERSIST_FAILED]', {
               eventId: envelope.eventId,
               error: err,
@@ -332,29 +338,40 @@ export class WebhookRouter {
           return;
         }
 
+        let handlerError: any = null;
+
+        await trx.raw('SAVEPOINT webhook_handler_execution');
         try {
           await handler(envelope, trx);
+          await trx.raw('RELEASE SAVEPOINT webhook_handler_execution');
+        } catch (err: any) {
+          await trx.raw('ROLLBACK TO SAVEPOINT webhook_handler_execution');
+          await trx.raw('RELEASE SAVEPOINT webhook_handler_execution');
+          handlerError = err;
+        }
 
+        if (handlerError) {
+          console.error('[WEBHOOK_HANDLER_ERROR]', {
+            eventId: envelope.eventId,
+            eventType: normalizedEventType,
+            error: handlerError?.message,
+          });
+
+          await WebhookLedgerService.markFailed(
+            envelope.eventId,
+            handlerError?.message ?? 'handler_error',
+            resolvedShopId,
+            trx
+          );
+
+          // Captured, not thrown here — see comment above this transaction.
+          capturedError = handlerError;
+        } else {
           await WebhookLedgerService.markProcessed(
             envelope.eventId,
             resolvedShopId,
             trx
           );
-
-        } catch (err: any) {
-          console.error('[WEBHOOK_HANDLER_ERROR]', {
-            eventId: envelope.eventId,
-            eventType: normalizedEventType,
-            error: err?.message,
-          });
-          await WebhookLedgerService.markFailed(
-            envelope.eventId,
-            err?.message ?? 'handler_error',
-            resolvedShopId,
-            trx
-          );
-          // Captured, not thrown here — see comment above this transaction.
-          capturedError = err;
         }
       });
 

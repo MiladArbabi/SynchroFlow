@@ -116,6 +116,7 @@ export async function handleRefundCreated(
 
   let domainEventId: number;
 
+  await trx.raw('SAVEPOINT refund_created_domain_event');
   try {
 
     const result = await trx('domain_events')
@@ -130,7 +131,10 @@ export async function handleRefundCreated(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+    await trx.raw('RELEASE SAVEPOINT refund_created_domain_event');
   } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT refund_created_domain_event');
+    await trx.raw('RELEASE SAVEPOINT refund_created_domain_event');
     if (error?.code === '23505') {
       console.warn('[DOMAIN_EVENT_DUPLICATE]', {
         shopId,
@@ -170,6 +174,7 @@ export async function handleRefundCreated(
     const externalVariantId = lineItem.line_item?.variant_id;
     if (!externalVariantId) continue;
 
+    await trx.raw('SAVEPOINT refund_return_movement_optional');
     try {
       /**
        * Resolve external variant → lasyncro_variant_id
@@ -187,6 +192,7 @@ export async function handleRefundCreated(
           externalVariantId,
           shopId,
         });
+        await trx.raw('RELEASE SAVEPOINT refund_return_movement_optional');
         continue;
       }
 
@@ -255,7 +261,11 @@ export async function handleRefundCreated(
         shopId,
       });
 
+      await trx.raw('RELEASE SAVEPOINT refund_return_movement_optional');
     } catch (err) {
+      await trx.raw('ROLLBACK TO SAVEPOINT refund_return_movement_optional');
+      await trx.raw('RELEASE SAVEPOINT refund_return_movement_optional');
+
       console.error('[REFUND_RETURN_MOVEMENT_FAILED]', {
         externalVariantId,
         error: (err as Error).message,

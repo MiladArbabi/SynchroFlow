@@ -96,14 +96,29 @@ The two-delivery case is the useful one: domain-event dedupe is per-delivery
 (distinct `external_event_id`), while movement dedupe is per-refund-content
 (deterministic `reference_id`). Two events correctly produced one movement.
 
-## Related — still open
+## Related
 
-**WEBHOOK-TRX-POISON-01 (P2, new).** The `catch` at
-`handleRefundCreated.ts:234` logs and continues the loop on a transaction
-Postgres has already aborted. Its resilience is illusory: every later
-statement in that transaction is guaranteed to fail. Fixing the conflict
-target removes today's trigger but not the pattern. Needs its own audit —
-including whether other handlers catch-and-continue inside a shared `trx`.
+**WEBHOOK-TRX-POISON-01 (P2, resolved 2026-08-13).** The shared
+`WebhookRouter` now protects registered handler execution with a PostgreSQL
+savepoint. An unhandled handler DB error rolls back to that savepoint before
+the webhook ledger is marked `failed`, so the failed ledger state can commit
+before the error is rethrown to the caller.
+
+Shopify handlers that intentionally tolerate database errors now use their
+own local savepoints around those writes. They roll back and release the
+local savepoint before `return` or `continue`, preserving the handler's
+existing duplicate/optional-write semantics without leaving the shared
+transaction aborted. The same recovery rule applies to duplicate
+`domain_events` inserts and optional inventory-movement writes.
+
+The unsupported-event optional `domain_events` persistence path is also
+isolated with a savepoint, so failure of that optional write does not undo
+the already-recorded `ignored` webhook ledger state.
+
+Runtime proof covered four cases: unhandled DB failure → `failed`; swallowed
+DB failure without local recovery → router backstop `failed`; locally
+recovered tolerated DB failure → `processed`; normal success → `processed`.
+All synthetic proof ledger rows were removed afterwards.
 
 **ORDER-PAID-ORDERING-01 (P3, observed).** `[ORDER_PAID_DEFER_EXHAUSTED]` for
 external order `17053031858546`: `orders/paid` arrived before `orders/create`

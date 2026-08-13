@@ -188,6 +188,7 @@ export async function handleInventoryLevelUpdate(
    * event is processed — movement must already be in the ledger.
    */
   if (externalInventoryItemGid && typeof payload.available === 'number') {
+    await trx.raw('SAVEPOINT inventory_reconciliation_optional');
     try {
       const identityRow = await trx('external_product_identity_map')
         .where({
@@ -240,7 +241,12 @@ export async function handleInventoryLevelUpdate(
           });
         }
       }
+
+      await trx.raw('RELEASE SAVEPOINT inventory_reconciliation_optional');
     } catch (err) {
+      await trx.raw('ROLLBACK TO SAVEPOINT inventory_reconciliation_optional');
+      await trx.raw('RELEASE SAVEPOINT inventory_reconciliation_optional');
+
       console.error('[INVENTORY_MOVEMENT_WRITE_FAILED]', {
         error: (err as Error).message,
         eventId: envelope.eventId,
@@ -249,6 +255,7 @@ export async function handleInventoryLevelUpdate(
   }
 
   let domainEventId: number;
+  await trx.raw('SAVEPOINT inventory_level_domain_event');
   try {
     const result = await trx('domain_events')
       .insert({
@@ -262,7 +269,10 @@ export async function handleInventoryLevelUpdate(
       .returning('id');
 
     domainEventId = result[0].id ?? result[0];
+    await trx.raw('RELEASE SAVEPOINT inventory_level_domain_event');
   } catch (error: any) {
+    await trx.raw('ROLLBACK TO SAVEPOINT inventory_level_domain_event');
+    await trx.raw('RELEASE SAVEPOINT inventory_level_domain_event');
     /**
      * DUPLICATE DELIVERY HANDLING
      * ---------------------------
