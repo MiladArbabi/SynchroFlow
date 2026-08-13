@@ -1831,16 +1831,45 @@ export const httpConfirmStow = async (req: Request, res: Response) => {
         .first();
 
       if (task?.lasyncro_variant_id) {
-        // NOTE: intentionally NOT rebuilding inventory projection after stow confirm.
-        // Stow confirm is a location transfer only — inventory_truth is updated directly
-        // by confirmStow. Rebuilding from movements would erase the location transfer
-        // since no new movement is written on stow (per inventory contract INV-02).
-      /*  await rebuildInventoryProjectionForVariants(
-          shopId,
-          [task.lasyncro_variant_id],
-          trx,
-          new Date()
-        ); */
+        /*
+         * INV-BLOCK-03 (2026-08-13): corrected justification.
+         *
+         * We intentionally do NOT rebuild the inventory projection here.
+         *
+         * The previous note defended this on three grounds, all false:
+         *   - "no new movement is written on stow" — confirmStow writes
+         *     TWO location_transfer movements (stow.service.ts:503 debit,
+         *     :533 credit)
+         *   - "per inventory contract INV-02" — INV-02 is a fontWeight
+         *     styling issue in ProductsModuleFT2 (InventoryModule.md:143),
+         *     resolved May 2026. No such inventory contract exists
+         *   - "rebuilding would erase the location transfer" — inverted.
+         *     The movements exist, so a replay REPRODUCES the transfer.
+         *     The ledger is authority over inventory_truth, not vice versa
+         *
+         * The real reasons:
+         *   1. confirmStow already mutates inventory_truth directly AND
+         *      writes both balancing movements, so a per-variant rebuild
+         *      inside this transaction is redundant work on the hot
+         *      stow path.
+         *   2. INV-BLOCK-20's synchronous revalidateOrdersForReceivedVariants
+         *      below already delivers the constraint re-evaluation the
+         *      rebuild was meant to enable.
+         *
+         * CAVEAT (INV-BLOCK-03-FU-01): the order_cancelled_mid_pick
+         * trigger stows credit-only — +1 at the destination with no
+         * matching -1, because the pick sale already removed the unit.
+         * A rebuild summing movements may therefore land somewhere
+         * different from what confirmStow wrote directly. Whether
+         * ledger and truth agree across all four stow triggers is
+         * unverified. If they diverge, this skip is protecting a real
+         * inconsistency rather than merely avoiding redundant work.
+         *
+         * The commented-out rebuildInventoryProjectionForVariants call
+         * that stood here was removed: wms.controller.ts has no import
+         * for it, so it could never have been uncommented as-is. It read
+         * as a switch and was not one.
+         */
 
         // CASCADE: Enqueue reconciliation for orders constrained on this variant.
         // Constraint engine will re-evaluate inventory block and release if stock now sufficient.
