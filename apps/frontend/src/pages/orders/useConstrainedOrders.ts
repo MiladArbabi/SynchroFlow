@@ -67,11 +67,47 @@ export function getBlockerReason(order: ConstrainedOrder): string {
   return 'Needs attention';
 }
 
+/**
+ * SECONDARY BLOCKERS — FLOW-MULTIBLOCK-01 (2026-08-13)
+ * ----------------------------------------------------
+ * An order can hold several active constraints at once. The card shows
+ * ONE — the elected constraint, chosen by fixed precedence in
+ * orders.constrained.controller.ts (operational > customer > inventory).
+ *
+ * WHY THIS EXISTS: locally 9 of 19 blocked orders held both a customer
+ * and an inventory constraint. The operator saw one, resolved it, and
+ * the order did not move — the other blocker was never surfaced. That
+ * is the same failure shape as the Shopify reviewer's rejection: an
+ * action that appears to work and produces no visible progress.
+ *
+ * WHY NAMED, NOT COUNTED: '+1 more' tells the operator a number.
+ * 'Also: not enough stock' tells them why their next action will not
+ * release the order. The point is to prevent a wasted action.
+ *
+ * Reuses CONSTRAINT_LABELS — system vocabulary is never shown raw.
+ * Returns null when the elected constraint is the only one, so the
+ * caller branches on null rather than on an empty string.
+ */
+export function getSecondaryBlockers(order: ConstrainedOrder): string | null {
+  const others = order.other_blocker_types ?? [];
+  if (others.length === 0) return null;
+
+  const labels = others.map((type) => CONSTRAINT_LABELS[type] ?? 'Needs Attention');
+  return `Also: ${labels.join(' · ')}`;
+}
+
 export type ConstrainedOrder = {
   order_id: string;
   external_order_id: string | null;
   constraint_type: string;
   block_type: string | null;
+  /**
+   * FLOW-MULTIBLOCK-01: other active constraint types on this order,
+   * excluding constraint_type above. Backend COALESCEs to an empty
+   * array, never null — the optional marker covers older cached
+   * responses only.
+   */
+  other_blocker_types?: string[];
   constrained_since: string | null;
   revenue: number | null;
   promised_ship_by: string | null;

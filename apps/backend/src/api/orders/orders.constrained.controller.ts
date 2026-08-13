@@ -53,13 +53,62 @@ export const httpGetConstrainedOrders = async (
        */
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      // Deduplicate order_constraints — one row per order, most recent constraint wins
+      /*
+       * FLOW-BUCKET-ELECTION-01 (2026-08-13)
+       * ------------------------------------
+       * An order may hold several active constraints at once (locally,
+       * 9 of 19 held both customer and inventory). This DISTINCT ON
+       * elects exactly one to drive the card, its bucket and the
+       * decision join below.
+       *
+       * The previous chain ordered on started_at alone. Both constraints
+       * are written inside the SAME projection transaction, so started_at
+       * ties to the second on every multi-blocked order — the chain was
+       * not total and Postgres returned whichever row the plan produced.
+       * The elected constraint was therefore arbitrary and could differ
+       * between two identical requests.
+       *
+       * Precedence is now explicit and the chain is total:
+       *   operational (post-release exception — BL-01b) beats
+       *   customer    (merchant-actionable today, no lead time) beats
+       *   inventory   (may clear on its own via inbound PO)
+       * then started_at DESC, then constraint_id as a final total key.
+       *
+       * Buckets stay mutually exclusive — every downstream count is
+       * unchanged. The blockers the operator is NOT being shown are
+       * surfaced separately via otherBlockerTypes below.
+       */
       const dedupedConstraints = trx('order_constraints')
         .distinctOn('lasyncro_order_id')
         .select('lasyncro_order_id', 'constraint_type', 'block_type', 'started_at', 'is_active')
         .where('is_active', true)
-        .orderByRaw('lasyncro_order_id, started_at DESC NULLS LAST')
+        .orderByRaw(`
+          lasyncro_order_id,
+          CASE constraint_type
+            WHEN 'operational' THEN 0
+            WHEN 'customer'    THEN 1
+            WHEN 'inventory'   THEN 2
+            ELSE 3
+          END,
+          started_at DESC NULLS LAST,
+          constraint_id
+        `)
         .as('oc');
+
+      /*
+       * FLOW-MULTIBLOCK-01: the other active constraint types on the
+       * same order, excluding the elected one. Aggregated by TYPE, not
+       * by row — inventory constraints are line-scoped (target_id), so
+       * an order short on three lines is still one blocker to an
+       * operator. Empty array when the elected constraint is the only
+       * one. Never drives the bucket or the CTA.
+       */
+      const otherBlockerTypes = trx('order_constraints')
+        .select('lasyncro_order_id')
+        .select(trx.raw('array_agg(DISTINCT constraint_type) as all_types'))
+        .where('is_active', true)
+        .groupBy('lasyncro_order_id')
+        .as('obt');
 
       const query = trx(dedupedConstraints)
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
@@ -118,6 +167,7 @@ export const httpGetConstrainedOrders = async (
           'oas.lasyncro_order_id', 'oc.lasyncro_order_id'
         )
         .leftJoin('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin(otherBlockerTypes, 'obt.lasyncro_order_id', 'oc.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .select(
           'oc.lasyncro_order_id as order_id',
@@ -125,6 +175,22 @@ export const httpGetConstrainedOrders = async (
           'oc.constraint_type',
           'oc.block_type',
           'oc.started_at as constrained_since',
+          /*
+           * FLOW-MULTIBLOCK-01: active constraint types on this order
+           * OTHER than the elected one. The elected type is stripped
+           * here rather than in the aggregate, because obt is grouped
+           * before the DISTINCT ON result is known.
+           *
+           * COALESCE to an empty array so the field is never null —
+           * the client can branch on length alone. Cast is explicit:
+           * array_remove on an empty array would otherwise be unknown-typed.
+           */
+          trx.raw(`
+            COALESCE(
+              array_remove("obt"."all_types", "oc"."constraint_type"),
+              ARRAY[]::text[]
+            ) as other_blocker_types
+          `),
           'o.total_price as revenue',
           'o.promised_ship_by',
           'd.recommended_action',

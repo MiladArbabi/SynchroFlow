@@ -57,6 +57,7 @@ import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { 
   getAgeLabel, 
   getBlockerReason, 
+  getSecondaryBlockers,
   getConstraintLabel, 
   useConstrainedOrders 
 } from '../orders/useConstrainedOrders';
@@ -875,6 +876,26 @@ export default function OrderFlowPage() {
                                       </Typography>
                                       <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
                                         {getBlockerReason(order)}
+                                        {/*
+                                          * FLOW-MULTIBLOCK-01 (2026-08-13): this card shows ONE
+                                          * elected constraint, but 9 of 19 blocked orders locally
+                                          * hold two. Naming the hidden blocker here stops the
+                                          * operator resolving the visible one and seeing no
+                                          * movement. Renders nothing when there is only one.
+                                          */}
+                                        {getSecondaryBlockers(order) && (
+                                          <Box
+                                            component="span"
+                                            sx={{
+                                              display: 'block',
+                                              color: 'text.secondary',
+                                              fontSize: '0.75rem',
+                                              mt: 0.25,
+                                            }}
+                                          >
+                                            {getSecondaryBlockers(order)}
+                                          </Box>
+                                        )}
                                       </Typography>
                                     </Box>
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-end', flexShrink: 0 }}>
