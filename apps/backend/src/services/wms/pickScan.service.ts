@@ -293,22 +293,42 @@ export async function confirmPickScan(
        * convention of the existing vocabulary: pick_batch,
        * pick_reservation_allocation, inventory_unit, receive_job.
        *
-       * THIS DOES NOT STOP THE DOUBLE DEBIT. Both this site and
-       * revenue-units.writer.ts write a `sale` for the same units —
-       * 9 ordered units produced 18 debited on shop 2. Each writer is
-       * idempotent only against ITSELF, via its own uuidv5
-       * device_event_id namespace; neither sees the other, and
-       * onConflict(['device_event_id']) is the real guard, not the
-       * six-column inventory_movements_shop_ref_unique.
-       * The duplicate is INV-SALE-DOUBLE-01 (P1) — pick is intended to
-       * become the sole physical debit, pending the fulfilment-path
-       * audit. Correcting the label here makes the pick-written rows
-       * queryable as a set for that fix's backfill.
+       * The double debit that motivated this label change is now fixed
+       * by movement_type above: this site writes 'pick_removal', which
+       * no on-hand computation sums. Ingestion keeps 'sale' and remains
+       * the single physical debit.
        *
-       * UNTIL INV-SALE-DOUBLE-01 LANDS: do not run rebuild-from-events
-       * on a tenant that has picked. rebuildInventoryProjection sums
-       * `sale` into on_hand and would subtract every picked unit twice.
+       * Note on guards, for future readers: onConflict(['device_event_id'])
+       * is the real idempotency guard here, NOT the six-column
+       * inventory_movements_shop_ref_unique. Each writer derives its
+       * device_event_id from its own uuidv5 namespace, so each is
+       * idempotent only against ITSELF and blind to the other. No
+       * conflict target would have caught the duplicate.
+       *
+       * BACKFILL — PRODUCTION OUTSTANDING. Rows written BEFORE migration
+       * 0147 carry movement_type 'sale' and are double-subtracted by any
+       * ledger replay. Local shop 2's 5 rows are corrected
+       * (INV-SALE-BACKFILL-01); shop 1 has NONE — its 26 'sale' rows are
+       * all triggered_by NULL (ingestion), 0 pick scans, 0 batches.
+       *
+       * PRODUCTION HAS NOT BEEN BACKFILLED and carries picked batches.
+       * Run backfill-pick-sale-corrections.ts --shop <id> (dry run first)
+       * before any rebuild-from-events there: the historical pick 
+       * rows are still summed into on_hand and would subtract twice.
+       * 
+       * The double debit that motivated this label change is now fixed
+       * by movement_type above: this site writes 'pick_removal', which
+       * no on-hand computation sums. Ingestion keeps 'sale' and remains
+       * the single physical debit.
+       *
+       * Note on guards, for future readers: onConflict(['device_event_id'])
+       * is the real idempotency guard here, NOT the six-column
+       * inventory_movements_shop_ref_unique. Each writer derives its
+       * device_event_id from its own uuidv5 namespace, so each is
+       * idempotent only against ITSELF and blind to the other. No
+       * conflict target would have caught the duplicate.
        */
+
       reference_type: 'order_line_item',
       reference_id: lasyncroLineItemId,
       platform: null,

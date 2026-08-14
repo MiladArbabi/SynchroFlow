@@ -22,7 +22,8 @@ RLS deliberately bypassed, to correct one snapshot row.
 It is also currently unsafe for a second, independent reason: pick rows written
 before migration 0147 still carry `movement_type = 'sale'`, so a replay
 double-subtracts every historical pick and drives `inventory_truth` below
-reality (INV-SALE-DOUBLE-01 — 5 rows shop 2, 26 shop 1, backfill outstanding).
+reality (INV-SALE-DOUBLE-01 — 5 rows on shop 2, since corrected by
+INV-SALE-BACKFILL-01; shop 1 had none, it has never picked).
 
 The worker runs on a 300 000 ms interval. The advice was live and repeating.
 

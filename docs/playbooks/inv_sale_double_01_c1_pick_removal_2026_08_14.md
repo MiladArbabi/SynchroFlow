@@ -112,9 +112,17 @@ mutation, not in the ledger. Same shape as INV-BLOCK-03.
 
 ## ⚠️ BACKFILL OUTSTANDING
 
-Rows written before 0147 keep `movement_type = 'sale'`: **5 on shop 2, 26 on
-shop 1**. Until compensating movements land, `rebuild-from-events` on those
-tenants still double-subtracts historical picks.
+Rows written before 0147 keep `movement_type = 'sale'`: **5 on shop 2 only**
+— corrected by INV-SALE-BACKFILL-01 the same day; shop 2's ledger now
+reconciles with truth at 116.
+
+**Shop 1 has none.** Its 26 `sale` rows are all `triggered_by = NULL`
+(ingestion). Verified: 0 rows in `pick_scan_log`, 0 in `pick_batches`.
+An earlier draft of this playbook said "26 on shop 1" — wrong, and acting on
+it would have written 26 spurious corrections into an append-only table.
+
+Shop 1's 32-unit divergence is separate: `INV-TRUTH-LEDGER-DRIFT-01`, a
+`dev_seed` ordering artefact.
 
 The margin-snapshot integrity worker actively recommends that command:
 
