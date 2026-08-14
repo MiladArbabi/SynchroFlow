@@ -540,7 +540,13 @@ export default function OverviewPageFT2() {
             ))}
           </Box>
           <Box
-            onClick={() => navigate('/floor-planning')}
+            // OV-35: deep-link to Setup → Canvas, not the default Map tab.
+            // This CTA only renders when hasPlacedFloor is false, and Map
+            // renders an empty canvas reading "No bins configured yet" for
+            // exactly that tenant — so the default landed merchants on a dead
+            // end two clicks from the tool the button promises. Matches the
+            // idle-rail CTA below (same file, live-map branch).
+            onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
             sx={{ display: 'inline-flex', alignItems: 'center', gap: '8px', px: '20px', py: '11px', fontSize: 13, fontWeight: 500, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', borderRadius: '8px', cursor: 'pointer', mt: '6px', '&:hover': { bgcolor: 'var(--accent-hover)' } }}
           >
             Set up floor planning →
