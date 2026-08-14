@@ -393,25 +393,61 @@ export default function OverviewPageFT2() {
   const shippedToday = liveActivityQuery.data?.shippedToday ?? 0;
   const packedNotShipped = liveActivityQuery.data?.packedNotShipped ?? 0;
 
+  // OV-40: one block per pipeline stage, ranked by distance from the floor.
+  // The single-block-per-rail design packed two disjoint stages into one
+  // volume separated only by colour — and this embed passes showLegend={false},
+  // so nothing on screen explained that red meant blocked. A merchant read
+  // "Order Pool · 3" on a red block while the pool was actually empty.
+  //
+  // Rail grammar (see playbook §5): unlocated work waits at the threshold,
+  // located work appears where it is. Rank ascends outward from the slab, so
+  // the map reads right-to-left as the order's journey:
+  //   blocked (2) -> pool (1) -> [floor] -> shipped (1) -> staged (2)
+  //
+  // Zero-count stages are omitted by IsometricCanvas rather than drawn empty,
+  // so the rail only ever shows stages holding work.
   const stations: SyntheticStation[] = hasMapTier ? [
     {
-      id: 'inbound',
-      label: 'Order Pool',
+      id: 'blocked',
+      label: 'Blocked',
       side: 'inbound',
-      count: orderPool.data?.eligible_order_count ?? 0,
-      urgentCount: orderPool.data?.summary?.blocked_count ?? 0,
+      rank: 2,
+      count: orderPool.data?.summary?.blocked_count ?? 0,
+      tone: 'critical',
+      // Wider, lower footprint — Ive/consortium: form carries state. Blocked
+      // work is settled and inert; it is not about to move.
+      footprint: { tw: 1.8, td: 0.9 },
       deepLink: '/order-flow',
     },
-    // OV-157b: renders when either stack has weight (IsometricCanvas :607).
-    // Nothing shipped AND nothing staged is a genuinely quiet outbound lane,
-    // so the apron stays hidden. Nothing shipped WITH orders staged is the
-    // alarm, and that renders.
     {
-      id: 'outbound',
+      id: 'pool',
+      label: 'Order Pool',
+      side: 'inbound',
+      rank: 1,
+      count: orderPool.data?.eligible_order_count ?? 0,
+      // Narrower, taller — queued and imminent, next onto the floor.
+      footprint: { tw: 1.2, td: 0.6 },
+      deepLink: '/order-flow',
+    },
+    {
+      id: 'staged',
+      label: 'Staged',
+      side: 'outbound',
+      rank: 2,
+      count: packedNotShipped,
+      // OV-157b: packed but uncollected is the alarm state — orders finished
+      // on the floor and still sitting there are why shipping stalled.
+      tone: 'critical',
+      footprint: { tw: 1.8, td: 0.9 },
+      deepLink: '/order-flow',
+    },
+    {
+      id: 'shipped',
       label: 'Shipped Today',
       side: 'outbound',
+      rank: 1,
       count: shippedToday,
-      urgentCount: packedNotShipped,
+      footprint: { tw: 1.2, td: 0.6 },
       deepLink: '/order-flow',
     },
   ] : [];

@@ -600,53 +600,44 @@ export function IsometricCanvas({
     const vMin = minX - maxY;                       // slab's leftmost screen edge
     const uMid = (minX + minY + maxX + maxY) / 2;   // slab's vertical screen centre
 
-    const GUTTER = 2.0;          // world-diagonal metres of guaranteed clear space
-    const tw = 1.5, td = 0.75;   // apron footprint
+    const GUTTER = 2.0;          // world-diagonal metres of clear space from the slab
+    const RANK_GAP = 0.6;        // OV-40: clear space between blocks on one rail
+    const DEF_TW = 1.5, DEF_TD = 0.75;
     const MAX_BAR_H = 2.5;
 
-    // Mirrored view negates screen X, so "right of the slab" becomes minimum v.
-    const vRight = flipped ? vMin - GUTTER - tw : vMax + GUTTER + td;
-    const vLeft  = flipped ? vMax + GUTTER + td : vMin - GUTTER - tw;
-
     return stations
-      // OV-157b: a station earns its place if EITHER stack has weight. The
-      // original count>0 test suppressed the outbound apron whenever nothing
-      // had shipped — precisely the day packed-not-shipped matters, since
-      // orders staged and uncollected are the reason shipping stalled. An
-      // apron reading 0 shipped with an urgent stack is the alarm state, not
-      // an empty one.
-      .filter(s => s.count > 0 || (s.urgentCount ?? 0) > 0)
+      // OV-40: a block with nothing in it is not information. Zero-count
+      // stages are omitted entirely rather than rendered as an empty volume,
+      // so the rail only ever shows stages that have work in them.
+      .filter(s => s.count > 0)
       .map(station => {
-        // Order pool ('inbound') rides the RIGHT rail — it represents orders
-        // waiting to be released to the floor, read before the floor itself.
-        const v0 = station.side === 'inbound' ? vRight : vLeft;
+        const tw = station.footprint?.tw ?? DEF_TW;
+        const td = station.footprint?.td ?? DEF_TD;
+
+        // OV-40: rank offsets each block outward along v (screen X only, per
+        // the rotated-basis note above). rank 1 sits at the base gutter; each
+        // further rank steps one footprint + gap further from the slab, so
+        // blocks on one rail never overlap regardless of their footprints.
+        // Mirrored view negates screen X, so both the base anchor and the
+        // rank step invert with `flipped`.
+        const rank = Math.max(1, station.rank ?? 1);
+        const step = (rank - 1) * (tw + RANK_GAP);
+        const outward = station.side === 'inbound' ? 1 : -1;
+        const dir = flipped ? -outward : outward;
+        const base = dir > 0 ? vMax + GUTTER + td : vMin - GUTTER - tw;
+        const v0 = base + dir * step;
         const u0 = uMid - (tw + td) / 2;
 
-        // OV-39: count and urgentCount are DISJOINT buckets (see the type
-        // doc), so the stack total is their sum. Math.max was here because
-        // OV-13 read urgentCount as a subset that could overflow count; it
-        // happened to be right only while one bucket was empty. At 5 ready +
-        // 3 blocked it sized the bar for 5 instead of 8 and painted 3/5 red
-        // instead of 3/8 — under-reporting waiting work and overstating how
-        // much of it was stuck.
-        // clampedUrgent is retained: a negative urgentCount is coerced to 0
-        // above, and clamping to stackTotal keeps urgentH <= totalBarH so a
-        // future non-disjoint caller cannot produce inverted polygons below
-        // the floor plane (the OV-13 "red arch" defect).
-        const urgentCount = Math.max(0, station.urgentCount ?? 0);
-        const stackTotal  = Math.max(0, station.count) + urgentCount;
-        const clampedUrgent = Math.min(stackTotal, urgentCount);
-        const totalBarH = Math.min(MAX_BAR_H, 0.4 + stackTotal * 0.06);
-        const urgentH   = stackTotal > 0
-          ? totalBarH * (clampedUrgent / stackTotal)
-          : 0;
-        const normalH   = Math.max(0, totalBarH - urgentH);
+        // OV-40: one stage, one quantity, one height. The urgent sub-bar and
+        // its stackTotal/clampedUrgent arithmetic (OV-13/15/18/39) are gone —
+        // they existed only to pack two stages into one volume.
+        const totalBarH = Math.min(MAX_BAR_H, 0.4 + station.count * 0.06);
 
         return {
           station,
           wx: (u0 + v0) / 2,
           wy: (u0 - v0) / 2,
-          tw, td, totalBarH, urgentH, normalH, stackTotal,
+          tw, td, totalBarH,
         };
       });
   }, [stations, worldBounds, flipped]);
@@ -655,7 +646,7 @@ export function IsometricCanvas({
   // count changes exactly as it reacts to layout changes.
   const stationSig = stationPlacements
   .map(p =>
-    `${p.station.id}:${p.station.label}:${p.station.side}:${p.station.count}:${p.station.urgentCount ?? 0}`
+`${p.station.id}:${p.station.label}:${p.station.side}:${p.station.rank}:${p.station.count}`
   )
   .join('|');
 
@@ -1192,24 +1183,22 @@ export function IsometricCanvas({
               OV-13: geometry, urgency clamp, and screen-space placement all
               resolved in `stationPlacements` above so the renderer and the fit
               bboxes can never disagree about where an apron actually is. */}
-            {stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH, stackTotal }) => {
+            {stationPlacements.map(({ station, wx, wy, tw, td, totalBarH }) => {
             // Normal (lower) bar
             const nb00 = project(wx,      wy,           0,       zoom, flipped);
             const nb10 = project(wx + tw, wy,           0,       zoom, flipped);
             const nb11 = project(wx + tw, wy + td,      0,       zoom, flipped);
-            const nb01 = project(wx,      wy + td,      0,       zoom, flipped);
-            const nt00 = project(wx,      wy,           normalH, zoom, flipped);
-            const nt10 = project(wx + tw, wy,           normalH, zoom, flipped);
-            const nt11 = project(wx + tw, wy + td,      normalH, zoom, flipped);
-            const nt01 = project(wx,      wy + td,      normalH, zoom, flipped);
-
-            // Urgent (upper) bar — stacked on top of normal
-            const ub00 = project(wx,      wy,           normalH,           zoom, flipped);
-            const ub10 = project(wx + tw, wy,           normalH,           zoom, flipped);
-            const ub11 = project(wx + tw, wy + td,      normalH,           zoom, flipped);
-            const ub01 = project(wx,      wy + td,      normalH,           zoom, flipped);
-            const ut00 = project(wx,      wy,           totalBarH,         zoom, flipped);
-            const ut10 = project(wx + tw, wy,           totalBarH,         zoom, flipped);
+            // OV-40: one stage, one volume. The normal/urgent two-bar stack is
+            // gone — each block now carries a single quantity, so there is one
+            // base quad at z=0 and one top quad at totalBarH.
+            const b00 = project(wx,      wy,      0,         zoom, flipped);
+            const b10 = project(wx + tw, wy,      0,         zoom, flipped);
+            const b11 = project(wx + tw, wy + td, 0,         zoom, flipped);
+            const b01 = project(wx,      wy + td, 0,         zoom, flipped);
+            const t00 = project(wx,      wy,      totalBarH, zoom, flipped);
+            const t10 = project(wx + tw, wy,      totalBarH, zoom, flipped);
+            const t11 = project(wx + tw, wy + td, totalBarH, zoom, flipped);
+            const t01 = project(wx,      wy + td, totalBarH, zoom, flipped);
             const ut11 = project(wx + tw, wy + td,      totalBarH,         zoom, flipped);
             const ut01 = project(wx,      wy + td,      totalBarH,         zoom, flipped);
 
@@ -1224,8 +1213,12 @@ export function IsometricCanvas({
             // the variable-height bar. The projected endpoints also handle flipped mode.
             const labelPt = project(wx, wy + td, 0, zoom, flipped);
             const labelEdgePt = project(wx + tw, wy + td, 0, zoom, flipped);
-            const countColor = urgentH > 0.01 ? '#E5484D' : 'var(--accent)';
-            const accentFill = 'var(--accent)';
+            // OV-40: tone is reinforcement only (WCAG 1.4.1). The block's label
+            // and count must stand alone for an operator who cannot tell these
+            // hues apart — which is why each stage now has its own named block
+            // rather than sharing one bar with a colour-coded sub-stack.
+            const isCritical = station.tone === 'critical';
+            const barFill = isCritical ? '#E5484D' : 'var(--accent)';
 
             return (
               <g
@@ -1233,40 +1226,19 @@ export function IsometricCanvas({
                 style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
                 onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
               >
-                {/* Normal order bar — sides first, top face last (painter order).
-                    OV-18: the first face was on plane x=wx — a BACK face, hidden
-                    on any real solid — leaving the visible y=wy+td front face
-                    undrawn. Two parallel constant-X planes 45px apart, bridged
-                    only by the top face, rendered as a hollow doorway. Face
-                    planes now match IsometricBox's level bands: one constant-Y
-                    (front-left, lighter) + one constant-X (right, darker). */}
-                {normalH > 0.01 && (
-                  <>
-                    <polygon points={pts(nt01, nt11, nb11, nb01)} fill={accentFill} fillOpacity={0.45} />
-                    <polygon points={pts(nt10, nb10, nb11, nt11)} fill={accentFill} fillOpacity={0.32} />
-                    <polygon points={pts(nt00, nt10, nt11, nt01)} fill={accentFill} fillOpacity={0.75} />
-                  </>
-                )}
-                {/* Urgent/blocked sub-bar — sides first, top face last so the
-                    painter order matches the normal bar. Emitted ONCE: the
-                    second identical group (OV-15) double-painted the alpha and
-                    made a translucent bar read as an opaque wall. */}
-                    {urgentH > 0.01 && (
-                  <>
-                    <polygon points={pts(ut01, ut11, ub11, ub01)} fill="#E5484D" fillOpacity={0.55} />
-                    <polygon points={pts(ut10, ub10, ub11, ut11)} fill="#E5484D" fillOpacity={0.40} />
-                    <polygon points={pts(ut00, ut10, ut11, ut01)} fill="#E5484D" fillOpacity={0.85} />
-                  </>
-                )}
+              {/* Stage bar — sides first, top face last (painter order).
+                    OV-18: face planes match IsometricBox's level bands — one
+                    constant-Y (front-left, lighter) + one constant-X (right,
+                    darker). Drawing two parallel constant-X planes instead
+                    left the visible front face undrawn and the solid rendered
+                    as a hollow doorway. */}
+                <polygon points={pts(t01, t11, b11, b01)} fill={barFill} fillOpacity={0.45} />
+                <polygon points={pts(t10, b10, b11, t11)} fill={barFill} fillOpacity={0.32} />
+                <polygon points={pts(t00, t10, t11, t01)} fill={barFill} fillOpacity={0.75} />
                 {/* Count badge */}
                 <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
-                  fontSize={Math.round(11 * zoom)} fontWeight="600" fill={countColor} fontFamily="monospace">
-                    {/* OV-39: the badge reports the whole stack, not just the
-                      non-urgent bucket. A red bar badged with count alone
-                      read "0" while three blocked orders sat in it — the
-                      number contradicted the colour. Severity stays in the
-                      fill; quantity lives here. */}
-                  {stackTotal}
+                  fontSize={Math.round(11 * zoom)} fontWeight="600" fill={barFill} fontFamily="monospace">
+                  {station.count}
                 </text>
                 <EdgeLabelPlate
                   label={station.label}

@@ -65,15 +65,31 @@ export interface SyntheticStation {
    */
   side: 'inbound' | 'outbound';
   /**
-   * OV-39: NON-URGENT stack count — disjoint from urgentCount, not a total.
-   * Both aprons supply mutually exclusive buckets: an order is releasable OR
-   * blocked, shipped-today OR packed-not-shipped. The bar's total is
-   * count + urgentCount; do NOT pass a pre-summed total here or the urgent
-   * portion is counted twice.
+   * OV-40: single quantity. Each block represents exactly one pipeline stage,
+   * so there is no sub-stack. The dual count/urgentCount contract was removed
+   * because it forced two meanings into one volume distinguishable only by
+   * colour — and Overview renders with showLegend={false}, so nothing on the
+   * surface explained what the colour meant.
    */
   count: number;
-  /** Urgent stack count rendered in critical red. Disjoint from count. */
-  urgentCount?: number;
+  /**
+   * OV-40: rail ordering, ascending = nearer the floor slab. Blocked (2) sits
+   * outside Order Pool (1) because it is further from being worked. Blocks on
+   * the same side must not share a rank or they render on top of each other.
+   */
+  rank: number;
+  /**
+   * OV-40: colour is REINFORCEMENT ONLY — never the sole carrier of meaning
+   * (WCAG 1.4.1). The label and count must be sufficient on their own for an
+   * operator who cannot distinguish these hues.
+   */
+  tone?: 'accent' | 'critical';
+  /**
+   * OV-40: footprint in metres. Ive/consortium — form carries state: a settled,
+   * inert stage reads lower and wider; an imminent one taller and narrower.
+   * Defaults to 1.5 x 0.75 when omitted.
+   */
+  footprint?: { tw: number; td: number };
   /** Deep-link on click — passed to onSelect. */
   deepLink?: string;
 }
