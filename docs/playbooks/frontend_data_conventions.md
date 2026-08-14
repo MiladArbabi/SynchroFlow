@@ -50,3 +50,40 @@ user changes filters) and `isInactive` (`warehouse_locations.active` — persist
 Don't overload one for the other; a user must be able to tell "filtered out"
 from "out of service". Inactive entities are also excluded from occupancy/heat
 overlays — a decommissioned bin reporting 85% stock is contradictory.
+## React Query client lifetime and tenant isolation (OV-36)
+
+**Never construct a `QueryClient` at module scope.** A module-level client is a
+process-lifetime singleton. `AuthenticatedAppShell` returns `null` when logged
+out, which unmounts its `QueryClientProvider` — but unmounting a provider does
+not destroy the client. The cache survives logout and is re-attached to the
+next tenant that logs in.
+
+Build it inside the tenant boundary instead, keyed on `shop_id`:
+
+```tsx
+const tenantQueryClient = React.useMemo(() => new QueryClient(), [user?.shop_id]);
+```
+
+`shop_id`, not `user.id` — two operators in one shop are the same tenant and
+should share a warm cache. `shop_id` is present on all three `AuthContext`
+hydration paths (login response, localStorage rehydrate, OAuth handoff decode).
+
+The `eslint react-hooks/exhaustive-deps` warning on that line is a false
+positive and is disabled inline: the dependency is the invalidation trigger,
+not a value the factory reads. Removing it rebuilds the client every render.
+
+**Query keys in this app carry no shop dimension.** `['floor-planning','layout']`,
+`['wms','batches']`, `['wms','order-pool']`, `['alerts', ...]` and the rest are
+tenant-agnostic. Rule 1 is the only thing making that safe. Two consequences:
+
+- Anything rendering *outside* `AuthenticatedAppShell`'s client is not covered.
+  `WmsDisplayPage` is a public route under `main.tsx`'s separate client, scoped
+  by `shop_display_tokens` rather than a user session — see OV-37.
+- Namespacing every key with `shopId` remains the defence-in-depth end state.
+  It is correct by construction rather than by eviction, but touches 30+ hooks
+  and every `invalidateQueries` prefix, so it is tracked as its own track.
+
+**How this surfaces if it regresses:** `useFloorPlanning` sets
+`placeholderData: (prev) => prev`, so the previous tenant's zones paint
+immediately on mount, before any refetch resolves. Overview rendering another
+shop's zones after an account switch is the canary.
