@@ -59,7 +59,7 @@ Rules:
 - Drawer, modal, and side-panel bodies may keep internal scroll.
 - Table/list cards may keep `overflow: 'hidden'` for rounded corners, but the row container should not own vertical scroll.
 
-**Board Layout Exception (2026-07-21, OF-12):** Multi-column board layouts (e.g. Order Flow's Blocked / Pool / Fulfillment lanes) may give each column independent `overflowY: 'auto'` scroll, and their shared parent may use `height: '100%'` to bound row height for `alignItems: 'stretch'`. A board's purpose is simultaneous visibility across lanes — forcing page-level scroll on a board scrolls all lanes out of view together to reach one lane's overflow, defeating the layout. This exception applies only to genuine multi-column board pages, not single-list module pages, which remain governed by the base rule above.
+**Board Layout Exception (2026-08-14, OF-12 / OF-UX-01):** Multi-column operational boards (for example Order Flow's Blocked / Order Pool / Fulfillment lanes) must remain bounded to the available viewport height. The shared board container owns the remaining page height with `flex: 1`, `minHeight: 0`, and overflow containment; each lane may then own independent `overflowY: 'auto'` scrolling. The tallest lane must never increase whole-page height or scroll the other lanes out of view. This exception applies only to genuine multi-column board pages, not single-list module pages, which remain governed by the base FT2 Page Scroll Rule above.
 
 ### Orders Outbound Pattern
 

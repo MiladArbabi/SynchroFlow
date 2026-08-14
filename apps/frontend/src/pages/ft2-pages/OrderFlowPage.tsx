@@ -699,19 +699,21 @@ export default function OrderFlowPage() {
             </Box>
           </Box>
         )}
-        {/* ---------- Working body: top overview + bottom work area---------- */}
+        {/* ---------- Working body: bounded operational board ---------- */}
           {!isLoading && (
             <Box
               sx={{
-                display: 'grid',
-                gridTemplateRows: 'max-content minmax(0, 1fr)',
+                display: 'flex',
+                flexDirection: 'column',
                 gap: 2,
                 flex: 1,
                 minHeight: 0,
+                overflow: 'hidden',
               }}
             >
               <Box
                 sx={{
+                  flex: 1,
                   minHeight: 0,
                   overflow: 'hidden',
                   display: 'flex',
@@ -791,8 +793,8 @@ export default function OrderFlowPage() {
                 {/* Phase 1 of target-IA rebuild: persistent reason-tagged blocked list
                     (target mockup's "Blocked orders" column) — now the sole Blocked
                     UI; the legacy banner/Drawer it was verified alongside is removed.
-                    No truncation: FT2 Page Scroll Rule prefers page-level scroll
-                    over nested list limits for primary working lists. */}
+                    OF-UX-01: the operational board is viewport-bounded; each
+                    primary column owns its vertical scrolling. */}
                 {blockedCount > 0 && (
                   <Box
                     sx={{
@@ -1498,27 +1500,6 @@ export default function OrderFlowPage() {
                 
                 </Box>
               </Box>
-              {/* ===================== BOTTOM ROW — release pool + next wave ===================== */}
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 1.5,
-                }}
-              >
-
-            {/* ---- Release pool table + next-wave rail ---- */}
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr',
-                  gap: 1.5,
-                  alignItems: 'stretch',
-                }}
-              >
-
-              </Box>
-            </Box>
           </Box>
         )}
       </Box>
