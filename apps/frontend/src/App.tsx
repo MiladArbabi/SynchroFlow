@@ -33,7 +33,10 @@ import VerifyEmailPage from 'pages/authentication/VerifyEmailPage';
 import ResetPasswordPage from 'pages/authentication/ResetPasswordPage';
 import WmsDisplayPage from 'pages/display/WmsDisplayPage';
 
-const queryClient = new QueryClient();
+// OV-36: intentionally NOT constructed here. A module-scope client is a
+// process-lifetime singleton — logout unmounts its provider (:122) but the
+// cache survives, so the next tenant to log in reads the previous tenant's
+// data. Built per-shop inside AuthenticatedAppShell instead.
 
 function RuntimeRoutesSubscriber() {
   useRuntimeRoutes();
@@ -123,7 +126,29 @@ function LifecycleGuardedApp() {
    (ALWAYS mounts AppLayout)
 ───────────────────────────── */
 function AuthenticatedAppShell() {
-  const { isLoading, isLoggedIn } = useAuth();
+  const { isLoading, isLoggedIn, user } = useAuth();
+
+  // OV-36: one QueryClient per tenant, rebuilt when shop_id changes.
+  // No query key in this app carries a shop dimension, so a cache shared
+  // across a tenant switch serves shop A's zones, batches, order pool and
+  // alerts to shop B. Rebuilding the client is structural rather than
+  // corrective: a fresh client has an empty cache, so there is no stale
+  // entry to read and no post-paint effect racing the first render.
+  // shop_id (not user.id) is the key — two operators in one shop are the
+  // same tenant and should share a warm cache. Confirmed present on all
+  // three hydration paths in AuthContext: login(), localStorage rehydrate,
+  // and the OAuth handoff decode.
+  // NOTE: covers this provider only. WmsDisplayPage is a public route under
+  // main.tsx's client and is scoped by shop_display_tokens, not a user
+  // session — see OV-37 for that client's separate lifecycle.
+  // invalidation trigger, not a value the factory reads. The rule flags it as
+  // unnecessary because new QueryClient() takes no arguments; removing it
+  // would rebuild the client every render and refetch every query forever.
+  const tenantQueryClient = React.useMemo(
+    () => new QueryClient(),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.shop_id]
+  );
   /**
    * CRITICAL: FIRST-PAINT BLOCK (must be before any return)
    */
@@ -143,7 +168,7 @@ function AuthenticatedAppShell() {
     return null;
   }
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={tenantQueryClient}>
       <RuntimeRoutesProvider>
         <RuntimeRoutesSubscriber />
 
