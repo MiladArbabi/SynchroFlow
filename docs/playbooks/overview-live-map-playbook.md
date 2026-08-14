@@ -109,34 +109,46 @@ Aprons are **not** `WarehouseZone` rows. They are a new optional prop on `Isomet
 stations?: SyntheticStation[];
 
 export interface SyntheticStation {
-  id: string;                          // 'inbound' | 'outbound' — stable keys
-  label: string;                       // 'Order pool' | 'Shipped today'
-  side: 'inbound' | 'outbound';        // determines projection position
-  count: number;                       // token stack height driver
-  urgentCount?: number;                // red sub-stack (blocked/constrained)
-  pulsingBadge?: boolean;              // SLA-breached indicator
+  id: string;                          // stable key per stage
+  label: string;                       // 'Blocked' | 'Order Pool' | 'Staged' | 'Shipped Today'
+  side: 'inbound' | 'outbound';        // which rail
+  count: number;                       // OV-40: single quantity, no sub-stack
+  rank: number;                        // OV-40: 1 = nearest the slab, ascending outward
+  tone?: 'accent' | 'critical';        // OV-40: reinforcement only, never the sole signal
+  footprint?: { tw: number; td: number };  // OV-40: form carries state
   deepLink?: string;                   // click target
 }
 ```
 
 ### 5.2 Projection
 
-Inbound apron projects to the left of the warehouse envelope (negative x offset from `position_x` minimum). Outbound projects to the right (beyond `position_x` maximum + `width`). Both render at `position_y` midpoint of the floor, at ground level (z = 0). Token stacks are SVG `rect` groups — no geometry data, no rack_levels.
+**Rail grammar (OV-40).** Located work appears where it is; unlocated work waits at the threshold. Blocked orders and the release queue are order-scoped with no location, so both ride a rail. Work already on the floor needs no block — the floor *is* the block.
+
+Inbound rides the **right** rail, outbound the **left** (OV-13 — anchored in screen space, not world X; shifting world X alone translates a box diagonally). Placement works in the rotated basis `v = wx − wy` (screen X) and `u = wx + wy` (screen Y): a block is pinned `GUTTER` clear of the slab's outermost `v`, centred on mid-`u`, then inverted back to world coords.
+
+`rank` steps each further block outward along `v` by its own footprint + `RANK_GAP`, so blocks on one rail never overlap at any bar height, zone count, or zoom. Both the base anchor and the step invert under `flipped`. Rank ascends with distance from being worked:
+
+BLOCKED (2) ORDER POOL (1) ║ floor ║ SHIPPED (1) STAGED (2)
+
+
+Zero-count stages are omitted, not drawn empty. Bars are projected polygon volumes (three faces, painter order per `IsometricBox`), not `rect` groups.
 
 ### 5.3 Data sources
 
 | Apron field | Source |
 | --- | --- |
 | `inbound.count` | `GET /api/v1/wms/order-pool` → `eligible_order_count` |
-| `inbound.urgentCount` | `computeConstraintMetrics` result → `constrained_orders` (already the Orders header source per W1 — same field, same API) |
-| `inbound.pulsingBadge` | `morningBrief.signals` any signal with `priority <= 2` AND `module === 'orders'` with SLA context — derived client-side from existing brief data, no new endpoint |
-| `outbound.count` | `GET /api/v1/wms/analytics` → `summary.fulfilled_today` (already exists) |
+| `blocked.count` | `GET /api/v1/wms/order-pool` → `summary.blocked_count` |
+| `staged.count` | `GET /api/v1/wms/live-activity` → `packedNotShipped` |
+| `shipped.count` | `GET /api/v1/wms/live-activity` → `shippedToday` |
+
+`pulsingBadge` was specified here but never implemented and is not on the type; row removed rather than left as a phantom contract.
 
 **Floor Planning does not receive `stations` prop.** Only Overview passes it.
 
 ### 5.4 Spatial-signal spine consistency rule
 
-Map badges must derive from the same `alerts` table rows that drive the bell count and the pulse card signals. Do not recompute conditions client-side. The inbound apron's red sub-stack is `constrained_orders` from `computeConstraintMetrics`, which is already the canonical constrained count. The pulsing SLA badge derives from `morningBrief.signals` (which reads alerts), not from a direct order query. One fact source → one signal everywhere.
+Map badges must derive from the same `alerts` table rows that drive the bell count and the pulse card signals. Do not recompute conditions client-side. Each block derives from one canonical count — `Blocked` from `summary.blocked_count`, `Order Pool` from `eligible_order_count` (OV-40: separate blocks, no sub-stack). The pulsing SLA badge derives from `morningBrief.signals` (which reads alerts), not from a direct order query. One fact source → one signal everywhere.
 
 ---
 
@@ -209,7 +221,7 @@ with them (8 tasks vs 132 units on the dev tenant).
 
 Ready-for-release orders remain authoritative in `GET /api/v1/wms/order-pool`. Packed-not-shipped orders are exposed as `packedNotShipped` on the live-activity response (OV-157), alongside `shippedToday`. Both derive from `order_warehouse_status`, which has no `shop_id` column — tenancy joins through `orders`, and a missing join would leak across tenants. `shipped_at` is monotonic per migration 0088's trigger, so a shipped-today count cannot silently revert.
 
-The two feed one outbound `SyntheticStation`: `count` from `shippedToday`, `urgentCount` from `packedNotShipped`. Known limitation (OV-159): the apron's two-segment bar computes the urgent height as a fraction of the stack total, so `urgentCount >= count` fills the bar entirely and `1 shipped / 3 staged` is indistinguishable from `0 shipped / 3 staged`. That encoding is sound for inbound, where blocked orders are a subset of the pool, but outbound's two counts are independent sets and a backlog can exceed a day's shipments.
+The two feed **two** outbound blocks (OV-40): `Shipped Today` at rank 1, `Staged` at rank 2 with `tone: 'critical'`. This closed OV-159 — the two-segment bar could not encode independent counts, and the assumption that inbound's were nested turned out to be wrong there too (OV-39): an order is releasable *or* blocked, never both. Both rails now carry one quantity per block.
 
 ### 6.3 Poll interval
 
@@ -413,7 +425,9 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-157 | P1 | Outbound apron never rendered; map ended at packing | CLOSED — shippedToday and packedNotShipped added to live-activity; outbound station constructed |
 | OV-157b | P1 | Apron suppressed whenever shippedToday was 0 | CLOSED — stationPlacements filters on either stack having weight; divisor moved to stackTotal |
 | OV-158 | P1 | No shipped or staged orders existed on the reviewer tenant | CLOSED — seed_reviewer_outbound.ts |
-| OV-159 | P2 | Urgent stack fills the whole bar when it meets or exceeds count | OPEN — needs a different encoding, not a tweak |
+| OV-159 | P2 | Urgent stack fills the whole bar when it meets or exceeds count | CLOSED by OV-40 — one stage per volume; the two-segment encoding is gone |
+| OV-39 | P1 | Apron badge showed `count` while the bar represented count+urgent; type doc claimed nested, both callers passed disjoint | CLOSED — disjoint documented, badge showed the total (superseded by OV-40) |
+| OV-40 | P1 | One block per rail carried two stages separable only by colour, with `showLegend={false}` — read "Order Pool · 3" on a red block while the pool was empty. Also a WCAG 1.4.1 failure | CLOSED — split into named, independently counted, ranked blocks |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
