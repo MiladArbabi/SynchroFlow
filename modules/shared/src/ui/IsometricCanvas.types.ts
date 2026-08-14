@@ -64,9 +64,15 @@ export interface SyntheticStation {
    * NOT a world-axis hint — see the stationPlacements comment for why.
    */
   side: 'inbound' | 'outbound';
-  /** Total token stack count. */
+  /**
+   * OV-39: NON-URGENT stack count — disjoint from urgentCount, not a total.
+   * Both aprons supply mutually exclusive buckets: an order is releasable OR
+   * blocked, shipped-today OR packed-not-shipped. The bar's total is
+   * count + urgentCount; do NOT pass a pre-summed total here or the urgent
+   * portion is counted twice.
+   */
   count: number;
-  /** Urgent sub-stack count rendered in critical red. */
+  /** Urgent stack count rendered in critical red. Disjoint from count. */
   urgentCount?: number;
   /** Deep-link on click — passed to onSelect. */
   deepLink?: string;

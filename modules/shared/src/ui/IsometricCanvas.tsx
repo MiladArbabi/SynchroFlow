@@ -622,17 +622,19 @@ export function IsometricCanvas({
         const v0 = station.side === 'inbound' ? vRight : vLeft;
         const u0 = uMid - (tw + td) / 2;
 
-        // OV-13: urgentCount is an independent server count (blocked orders)
-        // and can legitimately exceed the pool count. Left unclamped it gave
-        // urgentFrac > 1 → negative normalH → inverted, self-intersecting
-        // polygons drawn below the floor plane: the "red arch" defect.
-        // OV-157b: clamp to the STACK total, not to count. Under the old
-        // count>0 filter these could never disagree; now that a station may
-        // arrive with count 0, clamping to count would zero the urgent stack
-        // and render nothing. stackTotal is also the divisor — count alone
-        // was a latent divide-by-zero the filter happened to be hiding.
+        // OV-39: count and urgentCount are DISJOINT buckets (see the type
+        // doc), so the stack total is their sum. Math.max was here because
+        // OV-13 read urgentCount as a subset that could overflow count; it
+        // happened to be right only while one bucket was empty. At 5 ready +
+        // 3 blocked it sized the bar for 5 instead of 8 and painted 3/5 red
+        // instead of 3/8 — under-reporting waiting work and overstating how
+        // much of it was stuck.
+        // clampedUrgent is retained: a negative urgentCount is coerced to 0
+        // above, and clamping to stackTotal keeps urgentH <= totalBarH so a
+        // future non-disjoint caller cannot produce inverted polygons below
+        // the floor plane (the OV-13 "red arch" defect).
         const urgentCount = Math.max(0, station.urgentCount ?? 0);
-        const stackTotal  = Math.max(station.count, urgentCount);
+        const stackTotal  = Math.max(0, station.count) + urgentCount;
         const clampedUrgent = Math.min(stackTotal, urgentCount);
         const totalBarH = Math.min(MAX_BAR_H, 0.4 + stackTotal * 0.06);
         const urgentH   = stackTotal > 0
@@ -644,7 +646,7 @@ export function IsometricCanvas({
           station,
           wx: (u0 + v0) / 2,
           wy: (u0 - v0) / 2,
-          tw, td, totalBarH, urgentH, normalH,
+          tw, td, totalBarH, urgentH, normalH, stackTotal,
         };
       });
   }, [stations, worldBounds, flipped]);
@@ -1190,7 +1192,7 @@ export function IsometricCanvas({
               OV-13: geometry, urgency clamp, and screen-space placement all
               resolved in `stationPlacements` above so the renderer and the fit
               bboxes can never disagree about where an apron actually is. */}
-          {stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH }) => {
+            {stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH, stackTotal }) => {
             // Normal (lower) bar
             const nb00 = project(wx,      wy,           0,       zoom, flipped);
             const nb10 = project(wx + tw, wy,           0,       zoom, flipped);
@@ -1259,7 +1261,12 @@ export function IsometricCanvas({
                 {/* Count badge */}
                 <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
                   fontSize={Math.round(11 * zoom)} fontWeight="600" fill={countColor} fontFamily="monospace">
-                  {station.count}
+                    {/* OV-39: the badge reports the whole stack, not just the
+                      non-urgent bucket. A red bar badged with count alone
+                      read "0" while three blocked orders sat in it — the
+                      number contradicted the colour. Severity stays in the
+                      fill; quantity lives here. */}
+                  {stackTotal}
                 </text>
                 <EdgeLabelPlate
                   label={station.label}
