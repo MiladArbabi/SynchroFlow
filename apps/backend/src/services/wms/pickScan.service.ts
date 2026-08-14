@@ -13,7 +13,8 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  * 1. Validates batch is in 'picking' status and owned by operator
  * 2. Validates line item belongs to batch and is not already scanned
  * 3. Validates scanned variant matches line item variant (barcode gate)
- * 4. Writes a 'sale' movement to inventory_movements (at-scan deduction)
+ * 4. Writes a 'pick_removal' movement to inventory_movements — operator
+ *    activity record, NOT an on-hand deduction (INV-SALE-DOUBLE-01)
  * 5. Writes to pick_scan_log for audit + UPH tracking
  * 6. Updates pick_batches.units_picked + pick_last_activity_at
  *
@@ -256,7 +257,27 @@ export async function confirmPickScan(
       lasyncro_inventory_movement_id: inventoryMovementId,
       lasyncro_variant_id: lasyncroVariantId,
       shop_id: shopId,
-      movement_type: 'sale',
+      /*
+       * INV-SALE-DOUBLE-01 (2026-08-14): pick_removal, not sale.
+       *
+       * revenue-units.writer.ts:274 already writes a `sale` for these
+       * units at order ingestion. Both were summed into on-hand by every
+       * ledger computation. Shop 2 — built through the real pipeline —
+       * proved ingestion alone reproduces inventory_truth exactly:
+       *   1b36716c  60 - 5 = 55 = truth
+       *   40a185ed  40 - 3 = 37 = truth
+       *   8eb8114d  25 - 1 = 24 = truth   (total 116; with pick: 107)
+       *
+       * Ingestion keeps `sale`: it is the only debit covering orders
+       * that ship without a pick scan (shop 1: 3 of 3 fulfilled orders
+       * never picked), and historicalCanonicalRepair:1106 throws if that
+       * row is absent.
+       *
+       * This row remains the operator-activity signal — it alone carries
+       * operator_id and scan_source (5/5 here, 0/31 on ingestion rows),
+       * which is how wmsAnalytics and members.controller isolate it.
+       */
+      movement_type: 'pick_removal',
       quantity_delta: -quantityConfirmed,
       location_code: locationCode,
       /*

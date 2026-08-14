@@ -137,6 +137,14 @@ export async function rebuildInventoryProjectionForVariants(
               'shrinkage'
             ) THEN quantity_delta
 
+            /*
+             * INV-SALE-DOUBLE-01: "pick_removal" is deliberately absent.
+             * The unit was already debited by ingestion's "sale"; counting
+             * the pick again drove on-hand 9 below truth on shop 2.
+             * pick_removal is an operator-activity record, not an on-hand
+             * movement. Do not add it here.
+             */
+
             ELSE 0
           END
         `),

@@ -232,7 +232,10 @@ export async function getOperatorPerformance(shopId: number, windowDays: number,
       trx('inventory_movements')
         .where('shop_id', shopId)
         .where('occurred_at', '>=', since)
-        .where('movement_type', 'sale')
+        // INV-SALE-DOUBLE-01: operator activity lives on pick_removal.
+        // Ingestion's 'sale' has no operator_id/scan_source, so the
+        // NOT NULL guards below would return nothing on that type.
+        .where('movement_type', 'pick_removal')
         .whereNotNull('operator_id')
         .whereNotNull('scan_source')
         .groupBy('operator_id', 'scan_source')
@@ -670,7 +673,8 @@ export async function getActivityStream(shopId: number, sinceMs: number, knex: K
   const pulses = await knex('inventory_movements')
     .where('shop_id', shopId)
     .where('occurred_at', '>=', since)
-    .where('movement_type', 'sale')
+    // INV-SALE-DOUBLE-01: floor pulse = pick_removal, not ingestion sales.
+    .where('movement_type', 'pick_removal')
     .select('location_code', 'lasyncro_variant_id', 'occurred_at')
     .orderBy('occurred_at', 'desc')
     .limit(50);

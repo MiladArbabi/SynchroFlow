@@ -597,7 +597,9 @@ export const getMemberDetail = async (req: Request, res: Response) => {
           .where('shop_id', shopId)
           .where('operator_id', targetUserId)
           .where('occurred_at', '>=', since30d)
-          .where('movement_type', 'sale')
+          // INV-SALE-DOUBLE-01: per-operator scan sources live on
+          // pick_removal; ingestion's 'sale' carries neither field.
+          .where('movement_type', 'pick_removal')
           .whereNotNull('scan_source')
           .groupBy('scan_source')
           .select('scan_source', trx.raw('COUNT(*) as count')),
