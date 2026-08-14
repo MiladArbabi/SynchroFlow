@@ -259,7 +259,36 @@ export async function confirmPickScan(
       movement_type: 'sale',
       quantity_delta: -quantityConfirmed,
       location_code: locationCode,
-      reference_type: 'order_revenue_unit',
+      /*
+       * INV-SALE-REFTYPE-01 (2026-08-14)
+       * --------------------------------
+       * reference_id here is a LINE ITEM id, not a revenue unit id.
+       * This block previously declared reference_type='order_revenue_unit'
+       * — the same label revenue-units.writer.ts:274 uses for a genuine
+       * lasyncro_revenue_unit_id — so the ledger carried two different
+       * entity types under one name. reference_type is varchar and no
+       * reader filters on it (verified), so the label is corrected to
+       * name what is actually referenced. Matches the entity-naming
+       * convention of the existing vocabulary: pick_batch,
+       * pick_reservation_allocation, inventory_unit, receive_job.
+       *
+       * THIS DOES NOT STOP THE DOUBLE DEBIT. Both this site and
+       * revenue-units.writer.ts write a `sale` for the same units —
+       * 9 ordered units produced 18 debited on shop 2. Each writer is
+       * idempotent only against ITSELF, via its own uuidv5
+       * device_event_id namespace; neither sees the other, and
+       * onConflict(['device_event_id']) is the real guard, not the
+       * six-column inventory_movements_shop_ref_unique.
+       * The duplicate is INV-SALE-DOUBLE-01 (P1) — pick is intended to
+       * become the sole physical debit, pending the fulfilment-path
+       * audit. Correcting the label here makes the pick-written rows
+       * queryable as a set for that fix's backfill.
+       *
+       * UNTIL INV-SALE-DOUBLE-01 LANDS: do not run rebuild-from-events
+       * on a tenant that has picked. rebuildInventoryProjection sums
+       * `sale` into on_hand and would subtract every picked unit twice.
+       */
+      reference_type: 'order_line_item',
       reference_id: lasyncroLineItemId,
       platform: null,
       scan_source: scanSource,
