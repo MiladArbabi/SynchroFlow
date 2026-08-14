@@ -44,7 +44,7 @@
 //   - picking/packing counts are parked in the "today" column until
 //     per-batch deadlines exist.
 
-import { type ChangeEvent, type ReactNode, useCallback, useMemo, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { SpotlightCoachMark } from '@lasyncro/shared/ui';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import { useSearchParams } from 'react-router-dom';
@@ -57,7 +57,6 @@ import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { 
   getAgeLabel, 
   getBlockerReason, 
-  getSecondaryBlockers,
   getConstraintLabel, 
   useConstrainedOrders 
 } from '../orders/useConstrainedOrders';
@@ -86,6 +85,15 @@ const fmtOrderValue = (price: number, currency: string): string =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(price);
 
 type CptBucket = 'overdue' | 'today' | 'ahead';
+
+type BlockedReasonKey = 'operational' | 'inventory' | 'customer' | 'unknown';
+
+const BLOCKED_REASON_KEYS: readonly BlockedReasonKey[] = [
+  'operational',
+  'inventory',
+  'customer',
+  'unknown',
+];
 
 /**
  * Classify an order into a CPT (carrier pick-up time) bucket.
@@ -232,34 +240,11 @@ export default function OrderFlowPage() {
     });
     setPage(1); // reset to page 1 on filter change, per §6
   }, []);
-  // ISSUE-15 → OF-06 (2026-07-02): accordion state for Blocked Orders
-  // categories. Previously started fully collapsed by default (empty Set,
-  // except deep-linked ?constraint=<type>) — flagged live as leaving
-  // significant dead space on the Blocked Orders card when nothing is
-  // manually expanded. Now defaults to expanded for every category
-  // (bounded safely by OF-05's TRIAGE_PREVIEW_LIMIT=3 reveal cap, so this
-  // can't balloon into a huge list even with several blocked categories).
-  // constraintParam still works the same way — it's already covered by
-  // "start with everything expanded," no special-case needed anymore.
-  const [expandedReasons, setExpandedReasons] = useState<Set<string>>(
-    () => new Set(['operational', 'inventory', 'customer', 'unknown'])
-  );
-  const toggleReason = useCallback((key: string) => {
-    setExpandedReasons((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
-      return next;
-    });
-  }, []);
   /**
    * OF-05 (2026-07-02) — See-more reveal for Blocked Orders groups.
-   * Separate state from expandedReasons (that toggles the whole
-   * accordion section open/closed) — this toggles preview-vs-full
-   * within an already-open section. TRIAGE_PREVIEW_LIMIT = 3 per
+   * Separate state from the single-open accordion state below — this
+   * toggles preview-vs-full within the currently open section.
+   * TRIAGE_PREVIEW_LIMIT = 3 per
    * updated app-wide standard (modules-ux-playbook.md, was 4).
    */
   const TRIAGE_PREVIEW_LIMIT = 3;
@@ -338,10 +323,11 @@ export default function OrderFlowPage() {
     [liveCapacityQuery.data],
   );
 
-  // --- Blocked column: group by reason category (constraint_type) ----------
-  // constraint_type is a hard DB enum — inventory | customer | operational
-  // only (order_constraint_events migration). Any other value is a contract
-  // break, not a silent miscategorization: log it and bucket separately.
+  // --- Blocked column: group by reason category (constraint_type)----------
+  // Canonical constraint types currently emitted by the evaluators are
+  // inventory | customer | operational. The DB column itself is text, so an
+  // unexpected value is a contract break rather than an enum rejection:
+  // log it and bucket it separately instead of silently miscategorizing it.
   // urgencyFilter (?urgency=sla_breach) narrows to real SLA-breached orders
   // only, independent of which constraint group they fall into.
   const blockedForDisplay = useMemo(
@@ -372,6 +358,62 @@ export default function OrderFlowPage() {
 
     return grouped;
   }, [blockedForDisplay]);
+
+  /**
+   * OF-UX-02 (2026-08-14)
+   * ---------------------
+   * Preserve the backend's authoritative urgency ordering at group level.
+   * The category owning the first ranked blocked order appears first; later
+   * categories follow the position of their highest-ranked member.
+   *
+   * This is deliberately separate from multi-blocker election precedence,
+   * which determines the primary blocker for ONE order.
+   */
+  const orderedBlockedReasonKeys = useMemo<BlockedReasonKey[]>(() => {
+    const seen = new Set<BlockedReasonKey>();
+    const ordered: BlockedReasonKey[] = [];
+
+    blockedForDisplay.forEach((order) => {
+      const key: BlockedReasonKey =
+        order.constraint_type === 'operational' ||
+        order.constraint_type === 'inventory' ||
+        order.constraint_type === 'customer'
+          ? order.constraint_type
+          : 'unknown';
+
+      if (!seen.has(key)) {
+        seen.add(key);
+        ordered.push(key);
+      }
+    });
+
+    return ordered;
+  }, [blockedForDisplay]);
+
+  /**
+   * OF-UX-02: one blocker group is expanded at a time.
+   *
+   * A valid ?constraint=<type> deep link takes precedence. Otherwise the
+   * highest-ranked non-empty category is the initial visible work surface.
+   */
+  const [expandedReason, setExpandedReason] = useState<BlockedReasonKey | null>(
+    () =>
+      BLOCKED_REASON_KEYS.includes(constraintParam as BlockedReasonKey)
+        ? (constraintParam as BlockedReasonKey)
+        : null
+  );
+
+  useEffect(() => {
+    if (BLOCKED_REASON_KEYS.includes(constraintParam as BlockedReasonKey)) {
+      setExpandedReason(constraintParam as BlockedReasonKey);
+    }
+  }, [constraintParam]);
+
+  const activeExpandedReason =
+    expandedReason && blockedByReason[expandedReason].length > 0
+      ? expandedReason
+      : orderedBlockedReasonKeys[0] ?? null;
+
 
   // --- Wave selection + release state --------------------------------------
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -812,11 +854,11 @@ export default function OrderFlowPage() {
                       Blocked orders
                     </Typography>
                     <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    {(['operational', 'inventory', 'customer', 'unknown'] as const).map((key) =>
+                    {orderedBlockedReasonKeys.map((key) =>
                       blockedByReason[key].length > 0 && (
                         <Box key={key} sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                           <Box
-                            onClick={() => toggleReason(key)}
+                            onClick={() => setExpandedReason(key)}
                             sx={{
                               display: 'flex',
                               alignItems: 'center',
@@ -833,12 +875,12 @@ export default function OrderFlowPage() {
                               size={14}
                               style={{
                                 color: 'var(--ink-4)',
-                                transform: expandedReasons.has(key) ? 'rotate(180deg)' : 'rotate(0deg)',
+                                transform: activeExpandedReason === key ? 'rotate(180deg)' : 'rotate(0deg)',
                                 transition: 'transform 0.2s ease',
                               }}
                             />
                           </Box>
-                          <Collapse in={expandedReasons.has(key)} timeout={200}>
+                          <Collapse in={activeExpandedReason === key} timeout={200}>
                             <Box sx={{ display: 'flex', flexDirection:'column', gap: 0.5 }}>
                               {(revealedGroups.has(key) ? blockedByReason[key] : blockedByReason[key].slice(0, TRIAGE_PREVIEW_LIMIT)).map((order) => (
                                 <Box
@@ -885,19 +927,23 @@ export default function OrderFlowPage() {
                                           * operator resolving the visible one and seeing no
                                           * movement. Renders nothing when there is only one.
                                           */}
-                                        {getSecondaryBlockers(order) && (
-                                          <Box
-                                            component="span"
-                                            sx={{
-                                              display: 'block',
-                                              color: 'text.secondary',
-                                              fontSize: '0.75rem',
-                                              mt: 0.25,
-                                            }}
-                                          >
-                                            {getSecondaryBlockers(order)}
-                                          </Box>
-                                        )}
+                                        {(order.other_blocker_types?.length ?? 0) > 0 && (
+                                            <Box
+                                              component="span"
+                                              sx={{
+                                                display: 'block',
+                                                color: 'var(--ink-3)',
+                                                fontSize: 11,
+                                                fontWeight: 500,
+                                                lineHeight: 1.4,
+                                                mt: 0.375,
+                                              }}
+                                            >
+                                              Also blocked by: {order.other_blocker_types
+                                                ?.map(getConstraintLabel)
+                                                .join(' · ')}
+                                            </Box>
+                                          )}
                                       </Typography>
                                     </Box>
                                     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-end', flexShrink: 0 }}>

@@ -113,17 +113,32 @@ Decision groups must not render unbounded lists by default.
 
 Rules:
 
-- Show a maximum of 4 visible decisions per decision group.
-- If a group has more than 4 items, render a centered `See X more` control below the first 4.
+- Show a maximum of 3 visible decisions per decision group.
+- If a group has more than 3 items, render a centered `See X more` control below the first 3.
 - Clicking `See X more` expands the remaining items with MUI `<Collapse timeout={180} unmountOnExit>`.
 - Expanded state must provide `Show less` and collapse the hidden items.
 - Apply this pattern to decision categories such as `Critical — act today` and `Watch`.
-- Do not discard hidden items with `.slice(0, 4)` at the source level.
+- Do not discard hidden items with `.slice(0, 3)` at the source level.
 - Keep the full source array, then derive:
   - `visibleItems = items.slice(0, TRIAGE_PREVIEW_LIMIT)`
   - `hiddenItems = items.slice(TRIAGE_PREVIEW_LIMIT)`
 - Use `TRIAGE_PREVIEW_LIMIT = 3`.
 - `Everything else` may remain a separate collapsed/on-track group, but should not be treated as an urgent decision category.
+
+**Order Flow Blocked Orders exception (2026-08-14, OF-UX-02):**
+
+Blocked Orders is an operational exception queue, so category reveal follows a stricter hierarchy than generic decision groups:
+
+- Use a **single-open accordion**: exactly one non-empty blocker category is expanded at a time.
+- Order blocker categories by the first occurrence of each category in the backend-ranked constrained-order response. Do not impose a separate frontend category priority.
+- On normal entry, expand the category containing the highest-ranked blocked order.
+- A valid `?constraint=<type>` deep link may override that initial category selection.
+- Apply any urgency filter first; then derive category ordering and the initially expanded group from the filtered backend-ranked result.
+- An order with multiple active blockers appears **once**, under its elected primary blocker category.
+- Secondary blockers remain visible on that card using their real operator-facing names, e.g. `Also blocked by: Out of Stock`.
+- Do not replace named secondary blockers with opaque counts such as `+1 more`.
+- Keep the standard `TRIAGE_PREVIEW_LIMIT = 3` and `See X more` behavior within the currently expanded category.
+- Primary-blocker election and category ordering are separate concerns: backend blocker election determines which category owns one order; backend result ranking determines which category receives visual priority.
 
 Canonical reveal control:
 
