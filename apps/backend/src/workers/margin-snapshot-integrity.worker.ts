@@ -94,8 +94,29 @@ async function checkMarginSnapshotIntegrity(): Promise<void> {
       snapshot: r.snapshot_revenue,
       live: r.live_revenue,
     })),
+    /*
+     * REBUILD-ADVICE-01 (2026-08-14): this worker detects MARGIN drift —
+     * a stale version-sealed order_margin_snapshot row. It previously
+     * recommended rebuild-from-events, which is not a targeted recompute:
+     * that CLI connects as systemDb (table owner, BYPASSRLS) and
+     * TRUNCATES the projection tables before replaying them. Whole-
+     * projection destruction to correct one snapshot row.
+     *
+     * It is also currently unsafe for a second reason: pick rows written
+     * before migration 0147 still carry movement_type 'sale', so a replay
+     * double-subtracts every historical pick and drives inventory_truth
+     * below reality (INV-SALE-DOUBLE-01, backfill outstanding).
+     *
+     * Advice must stay proportionate to the drift detected. Margin drift
+     * is a margin problem.
+     */
     remediation:
-      'Run rebuild-from-events (or targeted recompute) for the listed orders.',
+      'Margin snapshot drift. Recompute margin only: ' +
+      'npm run backfill:margin -w apps/backend -- <shopId> ' +
+      '(calls computeOrderMargin per order, through the write guard). ' +
+      'Do NOT run rebuild-from-events: it truncates and replays all projection ' +
+      'tables, and is currently unsafe on any tenant that has picked ' +
+      '(INV-SALE-DOUBLE-01 backfill outstanding).',
   });
 }
 
