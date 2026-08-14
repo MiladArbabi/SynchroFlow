@@ -13,8 +13,8 @@ import { writeAuditLog } from '../audit/operatorAudit.service.js';
  * 1. Validates batch is in 'picking' status and owned by operator
  * 2. Validates line item belongs to batch and is not already scanned
  * 3. Validates scanned variant matches line item variant (barcode gate)
- * 4. Writes a 'pick_removal' movement to inventory_movements — operator
- *    activity record, NOT an on-hand deduction (INV-SALE-DOUBLE-01)
+ * 4. Writes a 'pick_removal' movement to inventory_movements — the
+ *    physical on-hand deduction and operator-activity record
  * 5. Writes to pick_scan_log for audit + UPH tracking
  * 6. Updates pick_batches.units_picked + pick_last_activity_at
  *
@@ -113,6 +113,21 @@ export async function confirmPickScan(
     if (!lineItem) {
       throw new Error(
         `[PICK_SCAN] Line item not found in batch: ${lasyncroLineItemId}`
+      );
+    }
+
+    const warehouseState =
+      await trx('order_line_item_warehouse_status')
+        .where({
+          shop_id: shopId,
+          lasyncro_line_item_id: lasyncroLineItemId,
+        })
+        .forUpdate()
+        .first('status');
+
+    if (warehouseState?.status === 'shipped') {
+      throw new Error(
+        `[PICK_SCAN] Line item already shipped: ${lasyncroLineItemId}`
       );
     }
 
@@ -234,7 +249,7 @@ export async function confirmPickScan(
 
   // 5. Deterministic inventory movement id + device_event_id.
   // Allocation-backed tasks use allocation identity so split line items
-  // produce independent, idempotent sale movements.
+  // produce independent, idempotent pick_removal movements.
   const pickTaskIdentity = allocationBackedLine
     ? reservationAllocationId!
     : lasyncroLineItemId;
@@ -251,84 +266,58 @@ export async function confirmPickScan(
 
   const scannedAt = new Date();
 
-  // 6. Write sale movement to inventory ledger (at-scan deduction)
-  const insertedSaleMovements = await trx('inventory_movements')
+  // 6. Write physical pick_removal movement to inventory ledger.
+  const insertedPickRemovals = await trx('inventory_movements')
     .insert({
       lasyncro_inventory_movement_id: inventoryMovementId,
       lasyncro_variant_id: lasyncroVariantId,
       shop_id: shopId,
       /*
-       * INV-SALE-DOUBLE-01 (2026-08-14): pick_removal, not sale.
-       *
-       * revenue-units.writer.ts:274 already writes a `sale` for these
-       * units at order ingestion. Both were summed into on-hand by every
-       * ledger computation. Shop 2 — built through the real pipeline —
-       * proved ingestion alone reproduces inventory_truth exactly:
-       *   1b36716c  60 - 5 = 55 = truth
-       *   40a185ed  40 - 3 = 37 = truth
-       *   8eb8114d  25 - 1 = 24 = truth   (total 116; with pick: 107)
-       *
-       * Ingestion keeps `sale`: it is the only debit covering orders
-       * that ship without a pick scan (shop 1: 3 of 3 fulfilled orders
-       * never picked), and historicalCanonicalRepair:1106 throws if that
-       * row is absent.
-       *
-       * This row remains the operator-activity signal — it alone carries
-       * operator_id and scan_source (5/5 here, 0/31 on ingestion rows),
-       * which is how wmsAnalytics and members.controller isolate it.
-       */
+        * INV-SALE-DOUBLE-01 / INV-INGEST-TRUTH-01 (2026-08-14)
+        * ------------------------------------------------------
+        * `sale` remains the economic order event written at ingestion.
+        * It is deliberately excluded from physical on-hand reconstruction.
+        *
+        * `pick_removal` is the physical outbound movement for a confirmed
+        * WMS pick. It is also the operator-activity signal carrying
+        * operator_id and scan_source.
+        *
+        * Shopify fulfillment for quantity that was not physically picked
+        * is represented separately by `fulfillment_removal`.
+        */
       movement_type: 'pick_removal',
       quantity_delta: -quantityConfirmed,
       location_code: locationCode,
-      /*
-       * INV-SALE-REFTYPE-01 (2026-08-14)
-       * --------------------------------
-       * reference_id here is a LINE ITEM id, not a revenue unit id.
-       * This block previously declared reference_type='order_revenue_unit'
-       * — the same label revenue-units.writer.ts:274 uses for a genuine
-       * lasyncro_revenue_unit_id — so the ledger carried two different
-       * entity types under one name. reference_type is varchar and no
-       * reader filters on it (verified), so the label is corrected to
-       * name what is actually referenced. Matches the entity-naming
-       * convention of the existing vocabulary: pick_batch,
-       * pick_reservation_allocation, inventory_unit, receive_job.
-       *
-       * The double debit that motivated this label change is now fixed
-       * by movement_type above: this site writes 'pick_removal', which
-       * no on-hand computation sums. Ingestion keeps 'sale' and remains
-       * the single physical debit.
-       *
-       * Note on guards, for future readers: onConflict(['device_event_id'])
-       * is the real idempotency guard here, NOT the six-column
-       * inventory_movements_shop_ref_unique. Each writer derives its
-       * device_event_id from its own uuidv5 namespace, so each is
-       * idempotent only against ITSELF and blind to the other. No
-       * conflict target would have caught the duplicate.
-       *
-       * BACKFILL — PRODUCTION OUTSTANDING. Rows written BEFORE migration
-       * 0147 carry movement_type 'sale' and are double-subtracted by any
-       * ledger replay. Local shop 2's 5 rows are corrected
-       * (INV-SALE-BACKFILL-01); shop 1 has NONE — its 26 'sale' rows are
-       * all triggered_by NULL (ingestion), 0 pick scans, 0 batches.
-       *
-       * PRODUCTION HAS NOT BEEN BACKFILLED and carries picked batches.
-       * Run backfill-pick-sale-corrections.ts --shop <id> (dry run first)
-       * before any rebuild-from-events there: the historical pick 
-       * rows are still summed into on_hand and would subtract twice.
-       * 
-       * The double debit that motivated this label change is now fixed
-       * by movement_type above: this site writes 'pick_removal', which
-       * no on-hand computation sums. Ingestion keeps 'sale' and remains
-       * the single physical debit.
-       *
-       * Note on guards, for future readers: onConflict(['device_event_id'])
-       * is the real idempotency guard here, NOT the six-column
-       * inventory_movements_shop_ref_unique. Each writer derives its
-       * device_event_id from its own uuidv5 namespace, so each is
-       * idempotent only against ITSELF and blind to the other. No
-       * conflict target would have caught the duplicate.
-       */
-
+        /*
+        * INV-SALE-REFTYPE-01 (2026-08-14)
+        * --------------------------------
+        * reference_id here is a LINE ITEM id, not a revenue unit id.
+        * This block previously declared reference_type='order_revenue_unit'
+        * — the same label revenue-units.writer.ts:274 uses for a genuine
+        * lasyncro_revenue_unit_id — so the ledger carried two different
+        * entity types under one name. reference_type is varchar and no
+        * reader filters on it (verified), so the label is corrected to
+        * name what is actually referenced. Matches the entity-naming
+        * convention of the existing vocabulary: pick_batch,
+        * pick_reservation_allocation, inventory_unit, receive_job.
+        *
+        * INV-SALE-DOUBLE-01 / INV-INGEST-TRUTH-01
+        * -----------------------------------------
+        * This site writes `pick_removal`, the physical outbound movement
+        * for a confirmed WMS pick.
+        *
+        * `sale` remains a separate ingestion-time economic event and is
+        * not included in physical on-hand reconstruction.
+        *
+        * Idempotency is enforced by device_event_id. Each writer derives
+        * its device_event_id from its own deterministic uuidv5 namespace.
+        *
+        * Historical pre-0147 pick rows may still carry movement_type='sale'
+        * with triggered_by='pick_scan'. Rebuild compatibility recognizes those
+        * rows directly as physical removals. Any inv_sale_backfill_01
+        * compensating correction remains physically neutral, so rebuild does
+        * not depend on whether that historical backfill was previously run.
+        */
       reference_type: 'order_line_item',
       reference_id: lasyncroLineItemId,
       platform: null,
@@ -344,10 +333,10 @@ export async function confirmPickScan(
 
     if (
       allocationBackedLine &&
-      insertedSaleMovements.length !== 1
+      insertedPickRemovals.length !== 1
     ) {
       throw new Error(
-        '[PICK_SCAN] SALE_MOVEMENT_ALREADY_EXISTS'
+        '[PICK_SCAN] PICK_REMOVAL_ALREADY_EXISTS'
       );
     }
 

@@ -43,6 +43,64 @@ export interface HistoricalInventoryNeutralityCheck {
   consistent: boolean;
 }
 
+type HistoricalPhysicalInventoryMovement = {
+  movement_type: string;
+  quantity_delta: number | string | null;
+  triggered_by: string | null;
+  reference_type: string | null;
+};
+
+/**
+ * INV-INGEST-TRUTH-01 — historical physical reconstruction compatibility.
+ *
+ * `sale` is economic-only except for legacy pre-0147 WMS picks, which were
+ * recorded as sale + triggered_by='pick_scan'.
+ *
+ * Two historical positive reconciliation rows are bookkeeping compensators,
+ * not physical receipts:
+ * - inv_sale_backfill_01 + inventory_movement
+ * - canonical_repair
+ */
+function historicalPhysicalOnHandDelta(
+  movement: HistoricalPhysicalInventoryMovement
+): number {
+  const quantity = Number(movement.quantity_delta ?? 0);
+
+  if (movement.movement_type === 'sale') {
+    return movement.triggered_by === 'pick_scan'
+      ? quantity
+      : 0;
+  }
+
+  if (movement.movement_type === 'reconciliation_correction') {
+    if (movement.reference_type === 'canonical_repair') {
+      return 0;
+    }
+
+    if (
+      movement.triggered_by === 'inv_sale_backfill_01' &&
+      movement.reference_type === 'inventory_movement'
+    ) {
+      return 0;
+    }
+
+    return quantity;
+  }
+
+  return [
+    'inbound_purchase',
+    'refund_return',
+    'manual_adjustment',
+    'opening_balance',
+    'pick_removal',
+    'fulfillment_removal',
+    'damage',
+    'shrinkage',
+  ].includes(movement.movement_type)
+    ? quantity
+    : 0;
+}
+
 export interface HistoricalCanonicalRepairCandidate {
   domainEventId: number;
   eventTime: string;
@@ -502,30 +560,20 @@ export async function planShopifyHistoricalCanonicalRepair(
             })
             .select(
               'movement_type',
-              'quantity_delta'
+              'quantity_delta',
+              'triggered_by',
+              'reference_type'
             );
 
         let ledgerOnHand = 0;
         let ledgerReserved = 0;
 
         for (const movement of movements) {
+          ledgerOnHand +=
+            historicalPhysicalOnHandDelta(movement);
+
           const quantity =
             Number(movement.quantity_delta ?? 0);
-
-          if (
-            [
-              'inbound_purchase',
-              'refund_return',
-              'manual_adjustment',
-              'reconciliation_correction',
-              'opening_balance',
-              'sale',
-              'damage',
-              'shrinkage',
-            ].includes(movement.movement_type)
-          ) {
-            ledgerOnHand += quantity;
-          }
 
           if (
             movement.movement_type ===
@@ -757,30 +805,20 @@ async function verifyHistoricalRepairInventoryNeutrality(
     })
     .select(
       'movement_type',
-      'quantity_delta'
+      'quantity_delta',
+      'triggered_by',
+      'reference_type'
     );
 
   let ledgerOnHand = 0;
   let ledgerReserved = 0;
 
   for (const movement of movements) {
+    ledgerOnHand +=
+      historicalPhysicalOnHandDelta(movement);
+
     const quantity =
       Number(movement.quantity_delta ?? 0);
-
-    if (
-      [
-        'inbound_purchase',
-        'refund_return',
-        'manual_adjustment',
-        'reconciliation_correction',
-        'opening_balance',
-        'sale',
-        'damage',
-        'shrinkage',
-      ].includes(movement.movement_type)
-    ) {
-      ledgerOnHand += quantity;
-    }
 
     if (
       movement.movement_type === 'reservation_hold' ||

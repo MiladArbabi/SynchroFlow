@@ -75,26 +75,82 @@ not just in source:
 
 ## New findings
 
-### INV-INGEST-TRUTH-01 (P1)
+### INV-INGEST-TRUTH-01 (P1) — verified
 
-**Order ingestion writes a `sale` movement without debiting `inventory_truth`.**
+**Final invariant: economic order ingestion and physical inventory movement are
+separate concerns.**
 
-Observed directly this cycle: order #92106 created at 11:46:51 with
-`sale -1` for MCS-001 in the ledger; `inventory_truth` stayed at 37. Truth only
-moved when the pick scan debited it directly (37 → 36 at 11:55:57).
+An ingested Shopify order still writes its economic `sale` movement, but that
+movement does **not** debit `inventory_truth`. Physical truth changes only when
+stock actually leaves the warehouse:
 
-So ledger and truth diverge by exactly the ordered-but-unpicked quantity, and
-converge only when a pick happens. Drift across this cycle went 0 → -1 → 0.
+- order ingestion: `sale` — economic only; no physical truth mutation
+- batch release: `reservation_hold` — on-hand unchanged, reserved increases,
+  available decreases
+- confirmed WMS pick: `pick_removal` — on-hand and reserved decrease,
+  available stays unchanged
+- Shopify fulfillment without a corresponding completed pick:
+  `fulfillment_removal` — physical fallback debit for only the remaining
+  unpicked quantity
+- fulfillment after a completed pick: no second physical debit
+- duplicate fulfillment: no second physical debit
+- missing physical location: `LOCATION_NOT_FOUND`; no mutation
+- multiple eligible physical locations: `LOCATION_AMBIGUOUS`; no guessing and
+  no mutation
 
-This also corrects an earlier claim in `inv_sale_double_01_c1_pick_removal`:
-the per-variant table showed ingestion-only REPRODUCING truth. It does not —
-it COINCIDED with it. Shop 2's truth came from `opening_balance 125` minus the
-9 units `pickScan` debited directly; its five ingestion sales were in the
-ledger and never in truth. `seed_fresh_install:176` runs
-`rebuildInventoryProjectionForVariants` BEFORE syncing orders, which is why.
+Migration 0148 adds the `fulfillment_removal` inventory movement type.
+`orders.fulfilled.ts` invokes the physical fallback only for normalized
+`fulfilled` state.
 
-Migration 0147 remains correct regardless — a unit must not be counted twice.
-But truth/ledger agreement is currently a property of picking, not an invariant.
+Runtime verification on fresh shop 2 proved the complete sequence:
+
+    path                              before       after
+    ingestion sale                   125/0/125    125/0/125
+    release MCS-001                  40/0/40      40/1/39
+    pick MCS-001                     40/1/39      39/0/39
+    unreserved fulfillment CWB-002   25/0/25      24/0/24
+    reserved fulfillment WBE-003     60/2/58      58/0/58
+    picked then fulfilled MCS-001    39/0/39      39/0/39
+
+The released-but-unpicked fulfillment wrote:
+
+    reservation_hold       +2
+    reservation_release    -2
+    fulfillment_removal    -2
+
+The fully picked fulfillment retained only its existing:
+
+    pick_removal           -1
+
+A repeated fulfillment left truth unchanged and kept exactly one
+`fulfillment_removal` row.
+
+The shipped-line pick guard also prevents a later pick from creating another
+physical debit. The API maps that stale pick attempt to HTTP 409.
+
+### Rebuild compatibility
+
+`rebuildInventoryProjectionForVariants` now reconstructs physical on-hand from
+physical movements rather than treating every `sale` as physical.
+
+Compatibility rules preserve historical correctness:
+
+- legacy pre-0147 `sale` rows with `triggered_by='pick_scan'` remain physical
+- ordinary ingestion `sale` rows remain economic-only
+- `inv_sale_backfill_01` reconciliation compensators are physically neutral
+- `canonical_repair` reconciliation compensators are physically neutral
+- ordinary reconciliation corrections remain physical
+- `pick_removal` and `fulfillment_removal` are physical debits
+
+Rollback rebuild verification reproduced the persistent shop-2 truth exactly:
+
+    CWB-002   24 / 0 / 24
+    MCS-001   39 / 0 / 39
+    WBE-003   58 / 0 / 58
+
+This supersedes the earlier conclusion that ingestion-only ledger totals
+reproduced physical truth. They merely coincided in the earlier fixture because
+truth had already been mutated directly by historical pick processing.
 
 ### SESSION-ORDERFLOW-LOGOUT-01 (P2)
 

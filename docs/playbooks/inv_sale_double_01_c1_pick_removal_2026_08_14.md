@@ -40,36 +40,69 @@ rejected on evidence:
   queries `movement_type='sale' + reference_type='order_revenue_unit' +
   reference_id=lasyncro_revenue_unit_id` and **throws** if absent.
 
-Removing ingestion's debit would have converted a double-debit into a
-no-debit for every non-picked order, and broken canonical repair.
+The ingestion `sale` row must remain because downstream economic and canonical
+repair logic identifies it. What changed after `INV-INGEST-TRUTH-01` is its
+**physical meaning**: the row remains in the ledger but is no longer an
+on-hand debit.
 
-## Fix
+## Final physical-truth model
 
-The pick row becomes `pick_removal` — an operator-activity record excluded
-from every on-hand computation. Ingestion is untouched.
+Migration 0147 introduced `pick_removal` so a confirmed WMS pick has an
+explicit physical movement distinct from the ingestion `sale`.
 
-Per-variant validation on shop 2 (the only tenant built through the real
-pipeline, movements in true causal order):
+`INV-INGEST-TRUTH-01` completed that model:
 
-    variant     opening  ingest  pick  truth  ingest-only  drift
-    1b36716c      60      -5     -5     55        55         0
-    40a185ed      40      -3     -3     37        37         0
-    8eb8114d      25      -1     -1     24        24         0
-                                       116       116         0
+- ingestion `sale` is economic-only
+- release reserves inventory without changing on-hand
+- `pick_removal` is the physical debit for a confirmed WMS pick
+- migration 0148 adds `fulfillment_removal` for Shopify fulfillment quantity
+  that was not already physically picked
+- fulfillment of already-picked quantity does not debit inventory again
+- duplicate fulfillment is idempotent
+- ambiguous or missing fulfillment locations fail instead of guessing
 
-Ingestion alone reproduces truth exactly, per variant. Including the pick
-debit gave 107.
+The earlier statement that `pick_removal` must be excluded from on-hand
+reconstruction is therefore superseded. Rebuild must include physical
+`pick_removal` and `fulfillment_removal` movements while excluding ordinary
+economic ingestion sales.
 
-## Sites changed
+Legacy compatibility is intentional:
 
-| Site | Change |
+- pre-0147 pick rows encoded as `sale` + `triggered_by='pick_scan'` remain
+  physical during rebuild
+- `inv_sale_backfill_01` compensating reconciliation rows are physically
+  neutral
+- `canonical_repair` compensating reconciliation rows are physically neutral
+
+## Runtime validation
+
+Fresh shop-2 verification established:
+
+    ingestion       physical truth unchanged
+    release         on-hand unchanged; reserved increases
+    pick            on-hand decreases; reservation consumed
+    fulfillment     unpicked quantity physically debited once
+    duplicate       no second physical debit
+    picked+fulfilled no second physical debit
+    rebuild         reproduces current physical truth exactly
+
+Final rebuild truth:
+
+    CWB-002   24 / 0 / 24
+    MCS-001   39 / 0 / 39
+    WBE-003   58 / 0 / 58
+
+## Current implementation sites
+
+| Site | Current responsibility |
 |---|---|
-| `pickScan.service.ts:279` | writes `pick_removal` |
-| `rebuildInventoryProjection.ts` | no edit — `pick_removal` absent from both CASE lists, falls to ELSE 0. Note added so nobody "helpfully" adds it |
-| `historicalCanonicalRepair:522, :777` | no edit — same, absent by omission |
-| `wmsAnalytics.service.ts:238` | team scan-source breakdown → `pick_removal` |
-| `wmsAnalytics.service.ts:677` | activity stream (floor pulse) → `pick_removal` |
-| `members.controller.ts:602` | per-operator scan stats → `pick_removal` |
+| `pickScan.service.ts` | writes `pick_removal`; rejects shipped-line picks |
+| `fulfillmentPhysicalRemoval.service.ts` | writes fallback `fulfillment_removal`, consumes unpicked reservations, refuses ambiguous/missing locations |
+| `orders.fulfilled.ts` | invokes fallback physical removal only for fulfilled state |
+| `rebuildInventoryProjection.ts` | reconstructs physical truth with current and legacy compatibility rules |
+| `historicalCanonicalRepair.service.ts` | applies the same physical/economic classification during repair |
+| `wms.controller.ts` | maps shipped-line stale pick attempts to HTTP 409 |
+| migration 0148 | adds `fulfillment_removal` and updates movement sign validation |
 
 ### Why the three readers had to move
 

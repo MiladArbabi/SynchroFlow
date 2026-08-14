@@ -19,10 +19,12 @@
  */
 import { Knex } from 'knex';
 import { resolveExternalOrderId } from '../../services/identity/resolveExternalOrder.service.js';
-import orderFulfillmentIngestionService 
+import orderFulfillmentIngestionService
   from '../../services/order-fulfillment-ingestion/orderFulfillmentIngestion.service.js';
 import { publishReconciliationJob } from '../../queues/reconciliation.queue.js';
 import { debugLog } from '../projection.utils.js';
+import { applyFulfillmentPhysicalRemoval }
+  from '../../services/wms/fulfillmentPhysicalRemoval.service.js';
 
 const ORDERS_PROJECTION = 'orders_projection';
 
@@ -302,6 +304,13 @@ export async function handleOrdersFulfilled({
      * so inventory constraints continue to reflect unfulfilled units.
      */
     if (isFulfilled) {
+      await applyFulfillmentPhysicalRemoval(
+        trx,
+        domainEvent.shop_id,
+        lasyncroOrderId,
+        canonicalEventTime
+      );
+
       await trx('order_revenue_units')
         .where({ lasyncro_order_id: lasyncroOrderId })
         .update({ fulfilled_quantity: trx.raw('quantity') });

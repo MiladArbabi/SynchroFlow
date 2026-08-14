@@ -111,39 +111,52 @@ export async function rebuildInventoryProjectionForVariants(
        * outbound movements → -quantity
        *
        * IMPORTANT — quantity_delta is PRE-SIGNED at the ledger layer.
-       * The inventory_movements sign-constraint enforces:
-       *   inbound_purchase / refund_return / manual_adjustment / reservation_hold  > 0
-       *   sale / damage / shrinkage / reservation_release                          < 0
-       *   opening_balance / reconciliation_correction / location_transfer          <> 0
-       * Therefore movements are summed AS-IS. Do NOT negate outbound here —
-       * negating would flip sales positive and inflate on_hand.
-       * Verified against live ledger 2026-06-20 (sale rows sum to a negative).
-       */
+       * The inventory_movements sign constraint enforces:
+       *   inbound_purchase / refund_return / manual_adjustment / reservation_hold > 0
+       *   sale / damage / shrinkage / reservation_release /
+       *   pick_removal / fulfillment_removal < 0
+       *   opening_balance / reconciliation_correction / location_transfer <> 0
+       *
+       * Physical on-hand reconstruction excludes economic `sale`.
+       * Historical pre-0147 WMS picks are the compatibility exception:
+       * sale + triggered_by='pick_scan' remains a physical outbound movement.
+       *
+       * Positive compensators written by inv_sale_backfill_01 and
+       * historical canonical repair are bookkeeping-only and therefore
+       * excluded from physical reconstruction.
+       *
+       * New physical outbound quantity comes from pick_removal,
+       * fulfillment_removal, damage, and shrinkage and is summed AS-IS.
+      */
       .sum({
         on_hand: trx.raw(`
           CASE
+            WHEN movement_type = 'sale'
+              AND triggered_by = 'pick_scan'
+            THEN quantity_delta
+
+            WHEN movement_type = 'reconciliation_correction'
+              AND COALESCE(reference_type, '') <> 'canonical_repair'
+              AND NOT (
+                COALESCE(triggered_by, '') = 'inv_sale_backfill_01'
+                AND reference_type = 'inventory_movement'
+              )
+            THEN quantity_delta
+
             WHEN movement_type IN (
               'inbound_purchase',
               'refund_return',
               'manual_adjustment',
-              'reconciliation_correction',
               'opening_balance',
               'location_transfer'
             ) THEN quantity_delta
 
             WHEN movement_type IN (
-              'sale',
+              'pick_removal',
+              'fulfillment_removal',
               'damage',
               'shrinkage'
             ) THEN quantity_delta
-
-            /*
-             * INV-SALE-DOUBLE-01: "pick_removal" is deliberately absent.
-             * The unit was already debited by ingestion's "sale"; counting
-             * the pick again drove on-hand 9 below truth on shop 2.
-             * pick_removal is an operator-activity record, not an on-hand
-             * movement. Do not add it here.
-             */
 
             ELSE 0
           END

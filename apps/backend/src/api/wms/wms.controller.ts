@@ -2294,7 +2294,18 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
 
     if (
       message.includes(
-        'SALE_MOVEMENT_ALREADY_EXISTS'
+        'Line item already shipped'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'This order line has already shipped and can no longer be picked.',
+      });
+    }
+
+    if (
+      message.includes(
+        'PICK_REMOVAL_ALREADY_EXISTS'
       )
     ) {
       return res.status(409).json({
