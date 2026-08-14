@@ -249,8 +249,18 @@ export default function OverviewPageFT2() {
   const hasMapTier = entitlementsResolved && (tier === 'scale' || tier === 'growth');
   const floorPlanning = useFloorPlanning();
   const zones = floorPlanning.data?.zones ?? [];
-  const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && zones.length > 0);
-  const idleAlerts = useIdleAlerts(hasMapTier && zones.length > 0);
+  // OV-34: a floor exists only when at least one zone carries geometry — not
+  // when rows merely exist. Every shop is bootstrapped with WH-{shopId}-ROOT
+  // (auth.controller.ts:83 on signup, integration.controller.ts:798 on Shopify
+  // install) with null position_x/position_y, so zones.length was 1 on a
+  // never-configured tenant while IsometricCanvas filtered that row out of
+  // positionedZones and painted an empty SVG. Mirrors IsometricCanvas.tsx:508
+  // exactly so the gate and the canvas can never disagree about "has a floor".
+  const hasPlacedFloor = zones.some(
+    (z: WarehouseZone) => z.position_x != null && z.position_y != null
+  );
+  const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && hasPlacedFloor);
+  const idleAlerts = useIdleAlerts(hasMapTier && hasPlacedFloor);
   // useOrderPool (GET /api/v1/wms/order-pool, 30s poll) feeds the inbound apron:
   // eligible_order_count → bar height, summary.blocked_count → red sub-bar.
   // Semantics: orders waiting to be released to the floor, not yet released.
@@ -263,7 +273,9 @@ export default function OverviewPageFT2() {
     // OV-152: unify visible warehouse warnings with the Overview headline.
   // Unknown prevents positive messaging while relevant queries are loading
   // or failed; disabled map-only sources do not block non-map tiers.
-  const operationalMapEnabled = hasMapTier && zones.length > 0;
+  // OV-34: gated on placed geometry, not row count — an unconfigured tenant
+  // has no operational map and must not suppress non-map warning sources.
+  const operationalMapEnabled = hasMapTier && hasPlacedFloor;
 
   const operationalWarningsUnresolved =
     !entitlementsResolved ||
@@ -436,7 +448,7 @@ export default function OverviewPageFT2() {
     );
   } else if (floorPlanning.isError) {
     // OV-01: Floor service failed or timed out — explicit recovery state with retry.
-    // Without this branch isError silently falls to zones.length === 0, showing
+    // Without this branch isError silently falls to !hasPlacedFloor, showing
     // "Build your floor" to a user who already has a configured floor.
     mapContent = (
       <Box sx={{
@@ -476,7 +488,7 @@ export default function OverviewPageFT2() {
         </Typography>
       </Box>
     );
-  } else if (zones.length === 0) {
+  } else if (!hasPlacedFloor) {
     // Teaching empty state — no zones configured yet (issue #1040)
     // OV-03: expanded to match activation mockup — progress framing, feature
     // chips, friction-reducer copy, 4-step rail. Rail state is intentionally
@@ -489,7 +501,7 @@ export default function OverviewPageFT2() {
     // were non-semantic and would have required hardcoding, which is banned.
     const activationSteps = [
       { label: 'Connect Shopify', done: true },
-      { label: 'Map warehouse zones', done: zones.length > 0, active: zones.length === 0 },
+      { label: 'Map warehouse zones', done: hasPlacedFloor, active: !hasPlacedFloor },
       { label: 'Print location barcodes', done: false, active: false },
       { label: 'Invite your pickers', done: false, active: false },
     ];
