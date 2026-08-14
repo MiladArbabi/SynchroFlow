@@ -59,8 +59,10 @@ Resolved at `OverviewFT2Page` level. The page owns subscription and data-state r
 
 | Branch | Condition | Overview renders |
 | --- | --- | --- |
-| **Live map** | tier is `growth` or `scale`, layout request succeeds, and `zones.length > 0` | Full `IsometricCanvas` with occupancy, apron stations, and live picker activity |
-| **Teaching empty** | tier is `growth` or `scale`, layout request succeeds, and `zones.length === 0` | “Build your floor” teaching state with CTA to `/floor-planning` |
+| **Live map** | tier is `growth` or `scale`, layout request succeeds, and `hasPlacedFloor` | Full `IsometricCanvas` with occupancy, apron stations, and live picker activity |
+| **Teaching empty** | tier is `growth` or `scale`, layout request succeeds, and `!hasPlacedFloor` | “Build your floor” teaching state with CTA to `/floor-planning` |
+
+> **OV-34 (Aug 2026):** the gate predicate is `hasPlacedFloor` — `zones.some(z => z.position_x != null && z.position_y != null)` — not `zones.length`. Every shop is bootstrapped with `WH-{shopId}-ROOT` (null geometry) at creation, so row count is never 0 and the teaching state was unreachable. The predicate mirrors `IsometricCanvas.tsx:508` (`positionedZones`) so the gate and the canvas cannot disagree about whether a floor exists. Any future change to one must change the other.
 | **Upgrade teaser** | owner/admin tier is below `growth` | Core triage layout remains fully available, followed by a compact, dismissible live-map teaser with CTA to `/settings/billing` |
 
 ### 3.1 Core upgrade bridge
