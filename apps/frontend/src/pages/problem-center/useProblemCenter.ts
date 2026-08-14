@@ -6,9 +6,15 @@ import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import type { ProblemCenterData } from '@lasyncro/problem-center';
 
-export function useProblemCenter() {
+export function useProblemCenter(
+  enabled = true,
+  refetchInterval?: number
+) {
   return useQuery<ProblemCenterData>({
     queryKey: ['problem-center'],
+    enabled,
+    refetchInterval,
+    staleTime: 0,
     queryFn: async () => {
       const { data } = await axiosInstance.get('/api/v1/wms/problem-center');
       const raw = data.problem_tasks ?? [];

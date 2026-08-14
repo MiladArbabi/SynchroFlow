@@ -46,8 +46,9 @@ const TILE_W       = ISO_SCALE;       // width of one metre in screen px
 const TILE_H       = TILE_W / 2;     // height of one metre in screen px (2:1 ratio)
 const LEVEL_H      = ISO_SCALE * 0.6; // screen px per rack level height
 
-// Zone colours — sourced from --zone-* brand tokens (themes/index.tsx) so the
-// canvas, landing page, and OAuth scene stay in lockstep. Alpha math unchanged.
+// Physical zones share one neutral base family. Zone type remains encoded by
+// label, geometry and alpha hierarchy — strong colour is reserved for live
+// operational state and explicit analytical overlays.
 const ZONE_KEYS = ['lane','shelf','warehouse','storage','pick','pack','receive','ship','returns','problem','kitting','quarantine'] as const;
 
 const FILL_A: Record<string, number> = {
@@ -69,11 +70,17 @@ function zoneRGBVar(key: string): string {
 }
 
 const ZONE_COLORS: Record<string, string> = Object.fromEntries(
-  ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${FILL_A[k] ?? 0.30})`])
+  ZONE_KEYS.map(k => [
+    k,
+    `rgba(${zoneRGBVar('storage')},${FILL_A[k] ?? 0.30})`,
+  ])
 );
 
 const ZONE_STROKE: Record<string, string> = Object.fromEntries(
-  ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${STROKE_A[k] ?? 0.7})`])
+  ZONE_KEYS.map(k => [
+    k,
+    `rgba(${zoneRGBVar('storage')},${STROKE_A[k] ?? 0.7})`,
+  ])
 );
 
 // ── Isometric projection ──────────────────────────────────────────────────────
@@ -215,6 +222,8 @@ interface BoxProps {
   occupancyFraction?: number;
   /** Explicit semantic emphasis used by empty and stock-out overlays. */
   focusTone?: FocusTone;
+  /** Operational critical state overlays the physical/analytical fill without replacing it. */
+  isCritical?: boolean;
   isFrame: boolean;
   isDimmed?: boolean;
   /**
@@ -232,10 +241,27 @@ interface BoxProps {
   onClick: () => void;
 }
 
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }: BoxProps) {
-  const baseFill   = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
-  const stroke     = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-  const selStroke  = 'var(--accent)';
+function IsometricBox({
+  wx, wy, ww, wd, wh,
+  colorKey,
+  isSelected,
+  isFrame,
+  isDimmed,
+  isInactive,
+  label,
+  rackLevels,
+  zoom,
+  onClick,
+  flipped,
+  occupancyFraction,
+  focusTone,
+  isCritical,
+}: BoxProps) {
+  const baseFill      = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
+  const stroke        = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
+  const selStroke     = 'var(--accent)';
+  const criticalStroke = 'var(--critical-ink)';
+  const faceStroke    = isCritical ? criticalStroke : stroke;
 
   // Occupancy heatmap: empty grey → low green → medium orange → high red.
   const fillOverride = occupancyFraction != null
@@ -293,11 +319,22 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
       <polygon
         points={pts(t00, t10, t11, t01)}
         fill={fill}
-        stroke={isSelected ? selStroke : stroke}
-        strokeWidth={isSelected ? 2 : 1}
+        stroke={isSelected ? selStroke : faceStroke}
+        strokeWidth={isSelected ? 2 : isCritical ? 1.6 : 1}
         strokeDasharray={isInactive ? '3 2' : undefined}
         opacity={isFlat ? 0.6 : 1}
       />
+
+      {isCritical && (
+        <polygon
+          points={pts(t00, t10, t11, t01)}
+          fill={criticalStroke}
+          fillOpacity={0.10}
+          stroke={criticalStroke}
+          strokeWidth={1.2}
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
       {/* Selection highlight */}
       {isSelected && (
         <polygon
@@ -344,8 +381,18 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
         const ru1 = project(wx + ww, wy + wd, z1, zoom, flipped);
         return (
           <g key={i}>
-            <polygon points={pts(ll0, ll1, lu1, lu0)} fill={lFill}     stroke={stroke} strokeWidth="0.4" />
-            <polygon points={pts(rl0, rl1, ru1, ru0)} fill={lFillDark} stroke={stroke} strokeWidth="0.4" />
+            <polygon
+              points={pts(ll0, ll1, lu1, lu0)}
+              fill={lFill}
+              stroke={faceStroke}
+              strokeWidth={isCritical ? 0.8 : 0.4}
+            />
+            <polygon
+              points={pts(rl0, rl1, ru1, ru0)}
+              fill={lFillDark}
+              stroke={faceStroke}
+              strokeWidth={isCritical ? 0.8 : 0.4}
+            />
           </g>
         );
       })}
@@ -373,10 +420,31 @@ export interface IsometricCanvasProps {
   /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
   autoFit?: boolean;
   fitPadding?: number;
+  /**
+   * Fit physical warehouse geometry independently from synthetic apron stations.
+   * Used by Overview so workflow rail volume does not shrink the actual floor.
+   */
+  fitPhysicalFloorFirst?: boolean;
+  /** Fraction of canvas width reserved on the right for the apron rail. */
+  apronReserveRatio?: number;
   /** Hide the FACES opacity legend — false for embedded/overview contexts (default: true) */
   showLegend?: boolean;
   /** Hide zoom/reset/angle controls — false for embedded/overview contexts (default: true) */
   showControls?: boolean;
+
+  /**
+   * Screen-aligned warehouse context. Unlike physical zone labels, this is UI
+   * chrome rather than warehouse geometry so it remains readable and can become
+   * the multi-warehouse selector without changing the floor renderer.
+   */
+  showWarehouseContext?: boolean;
+
+  /**
+   * Future multi-warehouse selector hook. When absent, the warehouse context is
+   * informational only and exposes no fake clickable affordance.
+   */
+  onWarehouseContextClick?: () => void;
+
   /** Disable pan and scroll — true for embedded/overview contexts where autoFit owns positioning (default: false) */
   disablePan?: boolean;
   /**
@@ -397,6 +465,11 @@ export interface IsometricCanvasProps {
    * operator being present (liveActivity). See overview-live-map-playbook §6.4.
    */
   stowPending?: Record<string, number>;
+  /** OV-41: unresolved Problem Center task count keyed by physical bin. */
+  problemByLocation?: Record<string, number>;
+  /** OV-41: all unresolved tasks; must reconcile with located + unlocated tasks. */
+  problemTaskTotal?: number;
+  unlocatedProblemTaskTotal?: number;
   /**
    * OV-129c: show the live-marker key (stow / pick / pack glyphs with words).
    * Deliberately separate from `showLegend`, which controls the occupancy
@@ -472,13 +545,20 @@ export function IsometricCanvas({
     initialOffset = { x: 420, y: 120 },
     autoFit = true,
     fitPadding = 0.68,
+    fitPhysicalFloorFirst = false,
+    apronReserveRatio = 0.22,
     showLegend = true,
     showControls = true,
+    showWarehouseContext = false,
+    onWarehouseContextClick,
     disablePan = false,
     stations,
     liveActivity,
     packQueueCount,
     stowPending,
+    problemByLocation,
+    problemTaskTotal,
+    unlocatedProblemTaskTotal,
     showMarkerKey = false,
     stowPendingTotal,
     receiveAtDock,
@@ -510,6 +590,9 @@ export function IsometricCanvas({
     (filteredCodes == null || filteredCodes.has(z.location_code)) &&
     (isFrame(z) ? showFloor : showBins)
   );
+
+  const warehouseContextName =
+    zones.find(z => z.type === 'warehouse' && z.warehouse_name)?.warehouse_name ?? null;
 
   // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
   // showBins so toggling display filters never changes what merchants are
@@ -836,33 +919,54 @@ export function IsometricCanvas({
       }
     }
 
-    // OV-13: same union as the clamp bbox — without it autoFit solves a zoom
-    // that fits the slab only, and the apron gets cropped at the right edge.
-    for (const p of stationPlacements) {
-      const top = p.totalBarH + 0.6;
-      const corners: Array<[number, number, number]> = [
-        [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
-        [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
-        [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
-        [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
-      ];
-      for (const [px, py, pz] of corners) {
-        const { sx, sy } = project(px, py, pz, 1, flipped);
-        if (sx < minX) minX = sx;
-        if (sx > maxX) maxX = sx;
-        if (sy < minY) minY = sy;
-        if (sy > maxY) maxY = sy;
+    // Default callers still fit physical geometry + apron stations together.
+    // Overview can instead reserve a dedicated rail so synthetic workflow
+    // volume never dictates the scale of the physical warehouse.
+    if (!fitPhysicalFloorFirst) {
+      for (const p of stationPlacements) {
+        const top = p.totalBarH + 0.6;
+        const corners: Array<[number, number, number]> = [
+          [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
+          [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
+          [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
+          [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
+        ];
+
+        for (const [px, py, pz] of corners) {
+          const { sx, sy } = project(px, py, pz, 1, flipped);
+          if (sx < minX) minX = sx;
+          if (sx > maxX) maxX = sx;
+          if (sy < minY) minY = sy;
+          if (sy > maxY) maxY = sy;
+        }
       }
     }
 
     const bboxW = Math.max(1, maxX - minX);
     const bboxH = Math.max(1, maxY - minY);
-    const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(size.w / bboxW, size.h / bboxH) * fitPadding));
+
+    const reservedRatio = fitPhysicalFloorFirst
+      ? Math.min(0.4, Math.max(0, apronReserveRatio))
+      : 0;
+
+    const fitWidth = size.w * (1 - reservedRatio);
+
+    const fitZoom = Math.min(
+      2.5,
+      Math.max(
+        0.3,
+        Math.min(fitWidth / bboxW, size.h / bboxH) * fitPadding
+      )
+    );
 
     const cx = ((minX + maxX) / 2) * fitZoom;
     const cy = ((minY + maxY) / 2) * fitZoom;
+
     setZoom(fitZoom);
-    setOffset({ x: size.w / 2 - cx, y: size.h / 2 - cy });
+    setOffset({
+      x: fitWidth / 2 - cx,
+      y: size.h / 2 - cy,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoFit, size.w, size.h, flipped, zoneSig]);
 
@@ -941,6 +1045,16 @@ export function IsometricCanvas({
               ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
               : null;
 
+            // OV-41: problems occupy the opposite face corner from stow/dock markers.
+            // The badge counts tasks, not units: one problem-center task = one decision.
+            const problemCount =
+              !isFrame && zone.active && zone.type === 'bin'
+                ? problemByLocation?.[zone.location_code]
+                : undefined;
+            const problemPt = (problemCount ?? 0) > 0
+              ? project(wx + ww * 0.18, wy + wd * 0.18, wh + 0.2, zoom, flipped)
+              : null;
+
             // OV-131: dock zones are flat (wh = 0 for frames, low for bins), so
             // the badge sits just above the face rather than on a tower top.
             const dockUnits = zone.active ? receiveAtDock?.[zone.location_code] : undefined;
@@ -952,19 +1066,9 @@ export function IsometricCanvas({
               ? project(wx + ww * 0.82, wy + wd * 0.82, wh + 0.15, zoom, flipped)
               : null;
 
-            // OV-128: anchor at the slab's near-left corner and run the label
-            // along the adjacent edge. The angle is derived from the two
-            // projected corners rather than hardcoded, so it stays correct
-            // under `flipped` and at any zoom.
-            const namePt = isFrame && zone.type === 'warehouse' && zone.warehouse_name
-              ? project(wx, wy + wd, 0, zoom, flipped)
-              : null;
-            // Swap to project(wx, wy, ...) to run along the upper-left edge instead.
-            const nameEdgePt = namePt
-              ? project(wx + ww, wy + wd, 0, zoom, flipped)
-              : null;
-            // OV-133: warehouse and synthetic-station labels share one plate primitive
-            // so edge alignment and light/dark contrast cannot diverge.
+            // Warehouse identity is rendered as screen-aligned UI chrome outside the SVG
+            // geometry. Physical floor labels remain world-aligned; warehouse selection
+            // must stay readable and future-ready for multi-warehouse switching.
 
             return (
               <g key={zone.location_code}>
@@ -990,6 +1094,7 @@ export function IsometricCanvas({
                       ? focusTone
                       : undefined
                   }
+                  isCritical={(problemCount ?? 0) > 0}
                   isFrame={isFrame}
                   isInactive={!zone.active}
                   label={zone.type === 'warehouse' ? '' : zone.location_code}
@@ -1070,15 +1175,6 @@ export function IsometricCanvas({
                   </g>
                 )}
 
-                {namePt && nameEdgePt && zone.warehouse_name && (
-                  <EdgeLabelPlate
-                    label={zone.warehouse_name}
-                    start={namePt}
-                    end={nameEdgePt}
-                    zoom={zoom}
-                  />
-                )}
-
                 {/* OV-129: pending stow units on the bin's top face.
                     OV-129b: a bare number can't say what it counts — stock,
                     picks and stow would all read as an unlabelled integer once
@@ -1116,6 +1212,39 @@ export function IsometricCanvas({
                     </text>
                   </g>
                 )}
+
+                {problemPt && problemCount && (
+                <g
+                  role="img"
+                  aria-label={`${problemCount} open ${problemCount === 1 ? 'problem' : 'problems'} at ${zone.location_code}`}
+                  style={{ pointerEvents: 'none' }}
+                >
+                  <title>
+                    {`${problemCount} open ${problemCount === 1 ? 'problem' : 'problems'} at ${zone.location_code}`}
+                  </title>
+                  <rect
+                    x={problemPt.sx - 11 * zoom}
+                    y={problemPt.sy - 5 * zoom}
+                    width={22 * zoom}
+                    height={10 * zoom}
+                    rx={2 * zoom}
+                    fill="var(--critical-ink)"
+                    opacity={0.92}
+                  />
+                  <text
+                    x={problemPt.sx}
+                    y={problemPt.sy}
+                    textAnchor="middle"
+                    dominantBaseline="middle"
+                    fontSize={Math.round(6 * zoom)}
+                    fontWeight="700"
+                    fill="var(--bg)"
+                    fontFamily="monospace"
+                  >
+                    {`! ${problemCount}`}
+                  </text>
+                </g>
+              )}
 
                 {/* OV-131: units physically at the dock. */}
                 {dockPt && (
@@ -1218,7 +1347,7 @@ export function IsometricCanvas({
             // hues apart — which is why each stage now has its own named block
             // rather than sharing one bar with a colour-coded sub-stack.
             const isCritical = station.tone === 'critical';
-            const barFill = isCritical ? '#E5484D' : 'var(--accent)';
+            const barFill = isCritical ? 'var(--critical-ink)' : 'var(--accent)';
 
             return (
               <g
@@ -1293,6 +1422,57 @@ export function IsometricCanvas({
       </Box>
       }
 
+      {showWarehouseContext && warehouseContextName && (
+      <Box
+        onClick={onWarehouseContextClick}
+        role={onWarehouseContextClick ? 'button' : undefined}
+        tabIndex={onWarehouseContextClick ? 0 : undefined}
+        onKeyDown={
+          onWarehouseContextClick
+            ? event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onWarehouseContextClick();
+                }
+              }
+            : undefined
+        }
+        aria-label={
+          onWarehouseContextClick
+            ? `Select warehouse. Current warehouse: ${warehouseContextName}`
+            : undefined
+        }
+        sx={{
+          position: 'absolute',
+          top: 12,
+          left: 12,
+          zIndex: 2,
+          display: 'inline-flex',
+          alignItems: 'center',
+          px: 1.25,
+          py: 0.625,
+          border: '1px solid var(--rule)',
+          borderRadius: '6px',
+          bgcolor: 'var(--bg)',
+          color: 'var(--ink)',
+          cursor: onWarehouseContextClick ? 'pointer' : 'default',
+          '&:hover': onWarehouseContextClick
+            ? { borderColor: 'var(--accent)' }
+            : undefined,
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: 11,
+            fontWeight: 500,
+            color: 'var(--ink)',
+          }}
+        >
+          {warehouseContextName}
+        </Typography>
+      </Box>
+    )}
+
       {/* OV-129c: live-marker key. Rendered only when markers can appear. */}
       {/* OV-129c/OV-131: marker key. One row per live marker type present on
           the floor — a row is omitted entirely when its count is zero, so the
@@ -1300,13 +1480,34 @@ export function IsometricCanvas({
       {showMarkerKey && (
         operatorSummary.total > 0 ||
         (stowPendingTotal ?? 0) > 0 ||
-        (receiveAtDockTotal ?? 0) > 0
+        (receiveAtDockTotal ?? 0) > 0 ||
+        (problemTaskTotal ?? 0) > 0
       ) && (
         <Box sx={{
           position: 'absolute', bottom: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 0.25,
           px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
           bgcolor: 'var(--bg)', opacity: 0.92,
         }}>
+          {(problemTaskTotal ?? 0) > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <Typography
+                aria-hidden
+                sx={{ fontSize: 11, fontWeight: 700, color: 'var(--critical-ink)', lineHeight: 1 }}
+              >
+                !
+              </Typography>
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }}>
+                {`${problemTaskTotal} open ${
+                  problemTaskTotal === 1 ? 'problem' : 'problems'
+                }${
+                  (unlocatedProblemTaskTotal ?? 0) > 0
+                    ? ` · ${unlocatedProblemTaskTotal} location unknown`
+                    : ''
+                }`}
+              </Typography>
+            </Box>
+          )}
+
           {(receiveAtDockTotal ?? 0) > 0 && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
               <svg width={14} height={12} viewBox="0 0 14 12" aria-hidden>

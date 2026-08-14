@@ -20,6 +20,7 @@ import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
 import type { SyntheticStation, LiveBinActivity, WarehouseZone } from '@lasyncro/shared/ui';
 import { sendEvent } from 'analytics/adapter';
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
+import { useProblemCenter } from '../problem-center/useProblemCenter';
 
 const LIVE_MAP_TEASER_DISMISS_KEY = 'overview-live-map-teaser-dismissed';
 
@@ -151,13 +152,14 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
         }}
       >
         <IsometricCanvas
-          zones={LIVE_MAP_TEASER_ZONES}
-          occupancy={LIVE_MAP_TEASER_OCCUPANCY}
-          showLegend={false}
-          showControls={false}
-          disablePan
-          autoFit
-          fitPadding={0.68}
+        zones={LIVE_MAP_TEASER_ZONES}
+        occupancy={LIVE_MAP_TEASER_OCCUPANCY}
+        showLegend={false}
+        showControls={false}
+        disablePan
+        autoFit
+        fitPhysicalFloorFirst
+        fitPadding={0.88}
         />
       </Box>
 
@@ -266,6 +268,28 @@ export default function OverviewPageFT2() {
   // Semantics: orders waiting to be released to the floor, not yet released.
   // Consumed by the `stations` prop below → IsometricCanvas (OV-13).
   const orderPool = useOrderPool();
+
+  // OV-41: unresolved physical problems stay attached to their recorded
+  // problem_bin_location. Null means unknown — never invent a floor location.
+  const problemCenter = useProblemCenter(
+    hasMapTier && hasPlacedFloor,
+    15_000
+  );
+  const problemTasks = problemCenter.data?.tasks ?? [];
+  const problemByLocation = problemTasks.reduce<Record<string, number>>(
+    (acc, task) => {
+      if (!task.problem_bin_location) return acc;
+      acc[task.problem_bin_location] =
+        (acc[task.problem_bin_location] ?? 0) + 1;
+      return acc;
+    },
+    {}
+  );
+  const problemTaskTotal = problemTasks.length;
+  const unlocatedProblemTaskTotal = problemTasks.filter(
+    task => !task.problem_bin_location
+  ).length;
+
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.
   const liveActivityQuery = useWmsLiveActivity(hasMapTier);
@@ -647,6 +671,9 @@ export default function OverviewPageFT2() {
             liveActivity={liveActivity}
             packQueueCount={packQueueCount}
             stowPending={stowPending}
+            problemByLocation={problemByLocation}
+            problemTaskTotal={problemTaskTotal}
+            unlocatedProblemTaskTotal={unlocatedProblemTaskTotal}
             stowPendingTotal={stowPendingTotal}
             receiveAtDock={receiveAtDock}
             receiveAtDockTotal={receiveAtDockTotal}
@@ -654,9 +681,12 @@ export default function OverviewPageFT2() {
             awaitingPackCount={awaitingPackCount}
             showLegend={false}
             showControls={false}
+            showWarehouseContext
             disablePan
             autoFit
-            fitPadding={0.68}
+            fitPhysicalFloorFirst
+            apronReserveRatio={0.22}
+            fitPadding={0.88}
           />
         </Box>
         <Box sx={{

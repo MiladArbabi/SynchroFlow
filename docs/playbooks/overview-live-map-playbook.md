@@ -133,6 +133,18 @@ BLOCKED (2) ORDER POOL (1) ║ floor ║ SHIPPED (1) STAGED (2)
 
 Zero-count stages are omitted, not drawn empty. Bars are projected polygon volumes (three faces, painter order per `IsometricBox`), not `rect` groups.
 
+**Overview fit contract (2026-08-14).** The physical floor owns the primary viewport. Synthetic apron stations must not shrink the warehouse merely because an unlocated workflow block sits farther from the slab.
+
+Overview therefore opts into `fitPhysicalFloorFirst`:
+
+- physical warehouse geometry determines auto-fit zoom
+- `apronReserveRatio={0.22}` reserves the right side for workflow-rail volume
+- Overview uses `fitPadding={0.88}`
+- other `IsometricCanvas` consumers retain the original whole-layout fit unless they explicitly opt in
+- apron geometry remains part of pan/clamp bounds; this rule changes initial fit ownership, not whether apron work exists
+
+This separation is semantic as well as spatial: the floor represents physical truth; the apron represents work waiting outside or after a physical stage.
+
 ### 5.3 Data sources
 
 | Apron field | Source |
@@ -277,8 +289,13 @@ warning. Automated regression coverage remains optional and non-blocking.
 
 Identity stays inline, live state goes on the box face. Bins keep their
 `location_code` label from `IsometricBox`; work state renders as a badge on the
-top face. The warehouse slab is the exception — its name moved to the near
-corner (OV-128) because the slab's centre is the middle of the floor.
+top face.
+
+The warehouse name is no longer SVG world geometry. Overview renders the
+current warehouse as screen-aligned UI chrome at the top-left of the canvas.
+This keeps warehouse identity readable at every zoom and prepares the same
+surface for the canonical multi-warehouse selector without changing floor
+geometry.
 
 **Anchoring.** The badge sits at `wx + ww * 0.85, wy + wd * 0.85` on the top
 face, not the centre. `IsometricBox` draws the location code at the face
@@ -331,9 +348,93 @@ production's is `RECEIVE`. The legacy `stowPressure.anchor_location: 'RECEIVE-1'
 constant matches no production location and is dead weight kept only for
 contract compatibility.
 
-**Marker key rows are conditional.** A row renders only when its total is
-above zero, so the key never explains a glyph that isn't on screen. Rows are
-ordered by material flow: dock → stow.
+### 6.7 Physical-floor visual grammar
+
+The Live Map uses a state-first colour hierarchy.
+
+**Normal physical state**
+- Physical zones share one neutral `storage` colour family.
+- Zone identity comes from location label, geometry and position — not a permanent rainbow of zone-type colours.
+- Existing per-zone alpha differences remain for structural depth.
+- Strong `--zone-*` colours remain available to explicit analytical overlays such as occupancy and stock risk.
+
+**Operational state**
+- Strong colour is reserved for information that needs attention now.
+- Critical/problem state uses `var(--critical-ink)`.
+- Colour is reinforcement only: icon, count and accessible text remain authoritative.
+- A problem at a physical bin keeps the underlying physical/analytical fill and adds a critical perimeter/tint plus the `! N` marker.
+- This prevents operational state and analytical fill from competing for ownership of the same face colour.
+
+State precedence is:
+
+`physical geometry → analytical fill → operational outline/marker → selection`
+
+The resulting merchant-facing rule is: **if the neutral floor gains strong colour, something operationally meaningful is happening there.**
+
+### 6.8 Warehouse context
+
+Warehouse identity is UI context, not warehouse geometry.
+
+Overview renders the current editable warehouse `name` as a horizontal,
+screen-aligned context element at the top-left of the map. It does not
+participate in projection, auto-fit bounds or SVG edge-label geometry.
+
+Current behavior:
+- one warehouse name is displayed
+- no click or dropdown affordance is exposed while no selector handler exists
+
+Future behavior:
+- the same element becomes the warehouse selector
+- selection swaps the warehouse-scoped floor and operational data together
+- UUIDs and root location codes remain internal and are never the primary label
+
+This follows the canonical warehouse-context contract in
+`docs/blueprints/product-structure.md`.
+
+### 6.9 Problem Center spatial state (OV-41)
+
+Overview projects unresolved Problem Center work back onto the physical floor
+when the task carries a real `problem_bin_location`.
+
+**Data contract**
+- Overview consumes the existing `GET /api/v1/wms/problem-center` surface.
+- `useProblemCenter` is enabled only when the live map tier is available and a
+  placed floor exists.
+- Overview polls Problem Center every 15 seconds, matching the live-map activity
+  cadence.
+- `problemByLocation` counts unresolved tasks by `problem_bin_location`.
+- Counts represent **problem tasks, not units**.
+
+**Location truth**
+- A non-null `problem_bin_location` may activate the matching physical bin.
+- A null `problem_bin_location` is never fabricated onto `PROBLEM` or any other
+  warehouse location.
+- Null-location tasks remain globally visible through the marker-key total as
+  `N location unknown`.
+- The floor therefore reports recorded spatial truth rather than inventing a
+  plausible location.
+
+**Rendering**
+- A bin with one or more unresolved tasks receives the operational critical
+  treatment defined in §6.7: `var(--critical-ink)` perimeter/tint while
+  preserving its physical or analytical fill.
+- The bin also renders `! N`, where `N` is the number of unresolved tasks at
+  that exact location.
+- The SVG marker exposes an accessible label such as
+  `1 open problem at PROBLEM`.
+- The marker key reports the total number of unresolved problems and appends
+  the unlocated count when applicable.
+
+**Resolution behavior**
+Problem state is derived rather than persisted in the canvas. When the
+Problem Center task disappears from the API, the next poll removes the
+critical perimeter, `! N` badge, and marker-key row automatically. No
+separate map cleanup action exists.
+
+Local runtime verification on 2026-08-14 proved both directions with a
+temporary `ov41_visual_verification` task at `PROBLEM`: the critical state
+appeared while the task was open and disappeared after guarded fixture
+cleanup and the following poll.
 
 ---
 
@@ -374,7 +475,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 
 ## 10. Future-proofing notes (design only — no build now)
 
-- **Multi-warehouse (#963):** `SyntheticStation` uses `warehouse_id` as a prop from day one. When warehouse tabs land, each tab swaps the `stations` and `zones` props; the apron contract needs no migration.
+- **Multi-warehouse (#963):** the screen-aligned warehouse context is the future selector surface. Selecting another warehouse swaps the warehouse-scoped `zones`, `stations`, and related live data together. `SyntheticStation` already carries `warehouse_id`, so the apron contract needs no migration. Do not introduce a competing warehouse-tab pattern on the map.
 - **Wave release from map (v3):** Inbound apron click → opens release drawer (currently lives in Order Pool sticky panel). The `onNavigate` prop already supports deep-links; extend to `onApronAction` when ready.
 - **Map snapshot in Export brief:** parked. Requires SVG-to-PNG server-side or canvas capture; not in scope.
 
@@ -393,7 +494,7 @@ One coach mark on first visit using the existing three-layer system (spotlight c
 | FP-OV-07 | BusinessPulse is revenue-only, no WMS signals | ✅ PARTIAL July 2026 — picker dots wired; WMS strip (Pool · Batches · Stow chips in pulse card) remains v3 |
 | FP-OV-08 | `operationalControl = null` dead code | v1-A: removed |
 | FP-OV-09 / OV-MAP-001 | Core users had no visible path to discover or upgrade to the live operations map | ✅ CLOSED July 13, 2026 — compact static map teaser added below Core triage with dismissal, billing CTA, and conversion events |
-| OV-128 | Warehouse name centred on slab, colliding with PACK-1 | Moved to near corner, rotated along the projected slab edge, plate with inverted fill | ✅ |
+| OV-128 | Warehouse identity competed with floor labels when rendered inside projected geometry | Replaced projected slab-edge label with a horizontal screen-aligned warehouse context, future-ready for the canonical multi-warehouse selector | ✅ |
 | OV-129 | Stow pressure aggregated to a scalar pinned to a hardcoded RECEIVE-1; per-bin detail discarded | `by_location` added to live-activity; badges on bin top faces | ✅ |
 | OV-129b | Bare integer badge could not say what it counted | Arrow-into-tray glyph prefix | ✅ |
 | OV-129c | Glyph alone does not teach meaning | `showMarkerKey` — glyph + words, independent of `showLegend` | ✅ |
@@ -428,6 +529,7 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-159 | P2 | Urgent stack fills the whole bar when it meets or exceeds count | CLOSED by OV-40 — one stage per volume; the two-segment encoding is gone |
 | OV-39 | P1 | Apron badge showed `count` while the bar represented count+urgent; type doc claimed nested, both callers passed disjoint | CLOSED — disjoint documented, badge showed the total (superseded by OV-40) |
 | OV-40 | P1 | One block per rail carried two stages separable only by colour, with `showLegend={false}` — read "Order Pool · 3" on a red block while the pool was empty. Also a WCAG 1.4.1 failure | CLOSED — split into named, independently counted, ranked blocks |
+| OV-41 | P1 | Open Problem Center tasks had no spatial representation on the Overview Live Map | CLOSED — unresolved tasks are counted by real `problem_bin_location`; physical bins receive critical outline/tint + `! N`; null locations remain unlocated rather than being fabricated onto the floor; 15s polling removes state automatically after resolution |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
