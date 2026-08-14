@@ -431,7 +431,7 @@ export default function OverviewPageFT2() {
     },
     {
       id: 'staged',
-      label: 'Staged',
+      label: 'Awaiting pickup',
       side: 'outbound',
       rank: 2,
       count: packedNotShipped,
