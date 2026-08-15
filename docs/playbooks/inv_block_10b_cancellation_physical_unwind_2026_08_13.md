@@ -171,7 +171,7 @@ would have double-counted. `reference_id` is `inventory_units.id`
 
 ## Issues discovered by this run — all OPEN
 
-### REFUND-MOVEMENT-CONFLICT-01 (P0)
+### REFUND-MOVEMENT-CONFLICT-01 (P0) — CLOSED, fixed in c7972da9
 The `refunds/create` handler's `onConflict` names five columns and omits
 `movement_type`; `inventory_movements_shop_ref_unique` has six. Postgres
 throws *no unique or exclusion constraint matching the ON CONFLICT
