@@ -45,6 +45,14 @@ export interface LiveBinActivity {
      * Undefined for mixed picking/packing activity.
      */
     status?: 'picking' | 'packing';
+    /**
+     * OV-HOVER-02: epoch ms of the latest legitimate operator activity at this
+     * bin — max(last_scan_at, batch_activity_at). The reducer already computed
+     * this for staleness grading and discarded it; Location Pulse needs the same
+     * value to answer "is anyone still working here?" without a second fetch.
+     * Absent when no operator row produced this bin — never synthesise "never".
+     */
+    lastActivityAt?: number;
 }
 /**
  * SyntheticStation — virtual apron projected in isometric space,
@@ -61,11 +69,51 @@ export interface SyntheticStation {
      * NOT a world-axis hint — see the stationPlacements comment for why.
      */
     side: 'inbound' | 'outbound';
-    /** Total token stack count. */
+    /**
+     * OV-40: single quantity. Each block represents exactly one pipeline stage,
+     * so there is no sub-stack. The dual count/urgentCount contract was removed
+     * because it forced two meanings into one volume distinguishable only by
+     * colour — and Overview renders with showLegend={false}, so nothing on the
+     * surface explained what the colour meant.
+     */
     count: number;
-    /** Urgent sub-stack count rendered in critical red. */
-    urgentCount?: number;
+    /**
+     * OV-40: rail ordering, ascending = nearer the floor slab. Blocked (2) sits
+     * outside Order Pool (1) because it is further from being worked. Blocks on
+     * the same side must not share a rank or they render on top of each other.
+     */
+    rank: number;
+    /**
+     * OV-40: colour is REINFORCEMENT ONLY — never the sole carrier of meaning
+     * (WCAG 1.4.1). The label and count must be sufficient on their own for an
+     * operator who cannot distinguish these hues.
+     */
+    tone?: 'accent' | 'critical';
+    /**
+     * OV-40: footprint in metres. Ive/consortium — form carries state: a settled,
+     * inert stage reads lower and wider; an imminent one taller and narrower.
+     * Defaults to 1.5 x 0.75 when omitted.
+     */
+    footprint?: {
+        tw: number;
+        td: number;
+    };
     /** Deep-link on click — passed to onSelect. */
     deepLink?: string;
+}
+/**
+ * OV-HOVER-02: generic hover plate payload. Deliberately carries NO warehouse
+ * vocabulary — the page/domain layer decides which facts are true and how they
+ * are worded; IsometricCanvas only anchors, clamps and renders two columns.
+ * This keeps WMS semantics out of a renderer shared with floor-planning.
+ */
+export interface LocationPulse {
+    title: string;
+    subtitle?: string;
+    rows: {
+        label: string;
+        value: string;
+        tone?: 'default' | 'muted' | 'warning' | 'critical';
+    }[];
 }
 //# sourceMappingURL=IsometricCanvas.types.d.ts.map

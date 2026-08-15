@@ -1,4 +1,4 @@
-import type { WarehouseZone } from './IsometricCanvas.types.js';
+import type { LocationPulse, WarehouseZone } from './IsometricCanvas.types.js';
 /**
  * Embeddable presentational component — renders a single zone as an isometric box.
  * No pan/zoom/interaction. Intended for product/order detail page embeds.
@@ -18,6 +18,19 @@ export interface IsometricCanvasProps {
     onSelect?: (locationCode: string | null) => void;
     filteredCodes?: Set<string>;
     highlightZoneTypes?: Set<string>;
+    /**
+     * OV-HOVER-01: transient physical-bin hover focus.
+     * Opt-in so existing IsometricCanvas consumers remain unchanged.
+     */
+    enableHoverFocus?: boolean;
+    /**
+     * OV-HOVER-02: hover plate payloads, keyed by bin location_code and station
+     * id. The canvas never composes these — the page decides what is true and
+     * how it is worded. Absent key = no plate, which is how a bin with nothing
+     * to say stays silent.
+     */
+    locationPulseByCode?: Record<string, LocationPulse>;
+    stationPulseById?: Record<string, LocationPulse>;
     /** Bin location codes to emphasize; an empty array means focus mode has zero matches. */
     focusedBins?: string[];
     /** Semantic colour applied to bins contained in focusedBins. */
@@ -37,10 +50,28 @@ export interface IsometricCanvasProps {
     /** Auto-fit the whole layout to the container on mount/resize/zone-change (default: true) */
     autoFit?: boolean;
     fitPadding?: number;
+    /**
+     * Fit physical warehouse geometry independently from synthetic apron stations.
+     * Used by Overview so workflow rail volume does not shrink the actual floor.
+     */
+    fitPhysicalFloorFirst?: boolean;
+    /** Fraction of canvas width reserved on the right for the apron rail. */
+    apronReserveRatio?: number;
     /** Hide the FACES opacity legend — false for embedded/overview contexts (default: true) */
     showLegend?: boolean;
     /** Hide zoom/reset/angle controls — false for embedded/overview contexts (default: true) */
     showControls?: boolean;
+    /**
+     * Screen-aligned warehouse context. Unlike physical zone labels, this is UI
+     * chrome rather than warehouse geometry so it remains readable and can become
+     * the multi-warehouse selector without changing the floor renderer.
+     */
+    showWarehouseContext?: boolean;
+    /**
+     * Future multi-warehouse selector hook. When absent, the warehouse context is
+     * informational only and exposes no fake clickable affordance.
+     */
+    onWarehouseContextClick?: () => void;
     /** Disable pan and scroll — true for embedded/overview contexts where autoFit owns positioning (default: false) */
     disablePan?: boolean;
     /**
@@ -61,6 +92,11 @@ export interface IsometricCanvasProps {
      * operator being present (liveActivity). See overview-live-map-playbook §6.4.
      */
     stowPending?: Record<string, number>;
+    /** OV-41: unresolved Problem Center task count keyed by physical bin. */
+    problemByLocation?: Record<string, number>;
+    /** OV-41: all unresolved tasks; must reconcile with located + unlocated tasks. */
+    problemTaskTotal?: number;
+    unlocatedProblemTaskTotal?: number;
     /**
      * OV-129c: show the live-marker key (stow / pick / pack glyphs with words).
      * Deliberately separate from `showLegend`, which controls the occupancy
@@ -126,7 +162,7 @@ export interface IsometricCanvasProps {
      */
     onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, showLegend, showControls, disablePan, stations, liveActivity, packQueueCount, stowPending, showMarkerKey, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, enableHoverFocus, locationPulseByCode, stationPulseById, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, fitPhysicalFloorFirst, apronReserveRatio, showLegend, showControls, showWarehouseContext, onWarehouseContextClick, disablePan, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map

@@ -1,4 +1,4 @@
-import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 // modules/shared/src/ui/IsometricCanvas.tsx
 /**
  * IsometricCanvas — 2.5D isometric SVG floor plan renderer (Phase 3)
@@ -29,8 +29,9 @@ const LEVEL_HEIGHT = 0.5; // metres per rack level
 const TILE_W = ISO_SCALE; // width of one metre in screen px
 const TILE_H = TILE_W / 2; // height of one metre in screen px (2:1 ratio)
 const LEVEL_H = ISO_SCALE * 0.6; // screen px per rack level height
-// Zone colours — sourced from --zone-* brand tokens (themes/index.tsx) so the
-// canvas, landing page, and OAuth scene stay in lockstep. Alpha math unchanged.
+// Physical zones share one neutral base family. Zone type remains encoded by
+// label, geometry and alpha hierarchy — strong colour is reserved for live
+// operational state and explicit analytical overlays.
 const ZONE_KEYS = ['lane', 'shelf', 'warehouse', 'storage', 'pick', 'pack', 'receive', 'ship', 'returns', 'problem', 'kitting', 'quarantine'];
 const FILL_A = {
     warehouse: 0.15, shelf: 0.20, lane: 0.25, storage: 0.30,
@@ -47,8 +48,14 @@ const STROKE_A = {
 function zoneRGBVar(key) {
     return `var(--zone-${key}, 100,116,139)`;
 }
-const ZONE_COLORS = Object.fromEntries(ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${FILL_A[k] ?? 0.30})`]));
-const ZONE_STROKE = Object.fromEntries(ZONE_KEYS.map(k => [k, `rgba(${zoneRGBVar(k)},${STROKE_A[k] ?? 0.7})`]));
+const ZONE_COLORS = Object.fromEntries(ZONE_KEYS.map(k => [
+    k,
+    `rgba(${zoneRGBVar('storage')},${FILL_A[k] ?? 0.30})`,
+]));
+const ZONE_STROKE = Object.fromEntries(ZONE_KEYS.map(k => [
+    k,
+    `rgba(${zoneRGBVar('storage')},${STROKE_A[k] ?? 0.7})`,
+]));
 // ── Isometric projection ──────────────────────────────────────────────────────
 /**
  * Project a 3D world point to 2D screen coordinates.
@@ -115,10 +122,17 @@ function EdgeLabelPlate({ label, start, end, zoom, }) {
 function pts(...coords) {
     return coords.map(c => `${c.sx.toFixed(1)},${c.sy.toFixed(1)}`).join(' ');
 }
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone }) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isHoverDimmed, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone, isCritical, dockBay, }) {
     const baseFill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
     const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
     const selStroke = 'var(--accent)';
+    const hoverStroke = 'var(--ink-2)';
+    const criticalStroke = 'var(--critical-ink)';
+    const faceStroke = isCritical
+        ? criticalStroke
+        : isHovered
+            ? hoverStroke
+            : stroke;
     // Occupancy heatmap: empty grey → low green → medium orange → high red.
     const fillOverride = occupancyFraction != null
         ? occupancyFraction >= 0.85 ? `rgba(${zoneRGBVar('quarantine')},0.75)`
@@ -151,6 +165,40 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
     const t10 = project(wx + ww, wy, wh, zoom, flipped);
     const t11 = project(wx + ww, wy + wd, wh, zoom, flipped);
     const t01 = project(wx, wy + wd, wh, zoom, flipped);
+    // ZONE-SHAPE-01: top face as 4 points normally, 8 when a dock bay is carved.
+    // The notch is cut in WORLD space and projected through the same project(),
+    // so `flipped` needs no special handling. Both dock zone types are flat
+    // slabs (rack_levels null), so the notch in the top face is the whole shape —
+    // there are no interior walls to draw.
+    const BAY_ALONG = 0.40; // fraction of the wall-facing extent
+    const BAY_DEEP = 0.35; // fraction of the perpendicular extent
+    const topFacePoints = (() => {
+        if (!dockBay)
+            return [t00, t10, t11, t01];
+        const p = (x, y) => project(x, y, wh, zoom, flipped);
+        if (dockBay === 'north' || dockBay === 'south') {
+            const bw = ww * BAY_ALONG;
+            const x0 = wx + (ww - bw) / 2;
+            const x1 = x0 + bw;
+            const bd = wd * BAY_DEEP;
+            if (dockBay === 'north') {
+                // Notch bites into the wy edge.
+                return [t00, p(x0, wy), p(x0, wy + bd), p(x1, wy + bd), p(x1, wy), t10, t11, t01];
+            }
+            // South: notch bites into the wy + wd edge.
+            return [t00, t10, t11, p(x1, wy + wd), p(x1, wy + wd - bd), p(x0, wy + wd - bd), p(x0, wy + wd), t01];
+        }
+        const bh = wd * BAY_ALONG;
+        const y0 = wy + (wd - bh) / 2;
+        const y1 = y0 + bh;
+        const bdx = ww * BAY_DEEP;
+        if (dockBay === 'west') {
+            // Notch bites into the wx edge.
+            return [t00, t10, t11, t01, p(wx, y1), p(wx + bdx, y1), p(wx + bdx, y0), p(wx, y0)];
+        }
+        // East: notch bites into the wx + ww edge.
+        return [t00, p(wx + ww, y0), p(wx + ww - bdx, y0), p(wx + ww - bdx, y1), p(wx + ww, y1), t10, t11, t01];
+    })();
     // Darken side faces
     const leftFill = fill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 1.4)})`).replace('rgba', 'rgba').replace(/,[\d.]+\)/, `,${0.55})`);
     const rightFill = fill.replace(/,[\d.]+\)/, `,${0.40})`);
@@ -160,7 +208,19 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
     const renderedRackLevels = Math.max(1, rackLevels ?? 1);
     return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
-    _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed ? 0.25 : isInactive ? 0.4 : 1, children: [_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: fill, stroke: isSelected ? selStroke : stroke, strokeWidth: isSelected ? 2 : 1, strokeDasharray: isInactive ? '3 2' : undefined, opacity: isFlat ? 0.6 : 1 }), isSelected && (_jsx("polygon", { points: pts(t00, t10, t11, t01), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
+    _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed
+            ? 0.25
+            : isInactive
+                ? 0.4
+                : isHoverDimmed
+                    ? 0.55
+                    : 1, children: [_jsx("polygon", { points: pts(...topFacePoints), fill: fill, stroke: isSelected ? selStroke : faceStroke, strokeWidth: isSelected
+                    ? 2
+                    : isCritical
+                        ? 1.6
+                        : isHovered
+                            ? 1.4
+                            : 1, strokeDasharray: isInactive ? '3 2' : undefined, opacity: isFlat ? 0.6 : 1 }), isCritical && (_jsx("polygon", { points: pts(...topFacePoints), fill: criticalStroke, fillOpacity: 0.10, stroke: criticalStroke, strokeWidth: 1.2, style: { pointerEvents: 'none' } })), isSelected && (_jsx("polygon", { points: pts(...topFacePoints), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
                 const centre = project(wx + ww / 2, wy + wd / 2, wh + 0.05, zoom, flipped);
                 const fontSize = Math.max(7, Math.min(10, TILE_W * zoom * ww * 0.12));
                 return (_jsx("text", { x: centre.sx, y: centre.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: fontSize, fontFamily: "monospace", fontWeight: isSelected ? 700 : 600, fill: isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)', style: { pointerEvents: 'none', userSelect: 'none' }, children: label }));
@@ -169,24 +229,59 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isFrame, isDim
                 const z1 = (i + 1) * LEVEL_HEIGHT;
                 const lFill = levelFill(i);
                 const lFillDark = lFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 0.75)})`);
-                // Left face slice corners
-                const ll0 = project(wx, wy + wd, z0, zoom, flipped);
-                const ll1 = project(wx + ww, wy + wd, z0, zoom, flipped);
-                const lu0 = project(wx, wy + wd, z1, zoom, flipped);
-                const lu1 = project(wx + ww, wy + wd, z1, zoom, flipped);
-                // Right face slice corners
-                const rl0 = project(wx + ww, wy, z0, zoom, flipped);
-                const rl1 = project(wx + ww, wy + wd, z0, zoom, flipped);
-                const ru0 = project(wx + ww, wy, z1, zoom, flipped);
-                const ru1 = project(wx + ww, wy + wd, z1, zoom, flipped);
-                return (_jsxs("g", { children: [_jsx("polygon", { points: pts(ll0, ll1, lu1, lu0), fill: lFill, stroke: stroke, strokeWidth: "0.4" }), _jsx("polygon", { points: pts(rl0, rl1, ru1, ru0), fill: lFillDark, stroke: stroke, strokeWidth: "0.4" })] }, i));
+                // ZONE-SHAPE-01: a dock bay cuts the slab, so the affected side face is
+                // rendered as two segments with the notch's inner wall between them.
+                // Only two faces are visible in this projection — the wy+wd edge (left)
+                // and the wx+ww edge (right) — so a north or west bay cuts a hidden
+                // face and contributes only its inner wall.
+                const q = (x, y, z) => project(x, y, z, zoom, flipped);
+                const bayAlongX = dockBay === 'north' || dockBay === 'south';
+                const bw = bayAlongX ? ww * BAY_ALONG : wd * BAY_ALONG;
+                const bd = bayAlongX ? wd * BAY_DEEP : ww * BAY_DEEP;
+                const a0 = bayAlongX ? wx + (ww - bw) / 2 : wy + (wd - bw) / 2;
+                const a1 = a0 + bw;
+                // ZONE-SHAPE-01: the bay is a cut through the slab — no floor, no lid.
+                // Only walls of the REMAINING solid are drawn, and only those facing
+                // +x or +y (toward the viewer). North and west bays cut the far edges,
+                // so every exposed wall faces away and nothing extra is drawn: the
+                // notch in the top face alone shows the ground through the gap.
+                const faces = [];
+                if (dockBay === 'south') {
+                    const yb = wy + wd - bd;
+                    faces.push({ pts: [q(wx, wy + wd, z0), q(a0, wy + wd, z0), q(a0, wy + wd, z1), q(wx, wy + wd, z1)], fill: lFill });
+                    faces.push({ pts: [q(a1, wy + wd, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(a1, wy + wd, z1)], fill: lFill });
+                    // Back of the recess, facing +y.
+                    faces.push({ pts: [q(a0, yb, z0), q(a1, yb, z0), q(a1, yb, z1), q(a0, yb, z1)], fill: lFill });
+                    // Only the a0 return faces +x; the a1 return faces -x and is hidden.
+                    faces.push({ pts: [q(a0, yb, z0), q(a0, wy + wd, z0), q(a0, wy + wd, z1), q(a0, yb, z1)], fill: lFillDark });
+                }
+                else {
+                    faces.push({ pts: [q(wx, wy + wd, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx, wy + wd, z1)], fill: lFill });
+                }
+                if (dockBay === 'east') {
+                    const xb = wx + ww - bd;
+                    faces.push({ pts: [q(wx + ww, wy, z0), q(wx + ww, a0, z0), q(wx + ww, a0, z1), q(wx + ww, wy, z1)], fill: lFillDark });
+                    faces.push({ pts: [q(wx + ww, a1, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx + ww, a1, z1)], fill: lFillDark });
+                    faces.push({ pts: [q(xb, a0, z0), q(xb, a1, z0), q(xb, a1, z1), q(xb, a0, z1)], fill: lFillDark });
+                    faces.push({ pts: [q(xb, a0, z0), q(wx + ww, a0, z0), q(wx + ww, a0, z1), q(xb, a0, z1)], fill: lFill });
+                }
+                else {
+                    faces.push({ pts: [q(wx + ww, wy, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx + ww, wy, z1)], fill: lFillDark });
+                }
+                return (_jsx("g", { children: faces.map((f, fi) => (_jsx("polygon", { points: pts(...f.pts), fill: f.fill, stroke: faceStroke, strokeWidth: isCritical ? 0.8 : 0.4 }, fi))) }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, showLegend = true, showControls = true, disablePan = false, stations, liveActivity, packQueueCount, stowPending, showMarkerKey = false, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
+export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, enableHoverFocus = false, locationPulseByCode, stationPulseById, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, fitPhysicalFloorFirst = false, apronReserveRatio = 0.22, showLegend = true, showControls = true, showWarehouseContext = false, onWarehouseContextClick, disablePan = false, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey = false, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
     const [selected, setSelected] = useState(null);
+    const [hovered, setHovered] = useState(null);
+    const [hoveredStationId, setHoveredStationId] = useState(null);
+    // OV-HOVER-02: projected anchor of the hovered object in SVG user units.
+    // Captured at hover time because the plate is an HTML sibling of the <svg>
+    // and cannot reach into the scene graph. offset is added at render.
+    const [hoverAnchor, setHoverAnchor] = useState(null);
     const [flipped, setFlipped] = useState(false);
     const [size, setSize] = useState({ w: 0, h: 0 });
     const panRef = useRef(null);
@@ -202,6 +297,75 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
     const positionedZones = zones.filter(z => z.position_x != null && z.position_y != null &&
         (filteredCodes == null || filteredCodes.has(z.location_code)) &&
         (isFrame(z) ? showFloor : showBins));
+    const warehouseContextName = zones.find(z => z.type === 'warehouse' && z.warehouse_name)?.warehouse_name ?? null;
+    // ZONE-SHAPE-01: world-space extent of the physical floor. Deliberately NOT
+    // bboxRef — that one projects to screen space and includes synthetic
+    // stations. The isometric transform collapses wx and wy into a single sx, so
+    // a screen bbox cannot answer "which building edge is this zone near", and
+    // `flipped` would mirror north into south.
+    const worldBox = (() => {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const z of positionedZones) {
+            if (isFrame(z))
+                continue;
+            const wx = parseFloat(String(z.position_x ?? 0));
+            const wy = parseFloat(String(z.position_y ?? 0));
+            const ww = parseFloat(String(z.width ?? 1));
+            const wd = parseFloat(String(z.depth ?? 0.5));
+            if (wx < minX)
+                minX = wx;
+            if (wx + ww > maxX)
+                maxX = wx + ww;
+            if (wy < minY)
+                minY = wy;
+            if (wy + wd > maxY)
+                maxY = wy + wd;
+        }
+        return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+    })();
+    // ZONE-SHAPE-01: the bay faces whichever building edge the zone sits nearest.
+    // Derived rather than stored — `warehouse_locations.orientation` exists but is
+    // 0 on every row and no renderer reads it, so there is no truth to honour yet.
+    //
+    // When the two nearest edges are within AMBIGUITY of each other the zone is
+    // effectively cornered and no bay is drawn: a dock facing the wrong way is
+    // worse than a plain rectangle.
+    const DOCK_BAY_AMBIGUITY = 0.15;
+    const dockBayFor = (z) => {
+        if (z.zone_type !== 'ship' && z.zone_type !== 'receive')
+            return null;
+        if (!worldBox)
+            return null;
+        const w = worldBox.maxX - worldBox.minX;
+        const h = worldBox.maxY - worldBox.minY;
+        if (w <= 0 || h <= 0)
+            return null;
+        const cx = parseFloat(String(z.position_x ?? 0)) + parseFloat(String(z.width ?? 1)) / 2;
+        const cy = parseFloat(String(z.position_y ?? 0)) + parseFloat(String(z.depth ?? 0.5)) / 2;
+        const sides = [
+            { side: 'north', d: (cy - worldBox.minY) / h },
+            { side: 'south', d: (worldBox.maxY - cy) / h },
+            { side: 'west', d: (cx - worldBox.minX) / w },
+            { side: 'east', d: (worldBox.maxX - cx) / w },
+        ];
+        const candidates = sides.sort((a, b) => a.d - b.d);
+        return candidates[1].d - candidates[0].d < DOCK_BAY_AMBIGUITY
+            ? null
+            : candidates[0].side;
+    };
+    // OV-HOVER-01: only an actually rendered physical bin may own hover focus.
+    // This prevents stale hover state from dimming the map after filters/layout change.
+    const activeHoveredCode = enableHoverFocus &&
+        hovered != null &&
+        positionedZones.some(z => z.type === 'bin' && z.location_code === hovered)
+        ? hovered
+        : null;
+    // OV-HOVER-02: a physical bin outranks a rail block; only one plate at a time.
+    const activePulse = activeHoveredCode != null
+        ? locationPulseByCode?.[activeHoveredCode] ?? null
+        : hoveredStationId != null
+            ? stationPulseById?.[hoveredStationId] ?? null
+            : null;
     // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
     // showBins so toggling display filters never changes what merchants are
     // told about their actual data completeness.
@@ -283,54 +447,47 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
         const vMax = maxX - minY; // slab's rightmost screen edge
         const vMin = minX - maxY; // slab's leftmost screen edge
         const uMid = (minX + minY + maxX + maxY) / 2; // slab's vertical screen centre
-        const GUTTER = 2.0; // world-diagonal metres of guaranteed clear space
-        const tw = 1.5, td = 0.75; // apron footprint
+        const GUTTER = 2.0; // world-diagonal metres of clear space from the slab
+        const RANK_GAP = 0.6; // OV-40: clear space between blocks on one rail
+        const DEF_TW = 1.5, DEF_TD = 0.75;
         const MAX_BAR_H = 2.5;
-        // Mirrored view negates screen X, so "right of the slab" becomes minimum v.
-        const vRight = flipped ? vMin - GUTTER - tw : vMax + GUTTER + td;
-        const vLeft = flipped ? vMax + GUTTER + td : vMin - GUTTER - tw;
         return stations
-            // OV-157b: a station earns its place if EITHER stack has weight. The
-            // original count>0 test suppressed the outbound apron whenever nothing
-            // had shipped — precisely the day packed-not-shipped matters, since
-            // orders staged and uncollected are the reason shipping stalled. An
-            // apron reading 0 shipped with an urgent stack is the alarm state, not
-            // an empty one.
-            .filter(s => s.count > 0 || (s.urgentCount ?? 0) > 0)
+            // OV-40: a block with nothing in it is not information. Zero-count
+            // stages are omitted entirely rather than rendered as an empty volume,
+            // so the rail only ever shows stages that have work in them.
+            .filter(s => s.count > 0)
             .map(station => {
-            // Order pool ('inbound') rides the RIGHT rail — it represents orders
-            // waiting to be released to the floor, read before the floor itself.
-            const v0 = station.side === 'inbound' ? vRight : vLeft;
+            const tw = station.footprint?.tw ?? DEF_TW;
+            const td = station.footprint?.td ?? DEF_TD;
+            // OV-40: rank offsets each block outward along v (screen X only, per
+            // the rotated-basis note above). rank 1 sits at the base gutter; each
+            // further rank steps one footprint + gap further from the slab, so
+            // blocks on one rail never overlap regardless of their footprints.
+            // Mirrored view negates screen X, so both the base anchor and the
+            // rank step invert with `flipped`.
+            const rank = Math.max(1, station.rank ?? 1);
+            const step = (rank - 1) * (tw + RANK_GAP);
+            const outward = station.side === 'inbound' ? 1 : -1;
+            const dir = flipped ? -outward : outward;
+            const base = dir > 0 ? vMax + GUTTER + td : vMin - GUTTER - tw;
+            const v0 = base + dir * step;
             const u0 = uMid - (tw + td) / 2;
-            // OV-13: urgentCount is an independent server count (blocked orders)
-            // and can legitimately exceed the pool count. Left unclamped it gave
-            // urgentFrac > 1 → negative normalH → inverted, self-intersecting
-            // polygons drawn below the floor plane: the "red arch" defect.
-            // OV-157b: clamp to the STACK total, not to count. Under the old
-            // count>0 filter these could never disagree; now that a station may
-            // arrive with count 0, clamping to count would zero the urgent stack
-            // and render nothing. stackTotal is also the divisor — count alone
-            // was a latent divide-by-zero the filter happened to be hiding.
-            const urgentCount = Math.max(0, station.urgentCount ?? 0);
-            const stackTotal = Math.max(station.count, urgentCount);
-            const clampedUrgent = Math.min(stackTotal, urgentCount);
-            const totalBarH = Math.min(MAX_BAR_H, 0.4 + stackTotal * 0.06);
-            const urgentH = stackTotal > 0
-                ? totalBarH * (clampedUrgent / stackTotal)
-                : 0;
-            const normalH = Math.max(0, totalBarH - urgentH);
+            // OV-40: one stage, one quantity, one height. The urgent sub-bar and
+            // its stackTotal/clampedUrgent arithmetic (OV-13/15/18/39) are gone —
+            // they existed only to pack two stages into one volume.
+            const totalBarH = Math.min(MAX_BAR_H, 0.4 + station.count * 0.06);
             return {
                 station,
                 wx: (u0 + v0) / 2,
                 wy: (u0 - v0) / 2,
-                tw, td, totalBarH, urgentH, normalH,
+                tw, td, totalBarH,
             };
         });
     }, [stations, worldBounds, flipped]);
     // Apron height and visibility track the counts, so the fit must react to
     // count changes exactly as it reacts to layout changes.
     const stationSig = stationPlacements
-        .map(p => `${p.station.id}:${p.station.label}:${p.station.side}:${p.station.count}:${p.station.urgentCount ?? 0}`)
+        .map(p => `${p.station.id}:${p.station.label}:${p.station.side}:${p.station.rank}:${p.station.count}`)
         .join('|');
     // Signature of what's drawn — refit only when the layout actually changes,
     // never on every render (so manual pan/zoom survives between changes).
@@ -526,35 +683,45 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                     maxY = sy;
             }
         }
-        // OV-13: same union as the clamp bbox — without it autoFit solves a zoom
-        // that fits the slab only, and the apron gets cropped at the right edge.
-        for (const p of stationPlacements) {
-            const top = p.totalBarH + 0.6;
-            const corners = [
-                [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
-                [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
-                [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
-                [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
-            ];
-            for (const [px, py, pz] of corners) {
-                const { sx, sy } = project(px, py, pz, 1, flipped);
-                if (sx < minX)
-                    minX = sx;
-                if (sx > maxX)
-                    maxX = sx;
-                if (sy < minY)
-                    minY = sy;
-                if (sy > maxY)
-                    maxY = sy;
+        // Default callers still fit physical geometry + apron stations together.
+        // Overview can instead reserve a dedicated rail so synthetic workflow
+        // volume never dictates the scale of the physical warehouse.
+        if (!fitPhysicalFloorFirst) {
+            for (const p of stationPlacements) {
+                const top = p.totalBarH + 0.6;
+                const corners = [
+                    [p.wx, p.wy, 0], [p.wx + p.tw, p.wy, 0],
+                    [p.wx + p.tw, p.wy + p.td, 0], [p.wx, p.wy + p.td, 0],
+                    [p.wx, p.wy, top], [p.wx + p.tw, p.wy, top],
+                    [p.wx + p.tw, p.wy + p.td, top], [p.wx, p.wy + p.td, top],
+                ];
+                for (const [px, py, pz] of corners) {
+                    const { sx, sy } = project(px, py, pz, 1, flipped);
+                    if (sx < minX)
+                        minX = sx;
+                    if (sx > maxX)
+                        maxX = sx;
+                    if (sy < minY)
+                        minY = sy;
+                    if (sy > maxY)
+                        maxY = sy;
+                }
             }
         }
         const bboxW = Math.max(1, maxX - minX);
         const bboxH = Math.max(1, maxY - minY);
-        const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(size.w / bboxW, size.h / bboxH) * fitPadding));
+        const reservedRatio = fitPhysicalFloorFirst
+            ? Math.min(0.4, Math.max(0, apronReserveRatio))
+            : 0;
+        const fitWidth = size.w * (1 - reservedRatio);
+        const fitZoom = Math.min(2.5, Math.max(0.3, Math.min(fitWidth / bboxW, size.h / bboxH) * fitPadding));
         const cx = ((minX + maxX) / 2) * fitZoom;
         const cy = ((minY + maxY) / 2) * fitZoom;
         setZoom(fitZoom);
-        setOffset({ x: size.w / 2 - cx, y: size.h / 2 - cy });
+        setOffset({
+            x: fitWidth / 2 - cx,
+            y: size.h / 2 - cy,
+        });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [autoFit, size.w, size.h, flipped, zoneSig]);
     return (_jsxs(Box, { sx: { display: 'flex', width: '100%', height: '100%', position: 'relative', overflow: 'hidden', bgcolor: 'var(--bg-2)' }, children: [_jsx("svg", { ref: svgRef, width: "100%", height: "100%", style: { cursor: disablePan ? 'default' : 'grab', userSelect: 'none', display: 'block' }, onMouseDown: onCanvasMouseDown, children: _jsxs("g", { transform: `translate(${offset.x},${offset.y})`, children: [sorted.map((zone) => {
@@ -620,6 +787,14 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             const stowPt = (stowUnits ?? 0) > 0 && !activity?.hasActivePick
                                 ? project(wx + ww * 0.85, wy + wd * 0.85, wh + 0.05, zoom, flipped)
                                 : null;
+                            // OV-41: problems occupy the opposite face corner from stow/dock markers.
+                            // The badge counts tasks, not units: one problem-center task = one decision.
+                            const problemCount = !isFrame && zone.active && zone.type === 'bin'
+                                ? problemByLocation?.[zone.location_code]
+                                : undefined;
+                            const problemPt = (problemCount ?? 0) > 0
+                                ? project(wx + ww * 0.18, wy + wd * 0.18, wh + 0.2, zoom, flipped)
+                                : null;
                             // OV-131: dock zones are flat (wh = 0 for frames, low for bins), so
                             // the badge sits just above the face rather than on a tower top.
                             const dockUnits = zone.active ? receiveAtDock?.[zone.location_code] : undefined;
@@ -630,20 +805,27 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             const dockPt = (dockUnits ?? 0) > 0 && !activity?.hasActivePick
                                 ? project(wx + ww * 0.82, wy + wd * 0.82, wh + 0.15, zoom, flipped)
                                 : null;
-                            // OV-128: anchor at the slab's near-left corner and run the label
-                            // along the adjacent edge. The angle is derived from the two
-                            // projected corners rather than hardcoded, so it stays correct
-                            // under `flipped` and at any zoom.
-                            const namePt = isFrame && zone.type === 'warehouse' && zone.warehouse_name
-                                ? project(wx, wy + wd, 0, zoom, flipped)
-                                : null;
-                            // Swap to project(wx, wy, ...) to run along the upper-left edge instead.
-                            const nameEdgePt = namePt
-                                ? project(wx + ww, wy + wd, 0, zoom, flipped)
-                                : null;
-                            // OV-133: warehouse and synthetic-station labels share one plate primitive
-                            // so edge alignment and light/dark contrast cannot diverge.
-                            return (_jsxs("g", { children: [_jsx(IsometricBox, { wx: wx, wy: wy, ww: ww, wd: wd, wh: wh, colorKey: colorKey, isSelected: selected === zone.location_code, isDimmed: !isFrame && ((highlightZoneTypes != null &&
+                            // Warehouse identity is rendered as screen-aligned UI chrome outside the SVG
+                            // geometry. Physical floor labels remain world-aligned; warehouse selection
+                            // must stay readable and future-ready for multi-warehouse switching.
+                            return (_jsxs("g", { onMouseEnter: enableHoverFocus && !isFrame
+                                    ? () => {
+                                        setHovered(zone.location_code);
+                                        const a = project(wx + ww, wy, wh, zoom, flipped);
+                                        const aL = project(wx, wy + wd, 0, zoom, flipped);
+                                        setHoverAnchor({ x: a.sx, y: a.sy, leftX: aL.sx });
+                                    }
+                                    : undefined, onMouseLeave: enableHoverFocus && !isFrame
+                                    ? () => {
+                                        setHovered(current => current === zone.location_code ? null : current);
+                                        setHoverAnchor(null);
+                                    }
+                                    : undefined, children: [_jsx(IsometricBox, { wx: wx, wy: wy, ww: ww, wd: wd, wh: wh, colorKey: colorKey, dockBay: dockBayFor(zone), isSelected: selected === zone.location_code, isHovered: !isFrame &&
+                                            activeHoveredCode === zone.location_code, isHoverDimmed: !isFrame &&
+                                            (activeHoveredCode != null || hoveredStationId != null) &&
+                                            activeHoveredCode !== zone.location_code &&
+                                            selected !== zone.location_code &&
+                                            (problemCount ?? 0) === 0, isDimmed: !isFrame && ((highlightZoneTypes != null &&
                                             highlightZoneTypes.size > 0 &&
                                             !highlightZoneTypes.has(zone.zone_type ?? '')) ||
                                             (focusedBins != null &&
@@ -652,28 +834,27 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone
-                                            : undefined, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' ? '' : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { role: "img", "aria-label": operatorAriaLabel, children: [_jsx("title", { children: operatorAriaLabel }), _jsx("rect", { x: dotPt.sx - 19 * zoom, y: dotPt.sy - 6.5 * zoom, width: 38 * zoom, height: 13 * zoom, rx: 6.5 * zoom, fill: "var(--bg)", stroke: "var(--rule)", strokeWidth: 0.8 * zoom, opacity: 0.96 }), _jsx("circle", { cx: dotPt.sx - 13.5 * zoom, cy: dotPt.sy - 2.2 * zoom, r: 1.6 * zoom, fill: "var(--ink-2)" }), _jsx("rect", { x: dotPt.sx - 16 * zoom, y: dotPt.sy + 0.2 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 1.9 * zoom, fill: "var(--ink-2)" }), _jsx("text", { x: dotPt.sx - 1.5 * zoom, y: dotPt.sy + 0.5 * zoom, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: allStale ? '#D9A23B' : 'var(--ink-2)', fontFamily: "monospace", children: `${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}` }), pickingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: packingOperatorCount > 0
+                                            : undefined, isCritical: (problemCount ?? 0) > 0, isFrame: isFrame, isInactive: !zone.active, label: zone.type === 'warehouse' ? '' : zone.location_code, rackLevels: rackLevels, zoom: zoom, flipped: flipped, onClick: () => handleSelect(zone.location_code), occupancyFraction: occupancyFraction }, zone.location_code), dotPt && (_jsxs("g", { role: "img", "aria-label": operatorAriaLabel, children: [_jsx("title", { children: operatorAriaLabel }), _jsx("rect", { x: dotPt.sx - 19 * zoom, y: dotPt.sy - 6.5 * zoom, width: 38 * zoom, height: 13 * zoom, rx: 6.5 * zoom, fill: "var(--bg)", stroke: "var(--rule)", strokeWidth: 0.8 * zoom, opacity: 0.96 }), _jsx("circle", { cx: dotPt.sx - 13.5 * zoom, cy: dotPt.sy - 2.2 * zoom, r: 1.6 * zoom, fill: "var(--ink-2)" }), _jsx("rect", { x: dotPt.sx - 16 * zoom, y: dotPt.sy + 0.2 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 1.9 * zoom, fill: "var(--ink-2)" }), _jsx("text", { x: dotPt.sx - 1.5 * zoom, y: dotPt.sy + 0.5 * zoom, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: allStale ? '#D9A23B' : 'var(--ink-2)', fontFamily: "monospace", children: `${operatorCount} ${operatorCount === 1 ? 'op' : 'ops'}` }), pickingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: packingOperatorCount > 0
                                                     ? dotPt.sy - 2.2 * zoom
                                                     : dotPt.sy, r: 1.6 * zoom, fill: "#1FA8FF" })), packingOperatorCount > 0 && (_jsx("circle", { cx: dotPt.sx + 14.5 * zoom, cy: pickingOperatorCount > 0
                                                     ? dotPt.sy + 2.2 * zoom
-                                                    : dotPt.sy, r: 1.6 * zoom, fill: "#FF6B2B" }))] })), namePt && nameEdgePt && zone.warehouse_name && (_jsx(EdgeLabelPlate, { label: zone.warehouse_name, start: namePt, end: nameEdgePt, zoom: zoom })), stowPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: stowPt.sx - 10 * zoom, y: stowPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: stowPt.sx - 6 * zoom, y1: stowPt.sy - 3 * zoom, x2: stowPt.sx - 6 * zoom, y2: stowPt.sy + 0.5 * zoom }), _jsx("polyline", { points: `${stowPt.sx - 7.6 * zoom},${stowPt.sy - 1 * zoom} ${stowPt.sx - 6 * zoom},${stowPt.sy + 0.7 * zoom} ${stowPt.sx - 4.4 * zoom},${stowPt.sy - 1 * zoom}` }), _jsx("polyline", { points: `${stowPt.sx - 8.2 * zoom},${stowPt.sy + 1.6 * zoom} ${stowPt.sx - 8.2 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 1.6 * zoom}` })] }), _jsx("text", { x: stowPt.sx + 3 * zoom, y: stowPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: stowUnits })] })), dockPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: dockPt.sx - 10 * zoom, y: dockPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("rect", { x: dockPt.sx - 8.4 * zoom, y: dockPt.sy - 0.4 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 0.5 * zoom }), _jsx("line", { x1: dockPt.sx - 5.9 * zoom, y1: dockPt.sy - 4.2 * zoom, x2: dockPt.sx - 5.9 * zoom, y2: dockPt.sy - 1.4 * zoom }), _jsx("polyline", { points: `${dockPt.sx - 7.3 * zoom},${dockPt.sy - 2.6 * zoom} ${dockPt.sx - 5.9 * zoom},${dockPt.sy - 1.2 * zoom} ${dockPt.sx - 4.5 * zoom},${dockPt.sy - 2.6 * zoom}` })] }), _jsx("text", { x: dockPt.sx + 3 * zoom, y: dockPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: dockUnits })] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
-                        }), stationPlacements.map(({ station, wx, wy, tw, td, totalBarH, urgentH, normalH }) => {
+                                                    : dotPt.sy, r: 1.6 * zoom, fill: "#FF6B2B" }))] })), stowPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: stowPt.sx - 10 * zoom, y: stowPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: stowPt.sx - 6 * zoom, y1: stowPt.sy - 3 * zoom, x2: stowPt.sx - 6 * zoom, y2: stowPt.sy + 0.5 * zoom }), _jsx("polyline", { points: `${stowPt.sx - 7.6 * zoom},${stowPt.sy - 1 * zoom} ${stowPt.sx - 6 * zoom},${stowPt.sy + 0.7 * zoom} ${stowPt.sx - 4.4 * zoom},${stowPt.sy - 1 * zoom}` }), _jsx("polyline", { points: `${stowPt.sx - 8.2 * zoom},${stowPt.sy + 1.6 * zoom} ${stowPt.sx - 8.2 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 3.2 * zoom} ${stowPt.sx - 3.8 * zoom},${stowPt.sy + 1.6 * zoom}` })] }), _jsx("text", { x: stowPt.sx + 3 * zoom, y: stowPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: stowUnits })] })), problemPt && problemCount && (_jsxs("g", { role: "img", "aria-label": `${problemCount} open ${problemCount === 1 ? 'problem' : 'problems'} at ${zone.location_code}`, style: { pointerEvents: 'none' }, children: [_jsx("title", { children: `${problemCount} open ${problemCount === 1 ? 'problem' : 'problems'} at ${zone.location_code}` }), _jsx("rect", { x: problemPt.sx - 11 * zoom, y: problemPt.sy - 5 * zoom, width: 22 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--critical-ink)", opacity: 0.92 }), _jsx("text", { x: problemPt.sx, y: problemPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "700", fill: "var(--bg)", fontFamily: "monospace", children: `! ${problemCount}` })] })), dockPt && (_jsxs("g", { style: { pointerEvents: 'none' }, children: [_jsx("rect", { x: dockPt.sx - 10 * zoom, y: dockPt.sy - 5 * zoom, width: 20 * zoom, height: 10 * zoom, rx: 2 * zoom, fill: "var(--ink)", opacity: 0.78 }), _jsxs("g", { stroke: "var(--bg)", strokeWidth: 0.9 * zoom, fill: "none", strokeLinecap: "round", children: [_jsx("rect", { x: dockPt.sx - 8.4 * zoom, y: dockPt.sy - 0.4 * zoom, width: 5 * zoom, height: 3.8 * zoom, rx: 0.5 * zoom }), _jsx("line", { x1: dockPt.sx - 5.9 * zoom, y1: dockPt.sy - 4.2 * zoom, x2: dockPt.sx - 5.9 * zoom, y2: dockPt.sy - 1.4 * zoom }), _jsx("polyline", { points: `${dockPt.sx - 7.3 * zoom},${dockPt.sy - 2.6 * zoom} ${dockPt.sx - 5.9 * zoom},${dockPt.sy - 1.2 * zoom} ${dockPt.sx - 4.5 * zoom},${dockPt.sy - 2.6 * zoom}` })] }), _jsx("text", { x: dockPt.sx + 3 * zoom, y: dockPt.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: Math.round(6 * zoom), fontWeight: "600", fill: "var(--bg)", fontFamily: "monospace", children: dockUnits })] })), packPt && (_jsxs("g", { children: [_jsxs("g", { children: [_jsx("rect", { x: packPt.sx - 5 * zoom, y: packPt.sy - 5 * zoom, width: 10 * zoom, height: 9 * zoom, rx: 1 * zoom, fill: "#D9A23B", stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.92 }), _jsx("line", { x1: packPt.sx, y1: packPt.sy - 5 * zoom, x2: packPt.sx, y2: packPt.sy + 4 * zoom, stroke: "var(--bg)", strokeWidth: 0.75, opacity: 0.6 }), _jsx("animate", { attributeName: "opacity", values: "1;0.6;1", dur: "2.6s", repeatCount: "indefinite" })] }), _jsx("text", { x: packPt.sx + 9 * zoom, y: packPt.sy + 1, textAnchor: "start", dominantBaseline: "middle", fontSize: Math.round(7 * zoom), fontWeight: "600", fill: "var(--ink)", fontFamily: "monospace", children: packQueueCount })] }))] }, zone.location_code));
+                        }), stationPlacements.map(({ station, wx, wy, tw, td, totalBarH }) => {
                             // Normal (lower) bar
                             const nb00 = project(wx, wy, 0, zoom, flipped);
                             const nb10 = project(wx + tw, wy, 0, zoom, flipped);
                             const nb11 = project(wx + tw, wy + td, 0, zoom, flipped);
-                            const nb01 = project(wx, wy + td, 0, zoom, flipped);
-                            const nt00 = project(wx, wy, normalH, zoom, flipped);
-                            const nt10 = project(wx + tw, wy, normalH, zoom, flipped);
-                            const nt11 = project(wx + tw, wy + td, normalH, zoom, flipped);
-                            const nt01 = project(wx, wy + td, normalH, zoom, flipped);
-                            // Urgent (upper) bar — stacked on top of normal
-                            const ub00 = project(wx, wy, normalH, zoom, flipped);
-                            const ub10 = project(wx + tw, wy, normalH, zoom, flipped);
-                            const ub11 = project(wx + tw, wy + td, normalH, zoom, flipped);
-                            const ub01 = project(wx, wy + td, normalH, zoom, flipped);
-                            const ut00 = project(wx, wy, totalBarH, zoom, flipped);
-                            const ut10 = project(wx + tw, wy, totalBarH, zoom, flipped);
+                            // OV-40: one stage, one volume. The normal/urgent two-bar stack is
+                            // gone — each block now carries a single quantity, so there is one
+                            // base quad at z=0 and one top quad at totalBarH.
+                            const b00 = project(wx, wy, 0, zoom, flipped);
+                            const b10 = project(wx + tw, wy, 0, zoom, flipped);
+                            const b11 = project(wx + tw, wy + td, 0, zoom, flipped);
+                            const b01 = project(wx, wy + td, 0, zoom, flipped);
+                            const t00 = project(wx, wy, totalBarH, zoom, flipped);
+                            const t10 = project(wx + tw, wy, totalBarH, zoom, flipped);
+                            const t11 = project(wx + tw, wy + td, totalBarH, zoom, flipped);
+                            const t01 = project(wx, wy + td, totalBarH, zoom, flipped);
                             const ut11 = project(wx + tw, wy + td, totalBarH, zoom, flipped);
                             const ut01 = project(wx, wy + td, totalBarH, zoom, flipped);
                             const countPt = project(wx + tw / 2, wy + td / 2, totalBarH + 0.45, zoom, flipped);
@@ -681,10 +862,39 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             // the variable-height bar. The projected endpoints also handle flipped mode.
                             const labelPt = project(wx, wy + td, 0, zoom, flipped);
                             const labelEdgePt = project(wx + tw, wy + td, 0, zoom, flipped);
-                            const countColor = urgentH > 0.01 ? '#E5484D' : 'var(--accent)';
-                            const accentFill = 'var(--accent)';
-                            return (_jsxs("g", { style: { cursor: station.deepLink ? 'pointer' : 'default' }, onClick: () => { if (station.deepLink)
-                                    onSelect?.(station.id); }, children: [normalH > 0.01 && (_jsxs(_Fragment, { children: [_jsx("polygon", { points: pts(nt01, nt11, nb11, nb01), fill: accentFill, fillOpacity: 0.45 }), _jsx("polygon", { points: pts(nt10, nb10, nb11, nt11), fill: accentFill, fillOpacity: 0.32 }), _jsx("polygon", { points: pts(nt00, nt10, nt11, nt01), fill: accentFill, fillOpacity: 0.75 })] })), urgentH > 0.01 && (_jsxs(_Fragment, { children: [_jsx("polygon", { points: pts(ut01, ut11, ub11, ub01), fill: "#E5484D", fillOpacity: 0.55 }), _jsx("polygon", { points: pts(ut10, ub10, ub11, ut11), fill: "#E5484D", fillOpacity: 0.40 }), _jsx("polygon", { points: pts(ut00, ut10, ut11, ut01), fill: "#E5484D", fillOpacity: 0.85 })] })), _jsx("text", { x: countPt.sx, y: countPt.sy, textAnchor: "middle", fontSize: Math.round(11 * zoom), fontWeight: "600", fill: countColor, fontFamily: "monospace", children: station.count }), _jsx(EdgeLabelPlate, { label: station.label, start: labelPt, end: labelEdgePt, zoom: zoom })] }, station.id));
+                            // OV-40: tone is reinforcement only (WCAG 1.4.1). The block's label
+                            // and count must stand alone for an operator who cannot tell these
+                            // hues apart — which is why each stage now has its own named block
+                            // rather than sharing one bar with a colour-coded sub-stack.
+                            const isCritical = station.tone === 'critical';
+                            const barFill = isCritical ? 'var(--critical-ink)' : 'var(--accent)';
+                            const isHoveredStation = enableHoverFocus && hoveredStationId === station.id;
+                            const stationStroke = isHoveredStation
+                                ? 'var(--ink-2)'
+                                : 'transparent';
+                            const stationOpacity = activeHoveredCode != null && !isCritical ? 0.55 : 1;
+                            return (_jsxs("g", { style: { cursor: station.deepLink ? 'pointer' : 'default' }, opacity: stationOpacity, onMouseEnter: enableHoverFocus
+                                    ? () => {
+                                        setHoveredStationId(station.id);
+                                        // OV-HOVER-02: anchor on the far top corner, not the
+                                        // bar centre — countPt sits mid-block, so a plate hung
+                                        // off it covers the very object being pointed at.
+                                        // OV-HOVER-02: anchor spans the block's projected
+                                        // width — flipping mirrors around the anchor, so a
+                                        // single mid-object point overlaps on either side.
+                                        setHoverAnchor({
+                                            x: t11.sx,
+                                            y: t11.sy,
+                                            leftX: b01.sx,
+                                        });
+                                    }
+                                    : undefined, onMouseLeave: enableHoverFocus
+                                    ? () => {
+                                        setHoveredStationId(current => current === station.id ? null : current);
+                                        setHoverAnchor(null);
+                                    }
+                                    : undefined, onClick: () => { if (station.deepLink)
+                                    onSelect?.(station.id); }, children: [_jsx("polygon", { points: pts(t01, t11, b11, b01), fill: barFill, fillOpacity: 0.45, stroke: stationStroke, strokeWidth: isHoveredStation ? 1.1 : 0 }), _jsx("polygon", { points: pts(t10, b10, b11, t11), fill: barFill, fillOpacity: 0.32, stroke: stationStroke, strokeWidth: isHoveredStation ? 1.1 : 0 }), _jsx("polygon", { points: pts(t00, t10, t11, t01), fill: barFill, fillOpacity: 0.75, stroke: stationStroke, strokeWidth: isHoveredStation ? 1.4 : 0 }), _jsx("text", { x: countPt.sx, y: countPt.sy, textAnchor: "middle", fontSize: Math.round(11 * zoom), fontWeight: "600", fill: barFill, fontFamily: "monospace", children: station.count }), _jsx(EdgeLabelPlate, { label: station.label, start: labelPt, end: labelEdgePt, zoom: zoom })] }, station.id));
                         })] }) }), showControls && _jsxs(Box, { sx: { position: 'absolute', bottom: 12, right: 12, display: 'flex', flexDirection: 'column', gap: 0.5 }, children: [[{ label: '+', delta: 0.15 }, { label: '−', delta: -0.15 }].map(({ label, delta }) => (_jsx(Box, { onClick: () => setZoom(z => Math.min(2.5, Math.max(0.3, z + delta))), sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 16,
                             color: 'var(--ink-3)', bgcolor: 'var(--bg)', '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: label }, label))), _jsx(Box, { onClick: () => { setZoom(0.9); setOffset({ x: 420, y: 120 }); }, sx: { px: 0.5, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -698,13 +908,69 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                             '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: flipped ? '↙' : '↗' }), onRefresh && (_jsx(Box, { onClick: onRefresh, title: "Refresh layout data", sx: { width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
                             border: '1px solid var(--rule)', borderRadius: 1, cursor: 'pointer', fontSize: 14,
                             color: 'var(--ink-3)', bgcolor: 'var(--bg)',
-                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "\u21BB" }))] }), showMarkerKey && (operatorSummary.total > 0 ||
+                            '&:hover': { borderColor: 'var(--accent)', color: 'var(--accent)' } }, children: "\u21BB" }))] }), activePulse && hoverAnchor && (() => {
+                const PW = 228;
+                const GAP = 14;
+                const ax = hoverAnchor.x + offset.x;
+                const ay = hoverAnchor.y + offset.y;
+                const alx = hoverAnchor.leftX + offset.x;
+                const flipLeft = ax + GAP + PW > size.w - 8;
+                const left = flipLeft ? Math.max(8, alx - GAP - PW) : ax + GAP;
+                const estH = 46 + activePulse.rows.length * 20;
+                const top = Math.max(8, Math.min(ay - estH / 2, size.h - estH - 8));
+                return (_jsxs(Box, { "aria-hidden": true, sx: {
+                        position: 'absolute', left, top, width: PW, zIndex: 3,
+                        pointerEvents: 'none',
+                        border: '1px solid var(--rule)', borderRadius: '6px',
+                        bgcolor: 'var(--bg)', px: 1.25, py: 1,
+                        boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
+                    }, children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }, children: activePulse.title }), activePulse.subtitle && (_jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)' }, children: activePulse.subtitle })), _jsx(Box, { sx: { borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75 }, children: activePulse.rows.map((r, i) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', gap: 1, py: 0.25 }, children: [_jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)' }, children: r.label }), _jsx(Typography, { sx: {
+                                            fontSize: 10, fontFamily: 'monospace', textAlign: 'right',
+                                            color: r.tone === 'critical' ? 'var(--critical-ink)'
+                                                : r.tone === 'warning' ? 'var(--accent)'
+                                                    : r.tone === 'muted' ? 'var(--ink-3)'
+                                                        : 'var(--ink)',
+                                        }, children: r.value })] }, i))) })] }));
+            })(), showWarehouseContext && warehouseContextName && (_jsx(Box, { onClick: onWarehouseContextClick, role: onWarehouseContextClick ? 'button' : undefined, tabIndex: onWarehouseContextClick ? 0 : undefined, onKeyDown: onWarehouseContextClick
+                    ? event => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            onWarehouseContextClick();
+                        }
+                    }
+                    : undefined, "aria-label": onWarehouseContextClick
+                    ? `Select warehouse. Current warehouse: ${warehouseContextName}`
+                    : undefined, sx: {
+                    position: 'absolute',
+                    top: 12,
+                    left: 12,
+                    zIndex: 2,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    px: 1.25,
+                    py: 0.625,
+                    border: '1px solid var(--rule)',
+                    borderRadius: '6px',
+                    bgcolor: 'var(--bg)',
+                    color: 'var(--ink)',
+                    cursor: onWarehouseContextClick ? 'pointer' : 'default',
+                    '&:hover': onWarehouseContextClick
+                        ? { borderColor: 'var(--accent)' }
+                        : undefined,
+                }, children: _jsx(Typography, { sx: {
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: 'var(--ink)',
+                    }, children: warehouseContextName }) })), showMarkerKey && (operatorSummary.total > 0 ||
                 (stowPendingTotal ?? 0) > 0 ||
-                (receiveAtDockTotal ?? 0) > 0) && (_jsxs(Box, { sx: {
+                (receiveAtDockTotal ?? 0) > 0 ||
+                (problemTaskTotal ?? 0) > 0) && (_jsxs(Box, { sx: {
                     position: 'absolute', bottom: 12, left: 12, display: 'flex', flexDirection: 'column', gap: 0.25,
                     px: 1, py: 0.5, border: '1px solid var(--rule)', borderRadius: 1,
                     bgcolor: 'var(--bg)', opacity: 0.92,
-                }, children: [(receiveAtDockTotal ?? 0) > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: _jsxs("g", { stroke: "var(--ink-3)", strokeWidth: 1, fill: "none", strokeLinecap: "round", children: [_jsx("rect", { x: 4.5, y: 6, width: 5, height: 4, rx: 0.5 }), _jsx("line", { x1: 7, y1: 1.5, x2: 7, y2: 4.5 }), _jsx("polyline", { points: "5.6,3.2 7,4.7 8.4,3.2" })] }) }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${receiveAtDockTotal} units at dock` })] })), (stowPendingTotal ?? 0) > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: _jsxs("g", { stroke: "var(--ink-3)", strokeWidth: 1, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: 7, y1: 2, x2: 7, y2: 6.5 }), _jsx("polyline", { points: "5.2,4.6 7,6.7 8.8,4.6" }), _jsx("polyline", { points: "4,8 4,10 10,10 10,8" })] }) }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${stowPendingTotal} units awaiting stow` })] })), operatorSummary.total > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsxs("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: [_jsx("circle", { cx: 4, cy: 3, r: 1.5, fill: "var(--ink-3)" }), _jsx("rect", { x: 1.5, y: 5.5, width: 5, height: 4, rx: 2, fill: "var(--ink-3)" }), operatorSummary.picking > 0 && (_jsx("circle", { cx: 10.5, cy: operatorSummary.packing > 0 ? 3.5 : 6, r: 1.5, fill: "#1FA8FF" })), operatorSummary.packing > 0 && (_jsx("circle", { cx: 10.5, cy: operatorSummary.picking > 0 ? 8.5 : 6, r: 1.5, fill: "#FF6B2B" }))] }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${operatorSummary.total} active ${operatorSummary.total === 1 ? 'operator' : 'operators'}${operatorSummary.picking > 0
+                }, children: [(problemTaskTotal ?? 0) > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(Typography, { "aria-hidden": true, sx: { fontSize: 11, fontWeight: 700, color: 'var(--critical-ink)', lineHeight: 1 }, children: "!" }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${problemTaskTotal} open ${problemTaskTotal === 1 ? 'problem' : 'problems'}${(unlocatedProblemTaskTotal ?? 0) > 0
+                                    ? ` · ${unlocatedProblemTaskTotal} location unknown`
+                                    : ''}` })] })), (receiveAtDockTotal ?? 0) > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: _jsxs("g", { stroke: "var(--ink-3)", strokeWidth: 1, fill: "none", strokeLinecap: "round", children: [_jsx("rect", { x: 4.5, y: 6, width: 5, height: 4, rx: 0.5 }), _jsx("line", { x1: 7, y1: 1.5, x2: 7, y2: 4.5 }), _jsx("polyline", { points: "5.6,3.2 7,4.7 8.4,3.2" })] }) }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${receiveAtDockTotal} units at dock` })] })), (stowPendingTotal ?? 0) > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: _jsxs("g", { stroke: "var(--ink-3)", strokeWidth: 1, fill: "none", strokeLinecap: "round", children: [_jsx("line", { x1: 7, y1: 2, x2: 7, y2: 6.5 }), _jsx("polyline", { points: "5.2,4.6 7,6.7 8.8,4.6" }), _jsx("polyline", { points: "4,8 4,10 10,10 10,8" })] }) }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${stowPendingTotal} units awaiting stow` })] })), operatorSummary.total > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsxs("svg", { width: 14, height: 12, viewBox: "0 0 14 12", "aria-hidden": true, children: [_jsx("circle", { cx: 4, cy: 3, r: 1.5, fill: "var(--ink-3)" }), _jsx("rect", { x: 1.5, y: 5.5, width: 5, height: 4, rx: 2, fill: "var(--ink-3)" }), operatorSummary.picking > 0 && (_jsx("circle", { cx: 10.5, cy: operatorSummary.packing > 0 ? 3.5 : 6, r: 1.5, fill: "#1FA8FF" })), operatorSummary.packing > 0 && (_jsx("circle", { cx: 10.5, cy: operatorSummary.picking > 0 ? 8.5 : 6, r: 1.5, fill: "#FF6B2B" }))] }), _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-3)', fontFamily: 'monospace' }, children: `${operatorSummary.total} active ${operatorSummary.total === 1 ? 'operator' : 'operators'}${operatorSummary.picking > 0
                                     ? ` · ${operatorSummary.picking} picking`
                                     : ''}${operatorSummary.packing > 0
                                     ? ` · ${operatorSummary.packing} packing`
