@@ -1247,3 +1247,33 @@ Related: **PROJ-GUARD-DEL-01** was found during cleanup — all five
 DELETE is a silent no-op on five projection tables. Five orphaned fixture rows
 remain in local `order_constraints` as a result; they are invisible to every
 metric (all join through `orders`) and clear on the next `db:reset`.
+
+## DC-02a / DC-02b — cumulative figures labelled as daily
+
+The Orders module rendered `orders.fulfilled` as "N shipped today" in two places
+(left-panel footer and the Today's pulse footerNote), and `revenue.earned` as
+"$X collected" in the same today-framed sentence.
+
+Neither figure is daily:
+
+- `fulfilledOrders` (`queue.metrics.ts:173`) is bounded only by
+  `order_created_at <= snapshotCutoff` — an upper bound. Cumulative.
+- `realizedRevenue` (`revenue.metrics.ts:27`) sums `net_revenue` with the same
+  upper bound and no day scoping. Cumulative.
+
+Shop 15 therefore claimed 23 shipped today while Outbound's newest shipment was
+20 Jun 2026 and Shipping Health read "Value shipped this week $0.00". Overview
+showed "Revenue today $0" beside "Collected today $54,859". The contradicting
+surfaces were the truthful ones.
+
+Both numbers were always correct. Only the labels were wrong, so the fix is a
+relabel: "N fulfilled to date · $X collected to date".
+
+A correctly day-scoped count already exists —
+`wms.controller.ts:4664`, `COUNT(*) FILTER (WHERE ows.shipped_at::date =
+CURRENT_DATE)` — feeding Overview's map and WMS Analytics. It is not plumbed to
+this module.
+
+**DC-02c (open)** — restore genuine daily framing to Today's pulse. `shipped_today`
+is available; `realized_revenue` has no day-scoped equivalent in the snapshot and
+one would need building. That is a design question, not plumbing.

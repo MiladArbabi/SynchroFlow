@@ -746,7 +746,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           <Box sx={{ px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }}>
             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
               {constrained === 0 && watchOrders.length === 0 ? 'Everything else is on track · ' : ''}
-              {fmtN(props.orders?.fulfilled)} shipped today · {syncLabel}
+              {/* DC-02a (2026-08-15): "shipped today" was false. orders.fulfilled
+                  is queue.metrics.ts fulfilledOrders, bounded only by
+                  order_created_at <= snapshotCutoff — an upper bound, so the
+                  figure is cumulative, not daily. Shop 15 read 23 while nothing
+                  had shipped since 20 Jun. A correctly day-scoped count exists
+                  (wms.controller.ts:4664, shipped_at::date = CURRENT_DATE) but
+                  is not plumbed to this module; rewiring is DC-02c. */}
+              {fmtN(props.orders?.fulfilled)} fulfilled to date · {syncLabel}
             </Typography>
           </Box>
         </Box>
@@ -771,10 +778,18 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
             ]}
             footerNote={
               <>
+                {/* DC-02a/b: both figures are cumulative, not daily. fulfilled is
+                    an upper-bounded count (see above); revenue.earned is
+                    realized_revenue, summed with the same <= snapshotCutoff bound
+                    and no day scoping. Rendered inside a card titled "Today's
+                    pulse", they read as daily and contradicted the truthful
+                    "Revenue today $0" and "Value shipped this week $0.00" on
+                    adjacent screens. The numbers were always right; the words
+                    were not. */}
                 <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmtN(props.orders?.fulfilled)}</Box>
-                {' shipped today · '}
+                {' fulfilled to date · '}
                 <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>{fmt$(revenue?.earned)}</Box>
-                {' collected'}
+                {' collected to date'}
               </>
             }
             footerCta={{ label: 'View order flow', onClick: () => navigate('/orders/flow') }}
