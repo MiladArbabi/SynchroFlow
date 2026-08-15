@@ -682,6 +682,7 @@ export default function OverviewPageFT2() {
             showLegend={false}
             showControls={false}
             showWarehouseContext
+            enableHoverFocus
             disablePan
             autoFit
             fitPhysicalFloorFirst

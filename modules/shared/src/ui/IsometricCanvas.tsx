@@ -218,6 +218,10 @@ interface BoxProps {
   wh: number;
   colorKey: string;
   isSelected: boolean;
+  /** OV-HOVER-01: transient pointer focus, weaker than persistent selection. */
+  isHovered?: boolean;
+  /** OV-HOVER-01: restrained dimming of unrelated physical bins. */
+  isHoverDimmed?: boolean;
   /** Occupancy 0–1 fraction overrides the normal zone fill. */
   occupancyFraction?: number;
   /** Explicit semantic emphasis used by empty and stock-out overlays. */
@@ -245,6 +249,8 @@ function IsometricBox({
   wx, wy, ww, wd, wh,
   colorKey,
   isSelected,
+  isHovered,
+  isHoverDimmed,
   isFrame,
   isDimmed,
   isInactive,
@@ -259,9 +265,14 @@ function IsometricBox({
 }: BoxProps) {
   const baseFill      = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke        = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
-  const selStroke     = 'var(--accent)';
+  const selStroke      = 'var(--accent)';
+  const hoverStroke    = 'var(--ink-2)';
   const criticalStroke = 'var(--critical-ink)';
-  const faceStroke    = isCritical ? criticalStroke : stroke;
+  const faceStroke     = isCritical
+    ? criticalStroke
+    : isHovered
+      ? hoverStroke
+      : stroke;
 
   // Occupancy heatmap: empty grey → low green → medium orange → high red.
   const fillOverride = occupancyFraction != null
@@ -312,7 +323,19 @@ function IsometricBox({
 
   return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
-    <g onClick={onClick} style={{ cursor: 'pointer' }} opacity={isDimmed ? 0.25 : isInactive ? 0.4 : 1}>
+    <g
+      onClick={onClick}
+      style={{ cursor: 'pointer' }}
+      opacity={
+        isDimmed
+          ? 0.25
+          : isInactive
+            ? 0.4
+            : isHoverDimmed
+              ? 0.55
+              : 1
+      }
+    >
       {/* Left and right faces are now rendered as per-level slices below.
           Full-height polygons removed to avoid double-painting over level bands. */}
       {/* Top face */}
@@ -320,7 +343,15 @@ function IsometricBox({
         points={pts(t00, t10, t11, t01)}
         fill={fill}
         stroke={isSelected ? selStroke : faceStroke}
-        strokeWidth={isSelected ? 2 : isCritical ? 1.6 : 1}
+        strokeWidth={
+          isSelected
+            ? 2
+            : isCritical
+              ? 1.6
+              : isHovered
+                ? 1.4
+                : 1
+        }
         strokeDasharray={isInactive ? '3 2' : undefined}
         opacity={isFlat ? 0.6 : 1}
       />
@@ -406,6 +437,11 @@ export interface IsometricCanvasProps {
   onSelect?: (locationCode: string | null) => void;
   filteredCodes?: Set<string>;
   highlightZoneTypes?: Set<string>;
+  /**
+   * OV-HOVER-01: transient physical-bin hover focus.
+   * Opt-in so existing IsometricCanvas consumers remain unchanged.
+   */
+  enableHoverFocus?: boolean;
   /** Bin location codes to emphasize; an empty array means focus mode has zero matches. */
   focusedBins?: string[];
   /** Semantic colour applied to bins contained in focusedBins. */
@@ -536,6 +572,7 @@ export function IsometricCanvas({
     onSelect, 
     filteredCodes, 
     highlightZoneTypes,
+    enableHoverFocus = false,
     focusedBins,
     focusTone,
     occupancy,
@@ -572,6 +609,8 @@ export function IsometricCanvas({
   const [zoom, setZoom]         = useState(initialZoom);
   const [offset, setOffset]     = useState(initialOffset);
   const [selected, setSelected] = useState<string | null>(null);
+  const [hovered, setHovered]   = useState<string | null>(null);
+  const [hoveredStationId, setHoveredStationId] = useState<string | null>(null);
   const [flipped, setFlipped]   = useState(false);
   const [size, setSize]         = useState({ w: 0, h: 0 });
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
@@ -593,6 +632,17 @@ export function IsometricCanvas({
 
   const warehouseContextName =
     zones.find(z => z.type === 'warehouse' && z.warehouse_name)?.warehouse_name ?? null;
+
+  // OV-HOVER-01: only an actually rendered physical bin may own hover focus.
+  // This prevents stale hover state from dimming the map after filters/layout change.
+  const activeHoveredCode =
+    enableHoverFocus &&
+    hovered != null &&
+    positionedZones.some(
+      z => z.type === 'bin' && z.location_code === hovered
+    )
+      ? hovered
+      : null;
 
   // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
   // showBins so toggling display filters never changes what merchants are
@@ -1071,12 +1121,38 @@ export function IsometricCanvas({
             // must stay readable and future-ready for multi-warehouse switching.
 
             return (
-              <g key={zone.location_code}>
+              <g
+                key={zone.location_code}
+                onMouseEnter={
+                  enableHoverFocus && !isFrame
+                    ? () => setHovered(zone.location_code)
+                    : undefined
+                }
+                onMouseLeave={
+                  enableHoverFocus && !isFrame
+                    ? () =>
+                        setHovered(current =>
+                          current === zone.location_code ? null : current
+                        )
+                    : undefined
+                }
+              >
                 <IsometricBox
                   key={zone.location_code}
                   wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
                   colorKey={colorKey}
                   isSelected={selected === zone.location_code}
+                  isHovered={
+                    !isFrame &&
+                    activeHoveredCode === zone.location_code
+                  }
+                  isHoverDimmed={
+                    !isFrame &&
+                    (activeHoveredCode != null || hoveredStationId != null) &&
+                    activeHoveredCode !== zone.location_code &&
+                    selected !== zone.location_code &&
+                    (problemCount ?? 0) === 0
+                  }
                   isDimmed={
                     !isFrame && (
                       (highlightZoneTypes != null &&
@@ -1348,11 +1424,32 @@ export function IsometricCanvas({
             // rather than sharing one bar with a colour-coded sub-stack.
             const isCritical = station.tone === 'critical';
             const barFill = isCritical ? 'var(--critical-ink)' : 'var(--accent)';
+            const isHoveredStation =
+              enableHoverFocus && hoveredStationId === station.id;
+            const stationStroke = isHoveredStation
+              ? 'var(--ink-2)'
+              : 'transparent';
+            const stationOpacity =
+              activeHoveredCode != null && !isCritical ? 0.55 : 1;
 
             return (
               <g
                 key={station.id}
                 style={{ cursor: station.deepLink ? 'pointer' : 'default' }}
+                opacity={stationOpacity}
+                onMouseEnter={
+                  enableHoverFocus
+                    ? () => setHoveredStationId(station.id)
+                    : undefined
+                }
+                onMouseLeave={
+                  enableHoverFocus
+                    ? () =>
+                        setHoveredStationId(current =>
+                          current === station.id ? null : current
+                        )
+                    : undefined
+                }
                 onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
               >
               {/* Stage bar — sides first, top face last (painter order).
@@ -1361,9 +1458,27 @@ export function IsometricCanvas({
                     darker). Drawing two parallel constant-X planes instead
                     left the visible front face undrawn and the solid rendered
                     as a hollow doorway. */}
-                <polygon points={pts(t01, t11, b11, b01)} fill={barFill} fillOpacity={0.45} />
-                <polygon points={pts(t10, b10, b11, t11)} fill={barFill} fillOpacity={0.32} />
-                <polygon points={pts(t00, t10, t11, t01)} fill={barFill} fillOpacity={0.75} />
+                <polygon
+                  points={pts(t01, t11, b11, b01)}
+                  fill={barFill}
+                  fillOpacity={0.45}
+                  stroke={stationStroke}
+                  strokeWidth={isHoveredStation ? 1.1 : 0}
+                />
+                <polygon
+                  points={pts(t10, b10, b11, t11)}
+                  fill={barFill}
+                  fillOpacity={0.32}
+                  stroke={stationStroke}
+                  strokeWidth={isHoveredStation ? 1.1 : 0}
+                />
+                <polygon
+                  points={pts(t00, t10, t11, t01)}
+                  fill={barFill}
+                  fillOpacity={0.75}
+                  stroke={stationStroke}
+                  strokeWidth={isHoveredStation ? 1.4 : 0}
+                />
                 {/* Count badge */}
                 <text x={countPt.sx} y={countPt.sy} textAnchor="middle"
                   fontSize={Math.round(11 * zoom)} fontWeight="600" fill={barFill} fontFamily="monospace">

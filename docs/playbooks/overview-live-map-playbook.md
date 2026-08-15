@@ -367,7 +367,7 @@ The Live Map uses a state-first colour hierarchy.
 
 State precedence is:
 
-`physical geometry → analytical fill → operational outline/marker → selection`
+`physical geometry → analytical fill → operational outline/marker → hover → selection`
 
 The resulting merchant-facing rule is: **if the neutral floor gains strong colour, something operationally meaningful is happening there.**
 
@@ -437,6 +437,46 @@ appeared while the task was open and disappeared after guarded fixture
 cleanup and the following poll.
 
 ---
+
+### 6.10 Transient hover focus (OV-HOVER-01)
+
+Selection is persistent and orange. Hover is transient and neutral — it answers
+"which object am I about to click?" without competing with operational severity.
+
+**Opt-in.** `enableHoverFocus?: boolean` defaults to `false`; only the Overview
+main map passes it. Every other `IsometricCanvas` consumer is unchanged.
+
+**Physical bins.** The hovered bin takes a `var(--ink-2)` stroke at 1.4 on the
+top face. Unrelated bins drop to `opacity 0.55` — softened, still readable.
+Analytical `isDimmed` stays stronger at `0.25` so the two never read alike.
+
+**Synthetic rail.** Rail blocks share the grammar: `var(--ink-2)` perimeter on
+all three faces when hovered, and they soften to `0.55` while a physical bin is
+hovered. Hovering a rail block softens the physical floor.
+
+**Protected from softening.**
+
+- the selected zone — selection outranks hover
+- any bin with unresolved Problem Center tasks
+- any rail block with `tone === 'critical'`
+- warehouse/lane/shelf frames are not hover targets at all
+
+Severity is never converted into interaction state: a critical object stays
+critical while its neighbours soften.
+
+**Stale-state guard.** `activeHoveredCode` resolves only when the hovered code
+is still a rendered physical bin, so a filter or layout change cannot leave the
+floor dimmed against a bin that no longer exists.
+
+Hover neither navigates nor mutates. Click still owns selection and deep-links.
+
+**Known gap.** Rail blocks do not soften each other — `stationOpacity` keys on
+`activeHoveredCode` only. Hovering one rail block leaves its siblings at full
+opacity. Registered as OV-HOVER-01b, not fixed here.
+
+**Verified.** Physical bins `A-3` and `PACK-1`, and rail blocks `Order Pool`
+and `Blocked`, on shop 1 (23/23 placed zones). Blocked held full red under both
+physical and rail hover, proving the critical exemption.
 
 ## 7. Pulse card — merged layout
 
@@ -530,6 +570,8 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-39 | P1 | Apron badge showed `count` while the bar represented count+urgent; type doc claimed nested, both callers passed disjoint | CLOSED — disjoint documented, badge showed the total (superseded by OV-40) |
 | OV-40 | P1 | One block per rail carried two stages separable only by colour, with `showLegend={false}` — read "Order Pool · 3" on a red block while the pool was empty. Also a WCAG 1.4.1 failure | CLOSED — split into named, independently counted, ranked blocks |
 | OV-41 | P1 | Open Problem Center tasks had no spatial representation on the Overview Live Map | CLOSED — unresolved tasks are counted by real `problem_bin_location`; physical bins receive critical outline/tint + `! N`; null locations remain unlocated rather than being fabricated onto the floor; 15s polling removes state automatically after resolution |
+| OV-HOVER-01 | P2 | Physical zones had pointer cursor and click selection but no feedback identifying the object under the pointer | CLOSED — opt-in `enableHoverFocus`; neutral `var(--ink-2)` focus, unrelated objects soften to 0.55; selection, critical bins and critical rail blocks exempt |
+| OV-HOVER-01b | P3 | Rail blocks do not soften sibling rail blocks on hover | OPEN — `stationOpacity` keys on `activeHoveredCode` only |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
