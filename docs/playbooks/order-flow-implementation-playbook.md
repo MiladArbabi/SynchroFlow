@@ -1277,3 +1277,42 @@ this module.
 **DC-02c (open)** — restore genuine daily framing to Today's pulse. `shipped_today`
 is available; `realized_revenue` has no day-scoped equivalent in the snapshot and
 one would need building. That is a design question, not plumbing.
+
+## DC-03 — elapsed time rendered as SLA breach
+
+The Orders pulse headline, its Breached row, and the stage bar all rendered
+`aging_72h_plus` under the word "Breached". That metric is:
+
+    COUNT(*) FILTER (WHERE oas.age_since_creation_seconds >= 259200)
+
+72 hours since order creation, over unfulfilled orders. No reference to
+`promised_ship_by`. An order can be four days old and comfortably within its
+promise, or breach in six hours — the two sets overlap and neither contains the
+other. Shop 15: 15 aging vs 13 actually breached.
+
+The genuine SLA count was already on the page: `criticalOrders`, filtered on
+`is_shipping_sla_breached` (projected in `orderAgeProjection.ts:142`). The
+"Critical — act today" section used it and correctly showed 13, as did
+Overview's "13 orders past shipping SLA".
+
+The card also contradicted itself: the headline showed the aging figure while
+its own "N still need priority" subtext counted within `criticalOrders`.
+
+This conflation was already identified and fixed once in the same file — the
+2026-07-01 comment on `constraintLabel` documents Watch rows displaying "SLA
+breach" on orders where `isShippingSlaBreached: false`, corrected to take "the
+real breach flag so it can tell the two apart honestly." That fix was never
+propagated six lines down to `aging72`.
+
+**Resolution, split by what each surface is for:**
+
+- Pulse headline and Breached row now use `slaBreachedCount`
+  (`criticalOrders.length`) — "Today's pulse — N breached" is meant to be the
+  SLA signal, and its subtext already counted that way.
+- Stage bar keeps the aging bucket but is relabelled **"Aging 3d+"** — an age
+  band belongs beside Ready/Picking/Blocked as a pipeline state. The `key`
+  remains `breached`; renaming it requires a consumer sweep.
+
+**DC-09 (open, P3)** — `stageData.reduce` at the same site sums overlapping
+stage counts. An order that is both Blocked and 3d+ aged is counted twice.
+Whatever `accountedFor` gates may be wrong. Same family as DC-01.

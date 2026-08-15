@@ -201,6 +201,18 @@ export default function OrdersModuleFT2(props) {
     });
     // Critical = SLA already breached — act today
     const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+    /**
+     * DC-03 (2026-08-15): the SLA breach count. aging_72h_plus is NOT this — it
+     * counts unfulfilled orders older than 72h since creation
+     * (age_since_creation_seconds >= 259200), with no reference to
+     * promised_ship_by. An order can be four days old and within its promise, or
+     * breach in six hours. Shop 15: 15 aging vs 13 actually breached.
+     *
+     * Same conflation the 2026-07-01 constraintLabel fix corrected below; it was
+     * never propagated to the pulse. The card's own subtext already counted
+     * against this figure, so the headline contradicted its own caption.
+     */
+    const slaBreachedCount = criticalOrders.length;
     // FIX (2026-07-01): the >= 24 check was dead weight — the backend already
     // pre-filters agingOrders to WATCH_FLOOR_SECONDS (now SLA-aware, was a flat
     // 48h) before this array ever reaches the frontend, so every order here
@@ -214,7 +226,7 @@ export default function OrdersModuleFT2(props) {
     const prioritizedCriticalCount = criticalOrders.filter(o => o.isPriorityFlagged).length;
     const unprioritizedCriticalCount = Math.max(criticalOrders.length - prioritizedCriticalCount, 0);
     const pulseRows = [
-        { label: 'Breached', n: aging72, color: STAGE_COLORS.breached },
+        { label: 'Breached', n: slaBreachedCount, color: STAGE_COLORS.breached },
         { label: 'Picking', n: qPicking, color: STAGE_COLORS.picking },
         { label: 'Ready', n: qReady, color: STAGE_COLORS.ready },
         { label: 'Blocked', n: constrained, color: STAGE_COLORS.blocked },
@@ -240,7 +252,10 @@ export default function OrdersModuleFT2(props) {
         { key: 'ready', label: 'Ready', count: qReady },
         { key: 'picking', label: 'Picking', count: qPicking },
         { key: 'blocked', label: 'Blocked', count: constrained },
-        { key: 'breached', label: 'Breached', count: aging72 },
+        // DC-03: keeps the aging bucket — a pipeline age band sits naturally beside
+        // Ready/Picking/Blocked — but stops calling it a breach. Key unchanged;
+        // renaming it needs a sweep of consumers.
+        { key: 'breached', label: 'Aging 3d+', count: aging72 },
         { key: 'awaiting_stock', label: 'Awaiting stock', count: operatorSummary?.constraintCounts?.inventory ?? 0 },
         { key: 'awaiting_reply', label: 'Awaiting reply', count: operatorSummary?.constraintCounts?.customer ?? 0 },
     ];
@@ -311,14 +326,14 @@ export default function OrdersModuleFT2(props) {
                                                                     py: 1,
                                                                     textAlign: 'center',
                                                                 }, children: "In batch" })) : (_jsx(PrioritizeButton, { isPriorityFlagged: order.isPriorityFlagged, onPrioritize: () => handlePrioritizeOrder(order.lasyncro_order_id) }))] }, order.lasyncro_order_id)) }) }), _jsxs(Box, { onClick: () => setCriticalExpanded(v => !v), sx: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }, children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 500 }, children: criticalExpanded ? 'Show less' : `See ${hiddenCriticalOrders.length} more` }), criticalExpanded ? _jsx(ChevronUp, { size: 13 }) : _jsx(ChevronDown, { size: 13 })] })] }))] })) : (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(76,175,122,0.06)' }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#4CAF7A' }, children: "All clear \u2014 no critical items" })] })), watchOrders.length > 0 && (_jsxs(_Fragment, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(217,162,59,0.06)', borderTop: '1px solid var(--rule)' }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: '#D9A23B', flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#D9A23B' }, children: "Watch" }), _jsx(Box, { sx: { flex: 1 } }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [watchOrders.length, " items"] })] }), visibleWatchOrders.map(order => (_jsxs(Box, { sx: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }, children: order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase() }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: [constraintLabel(order.constraintType, order.isShippingSlaBreached), " \u00B7 ", fmtSlaAge(order.ageHours), " aging"] })] }), _jsx(Box, { component: "button", onClick: () => onOrderClick?.(order.lasyncro_order_id), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "View order \u2192" })] }, order.lasyncro_order_id))), hiddenWatchOrders.length > 0 && (_jsxs(_Fragment, { children: [_jsx(Collapse, { in: watchExpanded, timeout: 180, unmountOnExit: true, children: hiddenWatchOrders.map(order => (_jsxs(Box, { sx: { display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 118px', gap: 1.75, alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }, children: order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase() }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: [constraintLabel(order.constraintType, order.isShippingSlaBreached), " \u00B7 ", fmtSlaAge(order.ageHours), " aging"] })] }), _jsx(Box, { component: "button", onClick: () => onOrderClick?.(order.lasyncro_order_id), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "View order \u2192" })] }, order.lasyncro_order_id))) }), _jsxs(Box, { onClick: () => setWatchExpanded(v => !v), sx: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }, children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 500 }, children: watchExpanded ? 'Show less' : `See ${hiddenWatchOrders.length} more` }), watchExpanded ? _jsx(ChevronUp, { size: 13 }) : _jsx(ChevronDown, { size: 13 })] })] }))] })), _jsx(Box, { sx: { px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)' }, children: _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: [constrained === 0 && watchOrders.length === 0 ? 'Everything else is on track · ' : '', fmtN(props.orders?.fulfilled), " fulfilled to date \u00B7 ", syncLabel] }) })] }), _jsx(Box, { sx: { flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }, children: _jsx(PulseCard, { title: "Today's pulse", headline: {
-                                value: `${fmtN(aging72)} breached`,
-                                tone: aging72 > 0 ? 'critical' : 'good',
-                                colorOverride: aging72 > 0 ? STAGE_COLORS.breached : 'var(--ink)',
+                                value: `${fmtN(slaBreachedCount)} breached`,
+                                tone: slaBreachedCount > 0 ? 'critical' : 'good',
+                                colorOverride: slaBreachedCount > 0 ? STAGE_COLORS.breached : 'var(--ink)',
                                 subtext: unprioritizedCriticalCount > 0
                                     ? `${unprioritizedCriticalCount} still need priority`
                                     : 'Critical queue is under control',
                             }, rows: [
-                                { id: 'breached', label: 'Breached', value: aging72, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: aging72, max: pulseMax } },
+                                { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
                                 { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
                                 { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
                                 { id: 'ready', label: 'Ready', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },

@@ -365,7 +365,20 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   });
 
   // Critical = SLA already breached — act today
-  const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+
+  /**
+   * DC-03 (2026-08-15): the SLA breach count. aging_72h_plus is NOT this — it
+   * counts unfulfilled orders older than 72h since creation
+   * (age_since_creation_seconds >= 259200), with no reference to
+   * promised_ship_by. An order can be four days old and within its promise, or
+   * breach in six hours. Shop 15: 15 aging vs 13 actually breached.
+   *
+   * Same conflation the 2026-07-01 constraintLabel fix corrected below; it was
+   * never propagated to the pulse. The card's own subtext already counted
+   * against this figure, so the headline contradicted its own caption.
+   */
+  const slaBreachedCount = criticalOrders.length;
   // FIX (2026-07-01): the >= 24 check was dead weight — the backend already
   // pre-filters agingOrders to WATCH_FLOOR_SECONDS (now SLA-aware, was a flat
   // 48h) before this array ever reaches the frontend, so every order here
@@ -380,7 +393,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const prioritizedCriticalCount = criticalOrders.filter(o => o.isPriorityFlagged).length;
   const unprioritizedCriticalCount = Math.max(criticalOrders.length - prioritizedCriticalCount, 0);
   const pulseRows = [
-    { label: 'Breached', n: aging72, color: STAGE_COLORS.breached },
+    { label: 'Breached', n: slaBreachedCount, color: STAGE_COLORS.breached },
     { label: 'Picking',  n: qPicking, color: STAGE_COLORS.picking },
     { label: 'Ready',    n: qReady, color: STAGE_COLORS.ready },
     { label: 'Blocked',  n: constrained, color: STAGE_COLORS.blocked },
@@ -409,7 +422,10 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     { key: 'ready',          label: 'Ready',          count: qReady      },
     { key: 'picking',        label: 'Picking',        count: qPicking    },
     { key: 'blocked',        label: 'Blocked',        count: constrained },
-    { key: 'breached',       label: 'Breached',       count: aging72     },
+    // DC-03: keeps the aging bucket — a pipeline age band sits naturally beside
+    // Ready/Picking/Blocked — but stops calling it a breach. Key unchanged;
+    // renaming it needs a sweep of consumers.
+    { key: 'breached',       label: 'Aging 3d+',      count: aging72     },
     { key: 'awaiting_stock', label: 'Awaiting stock', count: operatorSummary?.constraintCounts?.inventory ?? 0 },
     { key: 'awaiting_reply', label: 'Awaiting reply', count: operatorSummary?.constraintCounts?.customer  ?? 0 },
   ];
@@ -763,15 +779,15 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           <PulseCard
             title="Today's pulse"
             headline={{
-              value: `${fmtN(aging72)} breached`,
-              tone: aging72 > 0 ? 'critical' : 'good',
-              colorOverride: aging72 > 0 ? STAGE_COLORS.breached : 'var(--ink)',
+              value: `${fmtN(slaBreachedCount)} breached`,
+              tone: slaBreachedCount > 0 ? 'critical' : 'good',
+              colorOverride: slaBreachedCount > 0 ? STAGE_COLORS.breached : 'var(--ink)',
               subtext: unprioritizedCriticalCount > 0
                 ? `${unprioritizedCriticalCount} still need priority`
                 : 'Critical queue is under control',
             }}
             rows={[
-              { id: 'breached', label: 'Breached', value: aging72, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: aging72, max: pulseMax } },
+              { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
               { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
               { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
               { id: 'ready', label: 'Ready', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
