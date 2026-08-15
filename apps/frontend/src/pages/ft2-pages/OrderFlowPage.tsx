@@ -442,6 +442,15 @@ export default function OrderFlowPage() {
   const blockedCount = blockedOrders.length;
   const heldRevenue = blockedOrders.reduce((sum, order) => sum + Number(order.revenue ?? 0), 0);
   const readyCount = orderPoolQuery.data?.eligible_order_count ?? poolOrders.length;
+  /**
+   * POOL-VIS-01: the page header states held revenue for blocked orders, so a
+   * merchant could see what was stuck in money terms but not what was ready to
+   * ship. Pool rows carry total_price (useOrderPool.ts:27) — a different field
+   * from blockedOrders.revenue, same meaning.
+   */
+  const releasableRevenue = poolOrders.reduce(
+    (sum, order) => sum + Number(order.total_price ?? 0), 0
+  );
   const inBatchOrderCount = poolSummary?.in_batch_order_count ?? 0;
   /**
    * BL-06a (2026-08-09): falls back to 0, not blockedCount.
@@ -1004,45 +1013,38 @@ export default function OrderFlowPage() {
                 >
                     <Box sx={{ p: '12px 14px', borderBottom: '1px solid var(--rule)' }}>
                       <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-                        Order pool · {readyCount} ready
+                        Order pool · {readyCount} ready · {fmt$(releasableRevenue)} releasable
                       </Typography>
                       <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
                         paid · stock reserved
                       </Typography>
 
-                      <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap', mt: 1 }}>
+                    {/*
+                        POOL-VIS-01: rendered as a plain count strip, NOT pills.
+                        These four were styled as bordered pills directly above
+                        the OF-02 Priority / SLA breached chips, which are real
+                        onClick toggles — two visually identical rows, one
+                        interactive, one not. Counts state facts; chips filter.
+
+                        `Ready` was dropped: the header one line above already
+                        carries it as the panel's headline figure.
+
+                        `In batch` moved out of this group. The other counts all
+                        share pbo.lasyncro_order_id IS NULL and partition
+                        unbatched orders; in_batch_order_count is deliberately
+                        the complement (wms.controller.ts:3143), so grouping it
+                        with them implied a sum that does not exist.
+                      */}
+                      <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mt: 1 }}>
                         {[
-                          { label: 'Ready', value: readyCount },
-                          { label: 'In batch', value: inBatchOrderCount },
-                          /*
-                            BL-06a: qualified because this chip and the page
-                            header at :568 both said "Blocked" while counting
-                            different sets — header is all constrained orders,
-                            this is constrained AND unbatched. All four pool
-                            chips share the pbo.lasyncro_order_id IS NULL
-                            predicate, so they partition unbatched orders;
-                            the count was right, the label was not.
-                          */
                           { label: 'Blocked · unbatched', value: poolBlockedCount },
                           { label: 'Fulfilled', value: fulfilledCount },
                         ].map(({ label, value }) => (
-                          <Box
-                            key={label}
-                            sx={{
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 0.5,
-                              px: 1,
-                              py: 0.375,
-                              borderRadius: '999px',
-                              border: '0.5px solid var(--rule)',
-                              bgcolor: 'var(--bg-3)',
-                            }}
-                          >
-                            <Typography sx={{ fontSize: 10, fontWeight: 500, color: 'var(--ink-4)' }}>
+                          <Box key={label} sx={{ display: 'inline-flex', alignItems: 'baseline', gap: 0.5 }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-4)' }}>
                               {label}
                             </Typography>
-                            <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink)' }}>
+                            <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: 'var(--ink-2)' }}>
                               {value}
                             </Typography>
                           </Box>

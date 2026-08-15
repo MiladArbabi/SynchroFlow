@@ -1073,6 +1073,7 @@ different predicates is a defect even when both numbers are right.
 
 ## 16. Exception orders vs constrained orders — BL-19, 2026-08-09
 
+
 Two metrics, two lifecycle stages, deliberately disjoint:
 
   constrained_orders   PRE-release. Orders held in the Blocked column by
@@ -1118,3 +1119,71 @@ RULE: when a metric's source table has a finer grain than the metric,
 resolve the entity through the grain-matching join. Test that it counts
 UP, not only that it returns a plausible number — a 0-to-0 verification
 would have shipped the batch-fanout bug.
+
+---
+
+## 17. Order pool panel — POOL-VIS-01, 2026-08-15
+
+Three changes to the Order Pool column header and count row.
+
+### Defect A — counts styled as filters, directly above real filters
+
+The four pool counts rendered as bordered pills (`999px`, `0.5px` border,
+`var(--bg-3)`) with no `onClick`. Immediately beneath them sit the OF-02
+`Priority` / `SLA breached` chips, which *are* toggles — `onClick`,
+`active` state, accent colouring, dot indicator.
+
+Two visually similar pill rows stacked, one interactive and one not. The
+counts were not merely ambiguous in isolation; they were ambiguous against
+a working control one line below.
+
+Fix: the counts render as a plain strip — label in `--ink-4`, value in
+`--ink-2`, no border, no radius, no background. Counts state facts; chips
+filter. Making them real filters was considered and rejected: the panel
+answers "what can I release right now", and the row source shows eligible
+orders only, so filtering to `Fulfilled` would empty the panel. That is a
+separate feature, not a styling fix.
+
+### Defect B — `In batch` grouped with counts it does not partition
+
+§15 established that the pool chips share `pbo.lasyncro_order_id IS NULL`
+and therefore partition unbatched orders. `in_batch_order_count` is
+deliberately exempt from that predicate (`wms.controller.ts:3143`) — it
+counts the complement. Rendered in the same row with identical styling, it
+implied a sum that does not exist.
+
+Removed from the group. It belongs beside `active_batch_count` in the
+fulfillment context; that placement is not made here.
+
+### Defect C — `Ready` stated twice, no money on the pool
+
+The panel header read `Order pool · {readyCount} ready` and the first chip
+read `Ready {readyCount}` — the same number two lines apart, the headline
+figure demoted into a strip of secondary counts. The `Ready` chip is
+removed.
+
+Separately, the page header states `{fmt$(heldRevenue)} held` for blocked
+orders, so a merchant could see what was stuck in money terms but nothing
+about what was ready to ship. The pool header now carries
+`{fmt$(releasableRevenue)} releasable`, summed over `poolOrders` via
+`total_price` (`useOrderPool.ts:27`) — a different field name from
+`blockedOrders.revenue`, same meaning.
+
+Header now reads:
+
+```text
+Order pool · 3 ready · $1,234.56 releasable
+paid · stock reserved
+Blocked · unbatched 12   Fulfilled 0
+```
+
+### Verified
+
+Local shop 1, empty pool: `ORDER POOL · 0 READY · $0.00 RELEASABLE`, count
+strip renders `Blocked · unbatched 3` / `Fulfilled 0` as plain text, OF-02
+chips unchanged and still visibly interactive. The releasable sum is
+unproven against a populated pool — local `eligible_order_count` is 0.
+
+The empty state deliberately still prints `$0.00 releasable` rather than
+omitting the clause: a header whose shape is stable across states is easier
+to scan than one that grows and shrinks.
