@@ -65,14 +65,20 @@ export async function computeConstraintMetrics(
   // ISS-055: customer constraints are order-level (target_id is always
   // NULL for this type) — same shape as operational below, NOT the
   // variant-level join used for inventory above.
+  // DC-01b (2026-08-15): whereExists, not join. A join emits one row per
+  // matching constraint, so an order carrying two active customer constraints
+  // had its total_price summed twice. Existence is the question being asked —
+  // "is this order blocked for a customer reason" — not "how many times".
   const customerBlockedRow = await trx('orders as o')
-    .join('order_constraints as oc', (join) => {
-      join.on('oc.lasyncro_order_id', '=', 'o.lasyncro_order_id')
-        .andOnVal('oc.constraint_type', 'customer')
-        .andOnVal('oc.is_active', true);
-    })
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .whereExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.constraint_type', 'customer')
+        .andWhere('oc.is_active', true)
+    )
     .sum('o.total_price as customer_blocked')
     .first();
 
@@ -84,14 +90,17 @@ export async function computeConstraintMetrics(
   // --- Operational blocked revenue ---
   // Operational constraints are order-level (target_id = NULL).
   // Sum total_price directly from orders — not via revenue units.
+  // DC-01b: same duplication risk as customer above — one row per constraint.
   const operationalBlockedRow = await trx('orders as o')
-    .join('order_constraints as oc', (join) => {
-      join.on('oc.lasyncro_order_id', '=', 'o.lasyncro_order_id')
-        .andOnVal('oc.constraint_type', 'operational')
-        .andOnVal('oc.is_active', true);
-    })
     .where('o.shop_id', shopId)
     .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .whereExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.constraint_type', 'operational')
+        .andWhere('oc.is_active', true)
+    )
     .sum('o.total_price as operational_blocked')
     .first();
 
@@ -100,10 +109,41 @@ export async function computeConstraintMetrics(
       ?.operational_blocked ?? 0
   );
 
-  const blockedRevenueTotal =
-    revenueBlockedInventory +
-    revenueBlockedCustomer +
-    revenueBlockedOperational;
+  /**
+   * DC-01 (2026-08-15): the total is derived at ORDER level, not by adding the
+   * three categories. The categories are overlapping sets by construction — an
+   * order blocked on both stock and address appears in inventory AND customer —
+   * so their sum double-counts every multi-blocked order. On shop 15 that read
+   * $22,195.95 against a true $16,172.20, a 37% overstate on a figure the
+   * merchant sees as "revenue at stake".
+   *
+   * Each category remains correct in isolation and is left untouched; they
+   * answer "how much revenue does this cause touch", which legitimately
+   * overlaps. Only their sum was invalid.
+   *
+   * Basis is o.total_price: a blocked order cannot ship, so the whole order's
+   * revenue is held. This deliberately differs from revenueBlockedInventory's
+   * variant-scoped net_revenue, and makes the total agree with Order Flow's
+   * per-order sum, which was already correct.
+   *
+   * Mirrors the constrainedOrders derivation below — same shape, same reason.
+   */
+  const blockedRevenueTotalRow = await trx('orders as o')
+    .where('o.shop_id', shopId)
+    .andWhere('o.order_created_at', '<=', snapshotCutoff)
+    .whereExists(
+      trx('order_constraints as oc')
+        .select(1)
+        .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+        .andWhere('oc.is_active', true)
+    )
+    .sum('o.total_price as blocked_total')
+    .first();
+
+  const blockedRevenueTotal = Number(
+    (blockedRevenueTotalRow as { blocked_total: number | string | null } | undefined)
+      ?.blocked_total ?? 0
+  );
 
   /**
    * CRITICAL: derive constrained orders at ORDER level

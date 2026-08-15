@@ -1187,3 +1187,63 @@ unproven against a populated pool — local `eligible_order_count` is 0.
 The empty state deliberately still prints `$0.00 releasable` rather than
 omitting the clause: a header whose shape is stable across states is easier
 to scan than one that grows and shrinks.
+
+## DC-01 / DC-01b — blocked revenue was double-counted
+
+`constraint.metrics.ts` computed `blockedRevenueTotal` by adding the three
+category figures:
+
+    revenueBlockedInventory + revenueBlockedCustomer + revenueBlockedOperational
+
+Those categories are **overlapping sets by construction**. An order blocked on
+both stock and address appears in inventory *and* customer, so the sum
+double-counts every multi-blocked order. On shop 15 that produced $22,195.95
+against a true $16,172.20 — a 37% overstate on the figure a merchant reads as
+"revenue at stake". Six of thirteen blocked orders carried a second blocker;
+their $6,023.75 was exactly the gap.
+
+The same file already applied the correct discipline to `constrainedOrders`
+("derive at ORDER level — prevents duplication from multiple constraint rows
+per order"). It was never applied to the money. That is why every surface
+agreed on the count of 13 and disagreed on the dollars.
+
+**DC-01** — the total is now derived at order level via `whereExists`, mirroring
+`constrainedOrders`. Basis is `o.total_price`: a blocked order cannot ship, so
+the whole order's revenue is held. This deliberately differs from
+`revenueBlockedInventory`'s variant-scoped `net_revenue`, and makes the total
+agree with Order Flow's per-order sum, which was already correct.
+
+**DC-01b** — the customer and operational queries summed `o.total_price` across
+a *join* to `order_constraints`, emitting one row per constraint. An order with
+two active constraints of the same type had its revenue summed twice. Both now
+use `whereExists`.
+
+The three category figures are unchanged and remain individually correct — they
+answer "how much revenue does this cause touch", which legitimately overlaps.
+Only their sum was invalid.
+
+Verified on local shop 1 with a three-order fixture (customer-only,
+inventory-only, and one carrying two customer constraints plus an inventory
+constraint), run through the real dispatcher path
+`computeShopOperationalSnapshot('1')`:
+
+| Field | Broken | Fixed |
+|---|---|---|
+| `blocked_revenue` | 9179.85 | **7179.85** |
+| `revenue_blocked_customer` | 9000.00 | **5000.00** |
+| `revenue_blocked_inventory` | 179.85 | 179.85 |
+| `constrained_orders` | 6 | 6 |
+
+Fixture removed; snapshot returned to the 179.85 / 0.00 / 3 baseline.
+
+**No backfill.** Historical snapshot rows keep the inflated figure. `is_active`
+is current-state, not time-travelled, so past rows cannot be recomputed without
+event replay — and rewriting a dated series would change what the merchant saw
+on days they made decisions. Snapshots from before this fix are known-bad for
+`blocked_revenue` only.
+
+Related: **PROJ-GUARD-DEL-01** was found during cleanup — all five
+`enforce_projection_writer_*` trigger functions `RETURN NEW` unconditionally, so
+DELETE is a silent no-op on five projection tables. Five orphaned fixture rows
+remain in local `order_constraints` as a result; they are invisible to every
+metric (all join through `orders`) and clear on the next `db:reset`.
