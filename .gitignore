@@ -122,3 +122,6 @@ apps/marketing/.next/
 apps/marketing/out/
 apps/marketing/.env*.local
 apps/marketing/next-env.d.ts
+# Local dev-store playbook — contains the dev store domain, local
+# credentials and full auth walkthroughs. Deliberately never committed.
+docs/playbooks/shopify-local-dev-store-playbook.md
