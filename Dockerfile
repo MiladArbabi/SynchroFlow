@@ -17,6 +17,23 @@ COPY --link . .
 RUN npm install --legacy-peer-deps
 RUN npm install -g typescript@5.5.2
 
+# BUILD-02a: purge copied build artifacts before compiling.
+#
+# modules/*/dist and packages/*/dist are tracked in git and .dockerignore
+# deliberately admits them (it excludes apps/*/dist only). COPY --link . .
+# therefore brings committed artifacts into the image with mtimes no older
+# than their sources, and no module tsconfig.build.json sets `incremental`
+# or `composite` — so `tsc --build` falls back to timestamp comparison,
+# finds nothing to do, and skips the project.
+#
+# The committed artifact then wins over build:deps. On 2026-08-15 five
+# feature commits deployed green and were invisible in production because
+# modules/shared/dist/ui/IsometricCanvas.js was last committed in 6f6250d2.
+#
+# Deleting the copies makes the build authoritative. Tracking itself is a
+# separate problem — see BUILD-02.
+RUN rm -rf modules/*/dist packages/*/dist
+
 # Build frontend dependencies used by module imports
 RUN npm run build:deps
 
