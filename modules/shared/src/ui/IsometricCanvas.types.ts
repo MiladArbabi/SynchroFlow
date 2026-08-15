@@ -48,6 +48,14 @@ export interface LiveBinActivity {
    * Undefined for mixed picking/packing activity.
    */
   status?: 'picking' | 'packing';
+  /**
+   * OV-HOVER-02: epoch ms of the latest legitimate operator activity at this
+   * bin — max(last_scan_at, batch_activity_at). The reducer already computed
+   * this for staleness grading and discarded it; Location Pulse needs the same
+   * value to answer "is anyone still working here?" without a second fetch.
+   * Absent when no operator row produced this bin — never synthesise "never".
+   */
+  lastActivityAt?: number;
 }
 /**
  * SyntheticStation — virtual apron projected in isometric space,
@@ -92,4 +100,20 @@ export interface SyntheticStation {
   footprint?: { tw: number; td: number };
   /** Deep-link on click — passed to onSelect. */
   deepLink?: string;
+}
+
+/**
+ * OV-HOVER-02: generic hover plate payload. Deliberately carries NO warehouse
+ * vocabulary — the page/domain layer decides which facts are true and how they
+ * are worded; IsometricCanvas only anchors, clamps and renders two columns.
+ * This keeps WMS semantics out of a renderer shared with floor-planning.
+ */
+export interface LocationPulse {
+  title: string;
+  subtitle?: string;
+  rows: {
+    label: string;
+    value: string;
+    tone?: 'default' | 'muted' | 'warning' | 'critical';
+  }[];
 }

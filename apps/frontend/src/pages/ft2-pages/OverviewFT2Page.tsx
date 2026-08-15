@@ -17,7 +17,7 @@ import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
-import type { SyntheticStation, LiveBinActivity, WarehouseZone } from '@lasyncro/shared/ui';
+import type { SyntheticStation, LiveBinActivity, WarehouseZone, LocationPulse } from '@lasyncro/shared/ui';
 import { sendEvent } from 'analytics/adapter';
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
@@ -364,6 +364,8 @@ export default function OverviewPageFT2() {
         pickingCount,
         packingCount,
         staleCount: (existing?.staleCount ?? 0) + (isStale ? 1 : 0),
+        // OV-HOVER-02: keep the newest clock across operators sharing a bin.
+        lastActivityAt: Math.max(existing?.lastActivityAt ?? 0, freshnessAt),
         // OV-136: phase is homogeneous only when exactly one phase is present.
         status:
           pickingCount > 0 && packingCount === 0
@@ -475,6 +477,88 @@ export default function OverviewPageFT2() {
       deepLink: '/order-flow',
     },
   ] : [];
+
+  // OV-HOVER-02: Location Pulse payloads. Every row is sourced from data
+  // already derived above — no new fetch. Rows are omitted at zero rather than
+  // padded, so a calm bin stays calm and an active one visibly fills up.
+  // Deliberately absent: occupancy % (capacity is a rack_levels×10 proxy, not
+  // merchant truth) and blocked revenue (no per-stage source exists yet).
+  const relativeTime = (ms: number): string => {
+    const mins = Math.floor((Date.now() - ms) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`;
+  };
+
+  const locationPulseByCode: Record<string, LocationPulse> = {};
+  if (hasMapTier) {
+    for (const z of zones) {
+      if (z.type !== 'bin' || !z.location_code) continue;
+      const code = z.location_code;
+      const act = liveActivity?.[code];
+      const rows: LocationPulse['rows'] = [];
+
+      // Always present: the one fact every bin can answer truthfully.
+      rows.push({
+        label: 'On hand',
+        value: `${occupancyQuery.data?.occupancy?.[code]?.on_hand_quantity ?? 0} units`,
+      });
+
+      if (act && act.operatorCount > 0) {
+        const phases = [
+          (act.pickingCount ?? 0) > 0 ? `${act.pickingCount} picking` : null,
+          (act.packingCount ?? 0) > 0 ? `${act.packingCount} packing` : null,
+        ].filter(Boolean).join(', ');
+        rows.push({
+          label: 'Operators',
+          value: phases ? `${act.operatorCount} · ${phases}` : String(act.operatorCount),
+          tone: (act.staleCount ?? 0) > 0 ? 'warning' : 'default',
+        });
+      }
+
+      const problems = problemByLocation[code] ?? 0;
+      if (problems > 0) {
+        rows.push({ label: 'Open problems', value: String(problems), tone: 'critical' });
+      }
+
+      const stow = stowPending[code] ?? 0;
+      if (stow > 0) rows.push({ label: 'Awaiting stow', value: `${stow} units` });
+
+      const dock = receiveAtDock[code] ?? 0;
+      if (dock > 0) rows.push({ label: 'At dock', value: `${dock} units` });
+
+      // Only when an operator row actually produced a clock. Absence of
+      // activity is silence, never "never".
+      if (act?.lastActivityAt) {
+        rows.push({ label: 'Last activity', value: relativeTime(act.lastActivityAt), tone: 'muted' });
+      }
+
+      locationPulseByCode[code] = {
+        title: z.zone_type ? `${code} · ${z.zone_type.toUpperCase()}` : code,
+        rows,
+      };
+    }
+  }
+
+  // State strings are merchant-readable plain English (OV-40 rule) and live
+  // here, not in the shared renderer.
+  const STATION_STATE: Record<string, string> = {
+    blocked: 'Needs attention',
+    pool: 'Ready for release',
+    staged: 'Packed · awaiting carrier',
+    shipped: 'Shipped today',
+  };
+  const stationPulseById: Record<string, LocationPulse> = {};
+  for (const s of stations) {
+    stationPulseById[s.id] = {
+      title: s.label.toUpperCase(),
+      rows: [
+        { label: 'Orders', value: String(s.count), tone: s.tone === 'critical' ? 'critical' : 'default' },
+        { label: 'State', value: STATION_STATE[s.id] ?? '—', tone: 'muted' },
+      ],
+    };
+  }
 
     // Three-branch gate — see playbook §3.
   // OV-ENTRY-001: Growth/Scale users must NEVER see Core triage layout,
@@ -683,6 +767,8 @@ export default function OverviewPageFT2() {
             showControls={false}
             showWarehouseContext
             enableHoverFocus
+            locationPulseByCode={locationPulseByCode}
+            stationPulseById={stationPulseById}
             disablePan
             autoFit
             fitPhysicalFloorFirst

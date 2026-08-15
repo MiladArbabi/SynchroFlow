@@ -478,6 +478,61 @@ opacity. Registered as OV-HOVER-01b, not fixed here.
 and `Blocked`, on shop 1 (23/23 placed zones). Blocked held full red under both
 physical and rail hover, proving the critical exemption.
 
+### 6.11 Location Pulse (OV-HOVER-02)
+
+Hover identifies an object; Location Pulse says what is happening there. A
+~228px read-only plate, not a mini-dashboard: title plus at most six
+two-column rows, answerable in about two seconds.
+
+**Ownership split.** `OverviewFT2Page` composes the payloads; `IsometricCanvas`
+only anchors, clamps and renders. The `LocationPulse` type carries no warehouse
+vocabulary — `title`, optional `subtitle`, and `rows` of `{label, value, tone}`.
+Row wording and tone are merchant-facing product decisions and stay next to the
+OV-40 label rules, not inside a renderer shared with floor-planning.
+
+Props: `locationPulseByCode` (keyed by `location_code`) and `stationPulseById`.
+An absent key renders no plate, which is how an object with nothing to say
+stays silent. A physical bin outranks a rail block; only one plate at a time.
+
+**Rows are omitted at zero**, never padded. `On hand` is the sole exception —
+every bin can answer it truthfully, so a calm bin legitimately shows one row.
+Order: On hand, Operators, Open problems, Awaiting stow, At dock, Last activity.
+Operators fold phase into one row (`2 · 1 picking, 1 packing`) rather than
+consuming three.
+
+**Last activity** reuses `max(last_scan_at, batch_activity_at)`, which the
+Overview reducer already computed for staleness grading and discarded. It is
+now preserved as `LiveBinActivity.lastActivityAt`. No second fetch. The row
+appears only when an operator row produced a clock — absence is silence, never
+"never".
+
+**Synthetic rail** carries `Orders` plus a plain-English `State`, mapped from
+station id in the page (`Needs attention`, `Ready for release`,
+`Packed · awaiting carrier`, `Shipped today`).
+
+**Not shown, deliberately.** No occupancy percentage — capacity is a
+`rack_levels × 10` visual proxy, not merchant truth. No blocked revenue — the
+`$180` elsewhere on Overview has no per-rail-stage source. Neither ships until
+its data contract is audited.
+
+**Placement.** HTML/MUI overlay, `pointerEvents: 'none'`, outside the
+projection bbox and auto-fit. The SVG has no viewBox, so user units are
+container pixels 1:1; a plate position is `project(...).sx + offset.x`.
+
+The anchor spans the object rather than marking a point: `x` is the right edge,
+`leftX` the left. Flipping mirrors around the anchor, so a single mid-object
+point overlaps on whichever side it lands — this was observed twice during
+implementation, first anchoring at the bar centre and again at the far corner.
+Vertical position clamps within the container.
+
+No click, no pinning, no pointer-following in v1.
+
+**Verified.** Bins `A-4 · PICK` and `SHIP-1 · SHIP` rendered the calm
+single-row state against empty occupancy; `BLOCKED` rendered `Orders 3` in
+critical tone with `State Needs attention`, clearing the block after the anchor
+fix. Rail blocks other than Blocked are unreachable at present — they are
+zero-count and omitted by OV-40.
+
 ## 7. Pulse card — merged layout
 
 The right card absorbs both decisions and stats without becoming a junk drawer. Rules:
@@ -572,6 +627,8 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-41 | P1 | Open Problem Center tasks had no spatial representation on the Overview Live Map | CLOSED — unresolved tasks are counted by real `problem_bin_location`; physical bins receive critical outline/tint + `! N`; null locations remain unlocated rather than being fabricated onto the floor; 15s polling removes state automatically after resolution |
 | OV-HOVER-01 | P2 | Physical zones had pointer cursor and click selection but no feedback identifying the object under the pointer | CLOSED — opt-in `enableHoverFocus`; neutral `var(--ink-2)` focus, unrelated objects soften to 0.55; selection, critical bins and critical rail blocks exempt |
 | OV-HOVER-01b | P3 | Rail blocks do not soften sibling rail blocks on hover | OPEN — `stationOpacity` keys on `activeHoveredCode` only |
+| OV-HOVER-02 | P2 | Hover identified the object under the pointer but said nothing about it | CLOSED — read-only ~228px pulse plate; page composes payloads, canvas renders; rows omitted at zero; occupancy % and blocked revenue withheld pending a truthful source |
+| OV-HOVER-02a | P2 | Pulse plate covered the hovered object — anchoring at a mid-object point overlaps on whichever side the flip lands | CLOSED — anchor spans the object (`x` right edge, `leftX` left edge); flip mirrors off the far edge |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |

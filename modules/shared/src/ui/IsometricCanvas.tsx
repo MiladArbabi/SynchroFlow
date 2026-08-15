@@ -22,7 +22,7 @@
  */
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
-import type { WarehouseZone } from './IsometricCanvas.types.js';
+import type { LocationPulse, WarehouseZone } from './IsometricCanvas.types.js';
 
 // ── IsometricZoneView ─────────────────────────────────────────────────────────
 /**
@@ -441,7 +441,15 @@ export interface IsometricCanvasProps {
    * OV-HOVER-01: transient physical-bin hover focus.
    * Opt-in so existing IsometricCanvas consumers remain unchanged.
    */
-  enableHoverFocus?: boolean;
+   enableHoverFocus?: boolean;
+  /**
+   * OV-HOVER-02: hover plate payloads, keyed by bin location_code and station
+   * id. The canvas never composes these — the page decides what is true and
+   * how it is worded. Absent key = no plate, which is how a bin with nothing
+   * to say stays silent.
+   */
+  locationPulseByCode?: Record<string, LocationPulse>;
+  stationPulseById?: Record<string, LocationPulse>;
   /** Bin location codes to emphasize; an empty array means focus mode has zero matches. */
   focusedBins?: string[];
   /** Semantic colour applied to bins contained in focusedBins. */
@@ -573,6 +581,8 @@ export function IsometricCanvas({
     filteredCodes, 
     highlightZoneTypes,
     enableHoverFocus = false,
+    locationPulseByCode,
+    stationPulseById,
     focusedBins,
     focusTone,
     occupancy,
@@ -611,6 +621,10 @@ export function IsometricCanvas({
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered]   = useState<string | null>(null);
   const [hoveredStationId, setHoveredStationId] = useState<string | null>(null);
+  // OV-HOVER-02: projected anchor of the hovered object in SVG user units.
+  // Captured at hover time because the plate is an HTML sibling of the <svg>
+  // and cannot reach into the scene graph. offset is added at render.
+  const [hoverAnchor, setHoverAnchor] = useState<{ x: number; y: number; leftX: number } | null>(null);
   const [flipped, setFlipped]   = useState(false);
   const [size, setSize]         = useState({ w: 0, h: 0 });
   const panRef = useRef<{ startX: number; startY: number; startOX: number; startOY: number } | null>(null);
@@ -643,6 +657,14 @@ export function IsometricCanvas({
     )
       ? hovered
       : null;
+
+  // OV-HOVER-02: a physical bin outranks a rail block; only one plate at a time.
+  const activePulse: LocationPulse | null =
+    activeHoveredCode != null
+      ? locationPulseByCode?.[activeHoveredCode] ?? null
+      : hoveredStationId != null
+        ? stationPulseById?.[hoveredStationId] ?? null
+        : null;
 
   // FP-NULL1: unfiltered count — independent of filteredCodes/showFloor/
   // showBins so toggling display filters never changes what merchants are
@@ -1125,15 +1147,23 @@ export function IsometricCanvas({
                 key={zone.location_code}
                 onMouseEnter={
                   enableHoverFocus && !isFrame
-                    ? () => setHovered(zone.location_code)
+                    ? () => {
+                        setHovered(zone.location_code);
+                        const a = project(wx + ww, wy, wh, zoom, flipped);
+                        const aL = project(wx, wy + wd, 0, zoom, flipped);
+                        setHoverAnchor({ x: a.sx, y: a.sy, leftX: aL.sx });
+                      }
                     : undefined
                 }
                 onMouseLeave={
                   enableHoverFocus && !isFrame
                     ? () =>
-                        setHovered(current =>
-                          current === zone.location_code ? null : current
-                        )
+                        {
+                          setHovered(current =>
+                            current === zone.location_code ? null : current
+                          );
+                          setHoverAnchor(null);
+                        }
                     : undefined
                 }
               >
@@ -1439,15 +1469,31 @@ export function IsometricCanvas({
                 opacity={stationOpacity}
                 onMouseEnter={
                   enableHoverFocus
-                    ? () => setHoveredStationId(station.id)
+                    ? () => {
+                        setHoveredStationId(station.id);
+                        // OV-HOVER-02: anchor on the far top corner, not the
+                        // bar centre — countPt sits mid-block, so a plate hung
+                        // off it covers the very object being pointed at.
+                        // OV-HOVER-02: anchor spans the block's projected
+                        // width — flipping mirrors around the anchor, so a
+                        // single mid-object point overlaps on either side.
+                        setHoverAnchor({
+                          x: t11.sx,
+                          y: t11.sy,
+                          leftX: b01.sx,
+                        });
+                      }
                     : undefined
                 }
                 onMouseLeave={
                   enableHoverFocus
                     ? () =>
-                        setHoveredStationId(current =>
-                          current === station.id ? null : current
-                        )
+                        {
+                          setHoveredStationId(current =>
+                            current === station.id ? null : current
+                          );
+                          setHoverAnchor(null);
+                        }
                     : undefined
                 }
                 onClick={() => { if (station.deepLink) onSelect?.(station.id); }}
@@ -1536,6 +1582,56 @@ export function IsometricCanvas({
        )}
       </Box>
       }
+
+      {/* OV-HOVER-02: Location Pulse. Read-only, pointer-transparent, outside
+          the projection bbox and auto-fit. Flips left near the right edge and
+          clamps vertically so it never leaves the map container. */}
+      {activePulse && hoverAnchor && (() => {
+        const PW = 228;
+        const GAP = 14;
+        const ax = hoverAnchor.x + offset.x;
+        const ay = hoverAnchor.y + offset.y;
+        const alx = hoverAnchor.leftX + offset.x;
+        const flipLeft = ax + GAP + PW > size.w - 8;
+        const left = flipLeft ? Math.max(8, alx - GAP - PW) : ax + GAP;
+        const estH = 46 + activePulse.rows.length * 20;
+        const top = Math.max(8, Math.min(ay - estH / 2, size.h - estH - 8));
+        return (
+          <Box
+            aria-hidden
+            sx={{
+              position: 'absolute', left, top, width: PW, zIndex: 3,
+              pointerEvents: 'none',
+              border: '1px solid var(--rule)', borderRadius: '6px',
+              bgcolor: 'var(--bg)', px: 1.25, py: 1,
+              boxShadow: '0 4px 14px rgba(0,0,0,0.28)',
+            }}
+          >
+            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--ink)', fontFamily: 'monospace' }}>
+              {activePulse.title}
+            </Typography>
+            {activePulse.subtitle && (
+              <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>
+                {activePulse.subtitle}
+              </Typography>
+            )}
+            <Box sx={{ borderTop: '1px solid var(--rule)', mt: 0.75, pt: 0.75 }}>
+              {activePulse.rows.map((r, i) => (
+                <Box key={i} sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, py: 0.25 }}>
+                  <Typography sx={{ fontSize: 10, color: 'var(--ink-3)' }}>{r.label}</Typography>
+                  <Typography sx={{
+                    fontSize: 10, fontFamily: 'monospace', textAlign: 'right',
+                    color: r.tone === 'critical' ? 'var(--critical-ink)'
+                         : r.tone === 'warning'  ? 'var(--accent)'
+                         : r.tone === 'muted'    ? 'var(--ink-3)'
+                         : 'var(--ink)',
+                  }}>{r.value}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+        );
+      })()}
 
       {showWarehouseContext && warehouseContextName && (
       <Box
