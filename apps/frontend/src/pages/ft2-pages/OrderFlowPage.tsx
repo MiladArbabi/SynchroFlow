@@ -628,7 +628,7 @@ export default function OrderFlowPage() {
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
               {isLoading
                 ? 'Loading live order flow…'
-                : `${blockedCount} blocked · ${fmt$(heldRevenue)} held · ${readyCount} ready to release · ${activeBatchCount} batch${activeBatchCount !== 1 ? 'es' : ''} active`}
+                : `${blockedCount} blocked · ${fmt$(heldRevenue)} held · ${readyCount} in order pool · ${activeBatchCount} batch${activeBatchCount !== 1 ? 'es' : ''} active`}
             </Typography>
 
             {/* Active pool filter (set by clicking a pool cell in the matrix). */}

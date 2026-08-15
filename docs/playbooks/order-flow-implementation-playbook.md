@@ -1316,3 +1316,30 @@ propagated six lines down to `aging72`.
 **DC-09 (open, P3)** — `stageData.reduce` at the same site sums overlapping
 stage counts. An order that is both Blocked and 3d+ aged is counted twice.
 Whatever `accountedFor` gates may be wrong. Same family as DC-01.
+
+## DC-04 — "Ready" named two different pipeline positions
+
+The Orders pulse showed "Ready 13"; Order Flow showed "3 ready to release".
+Both correct, measuring different things:
+
+- `queue_ready_to_ship` (13) — paid, not fulfilled, not partially fulfilled, no
+  active constraint. Every unblocked order regardless of batch or pick state:
+  pool, batched, picking, packed alike.
+- `eligible_order_count` (3) — the release pool: eligible **and not yet
+  batched**. A subset of the 13.
+
+**Vocabulary settled:**
+
+- **Order pool** is the named place releasable orders collect. The panel header
+  and the isometric map block already called it that; the Order Flow page header
+  was the only surface saying "ready to release". Now reads "N in order pool".
+- **Fulfillable** is the pulse label for `queue_ready_to_ship` — it states the
+  predicate (nothing is in this order's way) without implying a pipeline stage.
+- **Unblocked** is deliberately NOT used for either. It means orders that had a
+  block and had it removed — a transition, not a state. Nothing currently
+  computes it; if that metric is ever wanted, the word is reserved.
+
+The stage bar keeps `key: 'ready'`; renaming requires a consumer sweep.
+
+**DC-10 (open, P3)** — blocked revenue renders as `$179.85` on Order Flow and
+`$180` on Overview/Orders. Same value, different formatter.

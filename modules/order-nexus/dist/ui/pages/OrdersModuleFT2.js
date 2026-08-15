@@ -228,7 +228,7 @@ export default function OrdersModuleFT2(props) {
     const pulseRows = [
         { label: 'Breached', n: slaBreachedCount, color: STAGE_COLORS.breached },
         { label: 'Picking', n: qPicking, color: STAGE_COLORS.picking },
-        { label: 'Ready', n: qReady, color: STAGE_COLORS.ready },
+        { label: 'Fulfillable', n: qReady, color: STAGE_COLORS.ready },
         { label: 'Blocked', n: constrained, color: STAGE_COLORS.blocked },
     ];
     const pulseMax = Math.max(...pulseRows.map(row => row.n), 1);
@@ -249,7 +249,12 @@ export default function OrdersModuleFT2(props) {
     };
     // ── Stage bar ───────────────────────────────────────────────
     const stageData = [
-        { key: 'ready', label: 'Ready', count: qReady },
+        // DC-04 (2026-08-15): queue_ready_to_ship counts every unblocked unfulfilled
+        // order — pool, batched, picking, packed alike. It is not a pipeline stage
+        // and not the order pool, which is the unbatched subset shown on Order Flow
+        // (3 vs 13 on shop 15). "Fulfillable" states the predicate: nothing is in
+        // this order's way. Key unchanged; renaming needs a consumer sweep.
+        { key: 'ready', label: 'Fulfillable', count: qReady },
         { key: 'picking', label: 'Picking', count: qPicking },
         { key: 'blocked', label: 'Blocked', count: constrained },
         // DC-03: keeps the aging bucket — a pipeline age band sits naturally beside
@@ -336,7 +341,7 @@ export default function OrdersModuleFT2(props) {
                                 { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
                                 { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
                                 { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
-                                { id: 'ready', label: 'Ready', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
+                                { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
                             ], footerNote: _jsxs(_Fragment, { children: [_jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmtN(props.orders?.fulfilled) }), ' fulfilled to date · ', _jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmt$(revenue?.earned) }), ' collected to date'] }), footerCta: { label: 'View order flow', onClick: () => navigate('/orders/flow') } }) })] })] }));
 }
 //# sourceMappingURL=OrdersModuleFT2.js.map
