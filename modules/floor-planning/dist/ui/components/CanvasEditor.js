@@ -222,7 +222,21 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
                                     { label: 'Position X', field: 'position_x', value: editX, set: setEditX },
                                     { label: 'Position Y', field: 'position_y', value: editY, set: setEditY },
                                 ]).map(({ label, field, value, set }) => (_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 9, color: 'var(--ink-4)', mb: 0.25, fontWeight: 500 }, children: label }), _jsx(TextField, { size: "small", value: value, onChange: (e) => set(e.target.value), onBlur: () => commitField(field, value), onKeyDown: (e) => { if (e.key === 'Enter')
-                                                commitField(field, value); }, disabled: saving, inputProps: { style: { fontFamily: 'monospace', fontSize: 12, padding: '4px 8px' } }, InputProps: { endAdornment: _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)' }, children: "m" }) }, sx: { width: '100%' } })] }, field))) })] }), _jsx(Divider, {}), _jsxs(Box, { sx: { display: 'flex', gap: 2, alignItems: 'center' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Layers, { size: 12, color: "var(--ink-4)" }), _jsx(TextField, { size: "small", type: "number", defaultValue: zone.rack_levels ?? '', placeholder: "\u2014", onBlur: (e) => {
+                                                commitField(field, value); }, disabled: saving, inputProps: { style: { fontFamily: 'monospace', fontSize: 12, padding: '4px 8px' } }, InputProps: { endAdornment: _jsx(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)' }, children: "m" }) }, sx: { width: '100%' } })] }, field))) })] }), (zone.zone_type === 'ship' || zone.zone_type === 'receive') && (_jsxs(Box, { children: [_jsx(Typography, { sx: {
+                                    fontSize: 9,
+                                    fontWeight: 600,
+                                    letterSpacing: '0.08em',
+                                    textTransform: 'uppercase',
+                                    color: 'var(--ink-4)',
+                                    mb: 0.75,
+                                }, children: "Dock opening" }), _jsxs(TextField, { select: true, size: "small", value: zone.dock_face ?? '', onChange: (e) => {
+                                    const value = e.target.value;
+                                    void onUpdateZone?.(zone.location_code, {
+                                        dock_face: value === ''
+                                            ? null
+                                            : value,
+                                    });
+                                }, SelectProps: { native: true }, sx: { width: '100%' }, children: [_jsx("option", { value: "", children: "Auto" }), _jsx("option", { value: "north", children: "North" }), _jsx("option", { value: "south", children: "South" }), _jsx("option", { value: "east", children: "East" }), _jsx("option", { value: "west", children: "West" }), _jsx("option", { value: "none", children: "None" })] })] })), _jsx(Divider, {}), _jsxs(Box, { sx: { display: 'flex', gap: 2, alignItems: 'center' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Layers, { size: 12, color: "var(--ink-4)" }), _jsx(TextField, { size: "small", type: "number", defaultValue: zone.rack_levels ?? '', placeholder: "\u2014", onBlur: (e) => {
                                             const val = parseInt(e.target.value);
                                             if (!isNaN(val) && val >= 1 && val <= 20)
                                                 onUpdateZone?.(zone.location_code, { rack_levels: val });

@@ -682,7 +682,7 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-HOVER-02a | P2 | Pulse plate covered the hovered object — anchoring at a mid-object point overlaps on whichever side the flip lands | CLOSED — anchor spans the object (`x` right edge, `leftX` left edge); flip mirrors off the far edge |
 | ZONE-SHAPE-01 | P2 | Every zone rendered as an identical rectangle — a loading dock was indistinguishable from a storage bin | CLOSED — `ship` and `receive` carry a dock bay cut from the slab on their nearest building edge; direction derived from a world-space bbox, cornered zones suppressed |
 | ZONE-SHAPE-01a | P2 | Dock bay inner faces assume the standard projection; `flipped` mirrors the geometry correctly but inverts which faces are viewer-facing | OPEN — reachable on `WmsDisplayPage`, which omits `showControls` (defaults true). Overview passes false and is unaffected |
-| ZONE-SHAPE-01b | P3 | 15% ambiguity threshold untuned against real merchant layouts | OPEN — verified correct on the Core teaser by computation only |
+| ZONE-SHAPE-01b | P3 | 15% ambiguity threshold untuned against real merchant layouts | ✅ CLOSED — explicit `dock_face` warehouse truth + conservative Auto fallback; API, DB constraint, Canvas control, renderer, CRUD and localhost visuals verified 2026-08-15 |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |
@@ -693,3 +693,46 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-152 | P1 | Positive headline could contradict visible idle-operator or blocked-order warnings | CLOSED — consolidated operational warning state now suppresses positive copy while warnings exist or relevant sources are unresolved; build and visual verification passed locally |
 | CANVAS-COLOR-01 | P3 | Five hardcoded colour literals in IsometricCanvas vs ZONE_COLORS' var(--zone-{type}) | Open |
 | BUILD-01 | P2 | No tsc --noEmit gate between commit and Docker build; tsx strips types without checking | Open |
+
+#### ZONE-SHAPE-01b — explicit dock-face truth
+
+Dock orientation is now persisted warehouse truth rather than renderer-only
+inference.
+
+`warehouse_locations.dock_face` is a nullable enum:
+
+- `north`, `south`, `east`, `west` — explicit merchant-selected opening
+- `none` — deliberately render the dock as a solid zone
+- `NULL` — Auto; preserve legacy layouts by resolving the nearest world-space
+  floor edge
+
+Renderer precedence in `modules/shared/src/ui/IsometricCanvas.tsx` is:
+
+1. explicit cardinal `dock_face`
+2. `none` → no bay
+3. `NULL` → automatic nearest-edge resolution
+4. ambiguous Auto geometry → no bay rather than guessing the wrong direction
+
+The existing Auto ambiguity threshold remains `0.15`; it is now only a safe
+fallback, not the source of truth for explicitly configured docks.
+
+Floor Planning → Setup → Canvas exposes **Dock opening** only for `ship` and
+`receive` zones, with `Auto / North / South / East / West / None`. Writes flow
+through `PATCH /api/v1/floor-planning/zones/:locationCode`.
+
+Backend invariants:
+
+- explicit `dock_face` is rejected for non-`ship`/`receive` zones
+- changing a dock zone to another `zone_type` clears stale `dock_face`
+- invalid enum values return HTTP 400
+- DB constraint enforces the same dock-zone ownership, including rejecting an
+  explicit face when `zone_type IS NULL`
+
+Schema history:
+
+- `20260815131000_0149_add_dock_face_to_warehouse_locations.ts`
+- `20260815154500_0150_harden_dock_face_zone_check.ts`
+
+`warehouse_locations.orientation` remains geometric rotation in degrees and is
+not used as dock-facing truth.
+

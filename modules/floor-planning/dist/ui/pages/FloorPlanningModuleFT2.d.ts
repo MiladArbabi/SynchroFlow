@@ -74,6 +74,7 @@ export type FloorPlanningPageProps = {
         orientation?: number;
         rack_levels?: number | null;
         zone_type?: string | null;
+        dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
     }) => Promise<void>;
 };
 export default function FloorPlanningModuleFT2(props: FloorPlanningPageProps): import("react").JSX.Element;

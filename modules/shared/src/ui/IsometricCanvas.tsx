@@ -744,20 +744,29 @@ export function IsometricCanvas({
     return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
   })();
 
-  // ZONE-SHAPE-01: the bay faces whichever building edge the zone sits nearest.
-  // Derived rather than stored — `warehouse_locations.orientation` exists but is
-  // 0 on every row and no renderer reads it, so there is no truth to honour yet.
-  //
-  // When the two nearest edges are within AMBIGUITY of each other the zone is
-  // effectively cornered and no bay is drawn: a dock facing the wrong way is
-  // worse than a plain rectangle.
+  // ZONE-SHAPE-01b: explicit merchant dock direction is authoritative.
+  // NULL/undefined keeps legacy layouts on Auto; `none` deliberately suppresses
+  // the opening. Auto remains conservative at ambiguous corners rather than
+  // inventing a physical warehouse direction.
   const DOCK_BAY_AMBIGUITY = 0.15;
   const dockBayFor = (z: WarehouseZone): DockBay | null => {
     if (z.zone_type !== 'ship' && z.zone_type !== 'receive') return null;
+
+    if (z.dock_face === 'none') return null;
+    if (
+      z.dock_face === 'north' ||
+      z.dock_face === 'south' ||
+      z.dock_face === 'east' ||
+      z.dock_face === 'west'
+    ) {
+      return z.dock_face;
+    }
+
     if (!worldBox) return null;
     const w = worldBox.maxX - worldBox.minX;
     const h = worldBox.maxY - worldBox.minY;
     if (w <= 0 || h <= 0) return null;
+
     const cx = parseFloat(String(z.position_x ?? 0)) + parseFloat(String(z.width ?? 1)) / 2;
     const cy = parseFloat(String(z.position_y ?? 0)) + parseFloat(String(z.depth ?? 0.5)) / 2;
     const sides: Array<{ side: DockBay; d: number }> = [
@@ -766,6 +775,7 @@ export function IsometricCanvas({
       { side: 'west',  d: (cx - worldBox.minX) / w },
       { side: 'east',  d: (worldBox.maxX - cx) / w },
     ];
+
     const candidates = sides.sort((a, b) => a.d - b.d);
     return candidates[1].d - candidates[0].d < DOCK_BAY_AMBIGUITY
       ? null

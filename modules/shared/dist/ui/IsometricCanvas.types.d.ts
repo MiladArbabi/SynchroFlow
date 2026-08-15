@@ -1,4 +1,5 @@
 export type LocationType = 'warehouse' | 'lane' | 'shelf' | 'bin';
+export type DockFace = 'north' | 'south' | 'east' | 'west' | 'none';
 export type WarehouseZone = {
     location_code: string;
     type: LocationType;
@@ -13,6 +14,8 @@ export type WarehouseZone = {
     orientation: number;
     rack_levels: number | null;
     zone_type: string | null;
+    /** NULL/undefined = Auto; `none` deliberately suppresses the opening. */
+    dock_face?: DockFace | null;
     last_printed_at: string | null;
     /** Editable warehouse display name — non-null only on type='warehouse' rows (§10.5) */
     warehouse_name: string | null;

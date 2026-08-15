@@ -26,6 +26,15 @@ import { ensureVariantBarcode } from '../../services/wms/productBarcode.service.
  * FEAT-002: Join products table for product_title on variants query.
  */
 
+const DOCK_FACES = ['north', 'south', 'east', 'west', 'none'] as const;
+type DockFace = typeof DOCK_FACES[number];
+
+const isDockFace = (value: unknown): value is DockFace =>
+  typeof value === 'string' && (DOCK_FACES as readonly string[]).includes(value);
+
+const isDockZoneType = (value: unknown): boolean =>
+  value === 'ship' || value === 'receive';
+
 /**
  * FP-GATE1 — spatial fields are Growth-tier.
  *
@@ -49,6 +58,7 @@ const GROWTH_SPATIAL_FIELDS = [
   'depth',
   'orientation',
   'rack_levels',
+  'dock_face',
 ] as const;
 
 /**
@@ -66,7 +76,12 @@ function rejectSpatialFieldsBelowGrowth(req: Request, res: Response): boolean {
   const body = (req.body ?? {}) as Record<string, unknown>;
   const offending = GROWTH_SPATIAL_FIELDS.filter((field) => {
     const value = body[field];
-    if (value === undefined || value === null) return false;
+    if (value === undefined) return false;
+
+    // ZONE-SHAPE-01b: null explicitly restores automatic dock-face selection.
+    if (field === 'dock_face') return true;
+
+    if (value === null) return false;
     if (field === 'orientation') return value !== 0;
     return true;
   });
@@ -129,6 +144,7 @@ export async function httpGetLayout(req: Request, res: Response) {
           'warehouse_locations.orientation',
           'warehouse_locations.rack_levels',
           'warehouse_locations.zone_type',
+          'warehouse_locations.dock_face',
           'warehouse_locations.last_printed_at',
         );
 
@@ -617,17 +633,32 @@ export async function httpCreateZone(req: Request, res: Response) {
     depth, 
     orientation, 
     rack_levels, 
-    zone_type 
-  } = req.body;
+    zone_type,
+    dock_face
+    } = req.body;
 
   if (!location_code || typeof location_code !== 'string' || !location_code.trim()) {
     return res.status(400).json({ error: 'location_code is required' });
   }
   if (!['warehouse', 'lane', 'shelf', 'bin'].includes(type)) {
-    return res.status(400).json({ error: 'type must be warehouse | lane | shelf | bin' });
+    return res.status(400).json({ error: 'type must be warehouse | lane | shelf| bin' });
   }
 
-  // FP-GATE1: Growth gate for geometry. The List create form never sends
+  if (dock_face !== undefined && dock_face !== null && !isDockFace(dock_face)) {
+    return res.status(400).json({
+      error: 'dock_face must be north | south | east | west | none | null',
+    });
+  }
+
+  const effectiveZoneType = zone_type ?? 'storage';
+
+  if (dock_face !== undefined && dock_face !== null && !isDockZoneType(effectiveZoneType)) {
+    return res.status(400).json({
+      error: 'dock_face requires zone_type ship or receive',
+    });
+  }
+
+  // FP-GATE1: Growth gate for geometry.. The List create form never sends
   // these — this is defence against crafted requests, not a UI path.
   if (rejectSpatialFieldsBelowGrowth(req, res)) return;
 
@@ -687,7 +718,8 @@ export async function httpCreateZone(req: Request, res: Response) {
         depth: depth ?? null,
         orientation: orientation ?? 0,
         rack_levels: rack_levels ?? null,
-        zone_type: zone_type ?? 'storage',
+        zone_type: effectiveZoneType,
+        dock_face: dock_face ?? null,
       });
 
       return resolvedWarehouseId;
@@ -746,8 +778,15 @@ export async function httpUpdateZone(req: Request, res: Response) {
     depth, 
     orientation, 
     rack_levels, 
-    zone_type 
+    zone_type,
+    dock_face
   } = req.body;
+
+  if (dock_face !== undefined && dock_face !== null && !isDockFace(dock_face)) {
+    return res.status(400).json({
+      error: 'dock_face must be north | south | east | west | none | null',
+    });
+  }
 
   // FP-GATE1: Growth gate for geometry. This is the ONLY spatial write path
   // in the module — Canvas drag/resize persists through looped PATCH calls
@@ -758,7 +797,25 @@ export async function httpUpdateZone(req: Request, res: Response) {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const updates: Record<string, unknown> = { updated_at: new Date() };
+    const current = await trx('warehouse_locations')
+      .where({ shop_id: shopId, location_code: locationCode })
+      .select('zone_type')
+      .first();
+
+    if (!current) throw new Error('Zone not found');
+
+    const nextZoneType =
+      zone_type !== undefined ? zone_type : current.zone_type;
+
+    if (
+      dock_face !== undefined &&
+      dock_face !== null &&
+      !isDockZoneType(nextZoneType)
+    ) {
+      throw new Error('dock_face requires zone_type ship or receive');
+    }
+
+    const updates: Record<string, unknown> = { updated_at: new Date() };
       if (active !== undefined)               updates.active = active;
       if (barcode !== undefined)              updates.barcode = barcode?.trim() ?? null;
       if (parent_location_code !== undefined) updates.parent_location_code = parent_location_code?.trim() ?? null;
@@ -770,6 +827,14 @@ export async function httpUpdateZone(req: Request, res: Response) {
       if (rack_levels !== undefined)          updates.rack_levels = rack_levels ?? null;
       if (zone_type !== undefined)            updates.zone_type = zone_type ?? null;
 
+      // ZONE-SHAPE-01b: leaving a dock zone clears stale physical dock intent.
+      // Otherwise explicit null restores Auto and explicit faces persist merchant truth.
+      if (zone_type !== undefined && !isDockZoneType(nextZoneType)) {
+        updates.dock_face = null;
+      } else if (dock_face !== undefined) {
+        updates.dock_face = dock_face;
+      }
+
       const updated = await trx('warehouse_locations')
         .where({ shop_id: shopId, location_code: locationCode })
         .update(updates);
@@ -780,6 +845,9 @@ export async function httpUpdateZone(req: Request, res: Response) {
     return res.json({ success: true });
   } catch (err: any) {
     if (err.message === 'Zone not found') return res.status(404).json({ error: err.message });
+    if (err.message === 'dock_face requires zone_type ship or receive') {
+      return res.status(400).json({ error: err.message });
+    }
     if (err.code === '23505') return res.status(409).json({ error: 'Barcode already assigned to another location' });
     console.error('[floor-planning] httpUpdateZone failed', err);
     return res.status(500).json({ error: 'Failed to update zone' });

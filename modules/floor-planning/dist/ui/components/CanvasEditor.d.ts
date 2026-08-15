@@ -12,6 +12,7 @@ interface CanvasEditorProps {
         orientation?: number;
         rack_levels?: number | null;
         zone_type?: string | null;
+        dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
     }) => Promise<void>;
     onDeleteZone?: (locationCode: string) => Promise<void>;
     onPrintBarcode?: (locationCode: string) => Promise<Blob>;

@@ -134,6 +134,7 @@ export type FloorPlanningPageProps = {
     orientation?: number;
     rack_levels?: number | null;
     zone_type?: string | null;
+    dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
   }) => Promise<void>;
 };
 

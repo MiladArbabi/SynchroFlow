@@ -120,6 +120,7 @@ interface CanvasEditorProps {
     orientation?: number;
     rack_levels?: number | null;
     zone_type?: string | null;
+    dock_face?: 'north' | 'south' | 'east' | 'west' | 'none' | null;
   }) => Promise<void>;
   onDeleteZone?: (locationCode: string) => Promise<void>;
   // FP-16 follow-up: mirrors the FloorPlanningModuleFT2 interface fix —
@@ -421,6 +422,47 @@ function RackInspector({ zone, onClose, onUpdateZone, onDeleteZone, onPrintBarco
             ))}
           </Box>
         </Box>
+
+        {(zone.zone_type === 'ship' || zone.zone_type === 'receive') && (
+          <Box>
+            <Typography
+              sx={{
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+                color: 'var(--ink-4)',
+                mb: 0.75,
+              }}
+            >
+              Dock opening
+            </Typography>
+
+            <TextField
+              select
+              size="small"
+              value={zone.dock_face ?? ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                void onUpdateZone?.(zone.location_code, {
+                  dock_face: value === ''
+                    ? null
+                    : value as 'north' | 'south' | 'east' | 'west' | 'none',
+                });
+              }}
+              SelectProps={{ native: true }}
+              sx={{ width: '100%' }}
+            >
+              <option value="">Auto</option>
+              <option value="north">North</option>
+              <option value="south">South</option>
+              <option value="east">East</option>
+              <option value="west">West</option>
+              <option value="none">None</option>
+            </TextField>
+          </Box>
+        )}
+
         <Divider />
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
