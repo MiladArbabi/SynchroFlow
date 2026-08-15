@@ -430,9 +430,24 @@ export default function OverviewPageFT2() {
   // the map reads right-to-left as the order's journey:
   //   blocked (2) -> pool (1) -> [floor] -> shipped (1) -> staged (2)
   //
+  // OUTBOUND-CONSOLIDATE-01: outbound state belongs on the ship zone the
+  // merchant actually drew, not duplicated on a rail beside it. Binding a
+  // workflow stage to a declared zone_type is what zone types are for —
+  // stowPending and receiveAtDock already do exactly this.
+  //
+  // Only an unambiguous single ship zone claims outbound. With several, no
+  // data attributes an order to one of them, and a first-match heuristic
+  // would invent that attribution (see OV-146). With none, the merchant has
+  // nowhere to put it. Both cases keep the rail.
+  const shipZones = zones.filter(
+    z => z.type === 'bin' && z.zone_type === 'ship' && z.active &&
+         z.position_x != null && z.position_y != null
+  );
+  const outboundZoneCode = shipZones.length === 1 ? shipZones[0].location_code : null;
+
   // Zero-count stages are omitted by IsometricCanvas rather than drawn empty,
   // so the rail only ever shows stages holding work.
-  const stations: SyntheticStation[] = hasMapTier ? [
+  const allStations: SyntheticStation[] = hasMapTier ? [
     {
       id: 'blocked',
       label: 'Blocked',
@@ -469,7 +484,12 @@ export default function OverviewPageFT2() {
     },
     {
       id: 'shipped',
-      label: 'Shipped Today',
+      // OUTBOUND-TRUTH-01: scope is in the label because this counts only
+      // orders shipped through the WMS path (order_warehouse_status.shipped_at).
+      // Analytics' "Shipped today" counts order_fulfillment_status instead and
+      // legitimately includes orders fulfilled outside laSyncro — on shop 2
+      // that is 3 vs 0. Both facts are true; one label for both was not.
+      label: 'Shipped from floor',
       side: 'outbound',
       rank: 1,
       count: shippedToday,
@@ -477,6 +497,12 @@ export default function OverviewPageFT2() {
       deepLink: '/order-flow',
     },
   ] : [];
+
+  // OUTBOUND-CONSOLIDATE-01: outbound blocks are dropped when the ship zone
+  // owns them, so OV-40's zero-count omission logic stays untouched.
+  const stations: SyntheticStation[] = allStations.filter(s =>
+    outboundZoneCode == null || (s.id !== 'staged' && s.id !== 'shipped')
+  );
 
   // OV-HOVER-02: Location Pulse payloads. Every row is sourced from data
   // already derived above — no new fetch. Rows are omitted at zero rather than
@@ -527,6 +553,22 @@ export default function OverviewPageFT2() {
 
       const dock = receiveAtDock[code] ?? 0;
       if (dock > 0) rows.push({ label: 'At dock', value: `${dock} units` });
+
+      // OUTBOUND-CONSOLIDATE-01: order-scoped outbound counts, shown only on
+      // the zone that owns them. Orders, not units — never conflate the two.
+      if (code === outboundZoneCode) {
+        const orderNoun = (n: number) => `${n} ${n === 1 ? 'order' : 'orders'}`;
+        if (packedNotShipped > 0) {
+          rows.push({
+            label: 'Awaiting pickup',
+            value: orderNoun(packedNotShipped),
+            tone: 'critical',
+          });
+        }
+        if (shippedToday > 0) {
+          rows.push({ label: 'Shipped from floor', value: orderNoun(shippedToday) });
+        }
+      }
 
       // Only when an operator row actually produced a clock. Absence of
       // activity is silence, never "never".

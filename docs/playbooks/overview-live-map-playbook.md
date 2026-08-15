@@ -533,6 +533,57 @@ critical tone with `State Needs attention`, clearing the block after the anchor
 fix. Rail blocks other than Blocked are unreachable at present — they are
 zero-count and omitted by OV-40.
 
+### 6.12 Dock bay geometry (ZONE-SHAPE-01)
+
+Every zone rendered as an identical rectangle, so a merchant could not tell a
+loading dock from a storage bin without reading the label. `ship` and `receive`
+zones now carry a truck berth carved out of the slab — recognisable by
+silhouette before the label is legible.
+
+**Scope.** `ship` and `receive` only. Other zone types have no unambiguous
+physical shape, and inventing one per type turns the floor into iconography.
+
+**Direction is derived, not stored.** `warehouse_locations.orientation` exists
+but is 0 on every row and no renderer reads it, so there is no truth to honour.
+The bay faces whichever building edge the zone sits nearest, measured against a
+world-space bbox of physical zones.
+
+That bbox is deliberately NOT `bboxRef`: that one projects to screen space and
+includes synthetic stations. Since `sx = (wx - wy) * TILE_W/2` collapses both
+world axes into one, a screen bbox cannot answer "which edge is this near", and
+`flipped` would mirror north into south.
+
+When the two nearest edges are within 15% of each other the zone is effectively
+cornered and no bay is drawn — a dock facing the wrong way is worse than a plain
+rectangle. The Core upgrade teaser's RECEIVE zone hits this case (east 0.118 vs
+south 0.162) and is correctly left unchanged.
+
+**Projection shading rule.** `sy = (wx + wy) * TILE_H/2 - wz * LEVEL_H`, so +x
+and +y both run toward the viewer and the near corner of any box is
+`(wx+ww, wy+wd)`. Exactly two faces of a solid are ever visible: the +y face
+(`lFill`) and the +x face (`lFillDark`). A wall facing -x or -y sits behind the
+solid and must not be drawn.
+
+**The bay is a cut, not a container.** There is no bay floor and no lid — the
+notch in the top face lets the ground show through. Only walls of the remaining
+solid are drawn, and only those facing the viewer:
+
+- **south bay** — the +y face splits into two segments, plus the back of the
+  recess (facing +y) and the single +x-facing return
+- **east bay** — the +x face splits, plus recess back and one +y-facing return
+- **north and west bays** cut the far edges, so every exposed wall faces away
+  and nothing beyond the top-face notch is drawn
+
+Three attempts were needed to reach this. Drawing invisible back walls produced
+an L-shaped step; adding a bay floor at `z1` produced a lid sitting flush in the
+notch. Both are the same error — treating the bay as a box rather than absence.
+
+Bay proportions: 40% of the wall-facing extent, 35% deep.
+
+**Verified.** Shop 1: SHIP-1 (centre 9.05, 8.75) resolves south; RECEIVE-1
+(centre 10, 2.75) resolves north. Both render as berths; all other zones
+unchanged.
+
 ## 7. Pulse card — merged layout
 
 The right card absorbs both decisions and stats without becoming a junk drawer. Rules:
@@ -629,6 +680,9 @@ Update `WarehouseGrid.md` consumer map and `product-structure.md` §5 and §11 a
 | OV-HOVER-01b | P3 | Rail blocks do not soften sibling rail blocks on hover | OPEN — `stationOpacity` keys on `activeHoveredCode` only |
 | OV-HOVER-02 | P2 | Hover identified the object under the pointer but said nothing about it | CLOSED — read-only ~228px pulse plate; page composes payloads, canvas renders; rows omitted at zero; occupancy % and blocked revenue withheld pending a truthful source |
 | OV-HOVER-02a | P2 | Pulse plate covered the hovered object — anchoring at a mid-object point overlaps on whichever side the flip lands | CLOSED — anchor spans the object (`x` right edge, `leftX` left edge); flip mirrors off the far edge |
+| ZONE-SHAPE-01 | P2 | Every zone rendered as an identical rectangle — a loading dock was indistinguishable from a storage bin | CLOSED — `ship` and `receive` carry a dock bay cut from the slab on their nearest building edge; direction derived from a world-space bbox, cornered zones suppressed |
+| ZONE-SHAPE-01a | P2 | Dock bay inner faces assume the standard projection; `flipped` mirrors the geometry correctly but inverts which faces are viewer-facing | OPEN — reachable on `WmsDisplayPage`, which omits `showControls` (defaults true). Overview passes false and is unaffected |
+| ZONE-SHAPE-01b | P3 | 15% ambiguity threshold untuned against real merchant layouts | OPEN — verified correct on the Core teaser by computation only |
 | OV-160 | P2 | Order Pool apron fell to 0 after the outbound seed claimed the last eligible orders | CLOSED — Production’s 42 orders reconcile exactly: 13 already batched, 8 blocked, 21 fulfilled, and 0 ready for release. The API and database agree; local also correctly reports zero eligible orders. |
 | OV-146 | P2 | Prod has 3 pack stations; first-active-zone heuristic stacks all packers on PACK-01 | Open |
 | OV-147 | P1 | Prod shop 1 has zero pack_scan_log rows; prod's 4-batch shape predates OV-135 and came from the Sprint 2/3 hand repair | Open — no longer blocks the map |

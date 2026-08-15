@@ -212,6 +212,13 @@ function pts(...coords: { sx: number; sy: number }[]): string {
 // ── IsometricBox ──────────────────────────────────────────────────────────────
 type FocusTone = 'empty' | 'risk';
 
+/**
+ * ZONE-SHAPE-01: which building edge a dock zone faces. The bay is carved from
+ * the top face on this side, so a SHIP or RECEIVE zone reads as a truck berth
+ * by silhouette before its label is legible.
+ */
+type DockBay = 'north' | 'south' | 'east' | 'west';
+
 interface BoxProps {
   wx: number; wy: number;
   ww: number; wd: number;
@@ -228,6 +235,12 @@ interface BoxProps {
   focusTone?: FocusTone;
   /** Operational critical state overlays the physical/analytical fill without replacing it. */
   isCritical?: boolean;
+  /**
+   * ZONE-SHAPE-01: carve a truck berth out of the top face on this building
+   * edge. Derived in IsometricCanvas, which owns the world bbox — this is
+   * geometry, not business truth, so the renderer resolves it.
+   */
+  dockBay?: DockBay | null;
   isFrame: boolean;
   isDimmed?: boolean;
   /**
@@ -262,6 +275,7 @@ function IsometricBox({
   occupancyFraction,
   focusTone,
   isCritical,
+  dockBay,
 }: BoxProps) {
   const baseFill      = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
   const stroke        = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
@@ -311,6 +325,40 @@ function IsometricBox({
   const t11 = project(wx + ww, wy + wd, wh, zoom, flipped);
   const t01 = project(wx,      wy + wd, wh, zoom, flipped);
 
+  // ZONE-SHAPE-01: top face as 4 points normally, 8 when a dock bay is carved.
+  // The notch is cut in WORLD space and projected through the same project(),
+  // so `flipped` needs no special handling. Both dock zone types are flat
+  // slabs (rack_levels null), so the notch in the top face is the whole shape —
+  // there are no interior walls to draw.
+  const BAY_ALONG = 0.40;  // fraction of the wall-facing extent
+  const BAY_DEEP  = 0.35;  // fraction of the perpendicular extent
+  const topFacePoints: ScreenPoint[] = (() => {
+    if (!dockBay) return [t00, t10, t11, t01];
+    const p = (x: number, y: number) => project(x, y, wh, zoom, flipped);
+    if (dockBay === 'north' || dockBay === 'south') {
+      const bw = ww * BAY_ALONG;
+      const x0 = wx + (ww - bw) / 2;
+      const x1 = x0 + bw;
+      const bd = wd * BAY_DEEP;
+      if (dockBay === 'north') {
+        // Notch bites into the wy edge.
+        return [t00, p(x0, wy), p(x0, wy + bd), p(x1, wy + bd), p(x1, wy), t10, t11, t01];
+      }
+      // South: notch bites into the wy + wd edge.
+      return [t00, t10, t11, p(x1, wy + wd), p(x1, wy + wd - bd), p(x0, wy + wd - bd), p(x0, wy + wd), t01];
+    }
+    const bh = wd * BAY_ALONG;
+    const y0 = wy + (wd - bh) / 2;
+    const y1 = y0 + bh;
+    const bdx = ww * BAY_DEEP;
+    if (dockBay === 'west') {
+      // Notch bites into the wx edge.
+      return [t00, t10, t11, t01, p(wx, y1), p(wx + bdx, y1), p(wx + bdx, y0), p(wx, y0)];
+    }
+    // East: notch bites into the wx + ww edge.
+    return [t00, p(wx + ww, y0), p(wx + ww - bdx, y0), p(wx + ww - bdx, y1), p(wx + ww, y1), t10, t11, t01];
+  })();
+
   // Darken side faces
   const leftFill   = fill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 1.4)})`).replace('rgba', 'rgba').replace(/,[\d.]+\)/, `,${0.55})`);
   const rightFill  = fill.replace(/,[\d.]+\)/, `,${0.40})`);
@@ -340,7 +388,7 @@ function IsometricBox({
           Full-height polygons removed to avoid double-painting over level bands. */}
       {/* Top face */}
       <polygon
-        points={pts(t00, t10, t11, t01)}
+        points={pts(...topFacePoints)}
         fill={fill}
         stroke={isSelected ? selStroke : faceStroke}
         strokeWidth={
@@ -358,7 +406,7 @@ function IsometricBox({
 
       {isCritical && (
         <polygon
-          points={pts(t00, t10, t11, t01)}
+          points={pts(...topFacePoints)}
           fill={criticalStroke}
           fillOpacity={0.10}
           stroke={criticalStroke}
@@ -369,7 +417,7 @@ function IsometricBox({
       {/* Selection highlight */}
       {isSelected && (
         <polygon
-          points={pts(t00, t10, t11, t01)}
+          points={pts(...topFacePoints)}
           fill="none"
           stroke={selStroke}
           strokeWidth="2"
@@ -400,30 +448,58 @@ function IsometricBox({
         const z1 = (i + 1) * LEVEL_HEIGHT;
         const lFill = levelFill(i);
         const lFillDark  = lFill.replace(/[\d.]+\)$/, m => `${Math.min(1, parseFloat(m) * 0.75)})`);
-        // Left face slice corners
-        const ll0 = project(wx,      wy + wd, z0, zoom, flipped);
-        const ll1 = project(wx + ww, wy + wd, z0, zoom, flipped);
-        const lu0 = project(wx,      wy + wd, z1, zoom, flipped);
-        const lu1 = project(wx + ww, wy + wd, z1, zoom, flipped);
-        // Right face slice corners
-        const rl0 = project(wx + ww, wy,      z0, zoom, flipped);
-        const rl1 = project(wx + ww, wy + wd, z0, zoom, flipped);
-        const ru0 = project(wx + ww, wy,      z1, zoom, flipped);
-        const ru1 = project(wx + ww, wy + wd, z1, zoom, flipped);
+        // ZONE-SHAPE-01: a dock bay cuts the slab, so the affected side face is
+        // rendered as two segments with the notch's inner wall between them.
+        // Only two faces are visible in this projection — the wy+wd edge (left)
+        // and the wx+ww edge (right) — so a north or west bay cuts a hidden
+        // face and contributes only its inner wall.
+        const q = (x: number, y: number, z: number) => project(x, y, z, zoom, flipped);
+        const bayAlongX = dockBay === 'north' || dockBay === 'south';
+        const bw = bayAlongX ? ww * BAY_ALONG : wd * BAY_ALONG;
+        const bd = bayAlongX ? wd * BAY_DEEP  : ww * BAY_DEEP;
+        const a0 = bayAlongX ? wx + (ww - bw) / 2 : wy + (wd - bw) / 2;
+        const a1 = a0 + bw;
+
+       // ZONE-SHAPE-01: the bay is a cut through the slab — no floor, no lid.
+        // Only walls of the REMAINING solid are drawn, and only those facing
+        // +x or +y (toward the viewer). North and west bays cut the far edges,
+        // so every exposed wall faces away and nothing extra is drawn: the
+        // notch in the top face alone shows the ground through the gap.
+        const faces: Array<{ pts: ScreenPoint[]; fill: string }> = [];
+
+        if (dockBay === 'south') {
+          const yb = wy + wd - bd;
+          faces.push({ pts: [q(wx, wy + wd, z0), q(a0, wy + wd, z0), q(a0, wy + wd, z1), q(wx, wy + wd, z1)], fill: lFill });
+          faces.push({ pts: [q(a1, wy + wd, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(a1, wy + wd, z1)], fill: lFill });
+          // Back of the recess, facing +y.
+          faces.push({ pts: [q(a0, yb, z0), q(a1, yb, z0), q(a1, yb, z1), q(a0, yb, z1)], fill: lFill });
+          // Only the a0 return faces +x; the a1 return faces -x and is hidden.
+          faces.push({ pts: [q(a0, yb, z0), q(a0, wy + wd, z0), q(a0, wy + wd, z1), q(a0, yb, z1)], fill: lFillDark });
+        } else {
+          faces.push({ pts: [q(wx, wy + wd, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx, wy + wd, z1)], fill: lFill });
+        }
+
+        if (dockBay === 'east') {
+          const xb = wx + ww - bd;
+          faces.push({ pts: [q(wx + ww, wy, z0), q(wx + ww, a0, z0), q(wx + ww, a0, z1), q(wx + ww, wy, z1)], fill: lFillDark });
+          faces.push({ pts: [q(wx + ww, a1, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx + ww, a1, z1)], fill: lFillDark });
+          faces.push({ pts: [q(xb, a0, z0), q(xb, a1, z0), q(xb, a1, z1), q(xb, a0, z1)], fill: lFillDark });
+          faces.push({ pts: [q(xb, a0, z0), q(wx + ww, a0, z0), q(wx + ww, a0, z1), q(xb, a0, z1)], fill: lFill });
+        } else {
+          faces.push({ pts: [q(wx + ww, wy, z0), q(wx + ww, wy + wd, z0), q(wx + ww, wy + wd, z1), q(wx + ww, wy, z1)], fill: lFillDark });
+        }
+
         return (
           <g key={i}>
-            <polygon
-              points={pts(ll0, ll1, lu1, lu0)}
-              fill={lFill}
-              stroke={faceStroke}
-              strokeWidth={isCritical ? 0.8 : 0.4}
-            />
-            <polygon
-              points={pts(rl0, rl1, ru1, ru0)}
-              fill={lFillDark}
-              stroke={faceStroke}
-              strokeWidth={isCritical ? 0.8 : 0.4}
-            />
+            {faces.map((f, fi) => (
+              <polygon
+                key={fi}
+                points={pts(...f.pts)}
+                fill={f.fill}
+                stroke={faceStroke}
+                strokeWidth={isCritical ? 0.8 : 0.4}
+              />
+            ))}
           </g>
         );
       })}
@@ -646,6 +722,55 @@ export function IsometricCanvas({
 
   const warehouseContextName =
     zones.find(z => z.type === 'warehouse' && z.warehouse_name)?.warehouse_name ?? null;
+
+  // ZONE-SHAPE-01: world-space extent of the physical floor. Deliberately NOT
+  // bboxRef — that one projects to screen space and includes synthetic
+  // stations. The isometric transform collapses wx and wy into a single sx, so
+  // a screen bbox cannot answer "which building edge is this zone near", and
+  // `flipped` would mirror north into south.
+  const worldBox = (() => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const z of positionedZones) {
+      if (isFrame(z)) continue;
+      const wx = parseFloat(String(z.position_x ?? 0));
+      const wy = parseFloat(String(z.position_y ?? 0));
+      const ww = parseFloat(String(z.width ?? 1));
+      const wd = parseFloat(String(z.depth ?? 0.5));
+      if (wx < minX) minX = wx;
+      if (wx + ww > maxX) maxX = wx + ww;
+      if (wy < minY) minY = wy;
+      if (wy + wd > maxY) maxY = wy + wd;
+    }
+    return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+  })();
+
+  // ZONE-SHAPE-01: the bay faces whichever building edge the zone sits nearest.
+  // Derived rather than stored — `warehouse_locations.orientation` exists but is
+  // 0 on every row and no renderer reads it, so there is no truth to honour yet.
+  //
+  // When the two nearest edges are within AMBIGUITY of each other the zone is
+  // effectively cornered and no bay is drawn: a dock facing the wrong way is
+  // worse than a plain rectangle.
+  const DOCK_BAY_AMBIGUITY = 0.15;
+  const dockBayFor = (z: WarehouseZone): DockBay | null => {
+    if (z.zone_type !== 'ship' && z.zone_type !== 'receive') return null;
+    if (!worldBox) return null;
+    const w = worldBox.maxX - worldBox.minX;
+    const h = worldBox.maxY - worldBox.minY;
+    if (w <= 0 || h <= 0) return null;
+    const cx = parseFloat(String(z.position_x ?? 0)) + parseFloat(String(z.width ?? 1)) / 2;
+    const cy = parseFloat(String(z.position_y ?? 0)) + parseFloat(String(z.depth ?? 0.5)) / 2;
+    const sides: Array<{ side: DockBay; d: number }> = [
+      { side: 'north', d: (cy - worldBox.minY) / h },
+      { side: 'south', d: (worldBox.maxY - cy) / h },
+      { side: 'west',  d: (cx - worldBox.minX) / w },
+      { side: 'east',  d: (worldBox.maxX - cx) / w },
+    ];
+    const candidates = sides.sort((a, b) => a.d - b.d);
+    return candidates[1].d - candidates[0].d < DOCK_BAY_AMBIGUITY
+      ? null
+      : candidates[0].side;
+  };
 
   // OV-HOVER-01: only an actually rendered physical bin may own hover focus.
   // This prevents stale hover state from dimming the map after filters/layout change.
@@ -1171,6 +1296,7 @@ export function IsometricCanvas({
                   key={zone.location_code}
                   wx={wx} wy={wy} ww={ww} wd={wd} wh={wh}
                   colorKey={colorKey}
+                  dockBay={dockBayFor(zone)}
                   isSelected={selected === zone.location_code}
                   isHovered={
                     !isFrame &&
