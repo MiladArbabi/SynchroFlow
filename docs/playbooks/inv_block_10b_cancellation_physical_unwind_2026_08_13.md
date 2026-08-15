@@ -184,12 +184,40 @@ never returns to the ledger.
 `cancellationUnwind.service.ts` names all six columns and worked first time —
 use it as the reference.
 
-### SHOPIFY-RECEIVE-INV-SYNC-01 (P1)
-PO receive writes `inbound_purchase` locally and pushes nothing to Shopify.
-Inbound `inventory_levels/update` then reconciles laSyncro *down* to Shopify's
-uninformed figure. WH-1-ROOT for this variant reached `-12` via two
-`reconciliation_correction -5` rows. Note the asymmetry: stow **does** push
-(`placedNow`), receive does not.
+### SHOPIFY-RECEIVE-INV-SYNC-01 (P1) — PREMISE FALSIFIED 2026-08-15, re-scope needed
+Originally registered as: PO receive writes `inbound_purchase` locally and
+pushes nothing to Shopify; inbound `inventory_levels/update` then reconciles
+laSyncro *down* to Shopify's uninformed figure. WH-1-ROOT for this variant
+reached `-12` via two `reconciliation_correction -5` rows.
+
+Audited 2026-08-15. The stated mechanism is not reachable in current code, and
+the proposed fix would introduce a defect:
+
+**Receive correctly does not push.** `shopifyInventorySync.service.ts` uses
+`inventoryAdjustQuantities` — delta-based, not absolute. Receive and stow move
+the same physical units through two stages of one building (ROOT is the
+warehouse root for multi-warehouse; receive → stow is an internal transfer, not
+a second entry). Pushing a delta at both stages would report each unit twice —
+the 200% overstate shape that RT2-AUD-22 fixed for refunds. One push per unit,
+and stow owns it: that is where stock reaches a real bin and becomes pickable.
+The `reason: 'received'` string hardcoded in the stow push is a leftover from
+before that boundary was settled.
+
+**The webhook does not reconcile.** `handleInventoryLevelUpdate.ts` §182–193
+declares an explicit observation-only contract — it must not create
+`inventory_movements`, change physical inventory, or reconcile against
+`WH-{shopId}-ROOT`. All three `.insert()` calls in the file target
+`domain_events`.
+
+**So the corrections came from something else.** The `-12` was real, but its
+cause is unidentified. The only non-script code path handling
+`reconciliation_correction` is `historicalCanonicalRepair.service.ts`.
+Re-scoping requires production data — the dev DB holds zero
+`reconciliation_correction` rows and no location carries an
+`external_location_id`, so neither the damage nor the stow push is reproducible
+locally.
+
+Do not implement a receive-side Shopify push against the original wording.
 
 ### BATCH-CANCEL-ORPHAN-01 (P2)
 The unwind touches neither `pick_batches` nor `pick_batch_orders`. Batch
