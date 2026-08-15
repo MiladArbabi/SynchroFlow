@@ -736,3 +736,20 @@ Schema history:
 `warehouse_locations.orientation` remains geometric rotation in degrees and is
 not used as dock-facing truth.
 
+### ZONE-SHAPE-01c-ii — dock creation defaults to `none`
+
+`POST /api/v1/floor-planning/zones` now writes `dock_face='none'` when a
+`ship`/`receive` zone is created without an explicit direction. Non-dock zone
+types remain `NULL` — migration 0150's check constraint rejects any face on
+other types.
+
+Rationale: `NULL` means Auto, and Auto renders a solid slab whenever geometry
+is ambiguous (`DOCK_BAY_AMBIGUITY = 0.15`). That reads as a settled merchant
+choice nobody made. `none` is the same visual result stated honestly, and the
+merchant changes it from the Floor Planning inspector.
+
+Consequence: explicit `dock_face: null` is no longer reachable at creation for
+dock zones. Auto remains reachable via `PATCH`, which treats `null` distinctly.
+
+Existing rows are untouched — this is creation-time only. Legacy ambiguous docks
+remain open as ZONE-SHAPE-01c; surfacing them in the inspector is ZONE-SHAPE-01d.

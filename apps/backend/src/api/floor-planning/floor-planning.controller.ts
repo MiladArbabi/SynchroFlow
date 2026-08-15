@@ -719,7 +719,14 @@ export async function httpCreateZone(req: Request, res: Response) {
         orientation: orientation ?? 0,
         rack_levels: rack_levels ?? null,
         zone_type: effectiveZoneType,
-        dock_face: dock_face ?? null,
+        // ZONE-SHAPE-01c-ii: a dock created without explicit direction defaults
+        // to 'none' (solid, honest, merchant-changeable) rather than NULL/Auto.
+        // Auto silently renders solid when geometry is ambiguous, which reads as
+        // a settled choice the merchant never made. Non-dock zones must stay
+        // NULL — the 0150 check constraint rejects any face on other types.
+        dock_face: isDockZoneType(effectiveZoneType)
+          ? (dock_face ?? 'none')
+          : null,
       });
 
       return resolvedWarehouseId;
