@@ -753,3 +753,29 @@ dock zones. Auto remains reachable via `PATCH`, which treats `null` distinctly.
 
 Existing rows are untouched — this is creation-time only. Legacy ambiguous docks
 remain open as ZONE-SHAPE-01c; surfacing them in the inspector is ZONE-SHAPE-01d.
+
+### ZONE-SHAPE-01c-i' — seeded docks state their facing
+
+All three seed sites now write an explicit `dock_face`:
+
+| Site | RECEIVE-1 | SHIP-1 |
+|---|---|---|
+| `apps/backend/seeds/dev_seed.ts` (two blocks) | `east` | `east` |
+| `apps/backend/src/scripts/seed_reviewer.ts` | `west` | `south` |
+
+Auto could not be relied on. Against the dev layout's world box, SHIP-1 sits
+0.1007 from its second-nearest edge — inside `DOCK_BAY_AMBIGUITY` (0.15) — so
+Auto correctly declines and the dock renders solid. For a seeded warehouse the
+layout's author *is* the merchant, so declaring the face is stating intent, not
+inferring it from ambiguous geometry.
+
+`dev_seed` docks share the easternmost column (x 9-11); `east` is also
+viewer-facing under the isometric projection, so the carve is visible.
+
+`seed_reviewer`'s RECEIVE-1 centres at (3, 2.5) — genuinely the west edge. West
+faces away from the viewer, so its carve will not be visible. That is a
+rendering limitation tracked as ZONE-SHAPE-01a, not a reason to misstate the
+layout.
+
+Not runtime-verified — proving it requires a reseed, which destroys the dev
+database. Verify on the next natural reseed.

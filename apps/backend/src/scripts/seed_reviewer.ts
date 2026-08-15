@@ -156,16 +156,21 @@ async function main(): Promise<void> {
 
     // Nine operational zones matching the isometric canvas layout.
     // Positions are in metres from top-left origin; width/depth drive 3D geometry.
+    // ZONE-SHAPE-01c-i': dock facing is explicit merchant truth, not inferred.
+    // RECEIVE-1 centres at (3, 2.5) — genuinely the west edge; note west faces
+    // away from the viewer under the isometric projection, so its carve is not
+    // visible. That is a rendering limitation (ZONE-SHAPE-01a), not a reason to
+    // misstate the layout.
     const zones: Array<{
-      code: string; zone_type: string;
+      code: string; zone_type: string; dock_face?: 'north' | 'south' | 'east' | 'west' | 'none';
       x: number; y: number; w: number; d: number; levels: number | null;
     }> = [
-      { code: 'RECEIVE-1',    zone_type: 'receive',    x: 0,  y: 0,  w: 6, d: 5,  levels: null },
+      { code: 'RECEIVE-1',    zone_type: 'receive',    dock_face: 'west',  x: 0,  y: 0,  w: 6, d: 5,  levels: null },
       { code: 'A-RACK',       zone_type: 'storage',    x: 7,  y: 0,  w: 6, d: 9,  levels: 4    },
       { code: 'B-RACK',       zone_type: 'storage',    x: 14, y: 0,  w: 6, d: 9,  levels: 4    },
       { code: 'C-RACK',       zone_type: 'pick',       x: 21, y: 0,  w: 6, d: 9,  levels: 3    },
       { code: 'PACK-1',       zone_type: 'pack',       x: 0,  y: 11, w: 6, d: 5,  levels: null },
-      { code: 'SHIP-1',       zone_type: 'ship',       x: 7,  y: 11, w: 6, d: 5,  levels: null },
+      { code: 'SHIP-1',       zone_type: 'ship',       dock_face: 'south', x: 7,  y: 11, w: 6, d: 5,  levels: null },
       { code: 'RETURNS-1',    zone_type: 'returns',    x: 14, y: 11, w: 6, d: 5,  levels: null },
       { code: 'QUARANTINE-1', zone_type: 'quarantine', x: 21, y: 11, w: 4, d: 5,  levels: null },
       { code: 'KITTING-1',    zone_type: 'kitting',    x: 26, y: 11, w: 4, d: 5,  levels: null },
@@ -178,6 +183,7 @@ async function main(): Promise<void> {
           parent_location_code: 'WH-01', type: 'lane', active: true,
           position_x: z.x, position_y: z.y, width: z.w, depth: z.d,
           orientation: 0, rack_levels: z.levels, zone_type: z.zone_type,
+          dock_face: z.dock_face ?? null,
         })
         .onConflict(['shop_id', 'location_code']).ignore();
     }

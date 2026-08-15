@@ -272,9 +272,14 @@ export async function seed(knex: Knex): Promise<void> {
 
     // Operational work zones demonstrate map colours without changing pick-stock assignments.
     { location_code: 'PACK-1',       barcode: 'LOC-PACK-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 2.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'pack' },
-    { location_code: 'RECEIVE-1',    barcode: 'LOC-RECEIVE-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 2.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'receive' },
-    { location_code: 'RETURNS-1',    barcode: 'LOC-RETURNS-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 5.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'returns' },
-    { location_code: 'SHIP-1',       barcode: 'LOC-SHIP-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 5.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'ship' },
+    // ZONE-SHAPE-01c-i': seeded docks state their facing explicitly. Auto cannot
+    // be relied on — SHIP-1 sits 0.1007 from its second-nearest edge, inside the
+    // 0.15 ambiguity guard, so Auto declines and the dock renders solid. Both
+    // docks occupy the easternmost column (x 9-11); east is also viewer-facing
+    // under the isometric projection, so the carve is visible.
+    { location_code: 'RECEIVE-1',    barcode: 'LOC-RECEIVE-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 2.0, width:2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'receive', dock_face: 'east' },
+    { location_code: 'RETURNS-1',    barcode: 'LOC-RETURNS-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 5.0, width:2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'returns' },
+    { location_code: 'SHIP-1',       barcode: 'LOC-SHIP-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 5.0, width:2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'ship', dock_face: 'east' },
     { location_code: 'QUARANTINE-1', barcode: 'LOC-QUARANTINE-1', type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 8.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'quarantine' },
     { location_code: 'KITTING-1',    barcode: 'LOC-KITTING-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 8.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'kitting' },
 
@@ -721,9 +726,10 @@ export async function seed(knex: Knex): Promise<void> {
 
       // Keep full-data operational zones aligned with the minimal development seed.
       { location_code: 'PACK-1',       barcode: 'LOC-PACK-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 2.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'pack' },
-      { location_code: 'RECEIVE-1',    barcode: 'LOC-RECEIVE-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 2.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'receive' },
+      // ZONE-SHAPE-01c-i': dock facing kept identical to the minimal seed above.
+      { location_code: 'RECEIVE-1',    barcode: 'LOC-RECEIVE-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 2.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'receive', dock_face: 'east' },
       { location_code: 'RETURNS-1',    barcode: 'LOC-RETURNS-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 5.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'returns' },
-      { location_code: 'SHIP-1',       barcode: 'LOC-SHIP-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 5.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'ship' },
+      { location_code: 'SHIP-1',       barcode: 'LOC-SHIP-1',       type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 5.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'ship', dock_face: 'east' },
       { location_code: 'QUARANTINE-1', barcode: 'LOC-QUARANTINE-1', type: 'bin', parent_location_code: rootLocationCode, position_x: 7.0, position_y: 8.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'quarantine' },
       { location_code: 'KITTING-1',    barcode: 'LOC-KITTING-1',    type: 'bin', parent_location_code: rootLocationCode, position_x: 9.0, position_y: 8.0, width: 2.0, depth: 1.5, orientation: 0, rack_levels: 1, zone_type: 'kitting' },
 
