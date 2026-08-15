@@ -131,11 +131,11 @@ export function LifecycleRouteHost() {
     ? stateBackgroundLocation ?? lastNonSettingsLocation.current
     : null;
 
-  console.log('[ROUTE_HOST_RENDER]', {
+  /* console.log('[ROUTE_HOST_RENDER]', {
     phase,
     readiness,
     ts: performance.now(),
-  });
+  }); */
 
   // FT0 must be checked BEFORE FT_MINUS_ONE.
   // After OAuth, phase briefly stays FT_MINUS_ONE on the client

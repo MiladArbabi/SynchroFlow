@@ -197,10 +197,10 @@ export function LifecycleProvider({
       try {
         const res = await getFt2Readiness();
 
-        console.info('[LIFECYCLE][READINESS_SYNC]', {
+        /* console.info('[LIFECYCLE][READINESS_SYNC]', {
           ready: res?.ready,
           ts: performance.now(),
-        });
+        }); */
 
         if (!cancelled) {
           setReadiness(res);
