@@ -288,10 +288,22 @@ FT0 is edge-triggered and non-retrying. If it fails:
 
 ## 8. Bootstrapping a Test Tenant Offline (FT_MINUS_ONE → FT2)
 
-Verified end to end 2026-08-07 against a running `npm run dev` + `npm run dev:worker`.
-Produces the reviewer's exact tenant shape: one warehouse root, **zero bins**,
-stock unlocated at `WH-{shopId}-ROOT`. Use this instead of `dev_seed`, which
-builds 22 locations including 18 bins and hid SHOP-REV-02 for seven sprints.
+Verified end to end against the Shopify-reviewer path: one warehouse root,
+**zero bins**, stock at `WH-{shopId}-ROOT`. Use this instead of `dev_seed`,
+which builds preconfigured bins and does not represent a fresh install.
+
+### FRESH-INSTALL-04 release regression ladder
+
+| Stage | Required invariant |
+| --- | --- |
+| Post-OAuth, synced, zero bins | Orders remain releasable from warehouse root |
+| One empty pick bin created | Orders remain releasable from warehouse root |
+| Partial stow | Binned stock is preferred; remaining root stock stays releasable |
+| Fully stowed | Pick-bin stock is preferred; root remains valid if stock exists there |
+
+`tests/integration/fresh-install-release-path.test.ts` protects the critical
+zero-bin → one-empty-bin transition through the real release and floor-planning
+HTTP endpoints. Creating an empty bin must never make root inventory unavailable.
 
 > ⚠️ **Step order is load-bearing.** The `integrations` row must exist BEFORE
 > the seeder runs. FT0 is edge-triggered and non-retrying (§5 rule 4): if

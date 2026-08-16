@@ -46,16 +46,20 @@ import { encrypt } from 'api-src/security/encryption.service';
 const app = createApp();
 
 /** Drains every unprocessed domain event for the shop, oldest first. */
-async function pumpEvents(shopId: number) {
+async function pumpEvents(shopId: number, afterId = 0) {
   const rows = await withTenant(shopId, (trx) =>
-    trx('domain_events').where({ shop_id: shopId }).orderBy('id', 'asc').select('id')
+    trx('domain_events')
+      .where({ shop_id: shopId })
+      .andWhere('id', '>', afterId)
+      .orderBy('id', 'asc')
+      .select('id')
   );
 
   for (const row of rows) {
     await runWithTenantContext(shopId, () => processDomainEvent(row.id));
   }
 
-  return rows.length;
+  return rows.length > 0 ? Number(rows[rows.length - 1].id) : afterId;
 }
 
 describe('fresh install: install -> lifecycle ladder -> batch release', () => {
@@ -68,7 +72,7 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
     process.env.JWT_SECRET = process.env.JWT_SECRET || 'test_jwt_secret';
   });
 
-  it('releases a batch against root-only inventory', async () => {
+it('keeps root inventory releasable across zero-bin -> one-empty-bin transition', async () => {
     // ---- 1. install ----------------------------------------------------
     const timestamp = String(Math.floor(Date.now() / 1000));
     const params = { shop: shopDomain, timestamp };
@@ -127,9 +131,10 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
     // Two passes: the first drains orders/create, whose post-commit hook emits
     // first_insight_delivered; the second drains that and the ft0.completed it
     // produces. Each pass processes events the previous pass created.
-    await pumpEvents(shopId);
-    await pumpEvents(shopId);
-    await pumpEvents(shopId);
+    let eventCursor = 0;
+    eventCursor = await pumpEvents(shopId, eventCursor);
+    eventCursor = await pumpEvents(shopId, eventCursor);
+    eventCursor = await pumpEvents(shopId, eventCursor);
 
     const readiness = await withTenant(shopId, (trx) =>
       trx('system_readiness_state').where({ shop_id: shopId }).first()
@@ -162,14 +167,76 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
     expect(atFt2?.phase).toBe('FT2');
     expect(atFt2?.user_id).toBe(ghostUser.id);
 
-    // ---- 4. the endpoint the reviewer hit ------------------------------
-    const release = await request(app)
+    // ---- 4. zero-bin release -------------------------------------------
+    const releasableOrders = await withTenant(shopId, (trx) =>
+      trx('orders as o')
+        .join(
+          'order_fulfillment_status as ofs',
+          'ofs.lasyncro_order_id',
+          'o.lasyncro_order_id'
+        )
+        .where('o.shop_id', shopId)
+        .whereIn('ofs.status', ['pending', 'processing'])
+        .whereNotExists(
+          trx('order_constraints as oc')
+            .where('oc.lasyncro_order_id', trx.raw('o.lasyncro_order_id'))
+            .where('oc.is_active', true)
+            .select(1)
+        )
+        .orderBy('o.order_created_at', 'asc')
+        .select('o.lasyncro_order_id')
+    );
+
+    expect(releasableOrders.length).toBeGreaterThanOrEqual(2);
+
+    const zeroBinOrderId = releasableOrders[0].lasyncro_order_id;
+    const oneBinOrderId = releasableOrders[1].lasyncro_order_id;
+
+    const zeroBinRelease = await request(app)
       .post('/api/v1/wms/batch/release')
       .set('Authorization', `Bearer ${token}`)
-      .send({});
+      .send({
+        priority_order_ids: [zeroBinOrderId],
+        exclusive: true,
+      });
 
-    // 200 is the no-op path SHOP-REV-03 stopped swallowing — it must not pass.
-    expect(release.status).toBe(201);
+    expect(zeroBinRelease.status).toBe(201);
+    expect(zeroBinRelease.body.order_count).toBe(1);
+
+    // ---- 5. create one empty pick bin ----------------------------------
+    const emptyBinCode = 'PICK-EMPTY-01';
+
+    const createBin = await request(app)
+      .post('/api/v1/floor-planning/zones')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        location_code: emptyBinCode,
+        type: 'bin',
+        parent_location_code: rootLocationCode,
+        zone_type: 'pick',
+      });
+
+    expect(createBin.status).toBe(201);
+
+    const emptyBinStock = await withTenant(shopId, (trx) =>
+      trx('inventory_truth').where({
+        shop_id: shopId,
+        location_code: emptyBinCode,
+      })
+    );
+    expect(emptyBinStock).toHaveLength(0);
+
+    // ---- 6. release must still use root -------------------------------
+    const oneBinRelease = await request(app)
+      .post('/api/v1/wms/batch/release')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        priority_order_ids: [oneBinOrderId],
+        exclusive: true,
+      });
+
+    expect(oneBinRelease.status).toBe(201);
+    expect(oneBinRelease.body.order_count).toBe(1);
 
     const holds = await withTenant(shopId, (trx) =>
       trx('inventory_movements').where({
@@ -178,6 +245,7 @@ describe('fresh install: install -> lifecycle ladder -> batch release', () => {
         location_code: rootLocationCode,
       })
     );
-    expect(holds.length).toBeGreaterThan(0);
+
+    expect(holds.length).toBeGreaterThanOrEqual(2);
   }, 60000);
 });
