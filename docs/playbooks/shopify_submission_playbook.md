@@ -881,33 +881,35 @@ aligned:
 
     inventory_truth.available_quantity > 0
 
-at a warehouse location where:
+at an active warehouse location where:
 
-    warehouse_locations.active = true
-    AND warehouse_locations.zone_type = 'pick'
-    AND warehouse_locations.type = 'bin'
+    (warehouse_locations.zone_type = 'pick'
+     AND warehouse_locations.type = 'bin')
+    OR warehouse_locations.type = 'warehouse'
 
 ### INV-BLOCK-19 amendment (2026-08-10)
 
 The original rule read `type IN ('bin', 'warehouse')` and ignored
 `zone_type` entirely. Every staging and exception zone — receive, returns,
 pack, ship, kitting, problem, quarantine — is `type = 'bin'`, so all of
-them counted as sellable stock. Stock is pickable only once it has been
-stowed into an active pick bin: a received unit must be stowed, and a
-returned unit inspected and re-stowed, before either becomes pickable.
-`type = 'bin'` is required alongside `zone_type` because pick LANES also
-carry `zone_type = 'pick'` and are frame geometry, not storage.
+them counted as sellable stock. Pickable stock is real sellable stock held either in an active pick bin
+or at the warehouse root. Staging and exception zones remain excluded.
+`type = 'bin'` is required alongside `zone_type = 'pick'` because pick
+LANES are frame geometry, not storage.
 
-FRESH-INSTALL FALLBACK (preserves SHOP-REV-02, Shopify ref 102766):
-a tenant at install has one warehouse root and zero bins. Warehouse-root
-therefore counts as pickable ONLY while the tenant has no active pick bin
-at all. Once a pick bin exists, root stock is unstowed stock and is
-correctly excluded — it should surface as a stow task, not as availability.
+FRESH-INSTALL / STOW INVARIANT (Shopify ref 102766):
+a tenant may begin with all synced stock at its warehouse root and zero
+bins. Warehouse-root stock remains pickable after the first empty pick bin
+is created and during partial stow. Stowed bin stock is preferred during
+reservation, but root stock remains valid availability until physically
+moved. Unstowed root stock should also surface as stow work in the UI;
+stow-task visibility must never create fake inventory unavailability.
 
-Both surfaces now call the shared helper in
+The constraint evaluator, release-time availability pre-check, and batch
+reservation all call the shared helper in
 apps/backend/src/services/inventory/pickableLocation.ts. Do not re-inline
-the predicate: a single definition is what makes divergence between
-eligibility and reservation unreachable.
+the predicate. The shared predicate keeps the definition aligned; release-time
+re-evaluation keeps eligibility and reservation aligned in time.
 
 Verified 2026-08-10 on both branches:
   shop 1 (12 pick bins) — 3 blocked / 8 eligible, unchanged from baseline
