@@ -1,7 +1,6 @@
 import { Knex } from 'knex';
 import { ConstraintEvaluationResult } from '../constraint.types.js';
 import {
-  hasActivePickBins,
   pickableLocationCondition,
 } from '../../inventory/pickableLocation.js';
 
@@ -10,8 +9,6 @@ export async function evaluateInventoryConstraint(
   orderId: string,
   shopId: number
 ): Promise<ConstraintEvaluationResult[]> {
-
-  const hasPickBins = await hasActivePickBins(trx, shopId);
 
   /**
    * SOURCE OF TRUTH: inventory_truth
@@ -34,8 +31,9 @@ export async function evaluateInventoryConstraint(
    * inventory — so bin-only counting made every order oversell-blocked
    * and the order pool unreachable. Shopify review ref 102766.
    *
-   * INV-BLOCK-19: counts active PICK bins only. Warehouse-root counts
-   * solely as the fresh-install fallback — see pickableLocation.ts.
+   * FRESH-STOW-CLIFF-01: counts active pick bins AND warehouse root,
+   * unconditionally — root holds real unstowed stock. See
+   * pickableLocation.ts for why the bin-existence conditional was removed.
    * Lanes stay excluded: zone_type='pick' but type='lane', frame
    * geometry that never holds stock.
    *
@@ -70,7 +68,7 @@ export async function evaluateInventoryConstraint(
       this.on('wl.location_code', '=', 'it.location_code')
         .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
         .andOnVal('wl.active', true)
-        .andOn(pickableLocationCondition(trx, hasPickBins));
+        .andOn(pickableLocationCondition(trx));
     })
     .select(
       'demand.lasyncro_variant_id',

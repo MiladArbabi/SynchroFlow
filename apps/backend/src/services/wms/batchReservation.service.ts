@@ -1,7 +1,6 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import {
-  hasActivePickBins,
   pickableLocationCondition,
 } from '../inventory/pickableLocation.js';
 
@@ -316,12 +315,12 @@ export async function reserveBatchInventory(
     aggregateRequiredQuantities(lineItems);
 
   const variantIds = [...requiredByVariant.keys()];
-  const hasPickBins = await hasActivePickBins(trx, shopId);
 
   /**
-   * SHOP-REV-02: pickable = active bin OR warehouse root. Must match
-   * inventoryConstraintEvaluator's filter exactly — that one decides
-   * which orders are eligible, this one decides which are reservable.
+   * FRESH-STOW-CLIFF-01: pickable = active pick bin OR warehouse root,
+   * unconditionally. Shares one stateless helper with
+   * inventoryConstraintEvaluator — that one decides which orders are
+   * eligible, this one decides which are reservable.
    * A bin-only filter here threw on every tenant whose stock had not
    * been stowed, which is every tenant at install (Shopify ref 102766).
    *
@@ -337,7 +336,7 @@ export async function reserveBatchInventory(
         this.on('wl.location_code', '=', 'it.location_code')
             .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
             .andOnVal('wl.active', true)
-            .andOn(pickableLocationCondition(trx, hasPickBins));
+            .andOn(pickableLocationCondition(trx));
       })
       .where('it.shop_id', shopId)
       .whereIn('it.lasyncro_variant_id', variantIds)
