@@ -170,6 +170,16 @@ export function useReleaseBatch() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
       qc.invalidateQueries({ queryKey: ['wms', 'batches'] });
+      /**
+       * FLOW-BLOCKED-TRANSITION-UX-01
+       * Release can move an order into Blocked (newly_blocked_orders), so
+       * the constrained-orders queue is now stale too. Without this the
+       * Blocked panel waited out its own 10s poll while the banner already
+       * said the order had moved — the lag users saw. Prefix key: matches
+       * every {page, limit, constraint_type} variant, including
+       * useModuleHealth's limit:1.
+       */
+      qc.invalidateQueries({ queryKey: ['orders', 'constrained'] });
     },
   });
 }

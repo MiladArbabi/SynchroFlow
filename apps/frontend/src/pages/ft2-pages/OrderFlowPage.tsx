@@ -442,6 +442,11 @@ export default function OrderFlowPage() {
    * merchant may need to act on. Dismissed explicitly.
    */
   const [newlyBlocked, setNewlyBlocked] = useState<NewlyBlockedOrder[]>([]);
+  /** O(1) lookup for the arrival highlight — see the blocked card's animation. */
+  const newlyBlockedIds = useMemo(
+    () => new Set(newlyBlocked.map((o) => o.order_id)),
+    [newlyBlocked],
+  );
 
   const isLoading =
     constrainedQuery.isLoading ||
@@ -717,6 +722,14 @@ export default function OrderFlowPage() {
               borderRadius: '10px',
             }}
           >
+            {/* §18: severity dot mirrors the success banner's accent dot at the
+                same position. --warning-ink, not --critical-ink: an order moving
+                to Blocked is recoverable (stock arrives, it returns to the pool),
+                and red would collide with the release-failure banner directly
+                below, which is the genuine error state. Colour is reinforcement
+                only — the text carries the meaning (WCAG 1.4.1). */}
+            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'var(--warning-ink)', flexShrink: 0, mt: 0.625 }} />
+
             <Box sx={{ flex: 1 }}>
               <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
                 <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
@@ -892,7 +905,12 @@ export default function OrderFlowPage() {
                       </Typography>
                     )}
 
-                    {releaseSuccess.orderCount === 0 && releaseSuccess.skippedOrders.length === 0 && (
+                    {/* FLOW-BLOCKED-TRANSITION-UX-01: newlyBlocked is a third
+                        outcome this fallback predates. When release moved every
+                        order to Blocked, the pool did NOT change underneath the
+                        merchant and refreshing will not help — the banner above
+                        already states what happened and what to do. */}
+                    {releaseSuccess.orderCount === 0 && releaseSuccess.skippedOrders.length === 0 && newlyBlocked.length === 0 && (
                       <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>
                         No orders were released. The release pool may have changed. Refresh and try again.
                       </Typography>
@@ -981,6 +999,37 @@ export default function OrderFlowPage() {
                                     gap: 0.5,
                                     cursor: 'pointer',
                                     '&:hover': { borderColor: 'var(--accent-border)', bgcolor: 'var(--bg-2)' },
+                                    /**
+                                     * FLOW-BLOCKED-TRANSITION-UX-01
+                                     * A card arriving here during release appears silently in a
+                                     * column the operator is not looking at. Two seconds of
+                                     * highlight marks WHERE the order went; the banner above
+                                     * already says THAT it went — colour is reinforcement only
+                                     * (WCAG 1.4.1), so nothing is lost if it is missed.
+                                     * --warning-ink per playbook §18: recoverable, not critical.
+                                     * Inline @keyframes matches the app's established convention
+                                     * (OverviewFT2Page, TrialCountdownChip) over importing
+                                     * keyframes from @mui/system.
+                                     * forwards holds the resolved end state so the card settles
+                                     * into its normal treatment rather than snapping back.
+                                     */
+                                    ...(newlyBlockedIds.has(order.order_id) && {
+                                      animation: 'flowBlockedArrive 2s ease-out forwards',
+                                      '@keyframes flowBlockedArrive': {
+                                        '0%': {
+                                          backgroundColor: 'var(--warning-ghost)',
+                                          borderColor: 'var(--warning-ink)',
+                                        },
+                                        '70%': {
+                                          backgroundColor: 'var(--warning-ghost)',
+                                          borderColor: 'var(--warning-ink)',
+                                        },
+                                        '100%': {
+                                          backgroundColor: 'transparent',
+                                          borderColor: 'var(--rule)',
+                                        },
+                                      },
+                                    }),
                                   }}
                                 >
                                   {/*

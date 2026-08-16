@@ -51,9 +51,12 @@ Replace both existing `:root` blocks with this single definition. Use everywhere
   --rule-2:        #D1CFC8;
 
   /* Pulse severity — live risk/status metrics only, not persisted state (--confirm-*) or deltas (--ft2-infoblock-diff-up) */
+  /* Pulse severity — live risk/status metrics only, not persisted state (--confirm-*) or deltas (--ft2-infoblock-diff-up) */
   --critical-ink:  #E5484D;
   --warning-ink:   #EAB308;
   --good-ink:      #2E7D32;
+  /* Warning tint — transient severity fills (arrival highlights, warning banners). Dark: rgba(234,179,8,0.12) */
+  --warning-ghost: #FEF9E7;
 
   /* Space dark (dark mode backgrounds) */
   --space-1:       #151D29;
