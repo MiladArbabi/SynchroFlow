@@ -408,6 +408,22 @@ Live-verified against production: a request to / with shop and hmac params now r
 
 This closes the last known gap in the real App Store install path — the ghost-shop-creation and billing_provider stamping logic (SHB-01/03/04/18) is now actually reachable by a genuine Shopify-initiated install, not just correct in isolation.
 
+### FE-CHUNK-LOAD-01 — stale hashed asset handling
+
+Production serves the React app through `express.static()` followed by the SPA
+`app.get('*')` fallback. A browser tab can retain an older hashed dynamic-import
+URL across a deployment. If that old `/assets/*` file no longer exists, it must
+not fall through to the SPA fallback and receive `index.html`.
+
+Verified failure shape:
+- stale hashed chunk returned `200 text/html`
+- current hashed chunk returned `200 application/javascript`
+- refreshing the browser fixed the page because the refreshed HTML referenced the current chunk
+
+The SPA fallback therefore explicitly excludes `/assets/*` as well as `/api/*`.
+Missing assets now continue to Express's normal `404` handling, while real SPA
+deep links such as `/overview` still return `200` with `index.html`.
+
 ### Reviewer account — actual state (verified 2026-08-02)
 
 `contact@lasyncro.com` lives on **shop_id 1 ("Shopify's Shop")** — the general

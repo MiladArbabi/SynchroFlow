@@ -218,7 +218,13 @@ if (process.env.NODE_ENV === 'production') {
     app.use(express.static(frontendDistPath));
 
     app.get('*', (req, res, next) => {
-      if (req.path.startsWith('/api/')) return next();
+      if (
+        req.path.startsWith('/api/') ||
+        req.path.startsWith('/assets/')
+      ) {
+        return next();
+      }
+
       res.sendFile(frontendIndexPath);
     });
   } else {
