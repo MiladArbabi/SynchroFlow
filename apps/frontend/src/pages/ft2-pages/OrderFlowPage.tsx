@@ -67,6 +67,7 @@ import {
   useBulkSetPriority,
   type PoolOrder,
   type SkippedReleaseOrder,
+  NewlyBlockedOrder,
 } from '../wms/useOrderPool';
 import { usePickBatches } from '../wms/usePickBatches';
 import { useWmsOperators } from '../wms/useWmsOperators';
@@ -130,6 +131,12 @@ const formatSkippedOrder = (order: SkippedReleaseOrder): string => {
 
   return `${orderLabel} · ${order.label}`;
 };
+
+/** Order number for an order release moved to Blocked (FLOW-INVENTORY-TRIGGER-GAP-01). */
+const formatNewlyBlockedOrder = (order: NewlyBlockedOrder): string =>
+  order.external_order_id
+    ? `#${order.external_order_id}`
+    : order.order_id.slice(0, 8).toUpperCase();
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -427,6 +434,15 @@ export default function OrderFlowPage() {
     skippedOrders: SkippedReleaseOrder[];
   } | null>(null);
 
+  /**
+   * FLOW-INVENTORY-TRIGGER-GAP-01
+   * Orders that release moved to Blocked. Kept separate from
+   * releaseSuccess and NOT auto-cleared: releaseSuccess is a transient
+   * receipt for something that went right, this is a state change the
+   * merchant may need to act on. Dismissed explicitly.
+   */
+  const [newlyBlocked, setNewlyBlocked] = useState<NewlyBlockedOrder[]>([]);
+
   const isLoading =
     constrainedQuery.isLoading ||
     orderPoolQuery.isLoading ||
@@ -562,6 +578,7 @@ export default function OrderFlowPage() {
         orderCount: result.order_count,
         skippedOrders: result.skipped_orders ?? [],
       });
+      setNewlyBlocked(result.newly_blocked_orders ?? []);
       setTimeout(() => setReleaseSuccess(null), 9000);
     } catch (err) {
       /**
@@ -676,6 +693,66 @@ export default function OrderFlowPage() {
             <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
               Couldn’t load part of the order flow. Refresh to retry.
             </Typography>
+          </Box>
+        )}
+
+        {/* FLOW-INVENTORY-TRIGGER-GAP-01
+            Orders the release attempt moved out of the pool and into Blocked
+            because their stock was gone. Sits above the release-failure slot
+            and persists until dismissed: this is a state change the merchant
+            has to act on, not a transient receipt like releaseSuccess.
+            Distinguished from the accent banners by surface treatment and by
+            its own wording — colour is reinforcement only (WCAG 1.4.1). */}
+        {newlyBlocked.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 1.5,
+              px: 2,
+              py: 1.25,
+              mb: 3,
+              bgcolor: 'var(--surface)',
+              border: '1px solid var(--rule)',
+              borderRadius: '10px',
+            }}
+          >
+            <Box sx={{ flex: 1 }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-2)' }}>
+                <Box component="span" sx={{ fontWeight: 600, color: 'var(--ink)' }}>
+                  {newlyBlocked.length} order{newlyBlocked.length !== 1 ? 's' : ''} moved to Blocked
+                </Box>
+                {' · '}
+                {newlyBlocked.slice(0, 3).map(formatNewlyBlockedOrder).join(', ')}
+                {newlyBlocked.length > 3 && ` +${newlyBlocked.length - 3} more`}
+              </Typography>
+              <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }}>
+                There isn't enough stock in a pickable location to fill{' '}
+                {newlyBlocked.length !== 1 ? 'these orders' : 'this order'}. Find{' '}
+                {newlyBlocked.length !== 1 ? 'them' : 'it'} under Blocked Orders → Out of Stock.
+              </Typography>
+            </Box>
+            <Box
+              component="span"
+              role="button"
+              tabIndex={0}
+              aria-label="Dismiss"
+              onClick={() => setNewlyBlocked([])}
+              onKeyDown={(e: React.KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') setNewlyBlocked([]);
+              }}
+              sx={{
+                flexShrink: 0,
+                cursor: 'pointer',
+                fontSize: 14,
+                lineHeight: 1,
+                mt: 0.25,
+                color: 'var(--ink-3)',
+                '&:hover': { color: 'var(--ink)' },
+              }}
+            >
+              ✕
+            </Box>
           </Box>
         )}
 

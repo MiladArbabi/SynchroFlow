@@ -81,12 +81,25 @@ export interface SkippedReleaseOrder {
   label: string;
 }
 
+/**
+ * FLOW-INVENTORY-TRIGGER-GAP-01: orders release found unsatisfiable and
+ * moved to Blocked during this call. Distinct from skipped_orders, which
+ * reports facts that already existed before the release attempt.
+ */
+export interface NewlyBlockedOrder {
+  order_id: string;
+  external_order_id: string | null;
+  block_type: string;
+  label: string;
+}
+
 export interface ReleaseBatchResult {
   pick_batch_id: string | null;
   order_count: number;
   total_line_items: number;
   total_units: number;
   skipped_orders: SkippedReleaseOrder[];
+  newly_blocked_orders: NewlyBlockedOrder[];
 }
 
 export function useOrderPool() {

@@ -5,6 +5,9 @@ import { v5 as uuidv5 } from 'uuid';
 import { dispatchNotification } from '../notifications/notificationDispatch.service.js';
 import { fireBatchReleasedAlert } from './wmsAlerts.service.js';
 import { reserveBatchInventory } from './batchReservation.service.js';
+import { pickableLocationCondition } from '../inventory/pickableLocation.js';
+import { evaluateOrderConstraints } from '../constraints/constraintEngine.js';
+import { projectOrderConstraints } from '../../projections/orderConstraintProjection.js';
 import { generateWmsBarcode } from './wmsOrderBarcode.service.js';
 
 /**
@@ -38,12 +41,44 @@ export interface SkippedReleaseOrder {
   label: string;
 }
 
+/**
+ * FLOW-INVENTORY-TRIGGER-GAP-01
+ * -----------------------------
+ * An order that release found unsatisfiable, whose constraints were
+ * re-evaluated and persisted as a result. DISTINCT from skipped_orders:
+ * every skipped_orders reason describes a fact that already existed in
+ * the data before the release attempt (already batched, status changed,
+ * not in pool, already blocked). This one is a state change CAUSED by
+ * the release attempt — the order left the pool and entered Blocked
+ * Orders during this call. Collapsing the two would tell the merchant
+ * "N orders not released" without saying that some of them just moved.
+ */
+export interface NewlyBlockedOrder {
+  order_id: string;
+  external_order_id: string | null;
+  block_type: string;
+  label: string;
+}
+
+/**
+ * FLOW-INVENTORY-TRIGGER-GAP-01: orders release found unsatisfiable and
+ * moved to Blocked during this call. Distinct from skipped_orders, which
+ * reports facts that already existed before the release attempt.
+ */
+export interface NewlyBlockedOrder {
+  order_id: string;
+  external_order_id: string | null;
+  block_type: string;
+  label: string;
+}
+
 export interface ReleaseBatchResult {
   pick_batch_id: string | null;
   order_count: number;
   total_line_items: number;
   total_units: number;
   skipped_orders: SkippedReleaseOrder[];
+  newly_blocked_orders: NewlyBlockedOrder[];
 }
 
 const RELEASE_CONSTRAINT_LABELS: Record<string, string> = {
@@ -211,6 +246,7 @@ export async function releaseBatch(
       total_line_items: 0,
       total_units: 0,
       skipped_orders: skippedOrders,
+      newly_blocked_orders: [],
     };
   }
 
@@ -229,7 +265,7 @@ export async function releaseBatch(
   const candidateIds = [...validPriorityIds, ...priorityFlaggedIds, ...remainingIds];
 
   // 4. Greedy fill up to max_batch_line_items ceiling — full orders only
-  const selectedOrderIds: string[] = [];
+  let selectedOrderIds: string[] = [];
   let runningLineItems = 0;
   let runningUnits = 0;
 
@@ -299,7 +335,7 @@ export async function releaseBatch(
    * per batch + variant + location, and applies each projection
    * mutation only when its movement was newly inserted.
    */
-  const allLineItems = await trx('order_line_items')
+let allLineItems = await trx('order_line_items')
     .whereIn('lasyncro_order_id', selectedOrderIds)
     .select(
       'lasyncro_order_id',
@@ -307,6 +343,259 @@ export async function releaseBatch(
       'lasyncro_variant_id',
       'quantity'
     );
+
+  /**
+   * FLOW-INVENTORY-TRIGGER-GAP-01 — RELEASE-TIME AVAILABILITY CHECK
+   * ---------------------------------------------------------------
+   * order_constraints is only rewritten when an order receives a domain
+   * event, and the inventory domain emits none (stow, receive and pick
+   * write inventory_truth directly). So an order evaluated while stock
+   * existed stays "ready" in the pool after the stock is gone, and
+   * reserveBatchInventory — one all-or-nothing call for the whole batch —
+   * threw a raw service error that killed the release for every order in
+   * it, including the ones that were perfectly satisfiable.
+   *
+   * Here we ask the same question reserveBatchInventory will ask, one
+   * order at a time, BEFORE committing to the batch. Orders that cannot
+   * be satisfied are re-evaluated through the canonical evaluator +
+   * projection path (no second writer, no second definition), which
+   * writes the inventory constraint that was missing. That removes them
+   * from the pool and surfaces them under Blocked Orders, so the merchant
+   * has a real state to act on instead of an order that silently fails
+   * to release on every attempt.
+   *
+   * Uses pickableLocationCondition — the same stateless predicate
+   * reserveBatchInventory uses, so the two cannot disagree.
+   *
+   * RACE: a concurrent release could consume stock between this check and
+   * the reservation below. reserveBatchInventory still takes FOR UPDATE
+   * and still throws on a genuine race — rare, and failing loudly there
+   * is correct. This check is for the common case: stock that was already
+   * gone before anyone clicked release.
+   */
+  const demandByOrder = new Map<string, Map<string, number>>();
+  for (const li of allLineItems) {
+    const perVariant = demandByOrder.get(li.lasyncro_order_id) ?? new Map();
+    perVariant.set(
+      li.lasyncro_variant_id,
+      (perVariant.get(li.lasyncro_variant_id) ?? 0) + Number(li.quantity)
+    );
+    demandByOrder.set(li.lasyncro_order_id, perVariant);
+  }
+
+  const variantIds = [
+    ...new Set(allLineItems.map((li) => li.lasyncro_variant_id)),
+  ];
+
+  const availabilityRows = variantIds.length
+    ? await trx('inventory_truth as it')
+        .join('warehouse_locations as wl', function () {
+          this.on('wl.location_code', '=', 'it.location_code')
+            .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+            .andOnVal('wl.active', true)
+            .andOn(pickableLocationCondition(trx));
+        })
+        .where('it.shop_id', shopId)
+        .whereIn('it.lasyncro_variant_id', variantIds)
+        .groupBy('it.lasyncro_variant_id')
+        .select(
+          'it.lasyncro_variant_id',
+          trx.raw('SUM(it.available_quantity)::integer as available_quantity')
+        )
+    : [];
+
+  const availableByVariant = new Map<string, number>(
+    availabilityRows.map((r: { lasyncro_variant_id: string; available_quantity: number }) => [
+      r.lasyncro_variant_id,
+      Number(r.available_quantity),
+    ])
+  );
+
+  /**
+   * Allocate greedily in the batch's own order so a shortfall lands on
+   * exactly one order rather than starving several partially. Same
+   * intent as allocateRequiredQuantities' bins-first fill.
+   */
+  const remainingByVariant = new Map(availableByVariant);
+  const unsatisfiableOrderIds: string[] = [];
+
+  for (const orderId of selectedOrderIds) {
+    const demand = demandByOrder.get(orderId);
+    if (!demand) {
+      throw new Error(
+        `[PICK_BATCH_SERVICE] Order ${orderId} was selected for release but has no line items. Refusing to release an empty order.`
+      );
+    }
+
+    const canSatisfy = [...demand.entries()].every(
+      ([variantId, qty]) => (remainingByVariant.get(variantId) ?? 0) >= qty
+    );
+
+    if (canSatisfy) {
+      for (const [variantId, qty] of demand.entries()) {
+        remainingByVariant.set(
+          variantId,
+          (remainingByVariant.get(variantId) ?? 0) - qty
+        );
+      }
+    } else {
+      unsatisfiableOrderIds.push(orderId);
+    }
+  }
+
+  const newlyBlockedOrders: NewlyBlockedOrder[] = [];
+
+  if (unsatisfiableOrderIds.length > 0) {
+    const externalIds = await trx('external_order_identity_map')
+      .whereIn('lasyncro_order_id', unsatisfiableOrderIds)
+      .select('lasyncro_order_id', 'external_order_id');
+
+    const externalById = new Map(
+      externalIds.map((r: { lasyncro_order_id: string; external_order_id: string }) => [
+        r.lasyncro_order_id,
+        r.external_order_id,
+      ])
+    );
+
+    for (const orderId of unsatisfiableOrderIds) {
+      /**
+       * Canonical path: evaluate, then persist. projectOrderConstraints
+       * owns the lifecycle (started_at, resolved_at, write_source) and
+       * is the only thing that writes order_constraints.
+       */
+      const orderRow = await trx('orders')
+        .where({ lasyncro_order_id: orderId, shop_id: shopId })
+        .first('aggregate_version');
+
+      if (!orderRow?.aggregate_version) {
+        /**
+         * Same invariant projection.engine.ts enforces. Throw rather than
+         * skip: unlike receiveJob's bulk revalidation, this order is being
+         * dropped from a batch right now. Silently failing to write its
+         * constraint would leave it in the pool, falsely releasable, and
+         * the merchant would be told it moved to Blocked when it did not.
+         */
+        throw new Error(
+          `[PICK_BATCH_SERVICE] Order ${orderId} has no aggregate_version; cannot persist the inventory constraint that release just derived.`
+        );
+      }
+
+      const evaluations = await evaluateOrderConstraints(trx, orderId, shopId);
+
+      /**
+       * PROJECTION WRITER BYPASS
+       * ------------------------
+       * order_constraints is guarded by
+       * enforce_projection_writer_order_constraints. This is a legitimate
+       * projection write — constraint revalidation after release found the
+       * stock gone — occurring outside the projection engine's own
+       * transaction. Same pattern and same justification as DF-04-FIX-01
+       * in receiveJob.service.ts. SET LOCAL scopes it to this transaction.
+       */
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+      await projectOrderConstraints(
+        trx,
+        orderId,
+        shopId,
+        orderRow.aggregate_version,
+        new Date(),
+        evaluations
+      );
+
+      newlyBlockedOrders.push({
+        order_id: orderId,
+        external_order_id: externalById.get(orderId) ?? null,
+        block_type: 'oversell',
+        label: RELEASE_CONSTRAINT_LABELS.inventory,
+      });
+    }
+
+    console.info('[PICK_BATCH_RELEASE_ORDERS_NEWLY_BLOCKED]', {
+      shopId,
+      pickBatchId,
+      newly_blocked_count: newlyBlockedOrders.length,
+      order_ids: unsatisfiableOrderIds,
+    });
+
+    selectedOrderIds = selectedOrderIds.filter(
+      (id) => !unsatisfiableOrderIds.includes(id)
+    );
+
+    allLineItems = allLineItems.filter(
+      (li) => !unsatisfiableOrderIds.includes(li.lasyncro_order_id)
+    );
+
+    /**
+     * Membership rows were inserted at step 5 for every selected order,
+     * before this check could know any were starved. Leaving them would
+     * make a newly-blocked order simultaneously blocked AND batched:
+     * the pool excludes on pick_batch_orders, so the order would vanish
+     * from both the pool and the batch it isn't really in, and
+     * in_batch_order_count would over-report. Also required before the
+     * empty-batch delete below, which the FK would otherwise reject.
+     */
+    await trx('pick_batch_orders')
+      .where({ pick_batch_id: pickBatchId, shop_id: shopId })
+      .whereIn('lasyncro_order_id', unsatisfiableOrderIds)
+      .delete();
+
+    /**
+     * Batch totals were computed during greedy fill (step 4) and already
+     * written to pick_batches. Dropping orders here invalidates them, so
+     * recompute from the surviving line items and correct the row —
+     * otherwise the batch reports units it will never contain and the
+     * pick UI's progress denominator is wrong.
+     */
+    runningLineItems = allLineItems.length;
+    runningUnits = allLineItems.reduce((sum, li) => sum + Number(li.quantity), 0);
+
+    await trx('pick_batches')
+      .where({ pick_batch_id: pickBatchId, shop_id: shopId })
+      .update({
+        total_line_items: runningLineItems,
+        total_units: runningUnits,
+        updated_at: new Date(),
+      });
+  }
+
+  /**
+   * EMPTY-BATCH GUARD (FLOW-INVENTORY-TRIGGER-GAP-01)
+   * -------------------------------------------------
+   * The pick_batches row was inserted at step 4, before the availability
+   * check above could know any order was starved. If every selected order
+   * turned out unsatisfiable, that row is now a batch with no orders:
+   * httpGetBatches excludes only pack_complete and cancelled, so a
+   * zero-order 'pending' batch would render as a claimable card in the
+   * Fulfillment rail with nothing in it, and would inflate the header's
+   * active-batch count (FLOW-COUNT-01).
+   *
+   * Deleting is safe here specifically because nothing has been reserved
+   * yet — this runs before reserveBatchInventory, so there is no
+   * inventory_movements ledger entry to strand and no inventory_truth
+   * decrement to unwind. Do NOT copy this delete to any point after
+   * reservation.
+   */
+  if (selectedOrderIds.length === 0) {
+    console.info('[PICK_BATCH_RELEASE_ALL_ORDERS_NEWLY_BLOCKED]', {
+      shopId,
+      pickBatchId,
+      newly_blocked_count: newlyBlockedOrders.length,
+    });
+
+    await trx('pick_batches')
+      .where({ pick_batch_id: pickBatchId, shop_id: shopId })
+      .delete();
+
+    return {
+      pick_batch_id: null,
+      order_count: 0,
+      total_line_items: 0,
+      total_units: 0,
+      skipped_orders: skippedOrders,
+      newly_blocked_orders: newlyBlockedOrders,
+    };
+  }
 
   await reserveBatchInventory(trx, {
     shopId,
@@ -404,5 +693,6 @@ export async function releaseBatch(
     total_line_items: runningLineItems,
     total_units: runningUnits,
     skipped_orders: skippedOrders,
+    newly_blocked_orders: newlyBlockedOrders,
   };
 }
