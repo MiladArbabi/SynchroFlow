@@ -1,0 +1,91 @@
+---
+title: "Understand the stowing workflow"
+description: "Learn how received stock moves from receiving into its warehouse storage location."
+category: "Stowing"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "stowing workflow"
+  - "stow inventory"
+  - "received stock"
+  - "warehouse bin"
+  - "location scan"
+searchAliases:
+  - "put stock away"
+  - "stow received inventory"
+  - "warehouse putaway"
+  - "move received stock"
+  - "stow task"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/stowing/complete-a-stow-task"
+  - "/help/stowing/handle-partial-stows-and-exceptions"
+  - "/help/receiving/understand-the-receiving-workflow"
+---
+
+## Quick answer
+
+Stowing moves accepted stock from receiving into its physical warehouse storage location.
+
+It is the next operational step in the warehouse flow:
+
+**Receive → Stow → Pick → Pack → Ship**
+
+After receiving closes, accepted units can become stow work. The operator then confirms where each physical unit is placed.
+
+## Start with pending stow work
+
+Open Stow to review the pending tasks.
+
+The session shows the products, unit quantities, and assigned or suggested locations for the available work.
+
+Choose **Start Stowing** when you are ready to begin.
+
+## Stowing is location-first
+
+Before placing any unit, confirm the physical destination.
+
+LaSyncro shows a suggested bin when one is available.
+
+Walk to the bin and scan its barcode.
+
+The suggested bin is guidance. The location you physically scan is what confirms the active destination for the stow workflow.
+
+This location-first sequence prevents inventory from being recorded in a bin that the operator has not physically confirmed.
+
+## Scan the physical unit
+
+Once a bin is active, scan the unit being placed.
+
+The Stow session accepts the physical LSU label or a product barcode that LaSyncro can resolve to an available unit.
+
+Each successful placement represents **one physical unit**.
+
+LaSyncro updates progress only after the backend confirms that placement successfully.
+
+## What happens to inventory
+
+For newly received stock, inventory begins from the warehouse root location.
+
+When a unit is successfully stowed, LaSyncro moves that inventory from its source location into the confirmed destination bin.
+
+The physical unit is then recorded as stowed at that location.
+
+## Continue through the task
+
+Keep scanning units into the active bin until the required quantity has been placed.
+
+You can also scan another valid storage bin if the physical destination needs to change.
+
+LaSyncro preserves the committed progress for the task as units are placed.
+
+## When stowing is complete
+
+A stow task is complete only when its full quantity has been successfully placed.
+
+Once all current tasks are complete, the Stow session confirms that inventory has been updated.
+
+That stock is now stored in its warehouse location and can continue into downstream fulfillment.

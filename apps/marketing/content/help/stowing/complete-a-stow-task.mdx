@@ -1,0 +1,98 @@
+---
+title: "Complete a stow task"
+description: "Complete a stow task safely by confirming the destination bin and scanning each physical unit."
+category: "Stowing"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "complete stow task"
+  - "scan bin"
+  - "scan LSU"
+  - "place inventory"
+  - "stow units"
+searchAliases:
+  - "how to stow"
+  - "put inventory in bin"
+  - "scan location stow"
+  - "complete putaway"
+  - "stow scanner"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/stowing/understand-the-stowing-workflow"
+  - "/help/stowing/handle-partial-stows-and-exceptions"
+  - "/help/warehouse/understand-warehouse-locations"
+---
+
+## Quick answer
+
+To complete a stow task:
+
+1. review the pending task;
+2. choose **Start Stowing**;
+3. walk to the suggested or intended storage bin;
+4. scan the bin barcode;
+5. scan each physical unit being placed;
+6. continue until the full task quantity has been stowed.
+
+The bin must be confirmed before LaSyncro accepts an item placement.
+
+## Review the task
+
+Before starting, review the product and quantity shown in the Stow session.
+
+A location may already be suggested for the task.
+
+Use that as guidance for where the stock should be stored.
+
+## Confirm the destination bin
+
+Walk to the physical storage location.
+
+Scan its bin barcode, or enter its location code when using manual input.
+
+The scanned location becomes the active bin.
+
+If the location cannot be recognised, scan the bin label again or choose another valid active storage bin.
+
+## Scan the unit
+
+After the bin is active, scan the physical item.
+
+The interface accepts an LSU unit label or a resolvable product barcode.
+
+A successful scan commits exactly **one physical unit**.
+
+Do not scan multiple units as a single quantity.
+
+## If the wrong item is scanned
+
+LaSyncro rejects a unit that does not belong to the active stow task.
+
+Scan a unit matching the product that the task expects.
+
+For workflows requiring a specific physical LSU, LaSyncro can also reject a different unit and ask for the expected LSU.
+
+## Watch the remaining quantity
+
+Stow progress is saved after each successful placement.
+
+The remaining quantity is calculated from the progress committed by the backend rather than from an unsaved browser count.
+
+If more units remain, continue scanning them.
+
+## Change bins when necessary
+
+The active destination does not have to remain unchanged for the entire session.
+
+If you physically move to another valid storage bin, scan that bin before continuing.
+
+The newly confirmed location becomes the active destination for subsequent placements.
+
+## Finish the task
+
+The task completes only after its full required quantity has been placed successfully.
+
+When the final unit is confirmed, LaSyncro completes the task and advances to the next available stow work.

@@ -1,0 +1,97 @@
+---
+title: "Handle partial stows and exceptions"
+description: "Understand partial stow progress and how missing or damaged units are routed for follow-up."
+category: "Stowing"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "partial stow"
+  - "stow exception"
+  - "missing item"
+  - "damaged product"
+  - "Problem Center"
+searchAliases:
+  - "cannot finish stow"
+  - "missing stow unit"
+  - "damaged item during stow"
+  - "stow problem"
+  - "remaining stow quantity"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/stowing/understand-the-stowing-workflow"
+  - "/help/stowing/complete-a-stow-task"
+  - "/help/receiving/handle-shortages-and-receiving-exceptions"
+---
+
+## Quick answer
+
+A stow task does not have to be completed in one placement.
+
+LaSyncro records how many units have actually been placed and keeps the task active until its full quantity is complete.
+
+If a unit is missing or damaged, report a stow exception instead of recording stock as successfully placed.
+
+## Partial stowing
+
+Each successful physical scan places one unit.
+
+LaSyncro accumulates those placements in the task's progress.
+
+For example, if a task contains 5 units and 3 have been successfully placed:
+
+- total quantity: 5;
+- placed: 3;
+- remaining: 2.
+
+The task remains active for the remaining units.
+
+It does not become complete until all 5 units have been placed.
+
+## Report a stow exception
+
+The stow workflow supports these exception types:
+
+- **Item missing**
+- **Product defect**
+- **Packaging defect**
+
+Use an exception when the physical stock cannot be stowed normally.
+
+Owners, admins, and operators can report WMS exceptions.
+
+## What happens after an exception is reported
+
+Reporting a stow exception creates an open task in the **Problem Center**.
+
+LaSyncro records the affected quantity and routes the issue for follow-up.
+
+The exception report itself does **not** immediately reduce or otherwise change inventory.
+
+Inventory impact is deferred until the Problem Center issue is reviewed and resolved.
+
+This keeps the physical inventory decision separate from the operator's initial problem report.
+
+## Problem bin requirement
+
+The warehouse must have a Problem bin configured before a stow exception can be reported successfully.
+
+The Problem Center task is associated with that configured problem location for follow-up.
+
+## Do not complete inventory that was not placed
+
+Do not record a missing or defective unit as successfully stowed just to finish the task.
+
+Only physical units that were successfully placed in a confirmed storage location should count toward stow progress.
+
+## Continue with the remaining stock
+
+Valid units can continue through the normal stow process.
+
+The remaining task quantity stays available until its required placements are completed or the associated problem is handled through the appropriate exception workflow.
+
+This preserves the distinction between:
+
+**stock physically stowed successfully** and **stock requiring operational resolution**.
