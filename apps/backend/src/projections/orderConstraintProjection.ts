@@ -91,19 +91,30 @@ export async function projectOrderConstraints(
    * materialization, not evaluation, so it stays within this file's
    * architectural contract (see header).
    *
-   * Scope: 'cancelled' only. 'fulfilled' resolves through the normal
-   * evaluation path. 'failed' has no producer today.
+   * Scope: 'cancelled' and 'fulfilled'. 'failed' has no producer today.
+   *
+   * CONSTRAINT-FULFILLED-CUSTOMER-01 (2026-08-17): 'fulfilled' does NOT
+   * resolve through the normal evaluation path for every type. Inventory
+   * self-resolves (remaining demand hits zero), but the customer evaluator
+   * asks "is the address complete?" — a shipped order with a never-corrected
+   * address answers 'no' forever, so is_active is re-asserted on every pass
+   * and the constraint can never clear. A shipped order has no fulfilment
+   * left to unblock; all active constraints resolve regardless of type.
+   * Verified terminal: 0 fulfilled→lower transitions in order_fulfillment_history.
    *
    * Constraint lifecycle only — reservation release and physical stock
    * unwind for mid-pick cancellations are INV-BLOCK-10b.
    */
-  if (ofs.status === 'cancelled') {
+  const isTerminalStatus =
+    ofs.status === 'cancelled' || ofs.status === 'fulfilled';
+
+  if (isTerminalStatus) {
     const resolvedConstraints = await trx('order_constraints')
       .where({ lasyncro_order_id: orderId, is_active: true })
       .update({
         resolved_at: eventAnchor,
         is_active: false,
-        write_source: 'orderConstraintProjection:cancelled',
+        write_source: `orderConstraintProjection:${ofs.status}`,
       });
 
     /**
@@ -121,9 +132,10 @@ export async function projectOrderConstraints(
       });
 
     if (resolvedConstraints > 0 || resolvedEvents > 0) {
-      console.info('[CONSTRAINTS_RESOLVED_ORDER_CANCELLED]', {
+      console.info('[CONSTRAINTS_RESOLVED_ORDER_TERMINAL]', {
         orderId,
         shopId,
+        terminalStatus: ofs.status,
         resolvedConstraints,
         resolvedEvents,
       });

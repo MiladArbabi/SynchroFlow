@@ -1577,3 +1577,32 @@ eligible-and-unbatched 4 -> 6. No `WMS_BATCH_RELEASE_FAILED` after repair.
 **Query-scoping trap.** `order_constraints` has NO `shop_id` column. Any per-tenant constraint
 query MUST join `orders`. Filtering only via `order_fulfillment_status` silently counts all
 tenants (produced a false "71 address-blocked" during this session).
+
+## CONSTRAINT-FULFILLED-CUSTOMER-01 — shipped orders stay blocked (2026-08-17)
+
+**Defect.** `orderConstraintProjection` short-circuited on `cancelled` only, assuming
+`fulfilled` resolves via normal evaluation. True for inventory (remaining demand → 0),
+false for customer: the evaluator asks "is the address complete?", and a shipped order
+whose address was never corrected answers no forever, re-asserting `is_active` every pass.
+
+**Evidence.** 6 orders (shop 14: 2, shop 15: 4), all fulfilled, all with `oversell`
+resolved and `incomplete_address` still active. Shop 1 has 23 fulfilled orders with
+constraints, all resolved — its addresses were corrected before shipping, so it never
+hit the gap. `order_fulfillment_history`: 0 fulfilled→lower transitions, so `fulfilled`
+is terminal in practice.
+
+**Impact.** Not release-blocking — blocked orders never enter the pool, and these already
+shipped. But `orders.constrained.controller.ts` and `constraint.metrics.ts` filter on
+`is_active` with NO fulfillment-status predicate, so shipped orders appear in the
+constrained list and inflate blocked-order metrics.
+
+**Fix.** Terminal short-circuit extended to `cancelled | fulfilled`;
+`write_source` records which (`orderConstraintProjection:${ofs.status}`).
+
+**NOT verified locally** — local DB is empty (0 orders) and no projection test exists.
+Committed on audit evidence. Post-deploy, confirm via:
+`SELECT write_source, COUNT(*) FROM order_constraints WHERE write_source LIKE '%fulfilled' GROUP BY 1;`
+If that returns 0 rows after the 6 orders receive an event, the branch is not firing.
+
+**Existing 6 rows** repair via `reevaluate-order-constraints.js --shop-id=14/15 --apply`,
+not manual UPDATE — the projection must do the write.
