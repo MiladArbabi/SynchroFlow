@@ -101,7 +101,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
   const handleGetHelp = () => {
     setProfileAnchorEl(null);
-    window.location.href = 'mailto:support@lasyncro.com';
+    window.open('https://www.lasyncro.com/help', '_blank', 'noopener,noreferrer');
   };
 
   const handleLogout = async () => {

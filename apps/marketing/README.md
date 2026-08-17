@@ -1,5 +1,34 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Help Center
+
+The public LaSyncro Help Center lives at `/help`.
+
+### Source of truth
+
+- Help landing: `app/help/page.tsx`
+- Category routes: `app/help/[category]/page.tsx`
+- Article routes: `app/help/[category]/[slug]/page.tsx`
+- Help content: `content/help/<category>/<slug>.mdx`
+- Content loader: `lib/help.ts`
+- Search UI: `components/help/HelpSearch.tsx`
+
+Operational documentation must live in `content/help`; do not duplicate Help articles in the frontend app or marketing blog.
+
+Help article frontmatter includes:
+
+- `title`
+- `description`
+- `category`
+- `audience`
+- `keywords`
+- `searchAliases`
+- `order`
+- `lastReviewed`
+- `relatedArticles`
+
+The authenticated app links users to the public Help Center. Human support remains the fallback after self-service documentation.
+
 ## Getting Started
 
 First, run the development server:

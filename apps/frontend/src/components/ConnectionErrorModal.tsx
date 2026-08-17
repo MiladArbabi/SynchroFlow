@@ -27,7 +27,11 @@ export const ConnectionErrorModal: React.FC<ConnectionErrorModalProps> = ({
 }) => {
   // A helper to open the help docs in a new tab
   const handleHelp = () => {
-    window.open('/help/shopify-connection', '_blank');
+    window.open(
+      'https://www.lasyncro.com/help/shopify/shopify-connection',
+      '_blank',
+      'noopener,noreferrer'
+    );
   };
 
   return (
