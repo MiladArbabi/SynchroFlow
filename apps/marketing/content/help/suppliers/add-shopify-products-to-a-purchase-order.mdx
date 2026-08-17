@@ -1,0 +1,79 @@
+---
+title: "Add Shopify products to a purchase order"
+description: "Link purchase-order lines to products from your connected Shopify catalog."
+category: "Suppliers"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "Shopify products"
+  - "purchase order products"
+  - "PO line items"
+  - "product variants"
+  - "SKU"
+searchAliases:
+  - "add product to PO"
+  - "Shopify product purchase order"
+  - "add SKU to purchase order"
+  - "select product for PO"
+  - "product not linked"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/suppliers/create-a-purchase-order"
+  - "/help/suppliers/understand-purchase-order-statuses"
+  - "/help/receiving/receive-a-purchase-order"
+---
+
+## Quick answer
+
+Products ordered through a LaSyncro purchase order must be linked to product variants from your connected Shopify catalog.
+
+This connection is what allows the same product identity to continue through:
+
+**Purchase Order → Receive → Stow → Pick → Pack → Ship**
+
+## Search for the Shopify product
+
+When adding a line to a purchase order, search for the product or variant you want to order.
+
+Select the matching Shopify-linked variant from the results.
+
+LaSyncro stores the PO line against that product variant so the inbound stock can later be received into the correct warehouse product identity.
+
+## Enter the quantity
+
+For each selected product, enter the number of units being ordered.
+
+Every PO line requires a quantity of at least 1.
+
+You can add multiple Shopify product variants to one purchase order.
+
+## Products must be linked
+
+A PO line cannot be completed in the current workflow without a linked Shopify product variant.
+
+If LaSyncro tells you that the line is not linked to a Shopify product:
+
+1. search for the product and select it from the product dropdown;
+2. if the product does not exist in Shopify yet, create it in Shopify first;
+3. allow the product to become available in your connected LaSyncro catalog;
+4. return to the PO and select it.
+
+Do not create an unrelated manual product description as a substitute for the Shopify product.
+
+## Why the product link matters
+
+The linked product identity connects the inbound purchase to the rest of the warehouse workflow.
+
+When the shipment is later received, LaSyncro knows which product variant the accepted quantity belongs to.
+
+That stock can then continue through stowing and eventually satisfy Shopify order demand through picking, packing, and shipping.
+
+## Product descriptions and SKUs
+
+The purchase order can display product and variant information such as the product title and SKU when available.
+
+Always select the correct variant when a Shopify product has multiple variants.
+
+The warehouse inventory created later belongs to that specific linked variant.

@@ -1,0 +1,108 @@
+---
+title: "Understand purchase order statuses"
+description: "Understand the purchase-order lifecycle and when a shipment becomes ready for receiving."
+category: "Suppliers"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "purchase order status"
+  - "draft"
+  - "ordered"
+  - "shipped"
+  - "received"
+searchAliases:
+  - "PO statuses"
+  - "purchase order stages"
+  - "when can I receive a PO"
+  - "partially received"
+  - "PO lifecycle"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/suppliers/create-a-purchase-order"
+  - "/help/suppliers/add-shopify-products-to-a-purchase-order"
+  - "/help/receiving/receive-a-purchase-order"
+---
+
+## Quick answer
+
+Purchase-order statuses show where inbound stock is in the supplier-to-warehouse journey.
+
+The standard lifecycle is:
+
+**Draft → Ordered → Confirmed → In production → Shipped → Partially received → Received**
+
+A purchase order can also be **Cancelled**.
+
+Receiving begins from the **Shipped** stage.
+
+## Draft
+
+A newly created purchase order starts as **Draft**.
+
+At this stage, the PO has been created but has not yet progressed into the supplier fulfillment process.
+
+Review the supplier, Shopify-linked products, quantities, and other PO information before advancing it.
+
+## Ordered
+
+**Ordered** indicates that the purchase order has moved beyond draft and the stock has been ordered from the supplier.
+
+## Confirmed
+
+**Confirmed** indicates that the supplier order has progressed to the confirmed stage.
+
+## In production
+
+**In production** represents stock that is still being prepared before shipment.
+
+The LaSyncro interface may present this stage as **On the way** in parts of the supplier workflow.
+
+## Shipped
+
+**Shipped** is the key handoff into receiving.
+
+Once the PO is shipped, you can explicitly start a receive job for that purchase order.
+
+Changing the PO to Shipped does not itself receive the stock or add inventory.
+
+The receive job must still be started and processed.
+
+## Partially received
+
+A PO becomes **Partially received** when some ordered stock has been accepted through receiving but the entire purchase order has not yet been received.
+
+For example, this can occur with a partial delivery.
+
+LaSyncro supports multiple receive events for the same PO when stock arrives in separate deliveries.
+
+## Received
+
+A PO becomes **Received** when the ordered quantities have been fully received.
+
+Accepted quantities recorded during receiving determine the received progress of each PO line.
+
+## Cancelled
+
+**Cancelled** is used when the purchase order is no longer continuing through the inbound workflow.
+
+Cancelled purchase orders do not proceed to normal receiving.
+
+## When can receiving begin?
+
+A PO must reach **Shipped** before its WMS receive job is created.
+
+Starting receiving is an explicit action.
+
+The sequence is:
+
+**Shipped PO → Start receive job → Inspect or scan stock → Close receiving → Create stow tasks**
+
+This preserves the distinction between stock expected from a supplier and stock that has physically arrived and been accepted into the warehouse.
+
+## Who manages PO statuses
+
+Purchase-order status management is intended for owners and admins.
+
+Operators work with the downstream warehouse tasks rather than managing the purchase-order lifecycle.
