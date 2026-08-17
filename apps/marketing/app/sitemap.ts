@@ -4,6 +4,7 @@
 // Submit https://www.lasyncro.com/sitemap.xml to GSC after each deploy.
 import { MetadataRoute } from 'next'
 import { getAllContent, getAllSlugs } from '@/lib/mdx'
+import { getAllHelpArticles } from '@/lib/help'
 
 const BASE_URL = 'https://www.lasyncro.com'
 
@@ -13,8 +14,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // industries and features: no content yet — getAllSlugs returns [] safely
   const industrySlugs = getAllSlugs('industries')
   const featureSlugs  = getAllSlugs('features')
-  // glossary: grows with each new term added to /content/glossary/
-  const glossaryItems  = getAllContent('glossary')
+    // glossary: grows with each new term added to /content/glossary/
+  const glossaryItems = getAllContent('glossary')
+
+  // Help routes are generated from the canonical Help corpus so every new
+  // category/article becomes discoverable without manual sitemap maintenance.
+  const helpArticles = getAllHelpArticles()
+  const helpCategories = [...new Set(
+    helpArticles.map((article) => article.category)
+  )]
 
   const staticRoutes: MetadataRoute.Sitemap = [
   { url: BASE_URL,                      lastModified: new Date('2026-05-01'), priority: 1.0, changeFrequency: 'weekly'  },
@@ -27,6 +35,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   { url: `${BASE_URL}/faq`,             lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
   { url: `${BASE_URL}/getting-started`, lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
   { url: `${BASE_URL}/glossary`,        lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
+  { url: `${BASE_URL}/help`,            lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
 ]
 
   const dynamicRoutes: MetadataRoute.Sitemap = [
@@ -61,7 +70,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority:        0.7,
       changeFrequency: 'monthly' as const,
     })),
-    // Glossary — definition pages; priority 0.7, monthly change expected
+        // Glossary — definition pages; priority 0.7, monthly change expected
     ...glossaryItems.map(({ slug, frontmatter }) => ({
       url:             `${BASE_URL}/glossary/${slug}`,
       // SM1: lastReviewed may be absent on new pages — fall back to publish date,
@@ -69,6 +78,23 @@ export default function sitemap(): MetadataRoute.Sitemap {
       lastModified:    new Date(frontmatter.lastReviewed ?? frontmatter.date ?? Date.now()),
       priority:        0.7,
       changeFrequency: 'monthly' as const,
+    })),
+
+    // Help categories are derived from actual content directories.
+    ...helpCategories.map((category) => ({
+      url:             `${BASE_URL}/help/${category}`,
+      lastModified:    new Date(),
+      priority:        0.7,
+      changeFrequency: 'weekly' as const,
+    })),
+
+    // Help articles use their reviewed date so sitemap freshness tracks
+    // documentation maintenance rather than deployment time.
+    ...helpArticles.map(({ category, slug, frontmatter }) => ({
+      url:             `${BASE_URL}/help/${category}/${slug}`,
+      lastModified:    new Date(frontmatter.lastReviewed),
+      priority:        0.7,
+      changeFrequency: 'weekly' as const,
     })),
   ]
 

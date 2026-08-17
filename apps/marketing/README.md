@@ -29,6 +29,10 @@ Help article frontmatter includes:
 
 The authenticated app links users to the public Help Center. Human support remains the fallback after self-service documentation.
 
+- Sitemap integration: `app/sitemap.ts`
+
+Help routes are generated automatically into `/sitemap.xml` from the canonical Help corpus. Adding a new Help article must not require manual sitemap editing.
+
 ## Getting Started
 
 First, run the development server:
