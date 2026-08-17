@@ -991,6 +991,35 @@ Fly backend deployed
 
 Verify Fly independently.
 
+# 30A. Vercel green does not prove `www.lasyncro.com` routes exist
+
+`www.lasyncro.com` is served by `packages/landing-page`, while application-style marketing routes are served by `apps/marketing`.
+
+Routes exposed through the marketing project must also be explicitly rewritten in:
+
+```text
+packages/landing-page/vercel.json
+```
+
+Observed failure:
+
+```text
+apps/marketing build = route exists
+marketing Vercel deploy = green
+www.lasyncro.com/help = 404
+```
+
+Root cause: `/help` was missing from the landing-page rewrite manifest.
+
+For every new public marketing route, verify both:
+
+```text
+https://synchro-flow-marketing.vercel.app/<route>
+https://www.lasyncro.com/<route>
+```
+
+A successful marketing deployment alone does not prove the public domain can reach the route.
+
 ---
 
 # 31. Local build success does not prove clean deployment build success
