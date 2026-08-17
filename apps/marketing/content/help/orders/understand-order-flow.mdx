@@ -1,0 +1,95 @@
+---
+title: "Understand order flow"
+description: "Learn how Shopify orders move from block checks into picking, packing, and shipment."
+category: "Orders"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "order flow"
+  - "orders"
+  - "blocked orders"
+  - "order pool"
+  - "fulfillment"
+searchAliases:
+  - "order lifecycle"
+  - "Shopify order flow"
+  - "when is an order ready to pick"
+  - "release orders"
+  - "fulfillment flow"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/orders/release-orders-into-batches"
+  - "/help/picking/pick-a-released-batch"
+  - "/help/inventory/understand-reserved-and-available-stock"
+---
+
+## Quick answer
+
+Orders from your connected Shopify store appear in LaSyncro, but an order appearing in LaSyncro does not mean it is automatically ready to pick.
+
+LaSyncro first separates blocked orders from releasable orders, then batches releasable work for warehouse operators.
+
+The current operational sequence is:
+
+**Block Check -> Orders Pool -> Batch Release -> Pick -> Pack -> Ship**
+
+## Block Check
+
+LaSyncro checks whether an order can move into warehouse work.
+
+In **Order Flow**, blocked orders appear in the **Blocked orders** column.
+
+Blocked orders are grouped by reason, such as inventory, customer, or operational blockers. An order card can also show if another blocker is still present.
+
+Use the order detail modal to review the order and resolve the blocker through the current order workflow.
+
+## Orders Pool
+
+Orders that are not blocked and are not already batched appear in the **Order pool**.
+
+The pool shows order number, value, SKU count, unit count, age, and priority or SLA labels where available.
+
+The pool is the release surface. Orders in the pool are ready to become warehouse work, but they are not being picked until a batch is released.
+
+## Batch Release
+
+Owners and admins can release orders from the pool.
+
+When a batch is released, LaSyncro creates active fulfillment work and reserves the stock needed for the batch.
+
+Released batches appear in the **Fulfillment** column in Order Flow and in **Warehouse** as active batches.
+
+Operators do not release batches. Operators pick and pack the batches after release.
+
+## Pick
+
+Operators open Warehouse and claim an available batch.
+
+Picking is location-first: the picker scans the bin location, then scans the product or unit barcode for the item.
+
+When the required pick work has been successfully completed, the operator confirms pick completion.
+
+The batch then becomes ready for packing.
+
+## Pack
+
+Packing starts from picked orders.
+
+The Warehouse screen includes **Pack mode**, where operators scan an item or invoice barcode to begin packing.
+
+Packing verifies the order contents before shipment.
+
+## Ship
+
+After packing, the shipping workflow confirms shipment and handles the carrier handoff from the warehouse side.
+
+Shipment is the final outbound step after the order has passed through release, pick, and pack.
+
+## Who uses Order Flow
+
+Owners and admins use Order Flow to understand blockers, prioritize orders, and release batches.
+
+Operators use the warehouse stages that come after release, especially picking and packing.

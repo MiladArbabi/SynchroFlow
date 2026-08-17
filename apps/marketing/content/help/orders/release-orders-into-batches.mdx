@@ -1,0 +1,114 @@
+---
+title: "Release orders into batches"
+description: "Release ready orders from the Order pool so warehouse operators can pick them."
+category: "Orders"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "release orders"
+  - "order pool"
+  - "batch release"
+  - "release wave"
+  - "fulfillment"
+searchAliases:
+  - "release wave to floor"
+  - "release all"
+  - "release selected orders"
+  - "ready orders"
+  - "pick batch"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/orders/understand-order-flow"
+  - "/help/picking/pick-a-released-batch"
+  - "/help/inventory/understand-reserved-and-available-stock"
+---
+
+## Quick answer
+
+The **Order pool** is where owners and admins release ready orders into pick batches.
+
+Only orders that are not blocked, not already batched, and ready for fulfillment appear in the pool.
+
+Releasing a batch sends work to the warehouse floor. Operators then pick it from **Warehouse**.
+
+## Open the Order pool
+
+Open **Orders** and choose **Order Flow**.
+
+The middle column is **Order pool**.
+
+The pool shows how many orders are ready and the total releasable value.
+
+If there are no ready orders, the page may show that the release pool is clear or that no orders are ready for release right now.
+
+## Understand blocked versus releasable
+
+Blocked orders are shown separately in the **Blocked orders** column.
+
+The Order pool contains orders that LaSyncro currently considers releasable.
+
+If an order is blocked, resolve the blocker first. When the blocker is resolved and the order becomes ready, it can return to the pool.
+
+## Review pool information
+
+Each pool row can show:
+
+- order number;
+- order value;
+- SKU count;
+- unit count;
+- age;
+- priority label;
+- SLA breached label.
+
+Use search, filters, sorting, and pagination where they appear to narrow the pool before release.
+
+## Prioritize orders
+
+Owners and admins can mark an order as priority.
+
+Priority orders are treated ahead of non-priority orders when LaSyncro builds a release.
+
+Priority does not bypass blockers. A blocked order still needs its blocker resolved before release.
+
+## Release all ready orders
+
+If no orders are selected, the release button releases the ready pool up to the current batch ceiling.
+
+The button text shows the current action, such as **Release all** or **Nothing to release**.
+
+LaSyncro may create a smaller batch than the full pool when the batch ceiling is reached.
+
+## Release selected orders
+
+Select one or more orders in the pool when you want to release a specific group.
+
+When orders are selected, the release button changes to release the selected count.
+
+In Order Flow, selected release uses only the selected orders that are still eligible at release time.
+
+If a selected order is no longer eligible, LaSyncro reports it as not released or moves it to Blocked when the release check finds a current blocker.
+
+## After release
+
+When release succeeds, LaSyncro shows how many orders were released and the active batch identifier.
+
+The batch appears in the **Fulfillment** column and becomes available in **Warehouse**.
+
+Released orders are no longer ordinary pool rows. They are now part of active batch work.
+
+## Inventory during release
+
+Release is the point where LaSyncro reserves the stock needed for the batch.
+
+If the release check finds that stock is no longer available for an order, that order can move out of the pool and into **Blocked orders**.
+
+This protects the warehouse from picking work that no longer has enough available stock.
+
+## Who can release batches
+
+Batch release is intended for owners and admins.
+
+Operators claim and pick released batches, but they do not release orders from the pool.

@@ -1,0 +1,116 @@
+---
+title: "Handle pick exceptions"
+description: "Report the current pick problems that can be handled from the Pick session."
+category: "Picking"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "pick exception"
+  - "report problem"
+  - "short pick"
+  - "missing item"
+  - "Problem Center"
+searchAliases:
+  - "item not found"
+  - "short pick"
+  - "wrong item"
+  - "damaged item during pick"
+  - "cannot pick item"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/picking/pick-a-released-batch"
+  - "/help/orders/understand-order-flow"
+  - "/help/inventory/understand-reserved-and-available-stock"
+---
+
+## Quick answer
+
+If an item cannot be picked correctly, use **Report problem** in the Pick session instead of scanning the item as picked.
+
+Report problem is visible in the current Pick session, but some current pick work may not accept an exception report.
+
+When an exception report is successfully accepted, LaSyncro can record the line as an exception and create Problem Center follow-up.
+
+Do not use an exception for a simple scan mistake that you can correct by rescanning the right location or item.
+
+## Use scanner feedback first
+
+Some problems are recoverable without reporting an exception.
+
+If you scan the wrong bin, LaSyncro shows:
+
+**Wrong location. Expected [location] — try again.**
+
+Go to the expected bin and scan again.
+
+If you scan the wrong product, LaSyncro shows:
+
+**Wrong item — barcode does not match. Check you are at the right bin.**
+
+Check the bin, product, variant, and barcode before trying again.
+
+If LaSyncro says inventory or reservation state changed, refresh the pick task before continuing.
+
+## Report a pick problem
+
+Choose **Report problem** from the active Pick session.
+
+The **Report Problem** window shows the current product and variant.
+
+Select the best problem type, then choose **Confirm Exception**.
+
+Some exception types require more information before they can be confirmed. For example, **Short pick — fewer units than required** asks for **Quantity found**, and barcode or other problems can ask for notes.
+
+Some visible choices may fail when **Confirm Exception** is selected. If that happens, leave the item unpicked and ask an owner or admin to review the batch before continuing that unresolved item.
+
+## Visible problem types
+
+The current Pick session can show these problem choices:
+
+- **Item not found at location**
+- **Short pick — fewer units than required**
+- **Product defect**
+- **Packaging damaged**
+- **Wrong item entirely**
+- **Wrong variant (size / colour)**
+- **Wrong quantity on label**
+- **Barcode mismatch**
+- **Other**
+
+Use the most accurate visible option for what happened at the shelf.
+
+## What happens after reporting
+
+When a pick problem is accepted, LaSyncro can:
+
+- record the line as an exception in the Pick session;
+- route the problem for follow-up in Problem Center;
+- keep the exception separate from a successful pick;
+- let you continue with the remaining pick lines.
+
+Reporting a pick exception does not mean the missing or damaged unit was successfully picked.
+
+## Finish a batch with problems
+
+At the end of the batch, **Pick Summary** shows picked lines and exception lines.
+
+If the summary includes exceptions, LaSyncro says those items were routed to Problem Center.
+
+Choose **Confirm Pick Complete** only after the required pick work has been completed or the current session has accepted the relevant exception reports.
+
+If a required pick remains unresolved, do not confirm it as picked. Ask an owner or admin to review the unresolved batch and warehouse record before continuing.
+
+## If reporting fails
+
+If **Confirm Exception** shows an error, leave the item unpicked and do not scan it as successfully picked.
+
+The current Pick session may block some exception reports when the underlying pick state cannot safely accept the exception.
+
+Ask an owner or admin to review the order, batch, and Problem Center before continuing that item.
+
+## Who can report pick exceptions
+
+Owners, admins, and operators can report WMS exceptions from the Pick session.

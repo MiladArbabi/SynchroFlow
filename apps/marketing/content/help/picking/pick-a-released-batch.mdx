@@ -1,0 +1,141 @@
+---
+title: "Pick a released batch"
+description: "Claim a released batch and complete the current location-first picking workflow."
+category: "Picking"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "pick batch"
+  - "picking"
+  - "warehouse picking"
+  - "scan bin"
+  - "scan product barcode"
+searchAliases:
+  - "claim pick batch"
+  - "start picking"
+  - "pick session"
+  - "location-first picking"
+  - "batch ready to pack"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/orders/release-orders-into-batches"
+  - "/help/picking/handle-pick-exceptions"
+  - "/help/warehouse/understand-warehouse-locations"
+  - "/help/products/understand-product-barcodes"
+---
+
+## Quick answer
+
+Picking starts after an owner or admin releases orders into a batch.
+
+Open **Warehouse**, find an available batch, choose **Claim & pick**, then follow the location-first pick session.
+
+The normal scan sequence is:
+
+**Scan bin location -> Scan product or unit -> Confirm quantity when asked**
+
+## Find available pick work
+
+Open **Warehouse**.
+
+Released batches appear under **Active batches**.
+
+A batch card can show:
+
+- batch identifier;
+- line count;
+- unit count;
+- release time;
+- picking progress;
+- packing progress;
+- current status.
+
+If no batches are available, Warehouse shows that it is waiting for release.
+
+## Claim or continue a batch
+
+For an available batch, choose **Claim & pick**.
+
+If the batch is already in progress and available to you, choose **Continue picking**.
+
+If another operator has already claimed the batch, LaSyncro prevents a second claim and shows that the batch is already claimed by another operator.
+
+## Review the pick session
+
+The pick session starts with **Pick Session**.
+
+It shows the batch, line item count, and total units.
+
+LaSyncro tells the picker that items are sorted by optimized pick route.
+
+Choose **Start Picking** to begin.
+
+## Scan the bin first
+
+For each item, LaSyncro first asks you to walk to the location and scan the bin barcode.
+
+The location input says **Scan bin barcode or type location code**.
+
+Manual entry is also available by typing the location code and pressing Enter.
+
+If the wrong location is scanned, LaSyncro shows:
+
+**Wrong location. Expected [location] — try again.**
+
+## Scan the product or unit
+
+After the location is confirmed, scan the product barcode.
+
+The product input says **Scan product barcode or type barcode value**.
+
+When unit labels exist for the pick, LaSyncro can show **LSU- codes for this pick**. Scanning an LSU unit barcode can confirm the exact unit for that pick.
+
+If the barcode does not match the active pick item, LaSyncro shows:
+
+**Wrong item — barcode does not match. Check you are at the right bin.**
+
+## Confirm quantity when asked
+
+If the pick line requires more than one unit, LaSyncro adds a quantity step.
+
+Count the units and enter the expected quantity.
+
+If the quantity does not match, LaSyncro asks you to recount and try again.
+
+## Finish the batch
+
+Complete the required pick work for the batch.
+
+LaSyncro then shows **Pick Summary**.
+
+Review the picked count and any problem lines shown in the summary.
+
+Choose **Confirm Pick Complete**.
+
+When picking completes, LaSyncro shows **Pick Complete** and the batch becomes ready for pack.
+
+If a physical problem prevents a required line from being completed, do not scan that line as picked. Review the pick exceptions guidance before continuing that unresolved item.
+
+## Recover from scanner feedback
+
+Some scanner errors are recoverable in the moment.
+
+Examples include:
+
+- scan the expected bin again after a wrong-location message;
+- rescan the correct product barcode after a wrong-item message;
+- refresh the pick task if LaSyncro says inventory or reservation state changed;
+- avoid double-scanning if LaSyncro says the pick may already have been recorded.
+
+Do not keep scanning an item as picked if the physical item is missing, damaged, or otherwise cannot be picked correctly.
+
+Use **Report problem** when it is available, but do not assume every report can be accepted for the current pick line.
+
+## Who can pick
+
+Owners, admins, and operators can claim pick batches and complete pick scans.
+
+In normal warehouse operations, operators usually perform the pick workflow after owners or admins release the batch.
