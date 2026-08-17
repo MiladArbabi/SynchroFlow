@@ -174,8 +174,19 @@ export type SupplierAccumulation = {
   supplier_id: number;
   supplier_name: string;
   moq: number | null;
+  /** SRC-01b: null means the supplier has no delivery time set — hard gate G3. */
+  lead_time_days: number | null;
   total_qty: number;
   moq_met: boolean;
+  all_lines_have_sku: boolean;
+  /** SRC-01a gates, mirrored from the server — never recomputed client-side. */
+  gates: {
+    moq_met: boolean;
+    lead_time_set: boolean;
+    all_lines_have_sku: boolean;
+  };
+  /** True only when every gate passes. Convert re-checks server-side regardless. */
+  po_ready: boolean;
   requests: ReorderRequest[];
 };
 
@@ -213,7 +224,9 @@ export type SuppliersPortalPageProps = {
   onFetchReorderRequests: () => Promise<SupplierAccumulation[]>;
   onCreateReorderRequest: (input: { lasyncro_variant_id: string; supplier_id: number; qty_requested: number; source: 'alert' | 'manual' }) => Promise<ReorderRequest>;
   onDeleteReorderRequest: (id: string) => Promise<void>;
-  onConvertReorderRequests: (supplierId: number) => Promise<{ po_id: string }>;
+  /** SRC-01b: overrideMoq is the operator's explicit under-MOQ decision — the
+   *  server rejects with 422 unless it is passed, and stamps it on the PO. */
+  onConvertReorderRequests: (supplierId: number, overrideMoq?: boolean) => Promise<{ po_id: string }>;
   /** §8: set by page after convert survives refetch re-render — cleared by dismiss */
   lastConvertedPoId?: string | null;
   onDismissConvertedPo?: () => void;
@@ -1711,6 +1724,17 @@ function AssignSupplierDialog({
   );
 };
 
+/**
+ * SRC-01b — PO readiness gates in the accumulator UI
+ *
+ * `gates` and `po_ready` come from the server (SRC-01a) and are never
+ * recomputed here — the UI reflects backend truth so the two cannot drift.
+ *   HARD (lead_time_set, all_lines_have_sku) → button disabled + named reason
+ *   SOFT (moq_met)                           → enabled, routed via confirm
+ * Convert re-checks every gate server-side; this is affordance, not security.
+ * Gate rejections render inline per supplier group (convertErrors) rather than
+ * being swallowed by the old catch-free handler.
+ */
 function PurchasingSourcingView({
   data,
   onCreatePo,
@@ -1747,6 +1771,10 @@ function PurchasingSourcingView({
   // §8 reorder accumulator state
   const [reorderRequests, setReorderRequests] = useState<SupplierAccumulation[]>([]);
   const [convertingSupplierIds, setConvertingSupplierIds] = useState<Set<number>>(new Set());
+  // SRC-01b: gate failures must be visible, never a silent no-op click.
+  const [convertErrors, setConvertErrors] = useState<Record<number, string>>({});
+  // SRC-01b: under-MOQ is a soft gate — one confirm, then an explicit override.
+  const [moqConfirmGroup, setMoqConfirmGroup] = useState<SupplierAccumulation | null>(null);
 
   const [createPoOpen, setCreatePoOpen] = useState(false);
   const [poVariantId, setPoVariantId] = useState<string | undefined>(undefined);
@@ -1784,17 +1812,32 @@ function PurchasingSourcingView({
   };
 
   // §8: convert all pending for a supplier → draft PO, then clear from accumulator
-  const handleConvert = async (supplierId: number) => {
+  const handleConvert = async (supplierId: number, overrideMoq = false) => {
     setConvertingSupplierIds((prev) => new Set(prev).add(supplierId));
+    setConvertErrors((prev) => { const e = { ...prev }; delete e[supplierId]; return e; });
     try {
       // onConvertReorderRequests sets lastConvertedPoId at page level
       // before refetch so banner survives the re-render
-      await onConvertReorderRequests(supplierId);
+      await onConvertReorderRequests(supplierId, overrideMoq);
       const updated = await onFetchReorderRequests();
       setReorderRequests(updated);
+    } catch (err) {
+      // SRC-01b: surface the server's gate reason inline on the group row.
+      const message = err instanceof Error ? err.message : 'Failed to create purchase order';
+      setConvertErrors((prev) => ({ ...prev, [supplierId]: message }));
     } finally {
       setConvertingSupplierIds((prev) => { const s = new Set(prev); s.delete(supplierId); return s; });
     }
+  };
+
+  // SRC-01b: hard gates block the click entirely; the soft MOQ gate routes
+  // through a confirm dialog so the override is a deliberate act.
+  const handleConvertClick = (group: SupplierAccumulation) => {
+    if (!group.gates.moq_met) {
+      setMoqConfirmGroup(group);
+      return;
+    }
+    void handleConvert(group.supplier_id);
   };
 
   useEffect(() => {
@@ -2014,7 +2057,7 @@ function PurchasingSourcingView({
                 <Box sx={{ px: 2.5, pt: 1.5 }}>
                   <SpotlightCoachMark
                     title="Building up your order before sending"
-                    body="Products queue here by supplier. Once you've added enough to meet their minimum order, Create PO lights up. You can always send early if you need to."
+                    body="Products queue here by supplier. Create PO unlocks once the supplier has a delivery time set and every line has a SKU. If you're under their minimum order, you can still send early — we'll note it on the PO."
                     isDismissed={spotlights.accumulator.isDismissed}
                     onDismiss={spotlights.accumulator.dismiss}
                     step={3}
@@ -2025,6 +2068,13 @@ function PurchasingSourcingView({
               {reorderRequests.map((group) => {
                 const moqPct = group.moq ? Math.min(100, Math.round((group.total_qty / group.moq) * 100)) : null;
                 const converting = convertingSupplierIds.has(group.supplier_id);
+                // SRC-01b: hard gates (G3 lead time, G4 SKU) disable the button.
+                // The soft MOQ gate leaves it enabled and routes to a confirm.
+                const hardBlocked = !group.gates.lead_time_set || !group.gates.all_lines_have_sku;
+                const hardReason  = !group.gates.lead_time_set
+                  ? 'Set a delivery time for this supplier to order'
+                  : 'Some queued lines have no SKU — add one to order';
+                const convertError = convertErrors[group.supplier_id];
                 return (
                   <Box key={group.supplier_id} sx={{ px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
@@ -2035,13 +2085,18 @@ function PurchasingSourcingView({
                           {group.requests.length > 3 ? ` · +${group.requests.length - 3} more` : ''}
                         </Typography>
                       </Box>
-                      {group.moq_met ? (
-                        <Box component="button" onClick={() => !converting && void handleConvert(group.supplier_id)}
+                      {hardBlocked ? (
+                        <Box component="button" disabled title={hardReason}
+                          sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--ink-4)', bgcolor: 'transparent', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'not-allowed', flexShrink: 0 }}>
+                          Create PO →
+                        </Box>
+                      ) : group.po_ready ? (
+                        <Box component="button" onClick={() => !converting && handleConvertClick(group)}
                           sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.88 }, flexShrink: 0 }}>
                           {converting ? 'Creating…' : 'Create PO →'}
                         </Box>
                       ) : (
-                        <Box component="button" onClick={() => !converting && void handleConvert(group.supplier_id)}
+                        <Box component="button" onClick={() => !converting && handleConvertClick(group)}
                           sx={{ display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: converting ? 'wait' : 'pointer', '&:hover': { opacity: 0.75 }, flexShrink: 0 }}>
                           {converting ? 'Creating…' : 'Create PO anyway →'}
                         </Box>
@@ -2058,11 +2113,50 @@ function PurchasingSourcingView({
                         </Typography>
                       </Box>
                     )}
+                    {/* SRC-01b: name the blocking gate inline — the disabled
+                        button alone does not tell the operator what to fix. */}
+                    {hardBlocked && (
+                      <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', mt: 0.5 }}>
+                        {hardReason}
+                      </Typography>
+                    )}
+                    {convertError && (
+                      <Typography sx={{ fontSize: 10, color: 'var(--danger)', mt: 0.5 }}>
+                        {convertError}
+                      </Typography>
+                    )}
                   </Box>
                 );
               })}
             </Box>
           )}
+
+          {/* SRC-01b: under-MOQ confirm — the override is recorded on the
+                  PO notes, so it must be a deliberate choice, not a stray click. */}
+              <Dialog open={moqConfirmGroup !== null} onClose={() => setMoqConfirmGroup(null)} fullWidth maxWidth="xs">
+                <DialogTitle>Order below minimum?</DialogTitle>
+                <DialogContent>
+                  <Typography sx={{ fontSize: 13.5 }}>
+                    {moqConfirmGroup?.supplier_name} asks for {moqConfirmGroup?.moq} units minimum.
+                    You have {moqConfirmGroup?.total_qty} queued.
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, color: 'var(--ink-4)', mt: 1 }}>
+                    The PO will be marked as a below-minimum order so you and the supplier both see why.
+                  </Typography>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setMoqConfirmGroup(null)}>Cancel</Button>
+                  <Button
+                    onClick={() => {
+                      const id = moqConfirmGroup!.supplier_id;
+                      setMoqConfirmGroup(null);
+                      void handleConvert(id, true);
+                    }}
+                  >
+                    Order anyway
+                  </Button>
+                </DialogActions>
+              </Dialog>
 
           {/* §6a Branch B: never-ordered group — always visible */}
           {neverOrderedCount > 0 && (

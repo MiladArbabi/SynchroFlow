@@ -123,8 +123,19 @@ export type SupplierAccumulation = {
     supplier_id: number;
     supplier_name: string;
     moq: number | null;
+    /** SRC-01b: null means the supplier has no delivery time set — hard gate G3. */
+    lead_time_days: number | null;
     total_qty: number;
     moq_met: boolean;
+    all_lines_have_sku: boolean;
+    /** SRC-01a gates, mirrored from the server — never recomputed client-side. */
+    gates: {
+        moq_met: boolean;
+        lead_time_set: boolean;
+        all_lines_have_sku: boolean;
+    };
+    /** True only when every gate passes. Convert re-checks server-side regardless. */
+    po_ready: boolean;
     requests: ReorderRequest[];
 };
 export type SuppliersPortalData = {
@@ -182,7 +193,9 @@ export type SuppliersPortalPageProps = {
         source: 'alert' | 'manual';
     }) => Promise<ReorderRequest>;
     onDeleteReorderRequest: (id: string) => Promise<void>;
-    onConvertReorderRequests: (supplierId: number) => Promise<{
+    /** SRC-01b: overrideMoq is the operator's explicit under-MOQ decision — the
+     *  server rejects with 422 unless it is passed, and stamps it on the PO. */
+    onConvertReorderRequests: (supplierId: number, overrideMoq?: boolean) => Promise<{
         po_id: string;
     }>;
     /** §8: set by page after convert survives refetch re-render — cleared by dismiss */

@@ -160,12 +160,21 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     await axiosInstance.delete(`/api/v1/suppliers/reorder-requests/${id}`);
   }, []);
 
-  const handleConvertReorderRequests = useCallback(async (supplierId: number): Promise<{ po_id: string }> => {
-    const { data } = await axiosInstance.post('/api/v1/suppliers/reorder-requests/convert', { supplier_id: supplierId });
-    // Set banner BEFORE refetch so it survives the re-render
-    setLastConvertedPoId(data.po_id);
-    refetch();
-    return data;
+  const handleConvertReorderRequests = useCallback(async (supplierId: number, overrideMoq?: boolean): Promise<{ po_id: string }> => {
+    // SRC-01b: a 422 carries an actionable gate reason in data.error — rethrow
+    // it as a plain Error so the module can render it instead of swallowing it.
+    try {
+      const { data } = await axiosInstance.post('/api/v1/suppliers/reorder-requests/convert', {
+        supplier_id: supplierId,
+        ...(overrideMoq ? { override_moq: true } : {}),
+      });
+      // Set banner BEFORE refetch so it survives the re-render
+      setLastConvertedPoId(data.po_id);
+      refetch();
+      return data;
+    } catch (err: any) {
+      throw new Error(err?.response?.data?.error ?? 'Failed to create purchase order');
+    }
   }, [refetch]);
 
   /**
