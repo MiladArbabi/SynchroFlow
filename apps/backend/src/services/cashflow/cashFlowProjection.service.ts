@@ -376,8 +376,12 @@ export async function computeCashFlowProjection(
     const poOutflows: PoOutflow[] = poOutflowRows.map((r: any) => ({
       po_id: r.po_id,
       supplier_name: r.supplier_name,
+      // SRC-04: expected_delivery_date is a calendar day ('YYYY-MM-DD' since
+      // SRC-02). Re-inflating it to an ISO instant here re-introduced the very
+      // timezone ambiguity SRC-02 removed — clients then had to guess which
+      // day 2026-08-17T00:00:00Z means in their frame. Pass the day through.
       expected_delivery_date: r.expected_delivery_date
-        ? new Date(r.expected_delivery_date).toISOString()
+        ? String(r.expected_delivery_date).slice(0, 10)
         : null,
       total_cost: Math.round(Number(r.total_cost) * 100) / 100,
       status: r.status,
@@ -397,9 +401,23 @@ export async function computeCashFlowProjection(
     // optimistic distinct whenever there are blocked orders to release.
     const optimisticBoost = blockedRevenue;
 
+    // SRC-04: week bounds are calendar days, not instants. Building them from
+    // `new Date()` carried now's time-of-day, so a PO due exactly on a week
+    // boundary (UTC midnight) fell below that week's lower bound and was
+    // dropped from the projection entirely. Comparing 'YYYY-MM-DD' strings is
+    // exact: lexical order is chronological order for ISO dates.
+    const ymd = (offsetDays: number): string => {
+      const d = new Date();
+      d.setUTCHours(0, 0, 0, 0);
+      d.setUTCDate(d.getUTCDate() + offsetDays);
+      return d.toISOString().slice(0, 10);
+    };
+
     for (let week = 1; week <= 9; week++) {
       const weekDate = new Date();
       weekDate.setDate(weekDate.getDate() + week * 7);
+      const weekEndYmd   = ymd(week * 7);
+      const weekStartYmd = ymd((week - 1) * 7);
 
       // PO outflows due this week.
       // FIN-10 (2026-06-23): week 1's lower bound was previously `today`, which
@@ -408,16 +426,14 @@ export async function computeCashFlowProjection(
       // — under-modeling committed cash by $X and showing them as "Upcoming"
       // anyway. Fix: week 1 sweeps everything overdue + due this week (any
       // open PO with expected_delivery_date < end of week 1). Other weeks
-      // unchanged: strict [weekStart, weekDate) windowing.
-      const weekStart = new Date();
-      weekStart.setDate(weekStart.getDate() + (week - 1) * 7);
+      // unchanged: strict [weekStartYmd, weekEndYmd) windowing on calendar days.
       const weekOutflows = poOutflows
         .filter(p => {
           if (!p.expected_delivery_date) return false;
-          const due = new Date(p.expected_delivery_date);
+          const due = p.expected_delivery_date;
           // Week 1 absorbs any overdue commitments (no lower bound).
-          if (week === 1) return due < weekDate;
-          return due >= weekStart && due < weekDate;
+          if (week === 1) return due < weekEndYmd;
+          return due >= weekStartYmd && due < weekEndYmd;
         })
         .reduce((sum, p) => sum + p.total_cost, 0);
 

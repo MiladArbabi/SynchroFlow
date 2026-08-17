@@ -94,8 +94,19 @@ function CashFlowModuleFT2Inner({ data, isLoading, isError, currency, settings, 
     const realizedDelta = comparison?.delta?.realized_pct ?? null;
     const refundsDelta = comparison?.delta?.refunds_pct ?? null;
     // Overdue POs = expected_delivery_date in the past (FIN-10 semantics).
-    const now = new Date();
-    const overduePos = poOutflows.filter(p => p.expected_delivery_date && new Date(p.expected_delivery_date) < now);
+    // Overdue POs = expected_delivery_date strictly before today (FIN-10 semantics).
+    // SRC-04: comparing against `new Date()` counted a PO due TODAY as overdue,
+    // because the date parses to UTC midnight while `now` carries time-of-day.
+    // expected_delivery_date is a calendar day ('YYYY-MM-DD'), so a lexical
+    // compare is a calendar compare — no Date object, no timezone to get wrong.
+    // Canonical helper: apps/frontend/src/utils/calendarDays.ts. Duplicated here
+    // because modules/cashflow depends only on @lasyncro/ui-ft2, and adding a
+    // dependency edge for one comparison is not worth it.
+    const todayYmd = (() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    const overduePos = poOutflows.filter(p => p.expected_delivery_date && p.expected_delivery_date.slice(0, 10) < todayYmd);
     const overdueValue = overduePos.reduce((s, p) => s + p.total_cost, 0);
     // Projection cross — first week where base goes negative.
     const negativeCrossover = chartData.find(p => p.base < 0);

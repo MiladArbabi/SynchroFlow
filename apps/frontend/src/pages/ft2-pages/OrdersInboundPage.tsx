@@ -18,6 +18,7 @@ import { Package, Plus, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-rea
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
+import { daysUntilCalendarDay } from '../../utils/calendarDays';
 
 const TRIAGE_PREVIEW_LIMIT = 3;
 
@@ -118,10 +119,10 @@ const fmtDate = (iso: string | null): string => {
   return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 };
 
-const daysUntil = (iso: string | null): number | null => {
-  if (!iso) return null;
-  return Math.round((new Date(iso).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-};
+// SRC-04: was Math.round((date - Date.now()) / 86400000) — elapsed hours, not
+// calendar days, so a PO due today reported -1 after midday and rendered as
+// overdue. daysUntilCalendarDay compares day to day.
+const daysUntil = daysUntilCalendarDay;
 
 const fmtMoney = (cents: number): string =>
   '$' + (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
