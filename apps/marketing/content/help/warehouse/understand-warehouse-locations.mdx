@@ -1,0 +1,83 @@
+---
+title: "Understand warehouse locations"
+description: "Understand how LaSyncro uses warehouses, lanes, shelves, bins, and location codes."
+category: "Warehouse"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "warehouse locations"
+  - "location codes"
+  - "bins"
+  - "shelves"
+  - "lanes"
+searchAliases:
+  - "warehouse structure"
+  - "aisles"
+  - "storage locations"
+  - "bin locations"
+  - "location hierarchy"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/warehouse/create-and-manage-locations"
+  - "/help/warehouse/print-location-labels"
+---
+
+## Quick answer
+
+LaSyncro uses warehouse locations to identify where inventory physically belongs.
+
+A location has its own location code and can be created as a **Warehouse**, **Lane (Aisle)**, **Shelf**, or **Bin**.
+
+These location codes are used throughout warehouse operations to connect physical stock with its recorded position in LaSyncro.
+
+## Location types
+
+LaSyncro supports four location types:
+
+- **Warehouse** — the warehouse-level location.
+- **Lane (Aisle)** — a lane or aisle within the warehouse.
+- **Shelf** — a shelf location.
+- **Bin** — a specific storage bin.
+
+A location can optionally reference an existing location as its parent.
+
+This lets you represent the physical structure of your warehouse without requiring every location to sit at the same level.
+
+## Location codes
+
+Every location needs a location code.
+
+For example:
+
+- `A`
+- `A-1`
+- `A-1-01`
+
+LaSyncro converts location codes to uppercase when they are created.
+
+Each location code must also be unique within your shop.
+
+## Parent locations
+
+When creating a location, you can optionally enter a parent location.
+
+The parent must already exist in LaSyncro.
+
+For example, you may use parent locations to group storage locations beneath a larger physical area.
+
+## Warehouse root
+
+The warehouse root is managed separately from normal operational locations.
+
+Its lifecycle belongs under **Settings → Warehouse** rather than Floor Planning.
+
+The warehouse root cannot be deleted from Floor Planning.
+
+## What to do next
+
+Once your warehouse structure is clear, create the locations your team will actually scan and use during warehouse operations.
+
+Continue with **Create and manage warehouse locations**.

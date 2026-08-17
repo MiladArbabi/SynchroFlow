@@ -1,0 +1,93 @@
+---
+title: "Create and manage warehouse locations"
+description: "Create warehouse locations in LaSyncro and understand the rules for updating and deleting them."
+category: "Warehouse"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "create location"
+  - "add zone"
+  - "delete location"
+  - "location code"
+  - "floor planning"
+searchAliases:
+  - "add bin"
+  - "add shelf"
+  - "add aisle"
+  - "create zone"
+  - "remove location"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/warehouse/understand-warehouse-locations"
+  - "/help/warehouse/print-location-labels"
+---
+
+## Quick answer
+
+Owners and admins can create and manage warehouse locations from Floor Planning.
+
+Select **Add zone**, enter a location code, choose its type, optionally assign a parent, and select **Create**.
+
+## Create a location
+
+1. Open Floor Planning.
+2. Select **Add zone**.
+3. Enter a **Location code**.
+4. Choose the location **Type**.
+5. Optionally enter an existing **Parent** location.
+6. Select **Create**.
+
+Available types are:
+
+- **Bin**
+- **Lane (Aisle)**
+- **Shelf**
+- **Warehouse**
+
+LaSyncro converts the location code to uppercase when the location is created.
+
+## Location-code rules
+
+A location code is required.
+
+Each code must be unique within your shop.
+
+If you enter a parent location, that parent must already exist.
+
+The location code itself is the location's permanent identifier and cannot be changed through the location update flow.
+
+## Who can manage locations
+
+Creating, editing, deleting, and printing warehouse locations requires Floor Planning write access.
+
+By default, that access is available to **owners and admins**.
+
+Operators do not have Floor Planning write access.
+
+## Delete a location
+
+LaSyncro prevents deletion when removing the location could break the warehouse structure or inventory record.
+
+You cannot delete:
+
+- the warehouse root from Floor Planning;
+- a location that still contains on-hand stock;
+- a parent location while child locations still depend on it.
+
+If a location contains stock, move or adjust that inventory before deleting the location.
+
+If the location has children, remove or relocate those child locations first.
+
+## Manage the warehouse root
+
+The warehouse root is not deleted from Floor Planning.
+
+Manage the warehouse itself from **Settings → Warehouse**.
+
+## Next step
+
+After creating your physical locations, print labels so those locations can be identified and scanned on the warehouse floor.
+
+Continue with **Print location labels**.
