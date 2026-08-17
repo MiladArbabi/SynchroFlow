@@ -10,6 +10,7 @@ export type {
   CreateSupplierInput,
   CreatePoInput,
   SourcingRecommendation,
+  SourcingResult,
   PreferenceRow,
   ReorderRequest,
   SupplierAccumulation,

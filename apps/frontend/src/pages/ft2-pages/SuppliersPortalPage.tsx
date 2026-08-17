@@ -11,7 +11,7 @@ import type {
   CreateSupplierInput, 
   CreatePoInput, 
   Supplier,
-  SourcingRecommendation,
+  SourcingResult,
   PreferenceRow,
   ReorderRequest,
   SupplierAccumulation,
@@ -102,15 +102,20 @@ export default function SuppliersPortalPage() {
   // SOURCING (Thread C, sourcing-recommendation-playbook.md §6) — fetched
   // on demand per variant, not all up front (never_ordered list is the
   // only thing fetched eagerly, via useSuppliersPortal).
+  // SRC-03: the `needed` param is gone — nothing ever set it, so the server
+  // derives the shortfall from open demand minus availability and returns it
+  // alongside the ranked candidates.
   const handleFetchSourcingRecommendations = useCallback(async (
-    variantId: string,
-    neededQty?: number
-  ): Promise<SourcingRecommendation[]> => {
+    variantId: string
+  ): Promise<SourcingResult> => {
     const { data } = await axiosInstance.get(
-      `/api/v1/suppliers/sourcing-recommendations/${variantId}`,
-      { params: neededQty ? { needed: neededQty } : undefined }
+      `/api/v1/suppliers/sourcing-recommendations/${variantId}`
     );
-    return data.recommendations ?? [];
+    return {
+      recommendations:  data.recommendations ?? [],
+      shortfall:        Number(data.shortfall ?? 0),
+      shortfall_basis:  data.shortfall_basis ?? { demand: 0, available: 0 },
+    };
   }, []);
 
   const handleFetchPreferences = useCallback(async (): Promise<PreferenceRow[]> => {

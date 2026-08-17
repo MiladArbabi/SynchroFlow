@@ -580,7 +580,13 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
     const [searchParams] = useSearchParams();
     const triggerVariantId = searchParams.get('variantId');
     // §8: needed qty from alert deep-link — used for "Add to queue" pre-fill
-    const neededQty = Number(searchParams.get('needed') ?? 1) || 1;
+    // SRC-03: was Number(searchParams.get('needed') ?? 1) || 1 — but nothing in
+    // the codebase ever set `?needed=`, so every queued request was 1 unit and
+    // the MOQ accumulator could never fill. Now derived server-side, prefilled
+    // into an editable field so the operator can override with what they know.
+    const [shortfall, setShortfall] = useState(0);
+    const [shortfallBasis, setShortfallBasis] = useState(null);
+    const [queueQty, setQueueQty] = useState(1);
     const [activeVariantId, setActiveVariantId] = useState(triggerVariantId);
     const [recommendations, setRecommendations] = useState([]);
     const [isLoadingRecs, setIsLoadingRecs] = useState(false);
@@ -613,7 +619,7 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
     const handleAddToQueue = async (variantId, supplierId) => {
         setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'adding' }));
         try {
-            await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: neededQty, source: triggerVariantId ? 'alert' : 'manual' });
+            await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: queueQty, source: triggerVariantId ? 'alert' : 'manual' });
             const updated = await onFetchReorderRequests();
             setReorderRequests(updated);
             // Flash "Added ✓" for 1.5s so merchant knows the click registered
@@ -658,7 +664,15 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
             return;
         setIsLoadingRecs(true);
         onFetchSourcingRecommendations(activeVariantId)
-            .then(setRecommendations)
+            .then((result) => {
+            setRecommendations(result.recommendations);
+            setShortfall(result.shortfall);
+            setShortfallBasis(result.shortfall_basis);
+            // SRC-03: prefill the queue quantity from the derived shortfall.
+            // Floored at 1 so a fully-covered variant can still be queued
+            // deliberately — the operator may know about demand we can't see.
+            setQueueQty(Math.max(1, result.shortfall));
+        })
             .finally(() => setIsLoadingRecs(false));
     }, [activeVariantId, onFetchSourcingRecommendations]);
     const handleCreatePoFromRec = (variantId, supplierId) => {
@@ -692,7 +706,12 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
                                             if (!rows.length)
                                                 return null;
                                             return (_jsxs(Box, { children: [_jsx(Box, { sx: { px: 2.5, py: 0.75, bgcolor: 'var(--bg-2)' }, children: _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: scopeLabels[scope] }) }), rows.map((pref) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', gap: 1.5 }, children: [_jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: pref.supplier_name }), _jsx(Chip, { label: pref.priority === 1 ? 'Primary' : 'Backup', size: "small", sx: { fontSize: 10, height: 18, bgcolor: pref.priority === 1 ? 'rgba(255,107,43,0.12)' : 'action.hover', color: pref.priority === 1 ? 'var(--accent)' : 'text.secondary' } })] }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace', mt: 0.25 }, children: pref.scope_id }), pref.note && _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-3)', mt: 0.25, fontStyle: 'italic' }, children: pref.note })] }), _jsx(IconButton, { size: "small", onClick: () => void handleDeletePreference(pref.id), sx: { color: 'text.disabled', '&:hover': { color: 'error.main' } }, children: _jsx(Trash2, { size: 14 }) })] }, pref.id)))] }, scope));
-                                        }) }))] })), activeVariantId && isLoadingRecs && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: "Loading recommendations\u2026" }) })), activeVariantId && !isLoadingRecs && recommendations.length === 0 && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: "No supplier history for this product yet." }) })), activeVariantId && !isLoadingRecs && goodMatches.length > 0 && spotlights && !spotlights.alertTriggered.isDismissed && (_jsx(Box, { sx: { px: 2.5, pt: 1.5, borderTop: '1px solid var(--rule)' }, children: _jsx(SpotlightCoachMark, { title: "Your best supplier, ranked automatically", body: "Rankings are based on delivery speed, order accuracy, and quality from your real orders. Order now, or add to queue to combine with other products before sending.", isDismissed: spotlights.alertTriggered.isDismissed, onDismiss: spotlights.alertTriggered.dismiss, step: 2, totalSteps: 3 }) })), goodMatches.map((rec) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: rec.name }), rec.is_preferred && (_jsx(Chip, { label: "\u2605 Preferred", size: "small", sx: { fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' } }))] }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: (() => {
+                                        }) }))] })), activeVariantId && isLoadingRecs && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: "Loading recommendations\u2026" }) })), activeVariantId && !isLoadingRecs && recommendations.length === 0 && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: "No supplier history for this product yet." }) })), activeVariantId && !isLoadingRecs && goodMatches.length > 0 && spotlights && !spotlights.alertTriggered.isDismissed && (_jsx(Box, { sx: { px: 2.5, pt: 1.5, borderTop: '1px solid var(--rule)' }, children: _jsx(SpotlightCoachMark, { title: "Your best supplier, ranked automatically", body: "Rankings are based on delivery speed, order accuracy, and quality from your real orders. Order now, or add to queue to combine with other products before sending.", isDismissed: spotlights.alertTriggered.isDismissed, onDismiss: spotlights.alertTriggered.dismiss, step: 2, totalSteps: 3 }) })), activeVariantId && !isLoadingRecs && recommendations.length > 0 && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }, children: [_jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }, children: "Order quantity" }), shortfallBasis && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }, children: shortfall > 0
+                                                    ? `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · ${shortfall} short`
+                                                    : `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · covered` }))] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }, children: [_jsx(Box, { component: "input", type: "number", min: 1, value: queueQty, onChange: (e) => {
+                                                    const next = parseInt(e.target.value, 10);
+                                                    setQueueQty(Number.isNaN(next) || next < 1 ? 1 : next);
+                                                }, sx: { width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } } }), _jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "units" }), queueQty !== Math.max(1, shortfall) && (_jsx(Box, { component: "button", onClick: () => setQueueQty(Math.max(1, shortfall)), sx: { fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }, children: "Reset" }))] })] })), goodMatches.map((rec) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: rec.name }), rec.is_preferred && (_jsx(Chip, { label: "\u2605 Preferred", size: "small", sx: { fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' } }))] }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: (() => {
                                                     const parts = [
                                                         rec.on_time_rate != null && `On-time ${rec.on_time_rate}%`,
                                                         rec.fill_rate != null && `Fill ${rec.fill_rate}%`,

@@ -99,6 +99,19 @@ export type SourcingRecommendation = {
     preference_scope: string | null;
     preference_note: string | null;
 };
+/**
+ * SRC-03: the endpoint returns the derived shortfall alongside the ranked
+ * candidates. It is a property of the VARIANT, not of any one supplier, so it
+ * sits beside the list rather than inside each entry.
+ */
+export type SourcingResult = {
+    recommendations: SourcingRecommendation[];
+    shortfall: number;
+    shortfall_basis: {
+        demand: number;
+        available: number;
+    };
+};
 export type PreferenceRow = {
     id: string;
     supplier_id: number;
@@ -171,7 +184,7 @@ export type SuppliersPortalPageProps = {
     }>;
     onSearchVariants: (q: string) => Promise<VariantOption[]>;
     /** Sourcing (Thread C): ranked supplier recommendations for onevariant, fetched on demand. */
-    onFetchSourcingRecommendations: (variantId: string, neededQty?: number) => Promise<SourcingRecommendation[]>;
+    onFetchSourcingRecommendations: (variantId: string) => Promise<SourcingResult>;
     onFetchPreferences: () => Promise<PreferenceRow[]>;
     onCreatePreference: (input: {
         supplier_id: number;

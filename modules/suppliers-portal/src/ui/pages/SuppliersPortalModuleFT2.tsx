@@ -147,6 +147,17 @@ export type SourcingRecommendation = {
   preference_note: string | null;
 };
 
+/**
+ * SRC-03: the endpoint returns the derived shortfall alongside the ranked
+ * candidates. It is a property of the VARIANT, not of any one supplier, so it
+ * sits beside the list rather than inside each entry.
+ */
+export type SourcingResult = {
+  recommendations: SourcingRecommendation[];
+  shortfall: number;
+  shortfall_basis: { demand: number; available: number };
+};
+
 export type PreferenceRow = {
   id: string;
   supplier_id: number;
@@ -214,7 +225,9 @@ export type SuppliersPortalPageProps = {
   onCreateReceiveJob: (poId: string) => Promise<{ receive_job_id: string }>;
   onSearchVariants: (q: string) => Promise<VariantOption[]>;
   /** Sourcing (Thread C): ranked supplier recommendations for onevariant, fetched on demand. */
-  onFetchSourcingRecommendations: (variantId: string, neededQty?: number) => Promise<SourcingRecommendation[]>;
+  // SRC-03: neededQty removed — the server derives it. Passing it in was the
+  // old `?needed=` path, which no caller ever populated.
+  onFetchSourcingRecommendations: (variantId: string) => Promise<SourcingResult>;
   // §7.7 Preference CRUD
   onFetchPreferences: () => Promise<PreferenceRow[]>;
   onCreatePreference: (input: { supplier_id: number; scope_type: string; scope_id: string; priority?: number; note?: string }) => Promise<PreferenceRow>;
@@ -1759,7 +1772,13 @@ function PurchasingSourcingView({
   const [searchParams] = useSearchParams();
   const triggerVariantId = searchParams.get('variantId');
   // §8: needed qty from alert deep-link — used for "Add to queue" pre-fill
-  const neededQty = Number(searchParams.get('needed') ?? 1) || 1;
+  // SRC-03: was Number(searchParams.get('needed') ?? 1) || 1 — but nothing in
+  // the codebase ever set `?needed=`, so every queued request was 1 unit and
+  // the MOQ accumulator could never fill. Now derived server-side, prefilled
+  // into an editable field so the operator can override with what they know.
+  const [shortfall, setShortfall] = useState<number>(0);
+  const [shortfallBasis, setShortfallBasis] = useState<{ demand: number; available: number } | null>(null);
+  const [queueQty, setQueueQty] = useState<number>(1);
 
   const [activeVariantId, setActiveVariantId] = useState<string | null>(triggerVariantId);
   const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
@@ -1800,7 +1819,7 @@ function PurchasingSourcingView({
   const handleAddToQueue = async (variantId: string, supplierId: number) => {
     setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'adding' }));
     try {
-      await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: neededQty, source: triggerVariantId ? 'alert' : 'manual' });
+      await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: queueQty, source: triggerVariantId ? 'alert' : 'manual' });
       const updated = await onFetchReorderRequests();
       setReorderRequests(updated);
       // Flash "Added ✓" for 1.5s so merchant knows the click registered
@@ -1844,7 +1863,15 @@ function PurchasingSourcingView({
     if (!activeVariantId) return;
     setIsLoadingRecs(true);
     onFetchSourcingRecommendations(activeVariantId)
-      .then(setRecommendations)
+      .then((result) => {
+        setRecommendations(result.recommendations);
+        setShortfall(result.shortfall);
+        setShortfallBasis(result.shortfall_basis);
+        // SRC-03: prefill the queue quantity from the derived shortfall.
+        // Floored at 1 so a fully-covered variant can still be queued
+        // deliberately — the operator may know about demand we can't see.
+        setQueueQty(Math.max(1, result.shortfall));
+      })
       .finally(() => setIsLoadingRecs(false));
   }, [activeVariantId, onFetchSourcingRecommendations]);
 
@@ -1965,6 +1992,47 @@ function PurchasingSourcingView({
                 step={2}
                 totalSteps={3}
               />
+            </Box>
+          )}
+          {/* SRC-03: gated on recommendations, not goodMatches — the shortfall
+              belongs to the VARIANT, so it must show even when every candidate
+              is demoted for exceeding MOQ. Gating on goodMatches hid both the
+              quantity and its basis in exactly the case where the operator most
+              needs them: deciding whether to order under a large minimum. */}
+          {activeVariantId && !isLoadingRecs && recommendations.length > 0 && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
+                  Order quantity
+                </Typography>
+                {shortfallBasis && (
+                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+                    {shortfall > 0
+                      ? `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · ${shortfall} short`
+                      : `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · covered`}
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+                <Box
+                  component="input"
+                  type="number"
+                  min={1}
+                  value={queueQty}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                    const next = parseInt(e.target.value, 10);
+                    setQueueQty(Number.isNaN(next) || next < 1 ? 1 : next);
+                  }}
+                  sx={{ width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } }}
+                />
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>units</Typography>
+                {queueQty !== Math.max(1, shortfall) && (
+                  <Box component="button" onClick={() => setQueueQty(Math.max(1, shortfall))}
+                    sx={{ fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }}>
+                    Reset
+                  </Box>
+                )}
+              </Box>
             </Box>
           )}
 

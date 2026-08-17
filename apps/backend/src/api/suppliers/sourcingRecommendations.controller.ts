@@ -8,6 +8,21 @@
 // - GET /sourcing-recommendations/never-ordered — the live-derived list
 //   of variants with zero PO history at all, for the page's group view.
 //
+// SRC-03 — DERIVED SHORTFALL
+// The per-variant endpoint also returns `shortfall` and `shortfall_basis`:
+//   shortfall = max(0, open_demand - available)
+//   open_demand = SUM(quantity - fulfilled_quantity) across the variant's
+//     order lines. order_revenue_units enforces fulfilled <= quantity, so a
+//     shipped line contributes 0 — no order-status filter needed (and `orders`
+//     has no status column).
+//   available = SUM(inventory_truth.available_quantity) across locations.
+//     That table is written ONLY by physical events (receive/stow/pick), so a
+//     missing row means genuinely zero, not unknown. Floored at 0 because
+//     available_quantity goes negative on oversell.
+// This replaced a `?needed=` query param that no caller ever set, which meant
+// every queued reorder defaulted to 1 unit and `exceeds_moq` (which guards on
+// neededQty > 0) could never fire.
+//
 // No default_supplier_id, ever — see playbook §6a. Every call recomputes
 // from real PO history + the live scorecard, same discipline as the rest
 // of this codebase's explicit-data-over-inference principle.
@@ -20,7 +35,6 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
   const { variantId } = req.params;
-  const neededQty = Number(req.query.needed ?? 0);
 
   if (!variantId) {
     return res.status(400).json({ error: 'variantId is required' });
@@ -31,6 +45,13 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     let preferences: any[]  = [];
     let productId: string | null = null;
     let productType: string | null = null;
+    // SRC-03: shortfall is DERIVED, never supplied by the caller. The old
+    // `?needed=` query param had no writer anywhere in the codebase, so every
+    // queued reorder request defaulted to 1 unit — making the MOQ accumulator
+    // unusable (a 100-unit minimum needed 100 clicks).
+    let neededQty = 0;
+    let demandQty = 0;
+    let availableQty = 0;
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -45,6 +66,32 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
 
       productId   = variant?.product_id   ?? null;
       productType = variant?.product_type ?? null;
+
+      // ── SRC-03: SHORTFALL RESOLVER ──────────────────────────────────────
+      // Open demand = units ordered but not yet fulfilled. order_revenue_units
+      // enforces fulfilled_quantity <= quantity (CHECK constraint), so a fully
+      // shipped line contributes 0 — no order-status filter needed, and none
+      // exists on `orders` anyway.
+      const demandRow = await trx('order_revenue_units as oru')
+        .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .andWhere('oru.lasyncro_variant_id', variantId)
+        .sum({ demand: trx.raw('oru.quantity - oru.fulfilled_quantity') })
+        .first();
+
+      // inventory_truth is written ONLY by physical events (receive, stow,
+      // pick, cancel). A variant with no row has genuinely never been received,
+      // so absence means zero — not "unknown". Rows are per location_code, so
+      // this sums across locations. available_quantity can go negative on
+      // oversell, which is why the shortfall is floored below.
+      const availRow = await trx('inventory_truth')
+        .where({ shop_id: shopId, lasyncro_variant_id: variantId })
+        .sum({ available: 'available_quantity' })
+        .first();
+
+      demandQty    = Number(demandRow?.demand ?? 0);
+      availableQty = Number(availRow?.available ?? 0);
+      neededQty    = Math.max(0, demandQty - availableQty);
 
       // §7.8 Step 1: resolve preference — most specific scope wins.
       // variant > product > product_type (specificity order per playbook §7.3)
@@ -151,6 +198,12 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
 
     return res.json({
       variant_id:   variantId,
+      // SRC-03: derived shortfall + its basis. The UI prefills the queue
+      // quantity from this and shows the basis, so the operator can see WHY
+      // the number is what it is and override it when they know better
+      // (promo coming, supplier case pack, etc).
+      shortfall:       neededQty,
+      shortfall_basis: { demand: demandQty, available: availableQty },
       recommendations: ranked,
       // Surface whether any preference was resolved — useful for UI badge
       has_preference: prefBySupplierId.size > 0,
