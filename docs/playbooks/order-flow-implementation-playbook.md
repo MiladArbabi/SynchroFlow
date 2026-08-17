@@ -226,6 +226,8 @@ Cancellation is an atomic unwind, not deletion: the batch is preserved as `cance
 
 After success, the Fulfillment and Order Pool queries are invalidated immediately. Constraint-free orders return to the Order Pool, while normal constraint rules continue to keep blocked orders out of the pool.
 
+**In-flight order cancellation (BATCH-CANCEL-ORPHAN-01, 2026-08-17):** this is separate from pending-batch cancellation. When an individual order gets cancelled in Shopify after its batch has already entered picking, the cancellation projection removes that order's `pick_batch_orders` membership, marks `order_warehouse_status` as `cancelled`, and clears its `pick_batch_id`. If no memberships remain, the parent batch is preserved as `cancelled`; otherwise the remaining batch stays operational. Already-scanned allocations and picked-work counters remain historical, with physical stock recovery deferred to Problem Center/stow. The cancelled order therefore no longer appears in Ready to Pack or the batch-orders API.
+
 **"Shipped"** is intentionally not a stage here: per `POST /api/v1/wms/batch/:batchId/ship`, shipment is confirmed per‑order, not as a pick‑batch status transition. A shipped order leaves Fulfillment entirely and is tracked in Outbound.
 
 **Stalled‑batch highlighting:** deferred pending integration with the existing `alerts` table (`alert_type: 'wms_operator_idle'`), not a frontend‑computed threshold — `shop_wms_settings.idle_alert_threshold_minutes` is already the source of truth server‑side and should not be duplicated.

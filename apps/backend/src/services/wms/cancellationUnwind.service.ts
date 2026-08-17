@@ -67,6 +67,7 @@ export async function unwindCancelledOrder(
     );
 
   if (lines.length === 0) {
+    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
     console.info('[CANCEL_UNWIND_NO_LINES]', { shopId, lasyncroOrderId });
     return;
   }
@@ -79,7 +80,9 @@ export async function unwindCancelledOrder(
   const alreadyUnwound = lines.every(
     (l: any) => l.warehouse_status === 'cancelled'
   );
+
   if (alreadyUnwound) {
+    await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
     console.info('[CANCEL_UNWIND_ALREADY_APPLIED]', { shopId, lasyncroOrderId });
     return;
   }
@@ -224,6 +227,82 @@ export async function unwindCancelledOrder(
 
     await markLineCancelled(trx, shopId, line.lasyncro_line_item_id);
   }
+
+  await detachCancelledOrderFromBatch(trx, shopId, lasyncroOrderId);
+}
+
+async function detachCancelledOrderFromBatch(
+  trx: Knex.Transaction,
+  shopId: number,
+  lasyncroOrderId: string
+): Promise<void> {
+  const membership = await trx('pick_batch_orders')
+    .where({
+      shop_id: shopId,
+      lasyncro_order_id: lasyncroOrderId,
+    })
+    .select('pick_batch_id')
+    .forUpdate()
+    .first();
+
+  const now = new Date();
+
+  await trx('order_warehouse_status')
+    .where({ lasyncro_order_id: lasyncroOrderId })
+    .update({
+      status: 'cancelled',
+      pick_batch_id: null,
+      status_updated_at: now,
+      updated_at: now,
+    });
+
+  if (!membership) {
+    return;
+  }
+
+  const batch = await trx('pick_batches')
+    .where({
+      shop_id: shopId,
+      pick_batch_id: membership.pick_batch_id,
+    })
+    .select('status')
+    .forUpdate()
+    .first();
+
+  await trx('pick_batch_orders')
+    .where({
+      shop_id: shopId,
+      lasyncro_order_id: lasyncroOrderId,
+      pick_batch_id: membership.pick_batch_id,
+    })
+    .delete();
+
+  const remainingOrders = await trx('pick_batch_orders')
+    .where({
+      shop_id: shopId,
+      pick_batch_id: membership.pick_batch_id,
+    })
+    .count<{ count: string }>('* as count')
+    .first();
+
+  if (batch && Number(remainingOrders?.count ?? 0) === 0) {
+    await trx('pick_batches')
+      .where({
+        shop_id: shopId,
+        pick_batch_id: membership.pick_batch_id,
+      })
+      .update({
+        status: 'cancelled',
+        updated_at: now,
+      });
+  }
+
+  console.info('[CANCEL_UNWIND_BATCH_DETACHED]', {
+    shopId,
+    lasyncroOrderId,
+    pickBatchId: membership.pick_batch_id,
+    remainingOrders: Number(remainingOrders?.count ?? 0),
+  });
 }
 
 async function markLineCancelled(

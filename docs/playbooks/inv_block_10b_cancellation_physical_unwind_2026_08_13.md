@@ -247,15 +247,42 @@ For the final UI fixture (`46c4faf8-e63e-4ef4-a245-771443eceb76`):
 - once a different batch was legitimately claimed/started, the cancellation
   control was no longer available and the backend would reject cancellation
 
-This does **not** close `BATCH-CANCEL-ORPHAN-01` below. That issue concerns an
-individual order cancelled after its batch has already entered picking; this
-new endpoint deliberately refuses non-`pending` batches.
+### BATCH-CANCEL-ORPHAN-01 (P2) — RESOLVED 2026-08-17
 
-### BATCH-CANCEL-ORPHAN-01 (P2)
-The unwind touches neither `pick_batches` nor `pick_batch_orders`. Batch
-`5f4e320f` remains `status='picking'` with `units_picked=1` and a live
-`pick_batch_orders` membership row for the cancelled order. Related to
-`BATCH-CANCEL-01`.
+The cancellation unwind now removes stale fulfillment membership when an
+individual order gets cancelled in Shopify after it has entered a pick batch.
+Inside the same projection transaction it sets `order_warehouse_status` to
+`cancelled`, clears `pick_batch_id`, and deletes the matching
+`pick_batch_orders` row. If that was the final membership, the parent
+`pick_batches` row is preserved and moved to `status='cancelled'`; otherwise
+the remaining batch stays operational.
+
+This cleanup is deliberately separate from physical inventory recovery.
+Already-scanned `pick_reservation_allocations` remain retained, immutable scan
+history is preserved, and no inventory credit is created by batch detachment.
+Historical batch counters such as `units_picked` are not rewritten.
+
+The no-line and replay/already-unwound paths also run the detachment helper, so
+a retry cannot leave a cancelled order stranded in fulfillment.
+
+Local proof on 2026-08-17 used order
+`938d9d13-98c7-32c2-8db9-607d5ce1cd2b` in batch
+`742e0656-7d3d-4db2-afcb-b573a5cf9ed0`:
+
+- aggregate warehouse status `picked` -> `cancelled`
+- aggregate `pick_batch_id` -> `NULL`
+- batch membership `1` -> `0`
+- parent batch `pick_complete` -> `cancelled`
+- `units_picked` remained `1`
+- retained picked allocation remained at A-2
+- A-2 inventory truth remained `0/0/0/0`
+- Ready to Pack `1` -> `0`
+- target batch-orders API `1` -> `0`
+
+The cancellation event was executed through `projectDomainEventCore` under
+shop-1 tenant context because the local DB projection worker was separately
+stalled on an existing `RECONCILIATION_BACKLOG_VIOLATION`; no reconciliation
+code was changed for this issue.
 
 ### INV-BLOCK-10b-FU-01 (P2)
 `markLineCancelled` issues an `UPDATE ... WHERE lasyncro_line_item_id = ?`
