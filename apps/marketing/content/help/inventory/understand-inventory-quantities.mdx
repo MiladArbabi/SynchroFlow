@@ -1,0 +1,83 @@
+---
+title: "Understand inventory quantities"
+description: "Understand how LaSyncro represents on-hand, reserved, available, and sellable inventory."
+category: "Inventory"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "inventory quantities"
+  - "on hand"
+  - "available"
+  - "reserved"
+  - "sellable"
+searchAliases:
+  - "stock quantities"
+  - "inventory numbers"
+  - "on-hand stock"
+  - "available stock"
+  - "reserved inventory"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/inventory/view-inventory-by-location"
+  - "/help/inventory/understand-reserved-and-available-stock"
+---
+
+## Quick answer
+
+LaSyncro tracks inventory using several quantities that describe what is physically present and what is still available for new order demand.
+
+The main quantities are **On-hand**, **Reserved**, and **Available**.
+
+## On-hand
+
+**On-hand** is the physical quantity currently recorded in warehouse inventory.
+
+For example, if a bin contains 12 recorded units of a variant, its on-hand quantity is 12.
+
+On-hand includes units that may already be reserved for released orders.
+
+## Reserved
+
+**Reserved** inventory is part of your on-hand stock that has been held for order demand.
+
+Reserved units are still physically in the warehouse, but they are no longer available for another reservation.
+
+## Available
+
+**Available** is the inventory that remains after reservations are taken into account.
+
+In the current inventory model:
+
+`Available = On-hand - Reserved`
+
+For example:
+
+- On-hand: 12
+- Reserved: 4
+- Available: 8
+
+## Sellable
+
+LaSyncro also stores a **Sellable** quantity.
+
+In the current inventory model, Sellable is derived from Available and has the same quantity.
+
+## What about Committed?
+
+Committed is retained internally for schema compatibility but is not a separate active inventory stage in the current model.
+
+Order commitment is represented through inventory reservations instead.
+
+For day-to-day warehouse decisions, focus on **On-hand**, **Reserved**, and **Available**.
+
+## No inventory record is different from zero inventory
+
+LaSyncro distinguishes between:
+
+- a product variant that has an inventory record with a quantity of zero;
+- a product variant that has never been received into warehouse inventory.
+
+A product with no warehouse inventory record is treated as **not yet received**, not simply as an ordinary zero-stock record.

@@ -1,0 +1,93 @@
+---
+title: "Understand reserved and available stock"
+description: "Learn how order reservations affect available warehouse inventory in LaSyncro."
+category: "Inventory"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "reserved stock"
+  - "available stock"
+  - "inventory reservation"
+  - "order reservation"
+  - "stock availability"
+searchAliases:
+  - "why inventory is reserved"
+  - "why available is lower"
+  - "reserved inventory"
+  - "available quantity"
+  - "order stock hold"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/inventory/understand-inventory-quantities"
+  - "/help/inventory/view-inventory-by-location"
+---
+
+## Quick answer
+
+When LaSyncro reserves inventory for order demand, those units remain physically on hand but are removed from the quantity available for another reservation.
+
+This prevents the same warehouse stock from being allocated twice.
+
+## How a reservation changes inventory
+
+Suppose a location contains 10 units:
+
+- On-hand: 10
+- Reserved: 0
+- Available: 10
+
+If 3 units are reserved for released order demand:
+
+- On-hand: 10
+- Reserved: 3
+- Available: 7
+
+The physical stock has not disappeared.
+
+Three units have simply been held for existing demand.
+
+## Available stock
+
+Available stock is calculated from the physical on-hand quantity after reservations:
+
+`Available = On-hand - Reserved`
+
+LaSyncro uses available inventory when evaluating whether stock can satisfy additional demand.
+
+## When a reservation is released
+
+If reserved inventory no longer needs to be held, LaSyncro releases the reservation.
+
+Releasing reserved units:
+
+- decreases Reserved;
+- increases Available.
+
+The units become available for other demand again.
+
+## When reserved stock is physically removed
+
+When reserved units complete the warehouse fulfillment flow and are physically removed from inventory, both the relevant on-hand and reserved quantities are reduced.
+
+This reflects that the stock is no longer present in the warehouse.
+
+## Why On-hand can be higher than Available
+
+It is normal for On-hand to be higher than Available.
+
+The difference represents stock that is physically present but already reserved.
+
+For example:
+
+`20 On-hand - 6 Reserved = 14 Available`
+
+So seeing 20 units physically recorded does not mean all 20 units are free for new order demand.
+
+## Sellable stock
+
+In the current LaSyncro inventory model, Sellable is derived from Available.
+
+That means the sellable quantity currently follows the same inventory quantity as Available.

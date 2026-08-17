@@ -1,0 +1,81 @@
+---
+title: "View inventory by warehouse location"
+description: "Understand how LaSyncro shows physical inventory against warehouse locations."
+category: "Inventory"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "inventory by location"
+  - "bin inventory"
+  - "warehouse stock"
+  - "location inventory"
+  - "on hand"
+searchAliases:
+  - "stock by bin"
+  - "where is inventory"
+  - "inventory location"
+  - "stock locations"
+  - "bin occupancy"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/inventory/understand-inventory-quantities"
+  - "/help/warehouse/understand-warehouse-locations"
+---
+
+## Quick answer
+
+LaSyncro records warehouse inventory against physical location codes.
+
+Location-level inventory lets you see how much stock is physically recorded at a location and which product variants make up that stock.
+
+## Inventory is tied to locations
+
+Warehouse inventory records include a location code.
+
+That means physical stock can be associated with locations such as bins in your warehouse structure.
+
+Floor Planning uses this inventory data to represent occupied warehouse locations.
+
+## What location inventory contains
+
+For each occupied location, LaSyncro can determine:
+
+- the location code;
+- total on-hand units at that location;
+- the product variants stored there;
+- the SKU for each variant when available;
+- the product title;
+- the on-hand quantity for each variant.
+
+The location total is the combined on-hand quantity of the variants recorded there.
+
+## Empty locations
+
+The Floor Planning occupancy data contains locations with positive on-hand inventory.
+
+A location with no on-hand stock therefore does not appear as an occupied location in that inventory payload.
+
+This does not mean the warehouse location itself has been deleted.
+
+It means there is currently no positive on-hand inventory recorded there.
+
+## Product totals and location totals answer different questions
+
+The Products Catalog helps answer:
+
+**How much of this product do I have?**
+
+Location inventory helps answer:
+
+**Where is that physical stock recorded?**
+
+Both views come from LaSyncro's warehouse inventory truth, but they organize that information differently.
+
+## Keep location records accurate
+
+Accurate location inventory depends on warehouse movements being recorded against the correct locations.
+
+Receiving, stowing, picking, and other inventory movements should therefore use the physical locations your warehouse team actually works with.
