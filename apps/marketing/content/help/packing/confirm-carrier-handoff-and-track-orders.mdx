@@ -1,0 +1,101 @@
+---
+title: "Confirm carrier handoff and track orders"
+description: "Move packed orders through carrier handoff and review shipped-order tracking signals."
+category: "Packing"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "carrier handoff"
+  - "outbound"
+  - "shipped orders"
+  - "tracking"
+  - "confirm handoff"
+searchAliases:
+  - "mark order shipped"
+  - "awaiting carrier handoff"
+  - "packed orders"
+  - "shipment tracking"
+  - "carrier pickup"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/packing/pack-orders-with-scans"
+  - "/help/packing/set-up-carriers-and-shipping-labels"
+  - "/help/orders/understand-order-flow"
+---
+
+## Quick answer
+
+Packing and shipping are separate steps in LaSyncro.
+
+Scanning the invoice barcode in Pack mode marks the parcel packed. It does not by itself confirm that the carrier has collected the parcel.
+
+Use **Outbound** to review packed parcels awaiting handoff and to confirm handoff only after the parcel physically leaves the warehouse.
+
+## Understand the handoff queue
+
+Open **Orders**, then choose **Outbound**.
+
+When there are packed orders waiting to leave the warehouse, LaSyncro shows **Awaiting carrier handoff**.
+
+Each row can show:
+
+- the order number;
+- how long ago it was packed;
+- the tracking number when one is available;
+- **Confirm handoff** when the batch is available.
+
+If carrier tracking is configured, carrier movement can clear this queue automatically. If carrier tracking is not configured, confirm manually only after physical pickup.
+
+## Confirm a physical handoff
+
+Use **Confirm handoff** after the packed parcel has physically left the warehouse with the carrier.
+
+LaSyncro then marks the order shipped and moves it into the shipped-order ledger.
+
+If the handoff cannot be confirmed, LaSyncro shows:
+
+**Handoff confirmation failed. The order was not marked shipped.**
+
+Review the order and try again only after the physical handoff is correct.
+
+## Review shipped orders
+
+The **Outbound** page shows shipped orders and shipping health signals.
+
+The shipped-order table includes:
+
+- order;
+- shipped time;
+- proof;
+- carrier;
+- live status;
+- action.
+
+Use the filters to review orders that need action, this week, this month, or all time.
+
+## Track missing or delayed shipments
+
+Outbound can flag:
+
+- stalled shipments;
+- missing tracking;
+- orders delayed before shipping.
+
+If carrier settings are missing, LaSyncro can show **Configure** so an owner or admin can go to carrier settings.
+
+If carriers are configured and shipped orders are missing tracking, LaSyncro can show **Review orders** and **Backfill labels**.
+
+## Shopify fulfillment updates
+
+When LaSyncro confirms shipment, it also attempts to write the fulfillment update back to Shopify using the tracking information available for the order.
+
+If that Shopify update fails, LaSyncro keeps the warehouse shipment record. Review the order and carrier setup before contacting support.
+
+## Who can confirm handoff
+
+Owners, admins, and operators can confirm shipment handoff.
+
+Carrier setup and missing-tracking configuration are intended for owners and admins.

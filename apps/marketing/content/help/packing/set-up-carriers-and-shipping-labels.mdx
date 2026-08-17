@@ -1,0 +1,129 @@
+---
+title: "Set up carriers and shipping labels"
+description: "Connect carrier settings so LaSyncro can generate labels during packing and track shipments after handoff."
+category: "Packing"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "carrier settings"
+  - "shipping labels"
+  - "Sendcloud"
+  - "Shippo"
+  - "sender address"
+  - "tracking"
+searchAliases:
+  - "connect carrier"
+  - "shipping label setup"
+  - "label generation"
+  - "carrier pickup time"
+  - "sender address"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/packing/pack-orders-with-scans"
+  - "/help/packing/confirm-carrier-handoff-and-track-orders"
+  - "/help/warehouse/set-up-printers-and-label-routing"
+---
+
+## Quick answer
+
+Owners and admins set up shipping from **Settings -> Carriers**.
+
+Carrier setup controls whether LaSyncro can generate shipping labels during packing and receive tracking updates after parcels leave the warehouse.
+
+The current carrier options are **Sendcloud** and **Shippo**.
+
+## Open carrier settings
+
+Open **Settings**, then choose **Carriers**.
+
+The page includes:
+
+- **Carrier Pickup Time**;
+- **Sender address**;
+- carrier connection cards;
+- live tracking update setup for connected carriers.
+
+## Set the carrier pickup time
+
+Use **Carrier Pickup Time** for the daily time your carrier collects parcels.
+
+This time drives the warehouse countdown and required throughput signals where those analytics are shown.
+
+Leave the time blank if you do not want LaSyncro to show the pickup countdown.
+
+## Add a sender address
+
+Use **Sender address** to store the warehouse or company address used for labels.
+
+LaSyncro asks for:
+
+- warehouse or company name;
+- street address;
+- city;
+- postal code;
+- country;
+- phone.
+
+State or region, apartment or suite, and email are optional fields.
+
+The first saved sender address becomes the default. If you have more than one address, choose **Make default** on the address LaSyncro should use.
+
+Some carriers need a sender address before labels can be generated. Shippo uses the sender address saved in LaSyncro. Sendcloud uses the sender address configured in your Sendcloud account.
+
+## Connect Sendcloud
+
+Use the **Sendcloud** card when your shop uses Sendcloud for shipping labels.
+
+Enter the carrier credentials requested by the form, then choose **Connect Sendcloud**.
+
+When Sendcloud is connected, the card shows **Connected** and includes **Disconnect**.
+
+Sendcloud also includes an **Include return slip** setting. Turn it on when you want the generated A4 invoice to include the return slip area supported by the current Sendcloud setup.
+
+## Connect Shippo
+
+Use the **Shippo** card when your shop uses Shippo for shipping labels.
+
+Enter the carrier credential requested by the form, then choose **Connect Shippo**.
+
+When Shippo is connected, the card shows **Connected** and includes **Disconnect**.
+
+Shippo label generation requires a usable default sender address and a recipient phone number from the order.
+
+## Configure live tracking updates
+
+Connected carrier cards can show live tracking update controls.
+
+Use these controls when you want LaSyncro to receive carrier tracking events after labels are created.
+
+If you rotate or revoke tracking update access, update the carrier side immediately so tracking updates do not stop.
+
+## Generate labels during packing
+
+During a pack session, LaSyncro tries to generate or reuse the carrier label for the order.
+
+Pack mode does not currently ask you to choose between connected carriers for each parcel. If more than one carrier connection is active, verify the generated label before handoff.
+
+If a label URL is available, it opens during packing while the invoice is sent to the invoice printer.
+
+If label generation fails, the pack session can show:
+
+**Printing incomplete — check the invoice printer and carrier setup. You can still proceed.**
+
+Do not hand the parcel to the carrier until the correct label is available.
+
+## Backfill missing labels from Outbound
+
+If shipped orders are missing customer-visible tracking and a carrier is configured, **Outbound** can show **Backfill labels**.
+
+Use this only for orders that need labels generated after the normal packing step.
+
+LaSyncro reports how many labels succeeded or failed.
+
+## Who can manage carriers
+
+Carrier connection, pickup time, and sender address changes are intended for owners and admins.
+
+Operators can pack orders, but carrier setup is not part of the normal operator workflow.

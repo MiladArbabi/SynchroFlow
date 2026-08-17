@@ -1,0 +1,120 @@
+---
+title: "Pack orders with scans"
+description: "Use Pack mode to scan picked units, print packing paperwork, and close packed parcels."
+category: "Packing"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "packing"
+  - "pack mode"
+  - "scan item"
+  - "invoice barcode"
+  - "LSU"
+  - "LSO"
+searchAliases:
+  - "pack order"
+  - "scan packed item"
+  - "ready to pack"
+  - "packing session"
+  - "invoice scan"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/orders/release-orders-into-batches"
+  - "/help/picking/pick-a-released-batch"
+  - "/help/packing/set-up-carriers-and-shipping-labels"
+  - "/help/problem-center/resolve-warehouse-exceptions"
+---
+
+## Quick answer
+
+Packing starts after picking is complete.
+
+Open **Warehouse**, use **Pack mode**, then scan a picked item barcode to open the pack session for that order.
+
+The normal scan flow is:
+
+**Scan LSU item barcode -> scan remaining order items -> scan the LSO invoice barcode**
+
+The invoice scan closes the packed parcel in LaSyncro. Carrier handoff is handled later from Outbound.
+
+## Start from Pack mode
+
+Open **Warehouse**.
+
+The **Pack mode** panel accepts scanner input and manual entry. Scan an item or invoice barcode, or type the value and press Enter.
+
+The **Ready to pack** panel shows orders that have completed picking. It can show:
+
+- the order number;
+- the order invoice barcode;
+- each product or variant;
+- the tracked unit barcode when one exists.
+
+## Scan the first item
+
+Scan an item barcode that begins with **LSU-**.
+
+LaSyncro checks that the unit belongs to a picked order that is ready for packing. If the batch was ready to pack, LaSyncro can move it into packing and open the pack session.
+
+The pack session shows the order context, including the order number, product details, SKU, shipping recipient, and the scanned unit.
+
+## Print the invoice and label
+
+When the pack session opens, LaSyncro tries to send the invoice to the configured printer and open the carrier shipping label.
+
+The print status can show:
+
+- **Preparing invoice + shipping label...**
+- **Invoice sent to printer · shipping label opened**
+- **Printing incomplete — check the invoice printer and carrier setup. You can still proceed.**
+
+Printing problems do not automatically stop the pack session. Check printer and carrier setup before the parcel leaves the warehouse.
+
+## Pack every item in the order
+
+For tracked items, keep scanning the remaining **LSU-** barcodes for the same order.
+
+If the order has more than one item, LaSyncro shows how many more items need to be scanned before the invoice barcode can close the parcel.
+
+If a line is not tracked by unit barcode, the session can show **Inspection count**. Use the quantity controls and choose **Confirm** when the counted quantity is correct.
+
+## Close the parcel with the invoice barcode
+
+After every item in the order is confirmed, scan the invoice barcode that begins with **LSO-**.
+
+If the barcode belongs to the current order, LaSyncro marks the order packed and returns you to Pack mode.
+
+If every order in the batch has been packed, the batch can move out of active packing work.
+
+## Recover from scan errors
+
+Some scan errors are recoverable in the moment.
+
+Examples include:
+
+- **Unit barcode not recognised**: check the unit label and scan again.
+- **Unit is already packed**: do not pack the same unit twice.
+- **Unit cannot be packed**: the unit is not currently in a picked state.
+- **No confirmed pick record found for this unit**: review the pick record before packing.
+- **Batch not ready for packing**: finish or review the pick batch first.
+- **Wrong order**: finish the current order before scanning an item from another order.
+- **Wrong invoice**: scan the invoice barcode for the current order.
+- **Not all items in this order have been scanned**: scan the remaining items before scanning the invoice.
+- **Barcode prefix not recognised**: Pack mode expects **LSU-** item barcodes or **LSO-** invoice barcodes.
+
+If a physical item is missing, damaged, or cannot be packed correctly, do not force the parcel closed. Stop on that order and ask an owner or admin to review the problem before continuing.
+
+## Leave a partial pack session
+
+If you try to leave after scanning some, but not all, items, LaSyncro warns that leaving requires the items to be rescanned when you return.
+
+Choose **Stay** to keep packing or **Abandon** if you need to leave the session.
+
+## Who can pack
+
+Owners, admins, and operators can use pack scanning.
+
+Carrier setup, sender addresses, and related shipping settings are intended for owners and admins.

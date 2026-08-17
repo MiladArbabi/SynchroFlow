@@ -1,0 +1,129 @@
+---
+title: "Resolve warehouse exceptions"
+description: "Use Problem Center to review, filter, and resolve warehouse exception tasks."
+category: "Problem Center"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "Problem Center"
+  - "warehouse exceptions"
+  - "resolve exception"
+  - "problem bin"
+  - "write off"
+  - "re-stow"
+searchAliases:
+  - "resolve problem task"
+  - "warehouse problem"
+  - "exception queue"
+  - "problem label"
+  - "damaged item"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/picking/handle-pick-exceptions"
+  - "/help/receiving/handle-shortages-and-receiving-exceptions"
+  - "/help/packing/pack-orders-with-scans"
+  - "/help/stowing/handle-partial-stows-and-exceptions"
+---
+
+## Quick answer
+
+Problem Center is the warehouse exception queue.
+
+Use it to review open exception tasks, filter by stage or type, and choose a resolution action for each task.
+
+Problem Center can show exception work from pick, pack, stow, receive, and returns sources when those tasks exist in the current system.
+
+## Open Problem Center
+
+Open **Problem Center** from the warehouse navigation.
+
+The page shows the number of unresolved tasks and a table of current exceptions.
+
+If there are no open tasks, LaSyncro shows **No open exceptions**.
+
+If a filter hides the current tasks, LaSyncro shows **No exceptions match the current filters.**
+
+## Review the exception table
+
+Each row can show:
+
+- product or variant;
+- SKU;
+- stage;
+- type;
+- quantity;
+- problem label;
+- problem bin;
+- age;
+- resolution action.
+
+Problem labels use **PROB-** values. They help connect the physical exception item to the Problem Center task.
+
+Problem bin shows where the exception item should be staged when a problem bin is configured.
+
+## Filter and sort work
+
+Use stage filters to view:
+
+- **Pick**
+- **Pack**
+- **Stow**
+- **Receive**
+
+Returns tasks can appear in the table under **All stages**, but the current filter chips do not include a dedicated Returns filter.
+
+Use type filters for visible exception types, such as **Item Missing**, **Short Pick**, **Product Defect**, **Packaging Defect**, **Wrong Item**, **Stow Failure**, and **Receive Rejection**.
+
+Use **Show resolved** when you need to include resolved rows in the view.
+
+You can sort by exception, quantity, or age.
+
+## Resolve an exception
+
+Choose **Resolve** on an open row.
+
+Select the action that matches the physical decision, add an optional note, then choose **Confirm**.
+
+The actions available depend on the exception type. Current options can include:
+
+- **Re-stow**: the item is usable and should return to stock through stowing.
+- **Find Replacement**: marks the task as investigating. The current resolution dialog does not show replacement locations.
+- **Discard**: the item is damaged beyond use.
+- **Write Off**: the item is missing or unaccounted for.
+- **Quarantine**: hold the item for more investigation.
+
+Do not choose a resolution until the physical item and stock impact are clear.
+
+## Understand inventory impact
+
+Resolution actions can affect inventory differently.
+
+**Discard** and **Write Off** reduce available stock when LaSyncro can identify a single eligible stock location with enough available quantity.
+
+**Re-stow** creates new stow work so usable stock can return to a bin.
+
+**Quarantine** moves the item to the configured problem bin when LaSyncro can identify one eligible stock location.
+
+**Find Replacement** leaves the task investigating instead of fully resolved.
+
+If LaSyncro cannot safely identify the stock location or available quantity, the resolution can fail. Review the item, location, and problem bin setup before trying again.
+
+## Handle pending pack decisions
+
+Problem Center can also show a pending pack decision strip when a packer is waiting.
+
+The available actions are:
+
+- **Ship partial**
+- **Hold order**
+
+Choose the action only after reviewing the order and the missing or short item context. Add a note for the packer when helpful.
+
+## Who can use Problem Center
+
+Owners, admins, and operators can view Problem Center and resolve warehouse exception tasks when their role includes the required warehouse actions.
+
+Owner or admin review is recommended before actions that write off stock, discard stock, hold an order, or approve a partial shipment.
