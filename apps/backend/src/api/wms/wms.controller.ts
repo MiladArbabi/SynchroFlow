@@ -4,6 +4,7 @@ import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { getErrorMessage } from '@lasyncro/backend-core';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
+import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
 import { computeCoverage } from '../../services/wms/inventoryUnit.service.js';
@@ -402,6 +403,61 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_BATCH_RELEASE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Batch release failed: ${message}` });
+  }
+};
+
+// ─────────────────────────────────────────
+// POST /api/v1/wms/batch/:batchId/cancel
+// ─────────────────────────────────────────
+export const httpCancelBatch = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  const batchId = req.params.batchId;
+
+  if (!shopId || !userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (!batchId || Array.isArray(batchId)) {
+    return res.status(400).json({ error: 'A single batchId is required' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return cancelUnclaimedBatch(
+        trx,
+        shopId,
+        batchId
+      );
+    });
+
+    return res.status(200).json(result);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Unknown error';
+
+    if (message === 'BATCH_NOT_FOUND') {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    if (message.startsWith('BATCH_NOT_CANCELLABLE:')) {
+      return res.status(409).json({
+        error: `Batch is not cancellable: ${message.split(':')[1]}`,
+      });
+    }
+
+    console.error('[WMS_BATCH_CANCEL_FAILED]', {
+      shopId,
+      userId,
+      batchId,
+      error: message,
+    });
+
+    return res.status(500).json({
+      error: `Batch cancellation failed: ${message}`,
+    });
   }
 };
 

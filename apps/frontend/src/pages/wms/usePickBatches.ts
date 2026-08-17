@@ -4,7 +4,7 @@
 // Endpoint: GET /api/v1/wms/batches
 // Excludes pack_complete and cancelled — server-side filtered.
 
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
 export interface PickBatch {
@@ -48,6 +48,32 @@ export function usePickBatches(options?: { refetchInterval?: number }) {
     },
     // Default 30s; Order Flow passes a faster cadence for the live matrix/iso
     refetchInterval: options?.refetchInterval ?? 30_000,
+  });
+}
+
+export interface CancelBatchResult {
+  pick_batch_id: string;
+  status: 'cancelled';
+  returned_order_count: number;
+  released_reservation_count: number;
+  released_units: number;
+}
+
+export function useCancelBatch() {
+  const qc = useQueryClient();
+
+  return useMutation<CancelBatchResult, Error, string>({
+    mutationFn: async (batchId) => {
+      const { data } = await axiosInstance.post(
+        `/api/v1/wms/batch/${batchId}/cancel`,
+      );
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['wms', 'batches'] });
+      qc.invalidateQueries({ queryKey: ['wms', 'order-pool'] });
+      qc.invalidateQueries({ queryKey: ['orders', 'constrained'] });
+    },
   });
 }
 

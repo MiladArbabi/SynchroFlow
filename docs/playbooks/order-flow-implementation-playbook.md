@@ -218,7 +218,13 @@ line/unit counts
 picker or packer name, once assigned
 ```
 
-**Read‑only.** No advance‑stage actions on this column: claim, pick‑complete, and pack‑complete are gated by operator ownership (`picked_by`/`packed_by` must match the caller) and, for pick‑complete, a scan‑completion guard — none of which a manager‑facing screen can satisfy. Those transitions belong to the picker/packer's own flow, not Order Flow.
+**No manager stage advancement.** Claim, pick-complete, and pack-complete remain operator-owned transitions and do not belong on Order Flow.
+
+**Pending-batch cancellation (BATCH-CANCEL-UNCLAIMED-01, 2026-08-17):** a batch that is still `pending` and unclaimed may be cancelled from its Fulfillment card. The action uses an inline confirmation inside the existing card and calls `POST /api/v1/wms/batch/:batchId/cancel`. Once the batch leaves `pending`, cancellation is rejected.
+
+Cancellation is an atomic unwind, not deletion: the batch is preserved as `cancelled`; its batch-level `reservation_hold` movements are reversed with equal negative `reservation_release` movements; `inventory_truth.reserved_quantity` is reduced while `available_quantity` is restored; and `pick_reservation_allocations` plus `pick_batch_orders` are removed.
+
+After success, the Fulfillment and Order Pool queries are invalidated immediately. Constraint-free orders return to the Order Pool, while normal constraint rules continue to keep blocked orders out of the pool.
 
 **"Shipped"** is intentionally not a stage here: per `POST /api/v1/wms/batch/:batchId/ship`, shipment is confirmed per‑order, not as a pick‑batch status transition. A shipped order leaves Fulfillment entirely and is tracked in Outbound.
 

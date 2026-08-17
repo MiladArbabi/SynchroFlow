@@ -69,7 +69,7 @@ import {
   type SkippedReleaseOrder,
   NewlyBlockedOrder,
 } from '../wms/useOrderPool';
-import { usePickBatches } from '../wms/usePickBatches';
+import { useCancelBatch, usePickBatches } from '../wms/usePickBatches';
 import { useWmsOperators } from '../wms/useWmsOperators';
 import { useLiveCapacity } from '../wms/useWmsAnalytics';
 
@@ -151,6 +151,7 @@ export default function OrderFlowPage() {
   const pickBatchesQuery = usePickBatches({ refetchInterval: 10_000 });
   const liveCapacityQuery = useLiveCapacity();
   const releaseBatch = useReleaseBatch();
+  const cancelBatch = useCancelBatch();
   const setPriority = useSetPriority();
   const spotlightOrderFlowWave = useSpotlight('order_flow_wave');
   // ONB-ORD1: step 2 of the fulfillment coaching arc (pool → release → floor).
@@ -428,6 +429,16 @@ export default function OrderFlowPage() {
   // SHOP-REV-03 (2026-08-06): surfaces release failures. Cleared on each attempt.
   const [releaseError, setReleaseError] = useState<string | null>(null);
 
+  /**
+   * BATCH-CANCEL-UNCLAIMED-01: cancellation stays inline on the pending
+   * fulfillment card so a destructive action never hides its consequence.
+   */
+  const [cancelConfirmBatchId, setCancelConfirmBatchId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<{
+    batchId: string;
+    message: string;
+  } | null>(null);
+
   const [releaseSuccess, setReleaseSuccess] = useState<{
     batchId: string | null;
     orderCount: number;
@@ -598,6 +609,21 @@ export default function OrderFlowPage() {
         (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
         (err instanceof Error ? err.message : 'Unknown error');
       setReleaseError(message);
+    }
+  };
+
+  const handleCancelBatch = async (batchId: string) => {
+    setCancelError(null);
+
+    try {
+      await cancelBatch.mutateAsync(batchId);
+      setCancelConfirmBatchId(null);
+    } catch (err) {
+      const message =
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+        (err instanceof Error ? err.message : 'Unknown error');
+
+      setCancelError({ batchId, message });
     }
   };
 
@@ -1617,13 +1643,45 @@ export default function OrderFlowPage() {
                             gap: 0.75,
                           }}
                         >
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                             <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>
                               {batch.pick_batch_id.slice(0, 8).toUpperCase()}
                             </Typography>
-                            <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
-                              {batch.status === 'pending' ? 'Pending' : stages[stageIndex]?.label ?? batch.status}
-                            </Typography>
+
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                              <Typography sx={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)' }}>
+                                {batch.status === 'pending' ? 'Pending' : stages[stageIndex]?.label ?? batch.status}
+                              </Typography>
+
+                              {batch.status === 'pending' && (
+                                <Box
+                                  onClick={() => {
+                                    setCancelError(null);
+                                    setCancelConfirmBatchId((current) =>
+                                      current === batch.pick_batch_id ? null : batch.pick_batch_id,
+                                    );
+                                  }}
+                                  aria-label={`Cancel batch ${batch.pick_batch_id.slice(0, 8).toUpperCase()}`}
+                                  sx={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    width: 22,
+                                    height: 22,
+                                    borderRadius: '6px',
+                                    border: '0.5px solid var(--rule)',
+                                    color: 'var(--ink-4)',
+                                    cursor: 'pointer',
+                                    '&:hover': {
+                                      color: theme.palette.error.main,
+                                      borderColor: theme.palette.error.main,
+                                    },
+                                  }}
+                                >
+                                  <X size={12} />
+                                </Box>
+                              )}
+                            </Box>
                           </Box>
 
                           <Box sx={{ display: 'flex', gap: 0.5 }}>
@@ -1665,6 +1723,90 @@ export default function OrderFlowPage() {
                               {batch.packer_name ?? batch.picker_name}
                             </Typography>
                           )}
+
+                          <Collapse
+                            in={cancelConfirmBatchId === batch.pick_batch_id}
+                            timeout={180}
+                            unmountOnExit
+                          >
+                            <Box
+                              sx={{
+                                mt: 0.25,
+                                pt: 1,
+                                borderTop: '1px solid var(--rule)',
+                              }}
+                            >
+                              <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--ink)' }}>
+                                Cancel batch {batch.pick_batch_id.slice(0, 8).toUpperCase()}?
+                              </Typography>
+
+                              <Typography sx={{ mt: 0.25, fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                                Its orders return to the order pool or Blocked if constraints apply.
+                              </Typography>
+
+                              {cancelError?.batchId === batch.pick_batch_id && (
+                                <Typography
+                                  sx={{
+                                    mt: 0.75,
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: theme.palette.error.main,
+                                  }}
+                                >
+                                  {cancelError.message}
+                                </Typography>
+                              )}
+
+                              <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end', gap: 0.75 }}>
+                                <Box
+                                  onClick={() => {
+                                    setCancelError(null);
+                                    setCancelConfirmBatchId(null);
+                                  }}
+                                  sx={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    px: 1.25,
+                                    py: 0.5,
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: 'var(--ink-3)',
+                                    border: '0.5px solid var(--rule)',
+                                    borderRadius: '6px',
+                                    cursor: 'pointer',
+                                    '&:hover': { opacity: 0.75 },
+                                  }}
+                                >
+                                  Keep batch
+                                </Box>
+
+                                <Box
+                                  onClick={() =>
+                                    !cancelBatch.isPending &&
+                                    void handleCancelBatch(batch.pick_batch_id)
+                                  }
+                                  sx={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    px: 1.25,
+                                    py: 0.5,
+                                    fontSize: 11,
+                                    fontWeight: 600,
+                                    color: theme.palette.common.white,
+                                    bgcolor: theme.palette.error.main,
+                                    borderRadius: '6px',
+                                    cursor: cancelBatch.isPending ? 'not-allowed' : 'pointer',
+                                    opacity: cancelBatch.isPending ? 0.55 : 1,
+                                    '&:hover': {
+                                      opacity: cancelBatch.isPending ? 0.55 : 0.88,
+                                    },
+                                  }}
+                                >
+                                  {cancelBatch.isPending ? 'Cancelling…' : 'Cancel batch'}
+                                </Box>
+                              </Box>
+                            </Box>
+                          </Collapse>
                         </Box>
                       );
                     })

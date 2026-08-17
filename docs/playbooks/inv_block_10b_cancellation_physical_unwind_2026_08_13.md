@@ -219,6 +219,38 @@ locally.
 
 Do not implement a receive-side Shopify push against the original wording.
 
+### BATCH-CANCEL-UNCLAIMED-01 — RESOLVED 2026-08-17
+
+Order Flow now provides an explicit cancellation path for an unclaimed
+`pending` pick batch: `POST /api/v1/wms/batch/:batchId/cancel`.
+
+The cancellation transaction locks and re-validates the batch as `pending`,
+then uses the immutable batch-level `reservation_hold` ledger rows as the
+arithmetic source for reversal. For each hold it writes an equal negative
+`reservation_release`, restores `inventory_truth.available_quantity`, reduces
+`reserved_quantity`, deletes the operational `pick_reservation_allocations`
+and `pick_batch_orders` rows, and preserves the batch as `status='cancelled'`.
+
+Local verification on 2026-08-17 proved both the 12-unit and 1-unit cases.
+For the final UI fixture (`46c4faf8-e63e-4ef4-a245-771443eceb76`):
+
+- batch remained preserved as `cancelled`, `units_picked=0`
+- memberships: `0`
+- reservation allocations: `0`
+- reservation hold `+1` / release `-1` / net `0`
+- inventory truth at `A-2`: on-hand `1`, reserved `0`, available `1`,
+  sellable `1`
+- shop-wide negative inventory rows: `0`
+- the released order returned immediately to the Order Pool
+- retrying cancellation returned `409`
+- claiming a cancelled batch returned `409`
+- once a different batch was legitimately claimed/started, the cancellation
+  control was no longer available and the backend would reject cancellation
+
+This does **not** close `BATCH-CANCEL-ORPHAN-01` below. That issue concerns an
+individual order cancelled after its batch has already entered picking; this
+new endpoint deliberately refuses non-`pending` batches.
+
 ### BATCH-CANCEL-ORPHAN-01 (P2)
 The unwind touches neither `pick_batches` nor `pick_batch_orders`. Batch
 `5f4e320f` remains `status='picking'` with `units_picked=1` and a live

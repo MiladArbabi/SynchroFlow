@@ -8,6 +8,7 @@ import {
   httpGetBatches,
   httpGetBatchLineItems,
   httpReleaseBatch,
+  httpCancelBatch,
   httpClaimBatch,
   httpCompletePick,
   httpReportPickException,
@@ -131,6 +132,15 @@ router.post(
   httpReleaseBatch
 );
 router.post(
+  '/batch/:batchId/cancel',
+  authenticateToken,
+  requireFt2,
+  requireTier('starter'),
+  requireAction('wms:batch:release'),
+  httpCancelBatch
+);
+
+router.post(
   '/batch/:batchId/claim',
   authenticateToken,
   requireFt2,
@@ -138,6 +148,7 @@ router.post(
   requireAction('wms:batch:claim'),
   httpClaimBatch
 );
+
 router.post(
   '/batch/:batchId/pick-complete',
   authenticateToken,
