@@ -4,6 +4,18 @@
 // Four endpoints: GET (by_supplier grouped), POST (queue), DELETE (dismiss), convert (→ PO).
 // RLS: all queries require SET LOCAL app.current_tenant.
 // Supplier is locked at queue time — never re-resolved on convert (§8.1).
+//
+// SRC-01a — PO READINESS GATES
+// qty_requested is a LEVEL (the shortfall), never a running total: re-queueing
+// the same variant+supplier raises it to MAX(old, new). Enforced in the DB by
+// reorder_requests_pending_unique_idx (migration 0151).
+// Convert enforces three gates, mirrored to the UI as `gates` + `po_ready`:
+//   G2 moq_met            — SOFT: overridable via body.override_moq, stamped on PO notes
+//   G3 lead_time_set      — HARD: without it the PO has no ETA to project
+//   G4 all_lines_have_sku — HARD: a line with no SKU cannot be received or scanned
+// moq === null means no target set, so G2 PASSES — absence of a constraint is
+// not a failed constraint. Gate rejections return 422 with a reason; 400 is
+// reserved for "nothing queued".
 
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
@@ -30,7 +42,7 @@ export async function httpListReorderRequests(req: Request, res: Response) {
         .select(
           'rr.id', 'rr.lasyncro_variant_id', 'rr.supplier_id', 'rr.qty_requested',
           'rr.source', 'rr.created_at',
-          's.name as supplier_name', 's.moq',
+          's.name as supplier_name', 's.moq', 's.lead_time_days',
           'v.sku', 'v.title'
         );
     });
@@ -41,16 +53,22 @@ export async function httpListReorderRequests(req: Request, res: Response) {
     for (const row of result) {
       if (!bySupplierMap.has(row.supplier_id)) {
         bySupplierMap.set(row.supplier_id, {
-          supplier_id:   row.supplier_id,
-          supplier_name: row.supplier_name,
-          moq:           row.moq ? Number(row.moq) : null,
-          total_qty:     0,
-          moq_met:       false,
-          requests:      [],
+          supplier_id:     row.supplier_id,
+          supplier_name:   row.supplier_name,
+          moq:             row.moq ? Number(row.moq) : null,
+          // SRC-01a: lead time is a hard gate — a PO with no ETA cannot be
+          // placed on the inbound timeline or projected into stock.
+          lead_time_days:  row.lead_time_days !== null ? Number(row.lead_time_days) : null,
+          total_qty:       0,
+          moq_met:         false,
+          all_lines_have_sku: true,
+          requests:        [],
         });
       }
       const group = bySupplierMap.get(row.supplier_id);
       group.total_qty += Number(row.qty_requested);
+      // SRC-01a: a line with no SKU cannot be received or scanned at the dock.
+      if (!row.sku) group.all_lines_have_sku = false;
       group.requests.push({
         id:                  row.id,
         lasyncro_variant_id: row.lasyncro_variant_id,
@@ -63,11 +81,24 @@ export async function httpListReorderRequests(req: Request, res: Response) {
     }
 
     // Resolve moq_met after total_qty is fully accumulated
-    const bySupplier = Array.from(bySupplierMap.values()).map((group) => ({
-      ...group,
-      // moq_met is false when moq is null — no target to meet
-      moq_met: group.moq !== null && group.total_qty >= group.moq,
-    }));
+    const bySupplier = Array.from(bySupplierMap.values()).map((group) => {
+      // SRC-01a: moq === null means "no target set" — the gate PASSES rather
+      // than blocking. Absence of a constraint is not a failed constraint.
+      const moqMet       = group.moq === null || group.total_qty >= group.moq;
+      const leadTimeSet  = group.lead_time_days !== null;
+      const gates = {
+        moq_met:            moqMet,
+        lead_time_set:      leadTimeSet,
+        all_lines_have_sku: group.all_lines_have_sku,
+      };
+      return {
+        ...group,
+        moq_met:  moqMet,
+        gates,
+        // po_ready drives the UI button; convert re-checks server-side.
+        po_ready: moqMet && leadTimeSet && group.all_lines_have_sku,
+      };
+    });
 
     return res.json({ by_supplier: bySupplier });
   } catch (err) {
@@ -112,6 +143,27 @@ export async function httpCreateReorderRequest(req: Request, res: Response) {
         .where({ lasyncro_variant_id, shop_id: shopId })
         .first();
       if (!variant) return; // null row signals 404 below
+
+      // SRC-01a: qty_requested is a LEVEL (shortfall), not a delta. Re-queueing
+      // the same variant+supplier raises the level to the higher of the two —
+      // adding would double-count the same missing units toward MOQ.
+      const existing = await trx('reorder_requests')
+        .where({ shop_id: shopId, lasyncro_variant_id, supplier_id, status: 'pending' })
+        .forUpdate()
+        .first();
+
+      if (existing) {
+        const [updated] = await trx('reorder_requests')
+          .where({ id: existing.id })
+          .update({
+            qty_requested: Math.max(Number(existing.qty_requested), qty_requested),
+            source,
+            updated_at:    trx.fn.now(),
+          })
+          .returning('*');
+        row = updated;
+        return;
+      }
 
       const [inserted] = await trx('reorder_requests')
         .insert({
@@ -186,7 +238,7 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
   const userId = req.user?.userId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { supplier_id, expected_delivery_date, notes } = req.body ?? {};
+  const { supplier_id, expected_delivery_date, notes, override_moq } = req.body ?? {};
 
   if (!supplier_id) {
     return res.status(400).json({ error: 'supplier_id is required' });
@@ -194,9 +246,20 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
 
   try {
     let poId: string | null = null;
+    // SRC-01a: gate rejections surface as an explicit reason, never a silent
+    // no-op. null means "no gate blocked"; a string is returned as 422 below.
+    let gateFailure: string | null = null;
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const supplier = await trx('suppliers')
+        .where({ id: supplier_id, shop_id: shopId })
+        .first();
+      if (!supplier) {
+        gateFailure = 'Supplier not found';
+        return;
+      }
 
       // Fetch all pending for this supplier
       const pending = await trx('reorder_requests as rr')
@@ -206,7 +269,33 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
         .andWhere('rr.status', 'pending')
         .select('rr.id', 'rr.lasyncro_variant_id', 'rr.qty_requested', 'v.sku', 'v.title');
 
-      if (!pending.length) return; // null poId signals 400 below
+      if (!pending.length) return; // null poId + null gateFailure signals 400 below
+
+      // ── GATES (workshop SRC-01, Decision 2) ─────────────────────────────
+      // G3 lead time and G4 SKU are hard: neither can be overridden, because a
+      // PO without an ETA cannot be projected and a line without a SKU cannot
+      // be received. G2 MOQ is soft: suppliers grant exceptions, so the
+      // operator may override — but the override is stamped on the PO notes.
+      const leadTimeDays = supplier.lead_time_days !== null ? Number(supplier.lead_time_days) : null;
+      if (leadTimeDays === null) {
+        gateFailure = 'Supplier has no lead time set — set a delivery time before ordering';
+        return;
+      }
+
+      const missingSku = pending.filter((r: any) => !r.sku);
+      if (missingSku.length) {
+        gateFailure = `${missingSku.length} queued line(s) have no SKU — add a SKU before ordering`;
+        return;
+      }
+
+      const totalQty = pending.reduce((sum: number, r: any) => sum + Number(r.qty_requested), 0);
+      const moq      = supplier.moq !== null ? Number(supplier.moq) : null;
+      const belowMoq = moq !== null && totalQty < moq;
+
+      if (belowMoq && override_moq !== true) {
+        gateFailure = `MOQ not met — ${totalQty}/${moq} units. Pass override_moq to order anyway`;
+        return;
+      }
 
       // Collapse to one line item per variant — sum qty across multiple requests
       const lineItemMap = new Map<string, { description: string; qty: number; lasyncro_variant_id: string }>();
@@ -223,14 +312,26 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
       }
 
       //Create PO
+      // SRC-01a: ETA is derived from the supplier lead time when the caller
+      // does not supply one. expected_delivery_date is a DATE column.
+      const derivedEta = new Date(Date.now() + leadTimeDays * 86400000)
+        .toISOString()
+        .slice(0, 10);
+
+      // SRC-01a: an under-MOQ order is a decision, not an accident — record it
+      // on the PO so the merchant and the supplier both see why.
+      const moqNote  = belowMoq ? `Below MOQ: ${totalQty}/${moq} units (override)` : null;
+      const poNotes  = [moqNote, notes].filter(Boolean).join('\n') || null;
+
+      // Create PO
       const [po] = await trx('purchase_orders')
         .insert({
           shop_id:                shopId,
           supplier_id,
           // Cast required — status is purchase_order_status enum, not text
           status:                 trx.raw("'draft'::purchase_order_status"),
-          expected_delivery_date: expected_delivery_date ?? null,
-          notes:                  notes ?? null,
+          expected_delivery_date: expected_delivery_date ?? derivedEta,
+          notes:                  poNotes,
           // purchase_orders has no created_by column — omitted
         })
         .returning('id');
@@ -261,6 +362,8 @@ export async function httpConvertReorderRequests(req: Request, res: Response) {
         });
     });
 
+    // SRC-01a: 422 = gate blocked (actionable), 400 = nothing queued.
+    if (gateFailure) return res.status(422).json({ error: gateFailure });
     if (!poId) return res.status(400).json({ error: 'No pending requests found for this supplier' });
     return res.status(201).json({ po_id: poId });
   } catch (err) {
