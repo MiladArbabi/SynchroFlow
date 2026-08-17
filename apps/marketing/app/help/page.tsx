@@ -145,7 +145,7 @@ export default function HelpPage() {
           }}
         >
           Still need help?{' '}
-          <Link href="mailto:support@lasyncro.com" style={{ color: '#FF6B2B' }}>
+          <Link href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B' }}>
             Contact LaSyncro support
           </Link>
         </div>

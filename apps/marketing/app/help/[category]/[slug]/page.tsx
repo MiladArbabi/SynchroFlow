@@ -222,7 +222,7 @@ export default async function HelpArticlePage({
       >
         Still stuck?{' '}
         <Link
-          href="mailto:support@lasyncro.com"
+          href="mailto:contact@lasyncro.com"
           style={{ color: '#FF6B2B' }}
         >
           Contact LaSyncro support

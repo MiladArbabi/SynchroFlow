@@ -178,7 +178,7 @@ export default function ForgotPasswordPage() {
                 </Typography>
                 <Typography
                   component="a"
-                  href="mailto:support@lasyncro.com"
+                  href="mailto:contact@lasyncro.com"
                   variant="subtitle2"
                   sx={{ color: 'var(--ink-3)', textDecoration: 'none', '&:hover': { color: 'var(--ink)' } }}
                 >
