@@ -356,11 +356,15 @@ inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
 
 **INV-BLOCK-16:** Write-offs are all-or-nothing. The full task quantity must be available at the single stock-holding location. The former `Math.min(task.quantity, available_quantity)` truncation was removed because it could partially write the ledger while resolving the full task. Insufficient available inventory now returns `409`; the transaction rolls back, the task remains open, and no movement or truth mutation is written.
 
+**INV-NEG-ONHAND-01:** The final `inventory_truth` decrement is also guarded atomically by the database. Two concurrent Problem Center tasks may both initially read the same available quantity, but only a write whose row still has enough `on_hand_quantity` and `available_quantity` may decrement it. If another transaction consumed the stock first, the update affects zero rows, raises `WRITE_OFF_INSUFFICIENT_AVAILABLE`, and the whole transaction rolls back instead of allowing negative inventory.
+
 ```ts
 require task.quantity <= available_quantity
 problem_center_tasks.status → 'resolved'
 inventory_movements INSERT { movement_type: 'shrinkage', quantity_delta: -qty }
 inventory_truth UPDATE { on_hand -= qty, available -= qty, sellable -= qty }
+  WHERE on_hand >= qty AND available >= qty
+require updated_rows === 1 else rollback
 ```
 
 ### `return` (not yet built — INV-PC-05)

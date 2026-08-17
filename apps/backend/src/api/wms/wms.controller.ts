@@ -2615,14 +2615,28 @@ export const httpResolveProblemTask = async (req: Request, res: Response) => {
             occurred_at: new Date(),
           });
 
-          await trx('inventory_truth')
+          const updatedTruthRows = await trx('inventory_truth')
             .where({
               lasyncro_variant_id: task.lasyncro_variant_id,
               shop_id: shopId,
               location_code: it.location_code,
             })
-            .decrement('available_quantity', writeQty)
-            .decrement('on_hand_quantity', writeQty);
+            .where('on_hand_quantity', '>=', writeQty)
+            .where('available_quantity', '>=', writeQty)
+            .update({
+              available_quantity: trx.raw(
+                'available_quantity - ?',
+                [writeQty]
+              ),
+              on_hand_quantity: trx.raw(
+                'on_hand_quantity - ?',
+                [writeQty]
+              ),
+            });
+
+          if (updatedTruthRows !== 1) {
+            throw new Error('WRITE_OFF_INSUFFICIENT_AVAILABLE');
+          }
         }
         console.info('[PROBLEM_CENTER_WRITE_OFF]', {
           problem_task_id: taskId, movement_type: movementType,
