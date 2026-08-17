@@ -8,8 +8,9 @@ audience:
 keywords:
   - "purchase order status"
   - "draft"
-  - "ordered"
-  - "shipped"
+  - "on the way"
+  - "arrived"
+  - "receiving"
   - "received"
 searchAliases:
   - "PO statuses"
@@ -29,53 +30,53 @@ relatedArticles:
 
 Purchase-order statuses show where inbound stock is in the supplier-to-warehouse journey.
 
-The standard lifecycle is:
+The customer-facing lifecycle is:
 
-**Draft → Ordered → Confirmed → In production → Shipped → Partially received → Received**
+**Draft → On the way → Arrived → Receiving → Received**
 
 A purchase order can also be **Cancelled**.
 
-Receiving begins from the **Shipped** stage.
+Receiving begins after the purchase order is marked **Arrived**.
 
 ## Draft
 
 A newly created purchase order starts as **Draft**.
 
-At this stage, the PO has been created but has not yet progressed into the supplier fulfillment process.
+At this stage, the PO has been created but has not yet been marked as sent to the supplier.
 
 Review the supplier, Shopify-linked products, quantities, and other PO information before advancing it.
 
-## Ordered
+Available actions include **Prepare to send**, **Mark as sent**, and **Cancel PO**.
 
-**Ordered** indicates that the purchase order has moved beyond draft and the stock has been ordered from the supplier.
+**Prepare to send** opens copy you can send to the supplier. The PO does not leave Draft until you choose **Mark as sent**.
 
-## Confirmed
+## On the way
 
-**Confirmed** indicates that the supplier order has progressed to the confirmed stage.
+**On the way** means the purchase order has moved beyond Draft and is active with the supplier.
 
-## In production
+LaSyncro groups supplier-side progress under this customer-facing label.
 
-**In production** represents stock that is still being prepared before shipment.
+Available actions include **Mark as arrived** and **Cancel PO**.
 
-The LaSyncro interface may present this stage as **On the way** in parts of the supplier workflow.
+Use **Mark as arrived** when the shipment is ready to be handed to receiving.
 
-## Shipped
+## Arrived
 
-**Shipped** is the key handoff into receiving.
+**Arrived** is the key handoff into receiving.
 
-Once the PO is shipped, you can explicitly start a receive job for that purchase order.
+Once the PO is Arrived, you can choose **Receive via WMS** to start or open the receive workflow for that purchase order.
 
-Changing the PO to Shipped does not itself receive the stock or add inventory.
+Marking a PO as Arrived does not itself receive the stock or add inventory.
 
-The receive job must still be started and processed.
+The receive job must still be processed.
 
-## Partially received
+## Receiving
 
-A PO becomes **Partially received** when some ordered stock has been accepted through receiving but the entire purchase order has not yet been received.
+**Receiving** means some ordered stock has been accepted through receiving, but the entire purchase order has not yet been received.
 
 For example, this can occur with a partial delivery.
 
-LaSyncro supports multiple receive events for the same PO when stock arrives in separate deliveries.
+Use **Receive via WMS** again when more stock arrives for the same PO.
 
 ## Received
 
@@ -83,21 +84,25 @@ A PO becomes **Received** when the ordered quantities have been fully received.
 
 Accepted quantities recorded during receiving determine the received progress of each PO line.
 
+Received purchase orders no longer show the normal open-PO action buttons.
+
 ## Cancelled
 
 **Cancelled** is used when the purchase order is no longer continuing through the inbound workflow.
 
 Cancelled purchase orders do not proceed to normal receiving.
 
+Cancelled purchase orders no longer show the normal open-PO action buttons.
+
 ## When can receiving begin?
 
-A PO must reach **Shipped** before its WMS receive job is created.
+A PO must reach **Arrived** before its WMS receive job is created.
 
 Starting receiving is an explicit action.
 
 The sequence is:
 
-**Shipped PO → Start receive job → Inspect or scan stock → Close receiving → Create stow tasks**
+**Arrived PO → Receive via WMS → Inspect or scan stock → Close receiving → Create stow tasks**
 
 This preserves the distinction between stock expected from a supplier and stock that has physically arrived and been accepted into the warehouse.
 

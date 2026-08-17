@@ -1,0 +1,118 @@
+---
+title: "Use sourcing and reorder signals"
+description: "Use supplier recommendations, supplier preferences, and reorder queues to prepare purchase orders."
+category: "Suppliers"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "sourcing"
+  - "reorder"
+  - "supplier recommendations"
+  - "supplier preferences"
+  - "minimum order quantity"
+searchAliases:
+  - "sourcing recommendations"
+  - "reorder queue"
+  - "queued for reorder"
+  - "never ordered before"
+  - "preferred supplier"
+order: 5
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/suppliers/manage-suppliers"
+  - "/help/suppliers/create-a-purchase-order"
+  - "/help/suppliers/understand-purchase-order-statuses"
+  - "/help/products/use-the-product-catalog"
+---
+
+## Quick answer
+
+Sourcing helps owners and admins decide which supplier to use when preparing replenishment purchase orders.
+
+The Sourcing view can show supplier preferences, products that have never been ordered before, recommendations for a selected product, and pending reorder groups by supplier.
+
+Creating a reorder signal does not receive stock or change inventory. It helps you prepare a draft purchase order.
+
+## Open Sourcing
+
+Open **Suppliers** and choose the **Sourcing** tab.
+
+The **Sourcing pulse** summarizes current sourcing signals, including:
+
+- products never ordered before;
+- recommendations ready to order;
+- supplier preferences set;
+- products queued for reorder.
+
+## Review products never ordered before
+
+The **Never ordered before** section shows active Shopify variants that do not yet have purchase-order history in LaSyncro.
+
+Choose **Assign a supplier** to record the supplier you normally use for that product.
+
+If a product has no SKU, LaSyncro shows that a SKU should be added in Shopify before ordering can be enabled.
+
+## Set supplier preferences
+
+Supplier preferences tell LaSyncro which suppliers should be treated as preferred matches.
+
+When assigning a supplier, you can apply the preference to:
+
+- the current variant;
+- all variants of the product, when available;
+- all products in the same product type, when available.
+
+You can mark the supplier as **Primary** or **Backup** and add an optional note.
+
+Preferences appear in Sourcing and can influence which suppliers are highlighted as preferred recommendations.
+
+## Use supplier recommendations
+
+When Sourcing is opened for a specific product or stockout context, LaSyncro can show **Sourcing recommendations** for that product.
+
+Recommendations are ranked by supplier reliability signals from your purchase-order history, including on-time rate, fill rate, and defect rate.
+
+A recommendation can show:
+
+- supplier name;
+- preferred supplier marker;
+- on-time rate;
+- fill rate;
+- lead time;
+- minimum-order warning when the quantity is below the supplier's minimum.
+
+Choose **Create PO** to start a purchase order from a recommendation.
+
+Choose **Add to queue** when you want to combine the product with other pending reorder lines for the same supplier before creating the PO.
+
+## Use pending reorders
+
+Pending reorders are grouped by supplier.
+
+Each group shows the queued products, total quantity, and minimum order progress when the supplier has a minimum order quantity.
+
+LaSyncro can create a draft purchase order from the group when the required ordering details are available.
+
+The current hard blockers are:
+
+- the supplier has no delivery time set;
+- one or more queued lines have no SKU.
+
+If the only issue is that the queued quantity is below the supplier's minimum order quantity, LaSyncro lets you choose **Create PO anyway** and confirm **Order anyway**.
+
+When you order below the supplier's minimum, LaSyncro notes that on the draft purchase order.
+
+## After a draft PO is created
+
+After Sourcing creates a draft purchase order, review it in **Open POs**.
+
+The draft still needs to be reviewed and sent through the normal purchase-order workflow.
+
+Stock is not received into the warehouse until the purchase order reaches receiving and accepted units are processed.
+
+## Who uses sourcing
+
+Sourcing and reorder preparation are intended for owners and admins.
+
+Operators continue to work with receiving, stowing, picking, packing, and shipping tasks after purchase orders become warehouse work.

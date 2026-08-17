@@ -1,6 +1,6 @@
 ---
 title: "Handle partial stows and exceptions"
-description: "Understand partial stow progress and how missing or damaged units are routed for follow-up."
+description: "Understand partial stow progress and what to do when a unit cannot be placed."
 category: "Stowing"
 audience:
   - "Owner"
@@ -8,10 +8,9 @@ audience:
   - "Operator"
 keywords:
   - "partial stow"
-  - "stow exception"
   - "missing item"
   - "damaged product"
-  - "Problem Center"
+  - "remaining stow quantity"
 searchAliases:
   - "cannot finish stow"
   - "missing stow unit"
@@ -32,7 +31,7 @@ A stow task does not have to be completed in one placement.
 
 LaSyncro records how many units have actually been placed and keeps the task active until its full quantity is complete.
 
-If a unit is missing or damaged, report a stow exception instead of recording stock as successfully placed.
+Only scan a unit as placed when the physical unit has actually been placed into the confirmed bin.
 
 ## Partial stowing
 
@@ -50,37 +49,32 @@ The task remains active for the remaining units.
 
 It does not become complete until all 5 units have been placed.
 
-## Report a stow exception
+## If a unit cannot be placed
 
-The stow workflow supports these exception types:
+Do not record a missing, damaged, or unavailable unit as successfully stowed.
 
-- **Item missing**
-- **Product defect**
-- **Packaging defect**
+Leave the unit unscanned and continue with the valid units you can physically place.
 
-Use an exception when the physical stock cannot be stowed normally.
+The current Stow session does not expose a separate exception-reporting action for missing or damaged units.
 
-Owners, admins, and operators can report WMS exceptions.
+If the remaining quantity cannot be completed, stop on that task and tell an owner or admin so the warehouse record can be resolved through the appropriate current workflow.
 
-## What happens after an exception is reported
+## Fix recoverable scan problems
 
-Reporting a stow exception creates an open task in the **Problem Center**.
+Some stow issues can be fixed directly from the scanner feedback.
 
-LaSyncro records the affected quantity and routes the issue for follow-up.
+Common recoverable cases include:
 
-The exception report itself does **not** immediately reduce or otherwise change inventory.
+- scanning a unit before scanning a bin;
+- scanning a bin LaSyncro does not recognize;
+- scanning a product that does not match the active task;
+- scanning a physical unit that is already stored somewhere else;
+- scanning while the previous placement is still saving;
+- trying to work a task that is no longer available or is claimed by someone else.
 
-Inventory impact is deferred until the Problem Center issue is reviewed and resolved.
+Follow the on-screen message, then retry only when the physical action is correct.
 
-This keeps the physical inventory decision separate from the operator's initial problem report.
-
-## Problem bin requirement
-
-The warehouse must have a Problem bin configured before a stow exception can be reported successfully.
-
-The Problem Center task is associated with that configured problem location for follow-up.
-
-## Do not complete inventory that was not placed
+## Keep progress accurate
 
 Do not record a missing or defective unit as successfully stowed just to finish the task.
 
@@ -90,7 +84,7 @@ Only physical units that were successfully placed in a confirmed storage locatio
 
 Valid units can continue through the normal stow process.
 
-The remaining task quantity stays available until its required placements are completed or the associated problem is handled through the appropriate exception workflow.
+The remaining task quantity stays available until its required placements are completed or the warehouse record is resolved.
 
 This preserves the distinction between:
 
