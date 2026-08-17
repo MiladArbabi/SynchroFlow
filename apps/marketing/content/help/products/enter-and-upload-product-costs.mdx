@@ -1,0 +1,106 @@
+---
+title: "Enter and upload product costs"
+description: "Enter product unit costs one variant at a time or upload costs from a CSV file."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "product costs"
+  - "unit cost"
+  - "COGS"
+  - "CSV upload"
+  - "margin"
+searchAliases:
+  - "cost entry"
+  - "upload costs"
+  - "missing costs"
+  - "unit_cost"
+  - "cost of goods"
+order: 6
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/use-the-product-catalog"
+  - "/help/inventory/use-data-quality"
+---
+
+## Quick answer
+
+Use **Inventory -> Costs** to enter unit costs for physical product variants.
+
+Cost data unlocks more accurate margin and COGS reporting.
+
+## What the Costs page shows
+
+The Costs page lists physical variants with their current unit cost.
+
+Missing costs are shown first by default.
+
+Each row can show:
+
+- product or variant image;
+- product, variant, or SKU label;
+- current SKU when available;
+- unit cost input;
+- **Save** action.
+
+Use the **Missing** and **All** filters to switch between variants that still need a cost and the full cost list.
+
+## Enter one cost
+
+1. Open **Inventory -> Costs**.
+2. Find the variant.
+3. Enter a positive unit cost.
+4. Select **Save**.
+
+The save button is unavailable for empty, zero, or negative values.
+
+After a successful save, the row shows **Saved**.
+
+## Upload costs by CSV
+
+Use **Upload CSV** to update many variants at once.
+
+The current CSV format is:
+
+```csv
+sku,unit_cost
+SKU-001,12.50
+SKU-002,8.75
+```
+
+The first row can be a header row beginning with `sku`.
+
+Each data row must include:
+
+- a SKU in the first column;
+- a positive numeric unit cost in the second column.
+
+## Upload limits and results
+
+A bulk upload can include up to 500 rows.
+
+After upload, LaSyncro reports how many rows were updated. It can also report rows where:
+
+- the SKU was not found;
+- the unit cost was invalid;
+- another row-level error was returned.
+
+Rows with missing SKUs, missing costs, zero costs, or negative costs are rejected before upload or returned as errors.
+
+## What cost updates affect
+
+Updating a variant cost changes the cost stored for that variant.
+
+LaSyncro also backfills estimated unit cost for unfulfilled orders that contain that variant. Already fulfilled orders are excluded so historical margin is preserved.
+
+## If a row does not update
+
+Confirm that:
+
+- the product is physical;
+- the SKU in the CSV exactly matches the variant SKU in LaSyncro;
+- the cost is greater than zero;
+- the upload has 500 rows or fewer.
+
+If the product is missing a SKU, fix the SKU in Shopify and resync before using SKU-based bulk upload.

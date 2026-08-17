@@ -1,0 +1,116 @@
+---
+title: "Use the product catalog"
+description: "Use the Catalog view to review physical products, variants, inventory quantities, and sellability status."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "product catalog"
+  - "Catalog"
+  - "sellable"
+  - "blocked"
+  - "product status"
+searchAliases:
+  - "inventory catalog"
+  - "catalog health"
+  - "product list"
+  - "variant list"
+  - "catalog drift"
+order: 4
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/fix-product-readiness-issues"
+  - "/help/inventory/understand-inventory-quantities"
+  - "/help/inventory/use-data-quality"
+---
+
+## Quick answer
+
+Use **Inventory -> Catalog** to review physical products and variants synced into LaSyncro.
+
+The Catalog is a read-only operations view. It helps you see what is sellable, what is blocked, and which products need attention before warehouse work can run cleanly.
+
+## What appears in the Catalog
+
+The Catalog lists physical products and variants.
+
+For each product, the main list shows:
+
+- product image or initial;
+- product name;
+- number of variants;
+- **On-hand** quantity;
+- **Available** quantity;
+- current **Status**;
+- an action when the current status has a relevant next step.
+
+Digital, service, and gift-card products are excluded from the warehouse catalog signals because they do not require physical warehouse inventory.
+
+## Understand Catalog health
+
+The Catalog health panel summarizes:
+
+- **Sellable**
+- **Blocked**
+- **Phantom**
+- **Zero stock**
+- **Missing SKU**
+- **Not received**
+- **Variants**
+
+Use this panel to understand whether a product problem is about product identity, warehouse receiving, stock quantity, or inventory records.
+
+## Understand product status
+
+Catalog rows can show these statuses:
+
+- **Sellable**: the product has recorded on-hand stock.
+- **Not received**: the variant has a SKU but no warehouse inventory record.
+- **Phantom**: on-hand stock is below zero, which indicates recorded sales without recorded receiving.
+- **No SKU**: at least one variant is missing a SKU.
+- **Zero stock**: the product has an inventory record, but on-hand stock is zero.
+
+For the correction workflow behind each status, use **Fix product readiness issues**.
+
+## Use the Needs attention panel
+
+The **Needs attention** panel groups blocked stock into action rows.
+
+Depending on the issue, the row can take you to:
+
+- Warehouse operations for phantom stock;
+- the missing-SKU section lower in Catalog;
+- the not-received section lower in Catalog;
+- supplier purchasing for zero-stock products.
+
+The Catalog does not edit Shopify product data directly.
+
+## Use Catalog drift
+
+**Catalog drift** shows products added during the selected period.
+
+Use it to check recently added products before warehouse work depends on them. For new products, verify SKU, cost, and bin readiness.
+
+## Sort and page through products
+
+You can sort the main list by:
+
+- **Product**
+- **Variants**
+- **On-hand**
+- **Available**
+- **Status**
+
+Use the page-size controls to show more or fewer products at once.
+
+## If a product is missing from Catalog
+
+Confirm that:
+
+- the product is physical;
+- the product or variant is active;
+- Shopify sync has completed;
+- the product exists in Shopify with the expected SKU data.
+
+If the product is present but cannot be used in warehouse work, check the status and follow the related readiness article.

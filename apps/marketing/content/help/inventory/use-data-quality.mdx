@@ -1,0 +1,89 @@
+---
+title: "Use Data Quality"
+description: "Use Data Quality to understand whether inventory data is ready for picking, locating, and receiving work."
+category: "Inventory"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "Data Quality"
+  - "inventory readiness"
+  - "pickability"
+  - "no bin location"
+  - "inventory trust"
+searchAliases:
+  - "warehouse readiness"
+  - "not pickable"
+  - "no product code"
+  - "inventory evaluation"
+  - "receive readiness"
+order: 4
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/fix-product-readiness-issues"
+  - "/help/products/use-the-product-catalog"
+  - "/help/inventory/understand-inventory-quantities"
+  - "/help/inventory/view-inventory-by-location"
+---
+
+## Quick answer
+
+Use **Inventory -> Data Quality** to review whether product and inventory records have the coverage needed for warehouse work.
+
+Data Quality is a read-only readiness view. It highlights pickability, bin location coverage, inventory evaluation age, and receiving rejections.
+
+## Read the top verdict
+
+The top banner summarizes whether the warehouse is ready to pick.
+
+It can show:
+
+- **Your warehouse is ready to pick**
+- **Some items aren't ready to pick**
+
+The verdict currently depends on two blocker counts:
+
+- variants that are not pickable because they have no product code;
+- variants that have a SKU but no bin location record.
+
+## Pickability
+
+**Not pickable - no product code** counts active variants with no SKU.
+
+These products can fail at camera scan during picking.
+
+Use **Fix in Catalog** to review the affected products in the Catalog, then add missing SKUs in Shopify and resync.
+
+## Bin location coverage
+
+**No bin location** counts active variants that have a SKU but have not been stowed into a recorded bin location.
+
+Operators may not be able to locate these products on the warehouse floor.
+
+Use **Stow in Warehouse** to move toward the warehouse workflow that records where stock lives.
+
+## Inventory evaluation signals
+
+**Variants with count mismatch** is shown as an inventory signal, but the current screen does not prove that system inventory has been reconciled against a physical cycle count.
+
+When inventory data exists and no physical count source is available, the screen can show zero and explain that physical cycle count is not yet enabled.
+
+When no inventory baseline exists, the value can be blank.
+
+## Last inventory evaluation
+
+**Last inventory evaluation** shows the oldest inventory evaluation time across bin locations.
+
+Use this to understand how old the oldest inventory evaluation signal is.
+
+## Receive readiness
+
+**Open receive jobs with rejections** counts open receive jobs that include rejected units.
+
+Rejected units need inspection or supplier-return handling before they should be treated as clean available stock.
+
+## When to use Catalog instead
+
+Use Data Quality for the warehouse-wide readiness picture.
+
+Use **Inventory -> Catalog** when you need the product-level list behind readiness statuses such as missing SKU, not received, phantom stock, or zero stock.

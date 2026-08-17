@@ -1,0 +1,105 @@
+---
+title: "Set up printers and label routing"
+description: "Register warehouse printers and choose default printers for supported label and document roles."
+category: "Warehouse"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "printers"
+  - "label routing"
+  - "QZ Tray"
+  - "thermal printer"
+  - "default printer"
+searchAliases:
+  - "set up printer"
+  - "automatic printing"
+  - "printer routing"
+  - "unit labels"
+  - "location labels"
+order: 5
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/warehouse/print-location-labels"
+  - "/help/products/print-product-labels"
+  - "/help/warehouse/use-floor-planning"
+---
+
+## Quick answer
+
+Owners and admins can register warehouse printers from **Settings -> Warehouse -> Printers**.
+
+Printer routing lets LaSyncro send supported print jobs to a default printer for that job type when QZ Tray is available on the workstation.
+
+## Before you start
+
+Use the warehouse computer that prints labels or documents.
+
+The printer settings screen checks whether QZ Tray is available on that computer and shows one of these states:
+
+- **QZ Tray connected**
+- **Detecting QZ Tray...**
+- **QZ Tray not detected on this computer**
+
+When QZ Tray is not detected, the screen offers a **Download QZ Tray** link.
+
+## Add a printer
+
+1. Open **Settings**.
+2. Select **Warehouse**.
+3. In **Printers**, select **Add printer**.
+4. Enter the **Printer name**.
+5. Choose the printer **Role**.
+6. Choose the **Connection** type.
+7. Enter the **OS printer name (QZ Tray)**.
+8. For Wi-Fi/network or Bluetooth printers, enter the address when needed.
+9. Optionally select **Set as default** for the selected role.
+10. Select **Add printer**.
+
+The printer is registered after LaSyncro accepts the settings.
+
+## Supported routing roles
+
+The currently supported routing roles are:
+
+- **Unit labels (LSU-)**
+- **Invoices (A4)**
+- **Problem bin labels**
+- **Location labels (bin/lane)**
+- **General**
+
+Only one printer can be the default for a role at a time.
+
+When you set a printer as the default for a role, LaSyncro clears the previous default for that role.
+
+## Set or change the default printer
+
+In the printer list, use the default icon next to a registered printer to make it the default for its role.
+
+The screen shows a checkmark when a printer is already the default for that role.
+
+## Remove a printer
+
+Use the remove icon next to the printer.
+
+LaSyncro asks you to confirm before removing it.
+
+Removing a printer disables it for future routing. It does not change historical print-job records.
+
+## If automatic routing does not happen
+
+Confirm that:
+
+- QZ Tray is running on the warehouse computer;
+- the printer is registered in LaSyncro;
+- the printer has the right role;
+- the printer is marked as the default for that role;
+- the OS printer name matches the printer name visible to QZ Tray.
+
+If a supported route has no default printer or QZ Tray is unavailable, LaSyncro falls back to opening the generated PDF for browser-based printing where that workflow supports it.
+
+## Who can manage printers
+
+Owners and admins can add, update, and remove printer settings.
+
+Operators may use warehouse workflows that print labels or documents, but they do not manage printer routing settings by default.

@@ -1,0 +1,104 @@
+---
+title: "Fix product readiness issues"
+description: "Understand Catalog readiness statuses and the current recovery path for missing SKUs, not-received stock, phantom stock, and zero stock."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "product readiness"
+  - "missing SKU"
+  - "not received"
+  - "phantom stock"
+  - "zero stock"
+searchAliases:
+  - "No SKU"
+  - "Not received"
+  - "Phantom"
+  - "Zero stock"
+  - "blocked stock"
+order: 5
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/use-the-product-catalog"
+  - "/help/shopify/understand-shopify-sync-and-resync"
+  - "/help/inventory/use-data-quality"
+  - "/help/inventory/understand-inventory-quantities"
+---
+
+## Quick answer
+
+Product readiness issues show why a physical product cannot move cleanly through warehouse workflows.
+
+Use **Inventory -> Catalog** to find the affected product, read its status, and follow the available action.
+
+## Missing SKU
+
+Catalog shows **No SKU** or **Missing SKU** when an active physical variant does not have a SKU.
+
+Why it matters:
+
+Camera scanning depends on a product code. Without a SKU, the product can fail at the pick step.
+
+Current recovery path:
+
+1. Add a unique SKU to the product variant in Shopify.
+2. Return to LaSyncro.
+3. Resync Shopify data.
+4. Recheck **Inventory -> Catalog** or **Inventory -> Data Quality**.
+
+The Catalog does not edit Shopify SKUs directly.
+
+## Not received
+
+Catalog shows **Not received** when a physical variant has a SKU but no warehouse inventory record.
+
+Why it matters:
+
+LaSyncro treats this differently from ordinary zero stock. It means the warehouse has not recorded that variant into inventory.
+
+Current recovery path:
+
+1. Receive the product into warehouse inventory.
+2. Complete any required receiving and stowing workflow.
+3. Recheck the Catalog after inventory updates.
+
+## Phantom
+
+Catalog shows **Phantom** when recorded on-hand quantity is below zero.
+
+Why it matters:
+
+This indicates a contradiction in the warehouse record, such as stock being sold or consumed without recorded receiving.
+
+Current recovery path:
+
+1. Use the Catalog action to check Warehouse operations.
+2. Check whether receiving was recorded correctly for the product.
+3. Resolve the warehouse record through the currently available Warehouse or receiving workflow before relying on the quantity.
+
+## Zero stock
+
+Catalog shows **Zero stock** when a product has an inventory record and on-hand quantity is exactly zero.
+
+Why it matters:
+
+This is ordinary empty stock, not missing warehouse data.
+
+Current recovery path:
+
+1. Use the Catalog reorder action when available.
+2. Create or review supplier purchasing for the product.
+3. Receive stock into the warehouse when it arrives.
+
+## Sellable
+
+Catalog shows **Sellable** when the product has recorded on-hand stock.
+
+Sellable products can still be reserved by orders, so compare **On-hand** and **Available** when deciding whether there is free stock for new demand.
+
+## Use Data Quality for warehouse-wide readiness
+
+Catalog explains product-level status.
+
+Use **Inventory -> Data Quality** to review warehouse-wide readiness signals such as pickability, location coverage, inventory evaluation age, and receiving rejections.
