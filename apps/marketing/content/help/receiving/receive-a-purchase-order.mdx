@@ -1,0 +1,91 @@
+---
+title: "Receive a purchase order"
+description: "Process an inbound purchase-order shipment using inspection counts or barcode scanning."
+category: "Receiving"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "receive purchase order"
+  - "receive PO"
+  - "inspection count"
+  - "scan barcodes"
+  - "accepted quantity"
+searchAliases:
+  - "receive shipment"
+  - "process purchase order"
+  - "incoming stock"
+  - "receive inventory"
+  - "PO receiving"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/receiving/understand-the-receiving-workflow"
+  - "/help/receiving/handle-shortages-and-receiving-exceptions"
+---
+
+## Quick answer
+
+Before stock can be received, the purchase order must first be created in LaSyncro against products from your connected Shopify catalog.
+
+When that shipment arrives, open its receive job, confirm what actually arrived, then close the job to add accepted stock to inventory and create stow tasks.
+
+You can receive using **Inspection count** or **Scan barcodes**.
+
+## Review the expected lines
+
+The receive session shows the products included in the shipment and the **Expected** quantity for each line.
+
+Use these values as the reference when checking the physical delivery.
+
+## Option 1: Inspection count
+
+Choose **Inspection count** when you want to enter the quantity received for each product line.
+
+For each line:
+
+1. check the physical quantity;
+2. enter the number of accepted units;
+3. confirm the line.
+
+If the accepted quantity is lower than expected, LaSyncro treats the difference as a shortage that must be handled before completing the receive flow.
+
+## Option 2: Scan barcodes
+
+Choose **Scan barcodes** when the incoming products have barcodes that LaSyncro can resolve.
+
+Scan each unit.
+
+LaSyncro matches the barcode against the products on the purchase order and increases the count for the matching line.
+
+When the scanned quantity reaches the expected quantity, the line can be confirmed as fully received.
+
+## If a barcode does not match
+
+LaSyncro can reject a scan when:
+
+- no product can be recognised from the barcode;
+- the barcode belongs to a product that is not part of the current purchase order;
+- the line has already been fully confirmed.
+
+Correct the product or scan before continuing.
+
+## Accepted quantities
+
+The **Accepted** quantity represents the units successfully received.
+
+Only accepted quantities:
+
+- increase the purchase order's received quantity;
+- increase warehouse on-hand inventory;
+- increase available inventory;
+- create downstream stow work.
+
+## Finish receiving
+
+When all lines have been checked, select **Close & Create Stow Tasks**.
+
+The receive job is closed and accepted inventory moves into the stowing stage.
+
+If the purchase order has only been partly received, its status remains partially received. Once its expected stock has been fully received, it can advance to received.

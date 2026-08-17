@@ -1,0 +1,86 @@
+---
+title: "Understand the receiving workflow"
+description: "Learn how inbound purchase-order stock moves through receiving and into stowing in LaSyncro."
+category: "Receiving"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "receiving workflow"
+  - "inbound inventory"
+  - "purchase order"
+  - "inspection"
+  - "stow"
+searchAliases:
+  - "receive stock"
+  - "inbound workflow"
+  - "warehouse receiving"
+  - "receive PO"
+  - "receiving process"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/receiving/receive-a-purchase-order"
+  - "/help/receiving/handle-shortages-and-receiving-exceptions"
+---
+
+## Quick answer
+
+Receiving starts with a purchase order created in LaSyncro against products listed in your connected Shopify store.
+
+That purchase order defines what stock is expected to arrive. Once the shipment arrives, operators receive the products against the PO, and accepted stock continues through the warehouse workflow:
+
+**Purchase Order → Receive → Stow → Pick → Pack → Ship**
+
+The receiving stage checks what actually arrived, records the accepted quantities, and creates the next warehouse work for that stock.
+
+The basic receiving flow is:
+
+1. open the receive job;
+2. inspect or scan the incoming products;
+3. record the accepted quantities;
+4. record shortages or other exceptions;
+5. close the receive job;
+6. move accepted stock into the stowing workflow.
+
+## Start with the expected shipment
+
+Each receive job contains the product lines expected from the purchase order.
+
+For each line, LaSyncro shows the expected quantity so the operator can compare the shipment against what was ordered.
+
+## Inspect or scan the shipment
+
+Receiving supports two operator workflows:
+
+- **Inspection count** — count the units received for each line;
+- **Scan barcodes** — scan product barcodes and let LaSyncro match them to the correct PO line.
+
+Both workflows are used to establish what was actually received.
+
+## Accepted stock
+
+Accepted units are the quantities confirmed as successfully received.
+
+Only accepted quantities are added to warehouse inventory and counted toward the purchase order's received quantity.
+
+## Shortages and exceptions
+
+If fewer units arrive than expected, the difference is treated as a shortage.
+
+Receiving exceptions can be recorded and routed to the **Problem Center** for follow-up.
+
+## Close the receive job
+
+Once the shipment has been checked, use **Close & Create Stow Tasks**.
+
+Closing the job finalizes the accepted quantities and creates downstream stow work for the accepted stock.
+
+## Receiving is not final bin placement
+
+Accepted inventory does not move directly into its final storage bin during receiving.
+
+It first enters warehouse inventory at the warehouse root location.
+
+The stowing workflow then moves that stock to its assigned warehouse location.

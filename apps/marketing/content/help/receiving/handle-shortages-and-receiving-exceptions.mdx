@@ -1,0 +1,88 @@
+---
+title: "Handle shortages and receiving exceptions"
+description: "Record missing or problematic units during receiving and understand how they are routed for follow-up."
+category: "Receiving"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "receiving shortage"
+  - "receiving exception"
+  - "missing units"
+  - "problem center"
+  - "wrong quantity"
+searchAliases:
+  - "short shipment"
+  - "missing stock"
+  - "receive problem"
+  - "damaged delivery"
+  - "wrong item received"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/receiving/understand-the-receiving-workflow"
+  - "/help/receiving/receive-a-purchase-order"
+---
+
+## Quick answer
+
+If the shipment does not match the purchase order, record what was actually accepted and log the remaining problem as a receiving exception.
+
+Short or problematic units are not added to accepted warehouse inventory.
+
+## When the shipment is short
+
+Suppose the purchase order expects 10 units but only 8 acceptable units arrive.
+
+The receive result is:
+
+- Expected: 10
+- Accepted: 8
+- Short: 2
+
+Only the 8 accepted units become warehouse inventory.
+
+The missing units remain outside the accepted quantity.
+
+## Receiving exceptions
+
+The receive workflow supports exceptions for situations including:
+
+- defects;
+- packaging damage;
+- wrong item;
+- wrong variant;
+- wrong quantity;
+- barcode mismatch;
+- other receiving problems.
+
+Use the appropriate exception when the physical shipment does not match what should have arrived.
+
+## Shortages and the Problem Center
+
+When units are short, LaSyncro records the shortage as an exception and routes it to the **Problem Center** for follow-up.
+
+This keeps the receive job moving while preserving a separate operational record of the issue.
+
+## Accepted and problematic quantities stay separate
+
+Do not mark problematic or missing units as accepted just to complete the purchase-order line.
+
+Accepted quantities represent stock that was actually received successfully.
+
+Shortages and exceptions are handled separately.
+
+## What happens to inventory
+
+Only accepted units increase warehouse inventory.
+
+Rejected, missing, or otherwise unaccepted quantities do not increase on-hand or available stock.
+
+## Complete the receive job
+
+Once each line has been inspected and any shortages or exceptions have been recorded, close the job using **Close & Create Stow Tasks**.
+
+Accepted stock continues into stowing.
+
+The recorded exception remains available for separate follow-up through the Problem Center.
