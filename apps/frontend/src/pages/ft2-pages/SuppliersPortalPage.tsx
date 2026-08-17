@@ -17,6 +17,7 @@ import type {
   SupplierAccumulation,
 } from '@lasyncro/suppliers-portal';
 import { useSuppliersPortal } from '../suppliers-portal/useSuppliersPortal';
+import { isAxiosError } from 'axios';
 import { axiosInstance } from 'api/axiosConfig';
 
 /**
@@ -172,8 +173,13 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
       setLastConvertedPoId(data.po_id);
       refetch();
       return data;
-    } catch (err: any) {
-      throw new Error(err?.response?.data?.error ?? 'Failed to create purchase order');
+    } catch (err: unknown) {
+      // SRC-01b: the 422 gate reason lives in the response body. Narrow rather
+      // than cast, so a non-HTTP failure still surfaces something meaningful.
+      const gateReason = isAxiosError<{ error?: string }>(err)
+        ? err.response?.data?.error
+        : undefined;
+      throw new Error(gateReason ?? 'Failed to create purchase order');
     }
   }, [refetch]);
 
