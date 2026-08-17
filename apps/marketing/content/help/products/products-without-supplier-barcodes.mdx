@@ -1,0 +1,69 @@
+---
+title: "Products without supplier barcodes"
+description: "Create printable LaSyncro labels for products that do not have a supplier EAN or UPC."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "missing barcode"
+  - "no supplier barcode"
+  - "EAN"
+  - "UPC"
+  - "LSP"
+searchAliases:
+  - "product has no barcode"
+  - "missing EAN"
+  - "missing UPC"
+  - "unassigned barcode"
+  - "generate product barcode"
+order: 3
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/understand-product-barcodes"
+  - "/help/products/print-product-labels"
+---
+
+## Quick answer
+
+If a product does not have a supplier EAN or UPC, you can still print a LaSyncro product label.
+
+Select **Print label** and LaSyncro creates an internal `LSP-` identity for that product before generating the printable label.
+
+## Find products without supplier barcodes
+
+In the **Product Barcodes** area, LaSyncro separates products with supplier barcodes from products where that barcode is unassigned.
+
+Products without a supplier barcode can be selected and labelled directly from this area.
+
+## Print a label
+
+For the product you want to label:
+
+1. select **Print label**;
+2. LaSyncro creates an LSP identity if the product does not already have one;
+3. the printable product label is generated.
+
+The generated LSP identity is stored against that variant.
+
+## The LSP code is not a replacement EAN or UPC
+
+LaSyncro does not fabricate an EAN, UPC, or GTIN for the product.
+
+Instead, the `LSP-` code is a separate LaSyncro-owned product identity.
+
+If a supplier barcode is added later, the supplier barcode and LSP identity can both exist on the same product.
+
+## The label remains stable
+
+Once an LSP identity has been created, reprinting uses the same code.
+
+LaSyncro does not create a new LSP identity each time you print.
+
+## Print several unlabelled products at once
+
+You can select multiple products without supplier barcodes and batch print them.
+
+LaSyncro creates any missing LSP identities before generating the PDF label sheet.
+
+You do not need to print each product individually just to create its LaSyncro identity.

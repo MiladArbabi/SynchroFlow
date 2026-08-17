@@ -1,0 +1,77 @@
+---
+title: "Understand product barcodes"
+description: "Understand the difference between supplier barcodes and LaSyncro product labels."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "product barcodes"
+  - "EAN"
+  - "UPC"
+  - "GTIN"
+  - "LSP"
+searchAliases:
+  - "supplier barcode"
+  - "LaSyncro barcode"
+  - "product label"
+  - "EAN UPC"
+  - "LSP barcode"
+order: 1
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/print-product-labels"
+  - "/help/products/products-without-supplier-barcodes"
+---
+
+## Quick answer
+
+LaSyncro can work with two separate product identifiers:
+
+- a supplier barcode such as an **EAN, UPC, or GTIN**;
+- a LaSyncro product label with an identifier beginning with **LSP-**.
+
+These are separate barcode namespaces. A product can have one or both.
+
+## Supplier barcodes
+
+Supplier barcodes are external product identifiers.
+
+In LaSyncro, the supplier barcode is kept separately from the LaSyncro-generated product identity.
+
+LaSyncro does not generate replacement EAN, UPC, or GTIN values.
+
+## LaSyncro product labels
+
+A LaSyncro product label uses an identifier beginning with:
+
+`LSP-`
+
+LaSyncro creates this internal product identity when a product label needs to be printed and the variant does not already have one.
+
+The generated value is stored against that product variant.
+
+## A product can have both
+
+An LSP code does not replace a supplier barcode.
+
+A product that already has a supplier EAN or UPC can still have a LaSyncro label, for example when you need another physical label for warehouse use.
+
+The two identifiers remain separate.
+
+## Reprinting a LaSyncro label
+
+Once an LSP identity has been created, LaSyncro keeps it.
+
+Reprinting the product label uses the same LSP code rather than generating a new identity.
+
+This means labels already applied to the product remain tied to the same product variant.
+
+## Products without supplier barcodes
+
+A missing supplier barcode does not prevent you from creating a printable LaSyncro product label.
+
+LaSyncro can mint an LSP identity when you print the product label.
+
+Continue with **Products without supplier barcodes** for the workflow.

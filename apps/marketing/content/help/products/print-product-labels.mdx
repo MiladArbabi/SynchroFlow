@@ -1,0 +1,79 @@
+---
+title: "Print product labels"
+description: "Generate individual or batch PDF labels for products in LaSyncro."
+category: "Products"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "print product label"
+  - "product barcode"
+  - "LSP"
+  - "batch print"
+  - "barcode labels"
+searchAliases:
+  - "print barcode"
+  - "print SKU label"
+  - "product label PDF"
+  - "batch product labels"
+  - "LaSyncro label"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/products/understand-product-barcodes"
+  - "/help/products/products-without-supplier-barcodes"
+---
+
+## Quick answer
+
+You can print LaSyncro product labels individually or select multiple products and generate a batch PDF label sheet.
+
+If a selected product does not already have a LaSyncro LSP identity, LaSyncro creates one automatically before generating the label.
+
+## Print a single product label
+
+Open the **Product Barcodes** area in Floor Planning.
+
+For a product that needs a LaSyncro label, select **Print label**.
+
+LaSyncro then:
+
+1. checks whether the product already has an LSP identity;
+2. creates one if necessary;
+3. generates the product label as a PDF.
+
+If printing fails, the product row provides a **Retry** action.
+
+## Reprint an existing label
+
+Printing again does not create a different LSP identity.
+
+LaSyncro reuses the product's stored LSP code when generating the new label.
+
+## Print multiple product labels
+
+You can also select multiple products and use the batch-print workflow.
+
+Selection can include:
+
+- products with supplier barcodes;
+- products without supplier barcodes;
+- products that already have LaSyncro labels.
+
+For any selected product that does not yet have an LSP identity, LaSyncro creates one as part of the batch operation.
+
+The selected labels are returned as a single PDF label sheet.
+
+## Products with supplier barcodes
+
+Having an existing supplier EAN or UPC does not prevent you from printing a LaSyncro label.
+
+The supplier barcode and the LaSyncro LSP identity remain separate.
+
+## Who can print product labels
+
+Product-label printing uses Floor Planning write access.
+
+Owners and admins have this access by default.
+
+Operators do not have Floor Planning write access.
