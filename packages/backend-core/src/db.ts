@@ -1,12 +1,29 @@
 // packages/backend-core/src/db.ts
 
+// packages/backend-core/src/db.ts
 import knex from 'knex';
 import type { Knex } from 'knex';
+import pgTypes from 'pg-types';
 import dbConfig from './config/database.config.js';
 import {
   getTenantContextShopId,
   runWithTenantContext,
 } from './tenant-context.js';
+
+// SRC-02: a Postgres DATE is a calendar day — it has no instant and no zone.
+// The pg driver's default parser hydrates it into a JS Date at SERVER-local
+// midnight, so JSON.stringify then emits a UTC instant (2026-08-24 leaves as
+// 2026-08-23T22:00:00Z under UTC+2). The rendered day then depends on the
+// reader's timezone rather than on the stored day.
+//
+// Returning the raw 'YYYY-MM-DD' string keeps the value a calendar day all the
+// way to the client. new Date('2026-08-24') parses as UTC midnight, which
+// toLocaleDateString renders correctly in every zone.
+//
+// OID 1082 = DATE only. TIMESTAMPTZ (1184) is deliberately untouched — those
+// values ARE instants and are correctly zone-aware today.
+// Must run before knex(dbConfig) creates the pool.
+pgTypes.setTypeParser(pgTypes.builtins.DATE, (value: string) => value);
 
 const baseDb = knex(dbConfig);
 export { runWithTenantContext };

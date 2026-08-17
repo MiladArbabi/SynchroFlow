@@ -67,7 +67,11 @@ export async function getProductsInboundSignals(
   try {
     return await withTenant(shopId, async (trx) => {
       // Compare date strings (YYYY-MM-DD) to avoid timezone boundary issues.
-      // PostgreSQL date type returns as ISO timestamp — we extract date part only.
+      // SRC-02: DATE columns arrive as 'YYYY-MM-DD' strings (pg type parser
+      // registered in backend-core/db.ts), so a lexical compare is a calendar
+      // compare. Before that parser they arrived as Date objects and
+      // String(d).slice(0,10) yielded 'Wed Aug 12' — which never compared less
+      // than todayStr, so no PO ever reported overdue.
       const todayStr = new Date().toISOString().slice(0, 10);
 
       // ── Fetch open POs with supplier name + line item aggregates ─────────
@@ -136,7 +140,7 @@ export async function getProductsInboundSignals(
       let total_committed_value_cents: number | null = 0;
 
       for (const row of poRows) {
-        // Slice to YYYY-MM-DD for timezone-safe date comparison
+        // Already 'YYYY-MM-DD' (SRC-02); slice is defensive only.
         const expectedDateStr = row.expected_delivery_date
           ? String(row.expected_delivery_date).slice(0, 10)
           : null;
