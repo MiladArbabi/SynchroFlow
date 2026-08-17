@@ -1535,3 +1535,45 @@ Those actions bypass or distort the canonical repair invariants.
 Detailed contract and runtime proof:
 
 docs/playbooks/oauth_scopes_location_scope_2026_08_13.md
+## INV-SALE-DOUBLE-02 — inventory_truth double-debit residue (CLOSED 2026-08-17)
+
+**Defect.** Before `94043427` (`fix(shopify): make inventory webhooks observation-only`,
+2026-08-13), `inventory_levels/update` wrote a `reconciliation_correction` movement that
+mirrored the `sale` movement Shopify had just reported. Incremental writers then debited
+`on_hand_quantity` for BOTH. `rebuildInventoryProjection` counts only one — economic `sale`
+is excluded from physical reconstruction unless `triggered_by='pick_scan'`. Result:
+`inventory_truth` drifted below the canonical ledger.
+
+**Scope.** Shop 1 only, 8 of 33 rows, every diff positive (truth undercounting).
+17 `reference_type='inventory_levels_update'` movement rows, last written
+2026-08-13 10:01:22 UTC — approx 3.4h before the fix deployed. No other tenant affected.
+
+**Repair.** Targeted UPDATE of `inventory_truth` using the exact CASE expression from
+`rebuildInventoryProjection.ts`. `inventory_movements` NOT touched — the ledger was correct.
+`reserved_quantity` NOT touched — dry-run proved zero reservation drift.
+`available_quantity = GREATEST(0, on_hand - reserved)` per PROJ-004.
+`sellable_quantity` never written (generated column).
+Backup: `inventory_truth_backup_inv_sale_double_02` (33 rows).
+
+**Why not `npm run rebuild`.** Its `projectionTables` registry TRUNCATEs `order_constraints`
+for ALL tenants. Shops 14/15 constraint state is a separate open issue and would have been
+destroyed. Rebuild does NOT truncate `inventory_truth` (it upserts), but the constraint
+truncation alone disqualifies it as a scoped repair.
+
+**A NEGATIVE `on_hand_quantity` IS NOT AUTOMATICALLY A DEFECT.** PROJ-004: on_hand stores the
+TRUE value; negative means sold without recorded receiving ("phantom stock") and is a signal
+downstream surfaces flag. `available`/`sellable` clamp at 0. Two shop-1 variants
+(`b5b6c80b`, `fa4d3a26`) remain at -1 legitimately and MUST NOT be "repaired" to zero.
+The test for drift is truth vs. the canonical CASE, never `on_hand < 0`.
+
+**Constraint follow-up.** 6 orders re-evaluated via
+`reevaluate-order-constraints.js --shop-id=1 --order-ids=... --apply --confirm=BL-01A`.
+The CLI appends `orders/constraints_reevaluated` only; the projection worker decides outcomes.
+Oversells resolved 10 -> 4 active. Address blocks correctly unchanged.
+
+**Shop 1 before -> after:** 26 pending; stock-blocked 10 -> 3; address-blocked 9 -> 9;
+eligible-and-unbatched 4 -> 6. No `WMS_BATCH_RELEASE_FAILED` after repair.
+
+**Query-scoping trap.** `order_constraints` has NO `shop_id` column. Any per-tenant constraint
+query MUST join `orders`. Filtering only via `order_fulfillment_status` silently counts all
+tenants (produced a false "71 address-blocked" during this session).
