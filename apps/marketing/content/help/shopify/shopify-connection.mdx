@@ -18,35 +18,54 @@ searchAliases:
   - "Shopify not connecting"
 order: 1
 lastReviewed: "2026-08-17"
-relatedArticles: []
+relatedArticles:
+  - "/help/getting-started/connect-your-shopify-store"
+  - "/help/shopify/understand-shopify-sync-and-resync"
 ---
 
 ## Quick answer
 
-If LaSyncro reports that your Shopify connection failed, verify that you are connecting the correct Shopify store and then try the connection again.
+If Shopify authorization is canceled, rejected, or does not return you to a connected LaSyncro workspace, start the Shopify install again from the current **Connect store** step when that action is available.
 
-## What to check
+If your store is connected but sync is not complete, check the **Catalog Sync** popover and use **Resync** if the option is available.
 
-1. Confirm that you are connecting the intended Shopify store.
-2. Check that the store address you entered is correct.
-3. Return to LaSyncro and retry the connection.
+## If authorization was canceled or rejected
 
-## Try the connection again
+Return to LaSyncro and open the **Connect store** step.
 
-Use **Try Again** in the connection error window to restart the connection attempt.
+If **Install LaSyncro from the Shopify App Store** is available, select it again and complete Shopify authorization for the intended store.
 
-If Shopify opens an authorization screen, complete the requested authorization and return to LaSyncro.
+If the install action is not available on the current screen, contact support. The current Connect store screen does not provide a manual store-address form.
+
+## If you return but connection does not complete
+
+After a successful Shopify authorization, LaSyncro should show the sync screen while your workspace is prepared.
+
+If you return to LaSyncro but do not see the sync screen or a connected workspace, start the install again from **Connect store** if the Shopify App Store install action is available.
+
+If the same result repeats, contact support.
+
+## If the store is connected but sync is incomplete
+
+Open the sync pill in the top navigation.
+
+The **Catalog Sync** popover shows the current sync state. If **Resync** is available, select it to request a new sync for the connected Shopify integration.
+
+A resync request may not update the counts immediately. If sync remains incomplete after giving it time to finish, contact support.
 
 ## If the connection still fails
 
-Keep the error details shown by LaSyncro and contact support.
+Contact support if:
 
-Those details help us identify where the connection attempt failed without requiring you to repeatedly retry the same action.
+- Shopify authorization repeatedly returns you without completing the connection;
+- the install action is not available on the current Connect store screen;
+- the sync remains incomplete after using **Resync**;
+- Shopify shows an authorization or install error.
 
 ## Still stuck?
 
 Contact **contact@lasyncro.com** and include:
 
 - the Shopify store you are trying to connect;
-- the error message shown by LaSyncro;
+- any error message shown by Shopify or LaSyncro;
 - what happened immediately before the error appeared.
