@@ -1,0 +1,76 @@
+---
+title: "Understand Shopify sync and resync"
+description: "Understand what LaSyncro syncs from Shopify, where to check sync status, and how manual resync works."
+category: "Shopify"
+audience:
+  - "Owner"
+  - "Admin"
+keywords:
+  - "Shopify sync"
+  - "resync"
+  - "sync status"
+  - "products"
+  - "orders"
+searchAliases:
+  - "manual resync"
+  - "sync Shopify data"
+  - "catalog sync"
+  - "Shopify products sync"
+  - "Shopify orders sync"
+order: 2
+lastReviewed: "2026-08-17"
+relatedArticles:
+  - "/help/shopify/shopify-connection"
+  - "/help/getting-started/connect-your-shopify-store"
+---
+
+## Quick answer
+
+LaSyncro syncs Shopify data needed to run warehouse workflows, then shows the current sync state from the top navigation.
+
+The sync status pill shows **Live** when the current Shopify integration is marked complete and **Syncing** while it is not complete.
+
+Owners and admins can open the sync popover and request a manual **Resync** for the connected Shopify integration.
+
+## What LaSyncro syncs from Shopify
+
+The Shopify sync imports product and order data that LaSyncro uses for warehouse operations.
+
+For products, LaSyncro reads product and variant information such as titles, SKUs, barcodes, images, status, inventory-related values, and pricing or cost values when Shopify provides them.
+
+For orders, LaSyncro reads order details such as order identity, dates, totals, line items, fulfillment and payment status, shipping address, and the Shopify customer identity attached to the order when one exists.
+
+LaSyncro also records opening inventory quantities from Shopify so warehouse inventory can start from the connected catalog state.
+
+## Where to check sync status
+
+In the top navigation, use the sync pill.
+
+The pill shows:
+
+- **Live** when LaSyncro sees the Shopify integration as complete;
+- **Syncing** when the integration is still pending, syncing, or otherwise not complete.
+
+Select the pill to open the **Catalog Sync** popover.
+
+The popover can show:
+
+- the last updated time available for the sync record;
+- counts for products, variants, and orders currently recorded in LaSyncro;
+- recently synced products.
+
+## Request a manual resync
+
+Open the **Catalog Sync** popover and select **Resync**.
+
+LaSyncro sends a new sync request for the current Shopify integration.
+
+While the request is being submitted, the control shows **Syncing**. After the request completes, LaSyncro refreshes the sync status shown in the popover.
+
+A manual resync is a request to run the sync again. It does not mean every number in the popover changes immediately.
+
+## If sync is still not complete
+
+If the pill continues to show **Syncing**, give the sync time to finish.
+
+If the sync appears stuck or the connection itself failed, continue with **Troubleshoot your Shopify connection** and include the current sync status when contacting support.
