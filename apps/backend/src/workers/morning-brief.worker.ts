@@ -10,8 +10,11 @@
 //
 // CHANGE POLICY:
 //   Brief computation lives in overviewMorningBrief.resolver.ts.
-//   Schedule is hardcoded to 5am UTC — adjust if timezone-aware
-//   delivery is required in future (OVR-04).
+//   Schedule is hardcoded to 5am UTC. SRC-05a made shops.timezone a real
+//   per-shop IANA zone (populated from Shopify at OAuth, overridable in
+//   Settings > Localization), so timezone-aware delivery is now possible —
+//   tracked as SRC-05b. Until then every shop is briefed at 5am UTC
+//   regardless of where its warehouse is.
 
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import {

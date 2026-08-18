@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/pages/account-settings/LocalizationSettings.tsx
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -9,10 +9,12 @@ import {
   FormControl,
   Alert,
   SelectChangeEvent,
+  CircularProgress,
 } from '@mui/material';
 import { Globe } from 'lucide-react';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { updateCurrencyPreference } from 'api/members';
+import { getShopTimezone, updateShopTimezone } from 'api/shopSettings';
 import { useAuth } from 'contexts/AuthContext';
 import {
   SettingsCard,
@@ -51,6 +53,48 @@ const LocalizationSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // SRC-05a: shop timezone. Unlike currency this is not cosmetic — it decides
+  // when scheduled reports fire and how daily cut-off times are read.
+  const [timezone, setTimezone] = useState<string | null>(null);
+  const [tzSelected, setTzSelected] = useState<string>('');
+  const [tzDetected, setTzDetected] = useState<string>('');
+  const [tzLoading, setTzLoading] = useState(true);
+  const [tzSaving, setTzSaving] = useState(false);
+  const [tzSuccess, setTzSuccess] = useState(false);
+  const [tzError, setTzError] = useState<string | null>(null);
+
+  // Built from the runtime's own IANA data rather than a hardcoded list —
+  // zones get added and renamed, and a stale list would omit real warehouses.
+  const TIMEZONES = React.useMemo<string[]>(() => {
+    const supported = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] })
+      .supportedValuesOf;
+    return supported ? supported('timeZone') : ['UTC'];
+  }, []);
+
+  useEffect(() => {
+    getShopTimezone()
+      .then((tz) => {
+        setTimezone(tz.timezone);
+        setTzSelected(tz.timezone);
+        setTzDetected(tz.detected_default);
+      })
+      .catch(() => setTzError('Could not load the shop timezone.'))
+      .finally(() => setTzLoading(false));
+  }, []);
+
+  const handleTzSave = async () => {
+    setTzSaving(true);
+    setTzError(null);
+    try {
+      const saved = await updateShopTimezone(tzSelected);
+      setTimezone(saved.timezone);
+      setTzSuccess(true);
+    } catch {
+      setTzError('Failed to save timezone. Please try again.');
+    } finally {
+      setTzSaving(false);
+    }
+  };
 
   // Gate: operator role cannot change currency settings
   const canEdit = user?.role === 'owner' || user?.role === 'admin';
@@ -128,6 +172,67 @@ const LocalizationSettings: React.FC = () => {
         )}
 
         <SaveButton dirty={isDirty} saving={saving} onSave={handleSave} />
+      </SettingsCard>
+      {/* SRC-05a: shop timezone. Deliberately worded to signal that this is
+          behavioural, not cosmetic — a merchant who reads it as a display
+          preference will leave it wrong and get their reports at 5am UTC. */}
+      <SettingsCard
+        icon={<Globe size={16} />}
+        title="Shop Timezone"
+        description="Used for daily cut-off times and scheduled reports. Set this to your warehouse's local timezone, which may differ from where your storefront is registered."
+      >
+        {tzLoading ? (
+          <CircularProgress size={18} />
+        ) : (
+          <>
+            <Box>
+              <SectionLabel>Timezone</SectionLabel>
+              <FormControl size="small" sx={{ width: 320 }}>
+                <Select
+                  value={tzSelected}
+                  onChange={(e: SelectChangeEvent) => {
+                    setTzSelected(e.target.value);
+                    setTzSuccess(false);
+                    setTzError(null);
+                  }}
+                  sx={{ fontSize: 13 }}
+                  MenuProps={{ PaperProps: { sx: { maxHeight: 360 } } }}
+                >
+                  {TIMEZONES.map((tz) => (
+                    <MenuItem key={tz} value={tz} sx={{ fontSize: 13 }}>
+                      {tz}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              {tzDetected && tzDetected !== tzSelected && (
+                <Typography sx={{ fontSize: 12, mt: 1 }}>
+                  Your device is in {tzDetected}.{' '}
+                  <Box
+                    component="button"
+                    onClick={() => { setTzSelected(tzDetected); setTzSuccess(false); }}
+                    sx={{ fontSize: 12, background: 'none', border: 'none', p: 0, cursor: 'pointer', color: 'primary.main', textDecoration: 'underline' }}
+                  >
+                    Use this
+                  </Box>
+                </Typography>
+              )}
+            </Box>
+
+            {tzSuccess && (
+              <Alert severity="success" sx={{ mt: 1.5 }}>
+                Timezone set to {timezone}. Scheduled reports and cut-off times now use it.
+              </Alert>
+            )}
+            {tzError && (
+              <Alert severity="error" sx={{ mt: 1.5 }}>
+                {tzError}
+              </Alert>
+            )}
+
+            <SaveButton dirty={tzSelected !== timezone} saving={tzSaving} onSave={handleTzSave} />
+          </>
+        )}
       </SettingsCard>
     </SettingsPageWrapper>
   );

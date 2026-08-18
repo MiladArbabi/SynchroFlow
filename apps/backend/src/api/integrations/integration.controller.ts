@@ -326,6 +326,9 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
   let shopifyAccessToken: string;
   let shopifyGrantedScopes: string;
   let shopBaseCurrency = 'USD';
+  // SRC-05a: IANA zone, not timezoneOffset. An offset ("+02:00") is a snapshot
+  // that breaks twice a year at DST; the IANA identifier is durable.
+  let shopTimezone: string | null = null;
   let shopRealName: string | null = null;
   let shopContactEmail: string | null = null;
   let shopGid: string | null = null;
@@ -355,7 +358,7 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       try {
         const shopInfoRes = await axios.post(
           `https://${oauthContext.shopDomain}/admin/api/2024-01/graphql.json`,
-          { query: '{ shop { id currencyCode name contactEmail } }' },
+          { query: '{ shop { id currencyCode name contactEmail ianaTimezone } }' },
           {
             headers: {
               'X-Shopify-Access-Token': shopifyAccessToken,
@@ -368,6 +371,9 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         const shopGidCandidate = shopGraphData?.id;
 
         shopBaseCurrency = shopGraphData?.currencyCode ?? 'USD';
+        // Null when Shopify omits it — the DB default ('UTC') then stands
+        // rather than us writing a guess.
+        shopTimezone = shopGraphData?.ianaTimezone ?? null;
         shopRealName = shopGraphData?.name ?? null;
         shopContactEmail = shopGraphData?.contactEmail ?? null;
 
@@ -409,6 +415,18 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       await trx('shops')
         .where({ id: shopId })
         .update({ base_currency: shopBaseCurrency });
+
+      // SRC-05a: timezone is a SEPARATE statement because it carries a guard
+      // the currency write must not inherit. Folding both into one update with
+      // a trailing .where(timezone_source) would skip the currency refresh
+      // entirely for any shop that had set its own timezone.
+      // Only overwrite when Shopify supplied a zone AND the merchant hasn't
+      // chosen one — a re-install must never clobber a deliberate choice.
+      if (shopTimezone) {
+        await trx('shops')
+          .where({ id: shopId, timezone_source: 'shopify' })
+          .update({ timezone: shopTimezone });
+      }
 
       const encryptedToken = encryptToken(shopifyAccessToken);
 
