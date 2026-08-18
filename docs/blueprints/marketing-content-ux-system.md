@@ -87,13 +87,17 @@ Route migrations should rely on shared responsive behavior instead of duplicatin
 
 ## Migration sequence
 
-MKT-UX-01A: Shared primitives foundation.
+MKT-UX-01A: complete.
+Shared primitives foundation.
 
-MKT-UX-01B: Help UX migration.
+MKT-UX-01B: complete.
+Help UX migration.
 
-MKT-UX-01C: Blog convergence onto shared primitives without reducing editorial UX.
+MKT-UX-01C: next.
+Blog convergence onto shared primitives without reducing editorial UX.
 
-MKT-UX-01D: Compare, Glossary, and grouped marketing index convergence.
+MKT-UX-01D: later.
+Compare, Glossary, and grouped marketing index convergence.
 
 Migration does not mean forcing every domain to look identical. The objective is shared visual grammar and architecture.
 
@@ -110,10 +114,48 @@ Migration does not mean forcing every domain to look identical. The objective is
 
 ## Current state
 
-MKT-UX-01A foundation exists.
+MKT-UX-01A foundation is complete.
 
-No marketing routes have been migrated yet.
+MKT-UX-01B Help UX migration is complete. `/help`, `/help/[category]`, and `/help/[category]/[slug]` now compose the shared content primitives.
 
-Existing `ArticleLayout` remains unchanged and will be considered during later Blog convergence.
+All 53 Help MDX articles inherit the shared article/prose system through route templates; individual MDX files were not visually rewritten.
 
-Help migration is the next implementation issue.
+Help uses a canonical 16-category registry in `apps/marketing/lib/help.ts`. Category identity remains filesystem slug based, while the registry owns category label, description, and display order. Article counts are derived from the actual corpus.
+
+Registry validation detects missing or orphan category definitions and unexpected frontmatter category drift.
+
+Search remains client-side and article-metadata based; no body or fuzzy search was added.
+
+`relatedArticles` frontmatter is now resolved into `RelatedContent`, and broken canonical Help references fail clearly.
+
+Sitemap generation remains article/filesystem-derived and was not changed.
+
+Existing `ArticleLayout` remains unchanged and will be considered during MKT-UX-01C Blog convergence.
+
+## Help visual composition
+
+`/help` composes `ContentHero` -> `HelpSearch` -> linked category `ContentCard`s -> support `ContentCTA`.
+
+`/help/[category]` composes `ContentBreadcrumbs` -> `ContentHero` -> article count -> `ContentRow`s -> support `ContentCTA`.
+
+`/help/[category]/[slug]` composes `ContentArticleShell` -> breadcrumbs -> Help-owned article header/meta -> shared MDX prose -> `RelatedContent` -> support `ContentCTA`.
+
+## Help theme boundary
+
+`apps/marketing/app/help/layout.tsx` is the Help-domain theme boundary.
+
+Help deliberately forces the dark LaSyncro operational palette:
+
+- `#151D29` background
+- `#1C2740` surfaces
+- `#243050` secondary dark
+- `#F0EEE8` primary text
+- `#C8C4BB` secondary text
+- `#8B8F9A` muted text
+- `#FF6B2B` accent
+
+This is implemented through local CSS-variable overrides so shared primitives render consistently regardless of OS/browser color preference.
+
+This does not make the whole marketing site dark. Global marketing Nav/Footer remain owned by `apps/marketing/app/layout.tsx`, so the global footer may remain visually separate until later marketing-shell convergence.
+
+Future work should avoid independently duplicating this dark palette again; a shared theme contract may be extracted when multiple marketing domains adopt it.

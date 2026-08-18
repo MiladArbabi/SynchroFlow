@@ -50,7 +50,7 @@ export default function HelpSearch({
           marginBottom: 10,
           fontSize: 13,
           fontWeight: 500,
-          color: '#3A3835',
+          color: 'var(--ink-2)',
         }}
       >
         Search Help
@@ -67,10 +67,10 @@ export default function HelpSearch({
           width: '100%',
           boxSizing: 'border-box',
           padding: '14px 16px',
-          border: '1px solid #D8D5CF',
+          border: '1px solid var(--rule-2)',
           borderRadius: 10,
-          background: '#FFFFFF',
-          color: '#0F0E0D',
+          background: 'var(--surface)',
+          color: 'var(--ink)',
           font: 'inherit',
           fontSize: 15,
           outline: 'none',
@@ -82,9 +82,9 @@ export default function HelpSearch({
           aria-live="polite"
           style={{
             marginTop: 16,
-            border: '1px solid #E8E6E0',
+            border: '1px solid var(--rule)',
             borderRadius: 10,
-            background: '#FFFFFF',
+            background: 'var(--surface)',
             overflow: 'hidden',
           }}
         >
@@ -96,7 +96,7 @@ export default function HelpSearch({
                 style={{
                   display: 'block',
                   padding: '16px 18px',
-                  borderBottom: '1px solid #F0EEEA',
+                  borderBottom: '1px solid var(--rule)',
                   color: 'inherit',
                   textDecoration: 'none',
                 }}
@@ -106,7 +106,7 @@ export default function HelpSearch({
                     marginBottom: 4,
                     fontSize: 11,
                     fontWeight: 500,
-                    color: '#FF6B2B',
+                    color: 'var(--accent)',
                     textTransform: 'uppercase',
                     letterSpacing: '0.08em',
                   }}
@@ -119,7 +119,7 @@ export default function HelpSearch({
                     marginBottom: 4,
                     fontSize: 15,
                     fontWeight: 500,
-                    color: '#0F0E0D',
+                    color: 'var(--ink)',
                   }}
                 >
                   {item.title}
@@ -129,7 +129,7 @@ export default function HelpSearch({
                   style={{
                     fontSize: 13,
                     lineHeight: 1.5,
-                    color: '#6B7280',
+                    color: 'var(--ink-3)',
                   }}
                 >
                   {item.description}
@@ -141,7 +141,7 @@ export default function HelpSearch({
               style={{
                 padding: 18,
                 fontSize: 14,
-                color: '#6B7280',
+                color: 'var(--ink-3)',
               }}
             >
               No help articles found for “{query.trim()}”.
