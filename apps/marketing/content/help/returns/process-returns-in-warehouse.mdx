@@ -1,0 +1,141 @@
+---
+title: "Process returns in Warehouse"
+description: "Use the current Warehouse return intake flow to assess returned items and complete return jobs."
+category: "Returns"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "returns"
+  - "return intake"
+  - "scan a return"
+  - "returned item"
+  - "return job"
+  - "Pack mode"
+searchAliases:
+  - "process return"
+  - "scan returned item"
+  - "customer return"
+  - "return to sender"
+  - "undelivered return"
+order: 1
+lastReviewed: "2026-08-18"
+relatedArticles:
+  - "/help/packing/pack-orders-with-scans"
+  - "/help/problem-center/resolve-warehouse-exceptions"
+  - "/help/stowing/understand-the-stowing-workflow"
+  - "/help/stowing/complete-a-stow-task"
+---
+
+## Quick answer
+
+Returns are processed from **Warehouse**.
+
+Open **Returns**, choose **Scan a return**, then LaSyncro sends you to Warehouse. The current scanner surface is still called **Pack mode**.
+
+A return intake can begin when Pack mode scans an already shipped **LSO-** invoice barcode or an **LSU-** unit barcode whose unit and order are already shipped.
+
+LaSyncro then opens a return session for the order.
+
+## Start return intake
+
+Open **Returns**.
+
+Choose **Scan a return**.
+
+LaSyncro opens **Warehouse**, where the visible scanner is **Pack mode**.
+
+Scan the returned parcel's order invoice barcode or a shipped unit barcode from the returned item.
+
+If the scan resolves to a shipped order, LaSyncro opens:
+
+**Return job — Order #...**
+
+If another operator already owns the same return job, LaSyncro can stop the scan and tell you the return is already claimed by another operator.
+
+## Review the return session
+
+The return session shows the return origin and the linked order when available.
+
+Visible origins are:
+
+- **Customer return**
+- **Undelivered / return to sender**
+
+The session can show linked refund lines for the order. Each line shows the product or SKU and the refunded quantity.
+
+If there is no linked refund yet, the session tells you to scan the physical product barcode to log what arrived.
+
+## Assess each returned line
+
+For every returned line, choose the physical condition and confirm the received quantity.
+
+Visible condition choices are:
+
+- **Resellable**
+- **Repackable**
+- **Damaged**
+- **Unsellable**
+
+For **Damaged** and **Unsellable**, LaSyncro requires condition notes before the line can be saved.
+
+Choose **Save line** after the quantity and condition are correct.
+
+## Add a returned product line
+
+If no refund line is linked yet, use **Scan an item to add a line**.
+
+Scan the physical product barcode, then choose **Add line**.
+
+The current add-line flow records one received unit as **Resellable**. Use it only when the scanned product is the item physically returned for that order.
+
+If LaSyncro cannot recognise the barcode or match it to the order, it can reject the scan.
+
+## Choose a return reason when required
+
+Customer returns require a reason before the job can be completed.
+
+Visible reasons are:
+
+- **Wrong item**
+- **Damaged in transit**
+- **Damaged on arrival**
+- **Not as described**
+- **Quality issue**
+- **Changed mind**
+- **Duplicate order**
+- **Other**
+
+If you choose **Other**, add the required notes.
+
+Undelivered or return-to-sender jobs do not show the same customer-return reason step in the current return session.
+
+## Complete the return
+
+Choose **Complete return** after every visible line has been assessed and any required reason is present.
+
+LaSyncro blocks completion when:
+
+- at least one visible line has not been assessed;
+- a customer return is missing its required reason;
+- **Other** is selected without notes;
+- a damaged or unsellable line is waiting for owner or admin review.
+
+If completion fails, review the visible line state and ask an owner or admin to check the return before continuing.
+
+## Understand what each condition does
+
+**Resellable** creates stow work. The stock is not available just because the return was assessed. Inventory is credited when the resulting stow work is successfully completed.
+
+**Repackable** can create Problem Center follow-up for repackaging before the item returns to normal stock flow.
+
+**Damaged** and **Unsellable** require owner or admin review. Do not treat those items as available stock.
+
+If the received quantity is lower than the refunded quantity, LaSyncro can create Problem Center follow-up for the short quantity.
+
+## Who can process returns
+
+Owners, admins, and operators can process return jobs in the current warehouse flow.
+
+Owner or admin review is recommended whenever the item is damaged, unsellable, incomplete, or otherwise unclear.
