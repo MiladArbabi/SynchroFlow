@@ -23,7 +23,9 @@
     "migrate:rollback": "rm -rf dist/migrations && npx tsc --project tsconfig.migrations.json && DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:rollback",
     "migrate:make": "DOTENV_CONFIG_PATH=../../.env npx knex --knexfile knexfile.cjs migrate:make",
     "rebuild": "REBUILD_MODE=true node --loader ts-node/esm src/cli/rebuild-from-events.ts",
-    "backfill:margin": "node --loader ts-node/esm src/scripts/backfill-margin-snapshots.ts"
+    "backfill:margin": "node --loader ts-node/esm src/scripts/backfill-margin-snapshots.ts",
+    "verify:morning-brief": "node --loader ts-node/esm src/scripts/verify-morning-brief-cycle.ts",
+    "run:morning-brief": "node scripts/run-morning-brief-cycle.mjs"
   },
   "dependencies": {
     "@lasyncro/backend-core": "0.1.0",

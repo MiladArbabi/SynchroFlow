@@ -2,28 +2,59 @@
 //
 // Morning Brief Worker (OVR-02)
 // ------------------------------
-// Runs once per day at 5am UTC.
-// Pre-computes morning brief for all active shops.
+// Polls hourly; briefs each shop at 5am in ITS OWN timezone (SRC-05b).
+//
+// It previously ran once at 05:00 UTC and briefed everyone in that pass, which
+// meant 07:00 in Stockholm and 22:00 the previous evening in Los Angeles — a
+// "morning" brief describing a day that had already ended. shops.timezone
+// carries a real IANA zone since SRC-05a, so selection is now per shop.
+//
+// Because the 24h sleep no longer guarantees one run per shop per day, the
+// idempotency guard moved into the loop: skip if the shop's last brief was
+// generated after its own local day began. This also covers DST fall-back,
+// where 05:00 local occurs twice.
+//
+// Zones offset by 30 or 45 minutes are briefed at :30 or :45 past 5 rather
+// than on the hour — a deliberate trade against quadrupling the cycle count.
 //
 // Per-shop failures are isolated — cycle always continues.
 // Shops with no open subscription row are skipped silently.
 //
+// KNOWN BROKEN — SRC-07:
+//   computeMorningBrief() is called OUTSIDE withTenant, and the resolver makes
+//   bare global-db reads (overviewMorningBrief.resolver.ts:186, 189, 200).
+//   superviseWorker starts this worker with no AsyncLocalStorage context, so
+//   every shop throws TENANT_CONTEXT_MISSING and is swallowed by the per-shop
+//   catch into failed++. No scheduled brief has ever been generated; the rows
+//   in morning_brief_snapshots come from the on-demand HTTP refresh path,
+//   where request context exists. The scheduling above is correct and its
+//   selection is verified, but the cycle cannot complete until SRC-07 lands.
+//
 // CHANGE POLICY:
 //   Brief computation lives in overviewMorningBrief.resolver.ts.
-//   Schedule is hardcoded to 5am UTC. SRC-05a made shops.timezone a real
-//   per-shop IANA zone (populated from Shopify at OAuth, overridable in
-//   Settings > Localization), so timezone-aware delivery is now possible —
-//   tracked as SRC-05b. Until then every shop is briefed at 5am UTC
-//   regardless of where its warehouse is.
+//   Selection is verifiable: `npm run verify:morning-brief -w apps/backend`
+//   reports what the cycle would do without writing. Invoking it for real is
+//   `npm run run:morning-brief -w apps/backend -- --confirm=SRC-05B`, which
+//   runs against dist/ under plain node.
 
 import db, { systemQuery, withTenant } from '@lasyncro/backend-core/db.js';
 import {
   computeMorningBrief,
   persistMorningBrief,
 } from '../services/overview-ft2/overviewMorningBrief.resolver.js';
+import { getShopClock, startOfShopDay } from '../services/shop/shopClock.service.js';
 
-const POLL_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const TARGET_HOUR_UTC = 5; // 5am UTC
+// SRC-05b: the cycle polls hourly and briefs only the shops whose OWN local
+// hour has just turned 5. It used to run once at 05:00 UTC and brief everyone,
+// which meant 07:00 in Stockholm and 22:00 the previous evening in Los
+// Angeles — a "morning" brief describing a day that had already ended.
+//
+// Zones offset by 30 or 45 minutes (India, Nepal, parts of Australia) are
+// briefed at :30 or :45 past 5 rather than on the hour. That is a deliberate
+// trade: a brief 45 minutes late is not the failure being fixed here, and a
+// 15-minute poll would quadruple the cycle count for that alone.
+const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const TARGET_LOCAL_HOUR = 5; // 5am in the shop's own timezone
 
 let running = false;
 
@@ -31,17 +62,27 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function msUntilNextRun(): number {
+/**
+ * SRC-05b: delay to the top of the next hour, so the cycle lands close to :00
+ * in every zone rather than drifting by however long after boot the worker
+ * started. Replaces msUntilNextRun(), which anchored the whole schedule to
+ * 05:00 UTC.
+ */
+function msUntilNextHour(): number {
   const now = new Date();
-  const next = new Date();
-  next.setUTCHours(TARGET_HOUR_UTC, 0, 0, 0);
-  if (next <= now) {
-    next.setUTCDate(next.getUTCDate() + 1);
-  }
+  const next = new Date(now);
+  next.setUTCMinutes(0, 0, 0);
+  next.setUTCHours(next.getUTCHours() + 1);
   return next.getTime() - now.getTime();
 }
 
-async function runMorningBriefCycle(): Promise<void> {
+/**
+ * Exported for verification. A scheduled job with no invocation path can only
+ * be reviewed, never exercised — which is how a wiring bug survives review.
+ * Nothing outside this module calls it in normal operation; the worker loop
+ * below is its only production caller.
+ */
+export async function runMorningBriefCycle(): Promise<void> {
   // Fetch all active shops with a subscription row
   const tenantLookup = await systemQuery(
     db.raw('SELECT shop_id FROM public.list_morning_brief_tenants()')
@@ -53,8 +94,41 @@ async function runMorningBriefCycle(): Promise<void> {
   let succeeded = 0;
   let failed = 0;
 
+  let skipped = 0;
+
   for (const { shop_id } of shops) {
     try {
+      // SRC-05b: is it 5am at THIS shop? Read inside withTenant because the
+      // tenant context is already the RLS boundary these tables sit behind —
+      // widening list_morning_brief_tenants() to carry the timezone would mean
+      // altering a SECURITY DEFINER object for a per-shop lookup.
+      const due = await withTenant(shop_id, async (trx) => {
+        const shopRow = await trx('shops').where('id', shop_id).first('timezone');
+        const clock = getShopClock(shopRow?.timezone ?? null);
+        if (clock.hour !== TARGET_LOCAL_HOUR) return false;
+
+        // The 24h sleep used to guarantee one brief per shop per day. With an
+        // hourly poll that guarantee is gone, so it moves here: skip if this
+        // shop has already been briefed during its current local day. Also
+        // covers DST fall-back, where 05:00 local occurs twice.
+        const last = await trx('morning_brief_snapshots')
+          .where('shop_id', shop_id)
+          .first('generated_at');
+
+        if (!last?.generated_at) return true;
+
+        // "Was the last brief generated after this shop's day began?" stated
+        // directly, rather than inferred from a weekday match plus a 24h
+        // window — two conditions approximating one fact.
+        const dayStart = startOfShopDay(shopRow?.timezone ?? null);
+        return new Date(last.generated_at).getTime() < dayStart.getTime();
+      });
+
+      if (!due) {
+        skipped++;
+        continue;
+      }
+
       const brief = await computeMorningBrief({ shopId: shop_id });
 
       await withTenant(shop_id, async (trx) => {
@@ -72,19 +146,19 @@ async function runMorningBriefCycle(): Promise<void> {
     }
   }
 
-  console.info('[morning-brief-worker] cycle complete', { succeeded, failed });
+  console.info('[morning-brief-worker] cycle complete', { succeeded, failed, skipped });
 }
 
 export async function startMorningBriefWorker(): Promise<void> {
   if (running) return;
   running = true;
 
-  // Wait until 5am UTC before first run
-  const initialDelay = msUntilNextRun();
-  
-  // DEBUG only — this fires on every restart and is intentionally silent in production.
-  // First run is intentionally delayed until 5am UTC via msUntilNextRun().
-  console.debug('[morning-brief-worker] started — first run in', {
+  // SRC-05b: align to the top of the hour, then poll hourly. No shop is
+  // briefed until its own local 5am, so the first cycle is usually a no-op.
+  const initialDelay = msUntilNextHour();
+
+  // DEBUG only — fires on every restart, intentionally silent in production.
+  console.debug('[morning-brief-worker] started — first cycle in', {
       minutes: Math.round(initialDelay / 60000),
     });
 
