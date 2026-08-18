@@ -33,7 +33,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
   { url: `${BASE_URL}/terms`,           lastModified: new Date('2026-05-17'), priority: 0.3, changeFrequency: 'yearly'  },
   { url: `${BASE_URL}/pricing`,         lastModified: new Date('2026-05-21'), priority: 0.8, changeFrequency: 'monthly' },
   { url: `${BASE_URL}/faq`,             lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
-  { url: `${BASE_URL}/getting-started`, lastModified: new Date('2026-05-21'), priority: 0.7, changeFrequency: 'monthly' },
   { url: `${BASE_URL}/glossary`,        lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
   { url: `${BASE_URL}/help`,            lastModified: new Date(),             priority: 0.8, changeFrequency: 'weekly'  },
 ]

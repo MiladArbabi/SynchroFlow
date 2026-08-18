@@ -20,6 +20,11 @@ const nextConfig: NextConfig = {
         destination: '/blog/shopify-warehouse-management',
         permanent: true, // 301 — passes link equity to the canonical post
       },
+      {
+        source: '/getting-started',
+        destination: '/help/getting-started',
+        permanent: true,
+      },
     ]
   },
 }
