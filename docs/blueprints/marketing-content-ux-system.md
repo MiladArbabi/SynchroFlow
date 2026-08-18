@@ -18,6 +18,16 @@ Shared primitives live in `apps/marketing/components/content/`.
 
 The public API lives in `apps/marketing/components/content/index.ts`. Routes should import from this barrel where practical instead of deep-importing internal files.
 
+## Public-domain deployment
+
+`www.lasyncro.com` proxies marketing routes through `packages/landing-page/vercel.json`.
+
+Proxied Next.js pages emit root-relative `/_next/*` assets. Therefore the landing Vercel project must proxy `/_next/:path*` to `https://synchro-flow-marketing.vercel.app/_next/:path*`.
+
+Without that rewrite, HTML renders but CSS/JS assets 404 and pages appear as unstyled semantic HTML.
+
+Do not solve this with per-page inline styling or `assetPrefix` unless the routing architecture changes.
+
 ## Shared primitives
 
 `ContentShell` provides standard horizontal gutters and width constraints. Supported widths are `wide` at about 1200px, `medium` at about 880px, and `article` at about 720px.
