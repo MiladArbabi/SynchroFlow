@@ -3,27 +3,49 @@
 import db from '@lasyncro/backend-core/db.js';
 
 /**
- * DEMAND INTELLIGENCE SERVICE (DF-01, DF-02, DF-03)
- * ---------------------------------------------------
- * Computes demand velocity, days-of-stock-remaining,
- * and reorder signals per variant.
+ * DEMAND INTELLIGENCE SERVICE (DF-01, DF-02, DF-03 / SRC-11)
+ * ------------------------------------------------------------
+ * Computes fulfilled-demand velocity, days of stock, demand confidence,
+ * replenishment urgency, and suggested reorder quantity per variant.
  *
  * METHODOLOGY:
- * - Velocity = units sold / days in observation window
- * - Days of stock = available_quantity / velocity
- * - Reorder signal fires when days of stock < reorder_threshold
+ * - Demand uses fulfilled_quantity, not ordered quantity.
+ * - Velocity uses the shortest sufficiently populated 30d → 90d → 180d
+ *   window. Sparse fulfilled demand falls back to 180d instead of zero.
+ * - Confidence is separate from replenishment urgency.
+ * - Days of stock = aggregated available_quantity / velocity.
+ * - Stockout is always critical.
+ * - Critical when days_of_stock <= supplier lead_time_days.
+ * - Warning when days_of_stock <= lead_time_days + safety_days.
+ * - Missing lead time produces planning_data_required instead of guessing.
+ * - Suggested reorder quantity targets:
+ *     velocity × (lead time + safety days + purchasing cycle)
+ *     + open customer demand
+ *     - available stock
+ *     - reliable future inbound.
  *
  * SOURCES:
- * - order_revenue_units → units sold per variant
- * - inventory_truth → current available stock
- * - variants → unit cost, title, SKU
- * - orders → order timing for velocity window
+ * - order_revenue_units.fulfilled_quantity → fulfilled units per variant
+ * - order_fulfillment_status → fulfillment timing and terminal order state
+ * - inventory_truth → available stock summed across warehouse locations
+ * - suppliers.lead_time_days → canonical supplier planning lead time
+ * - purchase_orders / purchase_order_line_items → reliable future inbound
+ * - products / variants → physical + active eligibility
+ *
+ * CURRENT LIMITATIONS / DEFAULTS:
+ * - fulfilled_at is order-level truth; partial line-level fulfillment timing
+ *   is not modeled and must not be inferred.
+ * - Safety days use an explicit 5-day system default until configurable
+ *   SKU/supplier/shop policy fields exist.
+ * - Purchasing cycle uses an explicit 7-day system default until
+ *   configurable supplier/shop policy fields exist.
+ * - shipped / partially_received POs are at the receiving boundary and are
+ *   not counted as future reliable inbound.
  *
  * RULES:
- * - Read-only — never writes
- * - Shop-scoped — always filters by shop_id
- * - Velocity computed over rolling 30-day window
- * - Reorder threshold: 14 days of stock remaining
+ * - Read-only demand computation.
+ * - Shop-scoped — always filters by shop_id.
+ * - Eligible variants are physical, active products with active variants.
  */
 
 export type DemandVelocity = {
@@ -37,15 +59,22 @@ export type DemandVelocity = {
   units_sold_prev_30d: number;
   units_sold_all_time: number;
   velocity_per_day: number;
+  velocity_window_days: 30 | 90 | 180;
+  demand_confidence: 'high' | 'medium' | 'low' | 'none';
   /** 'up' = >10% increase vs prior period, 'down' = >10% decrease, 'stable' = within 10% */
   velocity_trend: 'up' | 'down' | 'stable';
   days_of_stock_remaining: number | null;
   reorder_signal: boolean;
-  reorder_urgency: 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity';
+  reorder_urgency: 'critical' | 'warning' | 'healthy' | 'planning_data_required' | 'no_velocity';
   estimated_stockout_date: string | null;
-  /** Suggested units to order: (velocity_per_day × lead_time_days × 1.2) - available_quantity */
+  /**
+   * Suggested units to order:
+   * velocity × (lead time + safety + purchasing cycle)
+   * + open demand - available stock - reliable inbound.
+   * Null when supplier planning lead time is not configured.
+   */
   suggested_reorder_qty: number | null;
-  /** Supplier avg delivery days — null if no supplier linked */
+  /** Supplier-configured planning lead time — null when not configured */
   supplier_lead_time_days: number | null;
 };
 
@@ -65,20 +94,30 @@ export type DemandIntelligenceResult = {
 };
 
 const VELOCITY_WINDOW_DAYS = 30;
-const REORDER_THRESHOLD_DAYS = 14;
-const CRITICAL_THRESHOLD_DAYS = 7;
-
+const MEDIUM_VELOCITY_WINDOW_DAYS = 90;
+const MAX_VELOCITY_WINDOW_DAYS = 180;
+const MIN_FULFILLMENT_EVENTS = 3;
+const SYSTEM_SAFETY_DAYS = 5;
+const SYSTEM_PURCHASING_CYCLE_DAYS = 7;
 function deriveUrgency(
   daysOfStock: number | null,
   velocityPerDay: number,
-  availableQty: number
-): 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity' {
-  if (velocityPerDay === 0) return 'no_velocity';
+  availableQty: number,
+  leadTimeDays: number | null
+): 'critical' | 'warning' | 'healthy' | 'planning_data_required' | 'no_velocity' {
   if (availableQty <= 0) return 'critical';
-  if (daysOfStock === null) return 'no_velocity';
-  if (daysOfStock <= CRITICAL_THRESHOLD_DAYS) return 'critical';
-  if (daysOfStock <= REORDER_THRESHOLD_DAYS) return 'warning';
-  if (daysOfStock > 90) return 'overstocked';
+
+  if (velocityPerDay === 0 || daysOfStock === null) {
+    return 'no_velocity';
+  }
+
+  if (leadTimeDays === null) {
+    return 'planning_data_required';
+  }
+
+  if (daysOfStock <= leadTimeDays) return 'critical';
+  if (daysOfStock <= leadTimeDays + SYSTEM_SAFETY_DAYS) return 'warning';
+
   return 'healthy';
 }
 
@@ -88,67 +127,165 @@ export async function computeDemandIntelligence(
   return db.transaction(async (trx) => {
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const windowStart = new Date();
-    windowStart.setDate(windowStart.getDate() - VELOCITY_WINDOW_DAYS);
+    const window30Start = new Date();
+    window30Start.setDate(window30Start.getDate() - VELOCITY_WINDOW_DAYS);
+
+    const window60Start = new Date();
+    window60Start.setDate(window60Start.getDate() - VELOCITY_WINDOW_DAYS * 2);
+
+    const window90Start = new Date();
+    window90Start.setDate(window90Start.getDate() - MEDIUM_VELOCITY_WINDOW_DAYS);
+
+    const window180Start = new Date();
+    window180Start.setDate(window180Start.getDate() - MAX_VELOCITY_WINDOW_DAYS);
 
     /**
-     * 30-DAY VELOCITY PER VARIANT
+     * ADAPTIVE FULFILLED-DEMAND HISTORY
+     * ---------------------------------
+     * Demand means units that actually left the warehouse, not units merely
+     * ordered. The shortest window with >=3 fulfilled orders wins:
+     * 30d -> 90d -> 180d. Sparse long-tail demand still uses 180d instead of
+     * collapsing to zero.
+     *
+     * order_fulfillment_status.fulfilled_at is currently order-level truth;
+     * line-level partial-fulfillment timestamps do not exist in the schema.
      */
-    const velocity30d = await trx('order_revenue_units as oru')
+    const demandHistory = await trx('order_revenue_units as oru')
       .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+      .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oru.lasyncro_order_id')
       .where('o.shop_id', shopId)
-      .where('o.order_created_at', '>=', windowStart)
+      .whereNotNull('ofs.fulfilled_at')
+      .where('ofs.fulfilled_at', '>=', window180Start)
       .groupBy('oru.lasyncro_variant_id')
       .select(
         'oru.lasyncro_variant_id',
-        trx.raw('SUM(oru.quantity) as units_sold_30d'),
+        trx.raw(
+          'COALESCE(SUM(oru.fulfilled_quantity) FILTER (WHERE ofs.fulfilled_at >= ?), 0) as units_30d',
+          [window30Start]
+        ),
+        trx.raw(
+          'COALESCE(SUM(oru.fulfilled_quantity) FILTER (WHERE ofs.fulfilled_at >= ? AND ofs.fulfilled_at < ?), 0) as units_prev_30d',
+          [window60Start, window30Start]
+        ),
+        trx.raw(
+          'COALESCE(SUM(oru.fulfilled_quantity) FILTER (WHERE ofs.fulfilled_at >= ?), 0) as units_90d',
+          [window90Start]
+        ),
+        trx.raw(
+          'COALESCE(SUM(oru.fulfilled_quantity), 0) as units_180d'
+        ),
+        trx.raw(
+          'COUNT(DISTINCT oru.lasyncro_order_id) FILTER (WHERE ofs.fulfilled_at >= ? AND oru.fulfilled_quantity > 0) as events_30d',
+          [window30Start]
+        ),
+        trx.raw(
+          'COUNT(DISTINCT oru.lasyncro_order_id) FILTER (WHERE ofs.fulfilled_at >= ? AND oru.fulfilled_quantity > 0) as events_90d',
+          [window90Start]
+        ),
+        trx.raw(
+          'COUNT(DISTINCT oru.lasyncro_order_id) FILTER (WHERE oru.fulfilled_quantity > 0) as events_180d'
+        )
       );
 
-    const velocity30dMap = new Map(
-      velocity30d.map((r: any) => [r.lasyncro_variant_id, Number(r.units_sold_30d)])
+    const demandHistoryMap = new Map(
+      demandHistory.map((r: any) => [
+        r.lasyncro_variant_id,
+        {
+          units30d: Number(r.units_30d),
+          unitsPrev30d: Number(r.units_prev_30d),
+          units90d: Number(r.units_90d),
+          units180d: Number(r.units_180d),
+          events30d: Number(r.events_30d),
+          events90d: Number(r.events_90d),
+          events180d: Number(r.events_180d),
+        },
+      ])
     );
 
     /**
-     * PREV 30-DAY VELOCITY (days 31-60) — for trend computation
-     */
-    const prevWindowStart = new Date();
-    prevWindowStart.setDate(prevWindowStart.getDate() - VELOCITY_WINDOW_DAYS * 2);
-    const prevWindowEnd = new Date(windowStart);
-
-    const velocityPrev30d = await trx('order_revenue_units as oru')
-      .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-      .where('o.shop_id', shopId)
-      .where('o.order_created_at', '>=', prevWindowStart)
-      .where('o.order_created_at', '<', prevWindowEnd)
-      .groupBy('oru.lasyncro_variant_id')
-      .select(
-        'oru.lasyncro_variant_id',
-        trx.raw('SUM(oru.quantity) as units_sold_prev_30d'),
-      );
-
-    const velocityPrev30dMap = new Map(
-      velocityPrev30d.map((r: any) => [r.lasyncro_variant_id, Number(r.units_sold_prev_30d)])
-    );
-
-    /**
-     * SUPPLIER LEAD TIME PER VARIANT
-     * Sourced from most recent received PO for this variant via suppliers.avg_delivery_days
+     * SUPPLIER PLANNING LEAD TIME PER VARIANT
+     * ---------------------------------------
+     * Use the supplier configured on the variant's most recent PO.
+     * lead_time_days is planning truth; avg_delivery_days is observed performance.
+     * supplier performance and must not silently replace it.
      */
     const supplierLeadTime = await trx('purchase_order_line_items as poli')
       .join('purchase_orders as po', 'po.id', 'poli.po_id')
       .join('suppliers as s', 's.id', 'po.supplier_id')
       .where('poli.shop_id', shopId)
       .whereNotNull('poli.lasyncro_variant_id')
-      .whereNotNull('s.avg_delivery_days')
-      .groupBy('poli.lasyncro_variant_id')
-      .orderByRaw('MAX(po.created_at) DESC')
+      .distinctOn('poli.lasyncro_variant_id')
       .select(
         'poli.lasyncro_variant_id',
-        trx.raw('AVG(s.avg_delivery_days) as avg_lead_time_days'),
-      );
+        's.lead_time_days',
+      )
+      .orderBy('poli.lasyncro_variant_id')
+      .orderBy('po.created_at', 'desc');
 
     const supplierLeadTimeMap = new Map(
-      supplierLeadTime.map((r: any) => [r.lasyncro_variant_id, Math.ceil(Number(r.avg_lead_time_days))])
+      supplierLeadTime.map((r: any) => [
+        r.lasyncro_variant_id,
+        r.lead_time_days !== null ? Number(r.lead_time_days) : null,
+      ])
+    );
+
+    /**
+     * OPEN CUSTOMER DEMAND
+     */
+    const openDemandRows = await trx('order_revenue_units as oru')
+      .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+      .join(
+        'order_fulfillment_status as ofs',
+        'ofs.lasyncro_order_id',
+        'oru.lasyncro_order_id'
+      )
+      .where('o.shop_id', shopId)
+      .whereNotIn('ofs.status', ['fulfilled', 'cancelled'])
+      .whereNotNull('oru.lasyncro_variant_id')
+      .groupBy('oru.lasyncro_variant_id')
+      .select(
+        'oru.lasyncro_variant_id',
+        trx.raw(
+          'SUM(oru.quantity - oru.fulfilled_quantity) as open_demand'
+        )
+      );
+
+    const openDemandMap = new Map(
+      openDemandRows.map((r: any) => [
+        r.lasyncro_variant_id,
+        Number(r.open_demand ?? 0),
+      ])
+    );
+
+    /**
+     * RELIABLE FUTURE INBOUND
+     * Draft is not committed. shipped/partially_received are already at the
+     * receiving boundary in this lifecycle, so only pre-arrival committed
+     * PO states contribute remaining inbound quantity.
+     */
+    const reliableInboundRows = await trx('purchase_order_line_items as poli')
+      .join('purchase_orders as po', 'po.id', 'poli.po_id')
+      .where('po.shop_id', shopId)
+      .whereIn('po.status', ['ordered', 'confirmed', 'in_production'])
+      .whereNotNull('poli.lasyncro_variant_id')
+      .groupBy('poli.lasyncro_variant_id')
+      .select(
+        'poli.lasyncro_variant_id',
+        trx.raw(`
+          SUM(
+            GREATEST(
+              poli.quantity_ordered - COALESCE(poli.quantity_received, 0),
+              0
+            )
+          ) as reliable_inbound
+        `)
+      );
+
+    const reliableInboundMap = new Map(
+      reliableInboundRows.map((r: any) => [
+        r.lasyncro_variant_id,
+        Number(r.reliable_inbound ?? 0),
+      ])
     );
 
     /**
@@ -160,7 +297,7 @@ export async function computeDemandIntelligence(
       .groupBy('oru.lasyncro_variant_id')
       .select(
         'oru.lasyncro_variant_id',
-        trx.raw('SUM(oru.quantity) as units_sold_all_time'),
+        trx.raw('SUM(oru.fulfilled_quantity) as units_sold_all_time'),
       );
 
     const allTimeSalesMap = new Map(
@@ -172,11 +309,21 @@ export async function computeDemandIntelligence(
      */
     const inventoryRows = await trx('inventory_truth as it')
       .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
-      .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+      .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .where('it.shop_id', shopId)
+      .andWhere('p.product_type', 'physical')
+      .andWhere('p.status', 'active')
+      .andWhere('v.status', 'active')
+      .groupBy(
+        'it.lasyncro_variant_id',
+        'v.title',
+        'v.unit_cost',
+        'v.sku',
+        'p.title'
+      )
       .select(
         'it.lasyncro_variant_id',
-        'it.available_quantity',
+        trx.raw('SUM(it.available_quantity)::integer as available_quantity'),
         'v.title',
         'v.unit_cost',
         trx.raw('COALESCE(v.sku, NULL) as sku'),
@@ -189,12 +336,50 @@ export async function computeDemandIntelligence(
      */
     const variants: DemandVelocity[] = inventoryRows
       .map((row: any) => {
-        const units30d = velocity30dMap.get(row.lasyncro_variant_id) ?? 0;
-        const unitsPrev30d = velocityPrev30dMap.get(row.lasyncro_variant_id) ?? 0;
+        const history = demandHistoryMap.get(row.lasyncro_variant_id) ?? {
+          units30d: 0,
+          unitsPrev30d: 0,
+          units90d: 0,
+          units180d: 0,
+          events30d: 0,
+          events90d: 0,
+          events180d: 0,
+        };
+
+        const units30d = history.units30d;
+        const unitsPrev30d = history.unitsPrev30d;
         const unitsAllTime = allTimeSalesMap.get(row.lasyncro_variant_id) ?? 0;
         const availableQty = Number(row.available_quantity ?? 0);
-        const velocityPerDay = Math.round((units30d / VELOCITY_WINDOW_DAYS) * 100) / 100;
-        const leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? 14; // default 14d
+
+        const velocityWindowDays =
+          history.events30d >= MIN_FULFILLMENT_EVENTS
+            ? VELOCITY_WINDOW_DAYS
+            : history.events90d >= MIN_FULFILLMENT_EVENTS
+              ? MEDIUM_VELOCITY_WINDOW_DAYS
+              : MAX_VELOCITY_WINDOW_DAYS;
+
+        const demandConfidence: 'high' | 'medium' | 'low' | 'none' =
+          history.events30d >= MIN_FULFILLMENT_EVENTS
+            ? 'high'
+            : history.events90d >= MIN_FULFILLMENT_EVENTS ||
+                history.events180d >= MIN_FULFILLMENT_EVENTS
+              ? 'medium'
+              : history.events180d > 0
+                ? 'low'
+                : 'none';
+
+        const velocityUnits =
+          velocityWindowDays === VELOCITY_WINDOW_DAYS
+            ? history.units30d
+            : velocityWindowDays === MEDIUM_VELOCITY_WINDOW_DAYS
+              ? history.units90d
+              : history.units180d;
+
+        // Preserve sparse long-tail velocity; rounding here previously turned
+        // demand below 0.005 units/day into false zero demand.
+        const velocityPerDay =
+          velocityUnits > 0 ? velocityUnits / velocityWindowDays : 0;
+        const leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null;
 
         // Velocity trend: compare current vs prior 30d
         const velocityTrend: 'up' | 'down' | 'stable' = (() => {
@@ -207,16 +392,42 @@ export async function computeDemandIntelligence(
         })();
 
         // Suggested reorder: cover lead time + 20% safety stock buffer
-        const suggestedReorderQty = velocityPerDay > 0
-          ? Math.max(0, Math.ceil(velocityPerDay * leadTimeDays * 1.2) - availableQty)
-          : null;
+        const openDemandQty =
+          openDemandMap.get(row.lasyncro_variant_id) ?? 0;
+        const reliableInboundQty =
+          reliableInboundMap.get(row.lasyncro_variant_id) ?? 0;
+
+        const targetCoverageDays =
+          leadTimeDays !== null
+            ? leadTimeDays +
+              SYSTEM_SAFETY_DAYS +
+              SYSTEM_PURCHASING_CYCLE_DAYS
+            : null;
+
+        const suggestedReorderQty =
+          velocityPerDay > 0 && targetCoverageDays !== null
+            ? Math.max(
+                0,
+                Math.ceil(
+                  velocityPerDay * targetCoverageDays +
+                  openDemandQty -
+                  availableQty -
+                  reliableInboundQty
+                )
+              )
+            : null;
 
         const daysOfStock =
           velocityPerDay > 0
             ? Math.round(availableQty / velocityPerDay)
             : null;
 
-        const urgency = deriveUrgency(daysOfStock, velocityPerDay, availableQty);
+        const urgency = deriveUrgency(
+          daysOfStock,
+          velocityPerDay,
+          availableQty,
+          leadTimeDays
+        );
         const reorderSignal = urgency === 'critical' || urgency === 'warning';
 
         const stockoutDate =
@@ -235,6 +446,8 @@ export async function computeDemandIntelligence(
           units_sold_prev_30d: unitsPrev30d,
           units_sold_all_time: unitsAllTime,
           velocity_per_day: velocityPerDay,
+          velocity_window_days: velocityWindowDays as 30 | 90 | 180,
+          demand_confidence: demandConfidence,
           velocity_trend: velocityTrend,
           days_of_stock_remaining: daysOfStock,
           reorder_signal: reorderSignal,
@@ -246,17 +459,15 @@ export async function computeDemandIntelligence(
       })
 
       .filter((v: DemandVelocity) => v.units_sold_all_time > 0 || v.available_quantity > 0)
-      // Exclude gift cards and products with no meaningful identity
-      // These are Shopify system products — not real inventory items
-      .filter((v: DemandVelocity) => {
-        if (!v.title) return false;
-        const title = v.title.trim();
-        // Exclude pure currency amounts (gift cards: "$10", "$25", "$50")
-        if (/^\$\d+$/.test(title)) return false;
-        return true;
-      })
+
       .sort((a: DemandVelocity, b: DemandVelocity) => {
-        const urgencyOrder = { critical: 0, warning: 1, healthy: 2, no_velocity: 3, overstocked: 4 };
+        const urgencyOrder = {
+          critical: 0,
+          warning: 1,
+          planning_data_required: 2,
+          healthy: 3,
+          no_velocity: 4,
+        };
         return (urgencyOrder[a.reorder_urgency] ?? 5) - (urgencyOrder[b.reorder_urgency] ?? 5);
       });
 
@@ -339,8 +550,8 @@ export async function computeDemandIntelligence(
       }
     }
 
-    // Resolve alerts for variants that are no longer critical OR were excluded
-    // This covers: urgency changed to non-critical, AND filtered-out variants (gift cards etc.)
+    // Resolve alerts for variants that are no longer critical or are no longer
+    // demand-eligible (for example inactive or non-physical catalog records).
     const criticalAlertKeys = new Set(
       variants
         .filter(v => v.reorder_urgency === 'critical')

@@ -28,10 +28,12 @@ export type DemandVelocity = {
   units_sold_30d: number;
   units_sold_prev_30d: number;
   velocity_per_day: number;
+  velocity_window_days: 30 | 90 | 180;
+  demand_confidence: 'high' | 'medium' | 'low' | 'none';
   velocity_trend: 'up' | 'down' | 'stable';
   days_of_stock_remaining: number | null;
   reorder_signal: boolean;
-  reorder_urgency: 'critical' | 'warning' | 'healthy' | 'overstocked' | 'no_velocity';
+  reorder_urgency: 'critical' | 'warning' | 'healthy' | 'planning_data_required' | 'no_velocity';
   estimated_stockout_date: string | null;
   suggested_reorder_qty: number | null;
   supplier_lead_time_days: number | null;
@@ -191,10 +193,21 @@ function VariantRow({ variant, currency, pal }: {
         {variant.available_quantity}
       </Typography>
 
-      {/* Sold 30d + trend */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-        <Typography sx={{ fontSize: 13, color: pal.textPrimary }}>{variant.units_sold_30d}</Typography>
-        <TrendBadge trend={variant.velocity_trend} prev={variant.units_sold_prev_30d} current={variant.units_sold_30d} />
+      {/* Sold 30d + adaptive demand trust context */}
+      <Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography sx={{ fontSize: 13, color: pal.textPrimary }}>
+            {variant.units_sold_30d}
+          </Typography>
+          <TrendBadge
+            trend={variant.velocity_trend}
+            prev={variant.units_sold_prev_30d}
+            current={variant.units_sold_30d}
+          />
+        </Box>
+        <Typography sx={{ fontSize: 10, color: pal.textSecond }}>
+          {variant.velocity_window_days}d · {variant.demand_confidence} confidence
+        </Typography>
       </Box>
 
       {/* Days left */}
@@ -227,8 +240,8 @@ function VariantRow({ variant, currency, pal }: {
             ? 'Critical'
             : isWarning
             ? 'Reorder soon'
-            : variant.reorder_urgency === 'overstocked'
-            ? 'Excess stock'
+            : variant.reorder_urgency === 'planning_data_required'
+            ? 'Planning data needed'
             : variant.reorder_urgency === 'no_velocity'
             ? 'No recent sales'
             : 'Healthy'}
