@@ -1,5 +1,6 @@
 // apps/backend/src/services/demand/demandIntelligence.service.ts
 
+import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
 
 /**
@@ -121,12 +122,32 @@ function deriveUrgency(
   return 'healthy';
 }
 
-export async function computeDemandIntelligence(
-  shopId: number
-): Promise<DemandIntelligenceResult> {
-  return db.transaction(async (trx) => {
-    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
+/**
+ * PER-VARIANT REPLENISHMENT PLANNING (SRC-12)
+ * -------------------------------------------
+ * Pure planning arithmetic: gathers demand history, supplier lead time, open
+ * demand, reliable inbound and inventory, then derives velocity, confidence,
+ * urgency and suggested reorder quantity per variant.
+ *
+ * Extracted from computeDemandIntelligence so Sourcing can reach the SAME
+ * trusted numbers that power the Demand module. Two subsystems previously
+ * answered "how much should I order" and only the weaker, reactive one was
+ * wired to the PO-creating surface.
+ *
+ * Takes a caller-supplied transaction: the caller owns the tenant scope
+ * (SET LOCAL app.current_tenant) and the transaction lifetime.
+ *
+ * WRITES NOTHING. Alert reconciliation stays in computeDemandIntelligence so
+ * a read-path caller (Sourcing) cannot trigger write side-effects.
+ *
+ * @param variantIds optional filter; omit for the whole catalogue.
+ */
+export async function computeVariantPlanning(
+  trx: Knex.Transaction,
+  shopId: number,
+  variantIds?: string[]
+): Promise<DemandVelocity[]> {
     const window30Start = new Date();
     window30Start.setDate(window30Start.getDate() - VELOCITY_WINDOW_DAYS);
 
@@ -150,10 +171,11 @@ export async function computeDemandIntelligence(
      * order_fulfillment_status.fulfilled_at is currently order-level truth;
      * line-level partial-fulfillment timestamps do not exist in the schema.
      */
-    const demandHistory = await trx('order_revenue_units as oru')
+    const demandHistory: any[] = await trx('order_revenue_units as oru')
       .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
       .join('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'oru.lasyncro_order_id')
       .where('o.shop_id', shopId)
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('oru.lasyncro_variant_id', variantIds); })
       .whereNotNull('ofs.fulfilled_at')
       .where('ofs.fulfilled_at', '>=', window180Start)
       .groupBy('oru.lasyncro_variant_id')
@@ -206,13 +228,14 @@ export async function computeDemandIntelligence(
      * SUPPLIER PLANNING LEAD TIME PER VARIANT
      * ---------------------------------------
      * Use the supplier configured on the variant's most recent PO.
-     * lead_time_days is planning truth; avg_delivery_days is observed performance.
-     * supplier performance and must not silently replace it.
+     * lead_time_days is planning truth; avg_delivery_days is observed supplier
+     * performance and must not silently replace it.
      */
-    const supplierLeadTime = await trx('purchase_order_line_items as poli')
+    const supplierLeadTime: any[] = await trx('purchase_order_line_items as poli')
       .join('purchase_orders as po', 'po.id', 'poli.po_id')
       .join('suppliers as s', 's.id', 'po.supplier_id')
       .where('poli.shop_id', shopId)
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('poli.lasyncro_variant_id', variantIds); })
       .whereNotNull('poli.lasyncro_variant_id')
       .distinctOn('poli.lasyncro_variant_id')
       .select(
@@ -232,7 +255,7 @@ export async function computeDemandIntelligence(
     /**
      * OPEN CUSTOMER DEMAND
      */
-    const openDemandRows = await trx('order_revenue_units as oru')
+    const openDemandRows: any[] = await trx('order_revenue_units as oru')
       .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
       .join(
         'order_fulfillment_status as ofs',
@@ -241,6 +264,7 @@ export async function computeDemandIntelligence(
       )
       .where('o.shop_id', shopId)
       .whereNotIn('ofs.status', ['fulfilled', 'cancelled'])
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('oru.lasyncro_variant_id', variantIds); })
       .whereNotNull('oru.lasyncro_variant_id')
       .groupBy('oru.lasyncro_variant_id')
       .select(
@@ -263,10 +287,11 @@ export async function computeDemandIntelligence(
      * receiving boundary in this lifecycle, so only pre-arrival committed
      * PO states contribute remaining inbound quantity.
      */
-    const reliableInboundRows = await trx('purchase_order_line_items as poli')
+    const reliableInboundRows: any[] = await trx('purchase_order_line_items as poli')
       .join('purchase_orders as po', 'po.id', 'poli.po_id')
       .where('po.shop_id', shopId)
       .whereIn('po.status', ['ordered', 'confirmed', 'in_production'])
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('poli.lasyncro_variant_id', variantIds); })
       .whereNotNull('poli.lasyncro_variant_id')
       .groupBy('poli.lasyncro_variant_id')
       .select(
@@ -291,9 +316,10 @@ export async function computeDemandIntelligence(
     /**
      * ALL-TIME UNITS SOLD PER VARIANT
      */
-    const allTimeSales = await trx('order_revenue_units as oru')
+    const allTimeSales: any[] = await trx('order_revenue_units as oru')
       .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
       .where('o.shop_id', shopId)
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('oru.lasyncro_variant_id', variantIds); })
       .groupBy('oru.lasyncro_variant_id')
       .select(
         'oru.lasyncro_variant_id',
@@ -307,10 +333,11 @@ export async function computeDemandIntelligence(
     /**
      * INVENTORY TRUTH + VARIANT DETAILS
      */
-    const inventoryRows = await trx('inventory_truth as it')
+    const inventoryRows: any[] = await trx('inventory_truth as it')
       .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
       .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .where('it.shop_id', shopId)
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('it.lasyncro_variant_id', variantIds); })
       .andWhere('p.product_type', 'physical')
       .andWhere('p.status', 'active')
       .andWhere('v.status', 'active')
@@ -391,7 +418,9 @@ export async function computeDemandIntelligence(
           return 'stable';
         })();
 
-        // Suggested reorder: cover lead time + 20% safety stock buffer
+        // Suggested reorder: velocity x (lead time + safety + purchasing
+        // cycle) + open demand - available - reliable inbound. No hidden
+        // multiplier; every term is named and derived.
         const openDemandQty =
           openDemandMap.get(row.lasyncro_variant_id) ?? 0;
         const reliableInboundQty =
@@ -470,6 +499,16 @@ export async function computeDemandIntelligence(
         };
         return (urgencyOrder[a.reorder_urgency] ?? 5) - (urgencyOrder[b.reorder_urgency] ?? 5);
       });
+    return variants;
+}
+
+export async function computeDemandIntelligence(
+  shopId: number
+): Promise<DemandIntelligenceResult> {
+  return db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+    const variants = await computeVariantPlanning(trx, shopId);
 
     /**
      * SUMMARY
