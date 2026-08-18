@@ -164,6 +164,28 @@ export type SourcingResult = {
   recommendations: SourcingRecommendation[];
   shortfall: number;
   shortfall_basis: { demand: number; available: number };
+  /**
+   * SRC-12: queue_qty is what the input prefills with — the preventive
+   * suggestion when one exists, floored at the reactive shortfall so we never
+   * propose ordering less than customers are already waiting for.
+   * quantity_basis names WHICH number it is; it is never a silent swap.
+   */
+  queue_qty: number;
+  quantity_basis:
+    | 'preventive'
+    | 'reactive'
+    | 'reactive_no_lead_time'
+    | 'reactive_no_history'
+    | 'planning_data_required'
+    | 'no_signal';
+  suggested_reorder_qty: number | null;
+  planning_context: {
+    demand_confidence: 'high' | 'medium' | 'low' | 'none';
+    velocity_window_days: 30 | 90 | 180;
+    days_of_stock_remaining: number | null;
+    reorder_urgency: string;
+    supplier_lead_time_days: number | null;
+  } | null;
 };
 
 export type PreferenceRow = {
@@ -1778,6 +1800,7 @@ function PurchasingSourcingView({
   const suppliers = data?.suppliers ?? [];
 
   const [searchParams] = useSearchParams();
+  const sourcingNavigate = useNavigate();
   const triggerVariantId = searchParams.get('variantId');
   // §8: needed qty from alert deep-link — used for "Add to queue" pre-fill
   // SRC-03: was Number(searchParams.get('needed') ?? 1) || 1 — but nothing in
@@ -1786,7 +1809,12 @@ function PurchasingSourcingView({
   // into an editable field so the operator can override with what they know.
   const [shortfall, setShortfall] = useState<number>(0);
   const [shortfallBasis, setShortfallBasis] = useState<{ demand: number; available: number } | null>(null);
-  const [queueQty, setQueueQty] = useState<number>(1);
+  const [queueQty, setQueueQty] = useState<number>(0);
+  // SRC-12: which number the operator is looking at, so a fallback is never
+  // mistaken for a forecast.
+  const [quantityBasis, setQuantityBasis] = useState<SourcingResult['quantity_basis']>('reactive');
+  const [prefillQty, setPrefillQty] = useState<number>(0);
+  const [planningContext, setPlanningContext] = useState<SourcingResult['planning_context']>(null);
 
   const [activeVariantId, setActiveVariantId] = useState<string | null>(triggerVariantId);
   const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
@@ -1875,10 +1903,15 @@ function PurchasingSourcingView({
         setRecommendations(result.recommendations);
         setShortfall(result.shortfall);
         setShortfallBasis(result.shortfall_basis);
-        // SRC-03: prefill the queue quantity from the derived shortfall.
-        // Floored at 1 so a fully-covered variant can still be queued
-        // deliberately — the operator may know about demand we can't see.
-        setQueueQty(Math.max(1, result.shortfall));
+        // SRC-12: prefill from the trusted quantity, not the reactive
+        // shortfall. The old Math.max(1, ...) floor queued 1 unit against a
+        // zero requirement, fabricating MOQ contribution from nothing.
+        // Deliberate over-ordering stays possible — it just stops being
+        // automatic.
+        setQuantityBasis(result.quantity_basis);
+        setPlanningContext(result.planning_context);
+        setPrefillQty(result.queue_qty);
+        setQueueQty(result.queue_qty);
       })
       .finally(() => setIsLoadingRecs(false));
   }, [activeVariantId, onFetchSourcingRecommendations]);
@@ -2010,40 +2043,76 @@ function PurchasingSourcingView({
               is demoted for exceeding MOQ. Gating on goodMatches hid both the
               quantity and its basis in exactly the case where the operator most
               needs them: deciding whether to order under a large minimum. */}
-          {activeVariantId && !isLoadingRecs && recommendations.length > 0 && (
+          {/* SRC-12: no longer gated on recommendations.length. A variant with
+              no supplier and no history rendered NOTHING — the operator saw a
+              blank space and could not tell whether the page was broken or the
+              data was missing. It now says which. */}
+          {activeVariantId && !isLoadingRecs && (
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
               <Box sx={{ minWidth: 0 }}>
                 <Typography sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>
                   Order quantity
                 </Typography>
-                {shortfallBasis && (
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
-                    {shortfall > 0
-                      ? `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · ${shortfall} short`
-                      : `${shortfallBasis.demand} ordered · ${shortfallBasis.available} in stock · covered`}
-                  </Typography>
-                )}
+                {/* SRC-12: the line states WHICH number is in the box. A
+                    fallback that looks like a forecast is worse than no
+                    number at all. */}
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }}>
+                  {quantityBasis === 'planning_data_required' ? (
+                    <>
+                      No supplier lead time —{' '}
+                      <Box
+                        component="span"
+                        onClick={() => sourcingNavigate('/suppliers-portal/suppliers')}
+                        sx={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', '&:hover': { opacity: 0.75 } }}
+                      >
+                        set one
+                      </Box>
+                      {' '}for a forecast
+                    </>
+                  ) : quantityBasis === 'no_signal' ? (
+                    'No sales history · enter a quantity if you know the demand'
+                  ) : quantityBasis === 'preventive' ? (
+                    // Deliberately no coverage figure: safety and purchasing-cycle
+                    // days are backend constants, and restating them here would
+                    // duplicate a number that can silently go stale. Surface
+                    // target_coverage_days from the API before showing one.
+                    `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · forecast incl. lead time`
+                  ) : shortfall > 0 ? (
+                    `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · ${shortfall} short`
+                  ) : (
+                    `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covered`
+                  )}
+                </Typography>
               </Box>
+              {/* SRC-12: no input when the merchant has a supplier but no lead
+                  time on it. There is no honest quantity to propose and no
+                  operator knowledge that fills the gap — the missing piece is
+                  data, and the line above links to where it is entered.
+                  Every other state keeps the input, including no_signal: a
+                  brand-new product has no history, but the merchant may well
+                  know they are launching it. */}
+              {quantityBasis !== 'planning_data_required' && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
                 <Box
                   component="input"
                   type="number"
-                  min={1}
+                  min={0}
                   value={queueQty}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     const next = parseInt(e.target.value, 10);
-                    setQueueQty(Number.isNaN(next) || next < 1 ? 1 : next);
+                    setQueueQty(Number.isNaN(next) || next < 0 ? 0 : next);
                   }}
                   sx={{ width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } }}
                 />
                 <Typography sx={{ fontSize: 12, color: 'var(--ink-4)' }}>units</Typography>
-                {queueQty !== Math.max(1, shortfall) && (
-                  <Box component="button" onClick={() => setQueueQty(Math.max(1, shortfall))}
+                {queueQty !== prefillQty && (
+                  <Box component="button" onClick={() => setQueueQty(prefillQty)}
                     sx={{ fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }}>
                     Reset
                   </Box>
                 )}
               </Box>
+              )}
             </Box>
           )}
 

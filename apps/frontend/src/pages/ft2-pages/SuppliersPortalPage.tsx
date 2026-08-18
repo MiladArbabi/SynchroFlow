@@ -115,6 +115,11 @@ export default function SuppliersPortalPage() {
       recommendations:  data.recommendations ?? [],
       shortfall:        Number(data.shortfall ?? 0),
       shortfall_basis:  data.shortfall_basis ?? { demand: 0, available: 0 },
+      // SRC-12: the trusted preventive quantity and WHY it is what it is.
+      queue_qty:             Number(data.queue_qty ?? 0),
+      quantity_basis:        data.quantity_basis ?? 'reactive',
+      suggested_reorder_qty: data.suggested_reorder_qty ?? null,
+      planning_context:      data.planning_context ?? null,
     };
   }, []);
 

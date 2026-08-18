@@ -119,6 +119,22 @@ export type SourcingResult = {
         demand: number;
         available: number;
     };
+    /**
+     * SRC-12: queue_qty is what the input prefills with — the preventive
+     * suggestion when one exists, floored at the reactive shortfall so we never
+     * propose ordering less than customers are already waiting for.
+     * quantity_basis names WHICH number it is; it is never a silent swap.
+     */
+    queue_qty: number;
+    quantity_basis: 'preventive' | 'reactive' | 'reactive_no_lead_time' | 'reactive_no_history' | 'planning_data_required' | 'no_signal';
+    suggested_reorder_qty: number | null;
+    planning_context: {
+        demand_confidence: 'high' | 'medium' | 'low' | 'none';
+        velocity_window_days: 30 | 90 | 180;
+        days_of_stock_remaining: number | null;
+        reorder_urgency: string;
+        supplier_lead_time_days: number | null;
+    } | null;
 };
 export type PreferenceRow = {
     id: string;
