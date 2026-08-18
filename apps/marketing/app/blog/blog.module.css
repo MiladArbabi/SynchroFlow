@@ -1,0 +1,28 @@
+.blogArticle :global(article > p) {
+  margin-bottom: 20px;
+}
+
+.blogArticle :global(article > h2) {
+  margin-top: 42px;
+  margin-bottom: 16px;
+}
+
+.blogArticle :global(article > h3) {
+  margin-top: 32px;
+  margin-bottom: 12px;
+}
+
+.blogArticle :global(article > ul),
+.blogArticle :global(article > ol) {
+  margin-bottom: 20px;
+}
+
+.blogArticle :global(article > .reveal),
+.blogArticle :global(article > figure.reveal) {
+  margin-top: 36px !important;
+  margin-bottom: 36px !important;
+}
+
+.blogArticle :global(article > aside[aria-label='Quick answer']) {
+  margin-top: 36px !important;
+}

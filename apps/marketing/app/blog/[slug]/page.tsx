@@ -24,6 +24,7 @@ import ArticleAnimation from '@/components/article/ArticleAnimation'
 import HeroVisual from '@/components/article/HeroVisual'
 import ProductVisual from '@/components/article/ProductVisual'
 import remarkGfm from 'remark-gfm'
+import styles from '../blog.module.css'
 
 const components = {
   ...createContentMdxComponents(),
@@ -135,7 +136,7 @@ function BlogQuickAnswer({ children, title = 'Quick Answer' }: { children: React
     <aside
       aria-label="Quick answer"
       style={{
-        margin: '64px auto 0',
+        margin: '36px auto 0',
         borderRadius: 'var(--r-lg)',
         border: '1px solid var(--accent-border)',
         background: 'var(--accent-ghost)',
@@ -167,7 +168,7 @@ function BlogNumberedH3({ n, title }: { n: string; title: string }) {
       display: 'flex',
       alignItems: 'baseline',
       gap: 12,
-      margin: '44px 0 14px',
+      margin: '32px 0 14px',
       color: 'var(--ink)',
       fontFamily: 'var(--sans)',
       fontSize: 18,
@@ -291,6 +292,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
       ])} />
 
       <ContentArticleShell
+        className={styles.blogArticle}
         breadcrumbs={
           <ContentBreadcrumbs
             items={[

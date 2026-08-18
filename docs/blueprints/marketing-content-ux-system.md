@@ -26,6 +26,10 @@ Proxied Next.js pages emit root-relative `/_next/*` assets. Therefore the landin
 
 Without that rewrite, HTML renders but CSS/JS assets 404 and pages appear as unstyled semantic HTML.
 
+Blog visual components also depend on `/reveal.js`. Because `.reveal` starts hidden and `/reveal.js` adds `.in`, the landing Vercel project must proxy `/reveal.js` to `https://synchro-flow-marketing.vercel.app/reveal.js`. This is intentionally targeted rather than a wildcard public-asset proxy.
+
+If `/reveal.js` is missing on `www.lasyncro.com`, Blog visuals can occupy layout space while remaining invisible even when the PNG assets themselves are present and healthy.
+
 Do not solve this with per-page inline styling or `assetPrefix` unless the routing architecture changes.
 
 ## Shared primitives
@@ -106,7 +110,10 @@ Help UX migration.
 MKT-UX-01C: complete.
 Blog convergence onto shared primitives without reducing editorial UX.
 
-MKT-UX-01D: next.
+MKT-UX-01C-PROD: implementation complete, production verification pending deployment.
+Blog production visual regression fix.
+
+MKT-UX-01D: next after production verification.
 Compare, Glossary, and grouped marketing index convergence.
 
 Migration does not mean forcing every domain to look identical. The objective is shared visual grammar and architecture.
@@ -192,6 +199,30 @@ Blog uses Plus Jakarta Sans as its font authority. Blog route files no longer re
 
 Light-mode hardcoded colors were replaced by shared design tokens. `#FFFFFF` remains intentionally as `--on-accent` in the Blog theme boundary.
 
+## Blog production visual regression
+
+MKT-UX-01C-PROD fixed a Blog production visual regression caused by the public-domain proxy missing `/reveal.js`.
+
+Blog visual components use the `.reveal` class. `.reveal` begins hidden and requires `/reveal.js` to add `.in`. `www.lasyncro.com/reveal.js` was not routed to the marketing deployment, while Blog PNG assets were present and healthy. Visuals therefore occupied layout space but remained invisible.
+
+`packages/landing-page/vercel.json` now proxies `/reveal.js` to `https://synchro-flow-marketing.vercel.app/reveal.js`. This fix is intentionally targeted rather than a wildcard public-asset proxy.
+
+The final Blog newsletter no longer uses a collapsing bottom margin. Bottom breathing room now remains inside the Blog dark-theme surface, while the global Footer remains unchanged and light.
+
+Blog owns scoped article-spacing overrides in `apps/marketing/app/blog/blog.module.css`:
+
+- paragraphs: 20px bottom
+- H2: 42px top / 16px bottom
+- H3: 32px top
+- Quick Answer: 36px top
+- article reveal/figure spacing: 36px vertical
+
+Shared `apps/marketing/components/content/content.module.css` was not changed.
+
+Existing Blog MDX visual placements were preserved. No Blog MDX files were rewritten, and existing `ArticleImage`, `HeroVisual`, and `ProductVisual` components remain shared and unchanged. Blog currently contains substantial existing visual coverage, so this issue restored rendering rather than redistributing images.
+
 ## Blog preserved contracts
 
 MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.
+
+MKT-UX-01C-PROD did not change Blog slugs/content, SEO/schema, shared content prose defaults, global Nav/Footer, Help, Compare, Features, Industries, Glossary, or shared legacy visual components.

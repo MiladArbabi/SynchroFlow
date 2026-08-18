@@ -8,6 +8,10 @@
       "destination": "https://synchro-flow-marketing.vercel.app/_next/:path*"
     },
     {
+      "source": "/reveal.js",
+      "destination": "https://synchro-flow-marketing.vercel.app/reveal.js"
+    },
+    {
       "source": "/blog",
       "destination": "https://synchro-flow-marketing.vercel.app/blog"
     },

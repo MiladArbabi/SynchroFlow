@@ -211,7 +211,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
         }
       `}</style>
 
-      <div className="blog-index">
+      <div className="blog-index" style={{ paddingBottom: 64 }}>
         <ContentShell width="wide">
           <ContentHero
             eyebrow="The operator's library"
@@ -544,7 +544,6 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
 
         <ContentShell width="wide">
           <section className="blog-newsletter-grid" style={{
-            marginBottom: 64,
             background: 'var(--bg-2)',
             color: 'var(--ink)',
             border: '1px solid var(--rule)',
