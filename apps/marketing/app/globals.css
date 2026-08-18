@@ -6,6 +6,7 @@
   --accent-hover:  #FF8C5A;
   --accent-ghost:  #FFF0E8;
   --accent-border: #FFDCCA;
+  --on-accent:     #FFFFFF;
   --bg:            #FAFAF8;
   --bg-2:          #F3F2EF;
   --bg-3:          #E8E6E0;
@@ -51,6 +52,7 @@
     --rule-2:  rgba(255,255,255,0.14);
     --accent-ghost:  rgba(255,107,43,0.12);
     --accent-border: rgba(255,107,43,0.25);
+    --on-accent:     #FFFFFF;
   }
 }
 
