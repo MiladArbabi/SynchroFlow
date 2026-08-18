@@ -2121,10 +2121,25 @@ function PurchasingSourcingView({
           {/* §8 Pending Reorders — always visible when accumulator has items */}
           {reorderRequests.length > 0 && (
             <Box sx={{ borderTop: '1px solid var(--rule)' }}>
-              <Box sx={{ px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
                 <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
                   Pending reorders · {reorderRequests.length} supplier{reorderRequests.length > 1 ? 's' : ''}
                 </Typography>
+                {/* SRC-09: a colour that needs decoding is not a signal. Local
+                    rather than FT2Legend, whose item type carries no colour and
+                    whose contract reads "Never instructional. Never semantic." */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  {([
+                    ['var(--good-ink)',     'Ready to send'],
+                    ['var(--warning-ink)',  'Below minimum'],
+                    ['var(--critical-ink)', 'Blocked'],
+                  ] as const).map(([tone, label]) => (
+                    <Box key={label} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Box sx={{ width: 8, height: 3, borderRadius: 1.5, bgcolor: tone, flexShrink: 0 }} />
+                      <Typography sx={{ fontSize: 10, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{label}</Typography>
+                    </Box>
+                  ))}
+                </Box>
               </Box>
               {/* Spotlight 3 — fires first time accumulator has items */}
               {spotlights && !spotlights.accumulator.isDismissed && (
@@ -2149,6 +2164,23 @@ function PurchasingSourcingView({
                   ? 'Set a delivery time for this supplier to order'
                   : 'Some queued lines have no SKU — add one to order';
                 const convertError = convertErrors[group.supplier_id];
+
+                // SRC-09: one live-status colour drives both the bar and its
+                // label. Grey-for-everything hid the difference between 5/500
+                // and 480/500, and between "queue more" and "you cannot order
+                // at all until you fix something".
+                //
+                // --good/--warning/--critical are the theme's live-status
+                // family (see themes/index.tsx). Deliberately NOT --confirm-*,
+                // which the theme scopes to confirmed ACTIONS ("Added ✓") —
+                // this is a computed condition, and the two tokens diverge in
+                // dark theme (#4CAF7A vs #66BB6A).
+                const moqTone = hardBlocked
+                  ? 'var(--critical-ink)'
+                  : group.po_ready
+                    ? 'var(--good-ink)'
+                    : 'var(--warning-ink)';
+                
                 return (
                   <Box key={group.supplier_id} sx={{ px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
@@ -2180,9 +2212,9 @@ function PurchasingSourcingView({
                     {group.moq !== null && (
                       <Box>
                         <Box sx={{ height: 4, borderRadius: 2, bgcolor: 'var(--bg-3)', overflow: 'hidden', mb: 0.5 }}>
-                          <Box sx={{ height: '100%', width: `${moqPct}%`, bgcolor: group.moq_met ? 'var(--accent)' : 'var(--ink-3)', borderRadius: 2, transition: 'width 0.3s' }} />
+                          <Box sx={{ height: '100%', width: `${moqPct}%`, bgcolor: moqTone, borderRadius: 2, transition: 'width 0.3s, background-color 0.3s' }} />
                         </Box>
-                        <Typography sx={{ fontSize: 10, color: group.moq_met ? 'var(--accent)' : 'var(--ink-4)' }}>
+                        <Typography sx={{ fontSize: 10, fontWeight: 500, color: moqTone }}>
                           {group.total_qty} / {group.moq} units{group.moq_met ? ' — MOQ met' : ' — MOQ not met'}
                         </Typography>
                       </Box>
