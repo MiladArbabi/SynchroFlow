@@ -1,0 +1,127 @@
+---
+title: "Troubleshoot barcode scanning"
+description: "Fix common barcode scan problems across receiving, stowing, picking, packing, and returns."
+category: "Troubleshooting"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "barcode"
+  - "scanning"
+  - "LSU"
+  - "LSO"
+  - "location barcode"
+  - "returns"
+searchAliases:
+  - "barcode not recognised"
+  - "wrong location"
+  - "wrong item"
+  - "scan failed"
+  - "manual barcode entry"
+order: 3
+lastReviewed: "2026-08-18"
+relatedArticles:
+  - "/help/products/understand-product-barcodes"
+  - "/help/receiving/receive-a-purchase-order"
+  - "/help/stowing/complete-a-stow-task"
+  - "/help/picking/pick-a-released-batch"
+  - "/help/packing/pack-orders-with-scans"
+  - "/help/returns/process-returns-in-warehouse"
+---
+
+## Quick answer
+
+Barcode errors usually mean the current workflow expected a different kind of barcode, the item belongs somewhere else, or the unit has already been processed.
+
+Start by confirming the workflow you are in and the barcode type that screen currently expects.
+
+## Know the barcode types
+
+LaSyncro workflows can use:
+
+- supplier or product barcodes, such as EAN, UPC, GTIN, SKU, or a linked product identifier;
+- **LSU-** barcodes for physical LaSyncro warehouse units;
+- **LSO-** barcodes for order and invoice scanning;
+- warehouse location barcodes;
+- **PROB-** labels for problem handling.
+
+PROB labels are not normal product scan barcodes.
+
+## Receiving scans
+
+Receiving supports **Inspection count** and **Scan mode**.
+
+Scan mode is available when usable product or supplier barcodes are available for the purchase order lines.
+
+If a receiving scan is not recognized, confirm that:
+
+- the barcode belongs to a product in the current purchase order;
+- the product has barcode data in LaSyncro;
+- the line is not already fully confirmed;
+- the screen is in Scan mode rather than count mode.
+
+## Stowing scans
+
+Stowing is location-first.
+
+Scan or enter the destination bin before scanning units.
+
+After a bin is active, each successful unit scan places one physical unit.
+
+If stowing rejects a scan, confirm that:
+
+- the bin barcode is recognized and active;
+- the bin can receive inventory;
+- the unit matches the stow task;
+- the LSU label is still tied to a unit waiting to be stowed.
+
+## Picking scans
+
+Picking is also location-first.
+
+Scan or enter the expected location, then scan the product or unit barcode.
+
+Current Pick uses scanner input or manual text entry with Enter. Do not expect camera scanning in Pick.
+
+If Pick says the location or item is wrong, check that you are at the expected bin and scanning the item shown in the pick step.
+
+## Packing scans
+
+Pack mode expects LSU item barcodes first.
+
+After all items in an order are confirmed, scan the LSO invoice barcode to close the parcel.
+
+If Pack rejects a barcode, confirm that:
+
+- the value starts with LSU- or LSO-;
+- the unit belongs to the current order;
+- the invoice belongs to the current order;
+- all items were scanned before the invoice barcode;
+- the unit was not already packed.
+
+## Return scans
+
+Shipped LSU or LSO scans can enter return processing through the current Warehouse Pack-mode scan flow.
+
+Inside return processing, the manual return-line flow can accept product barcode input where supported.
+
+If a return scan is not recognized, confirm that the shipment was already processed and that you scanned the order, unit, or product barcode expected by the current return screen.
+
+## Use manual entry where available
+
+Several warehouse scan fields allow typing the barcode and pressing Enter or choosing **Scan**.
+
+Use manual entry to separate scanner hardware issues from barcode-data issues.
+
+If typed entry works, check the scanner, focus, and physical label.
+
+If typed entry fails with the same message, review the product, unit, order, or location record.
+
+## Permission and claim errors
+
+Not every scan problem is a barcode problem.
+
+If the message says another operator or packer already claimed the job, treat it as a workflow ownership issue.
+
+If the message says you do not have access, ask an Owner to review your role or plan access.

@@ -1,0 +1,94 @@
+---
+title: "Troubleshoot permission and access errors"
+description: "Tell the difference between sign-in, role, plan, and workflow-claim problems."
+category: "Troubleshooting"
+audience:
+  - "Owner"
+  - "Admin"
+  - "Operator"
+keywords:
+  - "permissions"
+  - "access"
+  - "sign in"
+  - "plan"
+  - "claim"
+searchAliases:
+  - "access denied"
+  - "permission denied"
+  - "cannot open page"
+  - "operator redirected"
+  - "feature locked"
+order: 5
+lastReviewed: "2026-08-18"
+relatedArticles:
+  - "/help/users/understand-roles-and-permissions"
+  - "/help/billing/manage-plan-usage-and-payments"
+  - "/help/getting-started/sign-in"
+---
+
+## Quick answer
+
+Access problems usually fall into one of four groups:
+
+- sign-in or session problems;
+- role permission problems;
+- plan access problems;
+- workflow claim conflicts.
+
+The fix depends on which kind of block you are seeing.
+
+## Sign-in or session problems
+
+If your session expires or cannot refresh, LaSyncro can return you to **Sign in**.
+
+Sign in again and continue from the page LaSyncro returns you to.
+
+If sign-in does not work, use the password reset flow or ask an owner to confirm your team access.
+
+## Role permission problems
+
+Role permission problems happen when your account is signed in, but your role does not allow the action.
+
+Examples include trying to manage billing, team membership, role permissions, or settings without the required role.
+
+Owners can review role and permission configuration.
+
+Operators should ask an Owner for help instead of trying to change their own permissions.
+
+## Plan access problems
+
+Plan access problems happen when the current shop plan does not include the feature or capacity needed.
+
+This is different from a role denial.
+
+A plan-gated screen may show an upgrade prompt or locked tab.
+
+Owners can review plan options in **Settings -> Billing**.
+
+## Workflow claim conflicts
+
+Warehouse workflows can be claimed by a person or session.
+
+Messages that say a job, batch, or task is already claimed by another operator or packer are workflow conflicts, not account permission problems.
+
+Return to the workflow list, finish your own active work, or ask an owner or admin to review who should continue the task.
+
+## Operator routing
+
+Operators are intentionally warehouse-focused in the current application.
+
+When Operators open non-warehouse areas, LaSyncro may send them back to **Warehouse**.
+
+If an Operator needs a non-warehouse workflow, ask an owner to review the role assignment.
+
+## What to check before contacting support
+
+Before contacting support, confirm:
+
+- you are signed in to the right LaSyncro account;
+- you are working in the right shop;
+- your role matches the action you are trying to take;
+- the shop plan includes the feature;
+- the work is not already claimed by someone else.
+
+Include the page name, the action you tried, and the exact message you saw.
