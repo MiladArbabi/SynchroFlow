@@ -138,7 +138,15 @@ export type SourcingRecommendation = {
   moq: number | null;
   lead_time_days: number | null;
   score: number;
-  exceeds_moq: boolean;
+  /** SRC-06: units already queued for this supplier across ALL variants. */
+  pooled_qty: number;
+  /**
+   * Units still needed to reach this supplier's minimum once this variant is
+   * queued too. 0 means queueing completes it, or they have no minimum.
+   * Replaced `exceeds_moq`, which compressed this into a verdict and caused
+   * the UI to hide the queue button from exactly the suppliers that need it.
+   */
+  units_to_moq: number;
   // §7.8 preference fields
   is_preferred: boolean;
   preference_tier: 1 | 2 | null;
@@ -1897,8 +1905,11 @@ function PurchasingSourcingView({
     setPreferences((prev) => prev.filter((p) => p.id !== id));
   };
 
-  const goodMatches = recommendations.filter(r => !r.exceeds_moq);
-  const exceedsMoqMatches = recommendations.filter(r => r.exceeds_moq);
+  // SRC-06: one list. Splitting on MOQ pushed suppliers with a minimum into a
+  // dimmed group whose only action was "Create PO anyway" — steering the
+  // merchant toward an under-minimum order instead of toward pooling, which
+  // is what the accumulator exists for. The gap is shown per row instead.
+  const goodMatches = recommendations;
 
   const prefsByScope = {
     variant:      preferences.filter(p => p.scope_type === 'variant'),
@@ -2052,6 +2063,13 @@ function PurchasingSourcingView({
                       rec.on_time_rate != null && `On-time ${rec.on_time_rate}%`,
                       rec.fill_rate != null && `Fill ${rec.fill_rate}%`,
                       rec.lead_time_days != null && `Lead ${rec.lead_time_days}d`,
+                      // SRC-06: the actionable number. "445 more units to reach
+                      // their 500 minimum" tells the merchant what queueing
+                      // achieves; "Exceeds MOQ" told them to go elsewhere.
+                      rec.moq != null && rec.units_to_moq > 0 &&
+                        `${rec.units_to_moq} more to reach their ${rec.moq} minimum`,
+                      rec.moq != null && rec.units_to_moq === 0 &&
+                        `Meets their ${rec.moq} minimum`,
                     ].filter(Boolean);
                     return parts.length > 0 ? parts.join(' · ') : 'No order history yet';
                   })()}
@@ -2086,18 +2104,6 @@ function PurchasingSourcingView({
             </Box>
           ))}
 
-          {exceedsMoqMatches.map((rec) => (
-            <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', opacity: 0.7 }}>
-              <Box>
-                <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>{rec.name}</Typography>
-                <Typography sx={{ fontSize: 12, fontWeight: 300, color: '#C62828' }}>Exceeds MOQ ({rec.moq} units)</Typography>
-              </Box>
-              <Box component="button" onClick={() => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id)}
-                sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.75 } }}>
-                Create PO anyway →
-              </Box>
-            </Box>
-          ))}
 
           {/* §8 post-convert confirmation — state lives at page level to survive refetch */}
           {lastConvertedPoId && (

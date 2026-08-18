@@ -92,7 +92,15 @@ export type SourcingRecommendation = {
     moq: number | null;
     lead_time_days: number | null;
     score: number;
-    exceeds_moq: boolean;
+    /** SRC-06: units already queued for this supplier across ALL variants. */
+    pooled_qty: number;
+    /**
+     * Units still needed to reach this supplier's minimum once this variant is
+     * queued too. 0 means queueing completes it, or they have no minimum.
+     * Replaced `exceeds_moq`, which compressed this into a verdict and caused
+     * the UI to hide the queue button from exactly the suppliers that need it.
+     */
+    units_to_moq: number;
     is_preferred: boolean;
     preference_tier: 1 | 2 | null;
     preference_priority: number | null;

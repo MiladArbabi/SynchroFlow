@@ -20,8 +20,25 @@
 //     missing row means genuinely zero, not unknown. Floored at 0 because
 //     available_quantity goes negative on oversell.
 // This replaced a `?needed=` query param that no caller ever set, which meant
-// every queued reorder defaulted to 1 unit and `exceeds_moq` (which guards on
-// neededQty > 0) could never fire.
+// every queued reorder defaulted to 1 unit and `exceeds_moq` (since removed —
+// see SRC-06) could never fire.
+//
+// SRC-06 — MOQ GAP, NOT A VERDICT
+// `exceeds_moq` compared a supplier's minimum against ONE variant's shortfall
+// and never consulted reorder_requests, so a supplier already at 485 of a 500
+// minimum was still flagged as exceeding it for a 15-unit variant that would
+// have completed the order. The UI then rendered such suppliers dimmed, in
+// red, with no queue button — steering the merchant toward an under-minimum PO
+// from exactly the supplier they should have been pooling toward.
+// Replaced by two quantities:
+//   pooled_qty   = SUM(qty_requested) of pending reorder_requests for that
+//                  supplier, across ALL variants
+//   units_to_moq = max(0, moq - (pooled_qty + shortfall)); 0 means queueing
+//                  this variant reaches the minimum, or there is no minimum
+// MOQ no longer affects ranking. A minimum is a commercial term, not a quality
+// signal, and has no business outranking an explicit merchant preference or a
+// supplier's on-time record. The under-minimum PO path stays available and is
+// gated downstream by SRC-01a with a confirm and an override note on the PO.
 //
 // No default_supplier_id, ever — see playbook §6a. Every call recomputes
 // from real PO history + the live scorecard, same discipline as the rest
@@ -52,6 +69,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     let neededQty = 0;
     let demandQty = 0;
     let availableQty = 0;
+    const pooledBySupplier = new Map<number, number>();
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -92,6 +110,27 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       demandQty    = Number(demandRow?.demand ?? 0);
       availableQty = Number(availRow?.available ?? 0);
       neededQty    = Math.max(0, demandQty - availableQty);
+
+      // ── SRC-06: POOLED QUANTITY PER SUPPLIER ────────────────────────────
+      // The accumulator exists so small per-variant requirements can pool
+      // across variants until a supplier's minimum becomes reachable. Judging
+      // a supplier on whether THIS variant alone clears their MOQ ignores
+      // everything already queued for them — a supplier sitting at 485 of a
+      // 500 minimum was flagged as exceeding it for a 15-unit variant that
+      // would have completed the order.
+      // Knex infers the row shape from .sum() alone and drops the grouped
+      // column, so the select is annotated explicitly rather than cast.
+      const pooledRows = await trx('reorder_requests')
+        .where({ shop_id: shopId, status: 'pending' })
+        .groupBy('supplier_id')
+        .select<Array<{ supplier_id: number; pooled: string | number | null }>>(
+          'supplier_id',
+          trx.raw('SUM(qty_requested) AS pooled')
+        );
+
+      for (const row of pooledRows) {
+        pooledBySupplier.set(Number(row.supplier_id), Number(row.pooled ?? 0));
+      }
 
       // §7.8 Step 1: resolve preference — most specific scope wins.
       // variant > product > product_type (specificity order per playbook §7.3)
@@ -168,14 +207,25 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       const onTime      = Number(c.on_time_rate ?? 0);
       const fill        = Number(c.fill_rate    ?? 0);
       const defect      = Number(c.defect_rate  ?? 0);
-      const exceedsMoq  = neededQty > 0 && Number(c.moq ?? 0) > neededQty;
+      // SRC-06: report the GAP, not a verdict. "445 more units to reach their
+      // minimum" is actionable; "exceeds MOQ" reads as a rejection and told
+      // the merchant to go away from the exact supplier they should queue to.
+      const pooledQty   = pooledBySupplier.get(c.id) ?? 0;
+      const moqValue    = c.moq != null ? Number(c.moq) : null;
+      const unitsToMoq  = moqValue === null
+        ? 0
+        : Math.max(0, moqValue - (pooledQty + neededQty));
       const score       = onTime + fill - defect;
       const pref        = prefBySupplierId.get(c.id);
 
       return {
         ...c,
         score,
-        exceeds_moq:        exceedsMoq,
+        // Units already queued for this supplier across ALL variants.
+        pooled_qty:         pooledQty,
+        // Still needed to reach their minimum if this variant is queued too.
+        // 0 means queueing this completes it (or they have no minimum).
+        units_to_moq:       unitsToMoq,
         // §7.8 preference fields — additive, not breaking
         is_preferred:       !!pref,
         preference_tier:    pref ? 1 : 2,
@@ -185,16 +235,19 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       };
     });
 
-    // §7.8 Step 2 sort: preferred first (by preference_priority ASC),
-    // then scorecard-ranked remainder, MOQ-exceeders always last.
-    const preferred    = scored.filter(c => c.is_preferred && !c.exceeds_moq)
+    // §7.8 Step 2 sort: preferred first (by preference_priority ASC), then
+    // scorecard-ranked remainder.
+    // SRC-06: MOQ no longer demotes. A minimum is a commercial term, not a
+    // quality signal — it has no business outranking a merchant's explicit
+    // preference or a supplier's on-time record. The gap is shown per row
+    // instead, and the under-minimum PO path is already gated downstream
+    // (SRC-01a) with a confirm and an override note on the PO.
+    const preferred    = scored.filter(c => c.is_preferred)
                                .sort((a, b) => (a.preference_priority ?? 99) - (b.preference_priority ?? 99));
-    const nonPreferred = scored.filter(c => !c.is_preferred && !c.exceeds_moq)
-                               .sort((a, b) => b.score - a.score);
-    const exceedsMoq   = scored.filter(c => c.exceeds_moq)
+    const nonPreferred = scored.filter(c => !c.is_preferred)
                                .sort((a, b) => b.score - a.score);
 
-    const ranked = [...preferred, ...nonPreferred, ...exceedsMoq];
+    const ranked = [...preferred, ...nonPreferred];
 
     return res.json({
       variant_id:   variantId,
