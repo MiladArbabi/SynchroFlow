@@ -134,6 +134,8 @@ export type SourcingResult = {
         days_of_stock_remaining: number | null;
         reorder_urgency: string;
         supplier_lead_time_days: number | null;
+        /** lead time + safety + purchasing cycle — the span the suggestion covers */
+        target_coverage_days: number | null;
     } | null;
 };
 export type PreferenceRow = {

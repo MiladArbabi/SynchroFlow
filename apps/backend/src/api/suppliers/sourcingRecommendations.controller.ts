@@ -324,6 +324,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
         days_of_stock_remaining: planning.days_of_stock_remaining,
         reorder_urgency:         planning.reorder_urgency,
         supplier_lead_time_days: planning.supplier_lead_time_days,
+        target_coverage_days:    planning.target_coverage_days,
       } : null,
       recommendations: ranked,
       // Surface whether any preference was resolved — useful for UI badge

@@ -77,6 +77,13 @@ export type DemandVelocity = {
   suggested_reorder_qty: number | null;
   /** Supplier-configured planning lead time — null when not configured */
   supplier_lead_time_days: number | null;
+  /**
+   * Days of demand the suggestion is sized to cover:
+   * lead time + safety days + purchasing cycle. Returned so consumers can
+   * state the figure without restating the system defaults, which would
+   * duplicate a constant that can silently go stale.
+   */
+  target_coverage_days: number | null;
 };
 
 export type DemandSummary = {
@@ -484,6 +491,7 @@ export async function computeVariantPlanning(
           estimated_stockout_date: stockoutDate,
           suggested_reorder_qty: suggestedReorderQty,
           supplier_lead_time_days: supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null,
+          target_coverage_days: targetCoverageDays,
         };
       })
 

@@ -185,6 +185,8 @@ export type SourcingResult = {
     days_of_stock_remaining: number | null;
     reorder_urgency: string;
     supplier_lead_time_days: number | null;
+    /** lead time + safety + purchasing cycle — the span the suggestion covers */
+    target_coverage_days: number | null;
   } | null;
 };
 
@@ -2072,11 +2074,11 @@ function PurchasingSourcingView({
                   ) : quantityBasis === 'no_signal' ? (
                     'No sales history · enter a quantity if you know the demand'
                   ) : quantityBasis === 'preventive' ? (
-                    // Deliberately no coverage figure: safety and purchasing-cycle
-                    // days are backend constants, and restating them here would
-                    // duplicate a number that can silently go stale. Surface
-                    // target_coverage_days from the API before showing one.
-                    `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · forecast incl. lead time`
+                    // The coverage span comes from the API, not from restating
+                    // the backend's safety and purchasing-cycle constants here.
+                    planningContext?.target_coverage_days != null
+                      ? `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covers ${planningContext.target_coverage_days} days`
+                      : `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · forecast incl. lead time`
                   ) : shortfall > 0 ? (
                     `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · ${shortfall} short`
                   ) : (
