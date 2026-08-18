@@ -12,7 +12,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../contexts/ToastContext';
 import { SettingsCard, SectionLabel, SaveButton, SettingsPageWrapper, InlineConfirm } from './ShopSettingsShared';
 import { useAppTheme } from '../../hooks/useAppTheme';
-
+import { getShopTimezone } from 'api/shopSettings';
 // ─── TYPES ────────────────────────────────────────────────────
 
 type ShopSettings = {
@@ -208,6 +208,17 @@ function CarrierCutoffSection({ settings, saving, onSave }: {
   const [cpt, setCpt]     = useState('');
   const [dirty, setDirty] = useState(false);
 
+  // SRC-05c: the cutoff is stored as a bare wall-clock time and interpreted in
+  // the shop's timezone. Naming that zone here removes the guesswork — the
+  // setting lives on this page, the zone that resolves it lives in Localization.
+  const [shopTz, setShopTz] = useState<string | null>(null);
+
+  useEffect(() => {
+    getShopTimezone()
+      .then((tz) => setShopTz(tz.timezone))
+      .catch(() => setShopTz(null)); // hint is optional — never block the field
+  }, []);
+
   useEffect(() => {
     setCpt(settings?.daily_cpt_local ? settings.daily_cpt_local.slice(0, 5) : '');
     setDirty(false);
@@ -238,6 +249,7 @@ function CarrierCutoffSection({ settings, saving, onSave }: {
           </Box>
           <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.5 }}>
             e.g. 16:00 for a 4pm carrier collection. Leave blank to hide CPT countdown.
+            {shopTz && ` Interpreted in ${shopTz} — change it in Settings › Localization.`}
           </Typography>
         </Box>
         <SaveButton

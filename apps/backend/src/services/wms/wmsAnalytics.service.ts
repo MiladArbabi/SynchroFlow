@@ -1,6 +1,7 @@
 import { Knex } from 'knex';
 import crypto from 'crypto';
 import { withTenant } from '@lasyncro/backend-core/db.js';
+import { getShopClock, hoursUntilCpt, startOfShopDay } from '../shop/shopClock.service.js';
 
 function sha256(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex');
@@ -49,8 +50,14 @@ export async function getLiveCapacity(shopId: number, knex: Knex) {
     const pipeline: Record<string, number> = {};
     for (const row of pipelineRows) pipeline[row.status] = Number(row.count);
 
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    // SRC-05c: fetched here rather than beside the CPT lookup below, because
+    // the day boundary needs it too — "shipped today" must mean the shop's day.
+    const shopRow = await trx('shops')
+      .where('id', shopId)
+      .first('timezone');
+    const shopTimezone: string | null = shopRow?.timezone ?? null;
+
+    const startOfDay = startOfShopDay(shopTimezone);
     // Canonical fulfilled-today (matches Orders module) split by fulfillment path.
     // WMS-scanned = fulfilled AND has a WMS 'shipped' warehouse-status row today.
     // Legacy/Shopify = fulfilled today with no WMS shipped row.
@@ -73,19 +80,16 @@ export async function getLiveCapacity(shopId: number, knex: Knex) {
       .first('daily_cpt_local');
     const cptLocal: string | null = settings?.daily_cpt_local ?? null;
 
-    let hoursToCpt: number | null = null;
-    if (cptLocal) {
-      const [h, m] = cptLocal.split(':').map(Number);
-      const now = new Date();
-      const cptToday = new Date(now);
-      cptToday.setHours(h, m, 0, 0);
-      const diffMs = cptToday.getTime() - now.getTime();
-      hoursToCpt = diffMs > 0 ? diffMs / 3_600_000 : null;
-    }
+    const hoursToCpt: number | null = hoursUntilCpt(cptLocal, shopTimezone);
 
-    const now = new Date();
-    const weekday = now.getDay();
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // SRC-05c: operator_schedules.start_time/end_time are also bare wall-clock
+    // values. Matching them against server-local time offset every shift window
+    // by the same amount — and operatorsOnShift is the OTHER term in the
+    // required_uph formula, so the two errors compounded.
+    const shopClock = getShopClock(shopTimezone);
+    const weekday = shopClock.weekday;
+    const currentTime = shopClock.hhmm;
+
     const onShiftRows = await trx('operator_schedules')
       .where('shop_id', shopId)
       .where('weekday', weekday)
