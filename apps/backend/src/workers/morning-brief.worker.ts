@@ -20,15 +20,15 @@
 // Per-shop failures are isolated — cycle always continues.
 // Shops with no open subscription row are skipped silently.
 //
-// KNOWN BROKEN — SRC-07:
-//   computeMorningBrief() is called OUTSIDE withTenant, and the resolver makes
-//   bare global-db reads (overviewMorningBrief.resolver.ts:186, 189, 200).
-//   superviseWorker starts this worker with no AsyncLocalStorage context, so
-//   every shop throws TENANT_CONTEXT_MISSING and is swallowed by the per-shop
-//   catch into failed++. No scheduled brief has ever been generated; the rows
-//   in morning_brief_snapshots come from the on-demand HTTP refresh path,
-//   where request context exists. The scheduling above is correct and its
-//   selection is verified, but the cycle cannot complete until SRC-07 lands.
+// SRC-07 (fixed): computeMorningBrief is called here without ambient tenant
+//   context, because superviseWorker starts this worker outside any request.
+//   The resolver used to read the global db unscoped, so the guard threw for
+//   every shop. The per-shop catch below did its job and counted them into
+//   failed++, which is exactly why this went unnoticed: the cycle completed
+//   'successfully' with zero briefs generated, every day, logged only as a
+//   number nobody was watching.
+//   The resolver now scopes its own reads, so it is safe for any caller. Do
+//   not reintroduce bare db reads there.
 //
 // CHANGE POLICY:
 //   Brief computation lives in overviewMorningBrief.resolver.ts.

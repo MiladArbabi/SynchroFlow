@@ -183,17 +183,33 @@ export async function computeMorningBrief(input: {
   }
 
   // --- Fetch owner name + shop timezone for greeting ---
-  const shopRow = await db('shops').where({ id: shopId }).select('timezone').first();
-  const timezone = shopRow?.timezone ?? 'UTC';
+  // --- Fetch owner name + shop timezone for greeting ---
+  // SRC-07: explicitly scoped, like the alerts read below. These were bare
+  // global-db builders, which only worked because an HTTP request had already
+  // populated AsyncLocalStorage. The morning-brief worker is started by
+  // superviseWorker with no such context, so the tenant guard threw here and
+  // the error escaped the cycle entirely — killing the worker rather than
+  // failing one shop. No scheduled brief had ever been generated.
+  const { timezone, firstName } = await db.transaction(async (trx) => {
+    await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-  const ownerRow = await db('users as u')
-    .join('shop_memberships as sm', 'sm.user_id', 'u.id')
-    .where({ 'sm.shop_id': shopId, 'sm.role': 'owner' })
-    .orderBy('sm.created_at', 'asc')
-    .select('u.first_name')
-    .first();
+    const shopRow = await trx('shops')
+      .where({ id: shopId })
+      .select('timezone')
+      .first();
 
-  const firstName = ownerRow?.first_name ?? null;
+    const ownerRow = await trx('users as u')
+      .join('shop_memberships as sm', 'sm.user_id', 'u.id')
+      .where({ 'sm.shop_id': shopId, 'sm.role': 'owner' })
+      .orderBy('sm.created_at', 'asc')
+      .select('u.first_name')
+      .first();
+
+    return {
+      timezone: shopRow?.timezone ?? 'UTC',
+      firstName: ownerRow?.first_name ?? null,
+    };
+  });
 
   // --- Read active, non-dismissed alerts ---
   // Ranked by severity (critical first) then revenue impact (highest first).
