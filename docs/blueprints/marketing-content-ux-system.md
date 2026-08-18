@@ -103,10 +103,10 @@ Shared primitives foundation.
 MKT-UX-01B: complete.
 Help UX migration.
 
-MKT-UX-01C: next.
+MKT-UX-01C: complete.
 Blog convergence onto shared primitives without reducing editorial UX.
 
-MKT-UX-01D: later.
+MKT-UX-01D: next.
 Compare, Glossary, and grouped marketing index convergence.
 
 Migration does not mean forcing every domain to look identical. The objective is shared visual grammar and architecture.
@@ -140,7 +140,11 @@ Search remains client-side and article-metadata based; no body or fuzzy search w
 
 Sitemap generation remains article/filesystem-derived and was not changed.
 
-Existing `ArticleLayout` remains unchanged and will be considered during MKT-UX-01C Blog convergence.
+MKT-UX-01C Blog convergence is complete. `/blog` and `/blog/[slug]` now use the shared marketing content UX foundation.
+
+Blog has its own dark theme boundary at `apps/marketing/app/blog/layout.tsx` and uses the same LaSyncro operational palette as Help/auth.
+
+Blog index uses shared structural primitives while preserving its editorial composition. Blog articles no longer use legacy `ArticleLayout`; `ArticleLayout` remains unchanged for Compare, Features, Industries, and Glossary.
 
 ## Help visual composition
 
@@ -169,3 +173,25 @@ This is implemented through local CSS-variable overrides so shared primitives re
 This does not make the whole marketing site dark. Global marketing Nav/Footer remain owned by `apps/marketing/app/layout.tsx`, so the global footer may remain visually separate until later marketing-shell convergence.
 
 Future work should avoid independently duplicating this dark palette again; a shared theme contract may be extracted when multiple marketing domains adopt it.
+
+## Blog visual composition
+
+`/blog` preserves newest article as featured, client-side category filters, article count, featured visual, topic discovery cards, hover/motion behavior, newsletter `POST /api/waitlist` with `source: newsletter`, and responsive editorial hierarchy.
+
+`/blog/[slug]` composes `ContentArticleShell` -> `ContentBreadcrumbs` -> Blog-owned header/meta -> shared MDX prose -> existing `ArticleCTA` -> existing `FAQ` -> existing `ArticleCTA` full -> existing `InternalLinks` -> `BlogArticleTracker`.
+
+## Blog MDX and styling
+
+Blog shared MDX typography now comes from `createContentMdxComponents`.
+
+Blog-specific MDX components remain supported: `QuickAnswer`, `NumberedH3`, `Checklist`, `ArticleImage`, `HeroVisual`, `ArticleAnimation`, and `ProductVisual`.
+
+No Blog MDX files were rewritten; the current 18-article corpus remains intact.
+
+Blog uses Plus Jakarta Sans as its font authority. Blog route files no longer reference DM Sans.
+
+Light-mode hardcoded colors were replaced by shared design tokens. `#FFFFFF` remains intentionally as `--on-accent` in the Blog theme boundary.
+
+## Blog preserved contracts
+
+MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.
