@@ -46,6 +46,8 @@
 
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { computeVariantPlanning } from '../../services/demand/demandIntelligence.service.js';
+import type { DemandVelocity } from '../../services/demand/demandIntelligence.service.js';
 
 export async function httpGetSourcingRecommendations(req: Request, res: Response) {
   const shopId = req.user?.shopId;
@@ -67,6 +69,12 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     // queued reorder request defaulted to 1 unit — making the MOQ accumulator
     // unusable (a 100-unit minimum needed 100 clicks).
     let neededQty = 0;
+    // SRC-12: preventive planning row for this variant (null when the
+    // variant has no inventory_truth row and so cannot be planned).
+    // Assigned inside the transaction closure below. TS control-flow
+    // analysis cannot see that assignment from here and would narrow this
+    // to its initialiser type, so the annotation is restated on the value.
+    let planning: DemandVelocity | null = null as DemandVelocity | null;
     let demandQty = 0;
     let availableQty = 0;
     const pooledBySupplier = new Map<number, number>();
@@ -131,6 +139,22 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       for (const row of pooledRows) {
         pooledBySupplier.set(Number(row.supplier_id), Number(row.pooled ?? 0));
       }
+
+      // ── SRC-12: TRUSTED PREVENTIVE REORDER POINT ────────────────────────
+      // The shortfall above is REACTIVE: it fires once customers have already
+      // ordered more than we hold — which is the fire, not a warning. The
+      // demand engine's suggestion is preventive: velocity x (lead time +
+      // safety + purchasing cycle), net of stock and committed inbound.
+      // Same function the Demand module uses; no second copy of the formula.
+      // Deliberately NOT wrapped in try/catch — a broken planning path must
+      // surface as a 500 via the outer handler rather than silently degrade
+      // to the weaker number forever.
+      // req.params types variantId as string | string[]; the guard above
+      // rejects empty but not the array form, so narrow explicitly rather
+      // than casting and hoping.
+      const variantIdStr = Array.isArray(variantId) ? variantId[0] : variantId;
+      const planningRows = await computeVariantPlanning(trx, shopId, [variantIdStr]);
+      planning = planningRows[0] ?? null;
 
       // §7.8 Step 1: resolve preference — most specific scope wins.
       // variant > product > product_type (specificity order per playbook §7.3)
@@ -202,6 +226,37 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       }
     }
 
+    // ── SRC-12: WHICH QUANTITY DRIVES THE QUEUE ─────────────────────────
+    // Never queue less than customers are already waiting for: when open
+    // demand exceeds the forecast, the shortfall is the floor. The basis is
+    // always named so the operator sees WHICH number they are acting on
+    // rather than a silent substitution.
+    const suggestedQty = planning?.suggested_reorder_qty ?? null;
+    let queueQty: number;
+    let quantityBasis: string;
+
+    if (planning === null) {
+      queueQty = neededQty;
+      quantityBasis = 'reactive';
+    } else if (suggestedQty !== null) {
+      queueQty = Math.max(suggestedQty, neededQty);
+      quantityBasis = 'preventive';
+    } else if (planning.demand_confidence === 'none') {
+      // Order matters: a variant with no sales history also has no PO history,
+      // so it has no supplier lead time either. Testing lead time first made
+      // this branch unreachable for exactly the variants it describes —
+      // genuine absence of demand is not a data-entry gap.
+      queueQty = neededQty;
+      quantityBasis = neededQty > 0 ? 'reactive_no_history' : 'no_signal';
+    } else if (planning.supplier_lead_time_days === null) {
+      queueQty = neededQty;
+      quantityBasis = neededQty > 0 ? 'reactive_no_lead_time' : 'planning_data_required';
+    } else {
+      // Velocity and lead time both present but no suggestion produced.
+      queueQty = neededQty;
+      quantityBasis = neededQty > 0 ? 'reactive' : 'no_signal';
+    }
+
     // §6a scoring + §7.8 Step 2: annotate with preference tier
     const scored = candidates.map((c: any) => {
       const onTime      = Number(c.on_time_rate ?? 0);
@@ -214,7 +269,9 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       const moqValue    = c.moq != null ? Number(c.moq) : null;
       const unitsToMoq  = moqValue === null
         ? 0
-        : Math.max(0, moqValue - (pooledQty + neededQty));
+        // SRC-12: measured against queueQty, not the reactive shortfall —
+        // otherwise MOQ progress describes a quantity nobody will queue.
+        : Math.max(0, moqValue - (pooledQty + queueQty));
       const score       = onTime + fill - defect;
       const pref        = prefBySupplierId.get(c.id);
 
@@ -257,6 +314,17 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       // (promo coming, supplier case pack, etc).
       shortfall:       neededQty,
       shortfall_basis: { demand: demandQty, available: availableQty },
+      // SRC-12: the preventive number and the one the UI should prefill.
+      suggested_reorder_qty: suggestedQty,
+      queue_qty:             queueQty,
+      quantity_basis:        quantityBasis,
+      planning_context: planning ? {
+        demand_confidence:       planning.demand_confidence,
+        velocity_window_days:    planning.velocity_window_days,
+        days_of_stock_remaining: planning.days_of_stock_remaining,
+        reorder_urgency:         planning.reorder_urgency,
+        supplier_lead_time_days: planning.supplier_lead_time_days,
+      } : null,
       recommendations: ranked,
       // Surface whether any preference was resolved — useful for UI badge
       has_preference: prefBySupplierId.size > 0,
