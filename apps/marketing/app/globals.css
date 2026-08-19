@@ -74,6 +74,59 @@ body {
 /* ── Nav CTA hover ── */
 .nav-cta:hover { background: #FF8C5A !important; }
 
+/* ── Shared article visual breakout ── */
+.article-visual-breakout {
+  margin-left: -40px;
+  margin-right: -40px;
+}
+
+.article-visual-breakout-hero-frame {
+  aspect-ratio: 16 / 7;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.article-visual-breakout-hero-panel {
+  min-width: 0;
+}
+
+.article-visual-breakout-hero-panel--left {
+  padding: 44px 56px;
+}
+
+.article-visual-breakout-hero-panel--right {
+  padding: 36px 40px;
+}
+
+.article-visual-breakout-hero-divider {
+  padding: 0 28px;
+}
+
+@media (max-width: 728px) {
+  .article-visual-breakout {
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .article-visual-breakout-hero-frame {
+    aspect-ratio: auto;
+    grid-template-columns: 1fr;
+  }
+
+  .article-visual-breakout-hero-panel--left,
+  .article-visual-breakout-hero-panel--right {
+    padding: 28px 24px;
+  }
+
+  .article-visual-breakout-hero-divider {
+    min-height: 56px;
+    padding: 0 24px;
+  }
+
+  .article-visual-breakout-hero-divider-line {
+    display: none;
+  }
+}
+
 /* ── Marketing nav ── */
 .marketing-nav {
   position: fixed;

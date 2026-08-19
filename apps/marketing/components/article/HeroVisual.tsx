@@ -24,11 +24,11 @@ export default function HeroVisual({
   const rightList = rightItems.split('|')
   return (
     <figure
-      className={contentDriven ? 'reveal blog-hero-visual-content-driven' : 'reveal'}
-      style={{ margin: contentDriven ? '36px 0' : '44px -40px 40px' }}
+      className={contentDriven ? 'reveal blog-hero-visual-content-driven' : 'reveal article-visual-breakout article-visual-breakout--hero'}
+      style={contentDriven ? { margin: '36px 0' } : { marginTop: 44, marginBottom: 40 }}
     >
-      <div style={{
-        aspectRatio: contentDriven ? undefined : '16/7',
+      <div className={contentDriven ? undefined : 'article-visual-breakout-hero-frame'} style={{
+        aspectRatio: contentDriven ? undefined : undefined,
         width: contentDriven ? '100%' : undefined,
         minHeight: contentDriven ? 300 : undefined,
         background: '#F3F2EF',
@@ -37,7 +37,7 @@ export default function HeroVisual({
         overflow: 'hidden',
         position: 'relative',
         display: 'grid',
-        gridTemplateColumns: contentDriven ? 'minmax(0, 1fr) auto minmax(0, 1fr)' : '1fr auto 1fr',
+        gridTemplateColumns: contentDriven ? 'minmax(0, 1fr) auto minmax(0, 1fr)' : undefined,
         alignItems: 'stretch',
       }}>
         {/* Grid background */}
@@ -58,8 +58,8 @@ export default function HeroVisual({
         }} />
 
         {/* Left column — Shopify */}
-        <div className={contentDriven ? 'hero-visual-panel' : undefined} style={{
-          position: 'relative', padding: contentDriven ? '36px 40px' : '44px 56px',
+        <div className={contentDriven ? 'hero-visual-panel' : 'article-visual-breakout-hero-panel article-visual-breakout-hero-panel--left'} style={{
+          position: 'relative', padding: contentDriven ? '36px 40px' : undefined,
           minWidth: contentDriven ? 0 : undefined,
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '18px',
         }}>
@@ -91,13 +91,13 @@ export default function HeroVisual({
         </div>
 
         {/* Gap / arrow */}
-        <div className={contentDriven ? 'hero-visual-divider' : undefined} style={{
+        <div className={contentDriven ? 'hero-visual-divider' : 'article-visual-breakout-hero-divider'} style={{
           position: 'relative',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          padding: '0 28px',
+          padding: contentDriven ? '0 28px' : undefined,
         }}>
-          <div className={contentDriven ? 'hero-visual-divider-line' : undefined} style={{
+          <div className={contentDriven ? 'hero-visual-divider-line' : 'article-visual-breakout-hero-divider-line'} style={{
             position: 'absolute', top: 0, bottom: 0, left: '50%', width: '1px',
             background: 'linear-gradient(180deg, transparent, #D1CFC8 20%, #D1CFC8 80%, transparent)',
           }} />
@@ -114,8 +114,8 @@ export default function HeroVisual({
         </div>
 
         {/* Right column — WMS */}
-        <div className={contentDriven ? 'hero-visual-panel' : undefined} style={{
-          position: 'relative', padding: '36px 40px',
+        <div className={contentDriven ? 'hero-visual-panel' : 'article-visual-breakout-hero-panel article-visual-breakout-hero-panel--right'} style={{
+          position: 'relative', padding: contentDriven ? '36px 40px' : undefined,
           minWidth: contentDriven ? 0 : undefined,
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '18px',
         }}>

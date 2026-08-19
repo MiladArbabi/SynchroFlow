@@ -239,9 +239,36 @@ MKT-UX-01C-PROD-02 polished Blog visuals after the production regression fix.
 
 The Blog index hover issue came from article rows changing padding and margin geometry on hover. That moved the pointer hit area, so adjacent rows could repeatedly enter and leave hover when the pointer sat on their boundary. Blog row geometry is now constant with `padding: 28px 16px` and `margin: 0 -16px`; padding and margin are not animated. Hover only changes visual state such as background, title color, and arrow treatment.
 
-Blog-scoped CSS resets visual/reveal horizontal margins on mobile. No shared prose CSS changes were required, and Blog MDX content was not changed.
+Blog-scoped CSS resets visual/reveal horizontal margins on mobile were later replaced by shared legacy visual responsiveness in MKT-UX-01E-A. No shared prose CSS changes were required, and Blog MDX content was not changed.
 
 The existing reveal-class hydration warning was observed during verification but was not introduced or resolved by this issue, and it did not block rendering.
+
+## MKT-UX-01E-A — Legacy article visual responsiveness
+
+Shared legacy `HeroVisual`, `ProductVisual`, `ArticleImage`, and `ArticleAnimation` intentionally use an approximately 40px desktop editorial breakout.
+
+Below approximately 728px, that breakout could exceed the viewport. Shared responsive ownership now uses `article-visual-breakout`: above 728px, preserve the `-40px` horizontal breakout; at or below 728px, collapse horizontal breakout to 0 and keep visuals container-safe.
+
+`HeroVisual` also has responsive frame, panel, and divider behavior for mobile safety.
+
+Implementation files:
+
+- `apps/marketing/components/article/HeroVisual.tsx`
+- `apps/marketing/components/article/ProductVisual.tsx`
+- `apps/marketing/components/article/ArticleImage.tsx`
+- `apps/marketing/components/article/ArticleAnimation.tsx`
+- `apps/marketing/app/blog/blog.module.css`
+- `apps/marketing/app/globals.css`
+
+Blog cleanup: the redundant Blog-specific horizontal `.reveal` margin reset was removed. Blog vertical rhythm and `contentDriven` behavior were preserved.
+
+Verification: desktop breakout was preserved at 1440, 1024, 768, and 729px. Responsive behavior was verified at 728, 725, 720, 600, 390, and 320px. `/compare/stocky-alternative` shared visual overflow was 0; tested Blog shared visual overflow was 0; and the Blog `contentDriven` hero still stacks at <=720px.
+
+No current Features or Industries article corpus existed for browser verification.
+
+Still open/out of scope: `/compare` index heading overflow, FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables.
+
+MKT-UX-01E-A is implementation verified locally; production verification is pending deployment.
 
 ## Blog preserved contracts
 

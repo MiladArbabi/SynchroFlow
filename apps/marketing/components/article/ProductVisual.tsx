@@ -11,7 +11,7 @@ interface ProductVisualProps {
 
 export default function ProductVisual({ badge, title, caption }: ProductVisualProps) {
   return (
-    <figure className="reveal" style={{ margin: '36px -40px' }}>
+    <figure className="reveal article-visual-breakout" style={{ marginTop: 36, marginBottom: 36 }}>
       <div style={{
         aspectRatio: '16/7',
         background: '#F3F2EF',

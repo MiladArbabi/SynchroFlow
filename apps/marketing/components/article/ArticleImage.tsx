@@ -15,7 +15,7 @@ export default function ArticleImage({ src, alt, caption, priority = false, badg
     const fullSrc = src ? `/${src.replace(/^\/+/, '')}` : null
 
   return (
-    <figure className="reveal" style={{ margin: '36px -40px' }}>
+    <figure className="reveal article-visual-breakout" style={{ marginTop: 36, marginBottom: 36 }}>
       <div style={{
         aspectRatio: '16/9',
         border: '1px solid #E8E6E0',

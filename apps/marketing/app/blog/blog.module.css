@@ -47,12 +47,6 @@
 }
 
 @media (max-width: 720px) {
-  .blogArticle :global(article > .reveal),
-  .blogArticle :global(article > figure.reveal) {
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-  }
-
   .blogArticle :global(.blog-hero-visual-content-driven > div) {
     grid-template-columns: 1fr !important;
     min-height: 0 !important;
