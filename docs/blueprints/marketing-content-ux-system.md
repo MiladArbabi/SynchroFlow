@@ -266,9 +266,33 @@ Verification: desktop breakout was preserved at 1440, 1024, 768, and 729px. Resp
 
 No current Features or Industries article corpus existed for browser verification.
 
-Still open/out of scope: `/compare` index heading overflow, FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables.
+Still open/out of scope after MKT-UX-01E-A: FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables. `/compare` index heading overflow was handled separately in MKT-UX-01E-B.
 
 MKT-UX-01E-A is implementation verified locally; production verification is pending deployment.
+
+## MKT-UX-01E-B — Compare index responsive hero heading
+
+The Compare index hero heading in `apps/marketing/app/compare/page.tsx` used a fixed `fontSize: 64`.
+
+At narrow widths, the emphasized phrase `the alternatives.` contained an unbroken word wider than the available line width after the page's 5vw side padding. The first reproduced failure was approximately 372px viewport: `document.scrollWidth` exceeded `clientWidth`, while `body { overflow-x: hidden; }` masked the visible horizontal scroll.
+
+The Compare index hero now uses responsive typography:
+
+```txt
+fontSize: 'clamp(48px, 10vw, 64px)'
+```
+
+This preserves the 64px desktop size while scaling the heading down on narrow viewports.
+
+Preserved: exact heading wording, existing `<em>` emphasis, italic styling, existing letter-spacing, existing layout hierarchy, Compare cards/content, launch conversion, navigation, and metadata/schema.
+
+No forced word breaking, hyphenation, or copy change was required. The implementation modified only `apps/marketing/app/compare/page.tsx`.
+
+Verification covered 1440, 1024, 768, 600, 480, 400, 390, 375, 373, 372, 360, 340, and 320px. `document.scrollWidth === document.clientWidth` at every tested width; 373px, 372px, and 320px passed; desktop `h1` remained 64px at 1440, 1024, and 768px; the emphasized phrase remained italic/readable; and Compare cards, launch conversion, and marketing navigation were unaffected.
+
+MKT-UX-01E-B is implementation verified locally; production verification is pending deployment.
+
+Still open/out of scope: FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables.
 
 ## Blog preserved contracts
 
