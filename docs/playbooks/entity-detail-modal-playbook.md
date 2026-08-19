@@ -152,6 +152,7 @@ See also `docs/playbooks/sla_threshold_unification_2026_07_01.md` for the SLA/ag
 
 - "Go to order flow →" — confirmed live, functional (pre-existing fromprior session, verified working via screenshot).
 - **"Prioritize" button** — new, primary action in the constraint-free/unbatched footer state. Reuses the exact same `onPriorityFlag` mutation as ORDM-02's list-row Prioritize action (bulk-set-priority endpoint) — not a new/parallel implementation. Explicit product decision: **kept alongside** "Go to order flow," not a replacement — Prioritize (primary, filled accent) + Go to order flow (secondary, ghost pill), both always available together, not a fallback relationship.
+- **Fulfillment safety — ORD-CTA-01B (2026-08-19):** Order Detail must never expose `proceed_fulfillment` as an actionable CTA. That action performs a real Shopify fulfillment and would bypass laSyncro's operational sequence. A healthy pool order remains **Prioritize + Go to order flow** only; fulfillment continues through **release → pick → pack → ship**.
 
 **Shipped this session (2026-07-02) — visual pass against target design, live-verified via screenshots:**
 

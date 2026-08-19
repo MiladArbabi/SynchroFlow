@@ -364,8 +364,20 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     return b.ageHours - a.ageHours;
   });
 
-  // Critical = SLA already breached — act today
-const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+  // Critical/Watch contain only decisions that still need intervention.
+  // A successful priority action remains briefly during the existing movement
+  // hold, then leaves Needs a decision once that confirmation window expires.
+  const stillNeedsDecision = (order: AgingOrder): boolean =>
+    !order.isPriorityFlagged ||
+    movementHeldOrderIds.has(order.lasyncro_order_id);
+
+  // Unconstrained orders already moving in a pick batch have no decision here.
+  const allBreachedOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
+  const criticalOrders = allBreachedOrders.filter(
+    o =>
+      stillNeedsDecision(o) &&
+      (o.constraintType !== null || !o.inPickBatch)
+  );
 
   /**
    * DC-03 (2026-08-15): the SLA breach count. aging_72h_plus is NOT this — it
@@ -378,13 +390,15 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
    * never propagated to the pulse. The card's own subtext already counted
    * against this figure, so the headline contradicted its own caption.
    */
-  const slaBreachedCount = criticalOrders.length;
+  const slaBreachedCount = allBreachedOrders.length;
   // FIX (2026-07-01): the >= 24 check was dead weight — the backend already
   // pre-filters agingOrders to WATCH_FLOOR_SECONDS (now SLA-aware, was a flat
   // 48h) before this array ever reaches the frontend, so every order here
   // already qualifies. Re-checking a hardcoded 24h client-side both duplicated
   // backend logic and used a different, disconnected number.
-  const watchOrders = allAgingOrders.filter(o => !o.isShippingSlaBreached);
+  const watchOrders = allAgingOrders.filter(
+    o => !o.isShippingSlaBreached && stillNeedsDecision(o)
+  );
 
   const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
   const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
@@ -414,6 +428,14 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
       case 'customer':  return 'Address issue';
       case 'operational': return 'Pick exception';
       default: return isBreached ? 'SLA breach' : 'Aging';
+    }
+  };
+
+  const constraintActionLabel = (type: string): string => {
+    switch (type) {
+      case 'inventory': return 'Resolve stock →';
+      case 'customer': return 'Fix address →';
+      default: return 'Resolve issue →';
     }
   };
 
@@ -564,22 +586,7 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
                         onClick={() => onOrderClick?.(order.lasyncro_order_id)}
                         sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                       >
-                        Review queue
-                      </Box>
-                    ) : order.inPickBatch ? (
-                      <Box
-                        sx={{
-                          fontSize: 12,
-                          fontWeight: 600,
-                          color: 'var(--ink-3)',
-                          bgcolor: 'var(--bg-3)',
-                          border: '0.5px solid var(--rule)',
-                          borderRadius: '6px',
-                          py: 1,
-                          textAlign: 'center',
-                        }}
-                      >
-                        In batch
+                        {constraintActionLabel(order.constraintType)}
                       </Box>
                     ) : (
                       <PrioritizeButton
@@ -639,22 +646,7 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
                               onClick={() => onOrderClick?.(order.lasyncro_order_id)}
                               sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
                             >
-                              Review queue
-                            </Box>
-                          ) : order.inPickBatch ? (
-                            <Box
-                              sx={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: 'var(--ink-3)',
-                                bgcolor: 'var(--bg-3)',
-                                border: '0.5px solid var(--rule)',
-                                borderRadius: '6px',
-                                py: 1,
-                                textAlign: 'center',
-                              }}
-                            >
-                              In batch
+                              {constraintActionLabel(order.constraintType)}
                             </Box>
                           ) : (
                             <PrioritizeButton
@@ -716,9 +708,9 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
                     <Box
                       component="button"
                       onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                      sx={{ display: 'inline-flex', alignItems: 'center',justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                      sx={{ display: 'inline-flex', alignItems: 'center',justifyContent: 'flex-end', px: 0, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                     >
-                      View order →
+                      View →
                     </Box>
                   </Box>
                 ))}
@@ -742,9 +734,9 @@ const criticalOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
                           <Box
                             component="button"
                             onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                            sx={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', px: 0, py: 0.5, fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
                           >
-                            View order →
+                            View →
                           </Box>
                         </Box>
                       ))}

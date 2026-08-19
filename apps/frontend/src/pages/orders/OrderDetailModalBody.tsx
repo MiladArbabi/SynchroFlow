@@ -59,7 +59,6 @@ import type { OrderShipping } from './useOrderDetail';
 import { useCurrency } from '../../hooks/useCurrency';
 
 const ACTION_LABELS: Record<string, string> = {
-  proceed_fulfillment: 'Proceed to ship',
   resolve_operational_block: 'Mark as resolved',
   resolve_inventory_block: 'Go to sourcing',
   resolve_customer_block: 'Flag for customer review',
@@ -606,9 +605,18 @@ export function OrderDetailModalBody({
   // via ?? [] / ?. fallbacks, no additional guarding needed.
   const decision = data?.decision;
   const constraints = data?.constraints ?? [];
-  const recommendedAction = decision?.recommended_action;
+  // ORD-CTA-01B: proceed_fulfillment performs a real Shopify fulfillment.
+  // Order Detail must never expose that shortcut; fulfillment remains owned
+  // by the release → pick → pack → ship workflow.
+  const recommendedAction =
+    decision?.recommended_action?.type === 'proceed_fulfillment'
+      ? undefined
+      : decision?.recommended_action;
+
   const alternateActions = (decision?.actions ?? []).filter(
-    (a) => a.type !== recommendedAction?.type
+    (a) =>
+      a.type !== 'proceed_fulfillment' &&
+      a.type !== recommendedAction?.type
   );
   const exceptions = exceptionsQuery.data?.exceptions ?? [];
   const unresolvedExceptions = exceptions.filter((e) => !e.resolved);

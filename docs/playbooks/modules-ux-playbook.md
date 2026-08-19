@@ -529,9 +529,11 @@ The Tier 1 spec's code example (§2) showing `color: theme.palette.common.white`
 
 **Scope:** confirmed/persisted state ONLY — never an actionable CTA.
 First and currently only use: `PrioritizeButton` (Orders module,
-`OrdersModuleFT2.tsx`) once an order's priority flag is confirmed
-persisted (`isPriorityFlagged === true`), replacing the filled-orange
-default state.
+`OrdersModuleFT2.tsx`) after an order's priority flag is confirmed.
+`Prioritized ✓` is a brief confirmation state, not a permanent row state:
+once the existing movement hold expires, the order leaves **Needs a decision**.
+This applies to both Critical and Watch — successfully prioritized work no
+longer requires a decision and belongs in Order Flow instead.
 
 **Why this is a deliberate, documented exception, not drift:** §1's
 Hard Rules and §2's CTA Hierarchy are orange-accent-only by design —
