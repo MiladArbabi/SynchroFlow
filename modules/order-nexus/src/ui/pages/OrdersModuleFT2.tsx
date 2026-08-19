@@ -367,7 +367,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // Critical/Watch contain only decisions that still need intervention.
   // A successful priority action remains briefly during the existing movement
   // hold, then leaves Needs a decision once that confirmation window expires.
-  const stillNeedsDecision = (order: AgingOrder): boolean =>
+  const stillNeedsDecision = (order: (typeof allAgingOrders)[number]): boolean =>
     !order.isPriorityFlagged ||
     movementHeldOrderIds.has(order.lasyncro_order_id);
 
