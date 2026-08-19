@@ -262,9 +262,9 @@ Completed 2026-07-11: three-tier supplier preference system (§7), MOQ accumulat
 never-ordered assign flow, preference CRUD, ranked recommendations, onboarding spotlights,
 PO first-line preview, supplier MOQ/lead-time nudges, data quality filtering (ISS-SR-07).
 
-Remaining gaps to reach 100%:
+2026-07-11 gap register (superseded — see the SRC track above):
 
-- **Gap 1 (✅ closed 2026-07-11):** Signal→queue wired — `?needed=N` from alert flows into accumulator. "Add to queue →" has loading + success flash states. Scorecard shows only populated fields; "No order history yet" when all null.
+- **Gap 1 (recorded closed on a mechanism that never fired; properly closed as SRC-03):** `?needed=N` had no writer anywhere in the codebase. The shortfall is now server-derived and returned with a `shortfall_basis` naming its provenance. Original note follows: signal→queue wired — `?needed=N` from alert flows into accumulator. "Add to queue →" has loading + success flash states. Scorecard shows only populated fields; "No order history yet" when all null.
 - **Gap 2 (✅ closed 2026-07-11):** PO send flow — copy-only `SendPoModal`, "Mark as sent" ghost button, `poSendFlow` spotlight wired end-to-end. Status never auto-transitions.
 - **Gap 3 (✅ closed 2026-07-11):** "Lifetime POs" label corrected to "Received POs" — matches `total_pos` counter semantics.
 
