@@ -293,6 +293,16 @@ export async function computeVariantPlanning(
      * Draft is not committed. shipped/partially_received are already at the
      * receiving boundary in this lifecycle, so only pre-arrival committed
      * PO states contribute remaining inbound quantity.
+     *
+     * SRC-18a: rows carry days_out so the per-variant loop can window them.
+     * Previously this was summed here and subtracted in full, which made a
+     * time-bounded question (how much do I need for the next N days) answered
+     * with an unbounded quantity: a PO landing in 90 days suppressed a reorder
+     * needed in 20 exactly as hard as one landing tomorrow.
+     *
+     * Grouped-to-detailed is deliberate. targetCoverageDays depends on the
+     * variant's own supplier lead time, so the window cannot be applied here —
+     * it is not one horizon, it is one per variant.
      */
     const reliableInboundRows: any[] = await trx('purchase_order_line_items as poli')
       .join('purchase_orders as po', 'po.id', 'poli.po_id')
@@ -300,25 +310,40 @@ export async function computeVariantPlanning(
       .whereIn('po.status', ['ordered', 'confirmed', 'in_production'])
       .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('poli.lasyncro_variant_id', variantIds); })
       .whereNotNull('poli.lasyncro_variant_id')
-      .groupBy('poli.lasyncro_variant_id')
       .select(
         'poli.lasyncro_variant_id',
         trx.raw(`
-          SUM(
-            GREATEST(
-              poli.quantity_ordered - COALESCE(poli.quantity_received, 0),
-              0
-            )
-          ) as reliable_inbound
+          GREATEST(
+            poli.quantity_ordered - COALESCE(poli.quantity_received, 0),
+            0
+          ) as remaining_qty
+        `),
+        trx.raw(`
+          CASE
+            WHEN po.expected_delivery_date IS NULL THEN NULL
+            ELSE (po.expected_delivery_date - CURRENT_DATE)
+          END as days_out
         `)
       );
 
-    const reliableInboundMap = new Map(
-      reliableInboundRows.map((r: any) => [
-        r.lasyncro_variant_id,
-        Number(r.reliable_inbound ?? 0),
-      ])
-    );
+    /**
+     * SRC-18a: null days_out means no ETA was recorded. The manual PO creation
+     * path (suppliers.controller.ts) writes expected_delivery_date ?? null,
+     * unlike the reorder-conversion path which derives one. Null is treated as
+     * IN WINDOW: excluding it would drop real committed stock and inflate the
+     * suggestion, which is the worse failure. This fix can therefore only ever
+     * subtract LESS inbound than before — it can raise a suggestion, never
+     * suppress one that fires today.
+     */
+    const reliableInboundMap = new Map<string, Array<{ qty: number; daysOut: number | null }>>();
+    for (const r of reliableInboundRows) {
+      const list = reliableInboundMap.get(r.lasyncro_variant_id) ?? [];
+      list.push({
+        qty: Number(r.remaining_qty ?? 0),
+        daysOut: r.days_out === null ? null : Number(r.days_out),
+      });
+      reliableInboundMap.set(r.lasyncro_variant_id, list);
+    }
 
     /**
      * ALL-TIME UNITS SOLD PER VARIANT
@@ -430,8 +455,6 @@ export async function computeVariantPlanning(
         // multiplier; every term is named and derived.
         const openDemandQty =
           openDemandMap.get(row.lasyncro_variant_id) ?? 0;
-        const reliableInboundQty =
-          reliableInboundMap.get(row.lasyncro_variant_id) ?? 0;
 
         const targetCoverageDays =
           leadTimeDays !== null
@@ -439,6 +462,32 @@ export async function computeVariantPlanning(
               SYSTEM_SAFETY_DAYS +
               SYSTEM_PURCHASING_CYCLE_DAYS
             : null;
+
+        /**
+         * SRC-18a: only inbound landing INSIDE this variant's coverage window
+         * offsets the need to order now. A PO arriving on the last day of the
+         * window still replaces the stock that runs out then; one arriving
+         * after it does not, and subtracting it told the merchant to wait for
+         * goods that arrive after they stock out.
+         *
+         * Null days_out (no recorded ETA) counts as in-window — see the map
+         * construction above.
+         *
+         * targetCoverageDays null means no supplier lead time, in which case
+         * suggestedReorderQty is null regardless and this value is unused; the
+         * full sum is kept so the number stays meaningful if it is ever read.
+         */
+        const inboundLines =
+          reliableInboundMap.get(row.lasyncro_variant_id) ?? [];
+        const reliableInboundQty = inboundLines.reduce(
+          (sum, line) =>
+            targetCoverageDays === null ||
+            line.daysOut === null ||
+            line.daysOut <= targetCoverageDays
+              ? sum + line.qty
+              : sum,
+          0
+        );
 
         const suggestedReorderQty =
           velocityPerDay > 0 && targetCoverageDays !== null
