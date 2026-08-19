@@ -113,6 +113,9 @@ Blog convergence onto shared primitives without reducing editorial UX.
 MKT-UX-01C-PROD: implementation complete, production verification pending deployment.
 Blog production visual regression fix.
 
+MKT-UX-01C-PROD-02: implementation complete, production verification pending deployment.
+Blog visual polish.
+
 MKT-UX-01D: next after production verification.
 Compare, Glossary, and grouped marketing index convergence.
 
@@ -221,8 +224,26 @@ Shared `apps/marketing/components/content/content.module.css` was not changed.
 
 Existing Blog MDX visual placements were preserved. No Blog MDX files were rewritten, and existing `ArticleImage`, `HeroVisual`, and `ProductVisual` components remain shared and unchanged. Blog currently contains substantial existing visual coverage, so this issue restored rendering rather than redistributing images.
 
+MKT-UX-01C-PROD is complete.
+
+## Blog visual polish
+
+MKT-UX-01C-PROD-02 polished Blog visuals after the production regression fix.
+
+`HeroVisual` now supports optional `contentDriven?: boolean`. Default behavior remains legacy/fixed for existing non-Blog consumers, while Blog opts into content-driven rendering through its MDX component map. Blog comparison visuals can expand to fit long headings and bullet lists, and mobile Blog visuals stack without clipping or horizontal overflow.
+
+`InternalLinks` now supports `variant?: 'legacy' | 'blogDark'`. The default remains `legacy`; Blog uses `blogDark`; `ArticleLayout` and other existing consumers keep the legacy appearance. Blog Keep Reading no longer uses `LegacyReadableSection` and now uses a dark-theme outer/container hierarchy with contrasting cards.
+
+The Blog index hover issue came from article rows changing padding and margin geometry on hover. That moved the pointer hit area, so adjacent rows could repeatedly enter and leave hover when the pointer sat on their boundary. Blog row geometry is now constant with `padding: 28px 16px` and `margin: 0 -16px`; padding and margin are not animated. Hover only changes visual state such as background, title color, and arrow treatment.
+
+Blog-scoped CSS resets visual/reveal horizontal margins on mobile. No shared prose CSS changes were required, and Blog MDX content was not changed.
+
+The existing reveal-class hydration warning was observed during verification but was not introduced or resolved by this issue, and it did not block rendering.
+
 ## Blog preserved contracts
 
 MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.
 
 MKT-UX-01C-PROD did not change Blog slugs/content, SEO/schema, shared content prose defaults, global Nav/Footer, Help, Compare, Features, Industries, Glossary, or shared legacy visual components.
+
+MKT-UX-01C-PROD-02 preserved the `HeroVisual` legacy default, the `InternalLinks` legacy default, Compare's legacy `HeroVisual` behavior, `ArticleLayout`'s legacy `InternalLinks` behavior, Help, routing, SEO, and content.

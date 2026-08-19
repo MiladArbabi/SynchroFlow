@@ -4,7 +4,7 @@
 // Schema: Article + FAQPage + BreadcrumbList injected server-side.
 
 import type { Metadata } from 'next'
-import type { ReactNode } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { MDXRemote } from 'next-mdx-remote/rsc'
 import { getAllSlugs, getContentBySlug } from '@/lib/mdx'
 import { generateArticleSchema, generateFAQSchema, generateBreadcrumbSchema } from '@/lib/schema'
@@ -30,11 +30,15 @@ const components = {
   ...createContentMdxComponents(),
   QuickAnswer: BlogQuickAnswer,
   ArticleImage,
-  HeroVisual,
+  HeroVisual: BlogHeroVisual,
   NumberedH3: BlogNumberedH3,
   Checklist: BlogChecklist,
   ArticleAnimation,
   ProductVisual,
+}
+
+function BlogHeroVisual(props: ComponentProps<typeof HeroVisual>) {
+  return <HeroVisual {...props} contentDriven />
 }
 
 function formatLongDate(iso: string): string {
@@ -322,9 +326,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
           </>
         }
         related={
-          <LegacyReadableSection>
-            <InternalLinks links={frontmatter.relatedLinks ?? []} />
-          </LegacyReadableSection>
+          <InternalLinks links={frontmatter.relatedLinks ?? []} variant="blogDark" />
         }
       >
         <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />

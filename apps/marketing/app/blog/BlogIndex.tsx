@@ -180,7 +180,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           50% { transform: scale(.75); opacity: .4; }
         }
         .blog-index a { color: inherit; text-decoration: none; }
-        .blog-post-row { transition: padding .2s, background .15s; }
+        .blog-post-row { transition: background .15s; }
         .blog-post-row:hover { background: var(--bg-2); border-radius: var(--r-md); }
         .blog-post-title { transition: color .15s; }
         .blog-post-row:hover .blog-post-title { color: var(--accent) !important; }
@@ -404,8 +404,8 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                       gridTemplateColumns: '120px 1fr 180px auto',
                       gap: 28,
                       alignItems: 'baseline',
-                      padding: hovered ? '28px 16px' : '28px 4px',
-                      margin: hovered ? '0 -16px' : '0',
+                      padding: '28px 16px',
+                      margin: '0 -16px',
                     }}
                   >
                     <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', letterSpacing: '0.04em' }}>
