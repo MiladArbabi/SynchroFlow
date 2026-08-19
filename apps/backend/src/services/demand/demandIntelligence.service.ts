@@ -532,7 +532,8 @@ export async function computeVariantPlanning(
 export async function emitStockoutAlerts(
   trx: Knex.Transaction,
   shopId: number,
-  variants: DemandVelocity[]
+  variants: DemandVelocity[],
+  reconcile: boolean = true
 ): Promise<void> {
   // Fire demand alerts for critical variants (stockout risk)
   // Non-blocking — alert failure must not fail the demand computation
@@ -585,6 +586,13 @@ export async function emitStockoutAlerts(
 
   // Resolve alerts for variants that are no longer critical or are no longer
   // demand-eligible (for example inactive or non-physical catalog records).
+  // SRC-18c/D2: the sweep resolves EVERY active source:'demand' alert absent
+  // from `variants`, so it is only sound for a caller holding the full
+  // catalogue. A partial caller (resolve_inventory_block, which knows only
+  // one order's shorted variants) passes reconcile=false — otherwise it would
+  // deactivate every other variant's stockout alert in the shop.
+  if (!reconcile) return;
+
   const criticalAlertKeys = new Set(
     variants
       .filter(v => v.reorder_urgency === 'critical')

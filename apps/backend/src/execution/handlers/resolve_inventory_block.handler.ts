@@ -7,7 +7,8 @@
  * Strategy:
  * 1. Check inventory_truth for all variants on this order
  * 2. If ALL variants have sufficient stock → delegate to proceed_fulfillment
- * 3. If ANY variant is still out of stock → fire stockout_risk alert per variant
+ * 3. If ANY variant is still out of stock → delegate to the demand engine's
+ *    emitter, which writes stockout_risk from inbound-aware numbers (SRC-18c)
  *
  * IMPORTANT:
  * - execution_mode is 'manual' in the decision engine — this handler
@@ -19,6 +20,10 @@
 import db from '@lasyncro/backend-core/db.js';
 import { ExecutionHandler } from '../execution.registry.js';
 import { proceedFulfillmentHandler } from './proceed_fulfillment.handler.js';
+import {
+  computeVariantPlanning,
+  emitStockoutAlerts,
+} from '../../services/demand/demandIntelligence.service.js';
 
 export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) => {
   const dbx = (trx ?? db) as typeof db;
@@ -90,10 +95,11 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
   }
 
   /**
-   * STEP 3b — STILL OUT OF STOCK: fire stockout_risk alert per variant
+   * STEP 3b — STILL OUT OF STOCK: log, then delegate alerting
    * -------------------------------------------------------------------
-   * Operator needs to know which specific variants are blocking.
-   * Upserts follow the canonical alert pattern — idempotent on alert_key.
+   * Operator needs to know which specific variants are blocking. The alert
+   * itself is written by the demand engine's emitter (SRC-18c) rather than
+   * here — see the block below for why.
    */
   console.warn('[RESOLVE_INVENTORY_BLOCK_STILL_SHORT]', {
     decision_id: job.decision_id,
@@ -102,34 +108,45 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
     variants: shortages.map((s: any) => s.lasyncro_variant_id),
   });
 
-  for (const shortage of shortages) {
-    const qty = Number(shortage.quantity);
-    const available = Number(shortage.available_quantity);
-    const needed = qty - available;
-    const label = shortage.sku ?? shortage.title ?? shortage.lasyncro_variant_id.slice(0, 8);
+  /**
+   * SRC-18c — SINGLE WRITER FOR demand:stockout_risk
+   * -------------------------------------------------
+   * This handler previously wrote its own row on the same alert_key with
+   * `order_qty - available`, which ignores committed inbound entirely and so
+   * could instruct a merchant to reorder units already on an open PO. It now
+   * routes through the demand engine's own planning + emitter, so both paths
+   * publish one message from one set of numbers.
+   *
+   * BEHAVIOUR CHANGE (accepted): only variants the planner marks `critical`
+   * alert. A partial shortage (5 held, 10 needed) is an order-allocation
+   * problem surfaced by the order-block UI, not a reorder signal.
+   *
+   * RLS: computeVariantPlanning runs RLS-protected queries and requires a
+   * real transaction whose caller has set app.current_tenant. `trx` is
+   * therefore required here rather than falling back to `dbx`.
+   *
+   * The (trx ?? db) fallback above is already dead in practice: STEP 1's
+   * dbx query throws TENANT_CONTEXT_MISSING on the pooled root connection
+   * before execution ever reaches this point (verified 2026-08-19). A
+   * fallback branch here would be unreachable guard code of exactly the
+   * kind this issue exists to remove, so absence fails loudly instead.
+   *
+   * reconcile=false: the emitter's sweep resolves every active demand alert
+   * absent from the supplied list. This caller holds only one order's
+   * variants, so sweeping here would deactivate the rest of the shop's.
+   */
+  if (!trx) {
+    throw new Error(
+      '[RESOLVE_INVENTORY_BLOCK] transaction required: alerting needs a ' +
+      'tenant-scoped transaction. Dispatcher must supply one.'
+    );
+  }
 
-    await dbx('alerts')
-      .insert({
-        shop_id: job.shop_id,
-        alert_key: `demand:stockout_risk:${shortage.lasyncro_variant_id}`,
-        source: 'demand',
-        alert_type: 'stockout_risk',
-        severity: 'critical',
-        title: `${label} — out of stock`,
-        message: `Order needs ${qty} unit${qty > 1 ? 's' : ''} but only ${available} available. Reorder ${needed} unit${needed > 1 ? 's' : ''} to unblock.`,
-        entity_id: shortage.lasyncro_variant_id,
-        entity_type: 'variant',
-        revenue_impact: shortage.unit_cost
-          ? shortage.unit_cost * needed
-          : null,
-        is_active: true,
-      })
-      .onConflict(['shop_id', 'alert_key'])
-      .merge({
-        is_active: true,
-        title: dbx.raw('EXCLUDED.title'),
-        message: dbx.raw('EXCLUDED.message'),
-        updated_at: dbx.fn.now(),
-      });
+  const shortedVariantIds = shortages.map((s: any) => s.lasyncro_variant_id);
+
+  const planned = await computeVariantPlanning(trx, job.shop_id, shortedVariantIds);
+  const critical = planned.filter((v) => v.reorder_urgency === 'critical');
+  if (critical.length > 0) {
+    await emitStockoutAlerts(trx, job.shop_id, critical, false);
   }
 };
