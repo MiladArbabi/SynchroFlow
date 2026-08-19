@@ -293,8 +293,26 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // THREAD B (2026-06-30): prioritized orders sort to the bottom of
   // Critical after a short confirmation hold. This prevents the row from
   // teleporting immediately after the user clicks Prioritize.
-  const [criticalExpanded, setCriticalExpanded] = useState(false);
+  const [expandedCriticalGroupKeys, setExpandedCriticalGroupKeys] =
+    useState<Set<string>>(() => new Set());
   const [watchExpanded, setWatchExpanded] = useState(false);
+  const [bulkPriorityConfirmGroupKey, setBulkPriorityConfirmGroupKey] =
+    useState<string | null>(null);
+  const [bulkPriorityPendingGroupKey, setBulkPriorityPendingGroupKey] =
+    useState<string | null>(null);
+  const [bulkPriorityConfirmedGroupKey, setBulkPriorityConfirmedGroupKey] =
+    useState<string | null>(null);
+  const [bulkPriorityErrorGroupKey, setBulkPriorityErrorGroupKey] =
+    useState<string | null>(null);
+
+  const toggleCriticalGroup = (key: string) => {
+    setExpandedCriticalGroupKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
   const [movementHeldOrderIds, setMovementHeldOrderIds] = useState<Set<string>>(() => new Set());
   const [priorityFlashOrderIds, setPriorityFlashOrderIds] = useState<Set<string>>(() => new Set());
 
@@ -353,6 +371,46 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     }
   };
 
+  const handlePrioritizeGroup = async (
+    groupKey: string,
+    orderIds: string[]
+  ): Promise<void> => {
+    if (!onPriorityFlag || orderIds.length === 0) return;
+
+    orderIds.forEach(holdPriorityMovement);
+    setBulkPriorityPendingGroupKey(groupKey);
+    setBulkPriorityErrorGroupKey(null);
+
+    try {
+      await onPriorityFlag(orderIds, true);
+      orderIds.forEach(flashPriorityRow);
+      setBulkPriorityConfirmGroupKey(null);
+      setBulkPriorityConfirmedGroupKey(groupKey);
+
+      window.setTimeout(() => {
+        setBulkPriorityConfirmedGroupKey(prev =>
+          prev === groupKey ? null : prev
+        );
+      }, 2000);
+    } catch {
+      setMovementHeldOrderIds(prev => {
+        const next = new Set(prev);
+        orderIds.forEach(id => next.delete(id));
+        return next;
+      });
+
+      setPriorityFlashOrderIds(prev => {
+        const next = new Set(prev);
+        orderIds.forEach(id => next.delete(id));
+        return next;
+      });
+
+      setBulkPriorityErrorGroupKey(groupKey);
+    } finally {
+      setBulkPriorityPendingGroupKey(null);
+    }
+  };
+
   const allAgingOrders = [...(operatorSummary?.agingOrders ?? [])].sort((a, b) => {
     const aPrioritySettled = a.isPriorityFlagged && !movementHeldOrderIds.has(a.lasyncro_order_id);
     const bPrioritySettled = b.isPriorityFlagged && !movementHeldOrderIds.has(b.lasyncro_order_id);
@@ -379,6 +437,43 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       (o.constraintType !== null || !o.inPickBatch)
   );
 
+  // UX-CRITICAL-GROUPS: the owner acts on issue classes, not a wall of
+  // repeated order rows. Preserve every order underneath an expandable group.
+  const criticalGroups = [
+    {
+      key: 'customer',
+      label: 'Address issues',
+      orders: criticalOrders.filter(o => o.constraintType === 'customer'),
+    },
+    {
+      key: 'inventory',
+      label: 'Out of stock',
+      orders: criticalOrders.filter(o => o.constraintType === 'inventory'),
+    },
+    {
+      key: 'operational',
+      label: 'Operational issues',
+      orders: criticalOrders.filter(
+        o =>
+          o.constraintType !== null &&
+          o.constraintType !== 'customer' &&
+          o.constraintType !== 'inventory'
+      ),
+    },
+    {
+      key: 'sla',
+      label: 'Shipping SLA breached',
+      orders: criticalOrders.filter(o => o.constraintType === null),
+    },
+  ]
+    .filter(group => group.orders.length > 0)
+    .map(group => ({
+      ...group,
+      revenue: group.orders.reduce((sum, order) => sum + (order.revenue ?? 0), 0),
+      oldestAgeHours: Math.max(...group.orders.map(order => order.ageHours)),
+    }))
+    .sort((a, b) => b.revenue - a.revenue);
+
   /**
    * DC-03 (2026-08-15): the SLA breach count. aging_72h_plus is NOT this — it
    * counts unfulfilled orders older than 72h since creation
@@ -400,8 +495,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     o => !o.isShippingSlaBreached && stillNeedsDecision(o)
   );
 
-  const visibleCriticalOrders = criticalOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
-  const hiddenCriticalOrders  = criticalOrders.slice(TRIAGE_PREVIEW_LIMIT);
   const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
   const hiddenWatchOrders     = watchOrders.slice(TRIAGE_PREVIEW_LIMIT);
   const prioritizedCriticalCount = criticalOrders.filter(o => o.isPriorityFlagged).length;
@@ -538,113 +631,410 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                   Critical — act today
                 </Typography>
                 <Box sx={{ flex: 1 }} />
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>{criticalOrders.length} items</Typography>
+                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
+                  {criticalOrders.length} orders · {criticalGroups.length} {criticalGroups.length === 1 ? 'issue' : 'issues'}
+                </Typography>
               </Box>
-              <ReorderTransitionList
-                items={visibleCriticalOrders}
-                getKey={(order) => order.lasyncro_order_id}
-                durationMs={520}
-                renderItem={(order) => (
-                <Box
-                  key={order.lasyncro_order_id}
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
-                    gap: 1.75,
-                    alignItems: 'center',
-                    px: 2.5,
-                    py: 1.75,
-                    borderTop: '1px solid var(--rule)',
-                    bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                      ? 'rgba(16,185,129,0.08)'
-                      : 'transparent',
-                    boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                      ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
-                      : 'inset 0 0 0 rgba(16,185,129,0)',
-                    transition: 'background-color 520ms ease, box-shadow 520ms ease',
-                  }}
-                >
-                  <Box>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                      {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                      {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
-                    </Typography>
-                  </Box>
-                  <Box sx={{ textAlign: 'right' }}>
-                    <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                      {fmt$(order.revenue)}
-                    </Typography>
-                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                      at stake
-                    </Typography>
-                  </Box>
-                    {order.constraintType !== null ? (
+
+              {criticalGroups.map(group => {
+                const expanded = expandedCriticalGroupKeys.has(group.key);
+                const bulkPriorityOrderIds =
+                  group.key === 'sla'
+                    ? group.orders
+                        .filter(order => !order.isPriorityFlagged)
+                        .map(order => order.lasyncro_order_id)
+                    : [];
+                const bulkPriorityPending =
+                  bulkPriorityPendingGroupKey === group.key;
+                const bulkPriorityConfirmed =
+                  bulkPriorityConfirmedGroupKey === group.key;
+
+                return (
+                  <Box key={group.key}>
+                    <Box
+                      sx={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
+                        gap: 1.75,
+                        alignItems: 'center',
+                        px: 2.5,
+                        py: 1.75,
+                        borderTop: '1px solid var(--rule)',
+                      }}
+                    >
                       <Box
                         component="button"
-                        onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                        sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
-                      >
-                        {constraintActionLabel(order.constraintType)}
-                      </Box>
-                    ) : (
-                      <PrioritizeButton
-                        isPriorityFlagged={order.isPriorityFlagged}
-                        onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
-                      />
-                    )}
-                </Box>
-                  )}
-                />
-              {hiddenCriticalOrders.length > 0 && (
-                <>
-                  <Collapse in={criticalExpanded} timeout={180} unmountOnExit>
-                    <ReorderTransitionList
-                      items={hiddenCriticalOrders}
-                      getKey={(order) => order.lasyncro_order_id}
-                      durationMs={520}
-                      renderItem={(order) => (
-                      <Box
-                        key={order.lasyncro_order_id}
+                        type="button"
+                        onClick={() => toggleCriticalGroup(group.key)}
                         sx={{
-                          display: 'grid',
-                          gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
-                          gap: 1.75,
+                          display: 'block',
+                          width: '100%',
+                          p: 0,
+                          border: 'none',
+                          bgcolor: 'transparent',
+                          color: 'inherit',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                          '&:hover': { opacity: 0.8 },
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                          <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
+                            {group.label}
+                          </Typography>
+                          {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </Box>
+                        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)', mt: 0.375 }}>
+                          {group.orders.length} {group.orders.length === 1 ? 'order' : 'orders'} · oldest {fmtSlaAge(group.oldestAgeHours)}
+                        </Typography>
+                      </Box>
+
+                      <Box sx={{ textAlign: 'right' }}>
+                        <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
+                          {fmt$(group.revenue)}
+                        </Typography>
+                        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
+                          at stake
+                        </Typography>
+                      </Box>
+
+                      {group.key === 'sla' && !expanded ? (
+                        <Box
+                          component="button"
+                          type="button"
+                          disabled={
+                            !onPriorityFlag ||
+                            bulkPriorityPending ||
+                            bulkPriorityConfirmed ||
+                            bulkPriorityOrderIds.length === 0
+                          }
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (
+                              !onPriorityFlag ||
+                              bulkPriorityPending ||
+                              bulkPriorityConfirmed ||
+                              bulkPriorityOrderIds.length === 0
+                            ) return;
+
+                            setBulkPriorityErrorGroupKey(null);
+                            setBulkPriorityConfirmGroupKey(group.key);
+                          }}
+                          sx={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: bulkPriorityConfirmed
+                              ? 'var(--confirm-ink)'
+                              : 'var(--accent-ink)',
+                            bgcolor: bulkPriorityConfirmed
+                              ? 'var(--confirm-ghost)'
+                              : 'var(--accent)',
+                            border: bulkPriorityConfirmed
+                              ? '1px solid var(--confirm-border)'
+                              : 'none',
+                            borderRadius: '6px',
+                            py: 1,
+                            px: 1.25,
+                            textAlign: 'center',
+                            cursor:
+                              bulkPriorityPending || bulkPriorityConfirmed
+                                ? 'default'
+                                : 'pointer',
+                            opacity: bulkPriorityPending ? 0.6 : 1,
+                            '&:hover': {
+                              opacity:
+                                bulkPriorityPending || bulkPriorityConfirmed
+                                  ? 1
+                                  : 0.88,
+                            },
+                          }}
+                        >
+                          {bulkPriorityConfirmed
+                            ? 'Prioritized ✓'
+                            : bulkPriorityPending
+                              ? 'Prioritizing…'
+                              : 'Prioritize all…'}
+                        </Box>
+                      ) : (
+                        <Box />
+                      )}
+                    </Box>
+
+                    {group.key === 'sla' && expanded && (
+                      <Box
+                        sx={{
+                          display: 'flex',
                           alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 2,
                           px: 2.5,
-                          py: 1.75,
+                          py: 1.25,
                           borderTop: '1px solid var(--rule)',
-                          bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                            ? 'rgba(16,185,129,0.08)'
-                            : 'transparent',
-                          boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
-                            ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
-                            : 'inset 0 0 0 rgba(16,185,129,0)',
-                          transition: 'background-color 520ms ease, box-shadow 520ms ease',
+                          bgcolor: 'var(--accent-ghost)',
                         }}
                       >
                         <Box>
-                          <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }}>
-                            {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                          <Typography
+                            sx={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              letterSpacing: '0.08em',
+                              textTransform: 'uppercase',
+                              color: 'var(--accent)',
+                              mb: 0.25,
+                            }}
+                          >
+                            Bulk action
                           </Typography>
-                          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                            {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
+
+                          <Typography
+                            sx={{
+                              fontSize: 12,
+                              fontWeight: 300,
+                              color: 'var(--ink-3)',
+                            }}
+                          >
+                            Apply to all {bulkPriorityOrderIds.length}{' '}
+                            {bulkPriorityOrderIds.length === 1
+                              ? 'order'
+                              : 'orders'}
                           </Typography>
                         </Box>
-                        <Box sx={{ textAlign: 'right' }}>
-                          <Typography sx={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)' }}>
-                            {fmt$(order.revenue)}
-                          </Typography>
-                          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>
-                            at stake
-                          </Typography>
+
+                        <Box
+                          component="button"
+                          type="button"
+                          disabled={
+                            !onPriorityFlag ||
+                            bulkPriorityPending ||
+                            bulkPriorityConfirmed ||
+                            bulkPriorityOrderIds.length === 0
+                          }
+                          onClick={() => {
+                            if (
+                              !onPriorityFlag ||
+                              bulkPriorityPending ||
+                              bulkPriorityConfirmed ||
+                              bulkPriorityOrderIds.length === 0
+                            ) return;
+
+                            setBulkPriorityErrorGroupKey(null);
+                            setBulkPriorityConfirmGroupKey(group.key);
+                          }}
+                          sx={{
+                            fontSize: 12,
+                            fontWeight: 600,
+                            color: bulkPriorityConfirmed
+                              ? 'var(--confirm-ink)'
+                              : 'var(--accent-ink)',
+                            bgcolor: bulkPriorityConfirmed
+                              ? 'var(--confirm-ghost)'
+                              : 'var(--accent)',
+                            border: bulkPriorityConfirmed
+                              ? '1px solid var(--confirm-border)'
+                              : 'none',
+                            borderRadius: '6px',
+                            px: 1.5,
+                            py: 0.875,
+                            whiteSpace: 'nowrap',
+                            cursor:
+                              bulkPriorityPending || bulkPriorityConfirmed
+                                ? 'default'
+                                : 'pointer',
+                            opacity: bulkPriorityPending ? 0.6 : 1,
+                            '&:hover': {
+                              opacity:
+                                bulkPriorityPending || bulkPriorityConfirmed
+                                  ? 1
+                                  : 0.88,
+                            },
+                          }}
+                        >
+                          {bulkPriorityConfirmed
+                            ? 'Prioritized ✓'
+                            : bulkPriorityPending
+                              ? 'Prioritizing…'
+                              : 'Prioritize all…'}
                         </Box>
+                      </Box>
+                    )}
+
+                    {group.key === 'sla' && (
+                      <Collapse
+                        in={bulkPriorityConfirmGroupKey === group.key}
+                        timeout={180}
+                        unmountOnExit
+                      >
+                        <Box
+                          sx={{
+                            px: 2.5,
+                            py: 1.5,
+                            borderTop: '1px solid var(--rule)',
+                            bgcolor: 'var(--accent-ghost)',
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              fontSize: 13,
+                              fontWeight: 600,
+                              color: 'var(--ink)',
+                              mb: 0.375,
+                            }}
+                          >
+                            Prioritize all {bulkPriorityOrderIds.length} orders?
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              fontSize: 12,
+                              fontWeight: 300,
+                              color: 'var(--ink-4)',
+                              mb: 1.25,
+                            }}
+                          >
+                            They will move to the top of the Order Flow pool
+                            for the next release.
+                          </Typography>
+
+                          {bulkPriorityErrorGroupKey === group.key && (
+                            <Typography
+                              sx={{
+                                fontSize: 11,
+                                fontWeight: 500,
+                                color: 'var(--critical-ink)',
+                                mb: 1,
+                              }}
+                            >
+                              Prioritization failed. Nothing was changed.
+                            </Typography>
+                          )}
+
+                          <Box
+                            sx={{
+                              display: 'flex',
+                              justifyContent: 'flex-end',
+                              gap: 1,
+                            }}
+                          >
+                            <Box
+                              component="button"
+                              type="button"
+                              disabled={bulkPriorityPending}
+                              onClick={() => {
+                                setBulkPriorityConfirmGroupKey(null);
+                                setBulkPriorityErrorGroupKey(null);
+                              }}
+                              sx={{
+                                border: '1px solid var(--rule)',
+                                bgcolor: 'transparent',
+                                color: 'var(--ink-3)',
+                                borderRadius: '6px',
+                                px: 1.5,
+                                py: 0.75,
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: bulkPriorityPending
+                                  ? 'not-allowed'
+                                  : 'pointer',
+                              }}
+                            >
+                              Cancel
+                            </Box>
+
+                            <Box
+                              component="button"
+                              type="button"
+                              disabled={
+                                bulkPriorityPending ||
+                                bulkPriorityOrderIds.length === 0
+                              }
+                              onClick={() =>
+                                void handlePrioritizeGroup(
+                                  group.key,
+                                  bulkPriorityOrderIds
+                                )
+                              }
+                              sx={{
+                                border: 'none',
+                                bgcolor: 'var(--accent)',
+                                color: 'var(--accent-ink)',
+                                borderRadius: '6px',
+                                px: 1.5,
+                                py: 0.75,
+                                fontSize: 12,
+                                fontWeight: 600,
+                                cursor: bulkPriorityPending
+                                  ? 'not-allowed'
+                                  : 'pointer',
+                                opacity: bulkPriorityPending ? 0.6 : 1,
+                                '&:hover': {
+                                  opacity: bulkPriorityPending ? 0.6 : 0.88,
+                                },
+                              }}
+                            >
+                              {bulkPriorityPending
+                                ? 'Prioritizing…'
+                                : 'Confirm priority'}
+                            </Box>
+                          </Box>
+                        </Box>
+                      </Collapse>
+                    )}
+
+                    <Collapse in={expanded} timeout={180} unmountOnExit>
+                      {group.orders.map(order => (
+                        <Box
+                          key={order.lasyncro_order_id}
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
+                            gap: 1.75,
+                            alignItems: 'center',
+                            px: 2.5,
+                            py: 1.5,
+                            pl: 4,
+                            borderTop: '1px solid var(--rule)',
+                            bgcolor: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                              ? 'rgba(16,185,129,0.08)'
+                              : 'var(--bg-2)',
+                            boxShadow: priorityFlashOrderIds.has(order.lasyncro_order_id)
+                              ? 'inset 3px 0 0 rgba(16,185,129,0.55)'
+                              : 'none',
+                          }}
+                        >
+                          <Box>
+                            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
+                              {order.externalOrderId
+                                ? `#${order.externalOrderId}`
+                                : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
+                            </Typography>
+                            <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
+                              {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
+                            </Typography>
+                          </Box>
+
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                              {fmt$(order.revenue)}
+                            </Typography>
+                          </Box>
+
                           {order.constraintType !== null ? (
                             <Box
                               component="button"
                               onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                              sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', py: 1, textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.88 } }}
+                              sx={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: 'var(--accent-ink)',
+                                bgcolor: 'var(--accent)',
+                                border: 'none',
+                                borderRadius: '6px',
+                                py: 1,
+                                textAlign: 'center',
+                                cursor: 'pointer',
+                                '&:hover': { opacity: 0.88 },
+                              }}
                             >
                               {constraintActionLabel(order.constraintType)}
                             </Box>
@@ -654,22 +1044,12 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                               onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
                             />
                           )}
-                      </Box>
-                      )}
-                    />
-                  </Collapse>
-
-                  <Box
-                    onClick={() => setCriticalExpanded(v => !v)}
-                    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, px: 2.5, py: 1.125, borderTop: '1px solid var(--rule)', cursor: 'pointer', color: 'var(--accent)', '&:hover': { opacity: 0.75 } }}
-                  >
-                    <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
-                      {criticalExpanded ? 'Show less' : `See ${hiddenCriticalOrders.length} more`}
-                    </Typography>
-                    {criticalExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                        </Box>
+                      ))}
+                    </Collapse>
                   </Box>
-                </>
-              )}
+                );
+              })}
             </>
           ) : (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(76,175,122,0.06)' }}>

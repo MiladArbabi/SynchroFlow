@@ -579,6 +579,12 @@ still clickable or reversible, it stays orange per §2.
 
 **Rule going forward:** any button that triggers a bulk write (label generation, bulk status change, bulk export-and-mutate) is Tier 1 by the existing decision guide — do not default to a neutral/muted style for bulk actions just because they affect multiple rows. Multiplicity doesn't change the tier; committing an action does.
 
+**Grouped decision pattern — Orders Overview, 2026-08-19:** when multiple `Needs a decision` rows share the same resolution path, default to one issue group rather than repeating the same decision CTA per order. The group summary carries the affected order count, aggregate value at stake, and oldest urgency; the underlying orders remain available through an explicit title/chevron reveal. Grouping changes presentation only — factual Pulse counts remain order-level metrics.
+
+A group-level bulk CTA is allowed only when every included row can safely receive the same mutation. Keep inspection and mutation separate: the title/chevron reveals orders; the bulk CTA starts the write flow. When the CTA opens a confirmation rather than committing immediately, use copy such as `Prioritize all…` so the intermediate step is predictable.
+
+When the group is expanded, visually separate the bulk operation from per-order actions. Move the bulk CTA into a dedicated contextual strip (`var(--accent-ghost)`) labelled `Bulk action`, with scope copy such as `Apply to all N orders`; keep the actual bulk commit control Tier 1 (`var(--accent)` / `var(--accent-ink)`). Individual row CTAs remain on the normal surface below. Do not invent a bulk action for heterogeneous fixes such as customer addresses or stock constraints merely to reduce row count.
+
 | ID | Status | File | Line | Description |
 |---|---|---|---|---|
 | CTA-024 | ✅ | `apps/frontend/src/pages/ft2-pages/OrdersOutboundPage.tsx` | ~420, ~445 | Bulk backfill trigger + confirm button — initially muted gray / `white` text, corrected to Tier 1 filled accent + `var(--accent-ink)` |
