@@ -238,7 +238,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     if (planning === null) {
       queueQty = neededQty;
       quantityBasis = 'reactive';
-    } else if (suggestedQty !== null) {
+    } else if (suggestedQty !== null && suggestedQty > 0) {
       queueQty = Math.max(suggestedQty, neededQty);
       quantityBasis = 'preventive';
     } else if (planning.demand_confidence === 'none') {
@@ -252,7 +252,13 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       queueQty = neededQty;
       quantityBasis = neededQty > 0 ? 'reactive_no_lead_time' : 'planning_data_required';
     } else {
-      // Velocity and lead time both present but no suggestion produced.
+      // Velocity and lead time both present but no actionable suggestion.
+      // SRC-18b: this now also catches suggested_reorder_qty === 0, which the
+      // preventive branch previously swallowed — 0 !== null is true, so the
+      // operator saw a zero labelled 'preventive', a basis asserting a
+      // forecast was made on a number that means "do not order". A zero
+      // suggestion means coverage is already met by stock plus committed
+      // inbound; it is not a recommendation and must not be presented as one.
       queueQty = neededQty;
       quantityBasis = neededQty > 0 ? 'reactive' : 'no_signal';
     }
