@@ -18,6 +18,9 @@ export default function FAQ({ items }: FAQProps) {
     <section style={{ padding: '0 0 16px' }}>
       <style dangerouslySetInnerHTML={{ __html: `
         input[type="radio"].faq-r { position:absolute; opacity:0; width:0; height:0; pointer-events:none; }
+        .faq-header {
+          display:grid; grid-template-columns:1fr 2fr; gap:32px; align-items:start; margin-bottom:40px;
+        }
         .faq-row { border-top:1px solid #D1CFC8; border-bottom:1px solid #D1CFC8; margin-bottom:-1px; }
         label.faq-lbl {
           display:grid; grid-template-columns:1fr auto; gap:20px; align-items:center;
@@ -46,13 +49,13 @@ export default function FAQ({ items }: FAQProps) {
           transform:rotate(45deg); background:#FFDCCA; border-color:#FF6B2B;
         }
         input[type="radio"].faq-r:checked ~ .faq-bd { grid-template-rows:1fr; }
+        @media (max-width:720px) {
+          .faq-header { grid-template-columns:1fr; gap:24px; }
+        }
       ` }} />
 
       {/* Header */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr 2fr',
-        gap: '32px', alignItems: 'start', marginBottom: '40px',
-      }}>
+      <div className="faq-header">
         <div>
           <div style={{
             fontFamily: "'DM Sans', system-ui, sans-serif",

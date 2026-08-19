@@ -266,7 +266,7 @@ Verification: desktop breakout was preserved at 1440, 1024, 768, and 729px. Resp
 
 No current Features or Industries article corpus existed for browser verification.
 
-Still open/out of scope after MKT-UX-01E-A: FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables. `/compare` index heading overflow was handled separately in MKT-UX-01E-B.
+Still open/out of scope after MKT-UX-01E-A: `InternalLinks` related-card overflow and intentionally horizontally scrollable MDX tables. `/compare` index heading overflow was handled separately in MKT-UX-01E-B, and FAQ mobile grid overflow was handled separately in MKT-UX-01E-C.
 
 MKT-UX-01E-A is implementation verified locally; production verification is pending deployment.
 
@@ -292,7 +292,32 @@ Verification covered 1440, 1024, 768, 600, 480, 400, 390, 375, 373, 372, 360, 34
 
 MKT-UX-01E-B is implementation verified locally; production verification is pending deployment.
 
-Still open/out of scope: FAQ mobile grid overflow, `InternalLinks` related-card overflow, and intentionally horizontally scrollable MDX tables.
+Still open/out of scope after MKT-UX-01E-B: `InternalLinks` related-card overflow and intentionally horizontally scrollable MDX tables. FAQ mobile grid overflow was handled separately in MKT-UX-01E-C.
+
+## MKT-UX-01E-C — FAQ mobile grid responsiveness
+
+The shared FAQ header in `apps/marketing/components/article/FAQ.tsx` used `grid-template-columns: 1fr 2fr` with `gap: 32px` at all viewport widths.
+
+On narrow Blog layouts, the intro paragraph exceeded the viewport because the two-column grid remained active inside the padded article footer. The first reproduced Blog failure was approximately 348px viewport: `document.scrollWidth` exceeded `clientWidth`, and the FAQ intro paragraph extended beyond the viewport.
+
+`FAQ.tsx` now owns its responsive behavior through `.faq-header`.
+
+Responsive contract:
+
+- above 720px: preserve the two-column 1fr / 2fr layout and 32px gap
+- at or below 720px: collapse to one column, use 24px gap, keep the heading and intro paragraph fully contained, and prevent FAQ-induced horizontal overflow
+
+The implementation modified only `apps/marketing/components/article/FAQ.tsx`.
+
+Preserved: FAQ label, `Common questions.` heading, intro copy, FAQ questions and answers, radio accordion behavior, plus-icon behavior, single-open behavior, FAQ schema generation, Blog composition, Compare composition, navigation, and launch conversion.
+
+Verification covered 768, 721, 720, 600, 480, 400, 390, 375, 360, 350, 349, 348, 340, and 320px. At 768 and 721, the two-column layout remained active; at 720 and below, the one-column layout was active; 349px, 348px, and 320px passed; and FAQ-attributable horizontal overflow was 0 at every tested width.
+
+Blog FAQ header stacks correctly on mobile and keeps the intro paragraph contained. Compare FAQ stacks correctly on mobile and preserves the desktop layout. Accordion regression testing at 390x844 and 320x700 opened two questions sequentially, preserving single-open radio behavior with labels, icons, and answers contained. Desktop verification at 1440 and 1024 preserved the 1fr / 2fr layout with 32px gap.
+
+MKT-UX-01E-C is implementation verified locally; production verification is pending deployment.
+
+Still open/out of scope: `InternalLinks` related-card overflow and intentionally horizontally scrollable MDX tables.
 
 ## Blog preserved contracts
 
