@@ -319,6 +319,48 @@ MKT-UX-01E-C is implementation verified locally; production verification is pend
 
 Still open/out of scope: `InternalLinks` related-card overflow and intentionally horizontally scrollable MDX tables.
 
+## MKT-UX-01F-A — Marketing theme, font, and shell authority
+
+The Next marketing app now has one canonical visual authority: a forced dark brand palette, Plus Jakarta Sans as the sole loaded/canonical font, OS/browser color preference does not control the site palette, and shared nav/body/footer use the same dark shell. Route-level legacy content is migrated separately in MKT-UX-01F-B/C/D/E.
+
+Canonical dark tokens in `apps/marketing/app/globals.css`:
+
+```txt
+--bg             #151D29
+--bg-2           #1C2740
+--bg-3           #243050
+--surface        #1C2740
+--ink            #F0EEE8
+--ink-2          #C8C4BB
+--ink-3          #8B8F9A
+--ink-4          #5A5F6E
+--rule           rgba(255,255,255,0.08)
+--rule-2         rgba(255,255,255,0.14)
+--accent         #FF6B2B
+--accent-hover   #FF8C5A
+--accent-ghost   rgba(255,107,43,0.12)
+--accent-border  rgba(255,107,43,0.25)
+--on-accent      #FFFFFF
+```
+
+`apps/marketing/app/globals.css` owns the dark palette directly at `:root`. The previous root/body palette switching under `prefers-color-scheme` was removed for the application shell. `html` declares `color-scheme: dark`, and `body` uses `font-family: var(--sans)`, `background: var(--bg)`, and `color: var(--ink)`.
+
+The marketing app loads Plus Jakarta Sans through `next/font`. Both shared typography aliases resolve through `--font-plus-jakarta-sans`; do not describe DM Sans as loaded. Explicit legacy DM Sans declarations still exist and are intentionally deferred to MKT-UX-01F-B Compare, MKT-UX-01F-C Pricing, MKT-UX-01F-D FAQ/About, MKT-UX-01F-E Privacy/Terms, and legacy article/template cleanup as encountered within those scopes.
+
+Root layout no longer hard-codes light body colors. The shared footer is now dark and token-driven through `.marketing-footer`, `.marketing-footer-links`, and `.marketing-footer-link`. Navigation now uses one deterministic logo image appropriate for the dark shell; OS-theme-driven duplicate logo switching was removed. Navigation structure and destinations did not change.
+
+Blog and Help nested layouts no longer duplicate the complete dark token block. They inherit the root visual authority while preserving their route-layout boundaries.
+
+This work did not change `packages/landing-page/index.html` or checklist static surfaces. Those remain separate rendering owners for MKT-UX-01F-F and MKT-UX-01F-G.
+
+Local verification covered `/blog`, `/blog/best-wms-for-shopify-small-business`, `/help/getting-started`, `/compare`, `/pricing`, `/faq`, and `/about` at desktop and mobile. Representative routes were also verified under `prefers-color-scheme: light` and `prefers-color-scheme: dark`. The body shell, nav, and footer remained dark; the logo remained deterministic; Blog/Help typography resolved to Plus Jakarta Sans; Blog/Help visual system remained intact; and the footer changed intentionally from light to dark.
+
+Known transition state: legacy route content for Compare, Pricing, FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Some routes can temporarily look mixed after MKT-UX-01F-A. This is expected migration state, not the final visual system, and those routes are not converged.
+
+MKT-UX-01F-A is implementation verified locally; production verification is pending deployment.
+
+Next: MKT-UX-01F-B — Compare index + Compare article convergence.
+
 ## Blog preserved contracts
 
 MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.

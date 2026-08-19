@@ -57,7 +57,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${plusJakartaSans.variable}`}>
-      <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
+      <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <PostHogProvider>
           <Schema data={organizationSchema} />
           <MarketingNav />
@@ -71,26 +71,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 function Footer() {
   return (
-    <footer style={{
-      borderTop: '1px solid #E8E6E0',
-      padding: '40px 5vw',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      flexWrap: 'wrap',
-      gap: '16px',
-      background: '#F3F2EF',
-      fontSize: '13px',
-      color: '#6B7280',
-    }}>
-      <span style={{ color: '#6B7280' }}>© 2026 LaSyncro. All rights reserved.</span>
-      <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-        <a href="https://www.lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Home</a>
-        <Link href="/blog" style={{ color: '#6B7280', textDecoration: 'none' }}>Blog</Link>
-        <Link href="/compare" style={{ color: '#6B7280', textDecoration: 'none' }}>Compare</Link>
-        <Link href="/pricing" style={{ color: '#6B7280', textDecoration: 'none' }}>Pricing</Link>
-        <Link href="/about" style={{ color: '#6B7280', textDecoration: 'none' }}>About</Link>
-        <a href="mailto:contact@lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Contact</a>
+    <footer className="marketing-footer">
+      <span>© 2026 LaSyncro. All rights reserved.</span>
+      <div className="marketing-footer-links">
+        <a href="https://www.lasyncro.com" className="marketing-footer-link">Home</a>
+        <Link href="/blog" className="marketing-footer-link">Blog</Link>
+        <Link href="/compare" className="marketing-footer-link">Compare</Link>
+        <Link href="/pricing" className="marketing-footer-link">Pricing</Link>
+        <Link href="/about" className="marketing-footer-link">About</Link>
+        <a href="mailto:contact@lasyncro.com" className="marketing-footer-link">Contact</a>
       </div>
     </footer>
   )

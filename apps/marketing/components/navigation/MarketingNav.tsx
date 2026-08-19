@@ -33,18 +33,10 @@ export default function MarketingNav() {
   return (
     <nav className="marketing-nav" aria-label="Primary navigation">
       <a href="https://www.lasyncro.com" aria-label="LaSyncro home" className="marketing-nav-logo">
-        {/* Logo switches based on color scheme — logo-dark for light bg, logo-light for dark bg */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="https://www.lasyncro.com/logo.png"
           alt="LaSyncro"
-          className="logo-light-mode"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="https://www.lasyncro.com/logo.png"
-          alt="LaSyncro"
-          className="logo-dark-mode"
         />
       </a>
 
