@@ -34,8 +34,6 @@ function getPageviewContext(pathname: string) {
   if (pathname.startsWith('/blog/')) return { section: 'blog', page_type: 'blog_article' }
   if (pathname === '/compare') return { section: 'compare', page_type: 'compare_index' }
   if (pathname.startsWith('/compare/')) return { section: 'compare', page_type: 'compare_article' }
-  if (pathname === '/glossary') return { section: 'glossary', page_type: 'glossary_index' }
-  if (pathname.startsWith('/glossary/')) return { section: 'glossary', page_type: 'glossary_entry' }
   if (pathname === '/pricing') return { section: 'pricing', page_type: 'pricing' }
   if (pathname === '/about') return { section: 'about', page_type: 'about' }
   if (pathname === '/') return { section: 'home', page_type: 'home' }

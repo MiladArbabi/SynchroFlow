@@ -25,6 +25,16 @@ const nextConfig: NextConfig = {
         destination: '/help/getting-started',
         permanent: true,
       },
+      {
+        source: '/glossary',
+        destination: '/help',
+        permanent: true,
+      },
+      {
+        source: '/glossary/:path*',
+        destination: '/help',
+        permanent: true,
+      },
     ]
   },
 }

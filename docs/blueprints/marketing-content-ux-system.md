@@ -110,14 +110,17 @@ Help UX migration.
 MKT-UX-01C: complete.
 Blog convergence onto shared primitives without reducing editorial UX.
 
-MKT-UX-01C-PROD: implementation complete, production verification pending deployment.
+MKT-UX-01C-PROD: complete.
 Blog production visual regression fix.
 
 MKT-UX-01C-PROD-02: implementation complete, production verification pending deployment.
 Blog visual polish.
 
-MKT-UX-01D: next after production verification.
-Compare, Glossary, and grouped marketing index convergence.
+MKT-UX-01D-A: implementation complete, production verification pending deployment.
+Glossary retirement.
+
+MKT-UX-01D-B: next.
+Audit remaining marketing index surfaces after Glossary retirement.
 
 Migration does not mean forcing every domain to look identical. The objective is shared visual grammar and architecture.
 
@@ -154,7 +157,7 @@ MKT-UX-01C Blog convergence is complete. `/blog` and `/blog/[slug]` now use the 
 
 Blog has its own dark theme boundary at `apps/marketing/app/blog/layout.tsx` and uses the same LaSyncro operational palette as Help/auth.
 
-Blog index uses shared structural primitives while preserving its editorial composition. Blog articles no longer use legacy `ArticleLayout`; `ArticleLayout` remains unchanged for Compare, Features, Industries, and Glossary.
+Blog index uses shared structural primitives while preserving its editorial composition. Blog articles no longer use legacy `ArticleLayout`; `ArticleLayout` remains unchanged for Compare, Features, and Industries.
 
 ## Help visual composition
 
@@ -247,3 +250,17 @@ MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadc
 MKT-UX-01C-PROD did not change Blog slugs/content, SEO/schema, shared content prose defaults, global Nav/Footer, Help, Compare, Features, Industries, Glossary, or shared legacy visual components.
 
 MKT-UX-01C-PROD-02 preserved the `HeroVisual` legacy default, the `InternalLinks` legacy default, Compare's legacy `HeroVisual` behavior, `ArticleLayout`'s legacy `InternalLinks` behavior, Help, routing, SEO, and content.
+
+## Glossary retirement
+
+MKT-UX-01D-A retired Glossary because it had zero maintained content. Help is the canonical operational/product knowledge base, Blog remains educational/search content, and Compare remains commercial/competitor content.
+
+`/glossary` and `/glossary/:path*` now permanently redirect to `/help`. Redirects exist in both `apps/marketing/next.config.ts` and `packages/landing-page/vercel.json`. Existing `/getting-started` -> `/help/getting-started` behavior remains unchanged.
+
+The Glossary app routes `apps/marketing/app/glossary/page.tsx` and `apps/marketing/app/glossary/[slug]/page.tsx` were deleted. Glossary was removed from sitemap generation, no Glossary app routes remain, and no Glossary content corpus exists.
+
+The landing footer now points to Help instead of Glossary. `llms.txt` no longer describes Glossary as a future or empty corpus. Glossary PostHog page classification was removed, `glossary` was removed from the shared MDX `ContentType`, and the glossary-specific `DefinedTerm` schema generator was removed.
+
+`/glossary` is no longer emitted in the sitemap, and no dynamic glossary URLs are emitted. Retired URLs preserve user/search continuity through permanent redirects to `/help`, while Help remains indexed and canonical independently.
+
+MKT-UX-01D-A preserved Help content/routes, Blog, Compare, Features, Industries, root Organization schema, shared MDX behavior for remaining content domains, public `/_next/*` and `/reveal.js` routing, and robots behavior.

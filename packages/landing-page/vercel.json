@@ -61,11 +61,6 @@
     },
     { "source": "/pricing", "destination": "https://synchro-flow-marketing.vercel.app/pricing" },
     { "source": "/faq", "destination": "https://synchro-flow-marketing.vercel.app/faq" },
-    { "source": "/glossary", "destination": "https://synchro-flow-marketing.vercel.app/glossary" },
-    {
-      "source": "/glossary/:path*",
-      "destination": "https://synchro-flow-marketing.vercel.app/glossary/:path*"
-    },
     {
       "source": "/help",
       "destination": "https://synchro-flow-marketing.vercel.app/help"
@@ -81,6 +76,16 @@
     { "source": "/pilot", "destination": "https://synchro-flow-marketing.vercel.app/pilot" }
   ],
   "redirects": [
+    {
+      "source": "/glossary",
+      "destination": "/help",
+      "permanent": true
+    },
+    {
+      "source": "/glossary/:path*",
+      "destination": "/help",
+      "permanent": true
+    },
     {
       "source": "/getting-started",
       "destination": "/help/getting-started",
