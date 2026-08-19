@@ -2,14 +2,14 @@
 //
 // EXPORT ENGINE (GH #1014 — Sprint 1)
 // -------------------------------------
-// Sync-stream exports for Orders, Returns, Finances, and Morning Brief.
+// Sync-stream exports for Orders, Returns, and Finances.
+// (Morning Brief PDF removed 2026-08-19 - see playbook section 12.)
 //
 // Tier gating (enforced in routes, not here):
-//   Core+  → CSV (orders, returns, finances)
-//   Growth+ → PDF (morning brief)
+//   Starter -> nothing | Core+ -> CSV (orders, returns, finances)
 //
 // Date window enforcement (see @lasyncro/backend-core/utils/tierDataWindow.js):
-//   Starter → 60 days · Core → 180 days · Growth+ → unlimited
+//   Starter -> no access | Core -> 6 months | Growth+ -> unlimited
 //
 // All exports stream directly — no buffering, no temp files.
 // Content-Disposition is always 'attachment' — never 'inline'.
@@ -24,7 +24,7 @@
 //   refund_execution_line_items → refunded_quantity, lasyncro_revenue_unit_id
 //   order_revenue_units     → title, sku (joined for return line label)
 //   order_margin_snapshot   → gross_revenue, estimated_cost, gross_margin, margin_pct
-//   morning_brief_snapshots → signals, summary_line, generated_at
+//   order_constraints -> constraint_type, is_active (blocker truth)
 
 import { Request, Response } from 'express';
 import { format as csvFormat } from '@fast-csv/format';
@@ -38,6 +38,26 @@ function resolvedTier(req: Request): Tier {
   return TIERS.includes(raw as Tier) ? (raw as Tier) : 'starter';
 }
 
+// Mirrors the native `fulfillment_status_type` enum (see migration 0006 +
+// backfill 0133). 'blocked' is deliberately NOT a member — it's a synthetic
+// filter value resolved against order_constraints, not ofs.status.
+const FULFILLMENT_STATUS_VALUES = [
+  'pending',
+  'processing',
+  'fulfilled',
+  'partially_fulfilled',
+  'cancelled',
+  'failed',
+  'address_corrected',
+] as const;
+
+class InvalidStatusFilterError extends Error {
+  constructor(value: string) {
+    super(`Invalid status filter value: '${value}'`);
+    this.name = 'InvalidStatusFilterError';
+  }
+}
+
 function filename(resource: string, format: 'csv' | 'pdf'): string {
   const date = new Date().toISOString().split('T')[0];
   return `lasyncro-${resource}-${date}.${format}`;
@@ -49,7 +69,12 @@ function filename(resource: string, format: 'csv' | 'pdf'): string {
  * POST /api/v1/exports/orders
  *
  * Columns: order_id, created_at, total_price, currency,
- *          payment_state, fulfillment_status, channel, sku_count, shipping_country
+  *          payment_state, fulfillment_status, blocker_type, channel,
+ *          sku_count, shipping_country
+ *
+ * filters.status accepts the 7 fulfillment_status_type enum members plus
+ * the synthetic value 'blocked', which resolves against order_constraints
+ * (canonical blocker truth) rather than order_fulfillment_status.
  *
  * Joins: order_fulfillment_status (status), order_revenue_units (sku_count)
  */
@@ -74,6 +99,11 @@ export async function exportOrders(req: Request, res: Response) {
           'o.currency',
           'o.payment_state',
           trx.raw("COALESCE(ofs.status, 'pending') as fulfillment_status"),
+          trx.raw(`(
+            SELECT COALESCE(string_agg(DISTINCT oc.constraint_type, ' + '), '—')
+            FROM order_constraints oc
+            WHERE oc.lasyncro_order_id = o.lasyncro_order_id AND oc.is_active = true
+          ) as blocker_type`),
           trx.raw("COALESCE(o.source, '—') as channel"),
           trx.raw("COALESCE(ru.sku_count, 0) as sku_count"),
           trx.raw("COALESCE(o.shipping_country_code, '—') as shipping_country")
@@ -85,7 +115,37 @@ export async function exportOrders(req: Request, res: Response) {
       const { date_from, date_to, status, payment_state } = req.body?.filters ?? {};
       if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
       if (date_to) query = query.where('o.order_created_at', '<=', new Date(date_to));
-      if (status?.length) query = query.whereIn('ofs.status', status);
+      if (status?.length) {
+        const isBlocked = status.includes('blocked');
+        const remaining = status.filter((s: string) => s !== 'blocked');
+
+        for (const value of remaining) {
+          if (!(FULFILLMENT_STATUS_VALUES as readonly string[]).includes(value)) {
+            throw new InvalidStatusFilterError(value);
+          }
+        }
+
+        // EXISTS, not JOIN: an order can carry more than one active
+        // constraint row (order_constraints allows multiple per order across
+        // target_id/constraint_type). A JOIN would fan the order out into
+        // one row per constraint, duplicating it in the CSV and inflating
+        // the summed revenue. EXISTS only tests presence, so each order
+        // appears at most once regardless of how many constraints it has.
+        const blockedExists = () =>
+          trx('order_constraints as oc')
+            .whereRaw('oc.lasyncro_order_id = o.lasyncro_order_id')
+            .andWhere('oc.is_active', true);
+
+        if (isBlocked && remaining.length) {
+          query = query.where((qb) => {
+            qb.whereExists(blockedExists()).orWhereIn('ofs.status', remaining);
+          });
+        } else if (isBlocked) {
+          query = query.whereExists(blockedExists());
+        } else if (remaining.length) {
+          query = query.whereIn('ofs.status', remaining);
+        }
+      }
       if (payment_state?.length) query = query.whereIn('o.payment_state', payment_state);
 
       return query;
@@ -100,6 +160,9 @@ export async function exportOrders(req: Request, res: Response) {
     csvStream.end();
 
   } catch (err: unknown) {
+    if (err instanceof InvalidStatusFilterError) {
+      return res.status(400).json({ error: 'INVALID_STATUS_FILTER', message: err.message });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportOrders failed', { shopId, msg });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });

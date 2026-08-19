@@ -101,7 +101,11 @@ const tierDataWindowSince = (tier: Tier): Date | null => {
 
 ### Orders
 `order_id`, `created_at`, `total_price`, `currency`, `payment_state`,
-`fulfillment_status`, `channel`, `sku_count`, `shipping_country`, `tags`
+`fulfillment_status`, `blocker_type`, `channel`, `sku_count`, `shipping_country`, `tags`
+
+**Synthetic filter value:** `filters.status` accepts `'blocked'`, which resolves
+against `order_constraints` (canonical blocker truth), not the
+`fulfillment_status_type` enum. Unknown values return `400 INVALID_STATUS_FILTER`.
 
 ### Returns
 `return_id`, `created_at`, `order_id`, `variant_title`, `sku`,
@@ -202,6 +206,21 @@ duplicate summaries already available inside the product.
 8. Never duplicate column definitions — canonical list lives in `exports.controller.ts`.
 
 ## 12. Changelog
+
+- **2026-08-19** — EXP-BLOCKED-02: the Blocked Revenue Report returned
+  HTTP 500 on every click since it was added. `filters.status: ['blocked']`
+  was passed into `whereIn('ofs.status', ...)` against enum
+  `fulfillment_status_type`, which has no `blocked` member — Postgres threw,
+  and the generic catch masked it as `EXPORT_FAILED`. `'blocked'` is now
+  intercepted before the enum comparison and resolved via `EXISTS` against
+  `order_constraints` (EXISTS, not JOIN — a JOIN fans an order out into one
+  row per constraint, inflating both row count and summed revenue). Added
+  `blocker_type` column (aggregated `constraint_type`). Unknown status values
+  now throw `InvalidStatusFilterError` → `400 INVALID_STATUS_FILTER` instead
+  of surfacing as a raw DB error. Report description corrected from "SLA
+  breaches and revenue held" to constraint-based wording — the SLA card
+  (4 orders / $740) and constraint truth (3 orders / $179.85) are different
+  sets; splitting them is tracked as EXP-SEMANTIC-04.
 
 - **2026-08-19** — Removed the Daily Operations Brief PDF from the export
   system. The report duplicated Overview information without providing

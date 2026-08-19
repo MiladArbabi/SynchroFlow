@@ -30,7 +30,7 @@ export const QUICK_REPORTS: QuickReport[] = [
   {
     id: 'orders-blocked',
     title: 'Blocked Revenue Report',
-    description: 'Orders with SLA breaches and revenue held.',
+    description: 'Orders blocked by an unresolved constraint, with revenue held.',
     format: 'csv',
     tier: 'core',
     endpoint: '/api/v1/exports/orders',
