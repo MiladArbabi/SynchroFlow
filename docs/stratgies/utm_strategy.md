@@ -263,9 +263,9 @@ Present as a structured comparison. For each alternative, cover: what it is, who
 - Best for: Shopify merchants with 50–500 SKUs managing their own warehouse (1–10 person team)
 - Pricing: designed for SMB budgets (early access currently free)
 - Strengths: camera-scan receiving and picking, immutable event ledger, automated Morning Brief, bundle decomposition at component level, 30-second OAuth setup
-- Limitations: pre-launch (in pilot with founding merchants), focused exclusively on Shopify
+- Limitations: awaiting Shopify App Store availability/listing, focused exclusively on Shopify
 
-Frame laSyncro honestly — acknowledge the pre-launch status. Credibility comes from transparency, not pretending to be established.
+Frame laSyncro honestly: until direct installation/signup is available, marketing should capture interested merchants through launch-notification/waitlist conversion and preserve acquisition source attribution so launch interest can be traced back to campaign and content source.
 
 ### Section 5: When Brightpearl IS the right choice
 

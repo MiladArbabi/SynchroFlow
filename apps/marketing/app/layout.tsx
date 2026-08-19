@@ -8,6 +8,7 @@ import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
 import PostHogProvider from '@/components/PostHogProvider'
+import LaunchNavCTA from '@/components/conversion/LaunchNavCTA'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -103,23 +104,8 @@ function Nav() {
         <Link href="/pricing" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pricing</Link>
         <Link href="/help/getting-started" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Getting started</Link>
         <Link href="/faq" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>FAQ</Link>
-        <Link href="/pilot" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pilot</Link>
         <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
-        <Link
-          href="/pilot#apply"
-          className="nav-cta"
-          aria-label="Apply for the pilot program, so we can grow together"
-          style={{
-            display: 'inline-flex', alignItems: 'center',
-            padding: '8px 18px',
-            background: '#FF6B2B', color: '#fff',
-            fontSize: '13px', fontWeight: 500,
-            borderRadius: '6px', textDecoration: 'none',
-            transition: 'background 0.15s',
-          }}
-        >
-          Apply for pilot
-        </Link>
+        <LaunchNavCTA />
       </div>
     </nav>
   )
@@ -146,7 +132,6 @@ function Footer() {
         <Link href="/compare" style={{ color: '#6B7280', textDecoration: 'none' }}>Compare</Link>
         <Link href="/pricing" style={{ color: '#6B7280', textDecoration: 'none' }}>Pricing</Link>
         <Link href="/about" style={{ color: '#6B7280', textDecoration: 'none' }}>About</Link>
-        <Link href="/pilot" style={{ color: '#6B7280', textDecoration: 'none' }}>Pilot</Link>
         <a href="mailto:contact@lasyncro.com" style={{ color: '#6B7280', textDecoration: 'none' }}>Contact</a>
       </div>
     </footer>

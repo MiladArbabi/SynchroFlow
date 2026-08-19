@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import Schema from '@/components/seo/Schema'
 import PricingPlanCTA from '@/components/pricing/PricingPlanCTA'
+import LaunchNotifyForm from '@/components/conversion/LaunchNotifyForm'
 
 export const metadata: Metadata = {
   title: 'Pricing — LaSyncro',
@@ -10,8 +11,7 @@ export const metadata: Metadata = {
 
 const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 // AUD-028: split into two constants — Plus Jakarta Sans for headings/titles/price digits,
-// DM Sans for body, labels, fine print, and buttons — matching the convention on
-// /about, /getting-started, /faq, /pilot. Previously every element on this page used
+// DM Sans for body, labels, fine print, and buttons. Previously every element on this page used
 // FONT (Plus Jakarta Sans) regardless of role.
 const FONT = "'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 const BODY_FONT = "'DM Sans', system-ui, sans-serif"
@@ -393,6 +393,10 @@ export default function PricingPage() {
               <PricingPlanCTA plan={plan.tier} cta={plan.cta} featured={plan.featured} />
             </div>
           ))}
+        </div>
+
+        <div id="launch-pricing" style={{ maxWidth: 720, margin: '52px auto 0' }}>
+          <LaunchNotifyForm source="launch_pricing" />
         </div>
 
         {/* Footer note */}

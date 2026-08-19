@@ -19,6 +19,7 @@ import BlogArticleTracker from '@/components/blog/BlogArticleTracker'
 import ArticleCTA from '@/components/article/ArticleCTA'
 import FAQ from '@/components/article/FAQ'
 import InternalLinks from '@/components/article/InternalLinks'
+import LaunchNotifyForm from '@/components/conversion/LaunchNotifyForm'
 import ArticleImage from '@/components/article/ArticleImage'
 import ArticleAnimation from '@/components/article/ArticleAnimation'
 import HeroVisual from '@/components/article/HeroVisual'
@@ -323,6 +324,7 @@ export default async function BlogPost({ params }: { params: Promise<{ slug: str
               <FAQ items={frontmatter.faq} />
             </LegacyReadableSection>
             <ArticleCTA variant="full" href={frontmatter.cta_url} label={frontmatter.cta_label} />
+            <LaunchNotifyForm source="launch_blog" />
           </>
         }
         related={

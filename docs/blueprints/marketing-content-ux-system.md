@@ -119,8 +119,8 @@ Blog visual polish.
 MKT-UX-01D-A: implementation complete, production verification pending deployment.
 Glossary retirement.
 
-MKT-UX-01D-B: next.
-Audit remaining marketing index surfaces after Glossary retirement.
+MKT-UX-01D-B: implementation complete, production verification pending deployment.
+Pilot retirement and launch conversion.
 
 Migration does not mean forcing every domain to look identical. The objective is shared visual grammar and architecture.
 
@@ -264,3 +264,38 @@ The landing footer now points to Help instead of Glossary. `llms.txt` no longer 
 `/glossary` is no longer emitted in the sitemap, and no dynamic glossary URLs are emitted. Retired URLs preserve user/search continuity through permanent redirects to `/help`, while Help remains indexed and canonical independently.
 
 MKT-UX-01D-A preserved Help content/routes, Blog, Compare, Features, Industries, root Organization schema, shared MDX behavior for remaining content domains, public `/_next/*` and `/reveal.js` routing, and robots behavior.
+
+## Pilot retirement and launch conversion
+
+MKT-UX-01D-B retired the public Pilot program from the marketing story. `/pilot` now permanently redirects to `/pricing`; the Pilot page, Pilot form, and `/api/pilot-apply` marketing proxy were removed; and Pilot links were removed from marketing navigation and footers.
+
+Backend Pilot persistence/runtime was intentionally not removed in this issue and requires a separate engineering audit before any backend route, table, migration, or notification code is changed.
+
+Public pre-launch conversion now uses the existing waitlist pipeline:
+
+```txt
+POST /api/waitlist
+```
+
+Supported fields are `email`, optional `store`, and `source`. Launch conversion sources are `launch_nav`, `launch_home`, `launch_pricing`, `launch_compare`, and `launch_blog`. No `launch_footer` source is currently used.
+
+`GET /api/shopify-availability` is the single Shopify availability authority. It reads `SHOPIFY_APP_AVAILABLE` and `SHOPIFY_APP_STORE_URL`; availability is true only when `SHOPIFY_APP_AVAILABLE === "true"` and `SHOPIFY_APP_STORE_URL` is non-empty.
+
+When unavailable or misconfigured, the response is:
+
+```json
+{
+  "available": false,
+  "installUrl": null
+}
+```
+
+Failure to fetch availability fails safe into pre-launch email capture.
+
+Before Shopify availability, the nav shows `Notify me at launch`, the homepage shows launch email capture, Pricing shows launch capture, Compare index/articles show launch capture, and Blog articles show launch capture. Help has no inline launch capture. Copy must not promise a Shopify approval date.
+
+Once availability is enabled, launch forms disappear, the CTA becomes `Install on Shopify`, and the returned `installUrl` becomes the destination without per-page CTA rewrites.
+
+`packages/landing-page/index.html` cannot directly share the React conversion component, but it follows the same `/api/shopify-availability` contract, `/api/waitlist` contract, and source attribution.
+
+MKT-UX-01D-B preserved existing Blog newsletter behavior, checklist/waitlist consumers, Help documentation UX, Blog/Compare MDX content, backend waitlist persistence, duplicate-safe waitlist semantics, and existing public routing unrelated to Pilot.

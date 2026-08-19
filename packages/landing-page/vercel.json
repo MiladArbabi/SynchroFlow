@@ -56,8 +56,8 @@
       "destination": "https://synchro-flow-marketing.vercel.app/api/waitlist"
     },
     {
-      "source": "/api/pilot-apply",
-      "destination": "https://synchro-flow-marketing.vercel.app/api/pilot-apply"
+      "source": "/api/shopify-availability",
+      "destination": "https://synchro-flow-marketing.vercel.app/api/shopify-availability"
     },
     { "source": "/pricing", "destination": "https://synchro-flow-marketing.vercel.app/pricing" },
     { "source": "/faq", "destination": "https://synchro-flow-marketing.vercel.app/faq" },
@@ -72,10 +72,14 @@
     {
       "source": "/terms",
       "destination": "https://synchro-flow-marketing.vercel.app/terms"
-    },
-    { "source": "/pilot", "destination": "https://synchro-flow-marketing.vercel.app/pilot" }
+    }
   ],
   "redirects": [
+    {
+      "source": "/pilot",
+      "destination": "/pricing",
+      "permanent": true
+    },
     {
       "source": "/glossary",
       "destination": "/help",

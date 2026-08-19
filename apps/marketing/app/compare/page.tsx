@@ -6,6 +6,7 @@
 import { Metadata } from 'next'
 import { getAllContent } from '@/lib/mdx'
 import CompareCTA from '@/components/compare/CompareCTA'
+import LaunchNotifyForm from '@/components/conversion/LaunchNotifyForm'
 
 export const metadata: Metadata = {
   title: 'LaSyncro vs Alternatives — Compare Shopify Operations Tools',
@@ -128,6 +129,9 @@ export default function CompareIndex() {
           Don&apos;t see your current tool? Every comparison is operator-honest — we&apos;ll tell you when a competitor is a better fit.
         </p>
         <CompareCTA />
+        <div style={{ width: '100%', maxWidth: 720, marginTop: 12 }}>
+          <LaunchNotifyForm source="launch_compare" />
+        </div>
       </section>
     </>
   )
