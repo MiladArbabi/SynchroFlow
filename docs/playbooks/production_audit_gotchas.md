@@ -118,12 +118,12 @@ withTenant(shopId)
 
 This has several advantages:
 
-* it uses the production application's actual DB configuration;
-* it proves the deployed runtime has the code being inspected;
-* it retains RLS;
-* it avoids copying production DB credentials locally;
-* it prevents accidental use of migration/superuser credentials;
-* it exercises the same tenancy model as the application.
+- it uses the production application's actual DB configuration;
+- it proves the deployed runtime has the code being inspected;
+- it retains RLS;
+- it avoids copying production DB credentials locally;
+- it prevents accidental use of migration/superuser credentials;
+- it exercises the same tenancy model as the application.
 
 Use privileged database access only when the investigation explicitly requires it and the privilege boundary has been approved.
 
@@ -402,11 +402,11 @@ flyctl ssh console -a synchroflow \
 
 When a command becomes very large:
 
-* keep the JavaScript simple;
-* avoid unnecessary shell interpolation;
-* use literal numeric tenant IDs only after they have been verified;
-* inspect output before running another command;
-* never append a mutation to an already-complex verification command.
+- keep the JavaScript simple;
+- avoid unnecessary shell interpolation;
+- use literal numeric tenant IDs only after they have been verified;
+- inspect output before running another command;
+- never append a mutation to an already-complex verification command.
 
 Do not paste markdown-formatted URLs into the shell.
 
@@ -956,11 +956,11 @@ but it is a filtered view.
 
 If the result is ambiguous:
 
-* inspect a wider log range;
-* remove the filter;
-* search for the exact timestamp;
-* correlate against release time;
-* correlate against machine ID.
+- inspect a wider log range;
+- remove the filter;
+- search for the exact timestamp;
+- correlate against release time;
+- correlate against machine ID.
 
 Do not infer complete runtime history from `tail -120`.
 
@@ -1036,9 +1036,9 @@ Fly deploy never builds image
 
 When a production deploy unexpectedly fails after a source change:
 
-* inspect CI build output;
-* clean incremental state when appropriate;
-* distinguish source/build failure from runtime failure.
+- inspect CI build output;
+- clean incremental state when appropriate;
+- distinguish source/build failure from runtime failure.
 
 Do not assume production is running a fix until the release itself is green.
 

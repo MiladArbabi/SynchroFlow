@@ -1,31 +1,22 @@
-import type { WmsStowTask } from './WmsModuleFT2.js';
+import type { WmsStowTask, WmsStowConfirmResult } from './WmsModuleFT2.js';
 /**
- * STOW SESSION PAGE — WEB-STOW-UNIT-01
- * --------------------------------------
- * Option B flow — item-first, system-guided location:
+ * STOW SESSION PAGE — WEB-STOW-UNIT-01 / STOW-SPLIT-01
+ * -----------------------------------------------------
+ * Location-first flow with a sticky active bin:
  *
- *   brief → item_scan → location_scan → qty_confirm → summary → complete
+ *   brief → location_scan → item_scan ↺ → complete
  *
- * Node 1 (item_scan): Operator scans LSU- barcode. Resolver confirms variant
- *   match. Product image + details shown for visual confirmation.
+ * Location is established before any unit is handled. This mirrors the
+ * operator's physical position in the warehouse and allows one task to be
+ * split safely across multiple bins.
  *
- * Node 2 (location_scan): System shows suggested bin from stow task.
- *   Operator walks there and scans bin barcode to confirm. Claim fires here.
+ * Once active, the location persists across unit confirmations and task
+ * advancement until the operator explicitly scans a different bin.
  *
- * Node 3 (qty_confirm): Operator confirms quantity placed. Shortfall triggers
- *   exception dialog before summary.
- *
- * Bulk stow: scanning one LSU- and confirming qty=N updates all N matching
- * received units (same variant + job line) to stowed in one backend pass.
- *
- * Legacy path: if no LSU- available, legacy EAN/UPC resolves via
- * legacy_barcode_fallback_enabled. lasyncroUnitId will be undefined —
- * backend handles gracefully.
+ * STOW-SPLIT-01 — every accepted physical-unit scan commits exactly one unit.
+ * There is intentionally no quantity-confirm or review phase: the successful
+ * scanner event itself is the operator's placement confirmation.
  */
-export type StowExceptionResult = {
-    prob_label?: string;
-    problem_bin?: string;
-};
 export type BarcodeResolveResult = {
     lasyncro_variant_id: string;
     lasyncro_unit_id?: string;
@@ -41,13 +32,7 @@ export interface StowSessionPageProps {
     onAssignLocation: (taskId: string, locationCode: string) => Promise<void>;
     onClaimTask: (taskId: string) => Promise<void>;
     onResolveBarcode: (scannedValue: string) => Promise<BarcodeResolveResult | null>;
-    onConfirmStow: (taskId: string, quantityPlaced: number, lasyncroUnitId?: string) => Promise<void>;
-    onReportException: (taskId: string, params: {
-        exception_type: string;
-        quantity: number;
-        notes?: string;
-        lasyncro_unit_id?: string;
-    }) => Promise<StowExceptionResult>;
+    onConfirmStow: (taskId: string, quantityPlaced: number, lasyncroUnitId?: string) => Promise<WmsStowConfirmResult>;
 }
-export default function StowSessionPage({ initialTaskId, onComplete, onFetchTasks, onResolveLocation, onAssignLocation, onClaimTask, onResolveBarcode, onConfirmStow, onReportException, }: StowSessionPageProps): import("react").JSX.Element | null;
+export default function StowSessionPage({ initialTaskId, onComplete, onFetchTasks, onResolveLocation, onAssignLocation, onClaimTask, onResolveBarcode, onConfirmStow, }: StowSessionPageProps): import("react").JSX.Element;
 //# sourceMappingURL=StowSessionPage.d.ts.map

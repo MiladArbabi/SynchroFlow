@@ -98,25 +98,38 @@ const BatchCard = memo(function BatchCard({ batch, onClaim, onContinuePick, grid
  * Displays a pending stow task — stock that needs to be put away.
  * Triggered by: inbound receive close, cancelled order mid-pick.
  */
-const StowTaskCard = memo(function StowTaskCard({ task, onClaim, onConfirm, }) {
+const StowTaskCard = memo(function StowTaskCard({ task, onOpen, }) {
     const triggerLabel = task.trigger === 'order_cancelled_mid_pick' ? 'Cancelled pick' : 'Inbound receive';
-    const isPending = task.status === 'pending';
+    // STOW-CARD-CTA-01 — the card is an entry point, never a confirm.
+    //
+    // Previously an in_progress task took a direct onConfirmStow(id) branch
+    // that passed neither quantity nor LSU. Inbound stow survived it only via
+    // the legacy no-LSU fallback in confirmStow; order_cancelled_mid_pick
+    // hard-requires an LSU scan (stow.service.ts) and could never complete.
+    // Once claimed, a task had no route back into the scan session at all.
+    //
+    // StowSessionPage already loads both pending and in_progress tasks, and
+    // the session-entry callback only writes a URL param, so a single route
+    // is safe for every status. The claim fires inside the session at the
+    // location-scan step, which is why the old 'Claim & stow' label was
+    // describing the session, not this button.
+    const isClaimed = task.status === 'in_progress';
     return (_jsxs(Box, { sx: {
             bgcolor: 'var(--surface)',
             border: '1px solid var(--accent-border)',
             borderRadius: '14px',
             p: '18px 20px',
             mb: 1.5,
-        }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }, children: [task.image_url ? (_jsx(Box, { component: "img", src: task.image_url, alt: "", sx: { width: 40, height: 40, objectFit: 'cover', borderRadius: '8px', flexShrink: 0 } })) : (_jsx(Box, { sx: { width: 40, height: 40, borderRadius: '8px', bgcolor: 'var(--accent-ghost)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }, children: _jsx(Package, { size: 18, color: "var(--accent)" }) })), _jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, children: task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase() }), task.sku && (_jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: task.sku }))] }), _jsx(Box, { sx: { px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }, children: _jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }, children: "Stow pending" }) })] }), _jsxs(Box, { sx: { display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }, children: [_jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Qty: ", task.quantity] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Location: ", task.location_code ?? 'Unassigned'] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Source: ", triggerLabel] })] }), _jsx(Box, { component: "button", onClick: () => isPending ? onClaim(task.stow_task_id) : onConfirm(task.stow_task_id), sx: {
+        }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.25 }, children: [task.image_url ? (_jsx(Box, { component: "img", src: task.image_url, alt: "", sx: { width: 40, height: 40, objectFit: 'cover', borderRadius: '8px', flexShrink: 0 } })) : (_jsx(Box, { sx: { width: 40, height: 40, borderRadius: '8px', bgcolor: 'var(--accent-ghost)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }, children: _jsx(Package, { size: 18, color: "var(--accent)" }) })), _jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, children: task.product_title ?? task.variant_title ?? task.sku ?? task.lasyncro_variant_id.slice(0, 8).toUpperCase() }), task.sku && (_jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: task.sku }))] }), _jsx(Box, { sx: { px: 1, py: 0.375, bgcolor: 'var(--accent-ghost)', border: '0.5px solid var(--accent-border)', borderRadius: '100px', flexShrink: 0 }, children: _jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', letterSpacing: '0.04em' }, children: isClaimed ? 'In progress' : 'Stow pending' }) })] }), _jsxs(Box, { sx: { display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }, children: [_jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Qty: ", task.quantity] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Location: ", task.location_code ?? 'Unassigned'] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: ["Source: ", triggerLabel] })] }), _jsx(Box, { component: "button", onClick: () => onOpen(task.stow_task_id), sx: {
                     width: '100%', fontSize: 12, fontWeight: 600,
                     color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
                     border: 'none', borderRadius: '8px',
                     py: 1.25, cursor: 'pointer',
                     '&:hover': { opacity: 0.88 },
                     transition: 'opacity 0.15s ease',
-                }, children: isPending ? 'Claim & stow →' : 'Confirm stowed →' })] }));
+                }, children: isClaimed ? 'Resume stow →' : 'Start stow →' })] }));
 });
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, onReportStowException, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, }) {
     // Auto-enter receive session if handed off from Suppliers portal via URL param
     const [activeSession, setActiveSession] = useState(pendingReceiveSession
         ? { type: 'receive', ...pendingReceiveSession }
@@ -229,7 +242,11 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     }
     // Active stow session
     if (activeSession?.type === 'stow') {
-        return (_jsx(StowSessionPage, { initialTaskId: activeSession.taskId, onComplete: exitSession, onFetchTasks: onFetchStowTasks ?? (() => Promise.resolve([])), onResolveLocation: onResolveLocation ?? (() => Promise.resolve(null)), onAssignLocation: (taskId, locationCode) => onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve(), onClaimTask: (taskId) => onClaimStowTask?.(taskId) ?? Promise.resolve(), onResolveBarcode: onResolveBarcode, onConfirmStow: (taskId, qty, lasyncroUnitId) => onConfirmStow?.(taskId, qty, lasyncroUnitId) ?? Promise.resolve(), onReportException: (taskId, params) => onReportStowException?.(taskId, params) ?? Promise.resolve({}) }));
+        return (_jsx(StowSessionPage, { initialTaskId: activeSession.taskId, onComplete: exitSession, onFetchTasks: onFetchStowTasks ?? (() => Promise.resolve([])), onResolveLocation: onResolveLocation ?? (() => Promise.resolve(null)), onAssignLocation: (taskId, locationCode) => onAssignStowLocation?.(taskId, locationCode) ?? Promise.resolve(), onClaimTask: (taskId) => onClaimStowTask?.(taskId) ?? Promise.resolve(), onResolveBarcode: onResolveBarcode, onConfirmStow: (taskId, qty, lasyncroUnitId) => onConfirmStow?.(taskId, qty, lasyncroUnitId) ??
+                // STOW-SPLIT-01 — StowSession requires the authoritative committed
+                // server result. Never silently resolve when the confirm adapter is absent,
+                // because that would let the scanner advance without a warehouse mutation.
+                Promise.reject(new Error('Stow confirmation is unavailable. Return to Operations and try again.')) }));
     }
     if (activeSession?.type === 'return') {
         return (_jsx(ReturnSessionPage, { returnJobId: activeSession.returnJobId, onFetchReturnJob: onFetchReturnJob, onAddReturnLine: onAddReturnLine, onProcessReturnLine: onProcessReturnLine, onCompleteReturnJob: onCompleteReturnJob, onComplete: exitSession }));
@@ -300,7 +317,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                     textAlign: 'center', py: 8,
                     bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
                     borderRadius: '14px',
-                }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id))), !isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (_jsxs(Box, { sx: { mt: batches.length > 0 ? 3 : 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Stow tasks" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [(stowTasks ?? []).length, " pending"] })] }), (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onClaim: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }, onConfirm: (id) => void onConfirmStow?.(id).then(onRefresh) }, task.stow_task_id)))] }))] }));
+                }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id))), !isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (_jsxs(Box, { sx: { mt: batches.length > 0 ? 3 : 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Stow tasks" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [(stowTasks ?? []).length, " pending"] })] }), (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onOpen: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); } }, task.stow_task_id)))] }))] }));
 }
 export default function WmsModuleFT2(props) {
     return _jsx(ModuleErrorBoundary, { moduleName: "wms", children: _jsx(WmsModuleFT2Inner, { ...props }) });

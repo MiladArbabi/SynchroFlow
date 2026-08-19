@@ -88,7 +88,7 @@ function VariantRow({ variant, currency, pal }) {
             '&:hover': { background: pal.rowHover },
         }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: pal.textPrimary, lineHeight: 1.3 }, children: variant.product_title ?? variant.title ?? 'Unknown product' }), _jsx(Typography, { sx: { fontSize: 10, color: pal.textSecond }, children: variant.sku
                             ? variant.sku
-                            : _jsx("span", { style: { color: 'var(--ink-4)' }, children: "No SKU" }) })] }), _jsx(Typography, { sx: { fontSize: 13, color: variant.available_quantity <= 0 ? 'error.main' : pal.textPrimary }, children: variant.available_quantity }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Typography, { sx: { fontSize: 13, color: pal.textPrimary }, children: variant.units_sold_30d }), _jsx(TrendBadge, { trend: variant.velocity_trend, prev: variant.units_sold_prev_30d, current: variant.units_sold_30d })] }), _jsxs(Typography, { sx: { fontSize: 13, fontWeight: isCritical || isWarning ? 600 : 400, color: accentColor }, children: [variant.days_of_stock_remaining != null ? `${variant.days_of_stock_remaining}d` : '—', stockoutLabel && isCritical && (_jsxs(Typography, { component: "span", sx: { fontSize: 10, color: 'error.main', display: 'block' }, children: ["~", stockoutLabel] }))] }), _jsxs(Box, { sx: {
+                            : _jsx("span", { style: { color: 'var(--ink-4)' }, children: "No SKU" }) })] }), _jsx(Typography, { sx: { fontSize: 13, color: variant.available_quantity <= 0 ? 'error.main' : pal.textPrimary }, children: variant.available_quantity }), _jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [_jsx(Typography, { sx: { fontSize: 13, color: pal.textPrimary }, children: variant.units_sold_30d }), _jsx(TrendBadge, { trend: variant.velocity_trend, prev: variant.units_sold_prev_30d, current: variant.units_sold_30d })] }), _jsxs(Typography, { sx: { fontSize: 10, color: pal.textSecond }, children: [variant.velocity_window_days, "d \u00B7 ", variant.demand_confidence, " confidence"] })] }), _jsxs(Typography, { sx: { fontSize: 13, fontWeight: isCritical || isWarning ? 600 : 400, color: accentColor }, children: [variant.days_of_stock_remaining != null ? `${variant.days_of_stock_remaining}d` : '—', stockoutLabel && isCritical && (_jsxs(Typography, { component: "span", sx: { fontSize: 10, color: 'error.main', display: 'block' }, children: ["~", stockoutLabel] }))] }), _jsxs(Box, { sx: {
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '6px',
@@ -102,8 +102,8 @@ function VariantRow({ variant, currency, pal }) {
                             ? 'Critical'
                             : isWarning
                                 ? 'Reorder soon'
-                                : variant.reorder_urgency === 'overstocked'
-                                    ? 'Excess stock'
+                                : variant.reorder_urgency === 'planning_data_required'
+                                    ? 'Planning data needed'
                                     : variant.reorder_urgency === 'no_velocity'
                                         ? 'No recent sales'
                                         : 'Healthy' })] }), (isCritical || isWarning) ? (_jsx(OrderCTA, { variant: variant })) : (_jsx(Box, {}))] }));
