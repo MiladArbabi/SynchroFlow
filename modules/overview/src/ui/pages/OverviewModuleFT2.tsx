@@ -329,7 +329,7 @@ function buildBusinessPulseRows(
 
 // ─── MERGED PULSE CARD ────────────────────────────────────────
 // Right-hand 25% card for the map layout. Combines ranked decisions
-// (top 3, +N more → /order-flow) with the BusinessPulse stats strip.
+// (top 3, +N more → /orders/flow) with the BusinessPulse stats strip.
 // Decisions section self-hides when signals are empty (calm state).
 
 function MergedPulseCard({
@@ -398,7 +398,7 @@ function MergedPulseCard({
           ))}
           {hiddenCount > 0 && (
             <Box
-              onClick={() => onNavigate?.('/order-flow')}
+              onClick={() => onNavigate?.('/orders/flow')}
               sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
             >
               +{hiddenCount} more →

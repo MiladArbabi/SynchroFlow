@@ -458,7 +458,7 @@ export default function OverviewPageFT2() {
       // Wider, lower footprint — Ive/consortium: form carries state. Blocked
       // work is settled and inert; it is not about to move.
       footprint: { tw: 1.8, td: 0.9 },
-      deepLink: '/order-flow',
+      deepLink: '/orders/flow',
     },
     {
       id: 'pool',
@@ -468,7 +468,7 @@ export default function OverviewPageFT2() {
       count: orderPool.data?.eligible_order_count ?? 0,
       // Narrower, taller — queued and imminent, next onto the floor.
       footprint: { tw: 1.2, td: 0.6 },
-      deepLink: '/order-flow',
+      deepLink: '/orders/flow',
     },
     {
       id: 'staged',
@@ -480,7 +480,7 @@ export default function OverviewPageFT2() {
       // on the floor and still sitting there are why shipping stalled.
       tone: 'critical',
       footprint: { tw: 1.8, td: 0.9 },
-      deepLink: '/order-flow',
+      deepLink: '/orders/flow',
     },
     {
       id: 'shipped',
@@ -494,7 +494,7 @@ export default function OverviewPageFT2() {
       rank: 1,
       count: shippedToday,
       footprint: { tw: 1.2, td: 0.6 },
-      deepLink: '/order-flow',
+      deepLink: '/orders/flow',
     },
   ] : [];
 
