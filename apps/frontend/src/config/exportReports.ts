@@ -19,15 +19,6 @@ export interface QuickReport {
 
 export const QUICK_REPORTS: QuickReport[] = [
   {
-    id: 'brief',
-    title: 'Daily Operations Brief',
-    description: 'Decisions needed, revenue at risk, fulfillment pulse.',
-    format: 'pdf',
-    tier: 'growth',
-    endpoint: '/api/v1/exports/brief',
-    filename: 'lasyncro-brief',
-  },
-  {
     id: 'orders-all',
     title: 'All Orders',
     description: 'Full order list with status, value, channel, and country.',

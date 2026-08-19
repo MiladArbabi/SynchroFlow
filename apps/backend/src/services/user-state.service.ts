@@ -479,19 +479,18 @@ export class UserStateService {
 
   // T4 — onboarding: check which activation audit events exist for this shop.
   // Returns booleans only — no timestamps, no counts.
-   static async getActivationEvents(shopId: number): Promise<{ wave_released: boolean; brief_exported: boolean }> {
+   static async getActivationEvents(shopId: number): Promise<{ wave_released: boolean }> {
     const rows = (await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
       return trx('activation_audit_events')
         .where({ shop_id: shopId })
-        .whereIn('event_type', ['wave_released', 'brief_exported'])
+        .whereIn('event_type', ['wave_released'])
         .select('event_type');
     })) as { event_type: string }[];
 
     const types = new Set(rows.map((r: { event_type: string }) => r.event_type));
     return {
-      wave_released:  types.has('wave_released'),
-      brief_exported: types.has('brief_exported'),
+      wave_released: types.has('wave_released'),
     };
   }
 

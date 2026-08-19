@@ -27,7 +27,6 @@ interface ReadinessResponse {
 
 interface ActivationEventsResponse {
   wave_released: boolean;
-  brief_exported: boolean;
 }
 
 function findTask(modules: ReadinessResponse['modules'], moduleId: string, taskId: string): boolean {
@@ -86,12 +85,6 @@ export function useActivationChecklist() {
       label:        'Release your first batch',
       complete:     events.data?.wave_released ?? false,
       actionRoute:  '/orders/flow',
-    },
-    {
-      key:          'brief-exported',
-      label:        'Export your first brief',
-      complete:     events.data?.brief_exported ?? false,
-      actionRoute:  '/overview',
     },
   ];
 

@@ -88,7 +88,6 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   operationalWarningState: 'clear' | 'warning' | 'unknown';
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
-  onExportBrief?: () => void;
   onResolveAll?: () => void;
   /**
    * Rendered in the 75% map slot.
@@ -329,7 +328,7 @@ function buildBusinessPulseRows(
 
 // ─── MERGED PULSE CARD ────────────────────────────────────────
 // Right-hand 25% card for the map layout. Combines ranked decisions
-// (top 3, +N more → /orders/flow) with the BusinessPulse stats strip.
+// (top 3 initially, remaining decisions expand in-place) with the BusinessPulse stats strip.
 // Decisions section self-hides when signals are empty (calm state).
 
 function MergedPulseCard({
@@ -353,7 +352,9 @@ function MergedPulseCard({
 }) {
   const urgentSignals = [...criticalSignals, ...watchSignals];
   const visibleSignals = urgentSignals.slice(0, 3);
-  const hiddenCount = Math.max(0, urgentSignals.length - 3);
+  const hiddenSignals = urgentSignals.slice(3);
+  const hiddenCount = hiddenSignals.length;
+  const [decisionsExpanded, setDecisionsExpanded] = useState(false);
 
   return (
     <Box
@@ -397,12 +398,36 @@ function MergedPulseCard({
             </Box>
           ))}
           {hiddenCount > 0 && (
-            <Box
-              onClick={() => onNavigate?.('/orders/flow')}
-              sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-            >
-              +{hiddenCount} more →
-            </Box>
+            <>
+              <Collapse in={decisionsExpanded} timeout={180} unmountOnExit>
+                {hiddenSignals.map(s => (
+                  <Box
+                    key={s.id}
+                    onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
+                    sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+                  >
+                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
+                    <Box sx={{ flex: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
+                        {s.title}
+                      </Typography>
+                      {s.revenueImpact != null && (
+                        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                          {formatCurrencyCompact(s.revenueImpact, currency)}
+                        </Typography>
+                      )}
+                    </Box>
+                  </Box>
+                ))}
+              </Collapse>
+              <Box
+                onClick={() => setDecisionsExpanded(v => !v)}
+                sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px', mt: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+              >
+                {decisionsExpanded ? 'Show less' : `+${hiddenCount} more`}
+                {decisionsExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </Box>
+            </>
           )}
         </Box>
       )}
@@ -457,7 +482,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     operationalWarningState,
     onNavigate,
     onRefreshBrief,
-    onExportBrief,
     mapContent,
     upgradeTeaser,
   } = props;
@@ -543,14 +567,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
             {' · '}
             {isLoading ? 'Syncing…' : 'Live'}
           </Typography>
-          {!isLoading && !isTrustGated && onExportBrief && (
-            <Box
-              onClick={onExportBrief}
-              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
-            >
-              Export brief →
-            </Box>
-          )}
         </Box>
 
         {isLoading ? (

@@ -18,7 +18,6 @@ import {
   exportOrders,
   exportReturns,
   exportFinances,
-  exportBrief,
 } from './exports.controller.js';
 
 const router = Router();
@@ -46,15 +45,6 @@ router.post(
   requireTier('core'),
   requireAction('exports:read'),
   exportFinances
-);
-
-// PDF brief — Growth+
-router.post(
-  '/brief',
-  authenticateToken,
-  requireTier('growth'),
-  requireAction('exports:read'),
-  exportBrief
 );
 
 export default router;

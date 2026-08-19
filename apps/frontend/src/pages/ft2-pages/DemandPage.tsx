@@ -1,5 +1,6 @@
 // apps/frontend/src/pages/ft2-pages/DemandPage.tsx
 import { DemandModuleFT2 } from '@lasyncro/demand';
+import { useSearchParams } from 'react-router-dom';
 import { useDemand } from '../products/useDemand';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
@@ -11,6 +12,12 @@ export default function DemandPage() {
   const { data, isLoading, isError } = useDemand();
   const { displayCurrency, locale } = useEntitlements();
   const { rates } = useExchangeRates();
+  const [searchParams] = useSearchParams();
+
+  // Overview stock-risk decisions deep-link with ?filter=critical.
+  // Honor that intent by showing only critical reorder items on arrival.
+  const reorderUrgencyFilter =
+    searchParams.get('filter') === 'critical' ? 'critical' : undefined;
 
   return (
     // TIER GATE: demand.forecasting requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
@@ -20,7 +27,8 @@ export default function DemandPage() {
         data={data ?? null}
         isLoading={isLoading}
         isError={isError}
-        currency={{ displayCurrency, locale, rates }}
+        currency={{ displayCurrency, locale, rates}}
+        reorderUrgencyFilter={reorderUrgencyFilter}
       />
     </PlanGate>
   );

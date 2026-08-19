@@ -52,13 +52,12 @@ Request → enqueue job → worker generates → ready signal → download/email
 POST /api/v1/exports/orders
 POST /api/v1/exports/returns
 POST /api/v1/exports/finances
-POST /api/v1/exports/brief
 ```
 
 ### Request Body (shared shape)
 ```json
 {
-  "format": "csv" | "pdf",
+  "format": "csv",
   "filters": {
     "date_from": "2025-01-01",
     "date_to": "2025-12-31",
@@ -80,8 +79,8 @@ Direct file stream with appropriate `Content-Type` and `Content-Disposition` hea
 |---------|------------|-------------|------------------------|-----------|
 | Starter | None       | —           | —                      | —         |
 | Core    | CSV only   | 6 months    | Fixed set              | —         |
-| Growth  | CSV + PDF  | Unlimited   | Full column picker     | —         |
-| Scale   | CSV + PDF  | Unlimited   | Full + scheduled       | Daily/Weekly/Monthly |
+| Growth  | CSV only   | Unlimited   | Full column picker     | —         |
+| Scale   | CSV only   | Unlimited   | Full + scheduled       | Daily/Weekly/Monthly |
 
 ### Date Window Enforcement
 ```ts
@@ -112,17 +111,12 @@ const tierDataWindowSince = (tier: Tier): Date | null => {
 `order_id`, `created_at`, `total_price`, `cost_of_goods`, `gross_margin`,
 `gross_margin_pct`, `currency`, `channel`
 
-### Morning Brief (PDF only)
-Operational snapshot: decisions needed, revenue at risk, fulfillment pulse,
-blocked orders, SLA breaches, top alerts.
-
 ---
 
 ## 6. Module-Level Export Touch Points
 
 | Module / Submodule | CTA Label | Format | Tier Gate |
 |---|---|---|---|
-| Overview | `Export brief →` | PDF | Growth+ |
 | Orders / Overview | `Export →` | CSV | Core+ |
 | Orders / Blocked | `Export →` | CSV | Core+ |
 | Returns | `Export →` | CSV | Core+ |
@@ -145,7 +139,6 @@ New tab in `ShopSettingsPage` alongside General, Carriers, Warehouse, Finance, B
 
 ### Sprint 1 — Quick Reports panel
 One-click pre-built templates:
-- Daily Operations Brief (PDF) — Growth+
 - Blocked Revenue Report (CSV)
 - Returns Analysis (CSV)
 - Inventory Health (CSV) — Sprint 2
@@ -177,39 +170,20 @@ apps/backend/src/api/exports/
 
 ### Packages
 - `fast-csv@^5.0.7` — CSV generation (streaming)
-- `pdfkit@^0.19.1` — PDF generation
-- `@types/pdfkit@^0.17.6` — TypeScript types
 
 ---
 
-## 9. PDF Brief Format
+## 9. Export Design Principle
 
-```
-┌─────────────────────────────────────────┐
-│  LaSyncro                    [date/time] │
-│  Daily Operations Brief                  │
-│  {shop name}                             │
-├─────────────────────────────────────────┤
-│  NEEDS A DECISION              {count}   │
-│  • {signal title} — ${revenue}           │
-├─────────────────────────────────────────┤
-│  TODAY'S FLOW                            │
-│  Ready to ship    {n}                    │
-│  Blocked          {n}                    │
-│  Breached 72h+    {n}                    │
-├─────────────────────────────────────────┤
-│  ALERTS                        {count}   │
-│  • {alert title}                         │
-└─────────────────────────────────────────┘
-```
-
----
+Exports exist to move reusable operational data outside LaSyncro for analysis,
+accounting, reconciliation, and sharing. Do not create exports that merely
+duplicate summaries already available inside the product.
 
 ## 10. Sprint Roadmap
 
 | Sprint | Scope |
 |--------|-------|
-| **Sprint 1** (current) | Backend engine, CSV for Orders + Returns + Finances, PDF brief, download-only, Core+ gating. Wire Overview Export brief. Ghost pill CTAs on key pages. Quick Reports tab stub. |
+| **Sprint 1** (current) | Backend engine, CSV for Orders + Returns + Finances, download-only, Core+ gating. Ghost pill CTAs on key pages. Quick Reports tab stub. |
 | **Sprint 2** | Report History, Inventory + WMS export, Export drawer UI with column picker. |
 | **Sprint 3** | Email delivery (Resend), async queue, PDF for all modules. |
 | **Sprint 4** | Scheduled delivery (Scale tier), Custom Report Builder. |
@@ -224,11 +198,16 @@ apps/backend/src/api/exports/
 4. Stream directly — never buffer entire dataset in memory.
 5. Content-Disposition header must always be `attachment` — never `inline`.
 6. CSV: use `fast-csv` write stream piped to `res`.
-7. PDF: use `pdfkit` doc piped to `res`.
-8. Frontend CTAs: always Tier 2 ghost pill, always pre-filtered to current view.
-9. Never duplicate column definitions — canonical list lives in `exports.controller.ts`.
+7. Frontend CTAs: always Tier 2 ghost pill, always pre-filtered to current view.
+8. Never duplicate column definitions — canonical list lives in `exports.controller.ts`.
 
 ## 12. Changelog
+
+- **2026-08-19** — Removed the Daily Operations Brief PDF from the export
+  system. The report duplicated Overview information without providing
+  reusable operational data. Removed the Overview export CTA, `/exports/brief`
+  endpoint, `brief_exported` activation milestone, and the now-unused `pdfkit`
+  dependency. Historical `brief_exported` audit rows remain untouched.
 
 - **2026-06-24** — Overview's `Export brief →` CTA now opens `ExportDrawer` (page-level fixed slide-in, per §6 CTA Placement Rule) instead of hardcoding the PDF brief download. Drawer offers Brief (PDF), All Orders / Returns / Finances (CSV) — reuses existing Sprint 1 endpoints, no new backend work. Canonical report list moved from `ShopSettingsReportsPage.tsx` to `apps/frontend/src/config/exportReports.ts` (single source, both surfaces import it). True `.xlsx` still not implemented — tracked separately.
 - **2026-06-30** — Orders module's `Export →` CTA (ORDM-01) fixed: was a

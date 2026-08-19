@@ -12,7 +12,6 @@ import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { ProfileCompletionBanner } from '../overview/ProfileCompletionBanner';
-import { ExportDrawer } from 'components/ExportDrawer';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useOrderPool } from '../wms/useOrderPool';
@@ -234,7 +233,6 @@ export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
   const [forceRefresh, setForceRefresh] = useState(false);
-  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
 
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
@@ -891,14 +889,7 @@ export default function OverviewPageFT2() {
           }
           onNavigate={(deepLink) => navigate(deepLink)}
           onRefreshBrief={() => setForceRefresh(f => !f)}
-          onExportBrief={async () => setExportDrawerOpen(true)}
         />
-      <ExportDrawer
-        open={exportDrawerOpen}
-        onClose={() => setExportDrawerOpen(false)}
-        userTier={tier}
-        reportIds={['brief', 'orders-all', 'returns', 'finances']}
-      />
     </>
   );
 }

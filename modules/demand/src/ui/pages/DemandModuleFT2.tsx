@@ -59,6 +59,7 @@ export type DemandModuleFT2Props = {
   isLoading: boolean;
   isError: boolean;
   currency?: CurrencyContext;
+  reorderUrgencyFilter?: 'critical';
   /**
    * Demand owns reorder risk and replenishment decisions.
    * Warehouse occupancy belongs to Floor Planning/WMS.
@@ -266,6 +267,7 @@ function DemandModuleFT2Inner({
   isLoading,
   isError,
   currency,
+  reorderUrgencyFilter,
 }: DemandModuleFT2Props) {
   const theme = useTheme();
   const pal = demandPalette;
@@ -273,7 +275,11 @@ function DemandModuleFT2Inner({
 
   const summary = data?.summary;
   const allVariants = data?.variants ?? [];
-  const actionVariants = allVariants.filter(v => v.reorder_urgency === 'critical' || v.reorder_urgency === 'warning');
+  const actionVariants = allVariants.filter(v =>
+    reorderUrgencyFilter === 'critical'
+      ? v.reorder_urgency === 'critical'
+      : v.reorder_urgency === 'critical' || v.reorder_urgency === 'warning'
+  );
   const restVariants = allVariants.filter(v => v.reorder_urgency !== 'critical' && v.reorder_urgency !== 'warning');
 
   const fmt = (n: number) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -348,7 +354,7 @@ function DemandModuleFT2Inner({
 
       {/* Warehouse occupancy intentionally excluded: Floor Planning/WMS own storage utilization. */}
 
-              {/* ── REORDER LIST ── */}
+      {/* ── REORDER LIST ── */}
         {!isLoading && allVariants.length > 0 && (
           <Box sx={{
             background: pal.cardBg,
