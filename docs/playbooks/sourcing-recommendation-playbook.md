@@ -623,6 +623,336 @@ Signal→accumulator wiring confirmed working end-to-end:
 
 ---
 
+
+---
+
+## 10. Sprint 1 — Trust and Readiness (2026-08-18)
+
+> Eleven issues closed. Verified against the commit log, not reconstructed.
+> `git log --grep="SRC-"` is the chronological record; this section states the
+> contracts that survived.
+
+### 10.1 PO readiness gates (SRC-01a/b)
+
+`reorder_requests` holds a shortfall **level**, not a running total: qty = MAX,
+not `+=`. Enforced by migration `0151_unique_pending_reorder_request` (partial
+unique index).
+
+`GET /reorder-requests` returns per supplier group:
+
+gates: { moq_met, lead_time_set, all_lines_have_sku }
+po_ready: moq_met && lead_time_set && all_lines_have_sku
+
+
+**Gate severity is not uniform.** Lead time and SKU coverage are HARD — convert
+rejects 422. MOQ is SOFT — overridable via `override_moq: true` in the body,
+which stamps the override on the PO notes. `po_ready` drives the UI button;
+convert re-checks server-side and does not trust it.
+
+### 10.2 Dates are calendar days (SRC-02, SRC-04)
+
+A type parser is registered for Postgres OID 1082, returning raw `YYYY-MM-DD`
+strings across all 10 DATE columns. Before this, `String(dateObject).slice(0,10)`
+produced `"Wed Aug 12"` — a string that never compares less than `todayStr`,
+which meant **no PO had ever reported overdue days**.
+
+*Invariant: DATE columns are calendar days. Never convert them to instants, and
+never compare them as strings without confirming the parser is in play.*
+
+### 10.3 Shortfall is server-derived (SRC-03)
+
+`?needed=` was a dead URL parameter — no writer existed anywhere in the codebase.
+Replaced with a server-computed shortfall returned alongside `shortfall_basis`,
+so the number's provenance is always visible. This also repaired `exceeds_moq`,
+which guarded on `neededQty > 0`.
+
+### 10.4 Shop timezone (SRC-05a/b/c, SRC-07)
+
+Migration `0152_add_shop_timezone_source`. `shopClock.service.ts` interprets CPT
+and shift windows in the shop's own timezone; the morning brief fires at 5am
+local per shop rather than on one server clock. SRC-07 scoped the brief
+resolver's own tenant reads.
+
+### 10.5 The MOQ gap is reported, not hidden (SRC-06, SRC-09)
+
+"445 more units to reach their minimum" is actionable. "Exceeds MOQ" reads as a
+rejection and pushed merchants away from the supplier they should queue to. MOQ
+progress is coloured by live status with a legend.
+
+### 10.6 SRC-11 — the statistical trust audit
+
+Not a defect audit. `demandIntelligence` was read-only and dashboard-facing, and
+the question was whether its numbers could drive a purchase order.
+
+Production measurement found `no_velocity` for **88% of the catalogue** under a
+fixed 30-day window — too short for long-tail SKUs. The window became adaptive:
+
+| Window | Chosen when | Confidence |
+|---|---|---|
+| 30d | `events30d >= 3` | `high` |
+| 90d | `events90d >= 3` | `medium` |
+| 180d | otherwise | `medium` if `events180d >= 3`, else `low` |
+| — | `events180d === 0` | `none` |
+
+An **event** is `COUNT(DISTINCT lasyncro_order_id) FILTER (WHERE fulfilled_quantity > 0)`.
+`MIN_FULFILLMENT_EVENTS = 3`.
+
+*This is the gate that decides whether the preventive path runs at all. A variant
+with `demand_confidence: 'none'` produces `suggested_reorder_qty: null`, and the
+Sourcing ladder falls back to the reactive number.*
+
+### 10.7 Still open from Sprint 1
+
+**SRC-08** (worker health) and **SRC-10** (stale chunk) were registered and never
+shipped — no commits exist for either. They remain open.
+
+### 10.8 The recurring defect shape
+
+Five separate defects this sprint were **guards that read correctly and were dead
+on execution**. All five surfaced by running the code, not reading it. Two more of
+the same shape appeared in Sprint 2 and one in Sprint 3, both in freshly written
+code. Treat a correct-looking guard as unverified until a run proves it fires.
+
+
+---
+
+## 11. Sprint 2 — Wiring the Preventive Signal (2026-08-19)
+
+> Commits `38eb72c8`, `ef91142e`, `888c088f`, `57f41d6b` (SRC-12); `559002ef` (SRC-17).
+
+### 11.1 The defect SRC-12 closed
+
+Two subsystems answered "how much should I order," and **only the weaker one was
+wired to the surface that creates POs**:
+
+| | Sourcing (before) | Demand Intelligence |
+|---|---|---|
+| Quantity | `open_demand − available` | velocity × coverage − stock − inbound |
+| Timing | after customers are already waiting | before the stockout |
+| Fed | the accumulator and the PO | a dashboard |
+
+The reactive number only moves once an order is already blocked. That is the fire,
+not the warning.
+
+### 11.2 `computeVariantPlanning` — the contract
+
+```ts
+computeVariantPlanning(
+  trx: Knex.Transaction,
+  shopId: number,
+  variantIds?: string[]
+): Promise<DemandVelocity[]>
+```
+
+**Invariants, all deliberate:**
+
+- **Writes nothing.** Alert reconciliation stays in `computeDemandIntelligence` so
+  a read-path caller (Sourcing) cannot trigger write side-effects.
+- **Caller owns the transaction and the tenant scope.** It runs RLS-protected
+  queries and does not set `app.current_tenant` itself.
+- **Variant-filterable**, so Sourcing can plan one variant without a catalogue scan.
+- **One copy of the formula.** Sourcing calls this function rather than
+  reimplementing it or making an internal HTTP call to the Growth-gated route.
+
+### 11.3 The coverage formula
+
+targetCoverageDays = supplier_lead_time_days + SYSTEM_SAFETY_DAYS(5)
++ SYSTEM_PURCHASING_CYCLE_DAYS(7)
+
+suggested_reorder_qty = max(0, ceil(
+velocityPerDay × targetCoverageDays
+
+openDemand
+− available
+− reliableInbound
+))
+
+Null when `velocityPerDay === 0` or `targetCoverageDays === null` (no lead time).
+Both safety and cycle days are explicit system defaults until configurable
+SKU/supplier/shop policy fields exist. `target_coverage_days` is exposed through
+the full stack so the UI states real coverage rather than duplicating constants.
+
+### 11.4 The quantity ladder
+
+Sourcing resolves a quantity **and a named basis**, so the operator always sees
+which number they are acting on. There is never a silent substitution.
+
+| Basis | Condition | Quantity |
+|---|---|---|
+| `reactive` | no planning row, or velocity+lead time present but no usable suggestion, with open demand | `neededQty` |
+| `preventive` | suggestion > 0 | `max(suggested, neededQty)` |
+| `reactive_no_history` | `demand_confidence === 'none'`, open demand exists | `neededQty` |
+| `no_signal` | `demand_confidence === 'none'` or zero suggestion, no open demand | `neededQty` |
+| `reactive_no_lead_time` | no supplier lead time, open demand exists | `neededQty` |
+| `planning_data_required` | no supplier lead time, no open demand | `neededQty` |
+
+**`queue_qty = max(suggested, shortfall)` — never queue less than customers are
+already waiting for.** `units_to_moq` measures against `queue_qty`, not the
+reactive shortfall, so MOQ progress describes the quantity that will be queued.
+
+**Ladder ordering is load-bearing.** `demand_confidence === 'none'` must be tested
+BEFORE missing lead time. A variant with no sales history also has no PO history
+and therefore no lead time; testing lead time first made the no-history branch
+unreachable for exactly the variants it describes. This was found by execution
+after passing review — the second instance of §10.8's shape.
+
+### 11.5 SRC-17 — dev seed fulfilled demand
+
+`dev_seed.ts` marked orders fulfilled while leaving `fulfilled_quantity` at 0.
+Since demand means units that shipped, every seeded variant had zero velocity.
+Fixed by hoisting `isFulfilled` before the revenue-unit insert and using
+`orderDate` rather than `now` so events spread across 28 days. Both seeded
+suppliers gained lead time and MOQ (Wool & Co 10d/50, Linen House 21d/100).
+
+> **This did not achieve its stated outcome.** See §12.5 — `order_fulfillment_status`
+> is empty on freshly seeded databases, and the demand history query INNER JOINs it.
+> Local velocity is still zero. SRC-17 fixed one of two prerequisites.
+
+
+---
+
+## 12. Sprint 3 — SRC-18, the Zero-Units Alert (2026-08-19)
+
+> Commits `b4371f1e`, `f9ff0603`, `84a5155f`, `4bd57106`.
+> Registered as one issue ("stockout produces reorder 0 units"); the audit found
+> **four separate defects**, only one of which was the registered one.
+
+### 12.1 SRC-18a — inbound was ETA-blind
+
+`reliable_inbound` filtered on `po.status IN ('ordered','confirmed','in_production')`
+and nothing else, then was subtracted in full. `expected_delivery_date` has existed
+on `purchase_orders` since migration `0095` and was never read.
+
+A time-bounded question — how much do I need for the next N days — was answered with
+an unbounded quantity. **A PO landing in 90 days suppressed a reorder needed in 20.**
+
+The inbound query is now detailed rather than grouped, carrying `days_out` per line,
+and the per-variant loop sums only lines with `days_out <= targetCoverageDays`.
+
+*Why not window it in SQL: `targetCoverageDays` depends on the variant's own supplier
+lead time. It is not one horizon, it is one per variant.*
+
+**Null `days_out` counts as IN window.** The manual PO path writes
+`expected_delivery_date ?? null` while the reorder-conversion path derives one, so
+nulls are real POs. Excluding them would drop committed stock and inflate suggestions.
+Consequence: this change can only ever subtract LESS inbound than before — it can
+raise a suggestion, never suppress one that fires today.
+
+Negative `days_out` (overdue, unreceived) also stays in window. Overdue is not absent.
+
+### 12.2 SRC-18b — a zero forecast wearing a forecast's name
+
+The ladder tested `suggestedQty !== null` first. `0 !== null` is true, so a zero
+suggestion took the `preventive` branch and reached the operator as **0 units with a
+basis asserting a forecast was made** — on a number meaning "do not order."
+Indistinguishable from a real recommendation, in the one structure built specifically
+to never substitute silently.
+
+Now gated on `suggestedQty > 0`; zero falls to the existing tail.
+
+**Accepted tradeoff (decision B2):** `no_signal` now covers both "no data to forecast
+with" and "forecast ran, coverage already met." The UI cannot distinguish them and so
+cannot say "already on order — nothing to queue." A dedicated `covered_by_inbound`
+basis was considered and deliberately not taken. Open as a copy question.
+
+### 12.3 SRC-18c/d — two writers on one alert key
+
+`demand:stockout_risk:{variantId}` had two writers with different numbers and
+different semantics; last write won the row.
+
+| | `demandIntelligence` | `resolve_inventory_block` handler |
+|---|---|---|
+| Message | forecast, net of inbound | `order_qty − available`, ignores inbound |
+| Trigger | someone opens Demand/Products/aha | operator resolves a block |
+| Lifecycle | reconciled every run | never resolved |
+
+The handler's message could **tell a merchant to reorder units already on an open PO.**
+
+Fixed by making the handler call `computeVariantPlanning` and emit through the new
+`emitStockoutAlerts`, so both paths publish one message from one set of numbers.
+
+**`emitStockoutAlerts(trx, shopId, variants, reconcile = true)`.** The sweep resolves
+every active `source: 'demand'` alert absent from `variants`, which is only sound for
+a caller holding the full catalogue. The handler knows one order's variants and passes
+`false` — sweeping there would deactivate every other variant's stockout alert in the
+shop. **That was SRC-18d**, and it resolves as a consequence of the single-writer fix.
+
+**Behaviour change (accepted):** only variants the planner marks `critical` alert. A
+partial shortage (5 held, 10 needed) is an order-allocation problem the order-block UI
+already surfaces, not a reorder signal.
+
+**There is no scheduled demand run.** `computeDemandIntelligence` has four callers,
+all request-driven: the Demand module, the Products operator view, and two aha
+endpoints. An alert written by the handler is reconciled only when a merchant next
+opens one of those screens.
+
+### 12.4 Verification status — read this before trusting a number
+
+| Issue | Verified how |
+|---|---|
+| 18c/d | **Executed.** Drained a local variant, invoked the handler, confirmed demand-format message with `category`/`audience` populated, one row, and a sentinel alert left untouched proving `reconcile=false`. |
+| 18b | `tsc` and code reading only. |
+| 18a | `tsc`, plus DB-level confirmation that `expected_delivery_date - CURRENT_DATE` returns `integer`, not an OID 1082 string. |
+
+**Neither 18a nor 18b was exercised by data.** Both need a variant with velocity;
+18a additionally needs a distant-ETA PO. All production and local PO lines currently
+land inside any plausible window, so 18a moves no number that exists today. Blocked by
+§12.5.
+
+One correction worth carrying: 18c's verification proved the **routing**, not the
+arithmetic. The `reorder 1 unit` observed came from open demand minus availability —
+`velocityPerDay` was 0 throughout, because of §12.5.
+
+### 12.5 SEED-VELOCITY-01 — open, cause unidentified
+
+**`order_fulfillment_status` has zero rows on a database seeded the same day.**
+
+The demand history query INNER JOINs that table and filters on
+`ofs.fulfilled_at >= window180Start`. With no rows, **every variant is dropped from
+the history map** and returns `demand_confidence: 'none'`. The preventive reorder path
+is unreachable locally, catalogue-wide.
+
+Evidence gathered:
+
+- The insert at `dev_seed.ts:1028` is unconditional, in the same loop and the same
+  transaction as the `orders` and `order_revenue_units` inserts, which produced 15
+  rows each
+- The projection-writer bypass is set at both line 37 and 1027, the setting name
+  matches `enforce_projection_writer_order_fulfillment_status` exactly, and that guard
+  **raises** rather than skipping — a failed bypass would have crashed the seed
+- No truncate, no delete, one transaction for the whole seed
+- `fulfilled_quantity` is correct (SRC-17 landed), so the seed did reach that line
+
+**Next step:** run the seed with output captured and check whether line 1067's
+`[DEV_SEED] Created 15 orders with revenue units and fulfillment status` prints.
+
+*Blocks: SRC-18a and SRC-18b verification, SRC-13.*
+
+### 12.6 SEED-LEDGER-01 — open
+
+`inventory_movements` has zero rows for seeded variants; `inventory_truth` is written
+directly. Consequences: `npm run rebuild -w apps/backend` cannot restore local
+inventory, any test perturbing stock leaves permanent drift, and the event-sourced
+inventory path cannot be exercised locally at all. May share a cause with §12.5.
+
+*If you drain stock for a fixture, restore it with
+`available_quantity = on_hand_quantity - reserved_quantity - committed_quantity`.
+The rebuild will not do it for you.*
+
+### 12.7 SRC-18e — open
+
+The alert answers "how much to reorder" while the operator is looking at "how much to
+unblock this order." Both correct, different questions, one surface. In the verified
+run the alert read `reorder 1 unit` on an order needing 3.
+
+### 12.8 Interaction worth watching
+
+18a can only raise suggestions; 18b stopped zeros from claiming to be forecasts.
+Together they move the system toward suggesting more reordering. Correct where inbound
+genuinely arrives late, but on a catalogue where merchants leave ETAs distant or unset
+it may read as over-ordering. No evidence either way yet — `n=3` in production.
+
+
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
 `onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),
 `product-structure.md` §6 (The Three Must-Have Loops).*

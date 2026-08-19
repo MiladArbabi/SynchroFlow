@@ -194,7 +194,10 @@ Warehouse management and floor topology are separate responsibilities:
 - **Suppliers** — unified scorecard: on-time, fill rate, **return rate, suspect batches** — one card per supplier. MOQ + lead-time inline nudges deep-link to Edit dialog. ✅ 2026-07-11
 - **Sourcing** — three-tier supplier resolution (explicit preference → PO history scorecard → never-ordered assign flow), MOQ accumulation system, ranked recommendations with "Add to queue" + "Create PO" dual-path, onboarding spotlights. Step 2 of the Reorder Loop. ✅ 2026-07-11
 
-Remaining: none. All gaps closed 2026-07-11.
+Remaining: see `sourcing-recommendation-playbook.md` §10–§12. The 2026-07-11
+"all gaps closed" claim was premature — three sprints of defect work followed
+(SRC-01 … SRC-18), including the discovery that Gap 1's stated mechanism
+(`?needed=N`) had no writer anywhere in the codebase and never fired.
 
 ### $ Finances `/finances`
 
@@ -235,7 +238,25 @@ Requires: spine unification, number reconciliation. *Currently ~80%.*
 
 **Loop 2 — The Reorder Loop** *(weekly · owner · the Excel-killer for high-SKU merchants)*
 `Stockout signal → Demand (recommended qty) → Sourcing (pick supplier) → PO → inbound ETA → received → sellable`
-*Currently 100%. ✅ All gaps closed 2026-07-11.*
+*Signal now reaches the PO surface. Confidence in the numbers is the open
+question, not the wiring.* Updated 2026-08-19.
+
+The chain is connected end to end: a `stockout_risk` alert deep-links to Sourcing,
+which sizes the reorder from the preventive demand model (velocity × coverage, net
+of stock and in-window inbound) rather than from open demand alone, and names the
+basis it used. See `sourcing-recommendation-playbook.md` §11.4 for the quantity
+ladder.
+
+Not yet trustworthy end to end:
+- **SEED-VELOCITY-01** — `order_fulfillment_status` is empty on seeded databases, so
+  no local variant has velocity and the preventive path cannot be exercised locally.
+- **SRC-18a / SRC-18b** — shipped on review and `tsc`, not exercised by data.
+- **SRC-13/14/15** — supplier-first weekly view, queue ageing, cold-start assignment.
+  Untouched.
+- **SRC-08 / SRC-10** — registered in Sprint 1, never shipped.
+
+No percentage stated deliberately: the wiring is done and the verification is not,
+and one number cannot honestly say both.
 
 Completed 2026-07-11: three-tier supplier preference system (§7), MOQ accumulation system (§8),
 never-ordered assign flow, preference CRUD, ranked recommendations, onboarding spotlights,
