@@ -849,11 +849,15 @@ export async function seed(knex: Knex): Promise<void> {
     const linenVariants = variantIds.filter(v => v.sku.startsWith('LINEN-'));
 
     const [woolSupplier] = await trx('suppliers')
-      .insert({ shop_id: shop.id, name: 'Wool & Co', contact_email: 'orders@woolco.test', active: true })
+      // SRC-17: lead_time_days is planning truth — without it every variant
+      // resolves to planning_data_required and suggested_reorder_qty stays
+      // null, so the preventive reorder path cannot be reached from a fresh
+      // seed. moq exercises the MOQ accumulator (SRC-01a/06) too.
+      .insert({ shop_id: shop.id, name: 'Wool & Co', contact_email: 'orders@woolco.test', active: true, lead_time_days: 10, moq: 50 })
       .onConflict(['shop_id', 'name']).merge({ active: true }).returning('*');
 
     const [linenSupplier] = await trx('suppliers')
-      .insert({ shop_id: shop.id, name: 'Linen House', contact_email: 'orders@linenhouse.test', active: true })
+      .insert({ shop_id: shop.id, name: 'Linen House', contact_email: 'orders@linenhouse.test', active: true, lead_time_days: 21, moq: 100 })
       .onConflict(['shop_id', 'name']).merge({ active: true }).returning('*');
 
     // Wool & Co PO 1 — shipped, ready to receive
@@ -991,6 +995,12 @@ export async function seed(knex: Knex): Promise<void> {
 
       orderIds.push(order.lasyncro_order_id);
 
+      // SRC-17: resolved BEFORE the revenue unit is written. It used to be
+      // computed further down, next to order_fulfillment_status, so the two
+      // were decided independently — the seed declared 8 orders fulfilled
+      // while asserting zero units had left the warehouse.
+      const isFulfilled = i < 8; // first 8 orders fulfilled
+
       // Revenue units
       await trx('order_revenue_units').insert({
         lasyncro_revenue_unit_id: trx.raw('gen_random_uuid()'),
@@ -1000,7 +1010,12 @@ export async function seed(knex: Knex): Promise<void> {
         sku: variant.sku,
         title: variant.sku,
         quantity: qty,
-        fulfilled_quantity: 0,
+        // SRC-17: demand means units that actually shipped (see
+        // demandIntelligence.service.ts). Hardcoding 0 here while marking the
+        // order fulfilled gave every seeded variant zero velocity, so
+        // suggested_reorder_qty was always null and the preventive reorder
+        // path could not be exercised locally at all.
+        fulfilled_quantity: isFulfilled ? qty : 0,
         unit_price: unitPrice,
         line_total: totalPrice,
         estimated_unit_cost: 25.00,
@@ -1008,16 +1023,20 @@ export async function seed(knex: Knex): Promise<void> {
         updated_at: orderDate,
       }).onConflict(['lasyncro_order_id', 'lasyncro_variant_id']).ignore();
 
-      // Fulfillment status — requires projection writer bypass
+            // Fulfillment status — requires projection writer bypass
       await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
-      const isFulfilled = i < 8; // first 8 orders fulfilled
       await trx('order_fulfillment_status').insert({
         lasyncro_fulfillment_id: trx.raw('gen_random_uuid()'),
         lasyncro_order_id: order.lasyncro_order_id,
         status: isFulfilled ? 'fulfilled' : 'pending',
         status_reason: isFulfilled ? 'seed_fulfilled' : 'seed_pending',
         status_updated_at: now,
-        fulfilled_at: isFulfilled ? now : null,
+        // SRC-17: was `now`, which collapsed all 8 fulfillments onto one
+        // instant. The adaptive velocity window then saw a single event per
+        // variant and fell back to 180 days with low confidence. orderDate is
+        // already randomised across the past 28 days, so using it spreads the
+        // events into the 30-day window the model prefers.
+        fulfilled_at: isFulfilled ? orderDate : null,
         created_at: orderDate,
         updated_at: now,
       }).onConflict(['lasyncro_order_id']).ignore();
