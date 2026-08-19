@@ -4,7 +4,7 @@
 
 ## 1. Why Reorder Changed Direction
 
-Original mechanism (REPL-001, still functional): Demand's reorder signal deep-links to Suppliers Portal, pre-filling one PO line item with `suggested_reorder_qty`. Confirmed gap: zero MOQ enforcement or visibility anywhere in the codebase — `grep -rn "moq"` across the backend only touches the supplier's own stored field, never a submitted quantity.
+**Final ownership boundary — locked 2026-08-19.** Demand identifies what needs replenishment and computes the suggested quantity. Its `Source →` handoff opens `/suppliers-portal/sourcing?variantId=X`. Sourcing owns supplier selection, MOQ accumulation/queueing, and PO creation. The former REPL-001 direct Demand → pre-filled PO handoff is retired.
 
 A popup-based MOQ check was designed, then abandoned in favor of a **dedicated page** (same architectural shape as Order Flow — a surface that owns a whole class of decisions, fed by deep-links, with live recompute) once it became clear the real need is supplier *comparison and recommendation*, not just a quantity warning.
 

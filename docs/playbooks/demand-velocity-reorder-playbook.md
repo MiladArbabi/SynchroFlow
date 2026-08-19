@@ -24,7 +24,7 @@ Three pieces, sequential dependency:
 - Rolling window length for velocity — fixed (7d/14d) or seasonality-aware? Unscoped.
 - Days-of-stock threshold for "warn" vs. purely informational — unscoped.
 - Per-variant alert vs. batched/digest — real alert-fatigue risk for an SMB with many SKUs if every variant fires independently; unscoped.
-- Relationship to Sourcing (§6 of the sourcing playbook): should `reorder_warning` feed the exact same ranked-supplier flow as `stockout_risk`, just triggered earlier with more lead time? Strong intuition yes, not locked.
+- **Final handoff — locked 2026-08-19.** Demand owns replenishment intelligence: what is at risk, when, and the suggested quantity. Actionable rows use `Source →` and deep-link to `/suppliers-portal/sourcing?variantId=X`. Sourcing owns supplier ranking, MOQ/queue decisions, and PO creation. Demand does not construct or pre-open a PO.
 
 ## 5. Dependency Chain
 order_revenue_units + inventory_truth

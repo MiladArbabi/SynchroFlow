@@ -104,18 +104,11 @@ function TrendBadge({ trend, prev, current }: { trend: 'up' | 'down' | 'stable';
   );
 }
 
-// ─────────────────────────────────────────────
-// CREATE PO HANDOFF
-// ─────────────────────────────────────────────
-function OrderCTA({ variant }: { variant: DemandVelocity }) {
+function SourceCTA({ variant }: { variant: DemandVelocity }) {
   const params = new URLSearchParams();
-  params.set('action', 'create-po');
-  if (variant.lasyncro_variant_id) params.set('variantId', variant.lasyncro_variant_id);
-  if (variant.sku) params.set('sku', variant.sku);
-  if (variant.suggested_reorder_qty) params.set('qty', String(variant.suggested_reorder_qty));
-  if (variant.title) params.set('description', variant.title);
+  params.set('variantId', variant.lasyncro_variant_id);
 
-  const href = `/suppliers-portal?${params.toString()}`;
+  const href = `/suppliers-portal/sourcing?${params.toString()}`;
 
   return (
     <Box
@@ -138,7 +131,7 @@ function OrderCTA({ variant }: { variant: DemandVelocity }) {
         '&:hover': { opacity: 0.88 },
       }}
     >
-      Create PO →
+      Source →
     </Box>
   );
 }
@@ -251,7 +244,7 @@ function VariantRow({ variant, currency, pal }: {
 
       {/* CTA */}
       {(isCritical || isWarning) ? (
-        <OrderCTA variant={variant} />
+        <SourceCTA variant={variant} />
       ) : (
         <Box />
       )}
