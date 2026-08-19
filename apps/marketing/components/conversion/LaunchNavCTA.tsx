@@ -14,7 +14,7 @@ export default function LaunchNavCTA() {
         href={availability.installUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="nav-cta"
+        className="nav-cta launch-nav-cta"
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -37,7 +37,7 @@ export default function LaunchNavCTA() {
     <>
       <button
         type="button"
-        className="nav-cta"
+        className="nav-cta launch-nav-cta"
         onClick={() => setOpen(true)}
         style={{
           display: 'inline-flex',

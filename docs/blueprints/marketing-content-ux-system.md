@@ -299,3 +299,30 @@ Once availability is enabled, launch forms disappear, the CTA becomes `Install o
 `packages/landing-page/index.html` cannot directly share the React conversion component, but it follows the same `/api/shopify-availability` contract, `/api/waitlist` contract, and source attribution.
 
 MKT-UX-01D-B preserved existing Blog newsletter behavior, checklist/waitlist consumers, Help documentation UX, Blog/Compare MDX content, backend waitlist persistence, duplicate-safe waitlist semantics, and existing public routing unrelated to Pilot.
+
+## Mobile marketing navigation
+
+MKT-UX-01D-B-PROD-01 fixed the mobile marketing navigation after launch conversion made the nav CTA customer-critical.
+
+The original marketing navigation used a single horizontal flex row. At narrow viewports, the launch CTA and later nav items were pushed outside the viewport. `body { overflow-x: hidden; }` masked the layout overflow, so the CTA became clipped instead of producing visible page scroll. The failure became reproducible at approximately 480px and functionally unusable around 390px and below.
+
+Desktop above 720px preserves the existing navigation: Blog, Compare, Pricing, Getting started, FAQ, About, and the launch-aware CTA.
+
+Mobile at `@media (max-width: 720px)` keeps the logo, launch-aware CTA, and Menu button directly visible. The six navigation links move into a vertical mobile dropdown.
+
+Implementation:
+
+- new: `apps/marketing/components/navigation/MarketingNav.tsx`
+- updated: `apps/marketing/app/layout.tsx`
+- updated: `apps/marketing/app/globals.css`
+- updated: `apps/marketing/components/conversion/LaunchNavCTA.tsx`
+
+Accessibility behavior: the Menu button uses `aria-expanded` and `aria-controls`; the menu toggles open and closed; navigation link selection closes the menu; Escape closes the menu; and the existing `LaunchNavCTA` dialog behavior is preserved.
+
+Responsive contract: at 320px the logo, launch CTA, and Menu are fully visible and clickable, with no page-level horizontal overflow.
+
+Verification covered 1440, 1024, 768, 721, 720, 600, 480, 390, 375, and 320px. On Pricing, `scrollWidth === clientWidth` at every tested width. The mobile modal was verified through the actual visible CTA at 390x844, 375x812, and 320x700. Routes verified: `/pricing`, `/compare`, `/compare/stocky-alternative`, `/blog/best-wms-for-shopify-small-business`, and `/help`. Desktop behavior was preserved.
+
+Out of scope: `/compare/stocky-alternative` still has an existing non-navigation horizontal overflow. At 390px, document width measured 411px because existing `figure.reveal` content extends beyond the viewport. Marketing nav itself measured inside the viewport and is not the cause; handle this as a separate issue.
+
+MKT-UX-01D-B-PROD-01 is implementation verified locally; production verification is pending deployment.

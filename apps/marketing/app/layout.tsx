@@ -1,6 +1,5 @@
 // app/layout.tsx
 // Root layout for the LaSyncro marketing app.
-// Uses inline styles exclusively — avoids Tailwind/CSS variable conflicts in production.
 
 import type { Metadata } from 'next'
 import { Plus_Jakarta_Sans } from 'next/font/google'
@@ -8,7 +7,7 @@ import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
 import PostHogProvider from '@/components/PostHogProvider'
-import LaunchNavCTA from '@/components/conversion/LaunchNavCTA'
+import MarketingNav from '@/components/navigation/MarketingNav'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ['latin'],
@@ -61,53 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", background: '#FAFAF8', color: '#0F0E0D' }}>
         <PostHogProvider>
           <Schema data={organizationSchema} />
-            <Nav />
+          <MarketingNav />
           <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
           <Footer />
         </PostHogProvider>
       </body>
     </html>
-  )
-}
-
-function Nav() {
-  return (
-    <nav style={{
-      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-      height: '60px', display: 'flex', alignItems: 'center',
-      padding: '0 5vw', justifyContent: 'space-between',
-      background: 'rgba(21,29,41,0.95)',
-      backdropFilter: 'blur(14px)',
-      WebkitBackdropFilter: 'blur(14px)',
-      borderBottom: '1px solid rgba(255,255,255,0.08)',
-    }}>
-      <a href="https://www.lasyncro.com" aria-label="LaSyncro home" style={{ display: 'flex', alignItems: 'center' }}>
-        {/* Logo switches based on color scheme — logo-dark for light bg, logo-light for dark bg */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="https://www.lasyncro.com/logo.png"
-          alt="LaSyncro"
-          style={{ height: '24px', width: 'auto', display: 'block' }}
-          className="logo-light-mode"
-        />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="https://www.lasyncro.com/logo.png"
-          alt="LaSyncro"
-          style={{ height: '24px', width: 'auto', display: 'none' }}
-          className="logo-dark-mode"
-        />
-      </a>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-        <Link href="/blog" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Blog</Link>
-        <Link href="/compare" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Compare</Link>
-        <Link href="/pricing" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Pricing</Link>
-        <Link href="/help/getting-started" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>Getting started</Link>
-        <Link href="/faq" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>FAQ</Link>
-        <Link href="/about" style={{ color: 'rgba(240,238,232,0.7)', textDecoration: 'none', fontSize: '14px' }}>About</Link>
-        <LaunchNavCTA />
-      </div>
-    </nav>
   )
 }
 
