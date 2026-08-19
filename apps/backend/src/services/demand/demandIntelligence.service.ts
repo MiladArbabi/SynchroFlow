@@ -510,6 +510,94 @@ export async function computeVariantPlanning(
     return variants;
 }
 
+/**
+ * STOCKOUT ALERT EMISSION (SRC-18c)
+ * ---------------------------------
+ * WRITE-ONLY. Computes nothing — callers supply already-planned variants
+ * from computeVariantPlanning so every writer emits the SAME message from
+ * the SAME numbers, net of reliable inbound.
+ *
+ * Extracted because resolve_inventory_block.handler.ts previously wrote its
+ * own competing row on the identical alert_key with a raw
+ * order_qty - available figure that ignored committed inbound entirely —
+ * telling merchants to reorder units already on a purchase order.
+ *
+ * Takes a caller-supplied transaction: the caller owns the tenant scope
+ * (SET LOCAL app.current_tenant) and the transaction lifetime.
+ *
+ * Reconciles as well as emits: any active source:'demand' alert not in the
+ * supplied critical set is resolved. Safe because this is now the only
+ * writer to that source.
+ */
+export async function emitStockoutAlerts(
+  trx: Knex.Transaction,
+  shopId: number,
+  variants: DemandVelocity[]
+): Promise<void> {
+  // Fire demand alerts for critical variants (stockout risk)
+  // Non-blocking — alert failure must not fail the demand computation
+  const criticalVariants = variants.filter(v => v.reorder_urgency === 'critical');
+  for (const v of criticalVariants) {
+    try {
+      await trx('alerts')
+        .insert({
+          shop_id: shopId,
+          alert_key: `demand:stockout_risk:${v.lasyncro_variant_id}`,
+          source: 'demand',
+          alert_type: 'stockout_risk',
+          severity: 'critical',
+          title: v.sku && v.title && v.sku !== v.title
+            ? `${v.title} (${v.sku}) — stockout risk`
+            : `${v.sku ?? v.title ?? 'Variant'} — stockout risk`,
+          message: (() => {
+            const qty = v.suggested_reorder_qty;
+            const qtyLabel = qty != null ? `${qty} unit${qty === 1 ? '' : 's'}` : null;
+            if (v.available_quantity <= 0) {
+              return `Out of stock — reorder ${qtyLabel ?? 'immediately'}.`;
+            }
+            if (v.days_of_stock_remaining != null) {
+              return `${v.days_of_stock_remaining} days of stock at current velocity. Suggested reorder: ${qtyLabel ?? 'unknown'}.`;
+            }
+            return 'Stock depleted — reorder immediately.';
+          })(),
+          entity_id: v.lasyncro_variant_id,
+          entity_type: 'variant',
+          revenue_impact: v.unit_cost && v.suggested_reorder_qty
+            ? v.unit_cost * v.suggested_reorder_qty
+            : null,
+          is_active: true,
+          category: 'stock_reorder',
+          audience: 'all',
+        })
+        .onConflict(['shop_id', 'alert_key'])
+        .merge({
+          is_active: true,
+          title:     trx.raw('EXCLUDED.title'),
+          message:   trx.raw('EXCLUDED.message'),
+          category:  'stock_reorder',
+          audience:  'all',
+          updated_at: trx.fn.now(),
+        });
+    } catch {
+      // non-fatal
+    }
+  }
+
+  // Resolve alerts for variants that are no longer critical or are no longer
+  // demand-eligible (for example inactive or non-physical catalog records).
+  const criticalAlertKeys = new Set(
+    variants
+      .filter(v => v.reorder_urgency === 'critical')
+      .map(v => `demand:stockout_risk:${v.lasyncro_variant_id}`)
+  );
+
+  // Resolve ALL active demand alerts for this shop that aren't in the current critical set
+  await trx('alerts')
+    .where({ shop_id: shopId, source: 'demand', is_active: true })
+    .whereNotIn('alert_key', Array.from(criticalAlertKeys))
+    .update({ is_active: false, resolved_at: trx.fn.now(), updated_at: trx.fn.now() });
+}
+
 export async function computeDemandIntelligence(
   shopId: number
 ): Promise<DemandIntelligenceResult> {
@@ -548,68 +636,8 @@ export async function computeDemandIntelligence(
       total_inventory_value: Math.round(totalInventoryValue * 100) / 100,
     };
 
-   // Fire demand alerts for critical variants (stockout risk)
-    // Non-blocking — alert failure must not fail the demand computation
-    const criticalVariants = variants.filter(v => v.reorder_urgency === 'critical');
-    for (const v of criticalVariants) {
-      try {
-        await trx('alerts')
-          .insert({
-            shop_id: shopId,
-            alert_key: `demand:stockout_risk:${v.lasyncro_variant_id}`,
-            source: 'demand',
-            alert_type: 'stockout_risk',
-            severity: 'critical',
-            title: v.sku && v.title && v.sku !== v.title
-              ? `${v.title} (${v.sku}) — stockout risk`
-              : `${v.sku ?? v.title ?? 'Variant'} — stockout risk`,
-            message: (() => {
-              const qty = v.suggested_reorder_qty;
-              const qtyLabel = qty != null ? `${qty} unit${qty === 1 ? '' : 's'}` : null;
-              if (v.available_quantity <= 0) {
-                return `Out of stock — reorder ${qtyLabel ?? 'immediately'}.`;
-              }
-              if (v.days_of_stock_remaining != null) {
-                return `${v.days_of_stock_remaining} days of stock at current velocity. Suggested reorder: ${qtyLabel ?? 'unknown'}.`;
-              }
-              return 'Stock depleted — reorder immediately.';
-            })(),
-            entity_id: v.lasyncro_variant_id,
-            entity_type: 'variant',
-            revenue_impact: v.unit_cost && v.suggested_reorder_qty
-              ? v.unit_cost * v.suggested_reorder_qty
-              : null,
-            is_active: true,
-            category: 'stock_reorder',
-            audience: 'all',
-          })
-          .onConflict(['shop_id', 'alert_key'])
-          .merge({
-            is_active: true,
-            title:     trx.raw('EXCLUDED.title'),
-            message:   trx.raw('EXCLUDED.message'),
-            category:  'stock_reorder',
-            audience:  'all',
-            updated_at: trx.fn.now(),
-          });
-      } catch {
-        // non-fatal
-      }
-    }
-
-    // Resolve alerts for variants that are no longer critical or are no longer
-    // demand-eligible (for example inactive or non-physical catalog records).
-    const criticalAlertKeys = new Set(
-      variants
-        .filter(v => v.reorder_urgency === 'critical')
-        .map(v => `demand:stockout_risk:${v.lasyncro_variant_id}`)
-    );
-
-    // Resolve ALL active demand alerts for this shop that aren't in the current critical set
-    await trx('alerts')
-      .where({ shop_id: shopId, source: 'demand', is_active: true })
-      .whereNotIn('alert_key', Array.from(criticalAlertKeys))
-      .update({ is_active: false, resolved_at: trx.fn.now(), updated_at: trx.fn.now() });
+    // SRC-18c: single writer for demand:stockout_risk — see emitStockoutAlerts.
+    await emitStockoutAlerts(trx, shopId, variants);
 
     return { summary, variants, computed_at: new Date().toISOString() };
   });
