@@ -70,6 +70,13 @@ export default function AboutPage() {
           align-items: center;
         }
 
+        .about-main-grid .article-visual-breakout {
+          opacity: 1;
+          transform: none;
+          margin-left: 0;
+          margin-right: 0;
+        }
+
         .about-stats-grid {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
@@ -228,6 +235,7 @@ export default function AboutPage() {
               alt="LaSyncro mobile scanning interface showing warehouse location management and real-time inventory drift prevention"
               caption="Every scan closes the gap between physical stock and Shopify's records."
               priority={true}
+              variant="dark"
             />
           </div>
         </div>

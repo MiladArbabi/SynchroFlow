@@ -495,7 +495,30 @@ Implementation files:
 - `apps/marketing/components/about/AboutCTAs.tsx`
 - `docs/blueprints/marketing-content-ux-system.md`
 
-MKT-UX-01F-D implementation is applied; local build and production visual verification remain pending.
+MKT-UX-01F-D base convergence is locally build-verified. Production inspection confirmed the new FAQ/About title authority and dark-theme contrast are active, but exposed one About-only layout defect: the intended right-side warehouse visual was rendered in the HTML but remained visually hidden.
+
+## MKT-UX-01F-D-PROD-01 — About body visual visibility
+
+Production verification showed the About body copy occupying only the left half of its desktop two-column layout while the intended right-side visual appeared empty.
+
+Audit confirmed that `apps/marketing/app/about/page.tsx` already renders `ArticleImage` with `floorplanning-4.png`, the asset exists under `apps/marketing/public/`, and production HTML contains the corresponding `/floorplanning-4.png` image element.
+
+The root cause is shared article reveal behavior rather than an asset or routing failure. `ArticleImage` renders with the shared `reveal article-visual-breakout` classes. Global `.reveal` CSS starts at `opacity: 0` and requires an `.in` state, while the standalone About route does not own that article reveal lifecycle.
+
+The production fix remains About-scoped rather than changing shared article behavior:
+
+- the About body explicitly restores `opacity: 1` and `transform: none` for its nested `.article-visual-breakout`;
+- article-specific negative breakout margins are neutralized inside the About two-column grid;
+- the existing `ArticleImage` now opts into `variant="dark"` so its border, caption, and supporting treatment use the canonical dark visual system;
+- the existing two-column desktop composition and responsive single-column behavior remain unchanged;
+- About copy, metadata, schemas, image asset, alt text, caption, and CTA contracts remain unchanged.
+
+Implementation files:
+
+- `apps/marketing/app/about/page.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+MKT-UX-01F-D-PROD-01 is implemented; local build and production visual verification remain pending.
 
 Next: MKT-UX-01F-E — Privacy + Terms convergence.
 
