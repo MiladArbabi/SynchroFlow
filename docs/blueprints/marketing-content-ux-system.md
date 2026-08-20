@@ -658,20 +658,38 @@ MKT-ROUTE-01 implementation is applied; production redirect verification remains
 
 ## MKT-UX-01F-F — Static landing-page typography convergence
 
-Status: pending audit.
+Status: implementation applied; production verification pending.
 
-Production review of the public `/` landing page shows that its primary headline and supporting typography still use a separate legacy display/serif treatment rather than the Plus Jakarta Sans visual system established across the current marketing application.
+The public `/` route is owned by the standalone static document `packages/landing-page/index.html`, separate from the Next.js marketing application.
 
-This issue is intentionally separate from MKT-ROUTE-01. Its audit must identify the static landing page's actual font declarations and typography ownership before any visual mutation.
+Audit confirmed that the root page declared two typography families but loaded neither:
 
-Target outcome:
+- `--serif` requested Plus Jakarta Sans with a Georgia fallback;
+- `--sans` requested DM Sans with a system fallback;
+- the hero H1 independently used an inline Plus Jakarta Sans declaration with a generic serif fallback;
+- ten footer links independently requested DM Sans;
+- no Google Fonts or local `@font-face` resource loaded either named family.
 
-- preserve the landing page's commercial composition, messaging, imagery, and hierarchy;
-- converge its typography with the established marketing font system;
-- use the canonical primary-page title treatment where appropriate rather than preserving an independent legacy font language;
-- verify desktop and mobile after implementation.
+That produced a visible typography mismatch on the public landing page, including a serif fallback in the primary hero title.
 
-No MKT-UX-01F-F code changes are included in MKT-ROUTE-01.
+Implementation converges the standalone page with the marketing typography authority:
+
+- Plus Jakarta Sans is explicitly loaded from Google Fonts;
+- both `--serif` and `--sans` now resolve to Plus Jakarta Sans;
+- all eleven legacy DM Sans references were removed;
+- the Georgia fallback was removed;
+- the primary display token now uses `clamp(38px, 5vw, 64px)`, weight `650`, line-height `1.05`;
+- the hero H1 uses the same canonical title scale with `-0.045em` letter-spacing;
+- the existing orange italic emphasis on `splitting apart.` is preserved;
+- copy, imagery, layout, animations, conversion form, and section composition are unchanged.
+
+Implementation file:
+
+- `packages/landing-page/index.html`
+
+Local source verification confirms `DM Sans = 0`, `Georgia = 0`, the Plus Jakarta Sans loader is present, and the canonical hero title authority is applied.
+
+Desktop and mobile production visual verification remain required after deployment.
 
 ## Blog preserved contracts
 
