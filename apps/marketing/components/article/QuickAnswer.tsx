@@ -4,24 +4,27 @@
 
 interface QuickAnswerProps {
   children: React.ReactNode
+  variant?: 'legacy' | 'dark'
 }
 
-export default function QuickAnswer({ children }: QuickAnswerProps) {
+export default function QuickAnswer({ children, variant = 'legacy' }: QuickAnswerProps) {
+  const isDark = variant === 'dark'
+
   return (
     <aside
       aria-label="Quick answer"
       style={{
         margin: '64px auto 0',
         borderRadius: '12px',
-        border: '1px solid #FFDCCA',
-        background: '#FFF0E8',
+        border: isDark ? '1px solid var(--accent-border)' : '1px solid #FFDCCA',
+        background: isDark ? 'var(--accent-ghost)' : '#FFF0E8',
         padding: '20px 24px',
       }}
     >
-      <p style={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#FF6B2B', marginBottom: '8px' }}>
+      <p style={{ fontFamily: isDark ? 'var(--sans)' : undefined, fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', color: isDark ? 'var(--accent)' : '#FF6B2B', marginBottom: '8px' }}>
         Quick Answer
       </p>
-      <div style={{ fontSize: '15px', lineHeight: 1.7, color: '#3A3835' }}>
+      <div style={{ fontFamily: isDark ? 'var(--sans)' : undefined, fontSize: '15px', lineHeight: 1.7, color: isDark ? 'var(--ink-2)' : '#3A3835' }}>
         {children}
       </div>
     </aside>

@@ -4,20 +4,23 @@
 interface NumberedH3Props {
   n: string
   title: string
+  variant?: 'legacy' | 'dark'
 }
-export default function NumberedH3({ n, title }: NumberedH3Props) {
+export default function NumberedH3({ n, title, variant = 'legacy' }: NumberedH3Props) {
+  const isDark = variant === 'dark'
+
   return (
     <h3 style={{
       display: 'flex', alignItems: 'baseline', gap: '12px',
-      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontFamily: isDark ? 'var(--sans)' : "'DM Sans', system-ui, sans-serif",
       fontSize: '18px', fontWeight: 500,
-      lineHeight: 1.3, color: '#0F0E0D',
+      lineHeight: 1.3, color: isDark ? 'var(--ink)' : '#0F0E0D',
       margin: '44px 0 14px',
     }}>
       <span style={{
-        fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+        fontFamily: isDark ? 'var(--sans)' : "'Plus Jakarta Sans', system-ui, sans-serif",
         fontSize: '15px', fontWeight: 400,
-        lineHeight: 1, color: '#FF6B2B',
+        lineHeight: 1, color: isDark ? 'var(--accent)' : '#FF6B2B',
         fontStyle: 'italic', flexShrink: 0,
       }}>
         {n}.

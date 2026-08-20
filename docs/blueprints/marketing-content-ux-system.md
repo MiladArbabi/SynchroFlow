@@ -157,7 +157,7 @@ MKT-UX-01C Blog convergence is complete. `/blog` and `/blog/[slug]` now use the 
 
 Blog has its own dark theme boundary at `apps/marketing/app/blog/layout.tsx` and uses the same LaSyncro operational palette as Help/auth.
 
-Blog index uses shared structural primitives while preserving its editorial composition. Blog articles no longer use legacy `ArticleLayout`; `ArticleLayout` remains unchanged for Compare, Features, and Industries.
+Blog index uses shared structural primitives while preserving its editorial composition. Blog articles no longer use legacy `ArticleLayout`; Compare now opts into the scoped `ArticleLayout` dark variant documented in MKT-UX-01F-B, while the legacy default remains available for Features and Industries.
 
 ## Help visual composition
 
@@ -355,11 +355,52 @@ This work did not change `packages/landing-page/index.html` or checklist static 
 
 Local verification covered `/blog`, `/blog/best-wms-for-shopify-small-business`, `/help/getting-started`, `/compare`, `/pricing`, `/faq`, and `/about` at desktop and mobile. Representative routes were also verified under `prefers-color-scheme: light` and `prefers-color-scheme: dark`. The body shell, nav, and footer remained dark; the logo remained deterministic; Blog/Help typography resolved to Plus Jakarta Sans; Blog/Help visual system remained intact; and the footer changed intentionally from light to dark.
 
-Known transition state: legacy route content for Compare, Pricing, FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Some routes can temporarily look mixed after MKT-UX-01F-A. This is expected migration state, not the final visual system, and those routes are not converged.
+Known transition state: after MKT-UX-01F-B, legacy route content for Pricing, FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Those routes can temporarily look mixed until their convergence issues are complete.
 
 MKT-UX-01F-A is implementation verified locally; production verification is pending deployment.
 
-Next: MKT-UX-01F-B — Compare index + Compare article convergence.
+## MKT-UX-01F-B — Compare dark palette and typography convergence
+
+MKT-UX-01F-B converged `/compare`, `/compare/brightpearl-alternative`, `/compare/cin7-alternative`, `/compare/linnworks-alternative`, and `/compare/stocky-alternative` to the canonical dark marketing system established in MKT-UX-01F-A. Pricing, FAQ standalone, About, Privacy, and Terms were not changed.
+
+The Compare index replaced legacy light-era palette ownership with semantic tokens: `var(--ink)` for primary text, `var(--ink-2)` for secondary copy, `var(--ink-3)` for metadata, `var(--rule)` / `var(--rule-2)` for rules, `var(--bg-2)` / `var(--surface)` for hover/surfaces, `var(--accent)` for accent treatment, and `var(--on-accent)` for text on accent. The legacy light hover `#F3F2EF` was removed; comparison rows now use a dark hover surface, accent title/arrow treatment, and an explicit accent keyboard focus outline. The existing responsive H1 clamp remains preserved.
+
+Compare index and rendered Compare article paths now use Plus Jakarta Sans through `var(--sans)`. No rendered DM Sans remains across the current Compare routes, but this does not mean DM Sans declarations were removed from the entire marketing application.
+
+`ArticleLayout` gained an explicit scoped dark variant, and Compare opts into it. The default legacy behavior remains available for current or future Features/Industries consumers. The dark variant tokenizes breadcrumbs, H1, deck, metadata, author row, dots, and dividers. Blog does not use `ArticleLayout`; it continues to use its separate shared content article shell.
+
+Compare articles previously inherited `ArticleLayout`'s default `Blog` breadcrumb label. Compare now explicitly passes `/compare` and `Compare`; schema breadcrumbs were already correct and were not changed.
+
+The Compare MDX mapper converged to dark tokens and Plus Jakarta Sans for `table`, `thead`, `tr`, `th`, `td`, `h2`, `h3`, `p`, `li`, and `strong`. Table horizontal scrolling behavior remains intentionally unchanged.
+
+Scoped dark support was added and used by Compare for `FAQ`, `InternalLinks`, `ArticleCTA`, `QuickAnswer`, `HeroVisual`, `NumberedH3`, `ProductVisual`, and `ArticleImage`. `InternalLinks` gained a generic `dark` variant while preserving existing `blogDark` behavior and the legacy default. `FAQ` preserved 720px responsive stacking and radio single-open behavior. `HeroVisual` preserved responsive breakout behavior.
+
+CTA convergence: `CompareCTA` preserved its visual design while moving typography to `var(--sans)` and palette to semantic accent tokens. `ArticleCTA` gained a scoped dark theme used by Compare, with inline and full CTA treatments dark-compatible and destinations/labels unchanged. `LaunchNotifyForm` was already token-compatible and needed no Compare-specific change.
+
+Local verification covered all five Compare routes at 1440x900, 768x900, 390x844, and 320x700. All returned 200, `document.scrollWidth === document.clientWidth`, Compare H1 responsive behavior remained preserved, FAQ mobile stacking remained preserved, HeroVisual breakout remained preserved, table wrapper behavior remained preserved, comparison row hover/focus was verified, and FAQ sequential-open behavior was verified.
+
+Representative contrast results: Index H1 14.6, Index body 9.74, Filter/date 5.24, Row title 14.6, Row description 9.74, Article H1 14.6, Article body/deck/table body/FAQ answer 9.74, Table header 5.24, CTA text 8.54, and Related title/body 12.8 / 8.54. Rendered Compare DM Sans count: 0.
+
+Unchanged content and SEO contracts: all four Compare slugs, titles, copy, MDX prose, metadata, canonical URLs, Article schema, FAQ schema, Breadcrumb schema, tracking, and launch conversion source. Only customer-facing breadcrumb rendering changed from incorrect `Blog` to `Compare`.
+
+Implementation files:
+
+- `apps/marketing/app/compare/page.tsx`
+- `apps/marketing/app/compare/[slug]/page.tsx`
+- `apps/marketing/components/article/ArticleLayout.tsx`
+- `apps/marketing/components/article/FAQ.tsx`
+- `apps/marketing/components/article/InternalLinks.tsx`
+- `apps/marketing/components/article/ArticleCTA.tsx`
+- `apps/marketing/components/compare/CompareCTA.tsx`
+- `apps/marketing/components/article/QuickAnswer.tsx`
+- `apps/marketing/components/article/HeroVisual.tsx`
+- `apps/marketing/components/article/NumberedH3.tsx`
+- `apps/marketing/components/article/ProductVisual.tsx`
+- `apps/marketing/components/article/ArticleImage.tsx`
+
+MKT-UX-01F-B is implementation verified locally; production verification is pending deployment.
+
+Next: MKT-UX-01F-C — Pricing convergence.
 
 ## Blog preserved contracts
 

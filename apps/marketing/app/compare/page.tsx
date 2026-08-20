@@ -45,9 +45,10 @@ export default function CompareIndex() {
     <>
       <style>{`
         a { color: inherit; text-decoration: none; }
-        .compare-row:hover { background: #F3F2EF !important; }
-        .compare-row:hover .compare-title { color: #FF6B2B !important; }
-        .compare-row:hover .compare-arrow { color: #FF6B2B !important; transform: translateX(4px); }
+        .compare-row:hover { background: var(--bg-2) !important; }
+        .compare-row:hover .compare-title { color: var(--accent) !important; }
+        .compare-row:hover .compare-arrow { color: var(--accent) !important; transform: translateX(4px); }
+        .compare-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; background: var(--bg-2); }
         .compare-arrow { transition: color .15s, transform .15s; }
         .compare-title { transition: color .15s; }
         @media (max-width: 720px) {
@@ -58,26 +59,26 @@ export default function CompareIndex() {
 
       {/* ── Page header ───────────────────────────────────────────── */}
       <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--accent)', marginBottom: 22, fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
           Operator-honest comparisons
         </div>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 'clamp(48px, 10vw, 64px)', fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
+        <h1 style={{ fontFamily: 'var(--sans)', fontSize: 'clamp(48px, 10vw, 64px)', fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '0 0 32px', maxWidth: 820 }}>
           LaSyncro vs{' '}
-          <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>the alternatives.</em>
+          <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>the alternatives.</em>
         </h1>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: '#3A3835', maxWidth: 560, margin: 0 }}>
+        <p style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: 'var(--ink-2)', maxWidth: 560, margin: 0 }}>
           How LaSyncro compares to enterprise WMS and operations tools — built for Shopify merchants who need operational intelligence without the enterprise price tag.
         </p>
       </header>
 
       {/* ── Filter strip ──────────────────────────────────────────── */}
-      <div style={{ ...W, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 5vw', borderTop: '1px solid #E8E6E0', borderBottom: '1px solid #E8E6E0' }}>
-        <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280' }}>
+      <div style={{ ...W, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 5vw', borderTop: '1px solid var(--rule)', borderBottom: '1px solid var(--rule)' }}>
+        <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400, color: 'var(--ink-3)' }}>
           All comparisons
         </span>
-        <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 16, color: '#0F0E0D', fontStyle: 'italic' }}>
+        <div style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--sans)', fontSize: 16, color: 'var(--ink)', fontStyle: 'italic' }}>
             {pages.length}
           </span>
           tools compared
@@ -86,46 +87,46 @@ export default function CompareIndex() {
 
       {/* ── Compare list ──────────────────────────────────────────── */}
       {pages.length === 0 && (
-        <p style={{ ...W, padding: '24px 5vw', color: '#9CA3AF', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14 }}>
+        <p style={{ ...W, padding: '24px 5vw', color: 'var(--ink-3)', fontFamily: 'var(--sans)', fontSize: 14 }}>
           Comparison pages coming soon.
         </p>
       )}
       <ul style={{ ...W, listStyle: 'none', padding: '0 5vw', margin: '0 auto' }}>
         {pages.map((page) => (
-          <li key={page.slug} style={{ borderTop: '1px solid #E8E6E0' }}>
+          <li key={page.slug} style={{ borderTop: '1px solid var(--rule)' }}>
             <a href={`/compare/${page.slug}`} className="compare-row" style={{
               display: 'grid', gridTemplateColumns: '1fr 180px auto',
               gap: 28, alignItems: 'baseline', padding: '28px 4px', transition: 'padding .2s, background .15s',
             }}>
               <div style={{ minWidth: 0 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
-                  <span style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: '#FF6B2B' }}>
+                  <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                  <span style={{ fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' as const, color: 'var(--accent)' }}>
                     {page.frontmatter.tags?.[0]}
                   </span>
                 </div>
-                <h2 className="compare-title" style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 6px' }}>
+                <h2 className="compare-title" style={{ fontFamily: 'var(--sans)', fontSize: 22, fontWeight: 400, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '0 0 6px' }}>
                   {page.frontmatter.title}
                 </h2>
-                <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: '#6B7280', margin: 0, maxWidth: 560 }}>
+                <p style={{ fontFamily: 'var(--sans)', fontSize: 14, fontWeight: 300, lineHeight: 1.55, color: 'var(--ink-2)', margin: 0, maxWidth: 560 }}>
                   {page.frontmatter.description}
                 </p>
               </div>
-              <span style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 400, color: '#6B7280', letterSpacing: '0.04em' }}>
+              <span style={{ fontFamily: 'var(--sans)', fontSize: 13, fontWeight: 400, color: 'var(--ink-3)', letterSpacing: '0.04em' }}>
                 {formatDate(page.frontmatter.date)}
               </span>
-              <span className="compare-arrow compare-arrow-col" style={{ color: '#9CA3AF', alignSelf: 'center' }}>
+              <span className="compare-arrow compare-arrow-col" style={{ color: 'var(--ink-3)', alignSelf: 'center' }}>
                 <ArrowRight size={16} />
               </span>
             </a>
           </li>
         ))}
-        <li style={{ borderTop: '1px solid #E8E6E0' }} />
+        <li style={{ borderTop: '1px solid var(--rule)' }} />
       </ul>
 
       {/* ── Bottom CTA ────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '80px 5vw 64px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 20 }}>
-        <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0, maxWidth: 480 }}>
+        <p style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: 'var(--ink-2)', margin: 0, maxWidth: 480 }}>
           Don&apos;t see your current tool? Every comparison is operator-honest — we&apos;ll tell you when a competitor is a better fit.
         </p>
         <CompareCTA />

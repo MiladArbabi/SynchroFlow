@@ -19,58 +19,64 @@ import NumberedH3 from '@/components/article/NumberedH3'
 import Checklist from '@/components/article/Checklist'
 import { Metadata } from 'next'
 import remarkGfm from 'remark-gfm'
+import type { ComponentProps } from 'react'
 
 // MDX components — h2/h3 explicitly mapped to prevent browser default bold rendering
 const components = {
-  QuickAnswer, ArticleImage, HeroVisual, NumberedH3, Checklist, ProductVisual,
+  QuickAnswer: (props: ComponentProps<typeof QuickAnswer>) => <QuickAnswer {...props} variant="dark" />,
+  ArticleImage: (props: ComponentProps<typeof ArticleImage>) => <ArticleImage {...props} variant="dark" />,
+  HeroVisual: (props: ComponentProps<typeof HeroVisual>) => <HeroVisual {...props} variant="dark" />,
+  NumberedH3: (props: ComponentProps<typeof NumberedH3>) => <NumberedH3 {...props} variant="dark" />,
+  Checklist,
+  ProductVisual: (props: ComponentProps<typeof ProductVisual>) => <ProductVisual {...props} variant="dark" />,
   // Styled table components — renders MDX pipe tables with brand design system
   table: ({ children }: { children: React.ReactNode }) => (
     <div style={{ overflowX: 'auto', margin: '32px 0' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: '14px' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontFamily: 'var(--sans)', fontSize: '14px' }}>
         {children}
       </table>
     </div>
   ),
   thead: ({ children }: { children: React.ReactNode }) => (
-    <thead style={{ borderBottom: '2px solid #E8E6E0' }}>{children}</thead>
+    <thead style={{ borderBottom: '2px solid var(--rule-2)' }}>{children}</thead>
   ),
   tbody: ({ children }: { children: React.ReactNode }) => (
     <tbody>{children}</tbody>
   ),
   tr: ({ children }: { children: React.ReactNode }) => (
-    <tr style={{ borderBottom: '1px solid #F3F2EF' }}>{children}</tr>
+    <tr style={{ borderBottom: '1px solid var(--rule)' }}>{children}</tr>
   ),
   th: ({ children }: { children: React.ReactNode }) => (
-    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 500, color: '#6B7280', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>
+    <th style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 500, color: 'var(--ink-3)', fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase' as const }}>
       {children}
     </th>
   ),
   td: ({ children }: { children: React.ReactNode }) => (
-    <td style={{ padding: '12px 16px', color: '#3A3835', fontWeight: 300, lineHeight: 1.5, verticalAlign: 'top' }}>
+    <td style={{ padding: '12px 16px', color: 'var(--ink-2)', fontWeight: 300, lineHeight: 1.5, verticalAlign: 'top' }}>
       {children}
     </td>
   ),
   h2: ({ children }: { children: React.ReactNode }) => (
     <h2 style={{
-      fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+      fontFamily: 'var(--sans)',
       fontSize: '32px', fontWeight: 400,
       lineHeight: 1.25, letterSpacing: '-0.02em',
-      color: '#0F0E0D', margin: '40px 0 14px',
+      color: 'var(--ink)', margin: '40px 0 14px',
     }}>{children}</h2>
   ),
   h3: ({ children }: { children: React.ReactNode }) => (
     <h3 style={{
-      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontFamily: 'var(--sans)',
       fontSize: '18px', fontWeight: 500,
-      lineHeight: 1.3, color: '#0F0E0D',
+      lineHeight: 1.3, color: 'var(--ink)',
       margin: '24px 0 10px',
     }}>{children}</h3>
   ),
   p: ({ children }: { children: React.ReactNode }) => (
     <p style={{
-      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontFamily: 'var(--sans)',
       fontSize: '17px', fontWeight: 300,
-      lineHeight: 1.75, color: '#3A3835',
+      lineHeight: 1.75, color: 'var(--ink-2)',
       margin: '0 0 22px',
     }}>{children}</p>
   ),
@@ -79,14 +85,14 @@ const components = {
   ),
   li: ({ children }: { children: React.ReactNode }) => (
     <li style={{
-      fontFamily: "'DM Sans', system-ui, sans-serif",
+      fontFamily: 'var(--sans)',
       fontSize: '17px', fontWeight: 300,
-      lineHeight: 1.7, color: '#3A3835',
+      lineHeight: 1.7, color: 'var(--ink-2)',
       marginBottom: '6px',
     }}>{children}</li>
   ),
   strong: ({ children }: { children: React.ReactNode }) => (
-    <strong style={{ fontWeight: 500, color: '#0F0E0D' }}>{children}</strong>
+    <strong style={{ fontWeight: 500, color: 'var(--ink)' }}>{children}</strong>
   ),
 }
 
@@ -146,7 +152,13 @@ export default async function ComparePage({ params }: { params: Promise<{ slug: 
         { name: frontmatter.title, url },
       ])} />
       <CompareArticleTracker competitor={slug} />
-    <ArticleLayout frontmatter={frontmatter} relatedLinks={frontmatter.relatedLinks} wordCount={content?.split(/\s+/).length ?? 0}>
+    <ArticleLayout
+      frontmatter={frontmatter}
+      relatedLinks={frontmatter.relatedLinks}
+      wordCount={content?.split(/\s+/).length ?? 0}
+      basePath={{ href: '/compare', label: 'Compare' }}
+      variant="dark"
+    >
       <MDXRemote source={content} components={components} options={{ mdxOptions: { remarkPlugins: [remarkGfm] } }} />
       </ArticleLayout>
       <ContentShell width="article" style={{ paddingTop: 0, paddingBottom: 64 }}>

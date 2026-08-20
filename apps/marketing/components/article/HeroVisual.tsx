@@ -12,6 +12,7 @@ interface HeroVisualProps {
   rightItems: string
   caption?: string
   contentDriven?: boolean
+  variant?: 'legacy' | 'dark'
 }
 
 export default function HeroVisual({
@@ -19,9 +20,23 @@ export default function HeroVisual({
   rightLabel, rightHeading, rightItems,
   caption,
   contentDriven = false,
+  variant = 'legacy',
 }: HeroVisualProps) {
   const leftList = leftItems.split('|')
   const rightList = rightItems.split('|')
+  const isDark = variant === 'dark'
+  const sans = isDark ? 'var(--sans)' : "'DM Sans', system-ui, sans-serif"
+  const primary = isDark ? 'var(--ink)' : '#0F0E0D'
+  const secondary = isDark ? 'var(--ink-2)' : '#3A3835'
+  const muted = isDark ? 'var(--ink-3)' : '#6B7280'
+  const faint = isDark ? 'var(--ink-4)' : '#9CA3AF'
+  const rule = isDark ? 'var(--rule)' : '#E8E6E0'
+  const ruleStrong = isDark ? 'var(--rule-2)' : '#D1CFC8'
+  const surface = isDark ? 'var(--bg-2)' : '#F3F2EF'
+  const accent = isDark ? 'var(--accent)' : '#FF6B2B'
+  const accentGhost = isDark ? 'var(--accent-ghost)' : '#FFF0E8'
+  const accentBorder = isDark ? 'var(--accent-border)' : '#FFDCCA'
+
   return (
     <figure
       className={contentDriven ? 'reveal blog-hero-visual-content-driven' : 'reveal article-visual-breakout article-visual-breakout--hero'}
@@ -31,8 +46,8 @@ export default function HeroVisual({
         aspectRatio: contentDriven ? undefined : undefined,
         width: contentDriven ? '100%' : undefined,
         minHeight: contentDriven ? 300 : undefined,
-        background: '#F3F2EF',
-        border: '1px solid #E8E6E0',
+        background: surface,
+        border: `1px solid ${rule}`,
         borderRadius: '12px',
         overflow: 'hidden',
         position: 'relative',
@@ -43,7 +58,7 @@ export default function HeroVisual({
         {/* Grid background */}
         <div style={{
           position: 'absolute', inset: 0,
-          backgroundImage: 'linear-gradient(#E8E6E0 1px, transparent 1px), linear-gradient(90deg, #E8E6E0 1px, transparent 1px)',
+          backgroundImage: `linear-gradient(${rule} 1px, transparent 1px), linear-gradient(90deg, ${rule} 1px, transparent 1px)`,
           backgroundSize: '32px 32px',
           WebkitMaskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, #000 15%, transparent 75%)',
           maskImage: 'radial-gradient(ellipse 70% 60% at 50% 50%, #000 15%, transparent 75%)',
@@ -64,26 +79,26 @@ export default function HeroVisual({
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '18px',
         }}>
           <span style={{
-            fontFamily: "'DM Sans', system-ui, sans-serif",
+            fontFamily: sans,
             fontSize: '11px', fontWeight: 500,
             letterSpacing: '0.12em', textTransform: 'uppercase',
-            color: '#6B7280',
+            color: muted,
           }}>{leftLabel}</span>
           <h4 style={{
-            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+            fontFamily: isDark ? 'var(--sans)' : "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
-            margin: 0, color: '#0F0E0D',
+            margin: 0, color: primary,
           }} dangerouslySetInnerHTML={{ __html: leftHeading }} />
           <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: '8px' }}>
             {leftList.map((item, i) => (
               <li key={i} style={{
-                fontFamily: "'DM Sans', system-ui, sans-serif",
+                fontFamily: sans,
                 fontSize: '13px', fontWeight: 300,
-                lineHeight: 1.7, color: '#3A3835',
+                lineHeight: 1.7, color: secondary,
                 display: 'flex', alignItems: 'center', gap: '10px',
               }}>
-                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#9CA3AF', flexShrink: 0 }} />
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: faint, flexShrink: 0 }} />
                 {item}
               </li>
             ))}
@@ -99,13 +114,13 @@ export default function HeroVisual({
         }}>
           <div className={contentDriven ? 'hero-visual-divider-line' : 'article-visual-breakout-hero-divider-line'} style={{
             position: 'absolute', top: 0, bottom: 0, left: '50%', width: '1px',
-            background: 'linear-gradient(180deg, transparent, #D1CFC8 20%, #D1CFC8 80%, transparent)',
+            background: `linear-gradient(180deg, transparent, ${ruleStrong} 20%, ${ruleStrong} 80%, transparent)`,
           }} />
           <span className={contentDriven ? 'hero-visual-arrow' : undefined} style={{
             width: '44px', height: '44px', borderRadius: '50%',
-            background: '#FFF0E8', border: '1px solid #FFDCCA',
+            background: accentGhost, border: `1px solid ${accentBorder}`,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            color: '#FF6B2B', position: 'relative', zIndex: 1, flexShrink: 0,
+            color: accent, position: 'relative', zIndex: 1, flexShrink: 0,
           }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>
@@ -120,26 +135,26 @@ export default function HeroVisual({
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '18px',
         }}>
           <span style={{
-            fontFamily: "'DM Sans', system-ui, sans-serif",
+            fontFamily: sans,
             fontSize: '11px', fontWeight: 500,
             letterSpacing: '0.12em', textTransform: 'uppercase',
-            color: '#FF6B2B',
+            color: accent,
           }}>{rightLabel}</span>
           <h4 style={{
-            fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif",
+            fontFamily: isDark ? 'var(--sans)' : "'Plus Jakarta Sans', system-ui, sans-serif",
             fontSize: '24px', fontWeight: 400,
             lineHeight: 1.15, letterSpacing: '-0.02em',
-            margin: 0, color: '#0F0E0D',
+            margin: 0, color: primary,
           }} dangerouslySetInnerHTML={{ __html: rightHeading }} />
           <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'grid', gap: '8px' }}>
             {rightList.map((item, i) => (
               <li key={i} style={{
-                fontFamily: "'DM Sans', system-ui, sans-serif",
+                fontFamily: sans,
                 fontSize: '13px', fontWeight: 300,
-                lineHeight: 1.7, color: '#3A3835',
+                lineHeight: 1.7, color: secondary,
                 display: 'flex', alignItems: 'center', gap: '10px',
               }}>
-                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: '#FF6B2B', flexShrink: 0 }} />
+                <span style={{ width: '5px', height: '5px', borderRadius: '50%', background: accent, flexShrink: 0 }} />
                 {item}
               </li>
             ))}
@@ -149,9 +164,9 @@ export default function HeroVisual({
 
       {caption && (
         <figcaption style={{
-          fontFamily: "'DM Sans', system-ui, sans-serif",
+          fontFamily: sans,
           fontSize: '13px', fontWeight: 300,
-          color: '#6B7280', marginTop: '14px',
+          color: muted, marginTop: '14px',
           textAlign: 'center', maxWidth: '640px',
           marginLeft: 'auto', marginRight: 'auto',
         }}>
