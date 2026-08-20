@@ -345,7 +345,7 @@ Canonical dark tokens in `apps/marketing/app/globals.css`:
 
 `apps/marketing/app/globals.css` owns the dark palette directly at `:root`. The previous root/body palette switching under `prefers-color-scheme` was removed for the application shell. `html` declares `color-scheme: dark`, and `body` uses `font-family: var(--sans)`, `background: var(--bg)`, and `color: var(--ink)`.
 
-The marketing app loads Plus Jakarta Sans through `next/font`. Both shared typography aliases resolve through `--font-plus-jakarta-sans`; do not describe DM Sans as loaded. Explicit legacy DM Sans declarations still exist and are intentionally deferred to MKT-UX-01F-B Compare, MKT-UX-01F-C Pricing, MKT-UX-01F-D FAQ/About, MKT-UX-01F-E Privacy/Terms, and legacy article/template cleanup as encountered within those scopes.
+The marketing app loads Plus Jakarta Sans through `next/font`. Both shared typography aliases resolve through `--font-plus-jakarta-sans`; do not describe DM Sans as loaded. Explicit legacy DM Sans declarations still exist and are intentionally deferred to MKT-UX-01F-E Privacy/Terms and legacy article/template cleanup as encountered within those scopes.
 
 Root layout no longer hard-codes light body colors. The shared footer is now dark and token-driven through `.marketing-footer`, `.marketing-footer-links`, and `.marketing-footer-link`. Navigation now uses one deterministic logo image appropriate for the dark shell; OS-theme-driven duplicate logo switching was removed. Navigation structure and destinations did not change.
 
@@ -355,7 +355,7 @@ This work did not change `packages/landing-page/index.html` or checklist static 
 
 Local verification covered `/blog`, `/blog/best-wms-for-shopify-small-business`, `/help/getting-started`, `/compare`, `/pricing`, `/faq`, and `/about` at desktop and mobile. Representative routes were also verified under `prefers-color-scheme: light` and `prefers-color-scheme: dark`. The body shell, nav, and footer remained dark; the logo remained deterministic; Blog/Help typography resolved to Plus Jakarta Sans; Blog/Help visual system remained intact; and the footer changed intentionally from light to dark.
 
-Known transition state: after MKT-UX-01F-C, legacy route content for FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Those routes can temporarily look mixed until their convergence issues are complete.
+Known transition state: after MKT-UX-01F-D, legacy route content for Privacy and Terms still contains light-era inline palette/font declarations. Those routes can temporarily look mixed until their convergence issue is complete.
 
 MKT-UX-01F-A is implementation verified locally; production verification is pending deployment.
 
@@ -457,9 +457,47 @@ Implementation files:
 
 Local verification: the marketing production build compiled successfully, TypeScript passed, and all 106 static pages generated successfully with `/pricing` remaining statically prerendered. Interactive visual verification is intentionally deferred to the deployed production route after commit/push.
 
-MKT-UX-01F-C is build verified locally; production interaction and visual verification are pending deployment.
+MKT-UX-01F-C is production verified and complete. `/pricing` renders the canonical dark palette and Pricing H1 authority in production; Monthly and Annual both switch correctly; Monthly renders `$79`, `$179`, and `$349`; Annual renders the canonical monthly-equivalent prices and annual billed totals; Growth remains visually emphasized; and launch conversion/footer content remain readable and contained.
 
-Next: MKT-UX-01F-D — FAQ + About convergence.
+## MKT-UX-01F-D — FAQ + About dark palette, title, and responsive convergence
+
+MKT-UX-01F-D converges `/faq` and `/about` to the canonical dark marketing visual system and applies the Pricing H1 treatment as the shared primary-page title authority.
+
+Both page H1s now use:
+
+```txt
+font-family: var(--sans)
+font-size: clamp(38px, 5vw, 64px)
+font-weight: 650
+line-height: 1.05
+letter-spacing: -0.045em
+color: var(--ink)
+```
+
+About preserves its intentional orange italic emphasis on `run their own warehouse.` while the base H1 uses the same typography and light-on-dark contrast as Pricing.
+
+FAQ and About no longer declare DM Sans or route-local Plus Jakarta Sans strings. Their rendered typography uses the shared `var(--sans)` authority.
+
+FAQ replaces its legacy dark text and light rules/surfaces with `var(--ink)`, `var(--ink-2)`, `var(--rule)`, `var(--accent)`, `var(--accent-ghost)`, `var(--accent-border)`, and `var(--on-accent)`. The contact callout remains visually emphasized without reintroducing a light-theme card.
+
+FAQ rows retain the existing two-column question/answer composition above 720px and collapse to one column at or below 720px. All FAQ copy, FAQPage schema, metadata, canonical URL, questions, answers, and mailto destination remain unchanged.
+
+About replaces legacy light-era H1/body/rule/stats colors with semantic dark tokens. Its body/image composition remains two-column above 880px and stacks to one column at or below 880px. The three-card stats strip remains three-column above 720px and becomes one column at or below 720px.
+
+About preserves Organization schema, AboutPage schema, metadata, canonical URL, Open Graph metadata, copy, `ArticleImage`, image source/alt/caption, Blog CTA destination, and `about_cta_clicked` analytics.
+
+`AboutCTAs` no longer owns a second top divider and top padding. The About page section is the single owner of that boundary, removing the previous duplicate rule/spacing while preserving CTA behavior.
+
+Implementation files:
+
+- `apps/marketing/app/faq/page.tsx`
+- `apps/marketing/app/about/page.tsx`
+- `apps/marketing/components/about/AboutCTAs.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+MKT-UX-01F-D implementation is applied; local build and production visual verification remain pending.
+
+Next: MKT-UX-01F-E — Privacy + Terms convergence.
 
 ## Blog preserved contracts
 

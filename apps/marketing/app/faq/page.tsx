@@ -3,11 +3,16 @@ import Schema from '@/components/seo/Schema'
 
 export const metadata: Metadata = {
   title: 'FAQ — LaSyncro',
-  description: 'Frequently asked questions about LaSyncro warehouse management. Setup, pricing, integrations, and more.',
+  description:
+    'Frequently asked questions about LaSyncro warehouse management. Setup, pricing, integrations, and more.',
   alternates: { canonical: 'https://www.lasyncro.com/faq' },
 }
 
-const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
+const W = {
+  maxWidth: '1200px',
+  margin: '0 auto',
+  padding: '0 5vw',
+} as const
 
 const faqs = [
   {
@@ -63,7 +68,7 @@ const faqs = [
 const faqSchema = {
   '@context': 'https://schema.org',
   '@type': 'FAQPage',
-  mainEntity: faqs.map(f => ({
+  mainEntity: faqs.map((f) => ({
     '@type': 'Question',
     name: f.q,
     acceptedAnswer: { '@type': 'Answer', text: f.a },
@@ -75,41 +80,181 @@ export default function FaqPage() {
     <>
       <Schema data={faqSchema} />
 
-      <header style={{ ...W, padding: '96px 5vw 64px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
+      <style>{`
+        .faq-row {
+          display: grid;
+          grid-template-columns: 1fr 1.4fr;
+          gap: 2vw;
+          padding: 32px 0;
+          border-bottom: 1px solid var(--rule);
+        }
+
+        .faq-contact:hover {
+          background: var(--accent-hover) !important;
+        }
+
+        .faq-contact:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 3px;
+        }
+
+        @media (max-width: 720px) {
+          .faq-row {
+            grid-template-columns: 1fr;
+            gap: 12px;
+            padding: 24px 0;
+          }
+
+          .faq-contact-card {
+            padding: 28px 20px !important;
+          }
+        }
+      `}</style>
+
+      <header style={{ ...W, padding: '88px 5vw 48px' }}>
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'var(--accent)',
+            marginBottom: 22,
+            fontFamily: 'var(--sans)',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              display: 'inline-block',
+            }}
+          />
           FAQ
         </div>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 'clamp(36px, 5vw, 56px)', fontWeight: 400, lineHeight: 1.1, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 20px', maxWidth: 640 }}>
-          Common questions,<br />straight answers.
+
+        <h1
+          style={{
+            fontFamily: 'var(--sans)',
+            fontSize: 'clamp(38px, 5vw, 64px)',
+            fontWeight: 650,
+            lineHeight: 1.05,
+            letterSpacing: '-0.045em',
+            color: 'var(--ink)',
+            margin: '0 0 22px',
+            maxWidth: 760,
+          }}
+        >
+          Common questions,
+          <br />
+          straight answers.
         </h1>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 17, fontWeight: 300, lineHeight: 1.65, color: '#6B7280', margin: 0, maxWidth: 480 }}>
+
+        <p
+          style={{
+            fontFamily: 'var(--sans)',
+            fontSize: 18,
+            fontWeight: 400,
+            lineHeight: 1.65,
+            color: 'var(--ink-2)',
+            margin: 0,
+            maxWidth: 620,
+          }}
+        >
           Everything you need to know before connecting your store.
         </p>
       </header>
 
       <div style={{ ...W, padding: '0 5vw 96px' }}>
-        <div style={{ borderTop: '1px solid #E8E6E0' }}>
-          {faqs.map((faq, i) => (
-            <div key={i} style={{ borderBottom: '1px solid #E8E6E0', padding: '32px 0', display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: '2vw' }}>
-              <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 20, fontWeight: 400, color: '#0F0E0D', margin: 0, lineHeight: 1.3 }}>
+        <div style={{ borderTop: '1px solid var(--rule)' }}>
+          {faqs.map((faq) => (
+            <div key={faq.q} className="faq-row">
+              <h2
+                style={{
+                  fontFamily: 'var(--sans)',
+                  fontSize: 20,
+                  fontWeight: 600,
+                  color: 'var(--ink)',
+                  margin: 0,
+                  lineHeight: 1.35,
+                }}
+              >
                 {faq.q}
               </h2>
-              <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.7, color: '#3A3835', margin: 0 }}>
+
+              <p
+                style={{
+                  fontFamily: 'var(--sans)',
+                  fontSize: 15,
+                  fontWeight: 400,
+                  lineHeight: 1.7,
+                  color: 'var(--ink-2)',
+                  margin: 0,
+                }}
+              >
                 {faq.a}
               </p>
             </div>
           ))}
         </div>
 
-        <div style={{ marginTop: 64, padding: '40px', background: '#FFF5F0', borderRadius: 16, border: '1px solid #FFD4BC', textAlign: 'center' }}>
-          <p style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 20, color: '#0F0E0D', margin: '0 0 8px' }}>
+        <div
+          className="faq-contact-card"
+          style={{
+            marginTop: 64,
+            padding: 40,
+            background: 'var(--accent-ghost)',
+            borderRadius: 16,
+            border: '1px solid var(--accent-border)',
+            textAlign: 'center',
+          }}
+        >
+          <p
+            style={{
+              fontFamily: 'var(--sans)',
+              fontSize: 20,
+              fontWeight: 600,
+              color: 'var(--ink)',
+              margin: '0 0 8px',
+            }}
+          >
             Still have questions?
           </p>
-          <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, color: '#6B7280', margin: '0 0 20px' }}>
+
+          <p
+            style={{
+              fontFamily: 'var(--sans)',
+              fontSize: 14,
+              fontWeight: 400,
+              lineHeight: 1.6,
+              color: 'var(--ink-2)',
+              margin: '0 0 20px',
+            }}
+          >
             We reply to every email within one business day.
           </p>
-          <a href="mailto:contact@lasyncro.com" style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 500, color: '#fff', background: '#FF6B2B', borderRadius: 8, padding: '10px 24px', textDecoration: 'none', display: 'inline-block' }}>
+
+          <a
+            className="faq-contact"
+            href="mailto:contact@lasyncro.com"
+            style={{
+              fontFamily: 'var(--sans)',
+              fontSize: 13,
+              fontWeight: 600,
+              color: 'var(--on-accent)',
+              background: 'var(--accent)',
+              borderRadius: 8,
+              padding: '10px 24px',
+              textDecoration: 'none',
+              display: 'inline-block',
+              transition: 'background 0.15s ease',
+            }}
+          >
             contact@lasyncro.com
           </a>
         </div>

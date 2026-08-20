@@ -10,14 +10,22 @@ import ArticleImage from '@/components/article/ArticleImage'
 
 export const metadata: Metadata = {
   title: 'About LaSyncro — Operational Intelligence for Shopify Merchants',
-  description: 'LaSyncro is built for Shopify merchants running their own warehouse. Learn about our mission, who we are, and who we build for.',
+  description:
+    'LaSyncro is built for Shopify merchants running their own warehouse. Learn about our mission, who we are, and who we build for.',
   alternates: { canonical: 'https://www.lasyncro.com/about' },
   openGraph: {
     title: 'About LaSyncro — Operational Intelligence for Shopify Merchants',
-    description: 'LaSyncro is built for Shopify merchants running their own warehouse.',
+    description:
+      'LaSyncro is built for Shopify merchants running their own warehouse.',
     url: 'https://www.lasyncro.com/about',
     type: 'website',
-    images: [{ url: 'https://www.lasyncro.com/og_image_lightmode.png', width: 1200, height: 630 }],
+    images: [
+      {
+        url: 'https://www.lasyncro.com/og_image_lightmode.png',
+        width: 1200,
+        height: 630,
+      },
+    ],
   },
 }
 
@@ -29,7 +37,8 @@ const organizationSchema = {
   url: 'https://www.lasyncro.com',
   email: 'contact@lasyncro.com',
   foundingDate: '2026',
-  description: 'LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse.',
+  description:
+    'LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse.',
 }
 
 const aboutPageSchema = {
@@ -38,19 +47,14 @@ const aboutPageSchema = {
   '@id': 'https://www.lasyncro.com/about',
   url: 'https://www.lasyncro.com/about',
   name: 'About LaSyncro',
-  publisher: { '@id': 'https://www.lasyncro.com/#organization', },
+  publisher: { '@id': 'https://www.lasyncro.com/#organization' },
 }
 
-function ArrowRight({ size = 16 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12h14" /><path d="m13 6 6 6-6 6" />
-    </svg>
-  )
-}
-
-const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
+const W = {
+  maxWidth: '1200px',
+  margin: '0 auto',
+  padding: '0 5vw',
+} as const
 
 export default function AboutPage() {
   return (
@@ -58,44 +62,166 @@ export default function AboutPage() {
       <Schema data={organizationSchema} />
       <Schema data={aboutPageSchema} />
 
-      <style>{`a { color: inherit; text-decoration: none; }`}</style>
+      <style>{`
+        .about-main-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 64px;
+          align-items: center;
+        }
 
-      {/* ── Page header ───────────────────────────────────────────── */}
-      <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
+        .about-stats-grid {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 1px;
+          background: var(--rule);
+          border: 1px solid var(--rule);
+          border-radius: 12px;
+          overflow: hidden;
+        }
+
+        @media (max-width: 880px) {
+          .about-main-grid {
+            grid-template-columns: 1fr;
+            gap: 40px;
+          }
+        }
+
+        @media (max-width: 720px) {
+          .about-stats-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .about-stat-card {
+            padding: 24px !important;
+          }
+        }
+      `}</style>
+
+      <header style={{ ...W, padding: '88px 5vw 48px' }}>
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            color: 'var(--accent)',
+            marginBottom: 22,
+            fontFamily: 'var(--sans)',
+            fontSize: 11,
+            fontWeight: 700,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+          }}
+        >
+          <span
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: 'var(--accent)',
+              display: 'inline-block',
+            }}
+          />
           Our story
         </div>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 64, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 32px', maxWidth: 820 }}>
+
+        <h1
+          style={{
+            fontFamily: 'var(--sans)',
+            fontSize: 'clamp(38px, 5vw, 64px)',
+            fontWeight: 650,
+            lineHeight: 1.05,
+            letterSpacing: '-0.045em',
+            color: 'var(--ink)',
+            margin: '0 0 22px',
+            maxWidth: 900,
+          }}
+        >
           Built for merchants who{' '}
-          <em style={{ color: '#FF6B2B', fontStyle: 'italic' }}>run their own warehouse.</em>
+          <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>
+            run their own warehouse.
+          </em>
         </h1>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: '#3A3835', maxWidth: 560, margin: 0 }}>
-          LaSyncro is an operational intelligence platform built for Shopify merchants who have outgrown spreadsheets but don&apos;t need enterprise complexity.
+
+        <p
+          style={{
+            fontFamily: 'var(--sans)',
+            fontSize: 18,
+            fontWeight: 400,
+            lineHeight: 1.65,
+            color: 'var(--ink-2)',
+            maxWidth: 620,
+            margin: 0,
+          }}
+        >
+          LaSyncro is an operational intelligence platform built for Shopify
+          merchants who have outgrown spreadsheets but don&apos;t need
+          enterprise complexity.
         </p>
       </header>
 
-      {/* ── Rule ──────────────────────────────────────────────────── */}
       <div style={{ ...W, padding: '0 5vw' }}>
-        <div style={{ borderTop: '1px solid #E8E6E0' }} />
+        <div style={{ borderTop: '1px solid var(--rule)' }} />
       </div>
 
-      {/* ── Body ──────────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '56px 5vw 0' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'center' }}>
-          {/* Left — copy */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-              LaSyncro connects orders, inventory, suppliers, warehouse workflows, and workforce into a single real-time picture — replacing the spreadsheets, WhatsApp threads, and disconnected tools most SMB merchants rely on.
+        <div className="about-main-grid">
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 28,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: 'var(--sans)',
+                fontSize: 16,
+                fontWeight: 400,
+                lineHeight: 1.8,
+                color: 'var(--ink-2)',
+                margin: 0,
+              }}
+            >
+              LaSyncro connects orders, inventory, suppliers, warehouse
+              workflows, and workforce into a single real-time picture —
+              replacing the spreadsheets, WhatsApp threads, and disconnected
+              tools most SMB merchants rely on.
             </p>
-            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-              We built LaSyncro for merchants doing $500K to $10M+ in revenue who operate their own warehouse with a small team. Merchants who have outgrown Shopify native tools but cannot justify the price tag or implementation timelines of enterprise WMS platforms like Cin7, Linnworks, or Brightpearl.
+
+            <p
+              style={{
+                fontFamily: 'var(--sans)',
+                fontSize: 16,
+                fontWeight: 400,
+                lineHeight: 1.8,
+                color: 'var(--ink-2)',
+                margin: 0,
+              }}
+            >
+              We built LaSyncro for merchants doing $500K to $10M+ in revenue
+              who operate their own warehouse with a small team. Merchants who
+              have outgrown Shopify native tools but cannot justify the price
+              tag or implementation timelines of enterprise WMS platforms like
+              Cin7, Linnworks, or Brightpearl.
             </p>
-            <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835', margin: 0 }}>
-              Our mission is to give every serious Shopify merchant the operational clarity that was previously only available to enterprise retailers.
+
+            <p
+              style={{
+                fontFamily: 'var(--sans)',
+                fontSize: 16,
+                fontWeight: 400,
+                lineHeight: 1.8,
+                color: 'var(--ink-2)',
+                margin: 0,
+              }}
+            >
+              Our mission is to give every serious Shopify merchant the
+              operational clarity that was previously only available to
+              enterprise retailers.
             </p>
           </div>
-          {/* Right — image */}
+
           <div>
             <ArticleImage
               src="floorplanning-4.png"
@@ -107,19 +233,44 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── Stats strip ───────────────────────────────────────────── */}
       <section style={{ ...W, padding: '64px 5vw' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: '#E8E6E0', border: '1px solid #E8E6E0', borderRadius: 12, overflow: 'hidden' }}>
+        <div className="about-stats-grid">
           {[
             { num: '$500K–$10M', label: 'Revenue range we build for' },
             { num: '1–30', label: 'Warehouse team size' },
             { num: '60s', label: 'Shopify connection time' },
           ].map(({ num, label }) => (
-            <div key={label} style={{ background: '#FFFFFF', padding: '28px 32px' }}>
-              <div style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 36, fontWeight: 400, color: '#FF6B2B', fontStyle: 'italic', marginBottom: 8 }}>
+            <div
+              key={label}
+              className="about-stat-card"
+              style={{
+                background: 'var(--surface)',
+                padding: '28px 32px',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--sans)',
+                  fontSize: 36,
+                  fontWeight: 650,
+                  color: 'var(--accent)',
+                  fontStyle: 'italic',
+                  letterSpacing: '-0.035em',
+                  marginBottom: 8,
+                }}
+              >
                 {num}
               </div>
-              <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 14, fontWeight: 300, lineHeight: 1.5, color: '#6B7280' }}>
+
+              <div
+                style={{
+                  fontFamily: 'var(--sans)',
+                  fontSize: 14,
+                  fontWeight: 400,
+                  lineHeight: 1.5,
+                  color: 'var(--ink-2)',
+                }}
+              >
                 {label}
               </div>
             </div>
@@ -127,9 +278,17 @@ export default function AboutPage() {
         </div>
       </section>
 
-      {/* ── CTA ───────────────────────────────────────────────────── */}
       <section style={{ ...W, padding: '0 5vw 80px' }}>
-        <div style={{ borderTop: '1px solid #E8E6E0', paddingTop: 48, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+        <div
+          style={{
+            borderTop: '1px solid var(--rule)',
+            paddingTop: 48,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 24,
+            flexWrap: 'wrap',
+          }}
+        >
           <AboutCTAs />
         </div>
       </section>
