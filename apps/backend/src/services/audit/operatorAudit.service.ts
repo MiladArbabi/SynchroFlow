@@ -40,7 +40,13 @@ export type AuditActionType =
   | 'return_line_process'
   | 'return_job_complete'
   | 'return_decision_set'
-  | 'return_line_decision_set';
+  | 'return_line_decision_set'
+  // ── Inventory recount (INV-PHYSICAL-COUNT-13) ────────────
+  | 'recount_create'
+  | 'recount_claim'
+  | 'recount_close'
+  | 'recount_line_review'
+  | 'recount_commit';
 export type AuditEntityType =
   | 'receive_job'
   | 'stow_task'
@@ -48,7 +54,8 @@ export type AuditEntityType =
   | 'order'
   | 'variant'
   | 'return_job'
-  | 'refund_execution_line_item';
+  | 'refund_execution_line_item'
+  | 'recount_task';
 
 export interface WriteAuditLogInput {
   shopId: number;

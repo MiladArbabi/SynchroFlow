@@ -441,3 +441,29 @@ Planned actions for ACTION_ROLE_MAP (require-action.middleware.ts), none locked:
     wms:recount:count    owner, admin, operator
     wms:recount:review   owner, admin
     wms:recount:commit   owner, admin
+
+### Recount service (step 2, shipped)
+
+`apps/backend/src/services/wms/inventoryRecount.service.ts` — eight exports:
+selectSuggestedLines, createRecountTask, claimRecountTask, getOperatorLines,
+recordCount, closeCount, reviewLine, commitRecount.
+
+Suggested scope is what makes counting take minutes: it selects only rows the
+ledger has reason to distrust — negative on_hand, variants carrying unlocated
+sale debt, and stock with no movement in 60 days. Root rows are excluded (no
+shelf to walk to). A merchant counts ~14 SKUs instead of 400.
+
+commitRecount is the first runtime writer of reconciliation_correction. Movement
+ids are uuidv5(recount_line_id, RECOUNT_NAMESPACE) with
+onConflict(device_event_id).ignore(), so a retried commit cannot double-correct.
+It writes movements and then calls rebuildInventoryProjectionForVariants — never
+inventory_truth directly (INV-LEDGER-BYPASS-16).
+
+Verified end to end against the local fixture, in a rolled-back transaction:
+blind stripped expected_quantity, expected 7 / counted 4 / variance -3, close
+routed to manual_review, accept with reason 'shrinkage', commit wrote one
+reconciliation_correction of -3 at A-2 with reference_type 'recount_line', and
+inventory_truth moved 7 -> 4.
+
+Not yet built: routes and ACTION_ROLE_MAP entries (step 3), operator UI and
+count sheet (step 4).
