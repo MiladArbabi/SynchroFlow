@@ -623,7 +623,55 @@ Implementation files:
 - `apps/marketing/app/compare/page.tsx`
 - `docs/blueprints/marketing-content-ux-system.md`
 
-MKT-UX-01G-B implementation is applied; local build and production interaction verification remain pending.
+MKT-UX-01G-B is production verified and complete. Blog latest rows, filter tabs, topic cards, featured read link, and Compare rows now provide equivalent pointer-hover and keyboard-focus interaction states without reported layout or overflow regressions.
+
+## MKT-ROUTE-01 — Public trailing-slash normalization
+
+Production audit found that canonical marketing routes worked without a trailing slash but returned the static Vercel `404 NOT_FOUND` response when the same public URL ended in `/`.
+
+Affected examples included:
+
+- `/help/`
+- `/help/receiving/`
+- `/blog/`
+- `/compare/`
+- `/pricing/`
+- `/faq/`
+- `/about/`
+
+The direct `synchro-flow-marketing.vercel.app` deployment behaved correctly: trailing-slash variants returned `308` redirects to the canonical no-slash route. This proved that Next.js route generation and the marketing application were healthy.
+
+The defect was isolated to the static `packages/landing-page` deployment that fronts `www.lasyncro.com` and proxies marketing paths to the Next.js deployment.
+
+Implementation:
+
+- `packages/landing-page/vercel.json` now explicitly sets `"trailingSlash": false`;
+- no individual Help, Blog, Compare, Pricing, FAQ, or About routes were modified;
+- `apps/marketing/next.config.ts` and `apps/marketing/vercel.json` remain unchanged;
+- the canonical contract is `/path` → content and `/path/` → `308` redirect to `/path`.
+
+Implementation file:
+
+- `packages/landing-page/vercel.json`
+
+MKT-ROUTE-01 implementation is applied; production redirect verification remains pending after deployment.
+
+## MKT-UX-01F-F — Static landing-page typography convergence
+
+Status: pending audit.
+
+Production review of the public `/` landing page shows that its primary headline and supporting typography still use a separate legacy display/serif treatment rather than the Plus Jakarta Sans visual system established across the current marketing application.
+
+This issue is intentionally separate from MKT-ROUTE-01. Its audit must identify the static landing page's actual font declarations and typography ownership before any visual mutation.
+
+Target outcome:
+
+- preserve the landing page's commercial composition, messaging, imagery, and hierarchy;
+- converge its typography with the established marketing font system;
+- use the canonical primary-page title treatment where appropriate rather than preserving an independent legacy font language;
+- verify desktop and mobile after implementation.
+
+No MKT-UX-01F-F code changes are included in MKT-ROUTE-01.
 
 ## Blog preserved contracts
 

@@ -2,6 +2,7 @@
   "installCommand": "echo 'no install needed'",
   "buildCommand": "echo 'no build needed'",
   "outputDirectory": ".",
+  "trailingSlash": false,
   "rewrites": [
     {
       "source": "/_next/:path*",
