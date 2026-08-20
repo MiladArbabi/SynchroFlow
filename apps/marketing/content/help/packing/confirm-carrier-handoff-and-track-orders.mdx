@@ -1,6 +1,6 @@
 ---
-title: "Confirm carrier handoff and track orders"
-description: "Move packed orders through carrier handoff and review shipped-order tracking signals."
+title: "Confirm carrier pickup and track orders"
+description: "Confirm physical carrier pickup for packed orders and review shipped-order tracking signals."
 category: "Packing"
 audience:
   - "Owner"
@@ -19,7 +19,7 @@ searchAliases:
   - "shipment tracking"
   - "carrier pickup"
 order: 3
-lastReviewed: "2026-08-17"
+lastReviewed: "2026-08-20"
 relatedArticles:
   - "/help/packing/pack-orders-with-scans"
   - "/help/packing/set-up-carriers-and-shipping-labels"
@@ -32,7 +32,7 @@ Packing and shipping are separate steps in LaSyncro.
 
 Scanning the invoice barcode in Pack mode marks the parcel packed. It does not by itself confirm that the carrier has collected the parcel.
 
-Use **Outbound** to review packed parcels awaiting handoff and to confirm handoff only after the parcel physically leaves the warehouse.
+Use **Outbound** to review packed parcels awaiting handoff and confirm carrier pickup only after the parcel physically leaves the warehouse.
 
 ## Understand the handoff queue
 
@@ -45,13 +45,15 @@ Each row can show:
 - the order number;
 - how long ago it was packed;
 - the tracking number when one is available;
-- **Confirm handoff** when the batch is available.
+- **Confirm carrier pickup** when the batch is available.
 
 If carrier tracking is configured, carrier movement can clear this queue automatically. If carrier tracking is not configured, confirm manually only after physical pickup.
 
-## Confirm a physical handoff
+## Confirm carrier pickup
 
-Use **Confirm handoff** after the packed parcel has physically left the warehouse with the carrier.
+Use **Confirm carrier pickup** after the packed parcel has physically left the warehouse with the carrier.
+
+The first click does not mark the order shipped. LaSyncro opens a confirmation explaining that confirming pickup will mark the order shipped and trigger the Shopify fulfillment update. Choose **Cancel** to leave the order unchanged, or **Confirm pickup** only after physical carrier pickup.
 
 LaSyncro then marks the order shipped and moves it into the shipped-order ledger.
 
@@ -94,8 +96,8 @@ When LaSyncro confirms shipment, it also attempts to write the fulfillment updat
 
 If that Shopify update fails, LaSyncro keeps the warehouse shipment record. Review the order and carrier setup before contacting support.
 
-## Who can confirm handoff
+## Who can confirm carrier pickup
 
-Owners, admins, and operators can confirm shipment handoff.
+Owners, admins, and operators can confirm carrier pickup.
 
 Carrier setup and missing-tracking configuration are intended for owners and admins.

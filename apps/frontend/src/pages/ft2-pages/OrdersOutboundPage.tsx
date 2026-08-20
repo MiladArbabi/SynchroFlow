@@ -11,7 +11,16 @@ import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 import { useBulkSetPriority } from '../wms/useOrderPool';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { ExportDrawer } from 'components/ExportDrawer';
-import { Box, Collapse, Typography, CircularProgress } from '@mui/material';
+import {
+  Box,
+  Collapse,
+  Typography,
+  CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+} from '@mui/material';
 import { ChevronDown, ChevronUp, Clock, Package } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -234,6 +243,8 @@ export default function OrdersOutboundPage() {
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
+  const [handoffConfirmOrder, setHandoffConfirmOrder] =
+    useState<PackedHandoffOrder | null>(null);
   const bulkSetPriority = useBulkSetPriority();
   const onPriorityFlag = useCallback(
   async (orderIds: string[], flagged: boolean) => {
@@ -474,10 +485,7 @@ export default function OrdersOutboundPage() {
                     disabled={!order.pick_batch_id || isConfirming}
                     onClick={() => {
                       if (!order.pick_batch_id) return;
-                      confirmCarrierHandoff.mutate({
-                        pickBatchId: order.pick_batch_id,
-                        orderId: order.lasyncro_order_id,
-                      });
+                      setHandoffConfirmOrder(order);
                     }}
                     sx={{
                       border: '1px solid var(--accent-border)',
@@ -496,7 +504,7 @@ export default function OrdersOutboundPage() {
                       ? 'Batch unavailable'
                       : isConfirming
                         ? 'Confirming…'
-                        : 'Confirm handoff'}
+                        : 'Confirm carrier pickup'}
                   </Box>
                 </Box>
               );
@@ -1059,6 +1067,90 @@ export default function OrdersOutboundPage() {
           )}
         </Box>
       </Box>
+      <Dialog
+        open={handoffConfirmOrder !== null}
+        onClose={() => {
+          if (!confirmCarrierHandoff.isPending) {
+            setHandoffConfirmOrder(null);
+          }
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
+          Confirm carrier pickup?
+        </DialogTitle>
+
+        <DialogContent>
+          <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'var(--ink-2)', mb: 1.25 }}>
+            Only confirm after this parcel has physically left your warehouse.
+          </Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+            This will mark the order shipped in laSyncro and send the fulfillment
+            update to Shopify.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2.5, gap: 1 }}>
+          <Box
+            component="button"
+            type="button"
+            disabled={confirmCarrierHandoff.isPending}
+            onClick={() => setHandoffConfirmOrder(null)}
+            sx={{
+              border: '1px solid var(--rule)',
+              bgcolor: 'transparent',
+              color: 'var(--ink-3)',
+              borderRadius: '6px',
+              px: 2,
+              py: 0.875,
+              fontSize: 12,
+              fontWeight: 500,
+              cursor: confirmCarrierHandoff.isPending ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Cancel
+          </Box>
+
+          <Box
+            component="button"
+            type="button"
+            disabled={
+              confirmCarrierHandoff.isPending ||
+              !handoffConfirmOrder?.pick_batch_id
+            }
+            onClick={() => {
+              if (!handoffConfirmOrder?.pick_batch_id) return;
+
+              confirmCarrierHandoff.mutate(
+                {
+                  pickBatchId: handoffConfirmOrder.pick_batch_id,
+                  orderId: handoffConfirmOrder.lasyncro_order_id,
+                },
+                {
+                  onSuccess: () => setHandoffConfirmOrder(null),
+                }
+              );
+            }}
+            sx={{
+              border: 'none',
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              px: 2,
+              py: 0.875,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: confirmCarrierHandoff.isPending ? 'not-allowed' : 'pointer',
+              opacity: confirmCarrierHandoff.isPending ? 0.6 : 1,
+              '&:hover': { opacity: confirmCarrierHandoff.isPending ? 0.6 : 0.88 },
+            }}
+          >
+            {confirmCarrierHandoff.isPending ? 'Confirming…' : 'Confirm pickup'}
+          </Box>
+        </DialogActions>
+      </Dialog>
+
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
