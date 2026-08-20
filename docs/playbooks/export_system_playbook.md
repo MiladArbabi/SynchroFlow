@@ -52,6 +52,7 @@ Request → enqueue job → worker generates → ready signal → download/email
 POST /api/v1/exports/orders
 POST /api/v1/exports/returns
 POST /api/v1/exports/finances
+POST /api/v1/exports/products
 ```
 
 ### Request Body (shared shape)
@@ -108,8 +109,18 @@ against `order_constraints` (canonical blocker truth), not the
 `fulfillment_status_type` enum. Unknown values return `400 INVALID_STATUS_FILTER`.
 
 ### Returns
-`return_id`, `created_at`, `order_id`, `variant_title`, `sku`,
-`units_returned`, `return_reason`, `decision`, `supplier_name`, `return_rate_pct`
+`return_id`, `created_at`, `order_id`, `item_title`, `sku`,
+`units_returned`, `return_reason`, `total_refund_amount`
+
+### Products
+`sku`, `title`, `status`, `unit_cost`, `on_hand`, `available`, `reserved`,
+`extended_value`, `locations`
+
+Variant grain: quantities summed across locations, bins rolled into one
+cell (`A-1=6; B-3=4`). LEFT JOIN `inventory_truth` so SKUs with no stock
+row still appear at zero - an accountant needs the complete SKU list.
+`filters.status` is a plain `whereIn` against a varchar column; no
+hardcoded whitelist. No date filtering - products are not a time series.
 
 ### Finances
 `order_id`, `created_at`, `total_price`, `cost_of_goods`, `gross_margin`,
@@ -125,7 +136,7 @@ against `order_constraints` (canonical blocker truth), not the
 | Orders / Blocked | `Export →` | CSV | Core+ |
 | Returns | `Export →` | CSV | Core+ |
 | Finances | `Export →` | CSV | Core+ |
-| Inventory (Sprint 2) | `Export →` | CSV | Core+ |
+| Products / Inventory Valuation | `Export ->` | CSV | Core+ |
 | WMS Analytics (Sprint 2) | `Export →` | CSV | Core+ |
 | Orders / Outbound | `Export →` | CSV | Core+ |
 
@@ -203,9 +214,66 @@ duplicate summaries already available inside the product.
 5. Content-Disposition header must always be `attachment` — never `inline`.
 6. CSV: use `fast-csv` write stream piped to `res`.
 7. Frontend CTAs: always Tier 2 ghost pill, always pre-filtered to current view.
-8. Never duplicate column definitions — canonical list lives in `exports.controller.ts`.
+8. Never duplicate column definitions - canonical lists live in
+   `exports.controller.ts` (ORDERS_/RETURNS_/FINANCES_/PRODUCTS_COLUMNS).
+9. NEVER `COALESCE` an enum column against a string literal. Postgres
+   resolves COALESCE argument types at parse time, so a non-member literal
+   throws before a single row is read. Cast first:
+   `COALESCE(col::text, '-')`. This shipped twice (EXP-BLOCKED-02,
+   EXP-RETURNS-06) and both reports 500d for months.
+10. Validate every client-supplied filter value BEFORE it reaches Knex.
+    Bad input is a 400, never a 500. Extend `InvalidFilterError` so each
+    catch needs one `instanceof` check, and add the 400 branch to EVERY
+    handler - not just the one you are editing.
+11. Every export must emit a header line on zero rows. `headers: true`
+    infers columns from row one and emits NOTHING when there are none;
+    use an explicit array plus `alwaysWriteHeaders`. Fresh tenants and
+    quiet days are the normal case, not an edge case.
+12. Log the Postgres error `code` via `pgErrorInfo()` on every failure.
+    Response bodies stay generic; operators need the code in logs.
+13. Timestamps: `to_char(col AT TIME ZONE shops.timezone,
+    'YYYY-MM-DD HH24:MI:SS')`. Space-separated, not ISO 8601 - Excel
+    parses the former as a date and the latter as text. ORDER BY the raw
+    timestamptz, never the formatted string.
 
 ## 12. Changelog
+
+- **2026-08-20** — EXP-PRODUCTS-11: added the Products export
+  (`POST /api/v1/exports/products`), delivering the inventory valuation
+  (`unit_cost x on_hand`) that section 6 scheduled for Sprint 2 and that never
+  shipped. Merchants previously had no way to produce the one artifact an
+  accountant asks for every month-end. Variant grain, LEFT JOIN
+  `inventory_truth` so the 3-of-17 SKUs with no stock row still appear at
+  zero rather than silently vanishing from the valuation. Verified: 17 rows,
+  183 units, $35,661.60, recomputed from the emitted CSV; no cross-tenant
+  leakage against a 4-shop local DB.
+
+- **2026-08-20** — EXP-DATEFILTER-07: `filters.date_from`/`date_to` went
+  through bare `new Date()` into Knex. Malformed input became
+  `0NaN-NaN-NaNTNaN...`, hit Postgres as garbage (22007) and returned 500.
+  Only `exportOrders` had a 400 branch, so Returns and Finances would have
+  surfaced even a correct validation throw as a server error. Added
+  `InvalidFilterError` base class, `parseDateFilter()`, and the 400 branch to
+  all three handlers. Semantics deliberately unvalidated - `date_from >
+  date_to` is a legitimate zero-row query.
+
+- **2026-08-20** — EXP-EMPTY-08: zero-row exports downloaded a 0-byte file.
+  `headers: true` infers columns from the first written row, so with no rows
+  nothing was emitted at all. This was the default outcome on a fresh Shopify
+  tenant and on any quiet day. Added explicit column arrays plus
+  `alwaysWriteHeaders` (which throws without a real array - `true` does not
+  satisfy it).
+
+- **2026-08-20** — EXP-RETURNS-06: `/exports/returns` 500d on every call.
+  `COALESCE(re.return_reason, '-')` targeted enum `return_reason_type`;
+  Postgres failed at parse time regardless of row count. Fixed with `::text`,
+  same cast applied to the latent `ofs.status` instance. Added `pgErrorInfo()`
+  so the PG code reaches the logs - both prior 500s were invisible for months
+  because only `err.message` was captured.
+
+- **2026-08-20** — EXP-DATE-03: timestamps exported as
+  `Wed Aug 19 2026 14:40:03 GMT+0200 (...)`, which Excel imports as text.
+  Now formatted in SQL to the merchant's own timezone via a `shops` join.
 
 - **2026-08-19** — EXP-BLOCKED-02: the Blocked Revenue Report returned
   HTTP 500 on every click since it was added. `filters.status: ['blocked']`
