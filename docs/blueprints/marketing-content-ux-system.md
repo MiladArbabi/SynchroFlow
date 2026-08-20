@@ -658,7 +658,7 @@ MKT-ROUTE-01 implementation is applied; production redirect verification remains
 
 ## MKT-UX-01F-F — Static landing-page typography convergence
 
-Status: implementation applied; production verification pending.
+Status: production verified; closed.
 
 The public `/` route is owned by the standalone static document `packages/landing-page/index.html`, separate from the Next.js marketing application.
 
@@ -689,7 +689,7 @@ Implementation file:
 
 Local source verification confirms `DM Sans = 0`, `Georgia = 0`, the Plus Jakarta Sans loader is present, and the canonical hero title authority is applied.
 
-Desktop and mobile production visual verification remain required after deployment.
+Production verification passed on desktop and mobile: Plus Jakarta Sans renders consistently, the canonical hero title treatment is live, the orange italic emphasis is preserved, the launch form remains usable, and no horizontal overflow or layout regression was observed.
 
 ## Blog preserved contracts
 
