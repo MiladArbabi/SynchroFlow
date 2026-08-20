@@ -27,6 +27,7 @@
 //   order_constraints -> constraint_type, is_active (blocker truth)
 
 import { Request, Response } from 'express';
+import type { Knex } from 'knex';
 import { format as csvFormat } from '@fast-csv/format';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
@@ -73,6 +74,13 @@ class InvalidDateFilterError extends InvalidFilterError {
   }
 }
 
+class InvalidColumnFilterError extends InvalidFilterError {
+  constructor(value: string) {
+    super('INVALID_COLUMN_FILTER', `Invalid column filter value: '${value}'`);
+    this.name = 'InvalidColumnFilterError';
+  }
+}
+
 // Invalid Date serializes to a NaN-laden string ('0NaN-NaN-NaNT...') that
 // Postgres rejects at cast time with a 500 — this must reject before the
 // value ever reaches Knex/the query. Non-string input (e.g. a bare number)
@@ -107,59 +115,97 @@ function pgErrorInfo(err: unknown): { code?: string; detail?: string } {
   return {};
 }
 
-// Explicit column lists, in select order, for csvFormat's `headers` option.
-// headers:true infers column names from the first written row — with zero
-// rows nothing is ever written, so nothing is emitted, not even a header
-// line. alwaysWriteHeaders forces the header line to emit regardless, but
-// (per @fast-csv/format's RowFormatter) it requires headers to be a real
-// array, not the boolean `true` — so a zero-row export still needs an
-// explicit list to produce a usable file.
-export const ORDERS_COLUMNS = [
-  'order_id',
-  'created_at',
-  'total_price',
-  'currency',
-  'payment_state',
-  'fulfillment_status',
-  'blocker_type',
-  'channel',
-  'sku_count',
-  'shipping_country',
-];
+// Column registry: one source of truth per resource for both the SQL
+// projection and the CSV header. `sql` is the raw expression WITHOUT the
+// 'as <key>' suffix — the builder below appends it, so every column stays
+// declared exactly once instead of duplicated between a header array and
+// a .select() block that could silently drift apart.
+interface ColumnDef {
+  key: string;
+  label: string;
+  sql: string;
+}
 
-export const RETURNS_COLUMNS = [
-  'return_id',
-  'created_at',
-  'order_id',
-  'item_title',
-  'sku',
-  'units_returned',
-  'return_reason',
-  'total_refund_amount',
-];
+type ExportResource = 'orders' | 'returns' | 'finances' | 'products';
 
-export const FINANCES_COLUMNS = [
-  'order_id',
-  'created_at',
-  'total_price',
-  'currency',
-  'gross_revenue',
-  'estimated_cost',
-  'gross_margin',
-  'margin_pct',
-];
+export const EXPORT_COLUMNS: Record<ExportResource, ColumnDef[]> = {
+  orders: [
+    { key: 'order_id', label: 'order_id', sql: 'o.lasyncro_order_id' },
+    // Space-separated, not ISO 8601: Excel auto-parses 'YYYY-MM-DD HH24:MI:SS'
+    // as a date/time value, but treats a 'T'-separated ISO string as text.
+    { key: 'created_at', label: 'created_at', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'total_price', label: 'total_price', sql: 'o.total_price' },
+    { key: 'currency', label: 'currency', sql: 'o.currency' },
+    { key: 'payment_state', label: 'payment_state', sql: 'o.payment_state' },
+    { key: 'fulfillment_status', label: 'fulfillment_status', sql: "COALESCE(ofs.status::text, 'pending')" },
+    { key: 'blocker_type', label: 'blocker_type', sql: `(
+      SELECT COALESCE(string_agg(DISTINCT oc.constraint_type, ' + '), '—')
+      FROM order_constraints oc
+      WHERE oc.lasyncro_order_id = o.lasyncro_order_id AND oc.is_active = true
+    )` },
+    { key: 'channel', label: 'channel', sql: "COALESCE(o.source, '—')" },
+    { key: 'sku_count', label: 'sku_count', sql: 'COALESCE(ru.sku_count, 0)' },
+    { key: 'shipping_country', label: 'shipping_country', sql: "COALESCE(o.shipping_country_code, '—')" },
+  ],
+  returns: [
+    { key: 'return_id', label: 'return_id', sql: 're.lasyncro_refund_execution_id' },
+    { key: 'created_at', label: 'created_at', sql: "to_char(re.executed_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'order_id', label: 'order_id', sql: 're.lasyncro_order_id' },
+    { key: 'item_title', label: 'item_title', sql: "COALESCE(ru.title, '—')" },
+    { key: 'sku', label: 'sku', sql: "COALESCE(ru.sku, '—')" },
+    { key: 'units_returned', label: 'units_returned', sql: 'COALESCE(reli.refunded_quantity, 0)' },
+    // ::text cast is required: COALESCE resolves its argument types at
+    // parse time, before any row is read. Against the return_reason_type
+    // enum, the '—' literal fails type resolution regardless of whether
+    // the table has matching rows — it errored even at 0 rows.
+    { key: 'return_reason', label: 'return_reason', sql: "COALESCE(re.return_reason::text, '—')" },
+    { key: 'total_refund_amount', label: 'total_refund_amount', sql: 're.total_refund_amount' },
+  ],
+  finances: [
+    { key: 'order_id', label: 'order_id', sql: 'oms.lasyncro_order_id' },
+    { key: 'created_at', label: 'created_at', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'total_price', label: 'total_price', sql: 'o.total_price' },
+    { key: 'currency', label: 'currency', sql: 'o.currency' },
+    { key: 'gross_revenue', label: 'gross_revenue', sql: 'oms.gross_revenue' },
+    { key: 'estimated_cost', label: 'estimated_cost', sql: 'oms.estimated_cost' },
+    { key: 'gross_margin', label: 'gross_margin', sql: 'oms.gross_margin' },
+    { key: 'margin_pct', label: 'margin_pct', sql: 'ROUND((oms.margin_pct * 100)::numeric, 2)' },
+  ],
+  products: [
+    { key: 'sku', label: 'sku', sql: 'v.sku' },
+    { key: 'title', label: 'title', sql: 'v.title' },
+    { key: 'status', label: 'status', sql: 'v.status' },
+    { key: 'unit_cost', label: 'unit_cost', sql: 'v.unit_cost' },
+    { key: 'on_hand', label: 'on_hand', sql: 'COALESCE(SUM(it.on_hand_quantity), 0)' },
+    { key: 'available', label: 'available', sql: 'COALESCE(SUM(it.available_quantity), 0)' },
+    { key: 'reserved', label: 'reserved', sql: 'COALESCE(SUM(it.reserved_quantity), 0)' },
+    { key: 'extended_value', label: 'extended_value', sql: 'ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2)' },
+    { key: 'locations', label: 'locations', sql: "string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code)" },
+  ],
+};
 
-export const PRODUCTS_COLUMNS = [
-  'sku',
-  'title',
-  'status',
-  'unit_cost',
-  'on_hand',
-  'available',
-  'reserved',
-  'extended_value',
-  'locations',
-];
+// Resolves filters.columns against the registry, in REGISTRY order — not
+// the order the client sent them in. A client-controlled column order
+// would make output non-deterministic (two requests with the same keys
+// in different order would need to produce different CSVs). Absent or
+// empty selects every column, unchanged from pre-registry behaviour.
+function resolveColumns(resource: ExportResource, requested: unknown): ColumnDef[] {
+  const all = EXPORT_COLUMNS[resource];
+  if (!Array.isArray(requested) || requested.length === 0) {
+    return all;
+  }
+  const requestedKeys = new Set(requested);
+  for (const key of requestedKeys) {
+    if (!all.some((c) => c.key === key)) {
+      throw new InvalidColumnFilterError(String(key));
+    }
+  }
+  return all.filter((c) => requestedKeys.has(c.key));
+}
+
+function buildSelect(trx: Knex.Transaction, defs: ColumnDef[]): Knex.Raw[] {
+  return defs.map((c) => trx.raw(`${c.sql} as ${c.key}`));
+}
 
 // ─── ORDERS CSV ───────────────────────────────────────────────────────────────
 
@@ -186,7 +232,15 @@ export async function exportOrders(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
+    const { date_from, date_to, status, payment_state, columns } = req.body?.filters ?? {};
+    const columnDefs = resolveColumns('orders', columns);
+
     const rows = await withTenant(shopId, async (trx) => {
+      // Joins are always-on by design (Option B): every join here is a LEFT
+      // (or the base 'shops' join required by created_at), and SMB row
+      // volumes are under 10K per playbook section 2. A conditional-join
+      // builder — joining only what a selected column needs — is deferred
+      // until a column requires a table that isn't already joined.
       let query = trx('orders as o')
         .join('shops as s', 's.id', 'o.shop_id')
         .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
@@ -195,29 +249,11 @@ export async function exportOrders(req: Request, res: Response) {
           'ru.lasyncro_order_id', 'o.lasyncro_order_id'
         )
         .where('o.shop_id', shopId)
-        .select(
-          'o.lasyncro_order_id as order_id',
-          // Space-separated, not ISO 8601: Excel auto-parses 'YYYY-MM-DD HH24:MI:SS'
-          // as a date/time value, but treats a 'T'-separated ISO string as text.
-          trx.raw("to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
-          'o.total_price',
-          'o.currency',
-          'o.payment_state',
-          trx.raw("COALESCE(ofs.status::text, 'pending') as fulfillment_status"),
-          trx.raw(`(
-            SELECT COALESCE(string_agg(DISTINCT oc.constraint_type, ' + '), '—')
-            FROM order_constraints oc
-            WHERE oc.lasyncro_order_id = o.lasyncro_order_id AND oc.is_active = true
-          ) as blocker_type`),
-          trx.raw("COALESCE(o.source, '—') as channel"),
-          trx.raw("COALESCE(ru.sku_count, 0) as sku_count"),
-          trx.raw("COALESCE(o.shipping_country_code, '—') as shipping_country")
-        )
+        .select(...buildSelect(trx, columnDefs))
         .orderBy('o.order_created_at', 'desc');
 
       if (since) query = query.where('o.order_created_at', '>=', since);
 
-      const { date_from, date_to, status, payment_state } = req.body?.filters ?? {};
       if (date_from) query = query.where('o.order_created_at', '>=', parseDateFilter(date_from, 'date_from'));
       if (date_to) query = query.where('o.order_created_at', '<=', parseDateFilter(date_to, 'date_to'));
       if (status?.length) {
@@ -259,7 +295,7 @@ export async function exportOrders(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('orders', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: ORDERS_COLUMNS, alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -294,32 +330,26 @@ export async function exportReturns(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
+    const { date_from, date_to, columns } = req.body?.filters ?? {};
+    const columnDefs = resolveColumns('returns', columns);
+
     const rows = await withTenant(shopId, async (trx) => {
+    // Joins are always-on by design (Option B): every join here is a LEFT
+    // (or the base 'orders'/'shops' joins required by created_at), and SMB
+    // row volumes are under 10K per playbook section 2. A conditional-join
+    // builder is deferred until a column requires a table that isn't
+    // already joined.
     let query = trx('refund_executions as re')
       .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
       .join('shops as s', 's.id', 'o.shop_id')
       .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
       .leftJoin('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .where('o.shop_id', shopId)
-      .select(
-        're.lasyncro_refund_execution_id as return_id',
-        trx.raw("to_char(re.executed_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
-        're.lasyncro_order_id as order_id',
-        trx.raw("COALESCE(ru.title, '—') as item_title"),
-        trx.raw("COALESCE(ru.sku, '—') as sku"),
-        trx.raw("COALESCE(reli.refunded_quantity, 0) as units_returned"),
-        // ::text cast is required: COALESCE resolves its argument types at
-        // parse time, before any row is read. Against the return_reason_type
-        // enum, the '—' literal fails type resolution regardless of whether
-        // the table has matching rows — it errored even at 0 rows.
-        trx.raw("COALESCE(re.return_reason::text, '—') as return_reason"),
-        're.total_refund_amount'
-      )
+      .select(...buildSelect(trx, columnDefs))
       .orderBy('re.executed_at', 'desc');
 
     if (since) query = query.where('re.executed_at', '>=', since);
 
-    const { date_from, date_to } = req.body?.filters ?? {};
     if (date_from) query = query.where('re.executed_at', '>=', parseDateFilter(date_from, 'date_from'));
     if (date_to)   query = query.where('re.executed_at', '<=', parseDateFilter(date_to, 'date_to'));
 
@@ -329,7 +359,7 @@ export async function exportReturns(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('returns', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: RETURNS_COLUMNS, alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -364,26 +394,23 @@ export async function exportFinances(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
+    const { date_from, date_to, columns } = req.body?.filters ?? {};
+    const columnDefs = resolveColumns('finances', columns);
+
     const rows = await withTenant(shopId, async (trx) => {
+    // Joins are always-on by design (Option B): every join here is a LEFT
+    // (or the base 'orders'/'shops' joins), and SMB row volumes are under
+    // 10K per playbook section 2. A conditional-join builder is deferred
+    // until a column requires a table that isn't already joined.
     let query = trx('order_margin_snapshot as oms')
       .join('orders as o', 'o.lasyncro_order_id', 'oms.lasyncro_order_id')
       .join('shops as s', 's.id', 'o.shop_id')
       .where('oms.shop_id', shopId)
-      .select(
-        'oms.lasyncro_order_id as order_id',
-        trx.raw("to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
-        'o.total_price',
-        'o.currency',
-        'oms.gross_revenue',
-        'oms.estimated_cost',
-        'oms.gross_margin',
-        trx.raw("ROUND((oms.margin_pct * 100)::numeric, 2) as margin_pct")
-      )
+      .select(...buildSelect(trx, columnDefs))
       .orderBy('o.order_created_at', 'desc');
 
     if (since) query = query.where('o.order_created_at', '>=', since);
 
-    const { date_from, date_to } = req.body?.filters ?? {};
     if (date_from) query = query.where('o.order_created_at', '>=', parseDateFilter(date_from, 'date_from'));
     if (date_to)   query = query.where('o.order_created_at', '<=', parseDateFilter(date_to, 'date_to'));
 
@@ -393,7 +420,7 @@ export async function exportFinances(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('finances', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: FINANCES_COLUMNS, alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -425,12 +452,20 @@ export async function exportProducts(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
 
   try {
+    const { status, columns } = req.body?.filters ?? {};
+    const columnDefs = resolveColumns('products', columns);
+
     const rows = await withTenant(shopId, async (trx) => {
+      // Joins are always-on by design (Option B): the join here is a LEFT,
+      // and SMB row volumes are under 10K per playbook section 2. A
+      // conditional-join builder is deferred until a column requires a
+      // table that isn't already joined.
+      //
+      // LEFT JOIN, not JOIN: a SKU with no inventory_truth row (never
+      // stocked, or fully depleted with the row cleaned up) must still
+      // appear — an accountant's valuation needs the complete SKU list,
+      // and on_hand 0 is information, not an omission.
       let query = trx('variants as v')
-        // LEFT JOIN, not JOIN: a SKU with no inventory_truth row (never
-        // stocked, or fully depleted with the row cleaned up) must still
-        // appear — an accountant's valuation needs the complete SKU list,
-        // and on_hand 0 is information, not an omission.
         .leftJoin('inventory_truth as it', function () {
           this.on('it.lasyncro_variant_id', '=', 'v.lasyncro_variant_id').andOn(
             'it.shop_id', '=', 'v.shop_id'
@@ -438,23 +473,12 @@ export async function exportProducts(req: Request, res: Response) {
         })
         .where('v.shop_id', shopId)
         .groupBy('v.lasyncro_variant_id', 'v.sku', 'v.title', 'v.status', 'v.unit_cost')
-        .select(
-          'v.sku',
-          'v.title',
-          'v.status',
-          'v.unit_cost',
-          trx.raw('COALESCE(SUM(it.on_hand_quantity), 0) as on_hand'),
-          trx.raw('COALESCE(SUM(it.available_quantity), 0) as available'),
-          trx.raw('COALESCE(SUM(it.reserved_quantity), 0) as reserved'),
-          trx.raw('ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2) as extended_value'),
-          trx.raw("string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code) as locations")
-        )
+        .select(...buildSelect(trx, columnDefs))
         .orderBy('v.sku');
 
       // status is varchar, not an enum — no hardcoded whitelist (that was
       // the EXP-BLOCKED-02 failure). Any string is passed through; a value
       // with no matching rows legitimately yields zero rows, not an error.
-      const { status } = req.body?.filters ?? {};
       if (status?.length) query = query.whereIn('v.status', status);
 
       return query;
@@ -463,7 +487,7 @@ export async function exportProducts(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('products', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: PRODUCTS_COLUMNS, alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
