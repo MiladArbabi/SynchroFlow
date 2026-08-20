@@ -6,9 +6,15 @@ interface Props {
   plan: string
   cta: string
   featured: boolean
+  billingInterval: 'monthly' | 'annual'
 }
 
-export default function PricingPlanCTA({ plan, cta, featured }: Props) {
+export default function PricingPlanCTA({
+  plan,
+  cta,
+  featured,
+  billingInterval,
+}: Props) {
   const ph = usePostHog()
 
   return (
@@ -18,15 +24,23 @@ export default function PricingPlanCTA({ plan, cta, featured }: Props) {
         ph?.capture('pricing_plan_cta_clicked', {
           plan: plan.toLowerCase(),
           cta_label: cta,
+          billing_interval: billingInterval,
         })
       }
       style={{
-        display: 'block', textAlign: 'center',
-        fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 13, fontWeight: 500,
-        color: featured ? '#fff' : '#FF6B2B',
-        background: featured ? '#FF6B2B' : 'transparent',
-        border: `1px solid ${featured ? '#FF6B2B' : '#FFD4BC'}`,
-        borderRadius: 8, padding: '10px 0', textDecoration: 'none',
+        display: 'block',
+        textAlign: 'center',
+        fontFamily: 'var(--sans)',
+        fontSize: 13,
+        fontWeight: 500,
+        color: featured ? 'var(--on-accent)' : 'var(--accent)',
+        background: featured ? 'var(--accent)' : 'transparent',
+        border: `1px solid ${
+          featured ? 'var(--accent)' : 'var(--accent-border)'
+        }`,
+        borderRadius: 8,
+        padding: '10px 0',
+        textDecoration: 'none',
         letterSpacing: '0.02em',
       }}
     >

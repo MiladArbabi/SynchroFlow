@@ -355,7 +355,7 @@ This work did not change `packages/landing-page/index.html` or checklist static 
 
 Local verification covered `/blog`, `/blog/best-wms-for-shopify-small-business`, `/help/getting-started`, `/compare`, `/pricing`, `/faq`, and `/about` at desktop and mobile. Representative routes were also verified under `prefers-color-scheme: light` and `prefers-color-scheme: dark`. The body shell, nav, and footer remained dark; the logo remained deterministic; Blog/Help typography resolved to Plus Jakarta Sans; Blog/Help visual system remained intact; and the footer changed intentionally from light to dark.
 
-Known transition state: after MKT-UX-01F-B, legacy route content for Pricing, FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Those routes can temporarily look mixed until their convergence issues are complete.
+Known transition state: after MKT-UX-01F-C, legacy route content for FAQ, About, Privacy, and Terms still contains light-era inline palette/font declarations. Those routes can temporarily look mixed until their convergence issues are complete.
 
 MKT-UX-01F-A is implementation verified locally; production verification is pending deployment.
 
@@ -398,9 +398,68 @@ Implementation files:
 - `apps/marketing/components/article/ProductVisual.tsx`
 - `apps/marketing/components/article/ArticleImage.tsx`
 
-MKT-UX-01F-B is implementation verified locally; production verification is pending deployment.
+MKT-UX-01F-B is production verified and complete. All five Compare routes returned 200 across desktop, tablet, and mobile verification; dark-theme readability, Plus Jakarta Sans authority, hover/focus behavior, responsive containment, FAQ behavior, article visuals, tables, and the corrected Compare breadcrumb were verified in production.
 
-Next: MKT-UX-01F-C — Pricing convergence.
+## MKT-UX-01F-C — Pricing dark palette, typography, and billing interval convergence
+
+MKT-UX-01F-C converges `/pricing` to the canonical dark marketing visual system and repairs the previously non-functional Monthly / Annual billing selector.
+
+Pricing preserves its existing H1 typography as the reference treatment for primary commercial page titles going forward:
+
+```ts
+font-family: var(--sans)
+font-size: clamp(38px, 5vw, 64px)
+font-weight: 650
+line-height: 1.05
+letter-spacing: -0.045em
+color: var(--ink)
+```
+
+The typography shape was intentionally preserved because it is the preferred primary-page headline treatment. Only its visual-system authority changed from a route-local Plus Jakarta Sans string and dark-on-dark legacy color to the shared `var(--sans)` and light-on-dark `var(--ink)` tokens.
+
+Pricing no longer declares a separate DM Sans body authority. Header copy, plan cards, prices, labels, billing controls, features, footer copy, and pricing CTAs use Plus Jakarta Sans through `var(--sans)`.
+
+The server/client boundary remains deliberate. `apps/marketing/app/pricing/page.tsx` stays a server component and continues to own Metadata, canonical URL, WebPage schema, and the static page header. Interactive pricing behavior is isolated in the client component `apps/marketing/components/pricing/PricingPlans.tsx`.
+
+The previous Monthly / Annual control was visual only: two static `<span>` elements with no state or interaction. `PricingPlans` now owns billing interval state and renders Monthly and Annual as accessible buttons with `aria-pressed`, keyboard-operable native button behavior, visible selected state, and accent focus-visible treatment.
+
+Monthly remains the default public display:
+
+- Core: `$79/mo`
+- Growth: `$179/mo`
+- Scale: `$349/mo`
+- Starter: `Free`
+
+Annual mode uses the existing canonical USD annual totals rather than calculating an assumed discount in the marketing UI. The monthly-equivalent display is annual total divided by 12:
+
+- Core: `$65.83/mo`, billed `$790/year`
+- Growth: `$143.20/mo`, billed `$1,718.40/year`
+- Scale: `$279.20/mo`, billed `$3,350.40/year`
+- Starter remains `Free`
+
+Annual cards also expose the exact annual billed amount and exact savings versus twelve monthly payments.
+
+The canonical pricing configuration currently contains annual amounts whose effective discount is not identical across every tier/currency despite older documentation describing annual billing as a flat 20% discount. MKT-UX-01F-C does not alter backend pricing, Stripe Price IDs, Shopify billing, or canonical billing configuration. The public Pricing page therefore avoids inventing a new 20% calculation and replaces the blanket `Annual billing saves 20%` presentation with factual annual billing wording and exact price-derived savings.
+
+Visual convergence replaces the old light pricing surfaces (`#FAFAF9`, `#FFF5F0`, `#FFFFFF`, `#F3F2EF`, `#E8E6E0`, and related light-era text colors) with canonical semantic tokens. Standard plan cards use the dark surface/rule system. Growth remains the emphasized recommendation through `var(--accent-ghost)` and `var(--accent-border)` rather than the former peach card.
+
+`PricingPlanCTA` now uses `var(--sans)` plus semantic accent tokens. Its destination remains `https://app.lasyncro.com`, its existing `pricing_plan_cta_clicked` PostHog event remains intact, and the selected `billing_interval` is now included in that event for attribution.
+
+`LaunchNotifyForm` was already token-compatible and remains unchanged. Its `source="launch_pricing"` contract is preserved.
+
+Unchanged contracts: `/pricing` metadata, canonical URL, WebPage schema, plan names, existing feature copy, launch conversion source, CTA destination, and backend/Shopify/Stripe billing behavior.
+
+Implementation files:
+
+- `apps/marketing/app/pricing/page.tsx`
+- `apps/marketing/components/pricing/PricingPlans.tsx`
+- `apps/marketing/components/pricing/PricingPlanCTA.tsx`
+
+Local verification: the marketing production build compiled successfully, TypeScript passed, and all 106 static pages generated successfully with `/pricing` remaining statically prerendered. Interactive visual verification is intentionally deferred to the deployed production route after commit/push.
+
+MKT-UX-01F-C is build verified locally; production interaction and visual verification are pending deployment.
+
+Next: MKT-UX-01F-D — FAQ + About convergence.
 
 ## Blog preserved contracts
 
