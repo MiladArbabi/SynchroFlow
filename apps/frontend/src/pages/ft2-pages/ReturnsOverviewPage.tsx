@@ -26,6 +26,8 @@ import { RotateCcw, TrendingDown, Clock, CheckCircle } from 'lucide-react';
 import { useReturns, type ReturnsByVariant, type OrphanedReturnJob } from '../finances/useReturns';
 import { useReturnsCorrelation } from '../returns/useReturnsCorrelation';
 import { PlanGate } from '../../components/PlanGate';
+import { ExportDrawer } from 'components/ExportDrawer';
+import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useState } from 'react';
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -197,6 +199,8 @@ function VariantRow({ row }: { row: ReturnsByVariant }) {
 export default function ReturnsOverviewPage() {
   const pal = useReturnsTheme();
   const navigate = useNavigate();
+  const { tier } = useEntitlements();
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const { data, isLoading, isError } = useReturns();
   const correlationQuery = useReturnsCorrelation();
   const correlationRows = correlationQuery.data?.data ?? [];
@@ -233,20 +237,46 @@ export default function ReturnsOverviewPage() {
         <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
           Returns
         </Typography>
-        <Box
-          onClick={() => navigate('/wms')}
-          sx={{
-            display: 'inline-flex', alignItems: 'center', gap: 0.75,
-            px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600,
-            bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
-            borderRadius: '6px', cursor: 'pointer',
-            '&:hover': { opacity: 0.88 },
-          }}
-        >
-          <RotateCcw size={13} />
-          Scan a return
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Export is a secondary data handoff; return scanning remains the primary workflow action. */}
+          <Box
+            onClick={() => setExportDrawerOpen(true)}
+            sx={{
+              display: 'inline-flex', alignItems: 'center',
+              px: 1.25, py: 0.5,
+              fontSize: 11, fontWeight: 500,
+              color: 'var(--accent)',
+              border: '0.5px solid var(--accent)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.75 },
+            }}
+          >
+            Export →
+          </Box>
+
+          <Box
+            onClick={() => navigate('/wms')}
+            sx={{
+              display: 'inline-flex', alignItems: 'center', gap: 0.75,
+              px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600,
+              bgcolor: 'var(--accent)', color: 'var(--accent-ink)',
+              borderRadius: '6px', cursor: 'pointer',
+              '&:hover': { opacity: 0.88 },
+            }}
+          >
+            <RotateCcw size={13} />
+            Scan a return
+          </Box>
         </Box>
       </Box>
+
+      <ExportDrawer
+        open={exportDrawerOpen}
+        onClose={() => setExportDrawerOpen(false)}
+        userTier={tier}
+        reportIds={['returns']}
+      />
 
       {isLoading && (
         <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>

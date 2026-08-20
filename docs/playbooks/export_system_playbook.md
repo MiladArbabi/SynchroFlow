@@ -269,6 +269,12 @@ duplicate summaries already available inside the product.
   so the PG code reaches the logs - both prior 500s were invisible for months
   because only `err.message` was captured.
 
+- **2026-08-20** — EXP-CTA-RETURNS: wired the Returns Overview `Export →`
+  CTA to the canonical `ExportDrawer`, scoped to `reportIds={['returns']}`.
+  Placement follows §6: top-right page header, Tier 2 ghost pill beside
+  the primary `Scan a return` action. No backend changes; existing
+  `POST /api/v1/exports/returns` remains the export engine.
+
 - **2026-08-20** — EXP-BLOCKED-REMOVE: removed the pre-built Blocked
   Revenue report from `QUICK_REPORTS` and the Orders export drawer. It
   duplicated the All Orders export plus filters and did not justify a
