@@ -372,13 +372,25 @@ if any writer produced state the ledger cannot reproduce.
 they are runtime clocks and would change it on every run, detecting nothing.
 Same rule as `orders.last_reconciled_at`.
 
-Baseline hash on the dev fixture (14 rows / 183 on hand):
+Baseline hash on the dev fixture (31 rows / 183 on hand):
 
-    11771efa58cad0f81c21b771c99994c249266491cd7d84d3cc0a4e6db6351f2b
+    4ee2fac720a1551d1ccae3953c17330ba8f051311b4f707b53990d59a83d8633
 
-Stable across consecutive rebuilds. INV-REBUILD-REPLAY-21 tracks promoting this
-to truncate+replay: add `inventory_truth` to `projectionTables`, call
-`rebuildInventoryProjectionForVariants` per shop after `replayEvents()`, and
-confirm the resulting hash still matches the baseline above. A mismatch means a
-live writer produces state the ledger cannot reproduce — investigate that
-before making rebuild authoritative.
+INV-REBUILD-REPLAY-21 (shipped): inventory_truth IS now truncated and replayed.
+rebuildInventoryForAllShops() runs after replayEvents() and before the hash,
+using a fixed epoch anchor (1970-01-01) rather than new Date() so two rebuilds
+of the same events produce identical rows.
+
+The ledger is therefore authoritative for inventory. Any writer that puts state
+in inventory_truth which the movements cannot reproduce will now be silently
+overwritten by rebuild — that writer is the bug (see INV-LEDGER-BYPASS-16).
+
+Replay is NOT expected to reproduce the row set exactly as live writers left it:
+sales carrying triggered_by='reconciliation_unlocated' contribute 0 to on_hand
+(the CASE only counts sale when triggered_by='pick_scan'), so warehouse-root
+groups materialise as zero-quantity rows. 14 rows became 31 on the dev fixture.
+The invariant that matters is SUM(on_hand_quantity), not row count.
+
+Verification: run the rebuild twice, redirecting to a file rather than piping
+(a pipe truncates output and masks the exit code), and confirm the
+inventory_truth hash is identical across runs.

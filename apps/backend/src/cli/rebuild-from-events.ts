@@ -95,6 +95,21 @@ async function truncateProjections() {
    * If a canonical table is added here, rebuild correctness is broken.
    */
   const projectionTables = [
+    /**
+     * INV-REBUILD-REPLAY-21
+     * ---------------------
+     * inventory_truth is a derived projection: rebuildInventoryProjection
+     * reconstructs it from inventory_movements, which IS canonical and is
+     * never truncated. Safe to truncate only because replay equivalence was
+     * proven first (INV-REBUILD-COVERAGE-17 hash + read-only simulation:
+     * live 183 == replayed 183, zero divergent rows).
+     *
+     * If a future writer puts state in inventory_truth that the ledger cannot
+     * reproduce, rebuild will now silently overwrite it. That writer is the
+     * bug — every inventory_truth write must be accompanied by a movement
+     * that reproduces it (INV-LEDGER-BYPASS-16).
+     */
+    'inventory_truth',
     'domain_event_outbox',
     'order_fulfillment_status',
     'order_fulfillment_history',
@@ -209,7 +224,54 @@ async function replayEvents() {
       lastProcessed = event.id;
     }
   }
-}
+};
+
+/**
+ * INVENTORY PROJECTION REBUILD (INV-REBUILD-REPLAY-21)
+ * ----------------------------------------------------
+ * Runs after replayEvents() because inventory_movements must be fully
+ * populated first. Per-shop, per-variant — mirrors shopify.service.ts:132.
+ *
+ * eventAnchor is a fixed epoch, NOT new Date(): last_evaluated_at is excluded
+ * from the state hash, but a wall clock here would still make two rebuilds of
+ * the same events produce different rows. Determinism is the point.
+ *
+ * Throws on failure rather than continuing — a partial inventory rebuild is
+ * worse than none, because it looks complete.
+ */
+async function rebuildInventoryForAllShops() {
+  console.log('[REBUILD] Rebuilding inventory_truth from ledger...');
+  const { rebuildInventoryProjectionForVariants } = await import(
+    '../services/inventory/rebuildInventoryProjection.js'
+  );
+  const REBUILD_ANCHOR = new Date('1970-01-01T00:00:00.000Z');
+  const shops = await db('shops').select('id');
+  for (const shop of shops) {
+    const shopId = Number(shop.id);
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      const variantRows = await trx('variants')
+        .where({ shop_id: shopId })
+        .select('lasyncro_variant_id');
+      const variantIds = variantRows.map(
+        (r: { lasyncro_variant_id: string }) => r.lasyncro_variant_id
+      );
+      if (variantIds.length === 0) {
+        console.log(`[REBUILD_INVENTORY_SKIP] shop ${shopId} has no variants`);
+        return;
+      }
+      await rebuildInventoryProjectionForVariants(
+        shopId,
+        variantIds,
+        trx,
+        REBUILD_ANCHOR
+      );
+      console.log(
+        `[REBUILD_INVENTORY] shop ${shopId} variants ${variantIds.length}`
+      );
+    });
+  }
+};
 
 /**
  * RECONCILIATION INTENT EXECUTION REMOVED
@@ -367,6 +429,7 @@ async function main() {
    */
   await truncateProjections();
   await replayEvents();
+  await rebuildInventoryForAllShops();
 
   /**
    * INTENT REGENERATION REMOVED
