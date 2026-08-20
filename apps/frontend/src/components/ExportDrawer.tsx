@@ -12,6 +12,9 @@ import { X, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { QUICK_REPORTS, isTierSufficient, MIME, type QuickReport } from '../config/exportReports';
 import { FormatBadge } from './ExportFormatBadge';
+import { ColumnPicker, type ColumnPickerSelection } from './ColumnPicker';
+
+const ALL_COLUMNS_SELECTED: ColumnPickerSelection = { columns: undefined, isEmpty: false };
 
 interface ExportDrawerProps {
   open: boolean;
@@ -24,14 +27,20 @@ interface ExportDrawerProps {
 function ExportRow({ report, userTier }: { report: QuickReport; userTier: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
   const eligible = isTierSufficient(userTier, report.tier);
+  const downloadDisabled = !eligible || loading || columnSelection.isEmpty;
 
   const handleDownload = async () => {
-    if (!eligible || loading) return;
+    if (downloadDisabled) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await axiosInstance.post(report.endpoint, report.body ?? {}, { responseType: 'blob' });
+      const baseBody = (report.body ?? {}) as { filters?: Record<string, unknown> };
+      const body = columnSelection.columns
+        ? { ...baseBody, filters: { ...(baseBody.filters ?? {}), columns: columnSelection.columns } }
+        : baseBody;
+      const res = await axiosInstance.post(report.endpoint, body, { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([res.data], { type: MIME[report.format] }));
       const a = document.createElement('a');
       a.href = url;
@@ -53,7 +62,7 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
         px: 2, py: 1.5, borderRadius: '8px',
         border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
         opacity: eligible ? 1 : 0.55,
-        cursor: eligible ? 'pointer' : 'not-allowed',
+        cursor: downloadDisabled ? 'not-allowed' : 'pointer',
         '&:hover': eligible ? { borderColor: 'var(--accent-border)' } : {},
       }}
     >
@@ -79,6 +88,7 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
         <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
           {report.description}
         </Typography>
+        <ColumnPicker endpoint={report.endpoint} onSelectionChange={setColumnSelection} />
         {error && (
           <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
             {error}
@@ -87,7 +97,7 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
       </Box>
       {loading
         ? <CircularProgress size={14} sx={{ color: 'var(--accent)', flexShrink: 0 }} />
-        : <Download size={14} strokeWidth={1.6} color={eligible ? 'var(--accent)' : 'var(--ink-4)'} style={{ flexShrink: 0 }} />}
+        : <Download size={14} strokeWidth={1.6} color={downloadDisabled ? 'var(--ink-4)' : 'var(--accent)'} style={{ flexShrink: 0 }} />}
     </Box>
   );
 }

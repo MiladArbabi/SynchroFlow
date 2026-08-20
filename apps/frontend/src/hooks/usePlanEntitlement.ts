@@ -54,6 +54,9 @@ const PLAN_FEATURES = {
   // Finances
   'finances.overview':         'growth',
 
+  // Exports
+  'exports.column_selection':  'growth',
+
   // WMS
   // ISS-G1: WMS pipeline is free on Starter, gated only by the
   // shippedOrderCap volume cap (see product-structure.md PLG decision,

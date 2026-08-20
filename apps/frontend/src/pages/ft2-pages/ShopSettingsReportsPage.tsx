@@ -23,22 +23,31 @@ import { useEntitlements } from 'contexts/EntitlementsContext';
 import { SectionLabel, SettingsPageWrapper } from './ShopSettingsShared';
 import { QUICK_REPORTS, isTierSufficient, MIME, type ExportFormat, type QuickReport } from '../../config/exportReports';
 import { FormatBadge } from 'components/ExportFormatBadge';
+import { ColumnPicker, type ColumnPickerSelection } from 'components/ColumnPicker';
+
+const ALL_COLUMNS_SELECTED: ColumnPickerSelection = { columns: undefined, isEmpty: false };
 
 // ─── QUICK REPORT CARD ────────────────────────────────────────────────────────
 
 function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
   const eligible = isTierSufficient(userTier, report.tier);
+  const downloadDisabled = !eligible || loading || columnSelection.isEmpty;
 
   const handleDownload = async () => {
-    if (!eligible || loading) return;
+    if (downloadDisabled) return;
     setLoading(true);
     setError(null);
     try {
+      const baseBody = (report.body ?? {}) as { filters?: Record<string, unknown> };
+      const body = columnSelection.columns
+        ? { ...baseBody, filters: { ...(baseBody.filters ?? {}), columns: columnSelection.columns } }
+        : baseBody;
       const res = await axiosInstance.post(
         report.endpoint,
-        report.body ?? {},
+        body,
         { responseType: 'blob' }
       );
       const url = URL.createObjectURL(new Blob([res.data], { type: MIME[report.format] }));
@@ -95,6 +104,7 @@ function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: 
         <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
           {report.description}
         </Typography>
+        <ColumnPicker endpoint={report.endpoint} onSelectionChange={setColumnSelection} />
         {error && (
           <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
             {error}
@@ -109,12 +119,12 @@ function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: 
           display: 'inline-flex', alignItems: 'center', gap: '6px',
           px: '12px', py: '6px',
           fontSize: 12, fontWeight: 500,
-          color: eligible ? 'var(--accent)' : 'var(--ink-4)',
-          border: `0.5px solid ${eligible ? 'var(--accent-border)' : 'var(--rule)'}`,
+          color: downloadDisabled ? 'var(--ink-4)' : 'var(--accent)',
+          border: `0.5px solid ${downloadDisabled ? 'var(--rule)' : 'var(--accent-border)'}`,
           borderRadius: '6px',
-          cursor: eligible ? 'pointer' : 'not-allowed',
+          cursor: downloadDisabled ? 'not-allowed' : 'pointer',
           flexShrink: 0,
-          '&:hover': eligible ? { opacity: 0.75 } : {},
+          '&:hover': !downloadDisabled ? { opacity: 0.75 } : {},
         }}
       >
         {loading

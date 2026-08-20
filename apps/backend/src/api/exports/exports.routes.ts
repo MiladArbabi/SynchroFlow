@@ -19,9 +19,21 @@ import {
   exportReturns,
   exportFinances,
   exportProducts,
+  exportColumns,
 } from './exports.controller.js';
 
 const router = Router();
+
+// Column metadata for the frontend column picker — same gate as the
+// exports themselves; the picker itself is entitlement-gated separately
+// (Growth+) inside each POST handler, not here.
+router.get(
+  '/columns',
+  authenticateToken,
+  requireTier('core'),
+  requireAction('exports:read'),
+  exportColumns
+);
 
 // CSV exports — Core+
 router.post(

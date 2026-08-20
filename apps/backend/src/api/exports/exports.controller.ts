@@ -39,6 +39,10 @@ function resolvedTier(req: Request): Tier {
   return TIERS.includes(raw as Tier) ? (raw as Tier) : 'starter';
 }
 
+function isAtLeastGrowth(tier: Tier): boolean {
+  return TIERS.indexOf(tier) >= TIERS.indexOf('growth');
+}
+
 // Mirrors the native `fulfillment_status_type` enum (see migration 0006 +
 // backfill 0133). 'blocked' is deliberately NOT a member — it's a synthetic
 // filter value resolved against order_constraints, not ofs.status.
@@ -207,6 +211,27 @@ function buildSelect(trx: Knex.Transaction, defs: ColumnDef[]): Knex.Raw[] {
   return defs.map((c) => trx.raw(`${c.sql} as ${c.key}`));
 }
 
+// ─── COLUMN METADATA ──────────────────────────────────────────────────────────
+
+/**
+ * GET /api/v1/exports/columns
+ *
+ * Feeds the frontend column picker. Maps EXPORT_COLUMNS down to {key,label}
+ * ONLY — `sql` is a raw SQL fragment (subqueries, joins) and must NEVER
+ * leave the backend. If you're adding a field to this response, it must
+ * come from this explicit key/label destructure, never a spread of the
+ * ColumnDef itself.
+ */
+export async function exportColumns(_req: Request, res: Response) {
+  const payload = Object.fromEntries(
+    (Object.keys(EXPORT_COLUMNS) as ExportResource[]).map((resource) => [
+      resource,
+      EXPORT_COLUMNS[resource].map(({ key, label }) => ({ key, label })),
+    ])
+  );
+  res.json(payload);
+}
+
 // ─── ORDERS CSV ───────────────────────────────────────────────────────────────
 
 /**
@@ -232,7 +257,17 @@ export async function exportOrders(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    const { date_from, date_to, status, payment_state, columns } = req.body?.filters ?? {};
+    const filters = req.body?.filters ?? {};
+    const { date_from, date_to, status, payment_state, columns } = filters;
+
+    // 403, not 400: the request is well-formed, the caller just isn't
+    // entitled to it — a different meaning from InvalidFilterError, so it
+    // does not route through that hierarchy. Absent filters.columns must
+    // behave exactly as before this feature existed, at every tier.
+    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    }
+
     const columnDefs = resolveColumns('orders', columns);
 
     const rows = await withTenant(shopId, async (trx) => {
@@ -330,7 +365,13 @@ export async function exportReturns(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    const { date_from, date_to, columns } = req.body?.filters ?? {};
+    const filters = req.body?.filters ?? {};
+    const { date_from, date_to, columns } = filters;
+
+    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    }
+
     const columnDefs = resolveColumns('returns', columns);
 
     const rows = await withTenant(shopId, async (trx) => {
@@ -394,7 +435,13 @@ export async function exportFinances(req: Request, res: Response) {
   const since = tierDataWindowSince(tier);
 
   try {
-    const { date_from, date_to, columns } = req.body?.filters ?? {};
+    const filters = req.body?.filters ?? {};
+    const { date_from, date_to, columns } = filters;
+
+    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    }
+
     const columnDefs = resolveColumns('finances', columns);
 
     const rows = await withTenant(shopId, async (trx) => {
@@ -450,9 +497,16 @@ export async function exportFinances(req: Request, res: Response) {
  */
 export async function exportProducts(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
+  const tier = resolvedTier(req);
 
   try {
-    const { status, columns } = req.body?.filters ?? {};
+    const filters = req.body?.filters ?? {};
+    const { status, columns } = filters;
+
+    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    }
+
     const columnDefs = resolveColumns('products', columns);
 
     const rows = await withTenant(shopId, async (trx) => {
