@@ -72,11 +72,15 @@ function filename(resource: string, format: 'csv' | 'pdf'): string {
   *          payment_state, fulfillment_status, blocker_type, channel,
  *          sku_count, shipping_country
  *
+ * created_at is shop-local (converted via shops.timezone), formatted
+ * 'YYYY-MM-DD HH24:MI:SS'.
+ *
  * filters.status accepts the 7 fulfillment_status_type enum members plus
  * the synthetic value 'blocked', which resolves against order_constraints
  * (canonical blocker truth) rather than order_fulfillment_status.
  *
- * Joins: order_fulfillment_status (status), order_revenue_units (sku_count)
+ * Joins: order_fulfillment_status (status), order_revenue_units (sku_count),
+ *        shops (timezone for created_at conversion)
  */
 export async function exportOrders(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
@@ -86,6 +90,7 @@ export async function exportOrders(req: Request, res: Response) {
   try {
     const rows = await withTenant(shopId, async (trx) => {
       let query = trx('orders as o')
+        .join('shops as s', 's.id', 'o.shop_id')
         .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
         .leftJoin(
           trx('order_revenue_units').select('lasyncro_order_id').count('* as sku_count').groupBy('lasyncro_order_id').as('ru'),
@@ -94,7 +99,9 @@ export async function exportOrders(req: Request, res: Response) {
         .where('o.shop_id', shopId)
         .select(
           'o.lasyncro_order_id as order_id',
-          'o.order_created_at as created_at',
+          // Space-separated, not ISO 8601: Excel auto-parses 'YYYY-MM-DD HH24:MI:SS'
+          // as a date/time value, but treats a 'T'-separated ISO string as text.
+          trx.raw("to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
           'o.total_price',
           'o.currency',
           'o.payment_state',
@@ -177,7 +184,11 @@ export async function exportOrders(req: Request, res: Response) {
  * Columns: return_id, created_at, order_id, item_title, sku,
  *          units_returned, return_reason, total_refund_amount
  *
- * Joins: refund_execution_line_items, order_revenue_units
+ * created_at is shop-local (converted via shops.timezone), formatted
+ * 'YYYY-MM-DD HH24:MI:SS'.
+ *
+ * Joins: refund_execution_line_items, order_revenue_units,
+ *        shops (timezone for created_at conversion)
  */
 export async function exportReturns(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
@@ -188,12 +199,13 @@ export async function exportReturns(req: Request, res: Response) {
     const rows = await withTenant(shopId, async (trx) => {
     let query = trx('refund_executions as re')
       .join('orders as o', 'o.lasyncro_order_id', 're.lasyncro_order_id')
+      .join('shops as s', 's.id', 'o.shop_id')
       .leftJoin('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
       .leftJoin('order_revenue_units as ru', 'ru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
       .where('o.shop_id', shopId)
       .select(
         're.lasyncro_refund_execution_id as return_id',
-        're.executed_at as created_at',
+        trx.raw("to_char(re.executed_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
         're.lasyncro_order_id as order_id',
         trx.raw("COALESCE(ru.title, '—') as item_title"),
         trx.raw("COALESCE(ru.sku, '—') as sku"),
@@ -235,7 +247,11 @@ export async function exportReturns(req: Request, res: Response) {
  * Columns: order_id, created_at, total_price, currency,
  *          gross_revenue, estimated_cost, gross_margin, margin_pct
  *
- * Source: order_margin_snapshot joined with orders
+ * created_at is shop-local (converted via shops.timezone), formatted
+ * 'YYYY-MM-DD HH24:MI:SS'.
+ *
+ * Source: order_margin_snapshot joined with orders, shops (timezone for
+ * created_at conversion)
  */
 export async function exportFinances(req: Request, res: Response) {
   const shopId = req.user!.shopId!;
@@ -246,10 +262,11 @@ export async function exportFinances(req: Request, res: Response) {
     const rows = await withTenant(shopId, async (trx) => {
     let query = trx('order_margin_snapshot as oms')
       .join('orders as o', 'o.lasyncro_order_id', 'oms.lasyncro_order_id')
+      .join('shops as s', 's.id', 'o.shop_id')
       .where('oms.shop_id', shopId)
       .select(
         'oms.lasyncro_order_id as order_id',
-        'o.order_created_at as created_at',
+        trx.raw("to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS') as created_at"),
         'o.total_price',
         'o.currency',
         'oms.gross_revenue',
