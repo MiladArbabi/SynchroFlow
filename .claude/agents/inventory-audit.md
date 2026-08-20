@@ -32,6 +32,27 @@ is 1 unless told otherwise. Always use `\pset pager off`. Never trim output.
 4. UNITS — inventory_units count by status and current_location_code.
 5. TOTALS — SUM(on_hand_quantity) vs SUM(quantity_delta).
 
+6. REBUILD INVARIANT — run the deterministic rebuild TWICE, redirecting to a
+   file each time (never pipe to grep: a pipe truncates output and masks the
+   exit code):
+
+     npm run rebuild -w apps/backend > /tmp/rb1.log 2>&1; echo "EXIT=$?"
+     npm run rebuild -w apps/backend > /tmp/rb2.log 2>&1; echo "EXIT=$?"
+     grep "REBUILD_TABLE_HASH inventory_truth" /tmp/rb1.log /tmp/rb2.log
+
+   Then re-run check 5. Report FAIL with INV-REBUILD-REPLAY-21 if either:
+   - the two inventory_truth hashes differ (replay is non-deterministic), or
+   - SUM(on_hand_quantity) changed across the rebuild (replay does not
+     reproduce live state).
+
+   Row COUNT changing is expected and not a failure: unlocated sales
+   contribute 0 to on_hand, so warehouse-root groups materialise as
+   zero-quantity rows. Only the on_hand total and hash stability matter.
+
+   This check WRITES (rebuild truncates and replays inventory_truth). Run it
+   only when explicitly asked to include the rebuild check, or on a dev
+   database. Never on production.
+
 ## Output
 
 A short table per check plus one verdict line: PASS or FAIL with the issue ID.
