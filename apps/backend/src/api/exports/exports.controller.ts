@@ -149,6 +149,18 @@ export const FINANCES_COLUMNS = [
   'margin_pct',
 ];
 
+export const PRODUCTS_COLUMNS = [
+  'sku',
+  'title',
+  'status',
+  'unit_cost',
+  'on_hand',
+  'available',
+  'reserved',
+  'extended_value',
+  'locations',
+];
+
 // ─── ORDERS CSV ───────────────────────────────────────────────────────────────
 
 /**
@@ -392,6 +404,76 @@ export async function exportFinances(req: Request, res: Response) {
     }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportFinances failed', { shopId, msg, ...pgErrorInfo(err) });
+    if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
+  }
+}
+
+// ─── PRODUCTS CSV ─────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/v1/exports/products
+ *
+ * Columns: sku, title, status, unit_cost, on_hand, available, reserved,
+ *          extended_value, locations
+ *
+ * Variant grain — not time-series, so no date_from/date_to filtering.
+ *
+ * Source: variants LEFT JOIN inventory_truth (on lasyncro_variant_id +
+ * shop_id).
+ */
+export async function exportProducts(req: Request, res: Response) {
+  const shopId = req.user!.shopId!;
+
+  try {
+    const rows = await withTenant(shopId, async (trx) => {
+      let query = trx('variants as v')
+        // LEFT JOIN, not JOIN: a SKU with no inventory_truth row (never
+        // stocked, or fully depleted with the row cleaned up) must still
+        // appear — an accountant's valuation needs the complete SKU list,
+        // and on_hand 0 is information, not an omission.
+        .leftJoin('inventory_truth as it', function () {
+          this.on('it.lasyncro_variant_id', '=', 'v.lasyncro_variant_id').andOn(
+            'it.shop_id', '=', 'v.shop_id'
+          );
+        })
+        .where('v.shop_id', shopId)
+        .groupBy('v.lasyncro_variant_id', 'v.sku', 'v.title', 'v.status', 'v.unit_cost')
+        .select(
+          'v.sku',
+          'v.title',
+          'v.status',
+          'v.unit_cost',
+          trx.raw('COALESCE(SUM(it.on_hand_quantity), 0) as on_hand'),
+          trx.raw('COALESCE(SUM(it.available_quantity), 0) as available'),
+          trx.raw('COALESCE(SUM(it.reserved_quantity), 0) as reserved'),
+          trx.raw('ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2) as extended_value'),
+          trx.raw("string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code) as locations")
+        )
+        .orderBy('v.sku');
+
+      // status is varchar, not an enum — no hardcoded whitelist (that was
+      // the EXP-BLOCKED-02 failure). Any string is passed through; a value
+      // with no matching rows legitimately yields zero rows, not an error.
+      const { status } = req.body?.filters ?? {};
+      if (status?.length) query = query.whereIn('v.status', status);
+
+      return query;
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename('products', 'csv')}"`);
+
+    const csvStream = csvFormat({ headers: PRODUCTS_COLUMNS, alwaysWriteHeaders: true });
+    csvStream.pipe(res);
+    for (const row of rows) csvStream.write(row);
+    csvStream.end();
+
+  } catch (err: unknown) {
+    if (err instanceof InvalidFilterError) {
+      return res.status(400).json({ error: err.code, message: err.message });
+    }
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('[exports] exportProducts failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
   }
 }

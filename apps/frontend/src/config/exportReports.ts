@@ -65,6 +65,15 @@ export const QUICK_REPORTS: QuickReport[] = [
     endpoint: '/api/v1/exports/finances',
     filename: 'lasyncro-finances',
   },
+  {
+    id: 'products',
+    title: 'Inventory Valuation',
+    description: 'On-hand units, unit cost, extended value, and locations per SKU.',
+    format: 'csv',
+    tier: 'core',
+    endpoint: '/api/v1/exports/products',
+    filename: 'lasyncro-products',
+  },
 ];
 
 export const TIER_ORDER: Record<string, number> = {

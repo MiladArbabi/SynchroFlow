@@ -18,6 +18,7 @@ import {
   exportOrders,
   exportReturns,
   exportFinances,
+  exportProducts,
 } from './exports.controller.js';
 
 const router = Router();
@@ -45,6 +46,14 @@ router.post(
   requireTier('core'),
   requireAction('exports:read'),
   exportFinances
+);
+
+router.post(
+  '/products',
+  authenticateToken,
+  requireTier('core'),
+  requireAction('exports:read'),
+  exportProducts
 );
 
 export default router;
