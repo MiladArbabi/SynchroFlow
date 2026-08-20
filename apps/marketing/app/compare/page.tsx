@@ -63,9 +63,22 @@ export default function CompareIndex() {
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
           Operator-honest comparisons
         </div>
-        <h1 style={{ fontFamily: 'var(--sans)', fontSize: 'clamp(48px, 10vw, 64px)', fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '0 0 32px', maxWidth: 820 }}>
+        <h1
+          style={{
+            fontFamily: 'var(--sans)',
+            fontSize: 'clamp(38px, 5vw, 64px)',
+            fontWeight: 650,
+            lineHeight: 1.05,
+            letterSpacing: '-0.045em',
+            color: 'var(--ink)',
+            margin: '0 0 32px',
+            maxWidth: 820,
+          }}
+        >
           LaSyncro vs{' '}
-          <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>the alternatives.</em>
+          <em style={{ color: 'var(--accent)', fontStyle: 'italic' }}>
+            the alternatives.
+          </em>
         </h1>
         <p style={{ fontFamily: 'var(--sans)', fontSize: 18, fontWeight: 300, lineHeight: 1.55, color: 'var(--ink-2)', maxWidth: 560, margin: 0 }}>
           How LaSyncro compares to enterprise WMS and operations tools — built for Shopify merchants who need operational intelligence without the enterprise price tag.

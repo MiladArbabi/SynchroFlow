@@ -518,9 +518,46 @@ Implementation files:
 - `apps/marketing/app/about/page.tsx`
 - `docs/blueprints/marketing-content-ux-system.md`
 
-MKT-UX-01F-D-PROD-01 is implemented; local build and production visual verification remain pending.
+MKT-UX-01F-D-PROD-01 is production verified and complete. The About warehouse visual is visible in the intended right-hand desktop column, uses the dark ArticleImage variant, remains contained without article breakout margins, and restores the intended balanced two-column composition.
 
-Next: MKT-UX-01F-E — Privacy + Terms convergence.
+MKT-UX-01F-D — FAQ + About convergence is fully closed.
+
+MKT-UX-01F-E — Privacy + Terms convergence remains pending as separate light-era contrast debt.
+
+## MKT-UX-01G-A — Primary page-title convergence
+
+MKT-UX-01G-A establishes the Pricing H1 treatment as the shared primary-page title authority across the remaining marketing hub surfaces that had visibly drifted.
+
+Canonical primary-page H1 typography:
+
+```txt
+font-family: var(--sans)
+font-size: clamp(38px, 5vw, 64px)
+font-weight: 650
+line-height: 1.05
+letter-spacing: -0.045em
+color: var(--ink)
+```
+
+The shared `ContentHero` primitive is used only by the Blog index, Help root, and Help category hubs. Its previous `56px / 400 / 1.16 / -0.02em` title styling and separate 48px/40px responsive overrides were replaced by the canonical clamp-based Pricing authority.
+
+This means Blog index, Help root, and Help category hubs now inherit the same primary-title typography without route-local duplication.
+
+The Compare index owns its H1 locally rather than through `ContentHero`. Its previous `clamp(48px, 10vw, 64px) / 400 / 1.18 / -0.02em` treatment was replaced with the same Pricing authority while preserving its orange italic `the alternatives.` emphasis and existing route-specific max width.
+
+Pricing, FAQ, and About already use this H1 authority and require no 01G-A changes.
+
+Blog article titles and Help article titles remain intentionally outside this issue. They are editorial/article headline treatments rather than primary hub-page H1s and retain their separate sizing hierarchy.
+
+Implementation files:
+
+- `apps/marketing/components/content/content.module.css`
+- `apps/marketing/app/compare/page.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+MKT-UX-01G-A implementation is applied; local build and production visual verification remain pending.
+
+Next visual-system issue: MKT-UX-01G-B — shared hover and focus-state convergence.
 
 ## Blog preserved contracts
 
