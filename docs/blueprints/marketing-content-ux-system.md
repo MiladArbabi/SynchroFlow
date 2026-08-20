@@ -555,7 +555,35 @@ Implementation files:
 - `apps/marketing/app/compare/page.tsx`
 - `docs/blueprints/marketing-content-ux-system.md`
 
-MKT-UX-01G-A implementation is applied; local build and production visual verification remain pending.
+MKT-UX-01G-A is production verified and complete. Blog index, Compare index, Help root, and Help category hubs now use the canonical Pricing primary-page title authority without introducing visible wrapping or layout regressions on the verified desktop surfaces.
+
+## MKT-UX-01H-A — Help Center navigation discoverability
+
+The canonical public Help Center exists at `/help`, but audit found that public marketing navigation did not expose that root route directly.
+
+Before this change:
+
+- the marketing header exposed `Getting started`, linking directly to `/help/getting-started`;
+- the shared footer had no Help link;
+- authenticated application users retained a separate `Get help` action inside the application shell;
+- both `/help` and `/help/getting-started` were healthy public routes.
+
+The public navigation contract is now:
+
+- the marketing header exposes `Help` linking to `/help`;
+- the same `Help` entry is inherited by the mobile menu because desktop and mobile both render from the shared `navLinks` array;
+- the shared marketing footer exposes `Help` linking to `/help`;
+- `Getting Started` remains a Help Center category reached from the canonical `/help` landing page;
+- the authenticated application-shell `Get help` behavior remains unchanged;
+- no Help routes, Help content, search behavior, or responsive navigation CSS are changed by this issue.
+
+Implementation files:
+
+- `apps/marketing/components/navigation/MarketingNav.tsx`
+- `apps/marketing/app/layout.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+MKT-UX-01H-A implementation is applied; local build and production navigation verification remain pending.
 
 Next visual-system issue: MKT-UX-01G-B — shared hover and focus-state convergence.
 

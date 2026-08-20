@@ -78,6 +78,7 @@ function Footer() {
         <Link href="/blog" className="marketing-footer-link">Blog</Link>
         <Link href="/compare" className="marketing-footer-link">Compare</Link>
         <Link href="/pricing" className="marketing-footer-link">Pricing</Link>
+        <Link href="/help" className="marketing-footer-link">Help</Link>
         <Link href="/about" className="marketing-footer-link">About</Link>
         <a href="mailto:contact@lasyncro.com" className="marketing-footer-link">Contact</a>
       </div>
