@@ -76,6 +76,48 @@ function pgErrorInfo(err: unknown): { code?: string; detail?: string } {
   return {};
 }
 
+// Explicit column lists, in select order, for csvFormat's `headers` option.
+// headers:true infers column names from the first written row — with zero
+// rows nothing is ever written, so nothing is emitted, not even a header
+// line. alwaysWriteHeaders forces the header line to emit regardless, but
+// (per @fast-csv/format's RowFormatter) it requires headers to be a real
+// array, not the boolean `true` — so a zero-row export still needs an
+// explicit list to produce a usable file.
+export const ORDERS_COLUMNS = [
+  'order_id',
+  'created_at',
+  'total_price',
+  'currency',
+  'payment_state',
+  'fulfillment_status',
+  'blocker_type',
+  'channel',
+  'sku_count',
+  'shipping_country',
+];
+
+export const RETURNS_COLUMNS = [
+  'return_id',
+  'created_at',
+  'order_id',
+  'item_title',
+  'sku',
+  'units_returned',
+  'return_reason',
+  'total_refund_amount',
+];
+
+export const FINANCES_COLUMNS = [
+  'order_id',
+  'created_at',
+  'total_price',
+  'currency',
+  'gross_revenue',
+  'estimated_cost',
+  'gross_margin',
+  'margin_pct',
+];
+
 // ─── ORDERS CSV ───────────────────────────────────────────────────────────────
 
 /**
@@ -174,7 +216,7 @@ export async function exportOrders(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('orders', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: true });
+    const csvStream = csvFormat({ headers: ORDERS_COLUMNS, alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -244,7 +286,7 @@ export async function exportReturns(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('returns', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: true });
+    const csvStream = csvFormat({ headers: RETURNS_COLUMNS, alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -305,7 +347,7 @@ export async function exportFinances(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('finances', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: true });
+    const csvStream = csvFormat({ headers: FINANCES_COLUMNS, alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
