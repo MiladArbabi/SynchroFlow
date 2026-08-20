@@ -63,6 +63,19 @@ function filename(resource: string, format: 'csv' | 'pdf'): string {
   return `lasyncro-${resource}-${date}.${format}`;
 }
 
+// Postgres errors carry `code`/`detail` as plain properties, not on the
+// Error prototype chain — narrow with a shape check rather than instanceof.
+function pgErrorInfo(err: unknown): { code?: string; detail?: string } {
+  if (typeof err === 'object' && err !== null) {
+    const { code, detail } = err as { code?: unknown; detail?: unknown };
+    return {
+      code: typeof code === 'string' ? code : undefined,
+      detail: typeof detail === 'string' ? detail : undefined,
+    };
+  }
+  return {};
+}
+
 // ─── ORDERS CSV ───────────────────────────────────────────────────────────────
 
 /**
@@ -105,7 +118,7 @@ export async function exportOrders(req: Request, res: Response) {
           'o.total_price',
           'o.currency',
           'o.payment_state',
-          trx.raw("COALESCE(ofs.status, 'pending') as fulfillment_status"),
+          trx.raw("COALESCE(ofs.status::text, 'pending') as fulfillment_status"),
           trx.raw(`(
             SELECT COALESCE(string_agg(DISTINCT oc.constraint_type, ' + '), '—')
             FROM order_constraints oc
@@ -171,7 +184,7 @@ export async function exportOrders(req: Request, res: Response) {
       return res.status(400).json({ error: 'INVALID_STATUS_FILTER', message: err.message });
     }
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[exports] exportOrders failed', { shopId, msg });
+    console.error('[exports] exportOrders failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
   }
 }
@@ -210,7 +223,11 @@ export async function exportReturns(req: Request, res: Response) {
         trx.raw("COALESCE(ru.title, '—') as item_title"),
         trx.raw("COALESCE(ru.sku, '—') as sku"),
         trx.raw("COALESCE(reli.refunded_quantity, 0) as units_returned"),
-        trx.raw("COALESCE(re.return_reason, '—') as return_reason"),
+        // ::text cast is required: COALESCE resolves its argument types at
+        // parse time, before any row is read. Against the return_reason_type
+        // enum, the '—' literal fails type resolution regardless of whether
+        // the table has matching rows — it errored even at 0 rows.
+        trx.raw("COALESCE(re.return_reason::text, '—') as return_reason"),
         're.total_refund_amount'
       )
       .orderBy('re.executed_at', 'desc');
@@ -234,7 +251,7 @@ export async function exportReturns(req: Request, res: Response) {
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[exports] exportReturns failed', { shopId, msg });
+    console.error('[exports] exportReturns failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
   }
 }
@@ -295,7 +312,7 @@ export async function exportFinances(req: Request, res: Response) {
 
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
-    console.error('[exports] exportFinances failed', { shopId, msg });
+    console.error('[exports] exportFinances failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
   }
 }
