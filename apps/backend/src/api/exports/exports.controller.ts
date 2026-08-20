@@ -134,57 +134,57 @@ type ExportResource = 'orders' | 'returns' | 'finances' | 'products';
 
 export const EXPORT_COLUMNS: Record<ExportResource, ColumnDef[]> = {
   orders: [
-    { key: 'order_id', label: 'order_id', sql: 'o.lasyncro_order_id' },
+    { key: 'order_id', label: 'Order ID', sql: 'o.lasyncro_order_id' },
     // Space-separated, not ISO 8601: Excel auto-parses 'YYYY-MM-DD HH24:MI:SS'
     // as a date/time value, but treats a 'T'-separated ISO string as text.
-    { key: 'created_at', label: 'created_at', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
-    { key: 'total_price', label: 'total_price', sql: 'o.total_price' },
-    { key: 'currency', label: 'currency', sql: 'o.currency' },
-    { key: 'payment_state', label: 'payment_state', sql: 'o.payment_state' },
-    { key: 'fulfillment_status', label: 'fulfillment_status', sql: "COALESCE(ofs.status::text, 'pending')" },
-    { key: 'blocker_type', label: 'blocker_type', sql: `(
+    { key: 'created_at', label: 'Created', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'total_price', label: 'Total', sql: 'o.total_price' },
+    { key: 'currency', label: 'Currency', sql: 'o.currency' },
+    { key: 'payment_state', label: 'Payment status', sql: 'o.payment_state' },
+    { key: 'fulfillment_status', label: 'Fulfillment status', sql: "COALESCE(ofs.status::text, 'pending')" },
+    { key: 'blocker_type', label: 'Blocker', sql: `(
       SELECT COALESCE(string_agg(DISTINCT oc.constraint_type, ' + '), '—')
       FROM order_constraints oc
       WHERE oc.lasyncro_order_id = o.lasyncro_order_id AND oc.is_active = true
     )` },
-    { key: 'channel', label: 'channel', sql: "COALESCE(o.source, '—')" },
-    { key: 'sku_count', label: 'sku_count', sql: 'COALESCE(ru.sku_count, 0)' },
-    { key: 'shipping_country', label: 'shipping_country', sql: "COALESCE(o.shipping_country_code, '—')" },
+    { key: 'channel', label: 'Channel', sql: "COALESCE(o.source, '—')" },
+    { key: 'sku_count', label: 'SKUs', sql: 'COALESCE(ru.sku_count, 0)' },
+    { key: 'shipping_country', label: 'Ship-to country', sql: "COALESCE(o.shipping_country_code, '—')" },
   ],
   returns: [
-    { key: 'return_id', label: 'return_id', sql: 're.lasyncro_refund_execution_id' },
-    { key: 'created_at', label: 'created_at', sql: "to_char(re.executed_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
-    { key: 'order_id', label: 'order_id', sql: 're.lasyncro_order_id' },
-    { key: 'item_title', label: 'item_title', sql: "COALESCE(ru.title, '—')" },
-    { key: 'sku', label: 'sku', sql: "COALESCE(ru.sku, '—')" },
-    { key: 'units_returned', label: 'units_returned', sql: 'COALESCE(reli.refunded_quantity, 0)' },
+    { key: 'return_id', label: 'Return ID', sql: 're.lasyncro_refund_execution_id' },
+    { key: 'created_at', label: 'Created', sql: "to_char(re.executed_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'order_id', label: 'Order ID', sql: 're.lasyncro_order_id' },
+    { key: 'item_title', label: 'Item', sql: "COALESCE(ru.title, '—')" },
+    { key: 'sku', label: 'SKU', sql: "COALESCE(ru.sku, '—')" },
+    { key: 'units_returned', label: 'Units returned', sql: 'COALESCE(reli.refunded_quantity, 0)' },
     // ::text cast is required: COALESCE resolves its argument types at
     // parse time, before any row is read. Against the return_reason_type
     // enum, the '—' literal fails type resolution regardless of whether
     // the table has matching rows — it errored even at 0 rows.
-    { key: 'return_reason', label: 'return_reason', sql: "COALESCE(re.return_reason::text, '—')" },
-    { key: 'total_refund_amount', label: 'total_refund_amount', sql: 're.total_refund_amount' },
+    { key: 'return_reason', label: 'Return reason', sql: "COALESCE(re.return_reason::text, '—')" },
+    { key: 'total_refund_amount', label: 'Refund amount', sql: 're.total_refund_amount' },
   ],
   finances: [
-    { key: 'order_id', label: 'order_id', sql: 'oms.lasyncro_order_id' },
-    { key: 'created_at', label: 'created_at', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
-    { key: 'total_price', label: 'total_price', sql: 'o.total_price' },
-    { key: 'currency', label: 'currency', sql: 'o.currency' },
-    { key: 'gross_revenue', label: 'gross_revenue', sql: 'oms.gross_revenue' },
-    { key: 'estimated_cost', label: 'estimated_cost', sql: 'oms.estimated_cost' },
-    { key: 'gross_margin', label: 'gross_margin', sql: 'oms.gross_margin' },
-    { key: 'margin_pct', label: 'margin_pct', sql: 'ROUND((oms.margin_pct * 100)::numeric, 2)' },
+    { key: 'order_id', label: 'Order ID', sql: 'oms.lasyncro_order_id' },
+    { key: 'created_at', label: 'Created', sql: "to_char(o.order_created_at AT TIME ZONE s.timezone, 'YYYY-MM-DD HH24:MI:SS')" },
+    { key: 'total_price', label: 'Total', sql: 'o.total_price' },
+    { key: 'currency', label: 'Currency', sql: 'o.currency' },
+    { key: 'gross_revenue', label: 'Gross revenue', sql: 'oms.gross_revenue' },
+    { key: 'estimated_cost', label: 'Estimated cost', sql: 'oms.estimated_cost' },
+    { key: 'gross_margin', label: 'Gross margin', sql: 'oms.gross_margin' },
+    { key: 'margin_pct', label: 'Margin %', sql: 'ROUND((oms.margin_pct * 100)::numeric, 2)' },
   ],
   products: [
-    { key: 'sku', label: 'sku', sql: 'v.sku' },
-    { key: 'title', label: 'title', sql: 'v.title' },
-    { key: 'status', label: 'status', sql: 'v.status' },
-    { key: 'unit_cost', label: 'unit_cost', sql: 'v.unit_cost' },
-    { key: 'on_hand', label: 'on_hand', sql: 'COALESCE(SUM(it.on_hand_quantity), 0)' },
-    { key: 'available', label: 'available', sql: 'COALESCE(SUM(it.available_quantity), 0)' },
-    { key: 'reserved', label: 'reserved', sql: 'COALESCE(SUM(it.reserved_quantity), 0)' },
-    { key: 'extended_value', label: 'extended_value', sql: 'ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2)' },
-    { key: 'locations', label: 'locations', sql: "string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code)" },
+    { key: 'sku', label: 'SKU', sql: 'v.sku' },
+    { key: 'title', label: 'Product', sql: 'v.title' },
+    { key: 'status', label: 'Status', sql: 'v.status' },
+    { key: 'unit_cost', label: 'Unit cost', sql: 'v.unit_cost' },
+    { key: 'on_hand', label: 'On hand', sql: 'COALESCE(SUM(it.on_hand_quantity), 0)' },
+    { key: 'available', label: 'Available', sql: 'COALESCE(SUM(it.available_quantity), 0)' },
+    { key: 'reserved', label: 'Reserved', sql: 'COALESCE(SUM(it.reserved_quantity), 0)' },
+    { key: 'extended_value', label: 'Extended value', sql: 'ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2)' },
+    { key: 'locations', label: 'Locations', sql: "string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code)" },
   ],
 };
 
@@ -330,7 +330,7 @@ export async function exportOrders(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('orders', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.key), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -400,7 +400,7 @@ export async function exportReturns(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('returns', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.key), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -467,7 +467,7 @@ export async function exportFinances(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('finances', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.key), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();
@@ -541,7 +541,7 @@ export async function exportProducts(req: Request, res: Response) {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename('products', 'csv')}"`);
 
-    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.label), alwaysWriteHeaders: true });
+    const csvStream = csvFormat({ headers: columnDefs.map((c) => c.key), alwaysWriteHeaders: true });
     csvStream.pipe(res);
     for (const row of rows) csvStream.write(row);
     csvStream.end();

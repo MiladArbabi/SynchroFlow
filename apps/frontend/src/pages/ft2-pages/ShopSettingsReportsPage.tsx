@@ -29,7 +29,11 @@ const ALL_COLUMNS_SELECTED: ColumnPickerSelection = { columns: undefined, isEmpt
 
 // ─── QUICK REPORT CARD ────────────────────────────────────────────────────────
 
-function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: string }) {
+function QuickReportCard({
+  report, userTier, pickerOpen, onTogglePicker,
+}: {
+  report: QuickReport; userTier: string; pickerOpen: boolean; onTogglePicker: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
@@ -104,7 +108,6 @@ function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: 
         <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
           {report.description}
         </Typography>
-        <ColumnPicker endpoint={report.endpoint} onSelectionChange={setColumnSelection} />
         {error && (
           <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
             {error}
@@ -112,25 +115,33 @@ function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: 
         )}
       </Box>
 
-      {/* CTA */}
-      <Box
-        onClick={handleDownload}
-        sx={{
-          display: 'inline-flex', alignItems: 'center', gap: '6px',
-          px: '12px', py: '6px',
-          fontSize: 12, fontWeight: 500,
-          color: downloadDisabled ? 'var(--ink-4)' : 'var(--accent)',
-          border: `0.5px solid ${downloadDisabled ? 'var(--rule)' : 'var(--accent-border)'}`,
-          borderRadius: '6px',
-          cursor: downloadDisabled ? 'not-allowed' : 'pointer',
-          flexShrink: 0,
-          '&:hover': !downloadDisabled ? { opacity: 0.75 } : {},
-        }}
-      >
-        {loading
-          ? <CircularProgress size={12} sx={{ color: 'var(--accent)' }} />
-          : <Download size={13} strokeWidth={1.6} />}
-        <span>{loading ? 'Exporting…' : 'Download'}</span>
+      {/* Column picker + CTA */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+        <ColumnPicker
+          endpoint={report.endpoint}
+          open={pickerOpen}
+          onToggle={onTogglePicker}
+          onSelectionChange={setColumnSelection}
+        />
+        <Box
+          onClick={handleDownload}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            px: '12px', py: '6px',
+            fontSize: 12, fontWeight: 500,
+            color: downloadDisabled ? 'var(--ink-4)' : 'var(--accent)',
+            border: `0.5px solid ${downloadDisabled ? 'var(--rule)' : 'var(--accent-border)'}`,
+            borderRadius: '6px',
+            cursor: downloadDisabled ? 'not-allowed' : 'pointer',
+            flexShrink: 0,
+            '&:hover': !downloadDisabled ? { opacity: 0.75 } : {},
+          }}
+        >
+          {loading
+            ? <CircularProgress size={12} sx={{ color: 'var(--accent)' }} />
+            : <Download size={13} strokeWidth={1.6} />}
+          <span>{loading ? 'Exporting…' : 'Download'}</span>
+        </Box>
       </Box>
     </Box>
   );
@@ -140,6 +151,8 @@ function QuickReportCard({ report, userTier }: { report: QuickReport; userTier: 
 
 export default function ShopSettingsReportsPage() {
   const { tier } = useEntitlements();
+  // Only one picker open at a time across the Quick Reports list.
+  const [openPickerId, setOpenPickerId] = useState<string | null>(null);
 
   return (
     <SettingsPageWrapper>
@@ -151,7 +164,13 @@ export default function ShopSettingsReportsPage() {
         </Typography>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.25 }}>
           {QUICK_REPORTS.map(report => (
-            <QuickReportCard key={report.id} report={report} userTier={tier} />
+            <QuickReportCard
+              key={report.id}
+              report={report}
+              userTier={tier}
+              pickerOpen={openPickerId === report.id}
+              onTogglePicker={() => setOpenPickerId(prev => (prev === report.id ? null : report.id))}
+            />
           ))}
         </Box>
       </Box>

@@ -24,7 +24,11 @@ interface ExportDrawerProps {
   reportIds?: string[];
 }
 
-function ExportRow({ report, userTier }: { report: QuickReport; userTier: string }) {
+function ExportRow({
+  report, userTier, pickerOpen, onTogglePicker,
+}: {
+  report: QuickReport; userTier: string; pickerOpen: boolean; onTogglePicker: () => void;
+}) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
@@ -56,14 +60,11 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
 
   return (
     <Box
-      onClick={handleDownload}
       sx={{
         display: 'flex', alignItems: 'center', gap: 1.5,
         px: 2, py: 1.5, borderRadius: '8px',
         border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
         opacity: eligible ? 1 : 0.55,
-        cursor: downloadDisabled ? 'not-allowed' : 'pointer',
-        '&:hover': eligible ? { borderColor: 'var(--accent-border)' } : {},
       }}
     >
       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -88,22 +89,41 @@ function ExportRow({ report, userTier }: { report: QuickReport; userTier: string
         <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)' }}>
           {report.description}
         </Typography>
-        <ColumnPicker endpoint={report.endpoint} onSelectionChange={setColumnSelection} />
         {error && (
           <Typography sx={{ fontSize: 11, color: '#E5484D', mt: '3px' }}>
             {error}
           </Typography>
         )}
       </Box>
-      {loading
-        ? <CircularProgress size={14} sx={{ color: 'var(--accent)', flexShrink: 0 }} />
-        : <Download size={14} strokeWidth={1.6} color={downloadDisabled ? 'var(--ink-4)' : 'var(--accent)'} style={{ flexShrink: 0 }} />}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
+        <ColumnPicker
+          endpoint={report.endpoint}
+          open={pickerOpen}
+          onToggle={onTogglePicker}
+          onSelectionChange={setColumnSelection}
+        />
+        <Box
+          onClick={handleDownload}
+          sx={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: '6px',
+            cursor: downloadDisabled ? 'not-allowed' : 'pointer',
+            '&:hover': !downloadDisabled ? { bgcolor: 'var(--bg)' } : {},
+          }}
+        >
+          {loading
+            ? <CircularProgress size={14} sx={{ color: 'var(--accent)' }} />
+            : <Download size={14} strokeWidth={1.6} color={downloadDisabled ? 'var(--ink-4)' : 'var(--accent)'} />}
+        </Box>
+      </Box>
     </Box>
   );
 }
 
 export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawerProps) {
   const reports = reportIds ? QUICK_REPORTS.filter(r => reportIds.includes(r.id)) : QUICK_REPORTS;
+  // Only one picker open at a time across the drawer.
+  const [openPickerId, setOpenPickerId] = useState<string | null>(null);
 
   // Keep guidance truthful when a module exposes only a subset of report formats.
   const formats = new Set(reports.map(report => report.format));
@@ -141,7 +161,15 @@ export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawe
           <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mb: 0.5 }}>
             {guidance}
           </Typography>
-          {reports.map(report => <ExportRow key={report.id} report={report} userTier={userTier} />)}
+          {reports.map(report => (
+            <ExportRow
+              key={report.id}
+              report={report}
+              userTier={userTier}
+              pickerOpen={openPickerId === report.id}
+              onTogglePicker={() => setOpenPickerId(prev => (prev === report.id ? null : report.id))}
+            />
+          ))}
         </Box>
       </Box>
     </>
