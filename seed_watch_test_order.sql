@@ -8,7 +8,8 @@
 -- instant and both thresholds cross together.
 -- Reuses variant 7ea4ee28-fbe6-bfd1-a60a-04c88f2f697b (APP-82994-8018,
 -- SKU used in every screenshot this session) via its Shopify GID.
--- inventory_truth is confirmed empty (0 rows) — this order will
+-- INV-LEDGER-BYPASS-16: inventory_truth is NO LONGER empty — seed_overview_products.sql
+-- seeds 14 bin rows with matching opening_balance movements. This order will
 -- naturally evaluate as inventory-blocked by evaluateInventoryConstraint
 -- once reconciliation runs, no manual constraint insert needed.
 

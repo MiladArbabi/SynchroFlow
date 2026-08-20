@@ -416,7 +416,9 @@ export async function closeReceiveJob(
    * ------------------------------------------
    * Write inbound_purchase movement immediately on receive close.
    * Stock becomes available at WH-{shopId}-ROOT (unlocated).
-   * Stow confirm later updates location_code on inventory_truth only.
+   * Stow confirm later writes TWO location_transfer movements (debit ROOT,
+   * credit bin) AND updates inventory_truth — see stow.service.ts header.
+   * Truth is never written without a movement that reproduces it (INV-LEDGER-BYPASS-16).
    *
    * Invariant: available_quantity = on_hand_quantity - reserved_quantity
    * Movement is append-only — never updated after insert.

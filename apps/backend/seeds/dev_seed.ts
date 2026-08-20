@@ -925,7 +925,27 @@ export async function seed(knex: Knex): Promise<void> {
     for (let vi = 0; vi < variantIds.length; vi++) {
       const v = variantIds[vi];
       const binCode = binLocations[vi % binLocations.length];
-      const qty = Math.floor(Math.random() * 80) + 20;
+            const qty = Math.floor(Math.random() * 80) + 20;
+      /**
+       * INV-LEDGER-BYPASS-16: inventory_truth must always be reproducible from
+       * inventory_movements. Seeding truth alone left the ledger unable to
+       * explain 226 units. opening_balance is booked AT THE BIN because the
+       * seed asserts stock physically sits there — this is the same
+       * re-baseline primitive a merchant uses when cutting over from Excel.
+       */
+      await trx('inventory_movements').insert({
+        lasyncro_inventory_movement_id: crypto.randomUUID(),
+        device_event_id: crypto.randomUUID(),
+        shop_id: shop.id,
+        lasyncro_variant_id: v.lasyncro_variant_id,
+        movement_type: 'opening_balance',
+        quantity_delta: qty,
+        reference_type: 'opening_balance',
+        reference_id: crypto.randomUUID(),
+        location_code: binCode,
+        occurred_at: new Date(Date.now() - 30 * 86400000),
+        triggered_by: 'system',
+      });
       await trx('inventory_truth')
       .insert({
         shop_id: shop.id,

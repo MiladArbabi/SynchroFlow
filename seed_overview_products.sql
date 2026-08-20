@@ -44,6 +44,29 @@ INSERT INTO variants (lasyncro_variant_id, lasyncro_product_id, shop_id, sku, ti
   ('2b1e6dd5-1077-c023-53e8-98d0dba72bf1','0f846955-ded9-d5d1-9d59-bf479197e57b',1,'HOM-79602-2754','Variant 2754','BC5632754',135.20,'active')
 ON CONFLICT (shop_id, sku) DO NOTHING;
 
+-- INV-LEDGER-BYPASS-16: every inventory_truth row needs a movement that
+-- reproduces it. opening_balance at the bin keeps ledger == truth on replay.
+INSERT INTO inventory_movements (
+  lasyncro_inventory_movement_id, device_event_id, shop_id,
+  lasyncro_variant_id, movement_type, quantity_delta,
+  reference_type, reference_id, location_code, occurred_at, triggered_by
+) VALUES
+  (gen_random_uuid(),gen_random_uuid(),1,'9ce05d1d-ee19-cfa5-9dcd-a7040928ccda','opening_balance', 2,'opening_balance',gen_random_uuid(),'A-1',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'5dca39bf-74c6-70eb-08d1-a4cb4604952d','opening_balance', 8,'opening_balance',gen_random_uuid(),'A-2',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'443850fb-1aec-f297-95d1-3162dc38d2e5','opening_balance',18,'opening_balance',gen_random_uuid(),'A-3',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'6f12576c-54f3-f2f4-88fb-dc31720e26b7','opening_balance',28,'opening_balance',gen_random_uuid(),'A-4',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'f0ff9579-b29f-7434-3f63-fed4c9d825fe','opening_balance', 3,'opening_balance',gen_random_uuid(),'B-1',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'ad93ba56-fc8b-407a-9ed5-4844cbe89b00','opening_balance',12,'opening_balance',gen_random_uuid(),'B-2',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'7ea4ee28-fbe6-bfd1-a60a-04c88f2f697b','opening_balance',20,'opening_balance',gen_random_uuid(),'B-3',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'42a5b986-ec3c-b94a-4cde-546b2eb2e2e0','opening_balance',29,'opening_balance',gen_random_uuid(),'B-4',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'b08871c4-ddb6-bbcf-aa01-ec1206a65a97','opening_balance', 5,'opening_balance',gen_random_uuid(),'C-1',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'e9574afd-9b2e-2a35-6376-d45591358b54','opening_balance',16,'opening_balance',gen_random_uuid(),'C-2',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'e584aeb1-3348-a134-4e3c-407972257190','opening_balance',24,'opening_balance',gen_random_uuid(),'C-3',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'4a2bf011-88dc-c9bb-9fb1-fa90007401e2','opening_balance',30,'opening_balance',gen_random_uuid(),'C-4',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'45b3c077-f9c3-2da1-1ac7-612589bcbc54','opening_balance', 1,'opening_balance',gen_random_uuid(),'A-1',CURRENT_TIMESTAMP - INTERVAL '30 days','system'),
+  (gen_random_uuid(),gen_random_uuid(),1,'2b1e6dd5-1077-c023-53e8-98d0dba72bf1','opening_balance', 1,'opening_balance',gen_random_uuid(),'A-2',CURRENT_TIMESTAMP - INTERVAL '30 days','system')
+ON CONFLICT DO NOTHING;
+
 -- Deterministic floor stock exercises every map overlay against 30-unit pick bins.
 INSERT INTO inventory_truth (
   shop_id,
