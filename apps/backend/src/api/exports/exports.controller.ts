@@ -51,11 +51,42 @@ const FULFILLMENT_STATUS_VALUES = [
   'address_corrected',
 ] as const;
 
-class InvalidStatusFilterError extends Error {
+class InvalidFilterError extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(message);
+    this.code = code;
+  }
+}
+
+class InvalidStatusFilterError extends InvalidFilterError {
   constructor(value: string) {
-    super(`Invalid status filter value: '${value}'`);
+    super('INVALID_STATUS_FILTER', `Invalid status filter value: '${value}'`);
     this.name = 'InvalidStatusFilterError';
   }
+}
+
+class InvalidDateFilterError extends InvalidFilterError {
+  constructor(field: string, value: unknown) {
+    super('INVALID_DATE_FILTER', `Invalid ${field} filter value: '${value}'`);
+    this.name = 'InvalidDateFilterError';
+  }
+}
+
+// Invalid Date serializes to a NaN-laden string ('0NaN-NaN-NaNT...') that
+// Postgres rejects at cast time with a 500 — this must reject before the
+// value ever reaches Knex/the query. Non-string input (e.g. a bare number)
+// is rejected outright rather than coerced — `new Date(12345)` would
+// otherwise "succeed" as a nonsense timestamp instead of failing loudly.
+function parseDateFilter(value: unknown, field: string): Date {
+  if (typeof value !== 'string') {
+    throw new InvalidDateFilterError(field, value);
+  }
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    throw new InvalidDateFilterError(field, value);
+  }
+  return d;
 }
 
 function filename(resource: string, format: 'csv' | 'pdf'): string {
@@ -175,8 +206,8 @@ export async function exportOrders(req: Request, res: Response) {
       if (since) query = query.where('o.order_created_at', '>=', since);
 
       const { date_from, date_to, status, payment_state } = req.body?.filters ?? {};
-      if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
-      if (date_to) query = query.where('o.order_created_at', '<=', new Date(date_to));
+      if (date_from) query = query.where('o.order_created_at', '>=', parseDateFilter(date_from, 'date_from'));
+      if (date_to) query = query.where('o.order_created_at', '<=', parseDateFilter(date_to, 'date_to'));
       if (status?.length) {
         const isBlocked = status.includes('blocked');
         const remaining = status.filter((s: string) => s !== 'blocked');
@@ -222,8 +253,8 @@ export async function exportOrders(req: Request, res: Response) {
     csvStream.end();
 
   } catch (err: unknown) {
-    if (err instanceof InvalidStatusFilterError) {
-      return res.status(400).json({ error: 'INVALID_STATUS_FILTER', message: err.message });
+    if (err instanceof InvalidFilterError) {
+      return res.status(400).json({ error: err.code, message: err.message });
     }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportOrders failed', { shopId, msg, ...pgErrorInfo(err) });
@@ -277,8 +308,8 @@ export async function exportReturns(req: Request, res: Response) {
     if (since) query = query.where('re.executed_at', '>=', since);
 
     const { date_from, date_to } = req.body?.filters ?? {};
-    if (date_from) query = query.where('re.executed_at', '>=', new Date(date_from));
-    if (date_to)   query = query.where('re.executed_at', '<=', new Date(date_to));
+    if (date_from) query = query.where('re.executed_at', '>=', parseDateFilter(date_from, 'date_from'));
+    if (date_to)   query = query.where('re.executed_at', '<=', parseDateFilter(date_to, 'date_to'));
 
       return query;
     });
@@ -292,6 +323,9 @@ export async function exportReturns(req: Request, res: Response) {
     csvStream.end();
 
   } catch (err: unknown) {
+    if (err instanceof InvalidFilterError) {
+      return res.status(400).json({ error: err.code, message: err.message });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportReturns failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
@@ -338,8 +372,8 @@ export async function exportFinances(req: Request, res: Response) {
     if (since) query = query.where('o.order_created_at', '>=', since);
 
     const { date_from, date_to } = req.body?.filters ?? {};
-    if (date_from) query = query.where('o.order_created_at', '>=', new Date(date_from));
-    if (date_to)   query = query.where('o.order_created_at', '<=', new Date(date_to));
+    if (date_from) query = query.where('o.order_created_at', '>=', parseDateFilter(date_from, 'date_from'));
+    if (date_to)   query = query.where('o.order_created_at', '<=', parseDateFilter(date_to, 'date_to'));
 
       return query;
     });
@@ -353,6 +387,9 @@ export async function exportFinances(req: Request, res: Response) {
     csvStream.end();
 
   } catch (err: unknown) {
+    if (err instanceof InvalidFilterError) {
+      return res.status(400).json({ error: err.code, message: err.message });
+    }
     const msg = err instanceof Error ? err.message : 'Unknown error';
     console.error('[exports] exportFinances failed', { shopId, msg, ...pgErrorInfo(err) });
     if (!res.headersSent) res.status(500).json({ error: 'EXPORT_FAILED' });
