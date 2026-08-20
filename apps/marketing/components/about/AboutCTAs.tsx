@@ -8,7 +8,7 @@ export default function AboutCTAs() {
 
   return (
     <div style={{ borderTop: '1px solid #E8E6E0', paddingTop: 48, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
-      <a
+      {/* <a
         href="https://app.lasyncro.com"
         onClick={() => ph?.capture('about_cta_clicked', { cta_label: 'get_early_access' })}
         style={{
@@ -19,7 +19,7 @@ export default function AboutCTAs() {
         }}
       >
         Get early access
-      </a>
+      </a> */}
       <Link
         href="/blog"
         onClick={() => ph?.capture('about_cta_clicked', { cta_label: 'read_blog' })}

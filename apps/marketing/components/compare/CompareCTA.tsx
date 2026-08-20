@@ -6,7 +6,7 @@ export default function CompareCTA() {
   const ph = usePostHog()
 
   return (
-    <a
+    {/* <a
       href="https://app.lasyncro.com"
       onClick={() => ph?.capture('compare_cta_clicked', { location: 'bottom_cta', cta_label: 'get_early_access' })}
       style={{
@@ -17,6 +17,6 @@ export default function CompareCTA() {
       }}
     >
       Get early access
-    </a>
+    </a> */}
   )
 }
