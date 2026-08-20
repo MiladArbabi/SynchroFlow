@@ -394,3 +394,50 @@ The invariant that matters is SUM(on_hand_quantity), not row count.
 Verification: run the rebuild twice, redirecting to a file rather than piping
 (a pipe truncates output and masks the exit code), and confirm the
 inventory_truth hash is identical across runs.
+
+## Inventory recount tasks (INV-PHYSICAL-COUNT-13)
+
+Migration 0153. Schema only — no service, routes, or UI yet.
+
+Task-first, mirroring stow_tasks (0084). An owner creates a recount task and
+either assigns it (`assigned_to` set — only that operator may claim) or
+dispatches it (`assigned_to` null, status `dispatched` — first claim wins).
+One operator owns it at a time via `claimed_by`.
+
+Lifecycle:
+
+    draft -> dispatched -> claimed -> counting -> manual_review -> committed
+                                              \-> (zero variance) -> committed
+
+`manual_review` matches house vocabulary but is a DISTINCT mechanism from the
+orders-domain `manual_review` (`order_constraints.constraint_type`, surfaced as
+`queue_manual_review`). A recount session in `manual_review` must never feed
+that metric, or the Orders module's Manual Review count silently starts
+including inventory counts.
+
+Two rules the service layer must enforce:
+
+1. BLIND — `expected_quantity` must not be sent to the operator client while
+   `tasks.blind` is true. Enforced server-side, not in the UI. Showing expected
+   makes operators confirm rather than count. Receive's auto-confirm-at-expected
+   behaviour must NOT be copied here: it leaks the value through behaviour.
+
+2. DEFERRED CORRECTION (INV-PC-01) — counting never writes stock. Non-zero
+   variance lines go to `manual_review`; the owner accepts (with a
+   `variance_reason`), orders a recount (new line, `recount_of_line_id` set), or
+   escalates (`problem_center_tasks` with `source:'count'`). Commit writes all
+   accepted `reconciliation_correction` movements in one transaction. This is
+   the first runtime writer for that movement type (INV-RECON-WRITER-14).
+
+`expected_quantity` is a snapshot taken at line creation and never re-read: a
+sale mid-count would otherwise shift the variance and the operator would be
+blamed for the system's own movement.
+
+Planned actions for ACTION_ROLE_MAP (require-action.middleware.ts), none locked:
+
+    wms:recount:create   owner, admin
+    wms:recount:read     owner, admin, operator
+    wms:recount:claim    owner, admin, operator
+    wms:recount:count    owner, admin, operator
+    wms:recount:review   owner, admin
+    wms:recount:commit   owner, admin
