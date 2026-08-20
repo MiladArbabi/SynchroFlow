@@ -357,3 +357,28 @@ Rows written before this marker keep `triggered_by = NULL`; movements are
 immutable (BEFORE UPDATE/DELETE triggers RAISE), so they cannot be relabelled.
 Any export column exposing bin-level stock must treat root rows as
 "unassigned", never as a shelf location.
+
+## Inventory in the deterministic rebuild (INV-REBUILD-COVERAGE-17)
+
+`inventory_truth` is included in `computeStateHash` but is deliberately NOT in
+`projectionTables` (the truncate registry) in `rebuild-from-events.ts`.
+
+Rebuild therefore OBSERVES inventory state without reconstructing it. This is
+intentional: `stow.service.ts` writes `inventory_truth` synchronously alongside
+its movements, so an authoritative truncate+replay could overwrite real stock
+if any writer produced state the ledger cannot reproduce.
+
+`last_evaluated_at`, `updated_at`, and `created_at` are excluded from the hash —
+they are runtime clocks and would change it on every run, detecting nothing.
+Same rule as `orders.last_reconciled_at`.
+
+Baseline hash on the dev fixture (14 rows / 183 on hand):
+
+    11771efa58cad0f81c21b771c99994c249266491cd7d84d3cc0a4e6db6351f2b
+
+Stable across consecutive rebuilds. INV-REBUILD-REPLAY-21 tracks promoting this
+to truncate+replay: add `inventory_truth` to `projectionTables`, call
+`rebuildInventoryProjectionForVariants` per shop after `replayEvents()`, and
+confirm the resulting hash still matches the baseline above. A mismatch means a
+live writer produces state the ledger cannot reproduce — investigate that
+before making rebuild authoritative.

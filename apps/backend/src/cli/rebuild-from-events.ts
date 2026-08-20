@@ -235,15 +235,30 @@ async function replayEvents() {
  * Used for replay validation.
  */
 async function computeStateHash(): Promise<string> {
-  const tables = [
-    'orders',
-    'order_line_items',
-    'order_revenue_units',
-    'order_age_snapshot',
-    'order_margin_snapshot',
-    'order_risk_snapshot',
-    'orders_operational_control_snapshot',
-    'projection_cursors',
+    const tables = [
+      'orders',
+      /**
+       * INV-REBUILD-COVERAGE-17
+       * -----------------------
+       * inventory_truth is a derived projection (rebuilt from
+       * inventory_movements by rebuildInventoryProjection) but was absent from
+       * both the truncate registry and this hash, so REBUILD_STATE_HASH carried
+       * no inventory signal at all — a ledger/projection divergence left no trace.
+       *
+       * Hash-only for now, deliberately: rebuild does NOT truncate or replay
+       * inventory_truth, because stow.service.ts writes it synchronously and an
+       * authoritative replay could overwrite real stock with a wrong number.
+       * This hash is the evidence needed to prove replay equivalence first.
+       * Once two rebuilds and live state agree, truncate+replay becomes safe.
+       */
+      'inventory_truth',
+      'order_line_items',
+      'order_revenue_units',
+      'order_age_snapshot',
+      'order_margin_snapshot',
+      'order_risk_snapshot',
+      'orders_operational_control_snapshot',
+      'projection_cursors',
   ];
 
   const hash = crypto.createHash('sha256');
@@ -278,7 +293,18 @@ async function computeStateHash(): Promise<string> {
       .createHash('sha256')
       .update(
         JSON.stringify(
-          table === 'orders'
+          table === 'inventory_truth'
+            /**
+             * last_evaluated_at and updated_at are runtime clocks
+             * (CURRENT_TIMESTAMP / now()). Including them would change the
+             * hash on every rebuild and detect nothing. Same rule as
+             * orders.last_reconciled_at below.
+             */
+            ? rows.map((r: any) => {
+                const { last_evaluated_at, updated_at, created_at, ...deterministic } = r;
+                return deterministic;
+              })
+            : table === 'orders'
             ? rows.map((r: any) => {
                 const { last_reconciled_at, ...deterministic } = r;
 
