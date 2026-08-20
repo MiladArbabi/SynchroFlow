@@ -98,19 +98,17 @@ export default function OrdersFT2Page() {
         currency={{ displayCurrency, locale, rates }}
         onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}
-        // ORDM-01 FIX (2026-06-29): was a hardcoded blob-download bypassing
-        // the established ExportDrawer pattern (see export_system_playbook.md
         // §6 — Orders/Overview is specced as "Export → opens drawer with
-        // format picker", same as Overview's Export brief). 'orders-all' and
-        // 'orders-blocked' report IDs already existed in exportReports.ts,
-        // unused until now.
+        // format picker", same as Overview's Export brief). Keep this surface
+        // focused on the canonical All Orders export; filtered variants remain
+        // available through the export API rather than duplicate report cards.
         onExport={async () => setExportDrawerOpen(true)}
       />
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
         userTier={tier}
-        reportIds={['orders-all', 'orders-blocked']}
+        reportIds={['orders-all']}
       />
      <EntityDetailModal
         entityId={selectedOrderId}

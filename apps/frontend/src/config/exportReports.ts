@@ -28,16 +28,6 @@ export const QUICK_REPORTS: QuickReport[] = [
     filename: 'lasyncro-orders',
   },
   {
-    id: 'orders-blocked',
-    title: 'Blocked Revenue Report',
-    description: 'Orders blocked by an unresolved constraint, with revenue held.',
-    format: 'csv',
-    tier: 'core',
-    endpoint: '/api/v1/exports/orders',
-    body: { filters: { payment_state: ['paid'], status: ['blocked'] } },
-    filename: 'lasyncro-blocked-orders',
-  },
-  {
     id: 'orders-outbound',
     title: 'Shipped Orders',
     description: 'Fulfilled orders with carrier, tracking, and ship date.',

@@ -133,7 +133,6 @@ hardcoded whitelist. No date filtering - products are not a time series.
 | Module / Submodule | CTA Label | Format | Tier Gate |
 |---|---|---|---|
 | Orders / Overview | `Export →` | CSV | Core+ |
-| Orders / Blocked | `Export →` | CSV | Core+ |
 | Returns | `Export →` | CSV | Core+ |
 | Finances | `Export →` | CSV | Core+ |
 | Products / Inventory Valuation | `Export ->` | CSV | Core+ |
@@ -154,7 +153,6 @@ New tab in `ShopSettingsPage` alongside General, Carriers, Warehouse, Finance, B
 
 ### Sprint 1 — Quick Reports panel
 One-click pre-built templates:
-- Blocked Revenue Report (CSV)
 - Returns Analysis (CSV)
 - Inventory Health (CSV) — Sprint 2
 - Cash Flow Summary (CSV) — Growth+
@@ -271,6 +269,12 @@ duplicate summaries already available inside the product.
   so the PG code reaches the logs - both prior 500s were invisible for months
   because only `err.message` was captured.
 
+- **2026-08-20** — EXP-BLOCKED-REMOVE: removed the pre-built Blocked
+  Revenue report from `QUICK_REPORTS` and the Orders export drawer. It
+  duplicated the All Orders export plus filters and did not justify a
+  separate curated report. The backend synthetic `status: ['blocked']`
+  filter remains supported and unchanged.
+
 - **2026-08-20** — EXP-DATE-03: timestamps exported as
   `Wed Aug 19 2026 14:40:03 GMT+0200 (...)`, which Excel imports as text.
   Now formatted in SQL to the merchant's own timezone via a `shops` join.
@@ -300,9 +304,9 @@ duplicate summaries already available inside the product.
 - **2026-06-30** — Orders module's `Export →` CTA (ORDM-01) fixed: was a
   hardcoded blob-download bypassing the drawer entirely, despite §6
   specifying the standard drawer pattern. Now opens `ExportDrawer` with
-  `reportIds={['orders-all', 'orders-blocked']}` — both report IDs
-  already existed in `exportReports.ts`, unused until now. No backend
-  work needed.
+  `reportIds={['orders-all', 'orders-blocked']}` at the time. The
+  `orders-blocked` pre-built report was retired on 2026-08-20; the
+  canonical backend `status: ['blocked']` filter remains supported.
 - **2026-07-04** — Orders/Outbound's `Export →` CTA (ISS-03) fixed: same
   bug class as ORDM-01, never applied here — `handleExportOutbound` was
   a hardcoded `axiosInstance.post(..., { responseType: 'blob' })` +
