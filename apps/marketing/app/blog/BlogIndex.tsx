@@ -157,7 +157,6 @@ const TOPIC_DESCRIPTIONS: Record<string, string> = {
 export default function BlogIndex({ articles: allArticles }: { articles: ContentItem[] }) {
   const categories = Array.from(new Set(allArticles.map((a) => postCategory(a.frontmatter.tags))))
   const [activeCategory, setActiveCategory] = useState('all')
-  const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
 
   const featured = allArticles[0]
   const remaining = allArticles.slice(1)
@@ -180,17 +179,72 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           50% { transform: scale(.75); opacity: .4; }
         }
         .blog-index a { color: inherit; text-decoration: none; }
-        .blog-post-row { transition: background .15s; }
-        .blog-post-row:hover { background: var(--bg-2); border-radius: var(--r-md); }
-        .blog-post-title { transition: color .15s; }
-        .blog-post-row:hover .blog-post-title { color: var(--accent) !important; }
-        .blog-post-arrow { transition: color .15s, transform .15s; }
-        .blog-post-row:hover .blog-post-arrow { color: var(--accent) !important; transform: translateX(4px); }
-        .blog-read-link { transition: color .15s, border-color .15s, gap .15s; }
-        .blog-read-link:hover { color: var(--accent) !important; border-color: var(--accent) !important; gap: 12px !important; }
-        .blog-filter-tab { transition: color .15s, border-color .15s, background .15s; cursor: pointer; }
-        .blog-topic-card { transition: background .15s, border-color .15s; cursor: pointer; }
-        .blog-topic-card:hover { background: var(--bg-2) !important; border-color: var(--accent-border) !important; }
+
+        .blog-post-row {
+          transition: background .15s, border-radius .15s;
+        }
+        .blog-post-row:hover,
+        .blog-post-row:focus-visible {
+          background: var(--bg-2);
+          border-radius: var(--r-md);
+        }
+
+        .blog-post-title {
+          transition: color .15s;
+        }
+        .blog-post-row:hover .blog-post-title,
+        .blog-post-row:focus-visible .blog-post-title {
+          color: var(--accent) !important;
+        }
+
+        .blog-post-arrow {
+          transition: color .15s, transform .15s;
+        }
+        .blog-post-row:hover .blog-post-arrow,
+        .blog-post-row:focus-visible .blog-post-arrow {
+          color: var(--accent) !important;
+          transform: translateX(4px);
+        }
+
+        .blog-read-link {
+          transition: color .15s, border-color .15s, gap .15s;
+        }
+        .blog-read-link:hover,
+        .blog-read-link:focus-visible {
+          color: var(--accent) !important;
+          border-color: var(--accent) !important;
+          gap: 12px !important;
+        }
+
+        .blog-filter-tab {
+          transition: color .15s, border-color .15s, background .15s;
+          cursor: pointer;
+        }
+        .blog-filter-tab:hover,
+        .blog-filter-tab:focus-visible {
+          color: var(--accent) !important;
+          border-color: var(--accent-border) !important;
+          background: var(--accent-ghost) !important;
+        }
+
+        .blog-topic-card {
+          transition: background .15s, border-color .15s, transform .15s;
+          cursor: pointer;
+        }
+        .blog-topic-card:hover,
+        .blog-topic-card:focus-visible {
+          background: var(--bg-2) !important;
+          border-color: var(--accent-border) !important;
+          transform: translateY(-1px);
+        }
+
+        .blog-post-row:focus-visible,
+        .blog-read-link:focus-visible,
+        .blog-filter-tab:focus-visible,
+        .blog-topic-card:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 3px;
+        }
         .blog-eyebrow-dot {
           width: 6px;
           height: 6px;
@@ -391,14 +445,11 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
           )}
           <ul style={{ listStyle: 'none', padding: 0, margin: '0 auto' }}>
             {filtered.map((article) => {
-              const hovered = hoveredSlug === article.slug
               return (
                 <li key={article.slug} style={{ borderTop: '1px solid var(--rule)' }}>
                   <a
                     href={`/blog/${article.slug}`}
                     className="blog-post-row"
-                    onMouseEnter={() => setHoveredSlug(article.slug)}
-                    onMouseLeave={() => setHoveredSlug(null)}
                     style={{
                       display: 'grid',
                       gridTemplateColumns: '120px 1fr 180px auto',
@@ -418,7 +469,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                         fontWeight: 400,
                         lineHeight: 1.25,
                         letterSpacing: 'var(--ls-tight)',
-                        color: hovered ? 'var(--accent)' : 'var(--ink)',
+                        color: 'var(--ink)',
                         margin: '0 0 6px',
                       }}>
                         {article.frontmatter.title}
@@ -449,7 +500,7 @@ export default function BlogIndex({ articles: allArticles }: { articles: Content
                       <span style={{ width: 4, height: 4, borderRadius: 'var(--r-pill)', background: 'var(--accent)', flexShrink: 0 }} />
                       {tagLabel(postCategory(article.frontmatter.tags))}
                     </span>
-                    <span className="blog-post-arrow blog-post-arrow-col" style={{ color: hovered ? 'var(--accent)' : 'var(--ink-4)', alignSelf: 'center' }}>
+                    <span className="blog-post-arrow blog-post-arrow-col" style={{ color: 'var(--ink-4)', alignSelf: 'center' }}>
                       <ArrowRight size={16} />
                     </span>
                   </a>

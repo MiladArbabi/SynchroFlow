@@ -583,9 +583,47 @@ Implementation files:
 - `apps/marketing/app/layout.tsx`
 - `docs/blueprints/marketing-content-ux-system.md`
 
-MKT-UX-01H-A implementation is applied; local build and production navigation verification remain pending.
+MKT-UX-01H-A is production verified and complete. Desktop header, mobile menu, and shared footer all expose `Help` and route to `/help` without responsive navigation regression.
 
-Next visual-system issue: MKT-UX-01G-B — shared hover and focus-state convergence.
+## MKT-UX-01G-B — Shared hover and focus-state convergence
+
+Audit grouped marketing interactions by interaction type rather than forcing every clickable surface into one animation.
+
+Already aligned and unchanged:
+
+- Help `ContentCard` surfaces pair `:hover` and `:focus-visible` with the canonical accent-border, `var(--bg-2)`, and subtle lift treatment;
+- Help `ContentRow` surfaces pair `:hover` and `:focus-visible`;
+- shared marketing navigation and footer links already pair hover and keyboard-focus treatment;
+- Pricing billing controls already provide focus-visible behavior;
+- the live FAQ page contact CTA already has explicit hover and focus-visible treatment.
+
+The remaining live hub-page drift was concentrated in Blog and Compare.
+
+Blog convergence:
+
+- latest-post rows now use CSS for both `:hover` and `:focus-visible`;
+- mouse-only `hoveredSlug`, `onMouseEnter`, and `onMouseLeave` state was removed;
+- latest-row title and arrow emphasis therefore works for keyboard focus as well as pointer hover;
+- the featured `Read the full guide` link pairs hover and focus-visible;
+- filter tabs pair hover and focus-visible using the active accent-ghost interaction language;
+- topic cards pair hover and focus-visible and adopt the same accent-border, dark-surface, and subtle lift language used by shared content cards;
+- interactive Blog surfaces receive a visible accent focus outline.
+
+Compare convergence:
+
+- comparison rows now apply the same background, title-accent, and arrow-shift treatment for both pointer hover and keyboard focus-visible;
+- the existing custom accent focus outline is preserved;
+- comparison content, links, ordering, metadata, and responsive structure are unchanged.
+
+Legacy `.faq-item` summary rules in `apps/marketing/app/globals.css` were audited but intentionally left unchanged because no current route/component consumer was found outside that legacy global definition. They are not used as authority for the live FAQ page.
+
+Implementation files:
+
+- `apps/marketing/app/blog/BlogIndex.tsx`
+- `apps/marketing/app/compare/page.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+MKT-UX-01G-B implementation is applied; local build and production interaction verification remain pending.
 
 ## Blog preserved contracts
 

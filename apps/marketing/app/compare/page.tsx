@@ -45,10 +45,29 @@ export default function CompareIndex() {
     <>
       <style>{`
         a { color: inherit; text-decoration: none; }
-        .compare-row:hover { background: var(--bg-2) !important; }
-        .compare-row:hover .compare-title { color: var(--accent) !important; }
-        .compare-row:hover .compare-arrow { color: var(--accent) !important; transform: translateX(4px); }
-        .compare-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; background: var(--bg-2); }
+
+        .compare-row:hover,
+        .compare-row:focus-visible {
+          background: var(--bg-2) !important;
+          border-radius: var(--r-md);
+        }
+
+        .compare-row:hover .compare-title,
+        .compare-row:focus-visible .compare-title {
+          color: var(--accent) !important;
+        }
+
+        .compare-row:hover .compare-arrow,
+        .compare-row:focus-visible .compare-arrow {
+          color: var(--accent) !important;
+          transform: translateX(4px);
+        }
+
+        .compare-row:focus-visible {
+          outline: 2px solid var(--accent);
+          outline-offset: 4px;
+        }
+
         .compare-arrow { transition: color .15s, transform .15s; }
         .compare-title { transition: color .15s; }
         @media (max-width: 720px) {
