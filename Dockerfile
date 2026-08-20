@@ -6,16 +6,29 @@ FROM node:${NODE_VERSION}-slim AS base
 LABEL fly_launch_runtime="NodeJS"
 WORKDIR /app
 
+# Manifests-only stage: collects every workspace's package.json plus the
+# root lockfile, nothing else. Copying just this (small, source-independent)
+# set into the build stage lets `npm ci` land on its own Docker layer, which
+# stays CACHED across rebuilds that only touch application source — only a
+# manifest or lockfile change busts it.
+FROM base AS manifests
+COPY --link . .
+RUN mkdir -p /manifests && \
+    find . -name package.json -not -path "*/node_modules/*" \
+      -exec cp --parents {} /manifests/ \; && \
+    cp package-lock.json /manifests/
+
 FROM base AS build
 ENV NODE_ENV=development
 
 RUN apt-get update -qq && \
     apt-get install -y python-is-python3 pkg-config build-essential libpqxx-dev
 
-COPY --link . .
-
-RUN npm install --legacy-peer-deps
+COPY --from=manifests /manifests /app
+RUN npm ci --legacy-peer-deps
 RUN npm install -g typescript@5.5.2
+
+COPY --link . .
 
 # BUILD-02a: purge copied build artifacts before compiling.
 #
