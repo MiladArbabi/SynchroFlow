@@ -275,8 +275,30 @@ export async function writeOrderRevenueUnits(
           quantity_delta: -ru.quantity,
           reference_type: 'order_revenue_unit',
           reference_id: ru.lasyncro_revenue_unit_id,
-          platform: null,
+                    platform: null,
+          /**
+           * INV-SALE-LOCATION-19 — UNLOCATED SALE
+           * -------------------------------------
+           * Shopify reports that a unit sold; it never reports which shelf it
+           * left. Resolving a bin here would invent a fact — if the operator
+           * picked from C-2 and we debited A-3, BOTH bins become wrong and a
+           * physical count is sent to two wrong shelves instead of one.
+           *
+           * Root is therefore the honest location: "sold, shelf unassigned."
+           * triggered_by marks it as such so a negative root balance is
+           * queryable as reconciliation debt rather than being mistaken for a
+           * ledger defect. The count session (INV-PHYSICAL-COUNT-13) is what
+           * resolves these — the operator supplies the bin the system cannot know.
+           *
+           * Do NOT reuse fulfillmentPhysicalRemoval's resolver: it throws on
+           * both zero and multiple stocked bins, which is correct for an
+           * operator-facing path and fatal in this unattended worker.
+           *
+           * Movements are immutable (BEFORE UPDATE/DELETE triggers RAISE), so
+           * rows written before this marker keep triggered_by = NULL.
+           */
           location_code: `WH-${order.shop_id}-ROOT`,
+          triggered_by: 'reconciliation_unlocated',
           occurred_at: occurredAt,
         }))
       )

@@ -331,3 +331,29 @@ duplicate summaries already available inside the product.
   enforcing the old 12-month window even after the canonical constant
   changed. Replaced with an import; §4 table and inline code comment
   both updated to reflect 6 months.
+
+## Unlocated sales (INV-SALE-LOCATION-19)
+
+Shopify reports that a unit sold but never which shelf it left. The
+reconciliation worker therefore books `sale` movements at the warehouse root
+with `triggered_by = 'reconciliation_unlocated'`.
+
+A negative root balance is expected, not a defect. It is reconciliation debt:
+stock that left the building without a recorded bin.
+
+Query outstanding debt:
+
+    SET app.current_tenant = '<shop_id>';
+    SELECT location_code, SUM(quantity_delta) AS unassigned_debt
+    FROM inventory_movements
+    WHERE triggered_by = 'reconciliation_unlocated'
+    GROUP BY 1;
+
+Do NOT resolve this by guessing a bin. Assigning the wrong bin makes two bins
+wrong instead of one and sends a physical count to two wrong shelves. Count
+sessions (INV-PHYSICAL-COUNT-13) resolve it — the operator supplies the bin.
+
+Rows written before this marker keep `triggered_by = NULL`; movements are
+immutable (BEFORE UPDATE/DELETE triggers RAISE), so they cannot be relabelled.
+Any export column exposing bin-level stock must treat root rows as
+"unassigned", never as a shelf location.
