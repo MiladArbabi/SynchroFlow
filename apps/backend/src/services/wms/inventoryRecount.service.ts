@@ -73,30 +73,51 @@ export async function selectSuggestedLines(
 ): Promise<RecountLineInput[]> {
   const rows = await trx.raw(
     `WITH root AS (
-       SELECT root_location_code FROM warehouses
-       WHERE warehouse_id = ? AND shop_id = ?
-     ),
-     suspect AS (
-       SELECT it.lasyncro_variant_id, it.location_code
-       FROM inventory_truth it
-       WHERE it.shop_id = ?
-         AND it.location_code <> (SELECT root_location_code FROM root)
-         AND (
-           it.on_hand_quantity < 0
-           OR it.lasyncro_variant_id IN (
-             SELECT DISTINCT lasyncro_variant_id FROM inventory_movements
-             WHERE shop_id = ? AND triggered_by = 'reconciliation_unlocated'
-           )
-           OR NOT EXISTS (
-             SELECT 1 FROM inventory_movements m
-             WHERE m.shop_id = it.shop_id
-               AND m.lasyncro_variant_id = it.lasyncro_variant_id
-               AND m.location_code = it.location_code
-               AND m.occurred_at > NOW() - INTERVAL '60 days'
-           )
-         )
-     )
-     SELECT * FROM suspect ORDER BY location_code`,
+      SELECT root_location_code FROM warehouses
+      WHERE warehouse_id = ? AND shop_id = ?
+    ),
+      suspect AS (
+      SELECT it.lasyncro_variant_id, it.location_code,
+              wl.position_x, wl.position_y
+      FROM inventory_truth it
+      JOIN warehouse_locations wl
+        ON wl.shop_id = it.shop_id
+        AND wl.location_code = it.location_code
+      WHERE it.shop_id = ?
+        AND it.location_code <> (SELECT root_location_code FROM root)
+        /**
+          * RECOUNT-WALKORDER-27 — transient staging excluded.
+          * pack/ship/receive/kitting hold stock mid-workflow by design, so a
+          * count there books variance against a bin the stock is legitimately
+          * passing through. problem/quarantine/returns ARE counted: stock
+          * rests there awaiting owner disposition (wms.controller.ts:2703
+          * moves to PROBLEM with no stow task). NULL zone_type is counted —
+          * a whitelist would silently hide that bin from every recount.
+          * Applies to scope='suggested' only; 'full' means full.
+          */
+        AND (
+          wl.zone_type IS NULL
+          OR wl.zone_type NOT IN ('pack', 'ship', 'receive', 'kitting')
+        )
+        AND (
+          it.on_hand_quantity < 0
+          OR it.lasyncro_variant_id IN (
+            SELECT DISTINCT lasyncro_variant_id FROM inventory_movements
+            WHERE shop_id = ? AND triggered_by = 'reconciliation_unlocated'
+          )
+          OR NOT EXISTS (
+            SELECT 1 FROM inventory_movements m
+            WHERE m.shop_id = it.shop_id
+              AND m.lasyncro_variant_id = it.lasyncro_variant_id
+              AND m.location_code = it.location_code
+              AND m.occurred_at > NOW() - INTERVAL '60 days'
+          )
+        )
+    )
+    SELECT lasyncro_variant_id, location_code FROM suspect
+    ORDER BY COALESCE(position_x, 9999) ASC,
+              COALESCE(position_y, 9999) ASC,
+              location_code ASC`,
     [warehouseId, shopId, shopId, shopId]
   );
   return rows.rows;
@@ -246,10 +267,25 @@ export async function getOperatorLines(
                 'counted_quantity', 'count_method', 'scan_count', 'counted_at'];
   if (!task.blind) cols.push('expected_quantity');
 
-  return trx('inventory_recount_lines')
-    .where({ shop_id: shopId, recount_task_id: recountTaskId })
-    .select(cols)
-    .orderBy('location_code');
+    /**
+   * RECOUNT-WALKORDER-27: the operator walks THIS order, so it matters more
+   * than the scope query's. Same coordinate sort as the pick path
+   * (wms.controller.ts:232) — one set of muscle memory across both workflows.
+   * Lexicographic location_code put A-10 before A-2 once a lane exceeded
+   * nine bins.
+   */
+  return trx('inventory_recount_lines as l')
+    .leftJoin('warehouse_locations as wl', function () {
+      this.on('wl.shop_id', '=', 'l.shop_id')
+          .andOn('wl.location_code', '=', 'l.location_code');
+    })
+    .where({ 'l.shop_id': shopId, 'l.recount_task_id': recountTaskId })
+    .select(cols.map((c) => `l.${c}`))
+    .orderByRaw(`
+      COALESCE(wl.position_x, 9999) ASC,
+      COALESCE(wl.position_y, 9999) ASC,
+      l.location_code ASC
+    `);
 }
 
 /**

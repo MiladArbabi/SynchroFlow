@@ -660,3 +660,44 @@ The guard should be unreachable in normal operation; if it fires, a producer
 bypassed the mapper. Its runtime behaviour is deliberately unproven — it was
 not worth contriving a payload for a path that should not exist. Compile-time
 and structural verification only.
+
+### RECOUNT-WALKORDER-27 — physical walk order + transient zone exclusion
+
+**Ordering.** `selectSuggestedLines` and `getOperatorLines` both sorted by
+`location_code`, which puts `A-10` before `A-2` once a lane exceeds nine bins.
+Both now use `COALESCE(position_x, 9999), COALESCE(position_y, 9999),
+location_code` — the same sort the pick path already uses
+(`wms.controller.ts:232`, "operator walks shortest physical path"). One set of
+muscle memory across picking and counting.
+
+`getOperatorLines` matters more than the scope query: it is the order the
+operator physically walks. It uses `leftJoin` so a line whose bin was deleted
+still appears, sorted last, rather than vanishing.
+
+**Zone exclusion, suggested scope only.** `pack`, `ship`, `receive`, `kitting`
+hold stock mid-workflow by design; counting them books variance against a bin
+the stock is legitimately passing through. Excluded.
+
+`pick`, `storage`, `quarantine`, `returns`, `problem` ARE counted — stock rests
+there awaiting disposition. Evidence: `wms.controller.ts:2703` moves quarantined
+items to the PROBLEM bin and deliberately creates no stow task, so they sit
+until an owner resolves them. That is exactly the stock a recount should verify.
+
+NULL `zone_type` is counted, not dropped — a whitelist would silently hide that
+bin from every recount, and hidden inventory is worse than an extra bin walked.
+
+`scope='full'` is unfiltered. Full means full.
+
+**On expected value:** for a 1-20 operator warehouse the walking-distance saving
+is modest. The real wins are the A-10/A-2 correctness bug, consistency with the
+pick path, and the accuracy gain from not counting transient staging.
+
+**Verified** in a rolled-back transaction as `sf_app` with the tenant frame set:
+negative on-hand planted in five zones returned
+`['C-2','RETURNS-1','QUARANTINE-1','PROBLEM']` — PACK-1 and RECEIVE-1 correctly
+absent, x-then-y ordering correct including the y tiebreak at x=7.0.
+
+**Not addressed:** stow is free-scan (location sticks, scan LSU- units, next
+bin), so a SKU scatters across bins by whatever was on the pallet. Walk order
+optimises the path through that placement; it cannot improve the placement.
+Directed putaway would be a separate track.
