@@ -701,3 +701,69 @@ absent, x-then-y ordering correct including the y tiebreak at x=7.0.
 bin), so a SKU scatters across bins by whatever was on the pallet. Walk order
 optimises the path through that placement; it cannot improve the placement.
 Directed putaway would be a separate track.
+
+### RECOUNT-SELLABLE-30 — suggested scope is sellable stock only (supersedes -27's zone split)
+
+**The axis was wrong in -27.** That change asked "does stock rest in this bin"
+and counted quarantine/returns/problem on the grounds that it does. The right
+question is "can this stock be oversold". Recount exists to prevent overselling
+and phantom stock; both are risks against SELLABLE inventory. Stock held in
+quarantine, returns, or the problem bin is deliberately out of the sellable
+path, so counting it cannot reduce the risk the recount addresses.
+
+Suggested scope is now a whitelist: `zone_type IN ('pick', 'storage')`.
+
+**Why `storage` is in it.** `storage` is not a meaningful category — it is the
+column DEFAULT (migration `0108:105`, `floor-planning.controller.ts:653`,
+described in `0108:27` as "general storage (default)"). It has no behavioural
+meaning anywhere in the backend. A merchant who never opens the floor planner
+has EVERY bin defaulted to it, so excluding it would return an empty suggested
+scope for exactly the user most likely to have phantom stock.
+
+No NULL branch is needed: `zone_type` has a DB default, so a bin cannot exist
+without one. (-27's NULL handling was defending against an impossible state.)
+
+`scope='full'` remains unfiltered.
+
+### RECOUNT-WALKORDER-27b — lane-grouped sequencing
+
+-27 sorted by `(position_x, position_y)`, copied from the pick path for
+consistency. On a floor plan with horizontal lanes (A at y=1, B at y=5, C at
+y=9, bins advancing along x) that returns A-1, B-1, C-1 — the front of every
+lane, forcing the operator to traverse all three lanes once per column.
+
+Both `selectSuggestedLines` and `getOperatorLines` now order by
+`(lane.position_y, lane.position_x, bin.position_x, bin.position_y,
+location_code)`, grouping bins under their `parent_location_code` lane first.
+Layout-independent: works whether lanes run along x or y.
+
+**The pick path (`wms.controller.ts:232, :311`) still uses the raw
+`(position_x, position_y)` sort and likely has the same problem.** Not verified,
+not changed here — worth its own audit.
+
+**Verified** in a rolled-back transaction as `sf_app` with the tenant frame set:
+all ten lane bins made suspect plus negative stock planted in QUARANTINE-1,
+RETURNS-1, PROBLEM and PACK-1 returned
+`['A-1','A-2','A-3','A-4','B-1','B-2','B-3','B-4','C-1','C-2']` — clean lane
+sweep, all four non-sellable bins excluded. PROBLEM is the sharpest case: it
+parents to lane A, so a failed whitelist would have placed it mid-sweep.
+
+### RECOUNT-ROLE-29 — operator permissions verified
+
+`4e010bdd`'s E2E ran on the owner token only. Verified live against
+localhost:3000 with both dev tokens:
+
+| Route | Operator | Owner |
+|---|---|---|
+| create | 403 | 200 |
+| read | 200 | 200 |
+| claim | 200 | — |
+| review | 403 | — |
+| commit | 403 | — |
+
+The blind rule also holds over HTTP for an operator: `GET .../lines` returned no
+`expected_quantity` field. That is the case the rule exists for and was
+previously only checked on an owner token.
+
+**Incidental finding, unfixed:** a malformed (non-UUID) `:taskId` returns 500,
+not 400 — same class as `EXP-DATEFILTER-07`.

@@ -78,27 +78,42 @@ export async function selectSuggestedLines(
     ),
       suspect AS (
       SELECT it.lasyncro_variant_id, it.location_code,
-              wl.position_x, wl.position_y
+              wl.position_x, wl.position_y,
+              lane.position_y AS lane_y, lane.position_x AS lane_x
       FROM inventory_truth it
       JOIN warehouse_locations wl
         ON wl.shop_id = it.shop_id
         AND wl.location_code = it.location_code
+      LEFT JOIN warehouse_locations lane
+        ON lane.shop_id = wl.shop_id
+        AND lane.location_code = wl.parent_location_code
       WHERE it.shop_id = ?
         AND it.location_code <> (SELECT root_location_code FROM root)
         /**
-          * RECOUNT-WALKORDER-27 — transient staging excluded.
-          * pack/ship/receive/kitting hold stock mid-workflow by design, so a
-          * count there books variance against a bin the stock is legitimately
-          * passing through. problem/quarantine/returns ARE counted: stock
-          * rests there awaiting owner disposition (wms.controller.ts:2703
-          * moves to PROBLEM with no stow task). NULL zone_type is counted —
-          * a whitelist would silently hide that bin from every recount.
-          * Applies to scope='suggested' only; 'full' means full.
+          * RECOUNT-SELLABLE-30 — sellable stock only.
+          * ------------------------------------------
+          * Recount exists to prevent overselling and phantom stock. Both are
+          * risks against SELLABLE inventory, so the axis is "can this be sold",
+          * not "does stock rest here" (the -27 reasoning, superseded).
+          *
+          * pick    — where sellable stock lives.
+          * storage — the column DEFAULT (migration 0108:105,
+          *           floor-planning.controller.ts:653). A merchant who never
+          *           opens the floor planner has EVERY bin defaulted to this,
+          *           so excluding it would return an empty scope for exactly
+          *           the user most likely to have phantom stock.
+          *
+          * Everything else is deliberately held out of the sellable path:
+          * pack/ship/receive/kitting are mid-workflow; returns/problem/
+          * quarantine are held back pending owner disposition. Counting them
+          * cannot reduce overselling risk.
+          *
+          * No NULL branch needed — zone_type has a DB default, so a bin
+          * cannot exist without one.
+          *
+          * scope='suggested' only. 'full' means full.
           */
-        AND (
-          wl.zone_type IS NULL
-          OR wl.zone_type NOT IN ('pack', 'ship', 'receive', 'kitting')
-        )
+        AND wl.zone_type IN ('pick', 'storage')
         AND (
           it.on_hand_quantity < 0
           OR it.lasyncro_variant_id IN (
@@ -114,8 +129,17 @@ export async function selectSuggestedLines(
           )
         )
     )
+    /**
+      * RECOUNT-WALKORDER-27b: lane-grouped, not raw coordinates.
+      * (position_x, position_y) returned A-1, B-1, C-1 — the front of every
+      * lane, forcing the operator to traverse each lane once per column.
+      * Grouping by the bin's parent lane first sweeps A fully, then B, then C,
+      * and is layout-independent (works whether lanes run along x or y).
+      */
     SELECT lasyncro_variant_id, location_code FROM suspect
-    ORDER BY COALESCE(position_x, 9999) ASC,
+    ORDER BY COALESCE(lane_y, 9999) ASC,
+              COALESCE(lane_x, 9999) ASC,
+              COALESCE(position_x, 9999) ASC,
               COALESCE(position_y, 9999) ASC,
               location_code ASC`,
     [warehouseId, shopId, shopId, shopId]
@@ -275,13 +299,19 @@ export async function getOperatorLines(
    * nine bins.
    */
   return trx('inventory_recount_lines as l')
-    .leftJoin('warehouse_locations as wl', function () {
+      .leftJoin('warehouse_locations as wl', function () {
       this.on('wl.shop_id', '=', 'l.shop_id')
           .andOn('wl.location_code', '=', 'l.location_code');
+    })
+    .leftJoin('warehouse_locations as lane', function () {
+      this.on('lane.shop_id', '=', 'wl.shop_id')
+          .andOn('lane.location_code', '=', 'wl.parent_location_code');
     })
     .where({ 'l.shop_id': shopId, 'l.recount_task_id': recountTaskId })
     .select(cols.map((c) => `l.${c}`))
     .orderByRaw(`
+      COALESCE(lane.position_y, 9999) ASC,
+      COALESCE(lane.position_x, 9999) ASC,
       COALESCE(wl.position_x, 9999) ASC,
       COALESCE(wl.position_y, 9999) ASC,
       l.location_code ASC
