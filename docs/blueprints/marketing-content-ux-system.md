@@ -352,7 +352,9 @@ Local verification:
 
 The first build attempt was run with the shell set to `NODE_ENV=development` and failed during unrelated Help prerendering. After clearing `.next` and rebuilding with `NODE_ENV=production`, the failure did not reproduce.
 
-MKT-UX-01E-D is implementation verified locally; production verification is pending deployment.
+MKT-UX-01E-D is production verified; closed.
+
+Production verification passed: all four affected Compare routes returned `200`; the deployed production CSS contains the shared `internal-links-grid` mobile rule; and runtime verification at a 500px viewport rendered all four Cin7 related cards in one resolved column with zero document horizontal overflow. Both Vercel deployment checks for the implementation commit completed successfully.
 
 Intentionally horizontally scrollable MDX tables remain out of scope.
 
