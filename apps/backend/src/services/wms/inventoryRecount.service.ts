@@ -320,8 +320,11 @@ export async function getOperatorLines(
     .first();
   if (!task) throw new Error(`[RECOUNT_LINES] Task not found: ${recountTaskId}`);
 
+  // RECOUNT-COUNTZERO-34: skip fields are safe on a blind task — they carry
+  // no information about expected_quantity.
   const cols = ['recount_line_id', 'lasyncro_variant_id', 'location_code',
-                'counted_quantity', 'count_method', 'scan_count', 'counted_at'];
+                'counted_quantity', 'count_method', 'scan_count', 'counted_at',
+                'skip_reason', 'skipped_at'];
   if (!task.blind) cols.push('expected_quantity');
 
     /**
@@ -402,6 +405,11 @@ export async function recordCount(
       scan_count: params.scanCount ?? null,
       counted_by: countedBy,
       counted_at: trx.fn.now(),
+      // RECOUNT-COUNTZERO-34: counting a previously-skipped line clears the skip.
+      // Left set, it would force manual_review forever on a line that was resolved.
+      skip_reason: null,
+      skipped_by: null,
+      skipped_at: null,
       updated_at: trx.fn.now(),
     });
 
@@ -412,6 +420,64 @@ export async function recordCount(
   }
 
   return { variance };
+}
+
+/**
+ * RECOUNT-COUNTZERO-34: record that a line could not be counted.
+ * Deliberately never writes counted_quantity or variance — commitRecount
+ * filters on counted_quantity NOT NULL, so a skipped line can never become
+ * a reconciliation_correction.
+ */
+export async function skipLine(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    recountTaskId: string;
+    recountLineId: string;
+    skipReason: 'bin_inaccessible' | 'stock_in_motion' | 'bin_not_found' | 'other';
+    notes?: string;
+    skippedBy: number;
+  }
+): Promise<void> {
+  const { shopId, recountTaskId, recountLineId, skipReason, skippedBy } = params;
+
+  if (skipReason === 'other' && !params.notes?.trim()) {
+    throw new Error('[RECOUNT_SKIP] skip_reason "other" requires notes — an unexplained skip is not actionable');
+  }
+
+  const task = await trx('inventory_recount_tasks')
+    .where({ shop_id: shopId, recount_task_id: recountTaskId })
+    .select('status', 'claimed_by')
+    .first();
+  if (!task) throw new Error(`[RECOUNT_SKIP] Task not found: ${recountTaskId}`);
+  if (task.claimed_by !== skippedBy) {
+    throw new Error('[RECOUNT_SKIP] Task owned by a different operator');
+  }
+  if (!['claimed', 'counting'].includes(task.status)) {
+    throw new Error(`[RECOUNT_SKIP] Task not countable in status: ${task.status}`);
+  }
+
+  const line = await trx('inventory_recount_lines')
+    .where({ shop_id: shopId, recount_line_id: recountLineId, recount_task_id: recountTaskId })
+    .select('recount_line_id')
+    .first();
+  if (!line) throw new Error(`[RECOUNT_SKIP] Line not found: ${recountLineId}`);
+
+  await trx('inventory_recount_lines')
+    .where({ shop_id: shopId, recount_line_id: recountLineId })
+    .update({
+      skip_reason: skipReason,
+      skipped_by: skippedBy,
+      skipped_at: trx.fn.now(),
+      notes: params.notes ?? null,
+      updated_at: trx.fn.now(),
+    });
+
+  if (task.status === 'claimed') {
+    await trx('inventory_recount_tasks')
+      .where({ shop_id: shopId, recount_task_id: recountTaskId })
+      .update({ status: 'counting', updated_at: trx.fn.now() });
+  }
 }
 
 /**
@@ -431,7 +497,7 @@ export async function closeCount(
   shopId: number,
   recountTaskId: string,
   userId: number
-): Promise<{ status: 'committed' | 'manual_review'; uncounted: number; variances: number }> {
+): Promise<{ status: 'committed' | 'manual_review'; unresolved: number; skipped: number; variances: number }> {
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status', 'claimed_by')
@@ -447,16 +513,22 @@ export async function closeCount(
 
   const lines = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
-    .select('counted_quantity', 'variance');
+    .select('counted_quantity', 'variance', 'skip_reason');
 
-  const uncounted = lines.filter((l: any) => l.counted_quantity === null).length;
-  if (uncounted > 0) {
+  // RECOUNT-COUNTZERO-34: a line is resolved by a count OR an explicit skip.
+  const unresolved = lines.filter(
+    (l: any) => l.counted_quantity === null && l.skip_reason === null
+  ).length;
+  if (unresolved > 0) {
     throw new Error(
-      `[RECOUNT_CLOSE] ${uncounted} line(s) not yet counted — count or cancel them before closing`
+      `[RECOUNT_CLOSE] ${unresolved} line(s) not yet resolved — count or skip them before closing`
     );
   }
+  const skipped = lines.filter((l: any) => l.skip_reason !== null).length;
   const variances = lines.filter((l: any) => Number(l.variance) !== 0).length;
-  const next = variances === 0 ? 'committed' : 'manual_review';
+  // WHY: any skip means the sweep was incomplete. The owner must see the
+  // obstruction before this becomes a correction, even if every counted line matched.
+  const next = variances === 0 && skipped === 0 ? 'committed' : 'manual_review';
 
   await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
@@ -467,8 +539,8 @@ export async function closeCount(
       updated_at: trx.fn.now(),
     });
 
-  console.info('[RECOUNT_CLOSED]', { recountTaskId, shopId, userId, uncounted, variances, next });
-  return { status: next, uncounted, variances };
+  console.info('[RECOUNT_CLOSED]', { recountTaskId, shopId, userId, unresolved, skipped, variances, next });
+  return { status: next, unresolved, skipped, variances };
 }
 
 /**

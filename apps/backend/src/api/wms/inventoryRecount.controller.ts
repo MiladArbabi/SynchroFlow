@@ -1,6 +1,6 @@
 // apps/backend/src/api/wms/inventoryRecount.controller.ts
 import { Request, Response } from 'express';
-import db from '@lasyncro/backend-core/db.js';
+import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { getErrorMessage } from '@lasyncro/backend-core';
 import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
 import {
@@ -12,6 +12,7 @@ import {
   reviewLine,
   commitRecount,
   listRecountTasks,
+  skipLine,
 } from '../../services/wms/inventoryRecount.service.js';
 
 /**
@@ -281,6 +282,45 @@ export const httpRecordRecountLine = async (req: Request, res: Response) => {
     });
   } catch (error) {
     return respondRecountError(res, 'COUNT', error);
+  }
+};
+
+const SKIP_REASONS = ['bin_inaccessible', 'stock_in_motion', 'bin_not_found', 'other'];
+
+/**
+ * RECOUNT-COUNTZERO-34: resolve a line the operator could not count.
+ * Mirrors httpRecordRecountLine's tenant and error handling exactly — skip is
+ * the same operator, same session, same permission (wms:recount:count).
+ */
+export const httpSkipRecountLine = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+  const recountTaskId = String(req.params.taskId ?? '');
+  const recountLineId = String(req.params.lineId ?? '');
+  const { skip_reason, notes } = req.body ?? {};
+
+  if (!recountTaskId || !recountLineId) {
+    return res.status(400).json({ error: 'taskId and lineId are required' });
+  }
+  if (!SKIP_REASONS.includes(skip_reason)) {
+    return res.status(400).json({ error: `skip_reason must be one of: ${SKIP_REASONS.join(', ')}` });
+  }
+  if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+    return res.status(400).json({ error: 'notes must be a string' });
+  }
+
+  try {
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return skipLine(trx, {
+        shopId, recountTaskId, recountLineId,
+        skipReason: skip_reason, notes, skippedBy: userId,
+      });
+    });
+    return res.status(200).json({ recount_line_id: recountLineId, skip_reason });
+  } catch (error) {
+    return respondRecountError(res, 'SKIP', error);
   }
 };
 

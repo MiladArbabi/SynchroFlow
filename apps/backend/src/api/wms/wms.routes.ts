@@ -100,6 +100,7 @@ import {
   httpReviewRecountLine,
   httpCommitRecountTask,
   httpListRecountTasks,
+  httpSkipRecountLine,
 } from './inventoryRecount.controller.js';
 
 /**
@@ -807,6 +808,15 @@ router.post(
   requireTier('core'),
   requireAction('wms:recount:count'),
   httpRecordRecountLine
+);
+
+router.post(
+  '/recount-tasks/:taskId/lines/:lineId/skip',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:count'),
+  httpSkipRecountLine
 );
 
 router.post(
