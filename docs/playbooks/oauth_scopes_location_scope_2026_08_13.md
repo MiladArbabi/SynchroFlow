@@ -320,27 +320,32 @@ explained.
 
 ## Location mapping dependency
 
-This work does **not** implement warehouse-to-Shopify-Location mapping.
-
-It only removes the permission and OAuth-state blockers for:
+This work originally removed the permission and OAuth-state blockers for:
 
 ```text
 SHOPIFY-LOCATION-MAP-01
 ```
 
-The already-approved location-mapping contract remains:
+**Status update 2026-08-21 — INV-SHOPIFY-LOCATION-10 implemented.**
+
+The approved location-mapping contract is now live:
 
 ```text
-one LaSyncro warehouse
+one laSyncro warehouse
     ↔
 at most one Shopify Location per Shopify integration
 ```
 
-No Shopify Location may be silently auto-mapped when multiple candidates
-exist.
+The mapping is persisted on `warehouses.external_location_id`. Internal
+warehouse locations resolve their Shopify Location through `warehouse_id`,
+rather than carrying duplicated per-bin mappings.
 
-The verified human-readable Location capability is now available for that
-future implementation.
+The merchant explicitly selects the mapping in Settings → Warehouse. No
+Shopify Location is silently auto-mapped when multiple candidates exist.
+
+The backend validates the selected Shopify Location against the connected
+shop before persistence, and the database prevents the same non-null Shopify
+Location from being assigned to multiple warehouses in the same shop.
 
 ---
 

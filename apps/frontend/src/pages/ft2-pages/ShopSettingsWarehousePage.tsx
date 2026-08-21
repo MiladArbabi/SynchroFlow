@@ -9,8 +9,12 @@
 import { useState, useEffect } from 'react';
 import { Box, Typography, TextField, Button, Skeleton, Tooltip, Select, MenuItem, FormControl, InputLabel, Chip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle } from 'lucide-react';
+import { Monitor, Copy, RotateCcw, Trash2, Plus, Tag, Printer, Wifi, Bluetooth, Usb, CheckCircle, Link2} from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
+import {
+  getWarehouseShopifyLocations,
+  updateWarehouseShopifyLocation,
+} from 'api/shopSettings';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '../../contexts/ToastContext';
 import { useAppTheme } from '../../hooks/useAppTheme';
@@ -713,9 +717,183 @@ function PrintersSection() {
   );
 }
 
+function ShopifyLocationMappingSection() {
+  const queryClient = useQueryClient();
+  const { show } = useToast();
+
+  const mappings = useQuery({
+    queryKey: ['warehouse-shopify-locations'],
+    queryFn: getWarehouseShopifyLocations,
+    retry: false,
+  });
+
+  const updateMapping = useMutation({
+    mutationFn: ({
+      warehouseId,
+      shopifyLocationId,
+    }: {
+      warehouseId: string;
+      shopifyLocationId: string | null;
+    }) => updateWarehouseShopifyLocation(warehouseId, shopifyLocationId),
+
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ['warehouse-shopify-locations'],
+      });
+      show('Shopify location mapping saved', 'success');
+    },
+
+    onError: () => {
+      show('Failed to save Shopify location mapping', 'error');
+    },
+  });
+
+  return (
+    <SettingsCard
+      icon={<Link2 size={16} strokeWidth={1.75} />}
+      title="Shopify location mapping"
+      description="Map each laSyncro warehouse to the Shopify Location that should receive its inventory updates."
+    >
+      {mappings.isLoading ? (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Skeleton height={42} />
+          <Skeleton height={42} />
+        </Box>
+      ) : mappings.isError ? (
+        <Box>
+          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mb: 1 }}>
+            Could not load Shopify locations. Confirm Shopify is connected and try again.
+          </Typography>
+
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => void mappings.refetch()}
+            sx={{ fontSize: 12 }}
+          >
+            Retry
+          </Button>
+        </Box>
+      ) : !mappings.data?.warehouses.length ? (
+        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+          No warehouses are configured yet.
+        </Typography>
+      ) : (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          {mappings.data.warehouses.map((warehouse) => {
+            const usedByOtherWarehouse = new Set(
+              mappings.data.warehouses
+                .filter(
+                  (candidate) =>
+                    candidate.warehouse_id !== warehouse.warehouse_id &&
+                    candidate.shopify_location_id
+                )
+                .map((candidate) => candidate.shopify_location_id as string)
+            );
+
+            return (
+              <Box
+                key={warehouse.warehouse_id}
+                sx={{
+                  display: 'flex',
+                  alignItems: { xs: 'stretch', sm: 'center' },
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: 1.5,
+                  py: 1,
+                  borderBottom: '0.5px solid var(--rule)',
+                  '&:last-child': {
+                    borderBottom: 'none',
+                    pb: 0,
+                  },
+                }}
+              >
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                    <Typography
+                      sx={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: 'var(--ink)',
+                      }}
+                    >
+                      {warehouse.name}
+                    </Typography>
+
+                    {warehouse.is_default && (
+                      <Chip
+                        label="Default"
+                        size="small"
+                        sx={{ height: 20, fontSize: 10 }}
+                      />
+                    )}
+                  </Box>
+
+                  {!warehouse.active && (
+                    <Typography
+                      sx={{
+                        fontSize: 11,
+                        color: 'var(--ink-4)',
+                        mt: 0.25,
+                      }}
+                    >
+                      Inactive warehouse
+                    </Typography>
+                  )}
+                </Box>
+
+                <FormControl
+                  size="small"
+                  sx={{ width: { xs: '100%', sm: 260 } }}
+                  disabled={!warehouse.active || updateMapping.isPending}
+                >
+                  <InputLabel>Shopify location</InputLabel>
+
+                  <Select
+                    label="Shopify location"
+                    value={warehouse.shopify_location_id ?? ''}
+                    onChange={(event) => {
+                      const value = String(event.target.value);
+
+                      updateMapping.mutate({
+                        warehouseId: warehouse.warehouse_id,
+                        shopifyLocationId: value || null,
+                      });
+                    }}
+                  >
+                    <MenuItem value="">
+                      <em>Not mapped</em>
+                    </MenuItem>
+
+                    {mappings.data.shopify_locations.map((location) => (
+                      <MenuItem
+                        key={location.shopify_location_id}
+                        value={location.shopify_location_id}
+                        disabled={
+                          !location.is_active ||
+                          usedByOtherWarehouse.has(
+                            location.shopify_location_id
+                          )
+                        }
+                      >
+                        {location.name}
+                        {!location.is_active ? ' — inactive' : ''}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            );
+          })}
+        </Box>
+      )}
+    </SettingsCard>
+  );
+}
+
 export default function ShopSettingsWarehousePage() {
   return (
     <SettingsPageWrapper>
+      <ShopifyLocationMappingSection />
       <UnitLabelCoverageSection />
       <PrintersSection />
       <FloorDisplaySection />

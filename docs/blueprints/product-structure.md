@@ -370,7 +370,7 @@ Requires: persona routing, Problem Center relocation. *Currently ~70%.*
 ## 9. Open Questions (pressure-test before locking)
 
 - **Warehouse access model:** warehouse identity and route context are locked, but user access is still shop-wide. Define warehouse membership, assignment, and supervisor/operator access before multi-warehouse isolation is considered complete.
-- **External-channel location mapping:** decide whether one warehouse maps to exactly one Shopify location or whether a warehouse may contain multiple external fulfillment locations.
+- ~~**External-channel location mapping:** decide whether one warehouse maps to exactly one Shopify location or whether a warehouse may contain multiple external fulfillment locations.~~ **✅ RESOLVED 2026-08-21 — INV-SHOPIFY-LOCATION-10:** one laSyncro warehouse maps to at most one Shopify Location. The mapping is stored on `warehouses.external_location_id`; non-null Shopify Location IDs are unique per shop. Merchants choose the mapping explicitly in Settings → Warehouse; internal bins inherit the warehouse mapping through `warehouse_id`, and no Shopify Location is silently auto-mapped.
 - **Remembered selection storage:** decide whether the user's last-selected warehouse belongs in server-side user state, local client state, or both. The fallback order is already locked: valid remembered selection → active default → not-configured state.
 - **B2B / wholesale orders:** does Orders need order-type segmentation, or a separate surface?
 - **Additional channels** (Amazon, retail POS): Data Trust sync-health is designed per-channel — confirm Orders/Inventory views are channel-aware.

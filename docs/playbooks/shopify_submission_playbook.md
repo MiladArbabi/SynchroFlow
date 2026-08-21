@@ -334,8 +334,19 @@ The development-store proof successfully resolved:
 gid://shopify/Location/110070792562 -> My Custom Location
 gid://shopify/Location/110070759794 -> Shop location
 
-This unblocks the permission prerequisite for SHOPIFY-LOCATION-MAP-01; it
-does not itself implement warehouse-to-Shopify-Location mapping.
+This originally unblocked the permission prerequisite for
+SHOPIFY-LOCATION-MAP-01.
+
+**2026-08-21 — INV-SHOPIFY-LOCATION-10 completed and verified against this
+development store.**
+
+Warehouse-to-Shopify-Location mapping is now explicit, merchant-controlled,
+persisted on `warehouses.external_location_id`, and resolved by internal
+warehouse locations through `warehouse_id`.
+
+End-to-end verification mapped `Main warehouse` to
+`gid://shopify/Location/110070792562`, read the persisted mapping back through
+the API, then cleared it and verified the restored null state.
 
 ---
 

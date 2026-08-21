@@ -27,3 +27,55 @@ export async function updateShopTimezone(timezone: string): Promise<ShopTimezone
   const { data } = await axiosInstance.patch('/api/v1/settings/shop/timezone', { timezone });
   return data;
 }
+
+
+/**
+ * INV-SHOPIFY-LOCATION-10
+ * Explicit Shopify Location ↔ laSyncro warehouse mapping.
+ */
+export type WarehouseShopifyMapping = {
+  warehouse_id: string;
+  name: string;
+  is_default: boolean;
+  active: boolean;
+  shopify_location_id: string | null;
+};
+
+export type ShopifyWarehouseLocation = {
+  shopify_location_id: string;
+  name: string;
+  is_active: boolean;
+};
+
+export type WarehouseShopifyLocationsResponse = {
+  warehouses: WarehouseShopifyMapping[];
+  shopify_locations: ShopifyWarehouseLocation[];
+};
+
+export type WarehouseShopifyLocationUpdate = {
+  warehouse_id: string;
+  name: string;
+  shopify_location_id: string | null;
+};
+
+export async function getWarehouseShopifyLocations(): Promise<WarehouseShopifyLocationsResponse> {
+  const { data } = await axiosInstance.get(
+    '/api/v1/settings/shop/warehouse-shopify-locations'
+  );
+
+  return data;
+}
+
+export async function updateWarehouseShopifyLocation(
+  warehouseId: string,
+  shopifyLocationId: string | null
+): Promise<WarehouseShopifyLocationUpdate> {
+  const { data } = await axiosInstance.patch(
+    `/api/v1/settings/shop/warehouses/${encodeURIComponent(warehouseId)}/shopify-location`,
+    {
+      shopify_location_id: shopifyLocationId,
+    }
+  );
+
+  return data;
+}

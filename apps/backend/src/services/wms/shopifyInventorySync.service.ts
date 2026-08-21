@@ -8,7 +8,7 @@
 //   - Delta-based: adds quantity, never sets absolute — safe under concurrent operations
 //   - Requires write_inventory scope (added to REQUIRED_SCOPES)
 //   - Requires external_inventory_item_id from external_product_identity_map
-//   - Requires external_location_id from warehouse_locations
+//   - Requires external_location_id from the owning warehouses row
 //
 // Failure contract:
 //   - Throws on missing identity, missing installation, or Shopify userErrors
@@ -66,15 +66,27 @@ export async function syncStowedQuantityToShopify(
     );
   }
 
-  // 2. Resolve Shopify location_id for this warehouse location
-  const location = await trx('warehouse_locations')
-    .where({ location_code: locationCode, shop_id: shopId })
-    .select('external_location_id')
+  // 2. Resolve Shopify location_id from the authoritative warehouse boundary.
+  // Internal bins/lanes belong to a warehouse via warehouse_id; Shopify Location
+  // identity is mapped once on that warehouse rather than duplicated per bin.
+  const location = await trx('warehouse_locations as wl')
+    .join('warehouses as w', function () {
+      this.on('w.warehouse_id', '=', 'wl.warehouse_id')
+        .andOn('w.shop_id', '=', 'wl.shop_id');
+    })
+    .where({
+      'wl.location_code': locationCode,
+      'wl.shop_id': shopId,
+    })
+    .select(
+      'wl.warehouse_id',
+      'w.external_location_id'
+    )
     .first();
 
   if (!location?.external_location_id) {
     throw new Error(
-      `[SHOPIFY_INV_SYNC] No external_location_id for location: ${locationCode}`
+      `[SHOPIFY_INV_SYNC] No Shopify location mapping for warehouse owning location: ${locationCode}`
     );
   }
 

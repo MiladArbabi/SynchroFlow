@@ -2,7 +2,12 @@
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
-import { httpGetShopTimezone, httpPatchShopTimezone } from './shopSettings.controller.js';
+import {
+  httpGetShopTimezone,
+  httpPatchShopTimezone,
+  httpGetWarehouseShopifyLocations,
+  httpPatchWarehouseShopifyLocation,
+} from './shopSettings.controller.js';
 
 const router = Router();
 
@@ -28,6 +33,28 @@ router.patch(
   authenticateToken,
   requireAction('wms:settings:write'),
   httpPatchShopTimezone
+);
+
+
+/**
+ * INV-SHOPIFY-LOCATION-10
+ * Read available Shopify Locations and current warehouse mappings.
+ */
+router.get(
+  '/warehouse-shopify-locations',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpGetWarehouseShopifyLocations
+);
+
+/**
+ * Persist or clear one warehouse → Shopify Location mapping.
+ */
+router.patch(
+  '/warehouses/:warehouseId/shopify-location',
+  authenticateToken,
+  requireAction('wms:settings:write'),
+  httpPatchWarehouseShopifyLocation
 );
 
 export default router;

@@ -89,6 +89,9 @@ const ALLOWED_CONTEXTS = [
   'sync.worker',
   'order-identity-guard',
   'wms.shipConfirmation.writeback',
+  'settings.shopifyLocationMapping',
+
+  'wms.stow.inventorySync',
   'shopify.dev',
   'shopify.billing',
   'shopify-token-backfill',

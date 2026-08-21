@@ -117,4 +117,33 @@ Outbound publication must also account for:
 - Shopify idempotency requirements
 - event origin to prevent double application
 
+### Shopify Location mapping status
+
+**INV-SHOPIFY-LOCATION-10 completed 2026-08-21.**
+
+The durable mapping boundary is the physical laSyncro warehouse:
+
+```text
+warehouse_locations.location_code
+    → warehouse_locations.warehouse_id
+    → warehouses.external_location_id
+    → Shopify Location
+```
+
+One laSyncro warehouse maps to at most one Shopify Location. A non-null
+Shopify Location may belong to only one warehouse within the same shop.
+
+Mapping is explicit in Settings → Warehouse; multiple Shopify Location
+candidates are never silently auto-mapped.
+
+This mapping infrastructure does **not** change the observation-only webhook
+contract above and does not authorize manufacturing physical stock from a
+Shopify observation.
+
+The outbound publication lifecycle remains a separate concern. In particular,
+the contract above states that stow inside the same warehouse must not itself
+change Shopify inventory; any existing stow-triggered writeback behavior must
+be handled under the separate inventory-publication workstream rather than
+being treated as part of INV-SHOPIFY-LOCATION-10.
+
 Those concerns are intentionally outside SHOPIFY-INV-WEBHOOK-LOOP-01.
