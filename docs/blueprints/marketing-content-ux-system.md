@@ -799,6 +799,35 @@ Production verification passed on desktop and responsive mobile: the six primary
 
 The journey rail remains a separate follow-up under MKT-LAND-NAV-01B.
 
+## MKT-LAND-NAV-01B — Landing journey rail
+
+Status: implementation verified locally; production verification pending.
+
+Audit confirmed that the standalone landing experience already has one authoritative 10-scene narrative model driven by `[data-step="0"]` through `[data-step="9"]`: Hero, The split, Activation, PO and inbound, Receive and barcode, Stow, Orders and batches, Pick, Pack and ship, and the final Synced/result scene. Proof points and the footer sit after the narrative and are intentionally excluded from journey navigation.
+
+The existing animation engine remains the authority for active-scene state. It calculates the current scene from the same `[data-step]` elements and stores that state in `this.scene` and `this.sceneProgress`; the journey navigation reuses that state rather than introducing a second observer or competing scroll model.
+
+Implementation adds:
+
+- stable semantic IDs to all 10 existing narrative scenes;
+- a fixed desktop journey rail on the right edge for Hero, 01–08, and Result;
+- active-state highlighting driven by the existing scene engine;
+- concise hover/focus labels for each desktop destination;
+- smooth direct jumps to the existing scene elements;
+- URL hash updates for journey destinations and initial hash deep-link support;
+- a compact `Journey` control at or below 720px exposing the same 10 destinations;
+- automatic mobile-menu close after a destination is selected;
+- synchronized mobile Journey labeling for the current scene;
+- preservation of the existing bottom-left `01 / 08` scene tracker and normal scrolling behavior.
+
+Implementation file:
+
+- `packages/landing-page/index.html`
+
+Local verification passed. Source checks confirmed 10 semantic scene IDs, 20 journey links across desktop and mobile controls, the 720px responsive contract, deep-link support, click-listener cleanup, and a clean `git diff --check`.
+
+Visual verification also passed. Desktop testing confirmed Hero through Result navigation, correct active-state movement, smooth scene jumps, working hover labels, and continued synchronization with the existing bottom-left tracker. At 392px, the desktop rail correctly disappears, the compact Journey control appears, all 10 destinations fit inside the opened menu, the active destination is highlighted, scene selection updates the URL hash and tracker state, and measured horizontal overflow remained `0`.
+
 ## Blog preserved contracts
 
 MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.

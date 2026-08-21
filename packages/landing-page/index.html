@@ -569,6 +569,123 @@ em { font-style: italic; color: var(--accent); }
       color: #F0EEE8;
     }
 
+    .ls-journey-rail {
+      position: fixed;
+      right: 12px;
+      top: 50%;
+      z-index: 45;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      transform: translateY(-50%);
+      padding: 7px 5px;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px;
+      background: rgba(11,17,28,0.48);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .ls-journey-item {
+      position: relative;
+      display: flex;
+      width: 30px;
+      height: 24px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: rgba(240,238,232,0.38);
+      font: 500 9px/1 'Plus Jakarta Sans', sans-serif;
+      text-decoration: none;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+    }
+    .ls-journey-item:hover,
+    .ls-journey-item:focus-visible {
+      color: #F0EEE8;
+      background: rgba(255,255,255,0.05);
+    }
+    .ls-journey-item.is-active {
+      color: #FF6B2B;
+      border-color: rgba(255,107,43,0.28);
+      background: rgba(255,107,43,0.10);
+    }
+    .ls-journey-item:focus-visible,
+    .ls-journey-mobile summary:focus-visible,
+    .ls-journey-mobile-panel a:focus-visible {
+      outline: 2px solid #FF6B2B;
+      outline-offset: 2px;
+    }
+    .ls-journey-tooltip {
+      position: absolute;
+      right: calc(100% + 9px);
+      top: 50%;
+      transform: translate(4px,-50%);
+      pointer-events: none;
+      opacity: 0;
+      padding: 7px 9px;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      background: rgba(28,39,64,0.98);
+      color: #F0EEE8;
+      font: 500 11px/1 'Plus Jakarta Sans', sans-serif;
+      white-space: nowrap;
+      transition: opacity 0.15s, transform 0.15s;
+    }
+    .ls-journey-item:hover .ls-journey-tooltip,
+    .ls-journey-item:focus-visible .ls-journey-tooltip {
+      opacity: 1;
+      transform: translate(0,-50%);
+    }
+    .ls-journey-mobile {
+      display: none;
+      position: fixed;
+      right: 12px;
+      top: 72px;
+      z-index: 46;
+    }
+    .ls-journey-mobile summary {
+      cursor: pointer;
+      list-style: none;
+      padding: 9px 11px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 7px;
+      background: rgba(11,17,28,0.78);
+      color: rgba(240,238,232,0.78);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      font: 500 11px/1 'Plus Jakarta Sans', sans-serif;
+      white-space: nowrap;
+    }
+    .ls-journey-mobile summary::-webkit-details-marker {
+      display: none;
+    }
+    .ls-journey-mobile-panel {
+      position: absolute;
+      right: 0;
+      top: calc(100% + 8px);
+      display: grid;
+      width: 220px;
+      max-height: calc(100vh - 128px);
+      overflow-y: auto;
+      padding: 6px;
+      border: 1px solid rgba(255,255,255,0.10);
+      border-radius: 9px;
+      background: rgba(28,39,64,0.98);
+      box-shadow: 0 18px 46px rgba(0,0,0,0.32);
+    }
+    .ls-journey-mobile-panel a {
+      padding: 10px 11px;
+      border-radius: 6px;
+      color: rgba(240,238,232,0.72);
+      font: 500 12px/1.2 'Plus Jakarta Sans', sans-serif;
+      text-decoration: none;
+    }
+    .ls-journey-mobile-panel a:hover,
+    .ls-journey-mobile-panel a.is-active {
+      color: #F0EEE8;
+      background: rgba(255,107,43,0.10);
+    }
+
     .ls-launch-status {
       color: #F0EEE8;
       font: 300 12px/1.6 'Plus Jakarta Sans', sans-serif;
@@ -591,6 +708,11 @@ em { font-style: italic; color: var(--accent); }
       .ls-proofgrid { grid-template-columns: 1fr !important; }
       .ls-eyebrow { white-space: normal !important; }
       .ls-launch-form { grid-template-columns: 1fr !important; }
+    }
+
+    @media (max-width: 720px) {
+      .ls-journey-rail { display: none; }
+      .ls-journey-mobile { display: block; }
     }
 
     @media (max-width: 420px) {
@@ -647,6 +769,56 @@ em { font-style: italic; color: var(--accent); }
   </nav>
 
   <!-- ───────── Scrollytelling film ───────── -->
+  <!-- ───────── Journey navigation ───────── -->
+  <nav class="ls-journey-rail" aria-label="Landing page journey">
+    <a class="ls-journey-item" href="#journey-hero" data-journey-step="0" aria-label="Hero">
+      <span class="ls-journey-index">H</span><span class="ls-journey-tooltip">Hero</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-split" data-journey-step="1" aria-label="01 · The split">
+      <span class="ls-journey-index">01</span><span class="ls-journey-tooltip">01 · The split</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-activation" data-journey-step="2" aria-label="02 · Activation">
+      <span class="ls-journey-index">02</span><span class="ls-journey-tooltip">02 · Activation</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-po-inbound" data-journey-step="3" aria-label="03 · PO &amp; inbound">
+      <span class="ls-journey-index">03</span><span class="ls-journey-tooltip">03 · PO &amp; inbound</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-receive-barcode" data-journey-step="4" aria-label="04 · Receive &amp; barcode">
+      <span class="ls-journey-index">04</span><span class="ls-journey-tooltip">04 · Receive &amp; barcode</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-stow" data-journey-step="5" aria-label="05 · Stow">
+      <span class="ls-journey-index">05</span><span class="ls-journey-tooltip">05 · Stow</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-orders-batches" data-journey-step="6" aria-label="06 · Orders &amp; batches">
+      <span class="ls-journey-index">06</span><span class="ls-journey-tooltip">06 · Orders &amp; batches</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-pick" data-journey-step="7" aria-label="07 · Pick">
+      <span class="ls-journey-index">07</span><span class="ls-journey-tooltip">07 · Pick</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-pack-ship" data-journey-step="8" aria-label="08 · Pack &amp; ship">
+      <span class="ls-journey-index">08</span><span class="ls-journey-tooltip">08 · Pack &amp; ship</span>
+    </a>
+    <a class="ls-journey-item" href="#journey-result" data-journey-step="9" aria-label="Result">
+      <span class="ls-journey-index">R</span><span class="ls-journey-tooltip">Result</span>
+    </a>
+  </nav>
+
+  <details id="ls-journey-mobile" class="ls-journey-mobile">
+    <summary id="ls-journey-mobile-label">Journey · Hero</summary>
+    <div class="ls-journey-mobile-panel">
+      <a href="#journey-hero" data-journey-step="0">Hero</a>
+      <a href="#journey-split" data-journey-step="1">01 · The split</a>
+      <a href="#journey-activation" data-journey-step="2">02 · Activation</a>
+      <a href="#journey-po-inbound" data-journey-step="3">03 · PO &amp; inbound</a>
+      <a href="#journey-receive-barcode" data-journey-step="4">04 · Receive &amp; barcode</a>
+      <a href="#journey-stow" data-journey-step="5">05 · Stow</a>
+      <a href="#journey-orders-batches" data-journey-step="6">06 · Orders &amp; batches</a>
+      <a href="#journey-pick" data-journey-step="7">07 · Pick</a>
+      <a href="#journey-pack-ship" data-journey-step="8">08 · Pack &amp; ship</a>
+      <a href="#journey-result" data-journey-step="9">Result</a>
+    </div>
+  </details>
+
   <div id="ls-wrap" data-screen-label="Warehouse film" style="position: relative;">
 
     <!-- Sticky stage -->
@@ -918,7 +1090,7 @@ em { font-style: italic; color: var(--accent); }
     <div style="position: relative; margin-top: -100vh; z-index: 10; pointer-events: none;">
 
       <!-- 0 · Hero -->
-      <div data-step="0" data-screen-label="Hero" class="ls-stepflex" style="min-height: 132vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 22px;">
+      <div id="journey-hero" data-step="0" data-screen-label="Hero" class="ls-stepflex" style="min-height: 132vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 22px;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 760px;">
           <div style="display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,107,43,0.25); border-radius: 100px; padding: 7px 14px; margin-bottom: 26px; background: rgba(11,17,28,0.6);">
             <span style="width: 7px; height: 7px; border-radius: 50%; background: #FF6B2B; animation: lsblink 2.4s ease-in-out infinite;"></span>
@@ -952,7 +1124,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 1 · The split -->
-      <div data-step="1" data-screen-label="The split" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
+      <div id="journey-split" data-step="1" data-screen-label="The split" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">01 · The split</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Shopify says one thing. Your shelves say <em style="font-style: italic; color: #FF6B2B;">another.</em></h3>
@@ -961,7 +1133,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 2 · Activation -->
-      <div data-step="2" data-screen-label="Activation" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
+      <div id="journey-activation" data-step="2" data-screen-label="Activation" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">02 · LaSyncro</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">One layer between your store and <em style="font-style: italic; color: #FF6B2B;">your warehouse.</em></h3>
@@ -970,7 +1142,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 3 · PO & inbound -->
-      <div data-step="3" data-screen-label="PO and inbound" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
+      <div id="journey-po-inbound" data-step="3" data-screen-label="PO and inbound" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">03 · PO &amp; inbound</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Know what's coming <em style="font-style: italic; color: #FF6B2B;">before it arrives.</em></h3>
@@ -979,7 +1151,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 4 · Receive & barcode -->
-      <div data-step="4" data-screen-label="Receive and barcode" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
+      <div id="journey-receive-barcode" data-step="4" data-screen-label="Receive and barcode" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-end; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">04 · Receive &amp; barcode</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Receive against the PO. Barcode <em style="font-style: italic; color: #FF6B2B;">every unit.</em></h3>
@@ -988,7 +1160,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 5 · Stow -->
-      <div data-step="5" data-screen-label="Stow" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
+      <div id="journey-stow" data-step="5" data-screen-label="Stow" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">05 · Stow</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Stock moves to the right shelf — <em style="font-style: italic; color: #FF6B2B;">and the system knows.</em></h3>
@@ -997,7 +1169,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 6 · Orders & batches -->
-      <div data-step="6" data-screen-label="Orders and batches" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
+      <div id="journey-orders-batches" data-step="6" data-screen-label="Orders and batches" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">06 · Orders &amp; batches</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Demand becomes <em style="font-style: italic; color: #FF6B2B;">organized work.</em></h3>
@@ -1006,7 +1178,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 7 · Pick -->
-      <div data-step="7" data-screen-label="Pick" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
+      <div id="journey-pick" data-step="7" data-screen-label="Pick" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">07 · Pick</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Every scan confirms the <em style="font-style: italic; color: #FF6B2B;">right item is moving.</em></h3>
@@ -1015,7 +1187,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 8 · Pack & ship -->
-      <div data-step="8" data-screen-label="Pack and ship" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
+      <div id="journey-pack-ship" data-step="8" data-screen-label="Pack and ship" class="ls-stepflex" style="min-height: 110vh; display: flex; align-items: center; justify-content: flex-start; padding: 0 6vw;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 380px; background: rgba(11,17,28,0.88); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 28px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 12px;">08 · Pack &amp; ship</div>
           <h3 style="font: 400 26px/1.22 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 10px;">Packed. Labeled. <em style="font-style: italic; color: #FF6B2B;">Shipped.</em></h3>
@@ -1024,7 +1196,7 @@ em { font-style: italic; color: var(--accent); }
       </div>
 
       <!-- 9 · Final synced -->
-      <div data-step="9" data-screen-label="Synced" class="ls-stepflex" style="min-height: 150vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 22px;">
+      <div id="journey-result" data-step="9" data-screen-label="Synced" class="ls-stepflex" style="min-height: 150vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 22px;">
         <div class="ls-panel" style="pointer-events: auto; max-width: 680px;">
           <div style="font: 500 11px/1.4 'Plus Jakarta Sans', sans-serif; letter-spacing: 0.12em; text-transform: uppercase; color: #FF6B2B; margin-bottom: 18px;">The result</div>
           <h2 style="font: 400 clamp(36px, 4.6vw, 56px)/1.1 'Plus Jakarta Sans', serif; letter-spacing: -0.02em; color: #F0EEE8; margin: 0 0 26px; text-wrap: balance;">One operation. One source of truth. <em style="font-style: italic; color: #FF6B2B;">Every row synced.</em></h2>
@@ -1206,6 +1378,18 @@ em { font-style: italic; color: var(--accent); }
       [P.stow, [560, 210], [739, 282]],
       [P.stow, [560, 210], [830, 235]]
     ].map(path => { const s = { path }; s.seg = []; s.len = 0; for (let i = 0; i < path.length - 1; i++) { const d = Math.hypot(path[i+1][0]-path[i][0], path[i+1][1]-path[i][1]); s.seg.push(d); s.len += d; } return s; });
+    this.journeyLabels = [
+      'Hero',
+      '01 · The split',
+      '02 · Activation',
+      '03 · PO & inbound',
+      '04 · Receive & barcode',
+      '05 · Stow',
+      '06 · Orders & batches',
+      '07 · Pick',
+      '08 · Pack & ship',
+      'Result'
+    ];
     this.scene = -1; this.sceneProgress = 0; this.prevScene = -1; this.trail = []; this.t0 = performance.now(); this.kpiTimer = null; this.kpiActive = 0; this.chatTimer = null; this.chatTyped = false; this.chatText = "Hey, do we really have this in the stock. I've looked 3 times already!";
     document.querySelectorAll('.ls-panel').forEach(p => { p.style.transition = 'opacity 0.7s ease, transform 0.7s ease'; p.style.opacity = '0'; p.style.transform = 'translateY(18px)'; });
     this.onResize = () => { const f = $('ls-fit'); const s = Math.min(window.innerWidth/1320, window.innerHeight/980, 1); if (f) f.style.transform = 'scale('+s+')'; };
@@ -1215,6 +1399,34 @@ em { font-style: italic; color: var(--accent); }
     tick();
     this.onScroll = () => { if (performance.now() - this.lastTick > 120) this.frame(); };
     document.addEventListener('scroll', this.onScroll, { capture: true, passive: true });
+
+    this.onJourneyClick = (event) => {
+      const link = event.target instanceof Element
+        ? event.target.closest('[data-journey-step]')
+        : null;
+      if (!link) return;
+
+      const step = document.querySelector('[data-step="' + link.getAttribute('data-journey-step') + '"]');
+      if (!step) return;
+
+      event.preventDefault();
+      step.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+      const href = link.getAttribute('href');
+      if (href) history.replaceState(null, '', href);
+
+      const mobileJourney = document.getElementById('ls-journey-mobile');
+      if (mobileJourney) mobileJourney.removeAttribute('open');
+    };
+    document.addEventListener('click', this.onJourneyClick);
+
+    if (location.hash.startsWith('#journey-')) {
+      const initialJourney = document.getElementById(location.hash.slice(1));
+      if (initialJourney) {
+        requestAnimationFrame(() => initialJourney.scrollIntoView({ block: 'start' }));
+      }
+    }
+
     this.watchdog = setInterval(() => { if (performance.now() - this.lastTick > 220) this.frame(); }, 250);
   }
 
@@ -1222,6 +1434,7 @@ em { font-style: italic; color: var(--accent); }
     cancelAnimationFrame(this.raf);
     window.removeEventListener('resize', this.onResize);
     document.removeEventListener('scroll', this.onScroll, { capture: true });
+    document.removeEventListener('click', this.onJourneyClick);
     clearInterval(this.watchdog);
     if (this.kpiTimer) clearInterval(this.kpiTimer);
     if (this.chatTimer) clearInterval(this.chatTimer);
@@ -1418,6 +1631,19 @@ em { font-style: italic; color: var(--accent); }
       if (i >= 1 && i <= 8) { tr.style.opacity = '1'; tn.textContent = '0'+i+' / 08'; tm.textContent = names[i]; }
       else { tr.style.opacity = '0'; }
     }
+
+    document.querySelectorAll('[data-journey-step]').forEach(el => {
+      const active = +el.getAttribute('data-journey-step') === i;
+      el.classList.toggle('is-active', active);
+      if (active) el.setAttribute('aria-current', 'step');
+      else el.removeAttribute('aria-current');
+    });
+
+    const journeyMobileLabel = document.getElementById('ls-journey-mobile-label');
+    if (journeyMobileLabel && this.journeyLabels[i]) {
+      journeyMobileLabel.textContent = 'Journey · ' + this.journeyLabels[i];
+    }
+
     this.prevScene = i;
   }
 
