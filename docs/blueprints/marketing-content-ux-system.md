@@ -774,7 +774,7 @@ Production verification passed on desktop and mobile: Plus Jakarta Sans renders 
 
 ## MKT-LAND-NAV-01A — Landing top navigation parity
 
-Status: implementation verified locally; production verification pending.
+Status: production verified; closed.
 
 Audit confirmed that the standalone landing page already had a fixed 60px top navigation shell, but it exposed only the LaSyncro logo and launch/install conversion control. Visitors had no primary navigation to the rest of the marketing site without reaching the footer.
 
@@ -794,6 +794,8 @@ Implementation file:
 - `packages/landing-page/index.html`
 
 Local verification passed: the navigation contract and `git diff --check` passed; desktop visual verification showed the complete six-link header without overlap; and responsive verification at 392px showed `[Logo] [Notify me at launch] [Menu]` contained correctly, with the Menu opening and all six destinations visible.
+
+Production verification passed on desktop and responsive mobile: the six primary navigation links render cleanly on desktop; at 392px the header renders `[Logo] [Notify me at launch] [Menu]` without visible overflow or clipping; the Menu opens successfully and exposes all six destinations; and both Vercel deployment checks for the implementation commit completed successfully.
 
 The journey rail remains a separate follow-up under MKT-LAND-NAV-01B.
 
