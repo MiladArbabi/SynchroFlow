@@ -524,7 +524,7 @@ MKT-UX-01F-D — FAQ + About convergence is fully closed.
 
 ## MKT-UX-01F-E — Privacy + Terms convergence
 
-Status: implementation verified locally; production verification pending.
+Status: production verified; closed.
 
 Audit confirmed that both public legal routes were healthy (`/privacy` and `/terms` returned `200`) but their route-local visual styling had drifted from the canonical marketing system.
 
@@ -564,7 +564,7 @@ Local verification:
 - both legal pages report zero audited `DM Sans` references and zero audited light-era color references;
 - `npm run build` in `apps/marketing` compiled successfully, completed TypeScript validation, and generated all 106 static/generated routes including `/privacy` and `/terms`.
 
-Desktop and mobile production visual verification remain required after deployment.
+Production verification passed on desktop and mobile for both `/privacy` and `/terms`: both routes return `200`, render the canonical Plus Jakarta Sans typography and dark token palette, retain readable legal body contrast and accent links, and show no observed horizontal overflow, clipping, or responsive navigation regression.
 
 ## MKT-UX-01G-A — Primary page-title convergence
 
