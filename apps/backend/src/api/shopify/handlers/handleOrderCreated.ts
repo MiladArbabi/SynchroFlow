@@ -108,13 +108,16 @@ export async function handleOrderCreated(
   const shopId = installation.shop_id;
 
   /**
-   * ORDER VOLUME CAP ENFORCEMENT (MON-05)
-   * --------------------------------------
-   * Starter tier: 50 orders/month cap.
-   * At 80% (40/50) → warn via console (alert system hook can be added here).
-   * At 100% (50/50) → block ingestion hard.
-   * Cap resets on calendar month boundary (COUNT filter by current month).
-   * Falls back to 'starter' cap if no subscription row exists.
+   * ORDER VOLUME TRACKING (MON-05 / MON-PPO-02)
+   * --------------------------------------------
+   * monthlyOrderCap is a commercial allowance, not an ingestion boundary.
+   *
+   * Shopify order truth must always be ingested. Dropping orders at the
+   * plan limit creates an unrecoverable operational-history gap while the
+   * webhook transport still reports success.
+   *
+   * Usage is therefore observed here for warning telemetry only.
+   * WMS execution/billing enforcement belongs downstream.
    */
   const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
 
@@ -129,20 +132,17 @@ export async function handleOrderCreated(
 
   if (isFinite(monthlyOrderCap)) {
     const monthlyCount = Number(usagePeriod.ingested_orders ?? 0);
+    const warningThreshold = Math.floor(monthlyOrderCap * 0.8);
 
     if (monthlyCount >= monthlyOrderCap) {
-      console.warn('[ORDER_CAP_HARD_BLOCK] Monthly order cap reached — ingestion blocked', {
+      console.warn('[ORDER_CAP_EXCEEDED_INGEST_CONTINUES]', {
         shopId,
         tier: currentTier,
         monthlyCount,
         monthlyOrderCap,
       });
-      return;
-    }
-
-    const warningThreshold = Math.floor(monthlyOrderCap * 0.8);
-    if (monthlyCount >= warningThreshold) {
-      console.warn('[ORDER_CAP_APPROACHING] Shop approaching monthly order cap', {
+    } else if (monthlyCount >= warningThreshold) {
+      console.warn('[ORDER_CAP_APPROACHING]', {
         shopId,
         tier: currentTier,
         monthlyCount,

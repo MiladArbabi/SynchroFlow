@@ -12,7 +12,7 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 
 | Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
 |---|---|---|---|---|
-| Starter | Free | Owner only (0 non-owner seats) | 50 | 0 (no WMS) |
+| Starter | Free | Owner only (0 non-owner seats) | 50 | 50 |
 | Core | $79 | 2 non-owner seats | 2,000 | 200 |
 | Growth | $179 | 5 non-owner seats | 10,000 | 1,000 |
 | Scale | $349 | Unlimited | Unlimited | Unlimited |
@@ -22,7 +22,7 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 - Ordinary member invitation and role-change flows cannot create or promote another `owner`; ownership transfer requires a separate explicit flow
 - Annual billing = 20% discount (varies slightly per currency — see Stripe actuals)
 - Extra seats purchasable above base limit: Core $15/seat/mo, Growth $12/seat/mo
-- Shipped order overage: $0.08/unit (Core + Growth only), billed via Stripe Meter
+- Shipped order overage: $0.08/unit for finite-cap Stripe-billed tiers. The Stripe meter technically supports Starter once a payment method is saved, but Starter WMS access/enforcement remains a separate downstream contract to audit before this is treated as merchant-facing behavior.
 
 **Module access by tier:**
 
@@ -125,7 +125,7 @@ One row per shop. Billing source of truth.
 
 ### `shop_usage_metrics` (migration 0091)
 
-Tracks order ingestion and shipped order counts per billing period. Used for order cap enforcement (MON-05) and metered overage reporting.
+Tracks order ingestion and shipped order counts per billing period. `ingested_orders` is usage telemetry only and must never block Shopify ingestion. `shipped_orders` is the downstream commercial/WMS allowance meter used for overage reporting.
 
 ---
 
@@ -157,8 +157,9 @@ Stripe Webhook → handleCheckoutSetupComplete
       (RLS-protected table — session-level SET is not reliable
       across pooled connections, must be transaction-scoped)
   └── once stripe_customer_id is set, reportShippedOrderOverage's
-      existing early-return (`if (!sub?.stripe_customer_id) return`)
-      starts firing automatically — no change needed there
+      early-return (`if (!sub?.stripe_customer_id) return`) no longer applies
+  └── PPO does not change tier or ingestion behavior; Shopify order truth
+      is always ingested regardless of commercial allowance
 
 JWT issuance (token.service.ts)
   └── resolveTierForShop(shopId) → reads shop_subscriptions.tier
@@ -179,7 +180,9 @@ WMS Pack-Complete → httpPackComplete
       └── calculates units newly crossing above shippedOrderCap
       └── stripe.billing.meterEvents.create({ event_name: 'overage', value: overageUnits })
       └── non-fatal — billing failure never blocks fulfillment
-      └── skips if no stripe_customer_id (trial/starter shops)
+      └── skips if no stripe_customer_id
+      └── Starter with a saved PPO payment method can therefore report
+          shipped units above its shippedOrderCap
       └── skips if Scale tier (shippedOrderCap = Infinity)
 
 Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
@@ -238,17 +241,37 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 
 ---
 
-## 9. Order Cap Enforcement (MON-05)
+## 9. Order Usage Tracking (MON-05 / MON-PPO-02)
 
 `apps/backend/src/api/shopify/handlers/handleOrderCreated.ts`
 
-- Open billing period created at shop registration in `shop_usage_metrics`
-- Cap check reads `shop_usage_metrics.ingested_orders` from open period row
-- Hard block at cap: ingestion returns early, order dropped
-- Warn at 80% of cap via `[ORDER_CAP_APPROACHING]` console signal
-- `ingested_orders` incremented after successful `domain_events` insert
-- Falls back to `starter` cap (50) if no subscription row exists
-- Scale tier: `monthlyOrderCap = Infinity` — cap check skipped entirely
+- Shopify order truth is always ingested; commercial plan limits must never discard a valid order webhook
+- `monthlyOrderCap` is an allowance/telemetry threshold, not an ingestion boundary
+- The handler reads the current open `shop_usage_metrics` period via `getOrRotateOpenUsagePeriod()`
+- Warns from 80% of the allowance via `[ORDER_CAP_APPROACHING]`
+- At or above the allowance, ingestion continues and emits `[ORDER_CAP_EXCEEDED_INGEST_CONTINUES]`
+- `ingested_orders` increments only after a successful `domain_events` insert
+- Falls back to the Starter tier configuration if no subscription row exists
+- Scale has `monthlyOrderCap = Infinity`, so finite-cap warning telemetry is skipped
+- WMS execution and pay-per-order billing enforcement belong downstream of ingestion and must not be moved back into the Shopify ingestion boundary
+
+### MON-PPO-02 runtime proof — 2026-08-21
+
+The pre-fix behavior was reproduced with Starter at 50/50 ingested orders and a saved Stripe PPO customer:
+
+- Shopify `orders/create` webhook returned HTTP 200
+- webhook ledger was marked `processed`
+- no canonical `orders/create` domain event was created
+- `ingested_orders` remained 50
+
+After the fix:
+
+- the same order #51 webhook returned HTTP 200
+- webhook ledger was marked `processed`
+- canonical `orders/create` domain event was persisted
+- `ingested_orders` advanced from 50 to 51
+
+`domain_events` is intentionally append-only, so the implementation-test event remains in the local canonical log. Mutable test subscription, usage, and Shopify-installation state was restored afterward.
 
 ---
 
