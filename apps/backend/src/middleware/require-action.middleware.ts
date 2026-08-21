@@ -65,6 +65,14 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:ship:confirm':         ['owner', 'admin', 'operator'],
   'wms:settings:write':       ['owner', 'admin'],
 
+  // Inventory recount: operators count; owner/admin control task + corrections.
+  'wms:recount:create':       ['owner', 'admin'],
+  'wms:recount:read':         ['owner', 'admin', 'operator'],
+  'wms:recount:claim':        ['owner', 'admin', 'operator'],
+  'wms:recount:count':        ['owner', 'admin', 'operator'],
+  'wms:recount:review':       ['owner', 'admin'],
+  'wms:recount:commit':       ['owner', 'admin'],
+
   // ── RETURNS ────────────────────────────────────────────────
   'returns:read':             ['owner', 'admin', 'operator'],
   'returns:job:create':       ['owner', 'admin', 'operator'], // operator creates return job on mobile

@@ -91,6 +91,15 @@ import {
   httpUpdateSenderAddress,
   httpDeleteSenderAddress,
 } from './senderAddress.controller.js';
+import {
+  httpCreateRecountTask,
+  httpClaimRecountTask,
+  httpGetRecountLines,
+  httpRecordRecountLine,
+  httpCloseRecountTask,
+  httpReviewRecountLine,
+  httpCommitRecountTask,
+} from './inventoryRecount.controller.js';
 
 /**
  * WMS ROUTES (WM-03)
@@ -751,6 +760,70 @@ router.delete(
   '/sender-addresses/:id',
   authenticateToken, requireFt2, requireTier('core'), requireAction('wms:batch:release'),
   httpDeleteSenderAddress
+);
+
+// Inventory recount is Core inventory correctness, not an advanced analytics feature.
+router.post(
+  '/recount-tasks',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:create'),
+  httpCreateRecountTask
+);
+
+router.get(
+  '/recount-tasks/:taskId/lines',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:read'),
+  httpGetRecountLines
+);
+
+router.post(
+  '/recount-tasks/:taskId/claim',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:claim'),
+  httpClaimRecountTask
+);
+
+router.post(
+  '/recount-tasks/:taskId/lines/:lineId/count',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:count'),
+  httpRecordRecountLine
+);
+
+router.post(
+  '/recount-tasks/:taskId/close',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:count'),
+  httpCloseRecountTask
+);
+
+router.post(
+  '/recount-tasks/:taskId/lines/:lineId/review',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:review'),
+  httpReviewRecountLine
+);
+
+router.post(
+  '/recount-tasks/:taskId/commit',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:commit'),
+  httpCommitRecountTask
 );
 
 router.get(

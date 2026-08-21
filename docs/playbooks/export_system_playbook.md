@@ -397,10 +397,11 @@ inventory_truth hash is identical across runs.
 
 ## Inventory recount tasks (INV-PHYSICAL-COUNT-13)
 
-Migration 0153. Schema only — no service, routes, or UI yet.
+Migration 0153 + service + HTTP surface shipped. Operator UI and printable count
+sheet remain step 4.
 
-Task-first, mirroring stow_tasks (0084). An owner creates a recount task and
-either assigns it (`assigned_to` set — only that operator may claim) or
+Task-first, mirroring stow_tasks (0084). An owner/admin creates a recount task
+and either assigns it (`assigned_to` set — only that operator may claim) or
 dispatches it (`assigned_to` null, status `dispatched` — first claim wins).
 One operator owns it at a time via `claimed_by`.
 
@@ -415,25 +416,96 @@ orders-domain `manual_review` (`order_constraints.constraint_type`, surfaced as
 that metric, or the Orders module's Manual Review count silently starts
 including inventory counts.
 
-Two rules the service layer must enforce:
+Two enforced invariants:
 
-1. BLIND — `expected_quantity` must not be sent to the operator client while
-   `tasks.blind` is true. Enforced server-side, not in the UI. Showing expected
-   makes operators confirm rather than count. Receive's auto-confirm-at-expected
-   behaviour must NOT be copied here: it leaks the value through behaviour.
+1. BLIND — `expected_quantity` is stripped server-side by
+   `getOperatorLines()` while `tasks.blind` is true. It is not a UI convention.
+   Receive's auto-confirm-at-expected behaviour must NOT be copied here because
+   that would reveal the expected quantity through behaviour.
 
-2. DEFERRED CORRECTION (INV-PC-01) — counting never writes stock. Non-zero
-   variance lines go to `manual_review`; the owner accepts (with a
-   `variance_reason`), orders a recount (new line, `recount_of_line_id` set), or
-   escalates (`problem_center_tasks` with `source:'count'`). Commit writes all
-   accepted `reconciliation_correction` movements in one transaction. This is
-   the first runtime writer for that movement type (INV-RECON-WRITER-14).
+2. DEFERRED CORRECTION (INV-PC-01) — `recordCount()` and `closeCount()` never
+   write stock. Non-zero variance goes to `manual_review`; owner/admin accepts
+   with a `variance_reason`, requests a recount (new line with
+   `recount_of_line_id`), or escalates to `problem_center_tasks` with
+   `source='count'`. Only `commitRecount()` writes accepted
+   `reconciliation_correction` movements.
 
-`expected_quantity` is a snapshot taken at line creation and never re-read: a
-sale mid-count would otherwise shift the variance and the operator would be
-blamed for the system's own movement.
+`expected_quantity` is snapshotted when the line is created and never re-read.
+Inventory movements occurring during a physical count therefore do not silently
+change the quantity the operator is being compared against.
 
-Planned actions for ACTION_ROLE_MAP (require-action.middleware.ts), none locked:
+### Recount service (step 2, shipped)
+
+`apps/backend/src/services/wms/inventoryRecount.service.ts` exports:
+
+    selectSuggestedLines
+    createRecountTask
+    claimRecountTask
+    getOperatorLines
+    recordCount
+    closeCount
+    reviewLine
+    commitRecount
+
+Suggested scope keeps recounts short by selecting only inventory the ledger has
+reason to distrust: negative on_hand, variants carrying unlocated sale debt,
+and stock with no movement in 60 days. Warehouse-root rows are excluded because
+there is no physical shelf for an operator to count.
+
+`commitRecount()` is the runtime writer for `reconciliation_correction`.
+Movement ids are deterministic UUIDv5 values derived from the recount line and
+use `onConflict(device_event_id).ignore()`, preventing a retry from
+double-correcting stock. It writes ledger movements and calls
+`rebuildInventoryProjectionForVariants()`; it never writes `inventory_truth`
+directly (INV-LEDGER-BYPASS-16).
+
+### Recount HTTP surface (step 3, shipped 2026-08-21)
+
+Controller:
+
+`apps/backend/src/api/wms/inventoryRecount.controller.ts`
+
+Routes are mounted beneath `/api/v1/wms` and use the standard chain:
+
+    authenticateToken -> requireFt2 -> requireTier('core') -> requireAction(...)
+
+Endpoints:
+
+    POST /recount-tasks
+      wms:recount:create
+      Create a full/location/variant_set/suggested task.
+
+    GET /recount-tasks/:taskId/lines
+      wms:recount:read
+      Returns operator lines. Blind tasks do not expose expected_quantity.
+
+    POST /recount-tasks/:taskId/claim
+      wms:recount:claim
+      Claims an eligible dispatched task.
+
+    POST /recount-tasks/:taskId/lines/:lineId/count
+      wms:recount:count
+      Records the observed quantity only; writes no inventory movement.
+
+    POST /recount-tasks/:taskId/close
+      wms:recount:count
+      Zero variance -> committed. Any variance -> manual_review.
+
+    POST /recount-tasks/:taskId/lines/:lineId/review
+      wms:recount:review
+      Owner/admin chooses accept, recount, or escalate.
+
+    POST /recount-tasks/:taskId/commit
+      wms:recount:commit
+      Writes accepted reconciliation corrections and rebuilds affected truth.
+
+There is intentionally no generic `GET /recount-tasks` list endpoint in step 3;
+the current HTTP contract exposes the workflow actions required by the planned
+operator/count UI.
+
+### Recount permissions
+
+`ACTION_ROLE_MAP`:
 
     wms:recount:create   owner, admin
     wms:recount:read     owner, admin, operator
@@ -442,28 +514,55 @@ Planned actions for ACTION_ROLE_MAP (require-action.middleware.ts), none locked:
     wms:recount:review   owner, admin
     wms:recount:commit   owner, admin
 
-### Recount service (step 2, shipped)
+Matching human-readable labels are registered in
+`permissionSettings.service.ts` under the Warehouse domain.
 
-`apps/backend/src/services/wms/inventoryRecount.service.ts` — eight exports:
-selectSuggestedLines, createRecountTask, claimRecountTask, getOperatorLines,
-recordCount, closeCount, reviewLine, commitRecount.
+### Recount audit trail
 
-Suggested scope is what makes counting take minutes: it selects only rows the
-ledger has reason to distrust — negative on_hand, variants carrying unlocated
-sale debt, and stock with no movement in 60 days. Root rows are excluded (no
-shelf to walk to). A merchant counts ~14 SKUs instead of 400.
+Controller/service wiring records:
 
-commitRecount is the first runtime writer of reconciliation_correction. Movement
-ids are uuidv5(recount_line_id, RECOUNT_NAMESPACE) with
-onConflict(device_event_id).ignore(), so a retried commit cannot double-correct.
-It writes movements and then calls rebuildInventoryProjectionForVariants — never
-inventory_truth directly (INV-LEDGER-BYPASS-16).
+    recount_create
+    recount_claim
+    recount_close
+    recount_line_review
+    recount_commit
 
-Verified end to end against the local fixture, in a rolled-back transaction:
-blind stripped expected_quantity, expected 7 / counted 4 / variance -3, close
-routed to manual_review, accept with reason 'shrinkage', commit wrote one
-reconciliation_correction of -3 at A-2 with reference_type 'recount_line', and
-inventory_truth moved 7 -> 4.
+`recount_commit` remains written by the service because the correction movement
+and its audit record must share the same transaction. Create, claim, close, and
+line review are written at the authenticated HTTP boundary where `req.user` is
+available.
 
-Not yet built: routes and ACTION_ROLE_MAP entries (step 3), operator UI and
-count sheet (step 4).
+### Step 3 verification — 2026-08-21
+
+Verified against a clean `DEV_SEED_MODE=full_data` fixture:
+
+- fixture: 10 inventory ledger rows, 10 inventory_truth rows, 596 units;
+- authenticated `/api/v1/wms/batches` remained HTTP 200;
+- POST `/api/v1/wms/recount-tasks` reached the controller instead of Express
+  404;
+- blind A-1 task returned no `expected_quantity`;
+- A-1 expected 88 / counted 88 / variance 0 auto-committed with no correction;
+- A-2 expected 51 / counted 50 / variance -1 entered `manual_review`;
+- owner accepted A-2 with reason `shrinkage`;
+- commit wrote exactly one `reconciliation_correction` movement of -1 at A-2;
+- `inventory_truth` rebuilt from A-2=51 to A-2=50;
+- audit rows were present for create, claim, close, review, and commit.
+
+The deterministic full rebuild command separately exposed a pre-existing
+`FULFILLMENT_PHYSICAL_REMOVAL LOCATION_NOT_FOUND` failure while replaying an
+`orders/fulfilled` event. That rebuild defect is outside the recount Step 3
+scope and must be handled as a separate issue; it was not used to qualify the
+recount implementation.
+
+### Remaining recount work
+
+Step 4 is not built:
+
+- `InventoryRecountSessionPage.tsx`;
+- operator flow: brief -> location scan -> count loop -> summary -> complete;
+- owner/admin variance review surface;
+- printable Inventory Count Sheet.
+
+Recount remains Core-tier inventory correctness functionality, not a Growth
+analytics feature.
+
