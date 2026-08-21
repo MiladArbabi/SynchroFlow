@@ -772,6 +772,31 @@ Local source verification confirms `DM Sans = 0`, `Georgia = 0`, the Plus Jakart
 
 Production verification passed on desktop and mobile: Plus Jakarta Sans renders consistently, the canonical hero title treatment is live, the orange italic emphasis is preserved, the launch form remains usable, and no horizontal overflow or layout regression was observed.
 
+## MKT-LAND-NAV-01A — Landing top navigation parity
+
+Status: implementation verified locally; production verification pending.
+
+Audit confirmed that the standalone landing page already had a fixed 60px top navigation shell, but it exposed only the LaSyncro logo and launch/install conversion control. Visitors had no primary navigation to the rest of the marketing site without reaching the footer.
+
+The canonical primary navigation is Blog, Compare, Pricing, Help, FAQ, and About. All six destinations returned `200` in production before implementation, and existing routing already supported them; no `vercel.json` change was required.
+
+Implementation preserves the existing landing shell and conversion behavior while adding navigation parity:
+
+- desktop: logo, six compact primary links, and the existing launch/install CTA;
+- at or below 920px: desktop links collapse into a `Menu` control;
+- the Menu exposes the same six destinations;
+- at or below 420px: header spacing and control sizing tighten further;
+- existing `data-launch-scroll` and `data-launch-install` behavior remains intact;
+- footer navigation is unchanged.
+
+Implementation file:
+
+- `packages/landing-page/index.html`
+
+Local verification passed: the navigation contract and `git diff --check` passed; desktop visual verification showed the complete six-link header without overlap; and responsive verification at 392px showed `[Logo] [Notify me at launch] [Menu]` contained correctly, with the Menu opening and all six destinations visible.
+
+The journey rail remains a separate follow-up under MKT-LAND-NAV-01B.
+
 ## Blog preserved contracts
 
 MKT-UX-01C did not change article slugs, metadata/canonicals, Article/FAQ/Breadcrumb schema, sitemap discovery, tracking, CTA frontmatter semantics, public routing, or Compare/Features/Industries/Glossary/Help.
