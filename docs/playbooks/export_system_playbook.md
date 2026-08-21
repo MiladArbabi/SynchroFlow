@@ -623,3 +623,40 @@ inventory still projected. Repeat run reproduced `ad385e69…` exactly.
 **Not fixed here:** poison still enters at the webhook boundary —
 `handleOrderCreated.ts:22,28` declare `subtotal_price` and `line_items`
 optional while the mapper requires them. That is the next issue.
+
+### CANONICAL-STRICTNESS-25 — investigated, mapper throws retained
+
+**Question:** should the mapper reject orders missing subtotal or tax?
+
+FT0CanonicalOrder declares currency/totalPrice/subtotalPrice/totalTax as
+nullable, and orders.create.ts appeared to store null for subtotal and tax. On
+that basis the throws looked stricter than the contract. They are not.
+
+**All four columns are NOT NULL** (`0001_sovereign_baseline:115-118`). The
+SCHEMA is the binding contract; the TypeScript type is the looser of the two
+and is what is out of step. Relaxing the mapper was tried and only moved the
+failure into the insert as a bare PG 23502 naming no event and no shop.
+
+Both throws are therefore retained. Real Shopify orders always carry both
+fields — this only ever surfaced via a hand-built test payload.
+
+**Tax:** deliberately not a product-logic consideration in laSyncro. No margin,
+valuation, or display decision reads total_tax; margin computes from
+order_revenue_units x estimated_unit_cost. It is stored because the schema
+requires it and periodic accounting needs it. Do not build product logic on it.
+
+### PROJ-NULLGUARD-26 — named failure instead of raw PG 23502
+
+`orders.create.ts` resolved subtotal_price and total_tax with `?? null` and
+passed the result straight into NOT NULL columns. The mapper normally rejects
+such payloads first, so the path never fired — but any producer bypassing
+canonical normalization would have hit an unreadable driver-level constraint
+error instead of a diagnosable one.
+
+`requireMonetary(value, column)` now throws
+`[ORDERS_CREATE] <column> is required (NOT NULL) but resolved to null`.
+
+The guard should be unreachable in normal operation; if it fires, a producer
+bypassed the mapper. Its runtime behaviour is deliberately unproven — it was
+not worth contriving a payload for a path that should not exist. Compile-time
+and structural verification only.

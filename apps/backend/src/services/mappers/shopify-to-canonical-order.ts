@@ -95,6 +95,15 @@ export function mapShopifyOrderNodeToCanonical(
     node.current_subtotal_price ??
     null;
 
+  /**
+   * CANONICAL-STRICTNESS-25 — investigated, throw retained
+   * ------------------------------------------------------
+   * FT0CanonicalOrder declares subtotalPrice nullable, but `orders`
+   * .subtotal_price is NOT NULL (0001_sovereign_baseline:117). The SCHEMA is
+   * the binding contract; the TS type is the looser of the two. Relaxing this
+   * throw was tried and only moved the failure into the insert as an
+   * unreadable PG 23502. Real Shopify orders always carry a subtotal.
+   */
   if (subtotalRaw == null) {
     throw new CanonicalContractError(
       'CANONICAL_ORDER_SUBTOTAL_MISSING',
@@ -112,6 +121,12 @@ export function mapShopifyOrderNodeToCanonical(
     node.current_total_tax ??
     null;
 
+  /**
+   * CANONICAL-STRICTNESS-25: same as subtotal — `orders`.total_tax is NOT NULL
+   * (0001_sovereign_baseline:118). Tax is deliberately NOT a product-logic
+   * consideration in laSyncro (no margin, valuation, or display decisions read
+   * it); it is stored because the schema requires it and accounting needs it.
+   */
   if (totalTaxRaw == null) {
     throw new CanonicalContractError(
       'CANONICAL_ORDER_TAX_MISSING',

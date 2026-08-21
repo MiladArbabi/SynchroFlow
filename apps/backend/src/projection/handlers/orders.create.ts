@@ -20,6 +20,28 @@ import { evaluateAlertRulesForOrder } from '../../services/alerts/alertRules.ser
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 
+/**
+ * PROJ-NULLGUARD-26
+ * -----------------
+ * `orders`.subtotal_price/total_tax/total_price/currency are all NOT NULL
+ * (0001_sovereign_baseline:115-118). Passing null reached Postgres and raised
+ * a bare 23502 naming no event, no shop, and no projection stage — the caller
+ * could only see a SQL string.
+ *
+ * The mapper normally rejects these payloads first, so this guard should be
+ * unreachable. If it ever fires, a producer bypassed canonical normalization —
+ * which is exactly the case that must fail loudly and by name, not as a
+ * driver-level constraint error.
+ */
+function requireMonetary(value: number | null, column: string): number {
+  if (value == null) {
+    throw new Error(
+      `[ORDERS_CREATE] ${column} is required (NOT NULL) but resolved to null`
+    );
+  }
+  return value;
+}
+
 export async function handleOrdersCreate({
   domainEvent,
   domain_event_id,
@@ -252,17 +274,20 @@ export async function handleOrdersCreate({
       /**
        * SUBTOTAL RESOLUTION (CANONICAL-FIRST)
        */
-      subtotal_price:
+      subtotal_price: requireMonetary(
         payload.subtotalPrice ??
-        (payload.subtotalPriceSet?.shopMoney?.amount != null
-          ? Number(payload.subtotalPriceSet.shopMoney.amount)
-          : null),
-
-      total_tax:
+          (payload.subtotalPriceSet?.shopMoney?.amount != null
+            ? Number(payload.subtotalPriceSet.shopMoney.amount)
+            : null),
+        'subtotal_price'
+      ),
+      total_tax: requireMonetary(
         payload.totalTax ??
-        (payload.totalTaxSet?.shopMoney?.amount != null
-          ? Number(payload.totalTaxSet.shopMoney.amount)
-          : null),
+          (payload.totalTaxSet?.shopMoney?.amount != null
+            ? Number(payload.totalTaxSet.shopMoney.amount)
+            : null),
+        'total_tax'
+      ),
 
       order_created_at: canonicalEventTime,
       order_updated_at: canonicalEventTime,
