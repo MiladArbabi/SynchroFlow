@@ -3,6 +3,10 @@ import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import crypto from 'crypto';
 import { getErrorMessage } from '@lasyncro/backend-core';
+import {
+  getTierConfig,
+  isValidTier,
+} from '@lasyncro/backend-core/config/tiers.js';
 import { releaseBatch } from '../../services/wms/pickBatch.service.js';
 import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
@@ -34,6 +38,21 @@ import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service
 import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
 import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.service.js';
 import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
+
+class ShippedOrderCapReachedError extends Error {
+  constructor(
+    readonly details: {
+      current: number;
+      batchOrders: number;
+      limit: number;
+      tier: 'starter';
+      ppoAvailable: boolean;
+    }
+  ) {
+    super('SHIPPED_ORDER_CAP_REACHED');
+    this.name = 'ShippedOrderCapReachedError';
+  }
+}
 // ─────────────────────────────────────────
 // GET /api/v1/wms/batches
 // ─────────────────────────────────────────
@@ -1436,6 +1455,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
   if (!batchId) return res.status(400).json({ error: 'batchId is required' });
 
   let billableCount = 0;
+
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -1446,9 +1466,102 @@ export const httpCompletePack = async (req: Request, res: Response) => {
         .first();
 
       if (!batch) throw new Error('BATCH_NOT_FOUND');
-      if (batch.status !== 'packing') throw new Error(`BATCH_NOT_IN_PACKING:${batch.status}`);
-      if (batch.packed_by !== userId) throw new Error('BATCH_NOT_OWNED_BY_PACKER');
+      if (batch.status !== 'packing') {
+        throw new Error(`BATCH_NOT_IN_PACKING:${batch.status}`);
+      }
+      if (batch.packed_by !== userId) {
+        throw new Error('BATCH_NOT_OWNED_BY_PACKER');
+      }
 
+      // --- Usage metering + Starter execution cap (MON-11 / MON-PPO-03) ---
+      // Count non-cancelled orders before mutating the batch. Commercial
+      // limits restrict WMS execution, never Shopify order ingestion.
+      const billableOrders = await trx('pick_batch_orders as pbo')
+        .join(
+          'order_fulfillment_status as ofs',
+          'pbo.lasyncro_order_id',
+          'ofs.lasyncro_order_id'
+        )
+        .where({
+          'pbo.pick_batch_id': batchId,
+          'pbo.shop_id': shopId,
+        })
+        .whereNot('ofs.status', 'cancelled')
+        .count<[{ count: string }]>('pbo.lasyncro_order_id as count')
+        .first();
+
+      billableCount = parseInt(billableOrders?.count ?? '0', 10);
+
+      let usagePeriodId: number | null = null;
+
+      if (billableCount > 0) {
+        /**
+         * getOrRotateOpenUsagePeriod takes the shop-scoped transaction
+         * advisory lock. FOR UPDATE additionally pins the exact usage row
+         * used for the cap decision until this transaction commits.
+         */
+        const usagePeriod = await getOrRotateOpenUsagePeriod(trx, shopId);
+        usagePeriodId = usagePeriod.id;
+
+        const usageRow = await trx('shop_usage_metrics')
+          .where({
+            id: usagePeriod.id,
+            shop_id: shopId,
+          })
+          .whereNull('period_ends_at')
+          .forUpdate()
+          .first('shipped_orders');
+
+        if (!usageRow) {
+          throw new Error('OPEN_USAGE_PERIOD_NOT_FOUND');
+        }
+
+        const subscription = await trx('shop_subscriptions')
+          .where({ shop_id: shopId })
+          .first(
+            'tier',
+            'billing_provider',
+            'stripe_customer_id'
+          );
+
+        const rawTier = subscription?.tier ?? 'starter';
+        const tier = isValidTier(rawTier) ? rawTier : 'starter';
+
+        /**
+         * MON-PPO-03
+         * -----------
+         * Starter gets 50 completed WMS orders/month.
+         *
+         * Above the allowance:
+         * - Stripe-billed + saved Stripe customer => PPO may continue.
+         * - No Stripe PPO capability => reject the entire batch atomically.
+         * - Shopify-billed Starter cannot use Stripe customer state as bypass.
+         *
+         * Core/Growth remain unchanged until their final commercial
+         * allowances are explicitly reconciled.
+         */
+        if (tier === 'starter') {
+          const { shippedOrderCap } = getTierConfig('starter');
+          const currentShipped = Number(usageRow.shipped_orders ?? 0);
+          const projectedShipped = currentShipped + billableCount;
+
+          const ppoAvailable =
+            subscription?.billing_provider === 'stripe' &&
+            Boolean(subscription?.stripe_customer_id);
+
+          if (projectedShipped > shippedOrderCap && !ppoAvailable) {
+            throw new ShippedOrderCapReachedError({
+              current: currentShipped,
+              batchOrders: billableCount,
+              limit: shippedOrderCap,
+              tier: 'starter',
+              ppoAvailable,
+            });
+          }
+        }
+      }
+
+      // Only mutate fulfillment state after commercial eligibility succeeds.
       const now = new Date();
 
       await trx('pick_batches')
@@ -1459,67 +1572,91 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           updated_at: now,
         });
 
-      // --- Usage metering (MON-11) ---
-      // Count non-cancelled orders in this batch — billed at pack-complete.
-      // Cancelled orders excluded: order_cancelled mid-pick generates a stow task,
-      // those items never reach the customer.
-      const billableOrders = await trx('pick_batch_orders as pbo')
-        .join('order_fulfillment_status as ofs', 'pbo.lasyncro_order_id', 'ofs.lasyncro_order_id')
-        .where({ 'pbo.pick_batch_id': batchId, 'pbo.shop_id': shopId })
-        .whereNot('ofs.status', 'cancelled')
-        .count<[{ count: string }]>('pbo.lasyncro_order_id as count')
-        .first();
-
-      billableCount = parseInt(billableOrders?.count ?? '0', 10);
-
-      if (billableCount > 0) {
-        // Rotate stale Starter periods before metering this completed batch.
-        // The helper returns the exact open row to increment, preventing a
-        // concurrent month-boundary rotation from moving this usage.
-        const usagePeriod = await getOrRotateOpenUsagePeriod(trx, shopId);
+      if (billableCount > 0 && usagePeriodId !== null) {
         const updated = await trx('shop_usage_metrics')
           .where({
-            id: usagePeriod.id,
+            id: usagePeriodId,
             shop_id: shopId,
           })
           .whereNull('period_ends_at')
           .increment('shipped_orders', billableCount);
 
         if (updated === 0) {
-          console.warn('[WMS_PACK_COMPLETE][USAGE] open period changed before increment', {
-            shopId,
-            batchId,
-            billableCount,
-            usagePeriodId: usagePeriod.id,
-          });
-        } else {
-          console.info('[WMS_PACK_COMPLETE][USAGE] shipped_orders incremented', {
-            shopId,
-            batchId,
-            billableCount,
-            usagePeriodId: usagePeriod.id,
-          });
+          throw new Error('OPEN_USAGE_PERIOD_CHANGED');
         }
+
+        console.info('[WMS_PACK_COMPLETE][USAGE] shipped_orders incremented', {
+          shopId,
+          batchId,
+          billableCount,
+          usagePeriodId,
+        });
       }
 
       // Alert supervisors — batch ready to ship
-      await fireBatchReadyToShipAlert(trx, { shopId, batchId, isActive: true });
-      console.info('[WMS_PACK_COMPLETED]', { pick_batch_id: batchId, packed_by: userId, shopId });
+      await fireBatchReadyToShipAlert(trx, {
+        shopId,
+        batchId,
+        isActive: true,
+      });
+
+      console.info('[WMS_PACK_COMPLETED]', {
+        pick_batch_id: batchId,
+        packed_by: userId,
+        shopId,
+      });
     });
 
-    // Report overage to Stripe after transaction commits — non-fatal
+    // PPO overage reporting stays after commit and remains non-fatal.
     if (billableCount > 0) {
       await reportShippedOrderOverage(shopId, billableCount);
     }
 
-    return res.status(200).json({ pick_batch_id: batchId, status: 'pack_complete' });
+    return res.status(200).json({
+      pick_batch_id: batchId,
+      status: 'pack_complete',
+    });
   } catch (error) {
+    if (error instanceof ShippedOrderCapReachedError) {
+      return res.status(403).json({
+        error: 'SHIPPED_ORDER_CAP_REACHED',
+        message: 'Your Starter plan includes 50 fulfilled orders per month.',
+        current: error.details.current,
+        batch_orders: error.details.batchOrders,
+        limit: error.details.limit,
+        tier: error.details.tier,
+        ppo_available: error.details.ppoAvailable,
+      });
+    }
+
     const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message === 'BATCH_NOT_FOUND') return res.status(404).json({ error: 'Batch not found' });
-    if (message === 'BATCH_NOT_OWNED_BY_PACKER') return res.status(403).json({ error: 'Batch not owned by this packer' });
-    if (message.startsWith('BATCH_NOT_IN_PACKING')) return res.status(409).json({ error: `Batch is not in packing status: ${message.split(':')[1]}` });
-    console.error('[WMS_PACK_COMPLETE_FAILED]', { shopId, userId, batchId, error: message });
-    return res.status(500).json({ error: `Pack complete failed: ${message}` });
+
+    if (message === 'BATCH_NOT_FOUND') {
+      return res.status(404).json({ error: 'Batch not found' });
+    }
+
+    if (message === 'BATCH_NOT_OWNED_BY_PACKER') {
+      return res.status(403).json({
+        error: 'Batch not owned by this packer',
+      });
+    }
+
+    if (message.startsWith('BATCH_NOT_IN_PACKING')) {
+      return res.status(409).json({
+        error: `Batch is not in packing status: ${message.split(':')[1]}`,
+      });
+    }
+
+    console.error('[WMS_PACK_COMPLETE_FAILED]', {
+      shopId,
+      userId,
+      batchId,
+      error: message,
+    });
+
+    return res.status(500).json({
+      error: `Pack complete failed: ${message}`,
+    });
   }
 };
 

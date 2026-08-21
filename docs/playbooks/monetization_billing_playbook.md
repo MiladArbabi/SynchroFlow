@@ -2,7 +2,7 @@
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
 > **Last updated:** August 21, 2026
-> **Status:** Stripe billing, Shopify Managed Pricing reconciliation, and Shopify App Events Shop GID capture verified end-to-end.
+> **Status:** Stripe billing, Shopify Managed Pricing reconciliation, Shopify App Events Shop GID capture, and Starter WMS shipped-order enforcement verified end-to-end.
 
 ---
 
@@ -22,12 +22,12 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 - Ordinary member invitation and role-change flows cannot create or promote another `owner`; ownership transfer requires a separate explicit flow
 - Annual billing = 20% discount (varies slightly per currency — see Stripe actuals)
 - Extra seats purchasable above base limit: Core $15/seat/mo, Growth $12/seat/mo
-- Shipped order overage: $0.08/unit for finite-cap Stripe-billed tiers. The Stripe meter technically supports Starter once a payment method is saved, but Starter WMS access/enforcement remains a separate downstream contract to audit before this is treated as merchant-facing behavior.
+- Shipped order overage: $0.08/unit for finite-cap Stripe-billed tiers. Starter includes 50 WMS-completed orders/month. Stripe/direct Starter shops with a saved PPO payment method may continue above 50 and meter overage; Shopify-billed Starter shops must upgrade through Shopify once the allowance is exhausted.
 
 **Module access by tier:**
 
-- Starter: overview, orders (view only, 90-day window), fulfillment queue (view only — WMS actions locked), alerts, Shopify integration
-- Core+: WMS (pick/pack/stow/receive, LSU/LSO labels), barcodes, returns processing, products, problem center (operational exceptions), 12-month order history
+- Starter: overview, orders, fulfillment queue, alerts, Shopify integration, and the full Receive→Stow→Pick→Pack→Ship WMS loop including barcodes; commercial usage is gated by the 50-order shipped allowance rather than a module wall
+- Core+: everything in Starter plus returns processing, products, problem center (operational exceptions), and expanded commercial allowances
 - Growth+: cash flow, demand forecasting, customer LTV, Specter, returns analysis (supplier correlation), problem center analytics, unlimited order history
 - Scale+: floor planning, unlimited everything
 
@@ -172,8 +172,18 @@ requireTier(minTier) middleware
   └── compares req.user.tier against tier order
   └── returns 402 if below minimum
 
-WMS Pack-Complete → httpPackComplete
-  └── increments shop_usage_metrics.shipped_orders (inside transaction)
+WMS Pack-Complete → httpCompletePack
+  └── validates batch state + packer ownership
+  └── counts non-cancelled billable orders before mutating fulfillment state
+  └── getOrRotateOpenUsagePeriod() serializes the shop usage period
+  └── locks the exact open shop_usage_metrics row FOR UPDATE
+  └── Starter execution guard:
+      ├── projected shipped_orders <= 50 → continue
+      ├── projected shipped_orders > 50 + Stripe billing + saved Stripe customer → PPO continues
+      └── projected shipped_orders > 50 without Stripe PPO capability → HTTP 403 SHIPPED_ORDER_CAP_REACHED
+  └── Shopify billing never uses a stray stripe_customer_id as PPO bypass
+  └── rejected batches remain packing; usage and ready-to-ship alert state are unchanged
+  └── accepted batch → status pack_complete + increment shop_usage_metrics.shipped_orders
   └── after transaction commits → reportShippedOrderOverage(shopId, billableCount)
       └── reads shop_subscriptions.tier + stripe_customer_id
       └── reads shop_usage_metrics.shipped_orders (current period total)
@@ -181,8 +191,10 @@ WMS Pack-Complete → httpPackComplete
       └── stripe.billing.meterEvents.create({ event_name: 'overage', value: overageUnits })
       └── non-fatal — billing failure never blocks fulfillment
       └── skips if no stripe_customer_id
-      └── Starter with a saved PPO payment method can therefore report
+      └── Stripe/direct Starter with a saved PPO payment method can report
           shipped units above its shippedOrderCap
+      └── Shopify-billed Starter is blocked at pack-complete above the cap
+          and must use the Shopify upgrade path
       └── skips if Scale tier (shippedOrderCap = Infinity)
 
 Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
@@ -254,6 +266,7 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 - Falls back to the Starter tier configuration if no subscription row exists
 - Scale has `monthlyOrderCap = Infinity`, so finite-cap warning telemetry is skipped
 - WMS execution and pay-per-order billing enforcement belong downstream of ingestion and must not be moved back into the Shopify ingestion boundary
+- Starter shipped-order enforcement is implemented atomically at WMS `pack-complete`; see MON-PPO-03 below
 
 ### MON-PPO-02 runtime proof — 2026-08-21
 
@@ -272,6 +285,53 @@ After the fix:
 - `ingested_orders` advanced from 50 to 51
 
 `domain_events` is intentionally append-only, so the implementation-test event remains in the local canonical log. Mutable test subscription, usage, and Shopify-installation state was restored afterward.
+
+### MON-PPO-03 — Starter WMS execution enforcement
+
+`apps/backend/src/api/wms/wms.controller.ts` → `httpCompletePack`
+
+Commercial invariant:
+
+> Shopify order truth is always ingested. Starter's commercial allowance restricts WMS execution at pack-complete, never canonical order capture.
+
+Starter behavior:
+
+| State | `pack-complete` behavior |
+|---|---|
+| Entire billable batch remains within 50 shipped orders | Allow |
+| Would exceed 50, Stripe/direct billing, saved `stripe_customer_id` | Allow entire batch and report newly over-cap units to Stripe after commit |
+| Would exceed 50, Stripe/direct billing, no saved PPO customer | `403 SHIPPED_ORDER_CAP_REACHED` |
+| Would exceed 50, Shopify billing | `403 SHIPPED_ORDER_CAP_REACHED`; upgrade through Shopify |
+| Scale | Unlimited; no shipped-order enforcement or overage |
+
+The batch is evaluated atomically. If a batch would cross the remaining Starter allowance without PPO, the **entire batch is rejected** rather than partially completing orders.
+
+Concurrency contract:
+
+- `getOrRotateOpenUsagePeriod()` takes the transaction-scoped shop advisory lock
+- the exact open `shop_usage_metrics` row is then read `FOR UPDATE`
+- cap evaluation, `pack_complete`, usage increment, and ready-to-ship alert all occur inside the same transaction
+- a rejected cap check therefore leaves batch status, usage, and alert state unchanged
+- Core/Growth are intentionally not hard-enforced by MON-PPO-03 pending separate reconciliation of their final commercial allowances
+
+Provider contract:
+
+- Shopify App Store installs/reconnects are stamped `billing_provider='shopify'`
+- Shopify-billed merchants cannot use Stripe checkout, setup-payment-method, seats, or portal flows
+- Stripe webhooks must not overwrite an existing Shopify provider stamp
+- Stripe/direct billing remains a separate supported/legacy path
+- `stripe_customer_id` counts as Starter PPO capability only when `billing_provider='stripe'`
+
+### MON-PPO-03 runtime proof — 2026-08-21
+
+All approved cases were verified against the real WMS endpoint:
+
+1. Starter `49 + 1`, no PPO → HTTP 200, usage `49 → 50`, batch `pack_complete`, ready-to-ship alert created.
+2. Starter `50 + 1`, no PPO → HTTP 403 `SHIPPED_ORDER_CAP_REACHED`, usage remains 50, batch remains `packing`, no alert.
+3. Stripe/direct Starter `50 + 1` with PPO capability → HTTP 200, usage `50 → 51`, batch `pack_complete`, alert created. Verification used an isolated local API with Stripe meter emission disabled; the post-commit reporter was reached and logged `STRIPE_METER_ID_OVERAGE not set`.
+4. Shopify-billed Starter `50 + 1`, even with a stray Stripe customer ID → HTTP 403, `ppo_available:false`, usage remains 50, batch remains `packing`, no alert.
+
+Mutable subscription, usage, batch, and alert fixtures were restored after each verification.
 
 ---
 
@@ -313,6 +373,8 @@ After the fix:
 | MON-10 | Upgrade prompt system | ✅ Done (PlanGate, PaywallSurface) |
 | MON-currency | Multi-currency pricing | ✅ Backend done · 🔄 Frontend in progress |
 | SEG-022-B | Pay-per-order Stripe Customer flow (lazy setup, no card at signup) | ✅ Done (2026-07-14) |
+| MON-PPO-02 | Preserve Shopify ingestion beyond commercial allowance | ✅ Done (2026-08-21) |
+| MON-PPO-03 | Starter WMS shipped-cap + PPO enforcement | ✅ Done (2026-08-21) |
 
 ---
 
