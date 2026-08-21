@@ -26,10 +26,10 @@ const privacyPageSchema = {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section style={{ marginBottom: 48 }}>
-      <h2 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 24, fontWeight: 400, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 16px' }}>
+      <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', margin: '0 0 16px' }}>
         {title}
       </h2>
-      <div style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: '#3A3835' }}>
+      <div style={{ fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: 'var(--ink-2)' }}>
         {children}
       </div>
     </section>
@@ -45,36 +45,36 @@ export default function PrivacyPage() {
 
       {/* ── Page header ───────────────────────────────────────────── */}
       <header style={{ ...W, padding: '96px 5vw 56px' }}>
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: '#FF6B2B', marginBottom: 22, fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#FF6B2B', display: 'inline-block' }} />
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--accent)', marginBottom: 22, fontFamily: 'var(--sans)', fontSize: 11, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', display: 'inline-block' }} />
           Legal
         </div>
-        <h1 style={{ fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif", fontSize: 48, fontWeight: 400, lineHeight: 1.18, letterSpacing: '-0.02em', color: '#0F0E0D', margin: '0 0 24px', maxWidth: 720 }}>
+        <h1 style={{ fontFamily: 'var(--sans)', fontSize: 'clamp(38px, 5vw, 64px)', fontWeight: 650, lineHeight: 1.05, letterSpacing: '-0.045em', color: 'var(--ink)', margin: '0 0 24px', maxWidth: 720 }}>
           Privacy Policy
         </h1>
-        <p style={{ fontFamily: "'DM Sans', system-ui, sans-serif", fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: '#6B7280', margin: 0 }}>
+        <p style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: 'var(--ink-3)', margin: 0 }}>
           Last updated: {updated}
         </p>
       </header>
 
       {/* ── Rule ─────────────────────────────────────────────────── */}
       <div style={{ ...W, padding: '0 5vw' }}>
-        <div style={{ borderTop: '1px solid #E8E6E0' }} />
+        <div style={{ borderTop: '1px solid var(--rule)' }} />
       </div>
 
       {/* ── Body ─────────────────────────────────────────────────── */}
       <div style={{ ...W, padding: '56px 5vw 80px', maxWidth: '780px', margin: '0 auto' }}>
 
         <Section title="Who we are">
-          <p>LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse. We are operated by LaSyncro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). Our website is <a href="https://www.lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>lasyncro.com</a> and we can be reached at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>.</p>
+          <p>LaSyncro is an operational intelligence platform for Shopify merchants running their own warehouse. We are operated by LaSyncro (&ldquo;we&rdquo;, &ldquo;us&rdquo;, &ldquo;our&rdquo;). Our website is <a href="https://www.lasyncro.com" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid var(--accent-border)' }}>lasyncro.com</a> and we can be reached at <a href="mailto:contact@lasyncro.com" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid var(--accent-border)' }}>contact@lasyncro.com</a>.</p>
         </Section>
 
         <Section title="What data we collect">
           <p style={{ marginBottom: 16 }}>We collect the following types of information:</p>
-          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Account and contact information.</strong> When you sign up for early access or contact us, we collect your email address and, optionally, your Shopify store URL. This information is used solely to communicate with you about LaSyncro.</p>
-          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Shopify store data.</strong> When you connect LaSyncro to your Shopify store via OAuth, we access the data scopes you authorise — typically orders, products, inventory levels, and locations. We use this data exclusively to provide the LaSyncro service. We do not sell, share, or use your Shopify store data for any purpose other than operating the service on your behalf.</p>
-          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Usage and analytics data.</strong> We collect anonymised usage data (page views, feature usage, session duration) via PostHog to understand how the product is used and improve it. This data is not linked to personally identifiable information.</p>
-          <p><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Communications.</strong> If you contact us by email, we retain those communications to respond to your enquiry and improve our support.</p>
+          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Account and contact information.</strong> When you sign up for early access or contact us, we collect your email address and, optionally, your Shopify store URL. This information is used solely to communicate with you about LaSyncro.</p>
+          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Shopify store data.</strong> When you connect LaSyncro to your Shopify store via OAuth, we access the data scopes you authorise — typically orders, products, inventory levels, and locations. We use this data exclusively to provide the LaSyncro service. We do not sell, share, or use your Shopify store data for any purpose other than operating the service on your behalf.</p>
+          <p style={{ marginBottom: 8 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Usage and analytics data.</strong> We collect anonymised usage data (page views, feature usage, session duration) via PostHog to understand how the product is used and improve it. This data is not linked to personally identifiable information.</p>
+          <p><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Communications.</strong> If you contact us by email, we retain those communications to respond to your enquiry and improve our support.</p>
         </Section>
 
         <Section title="How we use your data">
@@ -92,10 +92,10 @@ export default function PrivacyPage() {
         <Section title="Data sharing and third parties">
           <p style={{ marginBottom: 8 }}>We share data with third-party service providers only where necessary to operate the service:</p>
           <ul style={{ paddingLeft: '1.4rem', margin: '0 0 16px' }}>
-            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Shopify.</strong> We connect to Shopify via their official OAuth API. Shopify&apos;s privacy policy governs their handling of data.</li>
-            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Vercel.</strong> Our web infrastructure is hosted on Vercel. Vercel may process request data (IP addresses, request logs) as part of normal web hosting operations.</li>
-            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>PostHog.</strong> We use PostHog for anonymised product analytics. No personally identifiable information is sent to PostHog.</li>
-            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: '#0F0E0D' }}>Resend.</strong> We use Resend to send transactional email notifications. Email addresses used for notifications are processed by Resend in accordance with their privacy policy.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Shopify.</strong> We connect to Shopify via their official OAuth API. Shopify&apos;s privacy policy governs their handling of data.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Vercel.</strong> Our web infrastructure is hosted on Vercel. Vercel may process request data (IP addresses, request logs) as part of normal web hosting operations.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>PostHog.</strong> We use PostHog for anonymised product analytics. No personally identifiable information is sent to PostHog.</li>
+            <li style={{ marginBottom: 6 }}><strong style={{ fontWeight: 500, color: 'var(--ink)' }}>Resend.</strong> We use Resend to send transactional email notifications. Email addresses used for notifications are processed by Resend in accordance with their privacy policy.</li>
           </ul>
           <p>We do not share your Shopify store data, order data, inventory data, or customer data with any third party for any purpose other than operating the LaSyncro service.</p>
         </Section>
@@ -113,7 +113,7 @@ export default function PrivacyPage() {
             <li style={{ marginBottom: 6 }}>The right to object to or restrict processing of your personal data</li>
             <li style={{ marginBottom: 6 }}>The right to data portability</li>
           </ul>
-          <p>To exercise any of these rights, contact us at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>. We will respond within 30 days.</p>
+          <p>To exercise any of these rights, contact us at <a href="mailto:contact@lasyncro.com" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid var(--accent-border)' }}>contact@lasyncro.com</a>. We will respond within 30 days.</p>
         </Section>
 
         <Section title="Cookies">
@@ -121,7 +121,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Security">
-          <p>We implement industry-standard security measures to protect your data, including encrypted data transmission (HTTPS), access controls limiting who can access your data within our organisation, and regular security reviews. No method of transmission over the internet is 100% secure — if you have concerns about the security of your data, contact us at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>.</p>
+          <p>We implement industry-standard security measures to protect your data, including encrypted data transmission (HTTPS), access controls limiting who can access your data within our organisation, and regular security reviews. No method of transmission over the internet is 100% secure — if you have concerns about the security of your data, contact us at <a href="mailto:contact@lasyncro.com" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid var(--accent-border)' }}>contact@lasyncro.com</a>.</p>
         </Section>
 
         <Section title="Changes to this policy">
@@ -129,7 +129,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Contact">
-          <p>Questions about this privacy policy or your data? Contact us at <a href="mailto:contact@lasyncro.com" style={{ color: '#FF6B2B', textDecoration: 'none', borderBottom: '1px solid #FFDCCA' }}>contact@lasyncro.com</a>.</p>
+          <p>Questions about this privacy policy or your data? Contact us at <a href="mailto:contact@lasyncro.com" style={{ color: 'var(--accent)', textDecoration: 'none', borderBottom: '1px solid var(--accent-border)' }}>contact@lasyncro.com</a>.</p>
         </Section>
 
       </div>

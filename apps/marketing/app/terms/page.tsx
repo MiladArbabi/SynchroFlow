@@ -27,44 +27,44 @@ export default function TermsPage() {
       <main>
         <section style={{ padding: '80px 0 40px' }}>
           <div style={W}>
-            <h1 style={{ fontSize: '2.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>
+            <h1 style={{ fontFamily: 'var(--sans)', fontSize: 'clamp(38px, 5vw, 64px)', fontWeight: 650, lineHeight: 1.05, letterSpacing: '-0.045em', color: 'var(--ink)', marginBottom: '24px', maxWidth: 720 }}>
               Terms of Service
             </h1>
-            <p style={{ color: '#6B7280', marginBottom: '2.5rem' }}>
+            <p style={{ fontFamily: 'var(--sans)', fontSize: 15, fontWeight: 300, lineHeight: 1.6, color: 'var(--ink-3)', marginBottom: '2.5rem' }}>
               Last updated: May 2026
             </p>
 
-            <div style={{ maxWidth: '720px', lineHeight: '1.8', color: '#374151' }}>
+            <div style={{ maxWidth: '720px', fontFamily: 'var(--sans)', fontSize: 16, fontWeight: 300, lineHeight: 1.8, color: 'var(--ink-2)' }}>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>1. Acceptance of terms</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>1. Acceptance of terms</h2>
               <p>By accessing or using LaSyncro (&quot;the Service&quot;), you agree to be bound by these Terms of Service. If you do not agree, do not use the Service.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>2. Description of service</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>2. Description of service</h2>
               <p>LaSyncro provides inventory management, order management, and warehouse management software for Shopify merchants. The Service connects to your Shopify store in read-only mode by default.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>3. Account registration</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>3. Account registration</h2>
               <p>You must provide accurate information when creating an account. You are responsible for maintaining the security of your credentials. You must be 18 or older to use the Service.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>4. Data access and permissions</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>4. Data access and permissions</h2>
               <p>LaSyncro requests read-only access to your Shopify store data including products, inventory, orders, and customers. We never make changes to your store without explicit permission. You can revoke access at any time from your Shopify admin.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>5. Acceptable use</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>5. Acceptable use</h2>
               <p>You agree not to misuse the Service, attempt to gain unauthorised access, reverse engineer any part of the platform, or use it for any unlawful purpose.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>6. Subscription and billing</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>6. Subscription and billing</h2>
               <p>LaSyncro offers a 14-day free trial. After the trial, continued use requires a paid subscription. Billing is handled securely through Stripe. You may cancel at any time.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>7. Termination</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>7. Termination</h2>
               <p>We may suspend or terminate your account if you violate these terms. You may terminate your account at any time by contacting support.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>8. Limitation of liability</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>8. Limitation of liability</h2>
               <p>To the maximum extent permitted by law, LaSyncro shall not be liable for any indirect, incidental, or consequential damages arising from use of the Service.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>9. Changes to terms</h2>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>9. Changes to terms</h2>
               <p>We may update these terms from time to time. Continued use of the Service after changes constitutes acceptance of the new terms.</p>
 
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginTop: '2rem', marginBottom: '0.75rem' }}>10. Contact</h2>
-              <p>Questions about these terms? Contact us at <a href="mailto:legal@lasyncro.com" style={{ color: '#FF6B2B' }}>legal@lasyncro.com</a>.</p>
+              <h2 style={{ fontFamily: 'var(--sans)', fontSize: 24, fontWeight: 600, lineHeight: 1.25, letterSpacing: '-0.02em', color: 'var(--ink)', marginTop: '2rem', marginBottom: '0.75rem' }}>10. Contact</h2>
+              <p>Questions about these terms? Contact us at <a href="mailto:legal@lasyncro.com" style={{ color: 'var(--accent)' }}>legal@lasyncro.com</a>.</p>
             </div>
           </div>
         </section>

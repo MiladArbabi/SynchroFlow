@@ -345,7 +345,7 @@ Canonical dark tokens in `apps/marketing/app/globals.css`:
 
 `apps/marketing/app/globals.css` owns the dark palette directly at `:root`. The previous root/body palette switching under `prefers-color-scheme` was removed for the application shell. `html` declares `color-scheme: dark`, and `body` uses `font-family: var(--sans)`, `background: var(--bg)`, and `color: var(--ink)`.
 
-The marketing app loads Plus Jakarta Sans through `next/font`. Both shared typography aliases resolve through `--font-plus-jakarta-sans`; do not describe DM Sans as loaded. Explicit legacy DM Sans declarations still exist and are intentionally deferred to MKT-UX-01F-E Privacy/Terms and legacy article/template cleanup as encountered within those scopes.
+The marketing app loads Plus Jakarta Sans through `next/font`. Both shared typography aliases resolve through `--font-plus-jakarta-sans`; do not describe DM Sans as loaded. MKT-UX-01F-E resolves the Privacy/Terms font and light-era palette debt; any legacy article/template cleanup encountered elsewhere remains separate from that legal-page scope.
 
 Root layout no longer hard-codes light body colors. The shared footer is now dark and token-driven through `.marketing-footer`, `.marketing-footer-links`, and `.marketing-footer-link`. Navigation now uses one deterministic logo image appropriate for the dark shell; OS-theme-driven duplicate logo switching was removed. Navigation structure and destinations did not change.
 
@@ -522,7 +522,49 @@ MKT-UX-01F-D-PROD-01 is production verified and complete. The About warehouse vi
 
 MKT-UX-01F-D — FAQ + About convergence is fully closed.
 
-MKT-UX-01F-E — Privacy + Terms convergence remains pending as separate light-era contrast debt.
+## MKT-UX-01F-E — Privacy + Terms convergence
+
+Status: implementation verified locally; production verification pending.
+
+Audit confirmed that both public legal routes were healthy (`/privacy` and `/terms` returned `200`) but their route-local visual styling had drifted from the canonical marketing system.
+
+Privacy debt before convergence:
+
+- body, eyebrow, and updated-date text still declared `DM Sans`;
+- route-local text and rule colors used light-era values including `#0F0E0D`, `#3A3835`, `#6B7280`, and `#E8E6E0`;
+- the page title used a legacy `48px / 400 / 1.18 / -0.02em` treatment;
+- section headings used a separate `24px / 400` treatment.
+
+Terms debt before convergence:
+
+- the page title used a route-local `2.5rem / 700` treatment;
+- ten section headings used `1.25rem / 600`;
+- body and muted text used light-era `#374151` and `#6B7280`;
+- typography relied on inherited/default styling rather than explicitly adopting the shared marketing font authority.
+
+Implementation:
+
+- both legal pages now use `var(--sans)` for route-local typography;
+- both primary titles use the canonical marketing H1 authority: `clamp(38px, 5vw, 64px) / 650 / 1.05 / -0.045em`;
+- both pages use `24px / 600 / 1.25 / -0.02em` section-heading treatment with `var(--ink)`;
+- readable legal body copy uses `var(--ink-2)`, muted metadata uses `var(--ink-3)`, and separators use `var(--rule)`;
+- orange legal links and the Privacy eyebrow use the canonical `var(--accent)` / `var(--accent-border)` authority;
+- all Privacy `DM Sans` declarations and audited light-era legal-page colors were removed;
+- legal copy, dates, metadata, schemas, Shopify permission statements, trial/billing wording, links, and contact addresses were not intentionally changed.
+
+Implementation files:
+
+- `apps/marketing/app/privacy/page.tsx`
+- `apps/marketing/app/terms/page.tsx`
+- `docs/blueprints/marketing-content-ux-system.md`
+
+Local verification:
+
+- `git diff --check` passed;
+- both legal pages report zero audited `DM Sans` references and zero audited light-era color references;
+- `npm run build` in `apps/marketing` compiled successfully, completed TypeScript validation, and generated all 106 static/generated routes including `/privacy` and `/terms`.
+
+Desktop and mobile production visual verification remain required after deployment.
 
 ## MKT-UX-01G-A — Primary page-title convergence
 
