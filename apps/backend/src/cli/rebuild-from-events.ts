@@ -54,6 +54,16 @@ const { systemDb: db } = await import('@lasyncro/backend-core/system-db.js');
  */
 const { runWithTenantContext } = await import('@lasyncro/backend-core/db.js');
 
+/**
+ * PROJ-CONTRACT-24: rebuild skips canonical contract violations rather than
+ * halting. Distinguished by instanceof, never by message string.
+ */
+const { CanonicalContractError } = await import(
+  '../services/mappers/canonicalContractError.js'
+);
+
+const skippedEvents: Array<{ id: number; tag: string }> = [];
+
 async function truncateProjections() {
   console.log('[REBUILD] Truncating projection tables...');
 
@@ -111,6 +121,12 @@ async function truncateProjections() {
      */
     'inventory_truth',
     'domain_event_outbox',
+    /**
+     * PROJ-CONTRACT-24: skip register describes the CURRENT replay only.
+     * Without truncation, skips accumulate across runs and the summary count
+     * stops meaning anything.
+     */
+    'domain_event_projection_failures',
     'order_fulfillment_status',
     'order_fulfillment_history',
     'order_constraint_events',
@@ -220,7 +236,45 @@ async function replayEvents() {
        */
       // SEED-RLS-01b: per-event frame — rebuild replays across all shops,
       // so a single outer wrap would attribute events to the wrong tenant.
-      await runWithTenantContext(event.shop_id, () => processDomainEvent(event.id));
+            /**
+       * PROJ-CONTRACT-24 — SKIP, DO NOT SWALLOW
+       * ----------------------------------------
+       * Only CanonicalContractError is skippable: it is data-shaped and
+       * deterministic, so halting the whole replay protects nothing — the
+       * event will fail identically forever. Every other error (DB, tenant
+       * frame, handler, LOCATION_NOT_FOUND) stays fatal and rethrows.
+       *
+       * The skip is recorded, counted, folded into the state hash, and
+       * changes the exit code. A rebuild that skipped anything must never
+       * be mistakable for a clean one.
+       */
+      try {
+        await runWithTenantContext(event.shop_id, () => processDomainEvent(event.id));
+      } catch (err) {
+        if (!(err instanceof CanonicalContractError)) {
+          throw err;
+        }
+
+        console.warn('[REBUILD_EVENT_SKIPPED]', {
+          domainEventId: event.id,
+          shopId: event.shop_id,
+          eventType: event.event_type,
+          tag: err.tag,
+          message: err.message,
+        });
+
+        await db('domain_event_projection_failures').insert({
+          domain_event_id: event.id,
+          shop_id: event.shop_id,
+          event_type: event.event_type,
+          error_tag: err.tag,
+          error_message: err.message,
+          failed_at: new Date(0),
+        });
+
+        skippedEvents.push({ id: event.id, tag: err.tag });
+      }
+
       lastProcessed = event.id;
     }
   }
@@ -495,7 +549,34 @@ async function main() {
    */
 
   const stateHash = await computeStateHash();
-  console.log('[REBUILD_STATE_HASH]', stateHash);
+
+  /**
+   * PROJ-CONTRACT-24: skips are folded into the published hash so a run that
+   * skipped events cannot produce the same hash as one that did not. Baseline
+   * comparison then catches an incomplete replay automatically.
+   */
+  const publishedHash =
+    skippedEvents.length === 0
+      ? stateHash
+      : crypto
+          .createHash('sha256')
+          .update(stateHash)
+          .update(JSON.stringify(skippedEvents))
+          .digest('hex');
+
+  console.log('[REBUILD_STATE_HASH]', publishedHash);
+
+  if (skippedEvents.length > 0) {
+    console.warn('[REBUILD_INCOMPLETE]', {
+      skipped: skippedEvents.length,
+      events: skippedEvents,
+      hint: 'Inspect domain_event_projection_failures. Exit 2 = replayed but incomplete.',
+    });
+    console.warn(
+      `[REBUILD] Completed with ${skippedEvents.length} skipped event(s).`
+    );
+    process.exit(2);
+  }
 
   console.log('[REBUILD] Completed successfully.');
   process.exit(0);

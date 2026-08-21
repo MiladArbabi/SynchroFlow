@@ -583,3 +583,43 @@ no migration was required.
 **Contributing cause:** `apps/backend/package.json` `build:dev` ends in
 `|| true`, so `tsc` failures do not fail the dev build. Run
 `npx tsc --project apps/backend/tsconfig.json --noEmit` before committing.
+
+### PROJ-CONTRACT-24 — rebuild skips canonical contract violations
+
+Rebuild halted on the first event whose payload failed the canonical order
+contract, so `npm run rebuild` could not complete and the ledger's
+authoritativeness (INV-REBUILD-REPLAY-21) was unverifiable.
+
+**Split by error class.** `CanonicalContractError`
+(`services/mappers/canonicalContractError.ts`) carries a `tag` and is thrown by
+all six contract violations in `shopify-to-canonical-order.ts` (id missing,
+invalid id, currency, total, subtotal, tax). Rebuild skips ONLY this class,
+matched by `instanceof` — never by message string. Everything else stays fatal,
+including `FULFILLMENT_PHYSICAL_REMOVAL LOCATION_NOT_FOUND`: skipping an
+inventory contract violation would complete a rebuild with knowingly-wrong
+stock, which defeats the point.
+
+**The runtime worker is unchanged.** `projection.engine.ts` still rethrows on
+CANONICAL_NORMALIZATION_FAILED_FATAL. Live ingestion must never silently
+tolerate a malformed producer. Rebuild is different: it replays events already
+accepted and stored, where halting protects nothing.
+
+**A dirty rebuild cannot pass as clean.** Three mechanisms:
+- exit code 2 (not 0) whenever anything was skipped;
+- `[REBUILD_INCOMPLETE]` summary listing every skipped event id and tag;
+- skips folded into `REBUILD_STATE_HASH`, so baseline comparison catches an
+  incomplete replay automatically.
+
+`domain_event_projection_failures` (migration 0154) records each skip. It is
+truncated at the start of every rebuild — it describes the CURRENT replay, not
+history. `failed_at` is the epoch, not a wall clock, so repeated rebuilds of
+identical events produce identical hashes. Forced RLS, standard tenant policy;
+rebuild writes as sf_user (BYPASSRLS).
+
+**Verified:** clean seeded fixture `dc219e32…` exit 0; same fixture with one
+malformed `orders/create` `ad385e69…` exit 2, one skip recorded, 15 orders and
+inventory still projected. Repeat run reproduced `ad385e69…` exactly.
+
+**Not fixed here:** poison still enters at the webhook boundary —
+`handleOrderCreated.ts:22,28` declare `subtotal_price` and `line_items`
+optional while the mapper requires them. That is the next issue.

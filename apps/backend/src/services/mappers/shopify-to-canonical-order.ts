@@ -2,6 +2,7 @@
 import { createHash } from 'crypto';
 import type { FT0CanonicalOrder } 
   from '@lasyncro/shared/contracts/ft0-canonical-order';
+import { CanonicalContractError } from './canonicalContractError.js';
 
 /**
  * Shopify → Canonical Order Mapper (FT0 / FT2 compliant)
@@ -24,7 +25,10 @@ export function mapShopifyOrderNodeToCanonical(
         shopId,
         node,
       });
-      throw new Error('[CANONICAL_ORDER_ID_MISSING]');
+      throw new CanonicalContractError(
+        'CANONICAL_ORDER_ID_MISSING',
+        '[CANONICAL_ORDER_ID_MISSING]'
+      );
     }
 
     let orderId = String(rawId);
@@ -40,7 +44,10 @@ export function mapShopifyOrderNodeToCanonical(
      * Canonical layer MUST emit normalized numeric ID.
      */
     if (!/^\d+$/.test(orderId)) {
-      throw new Error('[CANONICAL_ORDER_INVALID_ID]');
+      throw new CanonicalContractError(
+        'CANONICAL_ORDER_INVALID_ID',
+        '[CANONICAL_ORDER_INVALID_ID]'
+      );
     }
 
   const currency =
@@ -57,7 +64,10 @@ export function mapShopifyOrderNodeToCanonical(
       raw: node,
     });
 
-    throw new Error('[CANONICAL_ORDER] currencyCode is required');
+    throw new CanonicalContractError(
+      'CANONICAL_ORDER_CURRENCY_MISSING',
+      '[CANONICAL_ORDER] currencyCode is required'
+    );
   }
 
   const totalPriceRaw =
@@ -69,7 +79,10 @@ export function mapShopifyOrderNodeToCanonical(
     null;
 
   if (totalPriceRaw == null) {
-    throw new Error('[CANONICAL_ORDER] totalPrice missing');
+    throw new CanonicalContractError(
+      'CANONICAL_ORDER_TOTAL_MISSING',
+      '[CANONICAL_ORDER] totalPrice missing'
+    );
   }
 
   const totalPrice = Number(totalPriceRaw);
@@ -83,7 +96,10 @@ export function mapShopifyOrderNodeToCanonical(
     null;
 
   if (subtotalRaw == null) {
-    throw new Error('[CANONICAL_ORDER] subtotalPrice missing');
+    throw new CanonicalContractError(
+      'CANONICAL_ORDER_SUBTOTAL_MISSING',
+      '[CANONICAL_ORDER] subtotalPrice missing'
+    );
   }
 
   const subtotalPrice = Number(subtotalRaw);
@@ -97,7 +113,10 @@ export function mapShopifyOrderNodeToCanonical(
     null;
 
   if (totalTaxRaw == null) {
-    throw new Error('[CANONICAL_ORDER] totalTax missing');
+    throw new CanonicalContractError(
+      'CANONICAL_ORDER_TAX_MISSING',
+      '[CANONICAL_ORDER] totalTax missing'
+    );
   }
 
   const totalTax = Number(totalTaxRaw);
