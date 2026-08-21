@@ -806,3 +806,38 @@ raw JWT claim names, which `authenticateToken` maps. No `as any` cast needed.
 **Still missing for Step 4:** no warehouse-listing endpoint exists (floor
 planning exposes `/layout` only), so the UI has no source for the
 `warehouse_id` that `POST /recount-tasks` requires.
+
+### RECOUNT-WAREHOUSE-31 — warehouse_id optional, resolves to default
+
+`POST /api/v1/wms/recount-tasks` required an explicit `warehouse_id`, but no
+frontend surface has one: `WmsOperationsPage.tsx` makes 40+ API calls and none
+touch warehouses, `modules/wms/src` has zero references to the field, and
+floor-planning's `/layout` returns location codes and `warehouse_name` without
+the id. Requiring it would mean building a listing endpoint purely so the UI
+could look up a value a single-warehouse shop never chooses between.
+
+The field is now optional. When omitted, `resolveDefaultWarehouseId()` reads
+`warehouses` where `is_default AND active` — the same fallback
+`floor-planning.controller.ts:687` already uses for zone creation.
+
+**It throws rather than picking one.** A recount run against the wrong
+warehouse produces variance on every line, so a named 400 is far cheaper than a
+silent mismatch. The thrown message deliberately contains the word "requires":
+`recountErrorStatus()` maps `.includes('requires')` to 400, so different wording
+would report a client error as a 500.
+
+Resolution happens before `nextRecountLabel()` — a label allocated against an
+unresolvable warehouse would burn a sequence number for nothing.
+
+**Multi-warehouse dependency.** This resolves to the DEFAULT warehouse. A shop
+with several will silently count the default until a selector supplies the id
+explicitly (the API already accepts it). Recount therefore joins the surfaces
+affected by GitHub issue #1002 (`feat: dynamic warehouse naming &
+multi-warehouse architecture`) and `WH-MULTI-NAMING-20`, alongside receive,
+stow, floor planning, and Overview's existing "Main warehouse" affordance. See
+also `docs/blueprints/product-structure.md` §9. When #1002 is picked up, the
+recount creation surface needs the same warehouse selector as the others.
+
+**Verified live:** `{"scope":"full"}` with no warehouse_id created CNT-1-0002
+(10 lines); an explicit id created CNT-1-0003; a non-string id returned 400.
+Test tasks were removed afterwards.

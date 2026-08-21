@@ -147,11 +147,40 @@ export async function selectSuggestedLines(
   return rows.rows;
 }
 
+/**
+ * RECOUNT-WAREHOUSE-31 — resolve the shop's default warehouse.
+ * Mirrors floor-planning.controller.ts:687. Throws rather than picking one
+ * arbitrarily: a recount against the wrong warehouse produces variance on
+ * every line, so a loud failure is far cheaper than a silent mismatch.
+ */
+export async function resolveDefaultWarehouseId(
+  trx: Knex.Transaction,
+  shopId: number
+): Promise<string> {
+  const row = await trx('warehouses')
+    .where({ shop_id: shopId, is_default: true, active: true })
+    .select('warehouse_id')
+    .first();
+
+    if (!row?.warehouse_id) {
+    /**
+     * Message wording is load-bearing: recountErrorStatus() maps
+     * `.includes('requires')` to 400. Without that token this returns 500 —
+     * a client error reported as a server fault.
+     */
+    throw new Error(
+      '[RECOUNT_CREATE] No default warehouse for this shop — this request requires an explicit warehouse_id'
+    );
+  }
+
+  return row.warehouse_id;
+}
+
 export async function createRecountTask(
   trx: Knex.Transaction,
   params: {
     shopId: number;
-    warehouseId: string;
+    warehouseId?: string;
     scope: 'full' | 'location' | 'variant_set' | 'suggested';
     createdBy: number;
     assignedTo?: number | null;
@@ -161,7 +190,11 @@ export async function createRecountTask(
     notes?: string;
   }
 ): Promise<{ recount_task_id: string; label: string; line_count: number }> {
-  const { shopId, warehouseId, scope, createdBy } = params;
+  const { shopId, scope, createdBy } = params;
+  // RECOUNT-WAREHOUSE-31: resolve before anything else — a label allocated
+  // against an unresolvable warehouse burns a sequence number for nothing.
+  const warehouseId =
+    params.warehouseId ?? (await resolveDefaultWarehouseId(trx, shopId));
   const label = await nextRecountLabel(trx, shopId);
 
   let lines: RecountLineInput[];

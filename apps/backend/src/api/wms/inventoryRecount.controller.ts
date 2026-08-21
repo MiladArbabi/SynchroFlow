@@ -81,8 +81,17 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
     notes,
   } = req.body ?? {};
 
-  if (!warehouse_id || typeof warehouse_id !== 'string') {
-    return res.status(400).json({ error: 'warehouse_id is required' });
+  /**
+   * RECOUNT-WAREHOUSE-31: optional. No WMS surface fetches warehouses, and
+   * almost every laSyncro shop runs one — requiring it would mean building a
+   * listing endpoint purely so the UI can look up a value it never chooses
+   * between. Omitted resolves to warehouses.is_default (same fallback as
+   * floor-planning.controller.ts:687). Multi-warehouse shops pass it
+   * explicitly; a shop with no default gets a named 400, never a guess — a
+   * count run against the wrong warehouse varies every line.
+   */
+  if (warehouse_id !== undefined && typeof warehouse_id !== 'string') {
+    return res.status(400).json({ error: 'warehouse_id must be a string' });
   }
 
   const scopes = ['full', 'location', 'variant_set', 'suggested'];
