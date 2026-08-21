@@ -11,6 +11,7 @@ import {
   closeCount,
   reviewLine,
   commitRecount,
+  listRecountTasks,
 } from '../../services/wms/inventoryRecount.service.js';
 
 /**
@@ -408,3 +409,37 @@ export const httpCommitRecountTask = async (req: Request, res: Response) => {
     return respondRecountError(res, 'COMMIT', error);
   }
 };
+
+/**
+ * GET /api/v1/wms/recount-tasks?status=claimed,counting
+ *
+ * Privilege is derived from the JWT's shop_roles, not from a client flag —
+ * an operator must not be able to request variance data by asking for it.
+ */
+export async function httpListRecountTasks(req: Request, res: Response) {
+  try {
+    const shopId = req.user?.shopId;
+    const userId = req.user?.userId;
+    const roles: string[] = req.user?.roles ?? [];
+
+    if (!shopId || !userId) {
+      return res.status(401).json({ error: 'UNAUTHENTICATED' });
+    }
+
+    const privileged = roles.includes('owner') || roles.includes('admin');
+
+    const statusParam = String(req.query.status ?? '').trim();
+    const statuses = statusParam
+      ? statusParam.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+    const tasks = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return listRecountTasks(trx, { shopId, userId, privileged, statuses });
+    });
+
+    return res.status(200).json({ tasks });
+  } catch (error) {
+    return respondRecountError(res, 'LIST', error);
+  }
+}

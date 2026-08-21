@@ -767,3 +767,42 @@ previously only checked on an owner token.
 
 **Incidental finding, unfixed:** a malformed (non-UUID) `:taskId` returns 500,
 not 400 — same class as `EXP-DATEFILTER-07`.
+
+### RECOUNT-LIST-28 — task discovery endpoint
+
+`GET /api/v1/wms/recount-tasks` — `wms:recount:read`, Core tier, standard chain
+(`authenticateToken → requireFt2 → requireTier → requireAction`).
+
+Every other recount route is `:taskId`-scoped, so a dispatched task was
+unreachable without already knowing its UUID. This is the Step 4 UI's entry
+point.
+
+**Visibility.** Owner/admin see every task. An operator sees only what they can
+act on: unassigned tasks, tasks assigned to them, and tasks they claimed.
+Surfacing another operator's assigned task would advertise a claim that
+`claimRecountTask` (service `:264`) is guaranteed to reject. This implements the
+dispatch model stated at service `:200-202` — `assigned_to` set means only that
+operator may claim; null means first claim wins.
+
+**`variance_count` is owner/admin only.** On a blind task, "3 variances" tells
+the counting operator their numbers disagreed with the system — the expected
+quantity leaking through an aggregate rather than a field. Privilege comes from
+`req.user.roles`, never a client parameter. `line_count` and `counted_count` are
+safe for anyone: neither reveals what the system expected.
+
+**Terminal tasks excluded by default.** Returns draft/dispatched/claimed/
+counting/manual_review; `?status=committed,cancelled` widens it. Otherwise the
+operator's list grows without bound.
+
+**Verified live** against localhost:3000 with both dev tokens: owner payload
+carries `variance_count`, operator payload ends at `counted_count`; a task
+assigned to user 1 appeared for the owner and was correctly absent from operator
+2's list; `?status=committed` returned empty; `GET /wms/batches` still 200.
+
+**Note for future handlers:** `req.user` is typed and camelCase —
+`shopId`, `userId`, `roles`. Not `shop_id`/`user_id`/`shop_roles`; those are the
+raw JWT claim names, which `authenticateToken` maps. No `as any` cast needed.
+
+**Still missing for Step 4:** no warehouse-listing endpoint exists (floor
+planning exposes `/layout` only), so the UI has no source for the
+`warehouse_id` that `POST /recount-tasks` requires.

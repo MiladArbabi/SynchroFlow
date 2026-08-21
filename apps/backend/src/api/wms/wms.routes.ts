@@ -99,6 +99,7 @@ import {
   httpCloseRecountTask,
   httpReviewRecountLine,
   httpCommitRecountTask,
+  httpListRecountTasks,
 } from './inventoryRecount.controller.js';
 
 /**
@@ -770,6 +771,15 @@ router.post(
   requireTier('core'),
   requireAction('wms:recount:create'),
   httpCreateRecountTask
+);
+
+router.get(
+  '/recount-tasks',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:read'),
+  httpListRecountTasks
 );
 
 router.get(

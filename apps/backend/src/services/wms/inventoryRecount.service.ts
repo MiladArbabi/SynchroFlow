@@ -630,3 +630,90 @@ export async function commitRecount(
   console.info('[RECOUNT_COMMITTED]', { recountTaskId, shopId, userId, corrections: pending.length, units });
   return { corrections: pending.length, units };
 }
+
+/**
+ * RECOUNT-LIST-28 — task discovery.
+ *
+ * VISIBILITY: owner/admin see every task. An operator sees only what they can
+ * act on: unassigned tasks (first claim wins), tasks assigned to them, and
+ * tasks they already claimed. Surfacing another operator's assigned task would
+ * advertise a claim that claimRecountTask() is guaranteed to reject
+ * (assigned_to !== userId).
+ *
+ * VARIANCE COUNT IS PRIVILEGED. On a blind task, "3 variances" tells the
+ * counting operator their numbers disagreed with the system — the expected
+ * quantity leaked through an aggregate instead of a field. Owner/admin only.
+ *
+ * Terminal tasks (committed, cancelled) are excluded by default so the list
+ * does not grow without bound; pass statuses explicitly to include them.
+ */
+const ACTIVE_RECOUNT_STATUSES = [
+  'draft',
+  'dispatched',
+  'claimed',
+  'counting',
+  'manual_review',
+] as const;
+
+export async function listRecountTasks(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    userId: number;
+    privileged: boolean;
+    statuses?: string[];
+  }
+): Promise<Array<Record<string, unknown>>> {
+  const { shopId, userId, privileged } = params;
+  const statuses = params.statuses?.length
+    ? params.statuses
+    : [...ACTIVE_RECOUNT_STATUSES];
+
+  const q = trx('inventory_recount_tasks as t')
+    .where({ 't.shop_id': shopId })
+    .whereIn('t.status', statuses)
+    .select(
+      't.recount_task_id',
+      't.label',
+      't.status',
+      't.scope',
+      't.blind',
+      't.assigned_to',
+      't.claimed_by',
+      't.created_at',
+      't.claimed_at',
+      trx.raw(
+        `(SELECT COUNT(*)::int FROM inventory_recount_lines l
+          WHERE l.shop_id = t.shop_id AND l.recount_task_id = t.recount_task_id
+         ) AS line_count`
+      ),
+      trx.raw(
+        `(SELECT COUNT(*)::int FROM inventory_recount_lines l
+          WHERE l.shop_id = t.shop_id AND l.recount_task_id = t.recount_task_id
+            AND l.counted_at IS NOT NULL
+        ) AS counted_count`
+      )
+    )
+    .orderBy('t.created_at', 'desc');
+
+  if (privileged) {
+    q.select(
+      trx.raw(
+        `(SELECT COUNT(*)::int FROM inventory_recount_lines l
+          WHERE l.shop_id = t.shop_id AND l.recount_task_id = t.recount_task_id
+            AND l.variance IS NOT NULL AND l.variance <> 0
+        ) AS variance_count`
+      )
+    );
+  } else {
+    q.where(function () {
+      this.where('t.claimed_by', userId).orWhere(function () {
+        this.whereNull('t.claimed_by').andWhere(function () {
+          this.whereNull('t.assigned_to').orWhere('t.assigned_to', userId);
+        });
+      });
+    });
+  }
+
+  return q;
+}
