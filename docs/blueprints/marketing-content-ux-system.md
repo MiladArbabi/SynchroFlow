@@ -801,7 +801,7 @@ The journey rail remains a separate follow-up under MKT-LAND-NAV-01B.
 
 ## MKT-LAND-NAV-01B — Landing journey rail
 
-Status: implementation verified locally; production verification pending.
+Status: production verified; closed.
 
 Audit confirmed that the standalone landing experience already has one authoritative 10-scene narrative model driven by `[data-step="0"]` through `[data-step="9"]`: Hero, The split, Activation, PO and inbound, Receive and barcode, Stow, Orders and batches, Pick, Pack and ship, and the final Synced/result scene. Proof points and the footer sit after the narrative and are intentionally excluded from journey navigation.
 
@@ -827,6 +827,8 @@ Implementation file:
 Local verification passed. Source checks confirmed 10 semantic scene IDs, 20 journey links across desktop and mobile controls, the 720px responsive contract, deep-link support, click-listener cleanup, and a clean `git diff --check`.
 
 Visual verification also passed. Desktop testing confirmed Hero through Result navigation, correct active-state movement, smooth scene jumps, working hover labels, and continued synchronization with the existing bottom-left tracker. At 392px, the desktop rail correctly disappears, the compact Journey control appears, all 10 destinations fit inside the opened menu, the active destination is highlighted, scene selection updates the URL hash and tracker state, and measured horizontal overflow remained `0`.
+
+Production verification passed on desktop and responsive mobile. The desktop rail renders Hero through Result, active-state tracking and direct scene jumps work correctly, and the existing scene tracker remains synchronized. At 392px, the compact Journey control renders cleanly, opens all 10 destinations without horizontal overflow, and navigation updates the active scene correctly. Both Vercel deployment checks completed successfully.
 
 ## Blog preserved contracts
 
