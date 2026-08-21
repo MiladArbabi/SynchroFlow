@@ -55,7 +55,15 @@ export type AuditEntityType =
   | 'variant'
   | 'return_job'
   | 'refund_execution_line_item'
-  | 'recount_task';
+  // ── Inventory recount (INV-PHYSICAL-COUNT-13) ────────────
+  // Two grains, deliberately distinct: task-level actions
+  // (create/claim/close/commit) audit the task; reviewLine
+  // audits the individual line so a variance decision is
+  // attributable to the specific SKU/bin it corrected, not
+  // just the session. `operator_audit_log.entity_type` is
+  // varchar with no enum/check, so no migration is required.
+  | 'recount_task'
+  | 'recount_line';
 
 export interface WriteAuditLogInput {
   shopId: number;

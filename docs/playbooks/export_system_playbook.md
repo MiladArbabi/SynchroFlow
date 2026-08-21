@@ -566,3 +566,20 @@ Step 4 is not built:
 Recount remains Core-tier inventory correctness functionality, not a Growth
 analytics feature.
 
+
+### RECOUNT-AUDIT-TYPE-23 — recount_line audit entity type
+
+`inventoryRecount.controller.ts` audits at two grains: task-level actions
+(`recount_create`, `recount_claim`, `recount_close`, `recount_commit`) against
+`entityType: 'recount_task'`, and `reviewLine` against `'recount_line'` so a
+variance decision is attributable to the specific SKU/bin corrected.
+
+`'recount_line'` was missing from `AuditEntityType` in
+`operatorAudit.service.ts`, shipping a typecheck failure in `4e010bdd`.
+`operator_audit_log.entity_type` is varchar with no enum/check constraint, so
+runtime rows were always written correctly — the defect was type-level only and
+no migration was required.
+
+**Contributing cause:** `apps/backend/package.json` `build:dev` ends in
+`|| true`, so `tsc` failures do not fail the dev build. Run
+`npx tsc --project apps/backend/tsconfig.json --noEmit` before committing.
