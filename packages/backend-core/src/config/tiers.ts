@@ -27,7 +27,7 @@ export type Tier = (typeof TIERS)[number];
 export interface TierConfig {
   /** Display price in USD cents/month. 0 = free. */
   monthlyPriceCents: number;
-  /** Max operator seats. Infinity = unlimited. */
+  /** Max non-owner seats. Owner is excluded. Infinity = unlimited. */
   seatLimit: number;
   /** Max orders ingested per calendar month. Infinity = unlimited. */
   monthlyOrderCap: number;
@@ -117,7 +117,8 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
    */
   starter: {
     monthlyPriceCents: 0,
-    seatLimit: 1,
+    // WHY: Starter is owner-only; seat enforcement counts non-owner memberships.
+    seatLimit: 0,
     monthlyOrderCap: 50,
     shippedOrderCap: 50, 
     specterSessionCap: 500,
@@ -134,7 +135,8 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
    */
   core: {
     monthlyPriceCents: 7900,
-    seatLimit: 3,
+    // WHY: Core commercially includes two non-owner seats; paid extras are additive.
+    seatLimit: 2,
     monthlyOrderCap: 2000,
     shippedOrderCap: 200,
     specterSessionCap: 5000,

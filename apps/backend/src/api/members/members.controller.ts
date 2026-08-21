@@ -63,7 +63,9 @@ export const updateMemberRole = async (req: Request, res: Response) => {
   const targetUserId = parseInt(rawUserId, 10);
   const { role } = req.body;
 
-  const VALID_ROLES = ['owner', 'admin', 'operator'] as const;
+  // WHY: Ownership transfer is a separate privileged lifecycle operation;
+  // ordinary role changes must never create additional owners.
+  const VALID_ROLES = ['admin', 'operator'] as const;
   type Role = typeof VALID_ROLES[number];
 
   if (typeof role !== 'string' || !VALID_ROLES.includes(role as Role)) {
@@ -137,7 +139,9 @@ export const createMember = async (req: Request, res: Response) => {
 
   const { email, first_name, last_name, role } = req.body;
 
-  const VALID_ROLES = ['owner', 'admin', 'operator'] as const;
+  // WHY: The shop owner is not a billable seat and must not be creatable
+  // through the normal invitation flow, otherwise ownership bypasses seat limits.
+  const VALID_ROLES = ['admin', 'operator'] as const;
   type Role = typeof VALID_ROLES[number];
 
   if (!email || typeof email !== 'string') {
@@ -156,29 +160,58 @@ export const createMember = async (req: Request, res: Response) => {
 
     // --- Seat limit enforcement (MON-04) ---
     // Tier is read from JWT claim (set at login/refresh via shop_subscriptions).
-    // Falls back to 'starter' (1 seat) if claim is missing — fail closed.
+    // Falls back to 'starter' (0 non-owner seats) if claim is missing — fail closed.
     const { getTierConfig, isValidTier } = await import('@lasyncro/backend-core/config/tiers.js');
     const rawTier = req.user!.tier ?? 'starter';
     const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
-    const { seatLimit } = getTierConfig(currentTier);
+    const { seatLimit: baseSeatLimit } = getTierConfig(currentTier);
 
-    const activeSeatCount = await withTenant(shopId, (trx) =>
-      trx('shop_memberships')
-        .where({ shop_id: shopId })
-        .whereNull('revoked_at')
-        .whereNot('role', 'owner')
-        .count('id as count')
-        .first()
-    );
+    const { activeSeatCount, subscription } = await withTenant(shopId, async (trx) => {
+      const [activeSeatCount, subscription] = await Promise.all([
+        trx('shop_memberships')
+          .where({ shop_id: shopId })
+          .whereNull('revoked_at')
+          .whereNot('role', 'owner')
+          .count('id as count')
+          .first(),
+        trx('shop_subscriptions')
+          .where({ shop_id: shopId })
+          .first('extra_seats'),
+      ]);
+
+      return { activeSeatCount, subscription };
+    });
 
     const currentSeats = Number(activeSeatCount?.count ?? 0);
 
-    if (currentSeats >= seatLimit) {
-      console.warn('[MEMBERS] Seat limit reached', { shopId, currentSeats, seatLimit, tier: currentTier });
+    // WHY: Core/Growth seat add-ons are purchased capacity on top of the
+    // tier's included non-owner seats. Starter cannot buy extras; Scale
+    // remains unlimited regardless of the persisted add-on value.
+    const extraSeats =
+      currentTier === 'core' || currentTier === 'growth'
+        ? Math.max(0, Number(subscription?.extra_seats ?? 0))
+        : 0;
+
+    const effectiveSeatLimit = Number.isFinite(baseSeatLimit)
+      ? baseSeatLimit + extraSeats
+      : Infinity;
+
+    if (currentSeats >= effectiveSeatLimit) {
+      console.warn('[MEMBERS] Seat limit reached', {
+        shopId,
+        currentSeats,
+        baseSeatLimit,
+        extraSeats,
+        effectiveSeatLimit,
+        tier: currentTier,
+      });
+
       return res.status(403).json({
         error: 'SEAT_LIMIT_REACHED',
         current: currentSeats,
-        limit: seatLimit,
+        limit: effectiveSeatLimit,
+        base_limit: baseSeatLimit,
+        extra_seats: extraSeats,
         tier: currentTier,
       });
     }

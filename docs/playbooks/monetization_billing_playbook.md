@@ -1,7 +1,7 @@
 # LaSyncro — Monetization, Billing & Currency Playbook
 
 > **Audience:** Engineers onboarding to LaSyncro, or picking up billing/monetization work.
-> **Last updated:** July 18, 2026
+> **Last updated:** August 21, 2026
 > **Status:** Stripe billing, Shopify Managed Pricing reconciliation, and Shopify App Events Shop GID capture verified end-to-end.
 
 ---
@@ -12,12 +12,14 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 
 | Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
 |---|---|---|---|---|
-| Starter | Free | 1 seat (owner only) | 50 | 0 (no WMS) |
-| Core | $79 | 3 non-owner seats | 2,000 | 200 |
+| Starter | Free | Owner only (0 non-owner seats) | 50 | 0 (no WMS) |
+| Core | $79 | 2 non-owner seats | 2,000 | 200 |
 | Growth | $179 | 5 non-owner seats | 10,000 | 1,000 |
 | Scale | $349 | Unlimited | Unlimited | Unlimited |
 
 - Seat count excludes the shop owner — limits apply to operators/admins only
+- Core includes 2 non-owner seats; Growth includes 5. Purchased extra seats are additive to those base limits
+- Ordinary member invitation and role-change flows cannot create or promote another `owner`; ownership transfer requires a separate explicit flow
 - Annual billing = 20% discount (varies slightly per currency — see Stripe actuals)
 - Extra seats purchasable above base limit: Core $15/seat/mo, Growth $12/seat/mo
 - Shipped order overage: $0.08/unit (Core + Growth only), billed via Stripe Meter
@@ -226,9 +228,13 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 
 - Reads `req.user.tier` from JWT
 - Calls `getTierConfig(tier).seatLimit`
-- Counts active `shop_memberships` rows
-- Returns `403 SEAT_LIMIT_REACHED` with `{ current, limit, tier }` if at cap
-- Effective limit = `seatLimit + extra_seats` (add-on seats from `shop_subscriptions`)
+- Counts active non-owner `shop_memberships` rows (`owner` is excluded)
+- Starter base limit = 0 non-owner seats; Core = 2; Growth = 5; Scale = unlimited
+- For Core/Growth, effective limit = `seatLimit + extra_seats` from `shop_subscriptions`
+- Returns `403 SEAT_LIMIT_REACHED` with `{ current, limit, base_limit, extra_seats, tier }` if at cap
+- Ordinary member creation accepts only `admin` or `operator`; `owner` returns `400 INVALID_ROLE`
+- Ordinary role changes likewise cannot promote a member to `owner`
+- Ownership transfer must be implemented as a separate explicit lifecycle operation
 
 ---
 
