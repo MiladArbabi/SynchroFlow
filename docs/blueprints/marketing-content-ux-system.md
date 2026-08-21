@@ -317,7 +317,44 @@ Blog FAQ header stacks correctly on mobile and keeps the intro paragraph contain
 
 MKT-UX-01E-C is implementation verified locally; production verification is pending deployment.
 
-Still open/out of scope: `InternalLinks` related-card overflow and intentionally horizontally scrollable MDX tables.
+## MKT-UX-01E-D — InternalLinks related-card responsiveness
+
+Audit confirmed that `InternalLinks` rendered `repeat(2, 1fr)` whenever more than one related link existed, while the only mobile collapse rule lived under the Blog-specific `.blogArticle` wrapper.
+
+Blast radius at audit time:
+
+- Blog: 18 articles had more than one related link, but were already protected by the Blog-scoped mobile rule.
+- Compare: 4 articles had more than one related link and did not inherit the Blog-scoped responsive rule.
+- Features: 0 current pages had more than one related link.
+- Industries: 0 current pages had more than one related link.
+
+The responsive contract now belongs to the shared `InternalLinks` primitive rather than a route-specific consumer.
+
+Implementation:
+
+- every related-links grid receives the shared `internal-links-grid` class;
+- dark/Blog variants preserve the existing `blog-related-link-grid` hook;
+- desktop behavior remains one column for one link and two columns for two or more links;
+- at or below 720px, `.internal-links-grid` collapses to one column for every consumer.
+
+Files changed:
+
+- `apps/marketing/components/article/InternalLinks.tsx`
+- `apps/marketing/app/globals.css`
+
+Local verification:
+
+- `git diff --check` passed;
+- the shared class is present on all `InternalLinks` grids;
+- the existing Blog-specific class remains intact;
+- the desktop `repeat(2, 1fr)` contract remains unchanged;
+- a clean production-environment marketing build with `NODE_ENV=production` compiled successfully, passed TypeScript, and generated all 106 static/generated pages.
+
+The first build attempt was run with the shell set to `NODE_ENV=development` and failed during unrelated Help prerendering. After clearing `.next` and rebuilding with `NODE_ENV=production`, the failure did not reproduce.
+
+MKT-UX-01E-D is implementation verified locally; production verification is pending deployment.
+
+Intentionally horizontally scrollable MDX tables remain out of scope.
 
 ## MKT-UX-01F-A — Marketing theme, font, and shell authority
 

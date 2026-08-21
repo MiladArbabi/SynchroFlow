@@ -49,7 +49,7 @@ export default function InternalLinks({ links, variant = 'legacy' }: InternalLin
         Related from the operator&apos;s library
       </h2>
 
-      <div className={isDark ? 'blog-related-link-grid' : undefined} style={{
+      <div className={isDark ? 'internal-links-grid blog-related-link-grid' : 'internal-links-grid'} style={{
         display: 'grid',
         gridTemplateColumns: links.length === 1 ? '1fr' : 'repeat(2, 1fr)',
         gap: '1px',
