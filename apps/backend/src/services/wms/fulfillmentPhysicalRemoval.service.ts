@@ -168,33 +168,51 @@ export async function applyFulfillmentPhysicalRemoval(
           );
 
         if (removalInserted) {
-          const updatedTruthRows =
-            await trx('inventory_truth')
-              .where({
-                shop_id: shopId,
-                lasyncro_variant_id: lasyncroVariantId,
-                location_code: allocation.location_code,
-              })
-              .where('on_hand_quantity', '>=', removalQuantity)
-              .where('reserved_quantity', '>=', removalQuantity)
-              .update({
-                on_hand_quantity: trx.raw(
-                  'on_hand_quantity - ?',
-                  [removalQuantity]
-                ),
-                reserved_quantity: trx.raw(
-                  'reserved_quantity - ?',
-                  [removalQuantity]
-                ),
-                last_evaluated_at: fulfilledAt,
-                updated_at: fulfilledAt,
-              });
-
-          if (updatedTruthRows !== 1) {
-            throw new Error(
-              `[FULFILLMENT_PHYSICAL_REMOVAL] RESERVED_TRUTH_UPDATE_FAILED allocation=${allocation.allocation_id}`
-            );
-          }
+          /**
+           * INV-REPLAY-FULFILL-41: upsert, not update. Under REBUILD_MODE the
+           * inventory_truth row does not exist yet — the projection is being
+           * rebuilt from zero — so an update matched 0 rows and the guard
+           * threw fatally, killing the replay.
+           *
+           * The engine does NOT rebuild the inventory projection after an
+           * event (projection.engine.ts: "inventory projection is DISABLED →
+           * MUST NOT call"), so this patch is the only runtime writer of
+           * inventory_truth on fulfilment. It cannot be removed.
+           *
+           * Compounding is impossible: rebuildInventoryProjection merges with
+           * EXCLUDED.on_hand_quantity — an absolute overwrite from the ledger
+           * sum, not an accumulate — so any provisional value written here is
+           * discarded when that variant is next derived.
+           */
+          await trx('inventory_truth')
+            .insert({
+              shop_id: shopId,
+              lasyncro_variant_id: lasyncroVariantId,
+              location_code: allocation.location_code,
+              on_hand_quantity: -removalQuantity,
+              reserved_quantity: 0,
+              committed_quantity: 0,
+              available_quantity: 0,
+              last_evaluated_at: fulfilledAt,
+              updated_at: fulfilledAt,
+            })
+            .onConflict([
+              'shop_id',
+              'lasyncro_variant_id',
+              'location_code',
+            ])
+            .merge({
+              on_hand_quantity: trx.raw(
+                'inventory_truth.on_hand_quantity - ?',
+                [removalQuantity]
+              ),
+              reserved_quantity: trx.raw(
+                'GREATEST(0, inventory_truth.reserved_quantity - ?)',
+                [removalQuantity]
+              ),
+              last_evaluated_at: fulfilledAt,
+              updated_at: fulfilledAt,
+            });
         }
       }
 
@@ -209,18 +227,37 @@ export async function applyFulfillmentPhysicalRemoval(
     }
 
     if (remainingQuantity > 0) {
+      /**
+       * INV-REPLAY-FULFILL-41: resolved from inventory_movements, not
+       * inventory_truth. Under REBUILD_MODE the projection is being rebuilt
+       * from zero rows, so querying it here asks where stock is in a world
+       * that does not exist yet — the replay died fatally on the first
+       * fulfilled order with no prior stow events (there are none in the
+       * event stream; opening_balance is written outside it).
+       *
+       * The ledger is append-only and complete at every replay position, so
+       * this answers identically during replay and at runtime. No REBUILD_MODE
+       * branch, and no second code path to keep in sync.
+       *
+       * available_quantity is deliberately dropped: it is a projection concept
+       * (on_hand minus reserved) with no ledger equivalent. Reservations are
+       * already consumed by the allocation loop above — reaching this fallback
+       * means there were none for this line.
+       *
+       * quantity_delta is PRE-SIGNED at the ledger layer
+       * (rebuildInventoryProjection.ts), so a plain SUM is correct.
+       */
       const stockLocations =
-        await trx('inventory_truth')
+        await trx('inventory_movements')
           .where({
             shop_id: shopId,
             lasyncro_variant_id: lasyncroVariantId,
           })
-          .where('available_quantity', '>=', remainingQuantity)
-          .where('on_hand_quantity', '>', 0)
-          .select(
+          .groupBy('location_code')
+          .havingRaw('SUM(quantity_delta) >= ?', [remainingQuantity])
+          .select<{ location_code: string; on_hand_quantity: string }[]>(
             'location_code',
-            'on_hand_quantity',
-            'available_quantity'
+            trx.raw('SUM(quantity_delta) as on_hand_quantity')
           );
 
       if (stockLocations.length === 0) {
@@ -249,33 +286,39 @@ export async function applyFulfillmentPhysicalRemoval(
         );
 
       if (removalInserted) {
-        const updatedTruthRows =
-          await trx('inventory_truth')
-            .where({
-              shop_id: shopId,
-              lasyncro_variant_id: lasyncroVariantId,
-              location_code: stockLocation.location_code,
-            })
-            .where('on_hand_quantity', '>=', remainingQuantity)
-            .where('available_quantity', '>=', remainingQuantity)
-            .update({
-              on_hand_quantity: trx.raw(
-                'on_hand_quantity - ?',
-                [remainingQuantity]
-              ),
-              available_quantity: trx.raw(
-                'available_quantity - ?',
-                [remainingQuantity]
-              ),
-              last_evaluated_at: fulfilledAt,
-              updated_at: fulfilledAt,
-            });
-
-        if (updatedTruthRows !== 1) {
-          throw new Error(
-            `[FULFILLMENT_PHYSICAL_REMOVAL] UNRESERVED_TRUTH_UPDATE_FAILED line=${lasyncroLineItemId}`
-          );
-        }
+        // INV-REPLAY-FULFILL-41: upsert for the same reason as the allocation
+        // path above. available_quantity is clamped at 0 to match
+        // rebuildInventoryProjection's Math.max(0, onHand - reserved) — only
+        // on_hand_quantity carries a negative, as the phantom-stock signal.
+        await trx('inventory_truth')
+          .insert({
+            shop_id: shopId,
+            lasyncro_variant_id: lasyncroVariantId,
+            location_code: stockLocation.location_code,
+            on_hand_quantity: -remainingQuantity,
+            reserved_quantity: 0,
+            committed_quantity: 0,
+            available_quantity: 0,
+            last_evaluated_at: fulfilledAt,
+            updated_at: fulfilledAt,
+          })
+          .onConflict([
+            'shop_id',
+            'lasyncro_variant_id',
+            'location_code',
+          ])
+          .merge({
+            on_hand_quantity: trx.raw(
+              'inventory_truth.on_hand_quantity - ?',
+              [remainingQuantity]
+            ),
+            available_quantity: trx.raw(
+              'GREATEST(0, inventory_truth.available_quantity - ?)',
+              [remainingQuantity]
+            ),
+            last_evaluated_at: fulfilledAt,
+            updated_at: fulfilledAt,
+          });
       }
     }
 
