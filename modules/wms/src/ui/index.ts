@@ -12,5 +12,7 @@ export { default } from './ModuleEntry.js';
 export { useOfflineScanQueue } from './hooks/useOfflineScanQueue.js';
 export type { UseOfflineScanQueueResult, ScanQueueEntry } from './hooks/useOfflineScanQueue.js';
 export { WmsConnectionBadge } from './components/WmsConnectionBadge.js';
+export { WorkTally, isAllClear } from './components/WorkTally.js';
+export type { WorkTallyCounts, WorkTallyProps } from './components/WorkTally.js';
 export { useWebPush } from './hooks/useWebPush.js';
 export type { WmsBatch, WmsData, WmsStowTask, WmsModuleFT2Props } from './pages/WmsModuleFT2.js';

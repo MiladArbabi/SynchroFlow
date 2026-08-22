@@ -103,7 +103,10 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
 
 export default function WmsOperationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { data, isLoading, isError, refetch, stowTasks, settings } = useWms();
+  const {
+    data, isLoading, isError, refetch, stowTasks, settings,
+    openReceiveJobs, recountTasks, recountLocked,
+  } = useWms();
   const readyToPackQuery = useReadyToPack();
   const { data: gridData } = useWarehouseGrid();
 
@@ -495,6 +498,9 @@ export default function WmsOperationsPage() {
       isError={isError}
       readyToPackOrders={readyToPackQuery.data?.orders}
       readyToPackCount={readyToPackQuery.data?.orderCount}
+      openReceiveJobCount={openReceiveJobs.length}
+      recountTaskCount={recountTasks.length}
+      recountLocked={recountLocked}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}

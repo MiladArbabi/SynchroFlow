@@ -25,6 +25,7 @@ import StowSessionPage from './StowSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
+import { WorkTally, isAllClear, type WorkTallyCounts } from '../components/WorkTally.js';
 
 /**
  * WMS MODULE — FT2 SURFACE
@@ -198,6 +199,16 @@ export type WmsModuleFT2Props = {
     }[];
   }[];
   readyToPackCount?: number;
+
+  /**
+   * Work tally sources. Passed through rather than fetched here — this
+   * component receives all data by prop (no context, no hooks of its own),
+   * matching readyToPackOrders/readyToPackCount.
+   */
+  openReceiveJobCount?: number;
+  recountTaskCount?: number;
+  /** True when the recount routes returned 403 — Core tier required. */
+  recountLocked?: boolean;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -586,6 +597,9 @@ function WmsModuleFT2Inner({
   onCompleteReturnJob,
   readyToPackOrders,
   readyToPackCount,
+  openReceiveJobCount,
+  recountTaskCount,
+  recountLocked,
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -780,6 +794,23 @@ function WmsModuleFT2Inner({
     );
   }
 
+    /**
+   * Counts are TASKS, not units. A batch mid-pack counts under both Picking
+   * and Packing on purpose — it needs a picker's attention and a packer's,
+   * and on a real floor those are different operators.
+   *
+   * NOTE: /batches returns { batches: [...] }, not a bare array.
+   */
+  const workCounts: WorkTallyCounts = {
+    picking: (data?.batches ?? []).filter(
+      (b) => Number(b.units_picked) < Number(b.total_units)
+    ).length,
+    packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
+    puttingAway: (stowTasks ?? []).length,
+    receiving: openReceiveJobCount ?? 0,
+    counting: recountTaskCount ?? 0,
+  };
+
   return (
     <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
 
@@ -789,8 +820,10 @@ function WmsModuleFT2Inner({
           <Typography sx={{ fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }}>
             Warehouse
           </Typography>
-          <Typography sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }}>
-            Pick and pack active batches.
+            <Typography sx={{ fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }}>
+            {isAllClear(workCounts)
+              ? 'All clear — nothing waiting.'
+              : 'Work waiting to be done.'}
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
@@ -811,6 +844,9 @@ function WmsModuleFT2Inner({
           )} */}
         </Box>
       </Box>
+
+      {/* WORK TALLY — everything waiting on the floor, above the fold */}
+      <WorkTally counts={workCounts} countingLocked={recountLocked} />
 
       {/* LOADING */}
       {(isLoading || loadingSession) && (
