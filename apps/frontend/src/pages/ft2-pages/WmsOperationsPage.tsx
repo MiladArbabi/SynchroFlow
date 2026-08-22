@@ -16,6 +16,8 @@ import type {
   CreateProblemTaskParams,
   LineItem,
   PackOrder,
+  CountingLine,
+  CountingSkipReason,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
@@ -427,6 +429,58 @@ export default function WmsOperationsPage() {
     });
   }, []);
 
+  // ── COUNTING CALLBACKS ──────────────────────────────────
+
+  const handleFetchCountingLines = useCallback(
+    async (taskId: string): Promise<CountingLine[]> => {
+      const { data } = await axiosInstance.get(
+        `/api/v1/wms/recount-tasks/${taskId}/lines`
+      );
+      return data.lines ?? [];
+    },
+    []
+  );
+
+  const handleClaimCountingTask = useCallback(async (taskId: string) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/claim`
+    );
+  }, []);
+
+  const handleRecordCountingLine = useCallback(async (
+    taskId: string,
+    lineId: string,
+    params: {
+      counted_quantity: number;
+      count_method: 'bin_quantity';
+    }
+  ) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/lines/${lineId}/count`,
+      params
+    );
+  }, []);
+
+  const handleSkipCountingLine = useCallback(async (
+    taskId: string,
+    lineId: string,
+    params: {
+      skip_reason: CountingSkipReason;
+      notes?: string;
+    }
+  ) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/lines/${lineId}/skip`,
+      params
+    );
+  }, []);
+
+  const handleCloseCountingTask = useCallback(async (taskId: string) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/close`
+    );
+  }, []);
+
   // STOW-SPLIT-01 — stow no longer reports quantity shortfalls from a separate
   // confirmation screen. Unit-placement failures remain scanner failures and
   // do not create an exception through the retired bulk-stow callback.
@@ -499,8 +553,17 @@ export default function WmsOperationsPage() {
       readyToPackOrders={readyToPackQuery.data?.orders}
       readyToPackCount={readyToPackQuery.data?.orderCount}
       openReceiveJobCount={openReceiveJobs.length}
-      recountTaskCount={recountTasks.length}
       recountLocked={recountLocked}
+      recountTasks={recountTasks}
+      onFetchCountingLines={handleFetchCountingLines}
+      onClaimCountingTask={handleClaimCountingTask}
+      onRecordCountingLine={handleRecordCountingLine}
+      onSkipCountingLine={handleSkipCountingLine}
+      onCloseCountingTask={handleCloseCountingTask}
+      pendingCountTaskId={searchParams.get('countTaskId')}
+      onCountSessionEnter={(id) =>
+        setSearchParams({ countTaskId: id }, { replace: true })
+      }
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}

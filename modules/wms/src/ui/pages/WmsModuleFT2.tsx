@@ -6,6 +6,7 @@ import {
   CircularProgress,
   Alert,
   TextField,
+  Button,
 } from '@mui/material';
 import { ScanBarcode, Package } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
@@ -22,6 +23,11 @@ import ReceiveSessionPage, {
 type ReceiveJobLine,
 } from './ReceiveSessionPage.js';
 import StowSessionPage from './StowSessionPage.js';
+import CountingSessionPage, {
+  type CountingLine,
+  type CountingSkipReason,
+  type CountingTask,
+} from './CountingSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
@@ -206,9 +212,35 @@ export type WmsModuleFT2Props = {
    * matching readyToPackOrders/readyToPackCount.
    */
   openReceiveJobCount?: number;
-  recountTaskCount?: number;
-  /** True when the recount routes returned 403 — Core tier required. */
+  /** True when the count routes returned 403 — Core tier required. */
   recountLocked?: boolean;
+
+  /** Count execution — operator-facing tasks only. */
+  recountTasks?: CountingTask[];
+  onFetchCountingLines: (taskId: string) => Promise<CountingLine[]>;
+  onClaimCountingTask: (taskId: string) => Promise<void>;
+  onRecordCountingLine: (
+    taskId: string,
+    lineId: string,
+    params: {
+      counted_quantity: number;
+      count_method: 'bin_quantity';
+    }
+  ) => Promise<void>;
+  onSkipCountingLine: (
+    taskId: string,
+    lineId: string,
+    params: {
+      skip_reason: CountingSkipReason;
+      notes?: string;
+    }
+  ) => Promise<void>;
+  onCloseCountingTask: (taskId: string) => Promise<void>;
+
+  /** Count task ID from URL param — restores an active counting session. */
+  pendingCountTaskId?: string | null;
+  /** Called when an operator enters a counting session. */
+  onCountSessionEnter?: (taskId: string) => void;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -534,11 +566,67 @@ export type PackFreeScanApiResponse =
   | { type: 'return'; lasyncro_order_id: string; returnJobId: string; status: string; isNew: boolean; claimedByOther: boolean }
   | { error: string; message: string };
 
+const CountingTaskCard = memo(function CountingTaskCard({
+  task,
+  onOpen,
+}: {
+  task: CountingTask;
+  onOpen: (task: CountingTask) => void;
+}) {
+  const continuing =
+    task.status === 'claimed' || task.status === 'counting';
+
+  return (
+    <Box sx={{
+      bgcolor: 'var(--surface)',
+      border: '1px solid var(--rule)',
+      borderRadius: '12px',
+      p: '16px 18px',
+      mb: 1.25,
+      display: 'flex',
+      alignItems: 'center',
+      gap: 2,
+    }}>
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography sx={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: 'var(--ink)',
+        }}>
+          {task.label}
+        </Typography>
+
+        <Typography sx={{
+          fontSize: 12,
+          fontWeight: 300,
+          color: 'var(--ink-3)',
+          mt: 0.375,
+        }}>
+          {task.line_count} checks
+          {task.counted_count > 0
+            ? ` · ${task.counted_count} counted`
+            : ''}
+        </Typography>
+      </Box>
+
+      <Button
+        variant={continuing ? 'contained' : 'outlined'}
+        size="small"
+        onClick={() => onOpen(task)}
+        sx={{ flexShrink: 0 }}
+      >
+        {continuing ? 'Continue' : 'Start count'}
+      </Button>
+    </Box>
+  );
+});
+
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; freeScanResult: PackFreeScanResult }
   | { type: 'receive'; receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] }
   | { type: 'stow'; taskId: string }
+  | { type: 'count'; task: CountingTask }
   | { type: 'return'; returnJobId: string }
   | null;
 
@@ -598,8 +686,15 @@ function WmsModuleFT2Inner({
   readyToPackOrders,
   readyToPackCount,
   openReceiveJobCount,
-  recountTaskCount,
   recountLocked,
+  recountTasks,
+  onFetchCountingLines,
+  onClaimCountingTask,
+  onRecordCountingLine,
+  onSkipCountingLine,
+  onCloseCountingTask,
+  pendingCountTaskId,
+  onCountSessionEnter,
 }: WmsModuleFT2Props) {
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -622,6 +717,24 @@ function WmsModuleFT2Inner({
   }, [pendingStowTaskId]);
 
   useEffect(() => {
+    if (!pendingCountTaskId) return;
+
+    const task = (recountTasks ?? []).find(
+      (candidate) =>
+        candidate.recount_task_id === pendingCountTaskId &&
+        (
+          candidate.status === 'dispatched' ||
+          candidate.status === 'claimed' ||
+          candidate.status === 'counting'
+        )
+    );
+
+    if (task) {
+      setActiveSession({ type: 'count', task });
+    }
+  }, [pendingCountTaskId, recountTasks]);
+
+  useEffect(() => {
     if (pendingPickBatchId) {
       enterPickSession(pendingPickBatchId, false).catch(() => {});
     }
@@ -631,6 +744,15 @@ function WmsModuleFT2Inner({
   const [sessionError, setSessionError] = useState<string | null>(null);
 
   const batches = data?.batches ?? [];
+
+  // Warehouse execution owns only physical counting work.
+  // manual_review belongs to the owner decision surface, not this floor list.
+  const countingTasks = (recountTasks ?? []).filter(
+    (task) =>
+      task.status === 'dispatched' ||
+      task.status === 'claimed' ||
+      task.status === 'counting'
+  );
 
   const enterPickSession = async (batchId: string, claim: boolean) => {
     setLoadingSession(true);
@@ -781,6 +903,21 @@ function WmsModuleFT2Inner({
     );
   }
 
+  if (activeSession?.type === 'count') {
+    return (
+      <CountingSessionPage
+        task={activeSession.task}
+        onComplete={exitSession}
+        onFetchLines={onFetchCountingLines}
+        onClaimTask={onClaimCountingTask}
+        onResolveBarcode={onResolveBarcode}
+        onRecordCount={onRecordCountingLine}
+        onSkipLine={onSkipCountingLine}
+        onCloseTask={onCloseCountingTask}
+      />
+    );
+  }
+
   if (activeSession?.type === 'return') {
     return (
       <ReturnSessionPage
@@ -808,7 +945,7 @@ function WmsModuleFT2Inner({
     packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
     puttingAway: (stowTasks ?? []).length,
     receiving: openReceiveJobCount ?? 0,
-    counting: recountTaskCount ?? 0,
+    counting: countingTasks.length,
   };
 
   return (
@@ -1069,6 +1206,55 @@ function WmsModuleFT2Inner({
               key={task.stow_task_id}
               task={task}
               onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
+            />
+          ))}
+        </Box>
+      )}
+
+      {/* COUNTS */}
+      {!isLoading && !loadingSession && countingTasks.length > 0 && (
+        <Box sx={{
+          mt:
+            batches.length > 0 || (stowTasks ?? []).length > 0
+              ? 3
+              : 0,
+        }}>
+          <Box sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1.5,
+            mb: 1.5,
+          }}>
+            <Typography sx={{
+              fontSize: 10.5,
+              fontWeight: 500,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'var(--ink-4)',
+            }}>
+              Counts
+            </Typography>
+
+            <Typography sx={{
+              fontSize: 11,
+              fontWeight: 300,
+              color: 'var(--ink-4)',
+            }}>
+              {countingTasks.length} waiting
+            </Typography>
+          </Box>
+
+          {countingTasks.map((task) => (
+            <CountingTaskCard
+              key={task.recount_task_id}
+              task={task}
+              onOpen={(selectedTask) => {
+                onCountSessionEnter?.(selectedTask.recount_task_id);
+                setActiveSession({
+                  type: 'count',
+                  task: selectedTask,
+                });
+              }}
             />
           ))}
         </Box>

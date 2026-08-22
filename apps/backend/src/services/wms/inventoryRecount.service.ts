@@ -335,16 +335,24 @@ export async function getOperatorLines(
    * nine bins.
    */
   return trx('inventory_recount_lines as l')
-      .leftJoin('warehouse_locations as wl', function () {
+    .leftJoin('variants as v', 'v.lasyncro_variant_id', 'l.lasyncro_variant_id')
+    .leftJoin('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+    .leftJoin('warehouse_locations as wl', function () {
       this.on('wl.shop_id', '=', 'l.shop_id')
-          .andOn('wl.location_code', '=', 'l.location_code');
+        .andOn('wl.location_code', '=', 'l.location_code');
     })
     .leftJoin('warehouse_locations as lane', function () {
       this.on('lane.shop_id', '=', 'wl.shop_id')
-          .andOn('lane.location_code', '=', 'wl.parent_location_code');
+        .andOn('lane.location_code', '=', 'wl.parent_location_code');
     })
     .where({ 'l.shop_id': shopId, 'l.recount_task_id': recountTaskId })
-    .select(cols.map((c) => `l.${c}`))
+    .select(
+      ...cols.map((c) => `l.${c}`),
+      'v.title as variant_title',
+      'v.sku',
+      'v.image_url',
+      'p.title as product_title',
+    )
     .orderByRaw(`
       COALESCE(lane.position_y, 9999) ASC,
       COALESCE(lane.position_x, 9999) ASC,

@@ -397,8 +397,12 @@ inventory_truth hash is identical across runs.
 
 ## Inventory recount tasks (INV-PHYSICAL-COUNT-13)
 
-Migration 0153 + service + HTTP surface shipped. Operator UI and printable count
-sheet remain step 4.
+Migration 0153 + service + HTTP surface shipped. Warehouse operator execution
+UI is now shipped; printable count sheet remains future work.
+
+The Warehouse surface owns physical execution only: `dispatched`, `claimed`, and
+`counting` tasks are actionable there. `manual_review` belongs to the owner/admin
+decision surface and is intentionally excluded from the floor list and Work tally.
 
 Task-first, mirroring stow_tasks (0084). An owner/admin creates a recount task
 and either assigns it (`assigned_to` set — only that operator may claim) or
@@ -499,8 +503,12 @@ Endpoints:
       wms:recount:commit
       Writes accepted reconciliation corrections and rebuilds affected truth.
 
-There is intentionally no generic `GET /recount-tasks` list endpoint in step 3;
-the current HTTP contract exposes the workflow actions required by the planned
+`GET /recount-tasks` is the operator/owner task-list contract. The Warehouse
+surface uses it for executable counting work, with privilege filtering enforced
+server-side: operators see only work they may claim or already own, while
+owner/admin responses may additionally include `variance_count`.
+
+The remaining HTTP contract exposes the workflow actions required by the
 operator/count UI.
 
 ### Recount permissions
@@ -798,6 +806,41 @@ operator's list grows without bound.
 carries `variance_count`, operator payload ends at `counted_count`; a task
 assigned to user 1 appeared for the owner and was correctly absent from operator
 2's list; `?status=committed` returned empty; `GET /wms/batches` still 200.
+
+### Warehouse counting execution
+
+The operator session is deliberately blind. `getOperatorLines()` exposes safe
+identity and navigation context only: location code, product title, variant
+title, SKU, image, and the operator's own count/skip state. It never exposes
+`expected_quantity`, `variance`, `window_delta`, or contested state while blind.
+
+Execution flow:
+
+    Warehouse -> Counts -> Start/Continue
+      -> confirm location
+      -> confirm product
+      -> enter physical quantity or skip with reason
+      -> repeat unresolved lines
+      -> Finish count only when every line is resolved
+
+Quantity `0` is valid and means the location was physically checked and empty.
+Skipped lines remain distinct from counted lines. The task card therefore does
+not infer remaining work from `counted_count`; exact resolved progress is derived
+inside the session from the line payload.
+
+Product confirmation resolves through the existing WMS barcode/SKU resolver and
+must match the line's `lasyncro_variant_id`. The session preserves
+`countTaskId` in the URL so an in-progress count restores after refresh.
+
+Closing the operator session does not imply that inventory was corrected.
+`recordCount()` and `closeCount()` still write no stock. Any required owner
+decision remains downstream of the blind operator workflow.
+
+Verified live on localhost:5173 against localhost:3000: executable Counts list
+rendered, the session opened, safe product identity displayed, location and
+product gates passed, quantity entry was reached, blind fields/copy did not
+leak, `countTaskId` survived reload, and the verification pass left count-line
+state unchanged.
 
 **Note for future handlers:** `req.user` is typed and camelCase —
 `shopId`, `userId`, `roles`. Not `shop_id`/`user_id`/`shop_roles`; those are the
