@@ -370,7 +370,7 @@ export async function recordCount(
     scanCount?: number;
     countedBy: number;
   }
-): Promise<{ variance: number }> {
+): Promise<{ variance: number; windowDelta: number; contested: boolean }> {
   const { shopId, recountTaskId, recountLineId, countedQuantity, countedBy } = params;
   if (!Number.isInteger(countedQuantity) || countedQuantity < 0) {
     throw new Error(`[RECOUNT_COUNT] Counted quantity must be a non-negative integer, got ${countedQuantity}`);
@@ -390,17 +390,56 @@ export async function recordCount(
 
   const line = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_line_id: recountLineId, recount_task_id: recountTaskId })
-    .select('expected_quantity')
+    .select(
+      'expected_quantity',
+      'lasyncro_variant_id',
+      'location_code',
+      'window_from',
+      'created_at'
+    )
     .first();
   if (!line) throw new Error(`[RECOUNT_COUNT] Line not found: ${recountLineId}`);
 
-  const variance = countedQuantity - line.expected_quantity;
+  /**
+   * RECOUNT-FRESH-37: expected_quantity was snapshotted at task creation and
+   * is never re-read. Anything that moved this bin since then — a pick, a
+   * sale, a stow — would otherwise surface as variance and be written to the
+   * ledger by commitRecount as shrinkage, debiting units a second time.
+   *
+   * window_from falls back to created_at for lines predating 0159. It is a
+   * separate column because reviewLine('recount') opens the replacement
+   * line's window at the ORIGINAL line's creation, not the replacement's.
+   *
+   * quantity_delta is PRE-SIGNED at the ledger layer
+   * (rebuildInventoryProjection.ts:113), so a plain SUM is correct — no CASE
+   * on movement_type.
+   */
+  const windowFrom: Date = line.window_from ?? line.created_at;
+  const windowRow = await trx('inventory_movements')
+    .where({
+      shop_id: shopId,
+      lasyncro_variant_id: line.lasyncro_variant_id,
+      location_code: line.location_code,
+    })
+    .where('occurred_at', '>=', windowFrom)
+    .sum({ delta: 'quantity_delta' })
+    .first();
+  const windowDelta = Number(windowRow?.delta ?? 0);
+
+  const expectedAtCount = Number(line.expected_quantity) + windowDelta;
+  const variance = countedQuantity - expectedAtCount;
 
   await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_line_id: recountLineId })
     .update({
       counted_quantity: countedQuantity,
       variance,
+      // RECOUNT-FRESH-37: frozen at count time, not recomputed on read. A value
+      // that shifts on every page load cannot be the basis for authorising a
+      // ledger write. 0 means "checked, nothing moved"; NULL means never checked.
+      window_delta: windowDelta,
+      window_from: windowFrom,
+      window_computed_at: trx.fn.now(),
       count_method: params.countMethod,
       scan_count: params.scanCount ?? null,
       counted_by: countedBy,
@@ -419,7 +458,16 @@ export async function recordCount(
       .update({ status: 'counting', updated_at: trx.fn.now() });
   }
 
-  return { variance };
+  /**
+   * RECOUNT-FRESH-37: a non-zero window means the bin moved under the
+   * operator. The count is not wrong, but it is not unambiguous either —
+   * closeCount routes any contested line to manual_review.
+   *
+   * RECOUNT-BLIND-39: the caller must not put variance on the operator
+   * response. expected = counted - variance is one subtraction, and blind
+   * counting is server-enforced everywhere else on this surface.
+   */
+  return { variance, windowDelta, contested: windowDelta !== 0 };
 }
 
 /**
@@ -497,7 +545,7 @@ export async function closeCount(
   shopId: number,
   recountTaskId: string,
   userId: number
-): Promise<{ status: 'committed' | 'manual_review'; unresolved: number; skipped: number; variances: number }> {
+): Promise<{ status: 'committed' | 'manual_review'; unresolved: number; skipped: number; variances: number; contested: number }> {
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status', 'claimed_by')
@@ -513,7 +561,7 @@ export async function closeCount(
 
   const lines = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
-    .select('counted_quantity', 'variance', 'skip_reason');
+    .select('counted_quantity', 'variance', 'skip_reason', 'window_delta');
 
   // RECOUNT-COUNTZERO-34: a line is resolved by a count OR an explicit skip.
   const unresolved = lines.filter(
@@ -526,9 +574,22 @@ export async function closeCount(
   }
   const skipped = lines.filter((l: any) => l.skip_reason !== null).length;
   const variances = lines.filter((l: any) => Number(l.variance) !== 0).length;
+  /**
+   * RECOUNT-FRESH-37: a line whose bin moved during the count window is
+   * contested — the variance nets out arithmetically, but nothing proves the
+   * movement and the count did not overlap on the same physical units. The
+   * owner sees it before it reaches the ledger.
+   *
+   * NULL window_delta is NOT contested: it means counted before 0159, or
+   * skipped. Only a computed non-zero value counts.
+   */
+  const contested = lines.filter(
+    (l: any) => l.window_delta !== null && Number(l.window_delta) !== 0
+  ).length;
   // WHY: any skip means the sweep was incomplete. The owner must see the
   // obstruction before this becomes a correction, even if every counted line matched.
-  const next = variances === 0 && skipped === 0 ? 'committed' : 'manual_review';
+  const next =
+    variances === 0 && skipped === 0 && contested === 0 ? 'committed' : 'manual_review';
 
   await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
@@ -539,8 +600,8 @@ export async function closeCount(
       updated_at: trx.fn.now(),
     });
 
-  console.info('[RECOUNT_CLOSED]', { recountTaskId, shopId, userId, unresolved, skipped, variances, next });
-  return { status: next, unresolved, skipped, variances };
+  console.info('[RECOUNT_CLOSED]', { recountTaskId, shopId, userId, unresolved, skipped, variances, contested, next });
+  return { status: next, unresolved, skipped, variances, contested };
 }
 
 /**
@@ -580,7 +641,10 @@ export async function reviewLine(
 
   const line = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_line_id: recountLineId, recount_task_id: recountTaskId })
-    .select('lasyncro_variant_id', 'location_code', 'expected_quantity', 'counted_quantity', 'variance')
+    // RECOUNT-FRESH-37: window_from/created_at feed the replacement line's
+    // window origin in the 'recount' branch below. Omitting them makes that
+    // insert write NULL and silently reopens the count window.
+    .select('lasyncro_variant_id', 'location_code', 'expected_quantity', 'counted_quantity', 'variance', 'window_from', 'created_at')
     .first();
   if (!line) throw new Error(`[RECOUNT_REVIEW] Line not found: ${recountLineId}`);
 
@@ -594,12 +658,20 @@ export async function reviewLine(
   }
 
   if (decision === 'recount') {
+    /**
+     * RECOUNT-FRESH-37: expected_quantity is copied from the original line, so
+     * the replacement's window must open where that snapshot was taken — not
+     * at the replacement's own created_at. Otherwise every movement between
+     * the original count and the owner's review falls outside the window and
+     * silently becomes shrinkage on the recount.
+     */
     await trx('inventory_recount_lines').insert({
       recount_task_id: recountTaskId,
       shop_id: shopId,
       lasyncro_variant_id: line.lasyncro_variant_id,
       location_code: line.location_code,
       expected_quantity: line.expected_quantity,
+      window_from: line.window_from ?? line.created_at,
       recount_of_line_id: recountLineId,
     });
     await trx('inventory_recount_tasks')

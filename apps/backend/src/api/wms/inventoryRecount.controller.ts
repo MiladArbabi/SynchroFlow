@@ -276,9 +276,16 @@ export const httpRecordRecountLine = async (req: Request, res: Response) => {
       });
     });
 
+    /**
+     * RECOUNT-BLIND-39: `...result` spread recordCount's variance onto the
+     * operator response, and expected = counted - variance. Blind counting is
+     * server-enforced everywhere else on this surface (getOperatorLines
+     * withholds expected_quantity; see the list-route note on not letting an
+     * operator request variance by asking for it). Acknowledge the write only.
+     */
     return res.status(200).json({
       recount_line_id: recountLineId,
-      ...result,
+      recorded: true,
     });
   } catch (error) {
     return respondRecountError(res, 'COUNT', error);

@@ -40,3 +40,51 @@ from expected", which presumes a count happened. A skip means no count exists.
 
 **UI note.** The reason must be a tap, not free text. Typing on a warehouse
 device is friction, and friction is what produces a fabricated `0`.
+
+`expected_quantity` is snapshotted at task creation and never re-read
+(`inventoryRecount.service.ts` — `createRecountTask`). Anything that moves the
+bin before the operator counts it — a pick, a sale, a stow — would otherwise
+surface as variance, and `commitRecount` writes variance into
+`inventory_movements` as a `reconciliation_correction`. The units would be
+debited twice: once by the real movement, once as fabricated shrinkage.
+
+`recordCount` computes `window_delta = SUM(quantity_delta)` over
+`inventory_movements` for the line's variant + location, from `window_from` to
+now. Columns added in migration 0159: `window_delta`, `window_from`,
+`window_computed_at`.
+
+**Invariants**
+
+1. Variance is `counted_quantity - (expected_quantity + window_delta)`, never
+   `counted_quantity - expected_quantity`. Any new count path that reads only
+   `expected_quantity` reintroduces the double-debit.
+2. `quantity_delta` is PRE-SIGNED at the ledger layer
+   (`rebuildInventoryProjection.ts`), so the window is a plain `SUM` — never a
+   `CASE` on `movement_type`.
+3. The window is frozen at count time, not recomputed on read. A value that
+   shifts on every page load cannot justify a ledger write.
+4. `NULL window_delta` means never checked (counted before 0159, or skipped).
+   `0` means checked and nothing moved. Only a computed non-zero value is
+   contested — `closeCount` tests `window_delta !== null && !== 0`.
+5. A contested line forces `manual_review` even when every variance is 0. Same
+   precedent as a skip under RECOUNT-COUNTZERO-34: the arithmetic nets out, but
+   nothing proves the movement and the count did not overlap on the same
+   physical units.
+6. `window_from` is its own column, not `created_at`. `reviewLine('recount')`
+   copies `expected_quantity` from the original line, so the replacement's
+   window must open where that snapshot was taken. The `select` in `reviewLine`
+   must include `window_from` and `created_at` or the insert writes NULL and
+   silently reopens the window.
+
+## Blind counting on the count endpoint (RECOUNT-BLIND-39)
+
+`POST /api/v1/wms/recount-tasks/:taskId/lines/:lineId/count` returns
+`{ recount_line_id, recorded: true }` and nothing else.
+
+**Invariant**
+
+1. The response must never carry `variance`, `window_delta`, or `contested`.
+   `expected = counted - variance` is one subtraction, and blind counting is
+   server-enforced everywhere else on this surface — `getOperatorLines`
+   withholds `expected_quantity`. `recordCount` returns those fields for the
+   service layer; the controller acknowledges the write only.
