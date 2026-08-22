@@ -17,7 +17,6 @@ import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
 import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
-import { reportShippedOrderOverage } from '../billing/stripe.meter.service.js';
 import {
   firePickExceptionAlert,
   fireStowTaskAlert,
@@ -38,6 +37,7 @@ import { generateAndPersistLabel } from '../../services/wms/carrierLabel.service
 import { resolveOrCreateReturnJobForScan } from '../../services/returns/returnJobs.service.js';
 import { getOrRotateOpenUsagePeriod } from '../../api/billing/usagePeriod.service.js';
 import { ensureOrderWmsBarcode } from '../../services/wms/wmsOrderBarcode.service.js';
+import { STOW_TASK_OPEN_STATUSES } from '@lasyncro/shared';
 
 class ShippedOrderCapReachedError extends Error {
   constructor(
@@ -51,6 +51,33 @@ class ShippedOrderCapReachedError extends Error {
   ) {
     super('SHIPPED_ORDER_CAP_REACHED');
     this.name = 'ShippedOrderCapReachedError';
+  }
+}
+
+
+class OverageDisabledError extends Error {
+  constructor(
+    readonly details: {
+      current: number;
+      batchOrders: number;
+      limit: number;
+      tier: 'core' | 'growth';
+    }
+  ) {
+    super('OVERAGE_DISABLED');
+    this.name = 'OverageDisabledError';
+  }
+}
+
+class OverageBillingUnavailableError extends Error {
+  constructor(
+    readonly details: {
+      tier: 'core' | 'growth';
+      billingProvider: string | null;
+    }
+  ) {
+    super('OVERAGE_BILLING_UNAVAILABLE');
+    this.name = 'OverageBillingUnavailableError';
   }
 }
 // ─────────────────────────────────────────
@@ -1456,6 +1483,19 @@ export const httpCompletePack = async (req: Request, res: Response) => {
 
   let billableCount = 0;
 
+  let pendingOverageEvent: {
+    billingProvider: 'stripe' | 'shopify';
+    overageUnits: number;
+    idempotencyKey: string;
+    tier: 'core' | 'growth';
+    includedAllowance: number;
+    currentBefore: number;
+    projectedAfter: number;
+    usagePeriodId: number;
+    stripeCustomerId?: string;
+    shopGid?: string;
+  } | null = null;
+
   try {
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
@@ -1521,42 +1561,136 @@ export const httpCompletePack = async (req: Request, res: Response) => {
           .first(
             'tier',
             'billing_provider',
-            'stripe_customer_id'
+            'stripe_customer_id',
+            'allow_overage'
           );
 
         const rawTier = subscription?.tier ?? 'starter';
         const tier = isValidTier(rawTier) ? rawTier : 'starter';
 
         /**
-         * MON-PPO-03
-         * -----------
-         * Starter gets 50 completed WMS orders/month.
+         * MON-ALLOW-04
+         * ------------
+         * Commercial execution is measured exclusively by completed WMS
+         * fulfilled orders.
          *
-         * Above the allowance:
-         * - Stripe-billed + saved Stripe customer => PPO may continue.
-         * - No Stripe PPO capability => reject the entire batch atomically.
-         * - Shopify-billed Starter cannot use Stripe customer state as bypass.
+         * Starter:
+         * - 50 fulfilled orders included.
+         * - hard stop above allowance; upgrade required.
          *
-         * Core/Growth remain unchanged until their final commercial
-         * allowances are explicitly reconciled.
+         * Core / Growth:
+         * - finite included allowance;
+         * - allow_overage=false atomically blocks any batch crossing it;
+         * - allow_overage=true permits execution and records only newly
+         *   over-cap units as an immutable billing/overage domain event.
+         *
+         * Scale:
+         * - unlimited; no commercial volume guard or usage event.
          */
+        const currentShipped = Number(usageRow.shipped_orders ?? 0);
+        const projectedShipped = currentShipped + billableCount;
+
         if (tier === 'starter') {
           const { shippedOrderCap } = getTierConfig('starter');
-          const currentShipped = Number(usageRow.shipped_orders ?? 0);
-          const projectedShipped = currentShipped + billableCount;
 
-          const ppoAvailable =
-            subscription?.billing_provider === 'stripe' &&
-            Boolean(subscription?.stripe_customer_id);
-
-          if (projectedShipped > shippedOrderCap && !ppoAvailable) {
+          if (projectedShipped > shippedOrderCap) {
             throw new ShippedOrderCapReachedError({
               current: currentShipped,
               batchOrders: billableCount,
               limit: shippedOrderCap,
               tier: 'starter',
-              ppoAvailable,
+              ppoAvailable: false,
             });
+          }
+        }
+
+        if (tier === 'core' || tier === 'growth') {
+          const { shippedOrderCap } = getTierConfig(tier);
+
+          if (
+            projectedShipped > shippedOrderCap &&
+            subscription?.allow_overage !== true
+          ) {
+            throw new OverageDisabledError({
+              current: currentShipped,
+              batchOrders: billableCount,
+              limit: shippedOrderCap,
+              tier,
+            });
+          }
+
+          const alreadyOverBefore = Math.max(
+            0,
+            currentShipped - shippedOrderCap
+          );
+          const nowOver = Math.max(
+            0,
+            projectedShipped - shippedOrderCap
+          );
+          const overageUnits = nowOver - alreadyOverBefore;
+
+          if (overageUnits > 0) {
+            const provider = subscription?.billing_provider;
+
+            const idempotencyKey =
+              `ov_${shopId}_` +
+              crypto
+                .createHash('sha256')
+                .update(`${usagePeriod.id}:${batchId}`)
+                .digest('hex')
+                .slice(0, 32);
+
+            if (provider === 'stripe') {
+              const stripeCustomerId = subscription?.stripe_customer_id;
+
+              if (!stripeCustomerId) {
+                throw new OverageBillingUnavailableError({
+                  tier,
+                  billingProvider: provider,
+                });
+              }
+
+              pendingOverageEvent = {
+                billingProvider: 'stripe',
+                overageUnits,
+                idempotencyKey,
+                tier,
+                includedAllowance: shippedOrderCap,
+                currentBefore: currentShipped,
+                projectedAfter: projectedShipped,
+                usagePeriodId: usagePeriod.id,
+                stripeCustomerId,
+              };
+            } else if (provider === 'shopify') {
+              const installation = await trx('shopify_app_installations')
+                .where({ shop_id: shopId })
+                .whereNull('uninstalled_at')
+                .first('shop_gid');
+
+              if (!installation?.shop_gid) {
+                throw new OverageBillingUnavailableError({
+                  tier,
+                  billingProvider: provider,
+                });
+              }
+
+              pendingOverageEvent = {
+                billingProvider: 'shopify',
+                overageUnits,
+                idempotencyKey,
+                tier,
+                includedAllowance: shippedOrderCap,
+                currentBefore: currentShipped,
+                projectedAfter: projectedShipped,
+                usagePeriodId: usagePeriod.id,
+                shopGid: installation.shop_gid,
+              };
+            } else {
+              throw new OverageBillingUnavailableError({
+                tier,
+                billingProvider: provider ?? null,
+              });
+            }
           }
         }
       }
@@ -1593,6 +1727,51 @@ export const httpCompletePack = async (req: Request, res: Response) => {
         });
       }
 
+      /**
+       * MON-ALLOW-04
+       * Durable commercial side effect.
+       *
+       * The billing event is inserted in the SAME transaction as pack-complete
+       * and usage increment. The existing domain-event trigger creates exactly
+       * one domain_event_outbox row. Provider delivery happens asynchronously.
+       */
+      if (pendingOverageEvent) {
+        const payload = {
+          billing_provider: pendingOverageEvent.billingProvider,
+          overage_units: pendingOverageEvent.overageUnits,
+          idempotency_key: pendingOverageEvent.idempotencyKey,
+          tier: pendingOverageEvent.tier,
+          included_allowance: pendingOverageEvent.includedAllowance,
+          current_before: pendingOverageEvent.currentBefore,
+          projected_after: pendingOverageEvent.projectedAfter,
+          usage_period_id: pendingOverageEvent.usagePeriodId,
+          batch_id: batchId,
+          ...(pendingOverageEvent.stripeCustomerId
+            ? { stripe_customer_id: pendingOverageEvent.stripeCustomerId }
+            : {}),
+          ...(pendingOverageEvent.shopGid
+            ? { shop_gid: pendingOverageEvent.shopGid }
+            : {}),
+        };
+
+        await trx('domain_events').insert({
+          shop_id: shopId,
+          event_type: 'billing/overage',
+          event_payload: payload,
+          event_time: now,
+          event_version: 1,
+        });
+
+        console.info('[WMS_PACK_COMPLETE][OVERAGE_EVENT_RECORDED]', {
+          shopId,
+          batchId,
+          tier: pendingOverageEvent.tier,
+          billingProvider: pendingOverageEvent.billingProvider,
+          overageUnits: pendingOverageEvent.overageUnits,
+          idempotencyKey: pendingOverageEvent.idempotencyKey,
+        });
+      }
+
       // Alert supervisors — batch ready to ship
       await fireBatchReadyToShipAlert(trx, {
         shopId,
@@ -1607,11 +1786,6 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       });
     });
 
-    // PPO overage reporting stays after commit and remains non-fatal.
-    if (billableCount > 0) {
-      await reportShippedOrderOverage(shopId, billableCount);
-    }
-
     return res.status(200).json({
       pick_batch_id: batchId,
       status: 'pack_complete',
@@ -1620,12 +1794,35 @@ export const httpCompletePack = async (req: Request, res: Response) => {
     if (error instanceof ShippedOrderCapReachedError) {
       return res.status(403).json({
         error: 'SHIPPED_ORDER_CAP_REACHED',
-        message: 'Your Starter plan includes 50 fulfilled orders per month.',
+        message: 'Your Starter plan includes 50 fulfilled orders per month. Upgrade to continue fulfilling orders.',
         current: error.details.current,
         batch_orders: error.details.batchOrders,
         limit: error.details.limit,
         tier: error.details.tier,
         ppo_available: error.details.ppoAvailable,
+      });
+    }
+
+    if (error instanceof OverageDisabledError) {
+      return res.status(403).json({
+        error: 'OVERAGE_DISABLED',
+        message:
+          'Your included monthly fulfilled-order allowance has been reached. Enable overage or change plan to continue.',
+        current: error.details.current,
+        batch_orders: error.details.batchOrders,
+        limit: error.details.limit,
+        tier: error.details.tier,
+        allow_overage: false,
+      });
+    }
+
+    if (error instanceof OverageBillingUnavailableError) {
+      return res.status(409).json({
+        error: 'OVERAGE_BILLING_UNAVAILABLE',
+        message:
+          'Overage is enabled, but billing is not configured for this shop. No fulfillment was completed.',
+        tier: error.details.tier,
+        billing_provider: error.details.billingProvider,
       });
     }
 
@@ -4807,10 +5004,15 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
         .where('pb.shop_id', shopId)
         .whereIn('pb.status', ['picking', 'packing']),
 
-      // Stow pressure — pending tasks only.
+      // WMS-STOWCOUNT-43: open tasks, not pending-only. This scalar answers
+      // "how much stow work exists", and a task an operator has claimed is
+      // still work on the floor. httpScanResolve already counted both states;
+      // this one didn't, so the same concept reported two different numbers.
+      // The per-bin aggregate below deliberately stays pending-only — see its
+      // own note.
       trx('stow_tasks')
         .where('shop_id', shopId)
-        .where('status', 'pending')
+        .whereIn('status', STOW_TASK_OPEN_STATUSES as readonly string[])
         .count('stow_task_id as pending_count')
         .first(),
 
@@ -4819,6 +5021,11 @@ export const httpGetLiveActivity = async (req: Request, res: Response): Promise<
       // number anchored at a hardcoded 'RECEIVE-1' — a location that
       // frequently has no stow tasks at all. Kept alongside it rather than
       // replacing it, since stowPressure is part of the existing contract.
+      //
+      // WMS-STOWCOUNT-43: deliberately still pending-only, unlike the scalar
+      // above. This badges what is physically waiting AT a bin; a claimed task
+      // is mid-move and counting it here would badge a bin for stock that may
+      // already have left it. Divergence is intentional, not an oversight.
       trx('stow_tasks')
         .where('shop_id', shopId)
         .where('status', 'pending')

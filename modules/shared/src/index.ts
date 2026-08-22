@@ -7,6 +7,7 @@ export * from './contracts/onboarding.js';
 export * from './contracts/free-tier.js';
 export * from './contracts/returns-quality-contract.js';
 export * from './contracts/finances-intelligence.js';
+export * from './contracts/work-queue-statuses.js';
 
 // --- Runtime helpers ---
 export * from './modules/module-presence.js';

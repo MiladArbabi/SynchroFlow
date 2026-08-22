@@ -19,6 +19,7 @@ import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { axiosInstance } from 'api/axiosConfig';
 import { daysUntilCalendarDay } from '../../utils/calendarDays';
+import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
 
 const TRIAGE_PREVIEW_LIMIT = 3;
 
@@ -294,7 +295,12 @@ export default function OrdersInboundPage() {
       const d = daysUntil(o.expected_delivery_date);
       return d !== null && d >= 0 && d <= 7;
     }).length;
-    const activeJobs = receiveJobs.filter(j => ['pending', 'in_progress'].includes(j.status)).length;
+    // RECEIVE-ACTIVE-UNDERCOUNT-45: was ['pending','in_progress'], which read a job
+// in inspection, barcode_assignment or stow_ready as inactive while it sat open
+// on the floor. A job is open from arrival until it is closed and ready to stow.
+const activeJobs = receiveJobs.filter(
+  (j) => (RECEIVE_JOB_OPEN_STATUSES as readonly string[]).includes(j.status)
+).length;
     const rejected = receiveJobs.reduce((s, j) => s + Number(j.units_rejected || 0), 0);
     const stowUnits = stowTasks.reduce((s, t) => s + Number(t.quantity || 0), 0);
     return { openPos: open.length, unitsExpected, arrivingSoon, activeJobs, rejected, stowUnits };
