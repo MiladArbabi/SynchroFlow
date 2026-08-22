@@ -104,3 +104,30 @@ spellings now map to 409.
 **Rule:** rewording a `[RECOUNT_*]` throw and updating `recountErrorStatus()` are one
 change, never two. Closing a task still requires every line counted or explicitly
 skipped — this was only ever an HTTP classification defect.
+
+## Warehouse counting session — bin-batched execution
+
+`RECOUNT-BINLIST-62`: the session groups lines by `location_code` and works one
+bin at a time. Scan the bin once, then scan each item in it; every row carries
+its own quantity input and its own skip action. The previous loop asked for the
+bin barcode per line, so an operator at one bin with six SKUs confirmed that bin
+six times.
+
+Rules that must survive future edits:
+
+- Grouping preserves first-appearance order. Lines arrive pre-sorted into walk
+  order (`RECOUNT-WALKORDER-27`); re-sorting in the UI discards it.
+- Progress counts bins as bins and lines as lines. Merchant copy says bin, not
+  location — `location_code` remains the internal identifier.
+- A scan never commits. Unlike stow, a count needs a quantity, so a scan only
+  moves focus into that row's input. Enter saves and returns focus to the scan
+  field.
+- Neither gate displays its own answer. The bin and product inputs use generic
+  placeholders (`RECOUNT-GATE-PREFILL-56`); showing the expected code or SKU
+  turns verification into transcription.
+- A scan matching nothing in the active bin is rejected. Recording unexpected
+  items is tracked separately as `RECOUNT-FOUND-UNLISTED-59` — it must never
+  become a variance-bearing line, because an item found in bin B that is on the
+  books at bin A is a relocation, and committing it as surplus inflates stock.
+- Blind counting is unchanged: no expected quantity, variance, movement window,
+  or contested state reaches this screen.

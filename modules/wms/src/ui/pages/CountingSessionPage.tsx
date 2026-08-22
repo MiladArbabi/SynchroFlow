@@ -83,13 +83,12 @@ export type CountingSessionPageProps = {
   onCloseTask: (taskId: string) => Promise<void>;
 };
 
-type Phase =
-  | 'brief'
-  | 'location'
-  | 'product'
-  | 'quantity'
-  | 'summary'
-  | 'complete';
+type Phase = 'brief' | 'location' | 'bin' | 'summary' | 'complete';
+
+type CountingBin = {
+  location_code: string;
+  lines: CountingLine[];
+};
 
 const SKIP_OPTIONS: Array<{
   value: CountingSkipReason;
@@ -132,8 +131,8 @@ export default function CountingSessionPage({
   onCloseTask,
 }: CountingSessionPageProps) {
   const locationInputRef = useRef<HTMLInputElement>(null);
-  const productInputRef = useRef<HTMLInputElement>(null);
-  const quantityInputRef = useRef<HTMLInputElement>(null);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const [phase, setPhase] = useState<Phase>('brief');
   const [lines, setLines] = useState<CountingLine[]>([]);
@@ -142,24 +141,73 @@ export default function CountingSessionPage({
   const [error, setError] = useState<string | null>(null);
 
   const [locationInput, setLocationInput] = useState('');
-  const [productInput, setProductInput] = useState('');
-  const [quantityInput, setQuantityInput] = useState('');
+  const [scanInput, setScanInput] = useState('');
+  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>(
+    {}
+  );
 
-  const [skipOpen, setSkipOpen] = useState(false);
+  const [activeBinCode, setActiveBinCode] = useState<string | null>(null);
+  const [skipTargetId, setSkipTargetId] = useState<string | null>(null);
   const [skipReason, setSkipReason] = useState<CountingSkipReason | null>(null);
   const [skipNotes, setSkipNotes] = useState('');
+
+  // RECOUNT-BINLIST-62 — the domain is location-centric, not line-centric.
+  // Lines arrive already sorted into walk order (RECOUNT-WALKORDER-27), so
+  // grouping preserves first-appearance order rather than re-sorting: any
+  // re-sort here would silently discard the lane ordering the backend built.
+  const bins = useMemo<CountingBin[]>(() => {
+    const order: string[] = [];
+    const grouped = new Map<string, CountingLine[]>();
+
+    for (const line of lines) {
+      const existing = grouped.get(line.location_code);
+
+      if (existing) {
+        existing.push(line);
+      } else {
+        grouped.set(line.location_code, [line]);
+        order.push(line.location_code);
+      }
+    }
+
+    return order.map((code) => ({
+      location_code: code,
+      lines: grouped.get(code) ?? [],
+    }));
+  }, [lines]);
 
   const unresolvedLines = useMemo(
     () => lines.filter((line) => !isResolved(line)),
     [lines]
   );
 
-  const currentLine = unresolvedLines[0] ?? null;
-  const resolvedCount = lines.length - unresolvedLines.length;
-  const progress =
-    lines.length > 0
-      ? Math.round((resolvedCount / lines.length) * 100)
-      : 0;
+  const activeBin =
+    bins.find((bin) => bin.location_code === activeBinCode) ?? null;
+
+  const activeBinResolved = activeBin
+    ? activeBin.lines.filter(isResolved).length
+    : 0;
+
+  const activeBinComplete = Boolean(
+    activeBin && activeBinResolved === activeBin.lines.length
+  );
+
+  const binsComplete = bins.filter((bin) =>
+    bin.lines.every(isResolved)
+  ).length;
+
+  const activeBinNumber = activeBin
+    ? bins.findIndex((bin) => bin.location_code === activeBin.location_code) + 1
+    : 0;
+
+  const firstOpenBin = (fromIndex = 0): CountingBin | null => {
+    for (let index = fromIndex; index < bins.length; index += 1) {
+      if (bins[index].lines.some((line) => !isResolved(line))) {
+        return bins[index];
+      }
+    }
+    return null;
+  };
 
   useEffect(() => {
     void (async () => {
@@ -186,33 +234,10 @@ export default function CountingSessionPage({
     if (phase === 'location') {
       setTimeout(() => locationInputRef.current?.focus(), 50);
     }
-    if (phase === 'product') {
-      setTimeout(() => productInputRef.current?.focus(), 50);
+    if (phase === 'bin') {
+      setTimeout(() => scanInputRef.current?.focus(), 50);
     }
-    if (phase === 'quantity') {
-      setTimeout(() => quantityInputRef.current?.focus(), 50);
-    }
-  }, [phase, currentLine?.recount_line_id]);
-
-  const resetForNextLine = () => {
-    setLocationInput('');
-    setProductInput('');
-    setQuantityInput('');
-    setError(null);
-    setSkipReason(null);
-    setSkipNotes('');
-  };
-
-  const advanceAfterResolution = (resolvedLineId: string) => {
-    const remaining = lines.filter(
-      (line) =>
-        line.recount_line_id !== resolvedLineId &&
-        !isResolved(line)
-    ).length;
-
-    resetForNextLine();
-    setPhase(remaining === 0 ? 'summary' : 'location');
-  };
+  }, [phase, activeBinCode]);
 
   const handleStart = async () => {
     if (submitting || loading) return;
@@ -225,7 +250,10 @@ export default function CountingSessionPage({
         await onClaimTask(task.recount_task_id);
       }
 
-      setPhase(unresolvedLines.length === 0 ? 'summary' : 'location');
+      const next = firstOpenBin();
+
+      setActiveBinCode(next?.location_code ?? null);
+      setPhase(next ? 'location' : 'summary');
     } catch (startError) {
       setError(
         errorMessage(
@@ -239,39 +267,56 @@ export default function CountingSessionPage({
   };
 
   const handleLocation = () => {
-    if (!currentLine) return;
+    if (!activeBin) {
+      setError('No location is active. Return to Warehouse and try again.');
+      return;
+    }
 
-    if (!locationMatches(locationInput, currentLine.location_code)) {
-      setError(`Wrong location. Go to ${currentLine.location_code}.`);
+    if (!locationMatches(locationInput, activeBin.location_code)) {
+      setError(`Wrong bin. Go to ${activeBin.location_code}.`);
       return;
     }
 
     setError(null);
     setLocationInput('');
-    setPhase('product');
+    setPhase('bin');
   };
 
-  const handleProduct = async () => {
-    if (!currentLine || !productInput.trim() || submitting) return;
+  // A scan does not commit anything on its own -- unlike stow, a count needs a
+  // quantity. The scan only identifies which row the operator is standing in
+  // front of and moves focus into that row's input.
+  const handleScan = async () => {
+    const scanned = scanInput.trim();
+
+    if (!activeBin || !scanned || submitting) return;
 
     setSubmitting(true);
     setError(null);
 
     try {
-      const resolved = await onResolveBarcode(productInput.trim());
+      const resolved = await onResolveBarcode(scanned);
 
-      if (
-        !resolved ||
-        resolved.lasyncro_variant_id !== currentLine.lasyncro_variant_id
-      ) {
+      if (!resolved) {
+        setError('Barcode not recognised. Try again.');
+        return;
+      }
+
+      const match = activeBin.lines.find(
+        (line) => line.lasyncro_variant_id === resolved.lasyncro_variant_id
+      );
+
+      if (!match) {
         setError(
-          'Wrong item. Scan the product shown for this location.'
+          `That item is not expected at ${activeBin.location_code}.`
         );
         return;
       }
 
-      setProductInput('');
-      setPhase('quantity');
+      setScanInput('');
+      setTimeout(
+        () => quantityRefs.current[match.recount_line_id]?.focus(),
+        50
+      );
     } catch (scanError) {
       setError(
         errorMessage(scanError, 'Barcode could not be resolved. Try again.')
@@ -281,10 +326,10 @@ export default function CountingSessionPage({
     }
   };
 
-  const handleCount = async () => {
-    if (!currentLine || submitting) return;
+  const handleCount = async (line: CountingLine) => {
+    if (submitting) return;
 
-    const raw = quantityInput.trim();
+    const raw = (quantityInputs[line.recount_line_id] ?? '').trim();
 
     if (!/^\d+$/.test(raw)) {
       setError('Enter a whole number, including 0 when the bin is empty.');
@@ -302,31 +347,33 @@ export default function CountingSessionPage({
     setError(null);
 
     try {
-      await onRecordCount(
-        task.recount_task_id,
-        currentLine.recount_line_id,
-        {
-          counted_quantity: quantity,
-          count_method: 'bin_quantity',
-        }
-      );
+      await onRecordCount(task.recount_task_id, line.recount_line_id, {
+        counted_quantity: quantity,
+        count_method: 'bin_quantity',
+      });
 
       setLines((previous) =>
-        previous.map((line) =>
-          line.recount_line_id === currentLine.recount_line_id
+        previous.map((entry) =>
+          entry.recount_line_id === line.recount_line_id
             ? {
-                ...line,
+                ...entry,
                 counted_quantity: quantity,
                 count_method: 'bin_quantity',
                 counted_at: new Date().toISOString(),
                 skip_reason: null,
                 skipped_at: null,
               }
-            : line
+            : entry
         )
       );
 
-      advanceAfterResolution(currentLine.recount_line_id);
+      setQuantityInputs((previous) => {
+        const next = { ...previous };
+        delete next[line.recount_line_id];
+        return next;
+      });
+
+      setTimeout(() => scanInputRef.current?.focus(), 50);
     } catch (countError) {
       setError(
         errorMessage(
@@ -340,7 +387,7 @@ export default function CountingSessionPage({
   };
 
   const handleSkip = async () => {
-    if (!currentLine || !skipReason || submitting) return;
+    if (!skipTargetId || !skipReason || submitting) return;
 
     if (skipReason === 'other' && !skipNotes.trim()) {
       setError('Add a short note for Other.');
@@ -351,41 +398,58 @@ export default function CountingSessionPage({
     setError(null);
 
     try {
-      await onSkipLine(
-        task.recount_task_id,
-        currentLine.recount_line_id,
-        {
-          skip_reason: skipReason,
-          ...(skipNotes.trim() ? { notes: skipNotes.trim() } : {}),
-        }
-      );
+      await onSkipLine(task.recount_task_id, skipTargetId, {
+        skip_reason: skipReason,
+        ...(skipNotes.trim() ? { notes: skipNotes.trim() } : {}),
+      });
 
       setLines((previous) =>
-        previous.map((line) =>
-          line.recount_line_id === currentLine.recount_line_id
+        previous.map((entry) =>
+          entry.recount_line_id === skipTargetId
             ? {
-                ...line,
+                ...entry,
                 counted_quantity: null,
                 counted_at: null,
                 skip_reason: skipReason,
                 skipped_at: new Date().toISOString(),
               }
-            : line
+            : entry
         )
       );
 
-      setSkipOpen(false);
-      advanceAfterResolution(currentLine.recount_line_id);
+      setSkipTargetId(null);
+      setSkipReason(null);
+      setSkipNotes('');
+      setTimeout(() => scanInputRef.current?.focus(), 50);
     } catch (skipError) {
       setError(
-        errorMessage(
-          skipError,
-          'This item could not be skipped. Try again.'
-        )
+        errorMessage(skipError, 'This item could not be skipped. Try again.')
       );
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleNextBin = () => {
+    if (!activeBin) return;
+
+    const currentIndex = bins.findIndex(
+      (bin) => bin.location_code === activeBin.location_code
+    );
+
+    const next = firstOpenBin(currentIndex + 1) ?? firstOpenBin(0);
+
+    setError(null);
+    setLocationInput('');
+    setScanInput('');
+
+    if (!next) {
+      setPhase('summary');
+      return;
+    }
+
+    setActiveBinCode(next.location_code);
+    setPhase('location');
   };
 
   const handleFinish = async () => {
@@ -402,10 +466,7 @@ export default function CountingSessionPage({
       setPhase('complete');
     } catch (closeError) {
       setError(
-        errorMessage(
-          closeError,
-          'Count could not be finished. Try again.'
-        )
+        errorMessage(closeError, 'Count could not be finished. Try again.')
       );
     } finally {
       setSubmitting(false);
@@ -422,16 +483,148 @@ export default function CountingSessionPage({
     );
   }
 
+  const renderRow = (line: CountingLine) => {
+    const counted = line.counted_at !== null;
+    const skipped = line.skipped_at !== null;
+    const resolved = counted || skipped;
+
+    return (
+      <Box
+        key={line.recount_line_id}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.25,
+          py: 0.75,
+          borderBottom: '1px solid var(--rule)',
+          opacity: resolved ? 0.5 : 1,
+        }}
+      >
+        <Box
+          sx={{
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            borderRadius: '4px',
+            bgcolor: 'var(--surface-2, var(--surface))',
+            border: '1px solid var(--rule)',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {line.image_url ? (
+            <Box
+              component="img"
+              src={line.image_url}
+              alt=""
+              sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+          ) : (
+            <PackageCheck size={14} color="var(--ink-4)" />
+          )}
+        </Box>
+
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography
+            sx={{
+              fontSize: 12,
+              lineHeight: 1.35,
+              color: 'var(--ink)',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {line.product_title ?? 'Product'}
+            {line.variant_title && line.variant_title !== 'Default Title'
+              ? ` · ${line.variant_title}`
+              : ''}
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: 11,
+              lineHeight: 1.35,
+              fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+              color: 'var(--ink-4)',
+            }}
+          >
+            {line.sku ?? 'No SKU'}
+          </Typography>
+        </Box>
+
+        {counted && (
+          <Typography
+            sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', width: 72, textAlign: 'right' }}
+          >
+            {line.counted_quantity}
+          </Typography>
+        )}
+
+        {skipped && (
+          <Typography
+            sx={{ fontSize: 11, color: 'var(--ink-3)', width: 72, textAlign: 'right' }}
+          >
+            Skipped
+          </Typography>
+        )}
+
+        {!resolved && (
+          <>
+            <TextField
+              inputRef={(element: HTMLInputElement | null) => {
+                quantityRefs.current[line.recount_line_id] = element;
+              }}
+              value={quantityInputs[line.recount_line_id] ?? ''}
+              onChange={(event) =>
+                setQuantityInputs((previous) => ({
+                  ...previous,
+                  [line.recount_line_id]: event.target.value,
+                }))
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void handleCount(line);
+              }}
+              placeholder="Qty"
+              size="small"
+              disabled={submitting}
+              autoComplete="off"
+              inputProps={{
+                inputMode: 'numeric',
+                pattern: '[0-9]*',
+                autoComplete: 'off',
+                style: { textAlign: 'right', padding: '6px 8px', fontSize: 13 },
+              }}
+              sx={{ width: 72 }}
+            />
+
+            <Button
+              size="small"
+              onClick={() => {
+                setError(null);
+                setSkipReason(null);
+                setSkipNotes('');
+                setSkipTargetId(line.recount_line_id);
+              }}
+              disabled={submitting}
+              aria-label="Cannot count this item"
+              sx={{ minWidth: 32, px: 0.5 }}
+            >
+              <SkipForward size={15} />
+            </Button>
+          </>
+        )}
+      </Box>
+    );
+  };
+
   return (
     <Box sx={{ p: '30px 24px', maxWidth: 720, mx: 'auto' }}>
       <Box sx={{ mb: 3 }}>
         <Typography
-          sx={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: 'var(--accent)',
-            mb: 0.5,
-          }}
+          sx={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', mb: 0.5 }}
         >
           {task.label}
         </Typography>
@@ -448,14 +641,10 @@ export default function CountingSessionPage({
         </Typography>
 
         <Typography
-          sx={{
-            fontSize: 13,
-            fontWeight: 300,
-            color: 'var(--ink-3)',
-            mt: 0.75,
-          }}
+          sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }}
         >
-          {resolvedCount} of {lines.length} locations checked · {progress}%
+          {binsComplete} of {bins.length}{' '}
+          {bins.length === 1 ? 'bin' : 'bins'} counted
         </Typography>
       </Box>
 
@@ -477,14 +666,10 @@ export default function CountingSessionPage({
           <ScanBarcode size={28} color="var(--accent)" />
 
           <Typography
-            sx={{
-              fontSize: 18,
-              fontWeight: 600,
-              color: 'var(--ink)',
-              mt: 1.5,
-            }}
+            sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
           >
-            {unresolvedLines.length} locations remaining
+            {bins.length - binsComplete}{' '}
+            {bins.length - binsComplete === 1 ? 'bin' : 'bins'} remaining
           </Typography>
 
           <Typography
@@ -496,8 +681,8 @@ export default function CountingSessionPage({
               mb: 2.5,
             }}
           >
-            Scan the location, confirm the product, then enter what you
-            physically see. System quantities stay hidden while you count.
+            Scan the bin, then scan each item and enter what you physically
+            see. System quantities stay hidden while you count.
           </Typography>
 
           <Button
@@ -507,267 +692,134 @@ export default function CountingSessionPage({
           >
             {submitting
               ? 'Starting…'
-              : resolvedCount > 0
+              : binsComplete > 0
               ? 'Continue count'
               : 'Start count'}
           </Button>
 
-          <Button
-            onClick={onComplete}
-            disabled={submitting}
-            sx={{ ml: 1 }}
-          >
+          <Button onClick={onComplete} disabled={submitting} sx={{ ml: 1 }}>
             Back
           </Button>
         </Box>
       )}
 
-      {(phase === 'location' ||
-        phase === 'product' ||
-        phase === 'quantity') &&
-        currentLine && (
-          <>
-            <Box
-              sx={{
-                bgcolor: 'var(--surface)',
-                border: '1px solid var(--rule)',
-                borderRadius: '14px',
-                p: 3,
-                mb: 2,
-              }}
+      {phase === 'location' && activeBin && (
+        <Box
+          sx={{
+            bgcolor: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '14px',
+            p: 3,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+            <MapPin size={18} color="var(--accent)" />
+            <Typography
+              sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}
             >
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  mb: 2,
-                }}
-              >
-                <MapPin size={18} color="var(--accent)" />
-                <Typography
-                  sx={{
-                    fontSize: 24,
-                    fontWeight: 700,
-                    color: 'var(--ink)',
-                  }}
-                >
-                  {currentLine.location_code}
-                </Typography>
-              </Box>
+              Scan the bin barcode
+            </Typography>
+          </Box>
 
+          <Typography
+            sx={{ fontSize: 12, color: 'var(--ink-3)', mb: 1.5 }}
+          >
+            Bin {activeBinNumber} of {bins.length} ·{' '}
+            {activeBin.lines.length}{' '}
+            {activeBin.lines.length === 1 ? 'item' : 'items'} to check
+          </Typography>
+
+          <TextField
+            inputRef={locationInputRef}
+            fullWidth
+            value={locationInput}
+            onChange={(event) =>
+              setLocationInput(event.target.value.toUpperCase())
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') handleLocation();
+            }}
+            placeholder="Scan bin barcode"
+            disabled={submitting}
+            autoComplete="off"
+            inputProps={{ autoComplete: 'off' }}
+          />
+
+          <Button
+            variant="contained"
+            onClick={handleLocation}
+            disabled={!locationInput.trim() || submitting}
+            sx={{ mt: 1.5 }}
+          >
+            Confirm bin
+          </Button>
+        </Box>
+      )}
+
+      {phase === 'bin' && activeBin && (
+        <Box
+          sx={{
+            bgcolor: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '14px',
+            p: 2.25,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'space-between',
+              mb: 1.25,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              <MapPin size={17} color="var(--accent)" />
               <Typography
-                sx={{
-                  fontSize: 16,
-                  fontWeight: 600,
-                  color: 'var(--ink)',
-                }}
+                sx={{ fontSize: 20, fontWeight: 700, color: 'var(--ink)' }}
               >
-                {currentLine.product_title ?? 'Product'}
-              </Typography>
-
-              {currentLine.variant_title &&
-                currentLine.variant_title !== 'Default Title' && (
-                  <Typography
-                    sx={{
-                      fontSize: 13,
-                      color: 'var(--ink-3)',
-                      mt: 0.25,
-                    }}
-                  >
-                    {currentLine.variant_title}
-                  </Typography>
-                )}
-
-              <Typography
-                sx={{
-                  fontSize: 12,
-                  fontFamily:
-                    '"DM Mono", "SF Mono", ui-monospace, monospace',
-                  color: 'var(--ink-4)',
-                  mt: 0.75,
-                }}
-              >
-                {currentLine.sku ?? 'No SKU'}
+                {activeBin.location_code}
               </Typography>
             </Box>
 
-            {phase === 'location' && (
-              <Box
-                sx={{
-                  bgcolor: 'var(--surface)',
-                  border: '1px solid var(--rule)',
-                  borderRadius: '14px',
-                  p: 3,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--ink)',
-                    mb: 1.5,
-                  }}
-                >
-                  Scan location
-                </Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+              Bin {activeBinNumber} of {bins.length} · {activeBinResolved} of{' '}
+              {activeBin.lines.length} items
+            </Typography>
+          </Box>
 
-                <TextField
-                  inputRef={locationInputRef}
-                  fullWidth
-                  value={locationInput}
-                  onChange={(event) =>
-                    setLocationInput(event.target.value.toUpperCase())
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') handleLocation();
-                  }}
-                  placeholder={currentLine.location_code}
-                  disabled={submitting}
-                />
+          <TextField
+            inputRef={scanInputRef}
+            fullWidth
+            size="small"
+            value={scanInput}
+            onChange={(event) => setScanInput(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') void handleScan();
+            }}
+            placeholder="Scan product barcode"
+            disabled={submitting || activeBinComplete}
+            autoComplete="off"
+            inputProps={{ autoComplete: 'off' }}
+            sx={{ mb: 1.25 }}
+          />
 
-                <Button
-                  variant="contained"
-                  onClick={handleLocation}
-                  disabled={!locationInput.trim() || submitting}
-                  sx={{ mt: 1.5 }}
-                >
-                  Confirm location
-                </Button>
-              </Box>
-            )}
+          <Box sx={{ borderTop: '1px solid var(--rule)' }}>
+            {activeBin.lines.map(renderRow)}
+          </Box>
 
-            {phase === 'product' && (
-              <Box
-                sx={{
-                  bgcolor: 'var(--surface)',
-                  border: '1px solid var(--rule)',
-                  borderRadius: '14px',
-                  p: 3,
-                }}
-              >
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1,
-                    mb: 1.5,
-                  }}
-                >
-                  <PackageCheck size={18} color="var(--accent)" />
-                  <Typography
-                    sx={{
-                      fontSize: 14,
-                      fontWeight: 600,
-                      color: 'var(--ink)',
-                    }}
-                  >
-                    Scan product
-                  </Typography>
-                </Box>
-
-                <TextField
-                  inputRef={productInputRef}
-                  fullWidth
-                  value={productInput}
-                  onChange={(event) =>
-                    setProductInput(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      void handleProduct();
-                    }
-                  }}
-                  placeholder={currentLine.sku ?? 'Scan barcode'}
-                  disabled={submitting}
-                />
-
-                <Button
-                  variant="contained"
-                  onClick={() => void handleProduct()}
-                  disabled={!productInput.trim() || submitting}
-                  sx={{ mt: 1.5 }}
-                >
-                  {submitting ? 'Checking…' : 'Confirm product'}
-                </Button>
-              </Box>
-            )}
-
-            {phase === 'quantity' && (
-              <Box
-                sx={{
-                  bgcolor: 'var(--surface)',
-                  border: '1px solid var(--rule)',
-                  borderRadius: '14px',
-                  p: 3,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--ink)',
-                    mb: 0.5,
-                  }}
-                >
-                  How many are physically here?
-                </Typography>
-
-                <Typography
-                  sx={{
-                    fontSize: 12,
-                    color: 'var(--ink-3)',
-                    mb: 1.5,
-                  }}
-                >
-                  Enter 0 if the location is empty.
-                </Typography>
-
-                <TextField
-                  inputRef={quantityInputRef}
-                  fullWidth
-                  value={quantityInput}
-                  onChange={(event) =>
-                    setQuantityInput(event.target.value)
-                  }
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') {
-                      void handleCount();
-                    }
-                  }}
-                  inputProps={{
-                    inputMode: 'numeric',
-                    pattern: '[0-9]*',
-                  }}
-                  disabled={submitting}
-                />
-
-                <Button
-                  variant="contained"
-                  onClick={() => void handleCount()}
-                  disabled={!quantityInput.trim() || submitting}
-                  sx={{ mt: 1.5 }}
-                >
-                  {submitting ? 'Saving…' : 'Save count'}
-                </Button>
-              </Box>
-            )}
-
+          {activeBinComplete && (
             <Button
-              startIcon={<SkipForward size={16} />}
-              onClick={() => {
-                setError(null);
-                setSkipReason(null);
-                setSkipNotes('');
-                setSkipOpen(true);
-              }}
+              variant="contained"
+              onClick={handleNextBin}
               disabled={submitting}
-              sx={{ mt: 1.5 }}
+              sx={{ mt: 2 }}
             >
-              Cannot count this item
+              {firstOpenBin() ? 'Next bin' : 'Review count'}
             </Button>
-          </>
-        )}
+          )}
+        </Box>
+      )}
 
       {phase === 'summary' && (
         <Box
@@ -781,14 +833,9 @@ export default function CountingSessionPage({
           <CheckCircle2 size={30} color="var(--accent)" />
 
           <Typography
-            sx={{
-              fontSize: 18,
-              fontWeight: 600,
-              color: 'var(--ink)',
-              mt: 1.5,
-            }}
+            sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
           >
-            All locations checked
+            All bins counted
           </Typography>
 
           <Typography
@@ -825,12 +872,7 @@ export default function CountingSessionPage({
           <CheckCircle2 size={32} color="var(--accent)" />
 
           <Typography
-            sx={{
-              fontSize: 19,
-              fontWeight: 600,
-              color: 'var(--ink)',
-              mt: 1.5,
-            }}
+            sx={{ fontSize: 19, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
           >
             Count submitted
           </Typography>
@@ -854,9 +896,9 @@ export default function CountingSessionPage({
       )}
 
       <Dialog
-        open={skipOpen}
+        open={skipTargetId !== null}
         onClose={() => {
-          if (!submitting) setSkipOpen(false);
+          if (!submitting) setSkipTargetId(null);
         }}
         fullWidth
         maxWidth="xs"
@@ -875,11 +917,7 @@ export default function CountingSessionPage({
             {SKIP_OPTIONS.map((option) => (
               <Button
                 key={option.value}
-                variant={
-                  skipReason === option.value
-                    ? 'contained'
-                    : 'outlined'
-                }
+                variant={skipReason === option.value ? 'contained' : 'outlined'}
                 onClick={() => {
                   setSkipReason(option.value);
                   setError(null);
@@ -898,9 +936,7 @@ export default function CountingSessionPage({
               multiline
               minRows={2}
               value={skipNotes}
-              onChange={(event) =>
-                setSkipNotes(event.target.value)
-              }
+              onChange={(event) => setSkipNotes(event.target.value)}
               placeholder="What prevented the count?"
               disabled={submitting}
               sx={{ mt: 2 }}
@@ -910,7 +946,7 @@ export default function CountingSessionPage({
 
         <DialogActions>
           <Button
-            onClick={() => setSkipOpen(false)}
+            onClick={() => setSkipTargetId(null)}
             disabled={submitting}
           >
             Cancel
