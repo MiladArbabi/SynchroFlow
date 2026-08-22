@@ -88,3 +88,19 @@ now. Columns added in migration 0159: `window_delta`, `window_from`,
    server-enforced everywhere else on this surface — `getOperatorLines`
    withholds `expected_quantity`. `recordCount` returns those fields for the
    service layer; the controller acknowledges the write only.
+## HTTP error mapping
+
+`recountErrorStatus()` (`apps/backend/src/api/wms/inventoryRecount.controller.ts`) maps
+service error messages to HTTP status by substring. Business-state rejections belong on
+the 409 list; anything unmatched falls through to 500 and gets an
+"Inventory recount close failed:" prefix, which misreports an ordinary client condition
+as a server fault.
+
+`RECOUNT-CLOSE-HTTP-47`: the unresolved-lines rejection was reworded from
+"not yet counted" to "not yet resolved" under `RECOUNT-COUNTZERO-34` (when skip became a
+valid resolution) without updating the mapper, so premature close returned 500. Both
+spellings now map to 409.
+
+**Rule:** rewording a `[RECOUNT_*]` throw and updating `recountErrorStatus()` are one
+change, never two. Closing a task still requires every line counted or explicitly
+skipped — this was only ever an HTTP classification defect.

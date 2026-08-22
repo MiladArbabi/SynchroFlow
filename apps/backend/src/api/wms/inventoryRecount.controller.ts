@@ -22,6 +22,12 @@ import {
  * movements after owner/admin review. Blind expected quantities remain enforced
  * by inventoryRecount.service.ts rather than trusting the client.
  */
+// RECOUNT-CLOSE-HTTP-47: 'not yet resolved' is the current wording of the
+// unresolved-lines rejection in closeCount(); it replaced 'not yet counted'
+// under RECOUNT-COUNTZERO-34, when skip became a valid resolution. Both
+// spellings are kept so older callers/messages still map to 409. If this
+// message is ever reworded again, update this list in the same change --
+// an unmatched business-state rejection silently degrades to HTTP 500.
 function recountErrorStatus(message: string): number {
   if (message.toLowerCase().includes('not found')) return 404;
 
@@ -40,7 +46,7 @@ function recountErrorStatus(message: string): number {
     message.includes('different operator') ||
     message.includes('not countable') ||
     message.includes('not closable') ||
-    message.includes('not yet counted') ||
+    message.includes('not yet counted') || message.includes('not yet resolved') ||
     message.includes('not in review') ||
     message.includes('not committable')
   ) {
