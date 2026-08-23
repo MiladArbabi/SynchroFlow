@@ -719,6 +719,7 @@ export async function reviewLine(
       source_exception_id: recountLineId,
       lasyncro_variant_id: line.lasyncro_variant_id,
       quantity: Math.abs(Number(line.variance)),
+      exception_type: 'recount_variance',
       problem_bin_location: seqRow.problem_bin_location,
       notes: `PROB-${shopId}-${String(seqRow.prob_label_sequence).padStart(4, '0')} recount variance at ${line.location_code}: expected ${line.expected_quantity}, counted ${line.counted_quantity}`,
     });
@@ -772,6 +773,15 @@ export async function commitRecount(
     .whereNotNull('variance_reason')
     .whereNot('variance', 0)
     .whereNotNull('counted_quantity')
+    // RECOUNT-EXCEPTIONS-80: escalation transfers correction ownership to
+    // Problem Center. Never also write a recount reconciliation correction.
+    .whereNotExists(function () {
+      this.select(trx.raw('1'))
+        .from('problem_center_tasks as pct')
+        .whereRaw('pct.shop_id = inventory_recount_lines.shop_id')
+        .whereRaw('pct.source_exception_id = inventory_recount_lines.recount_line_id')
+        .where('pct.source', 'count');
+    })
     .select('recount_line_id', 'lasyncro_variant_id', 'location_code', 'variance');
 
   const pending = lines.filter((l: any) => !superseded.includes(l.recount_line_id));
@@ -916,4 +926,315 @@ export async function listRecountTasks(
   }
 
   return q;
+}
+
+export type RecountFindingType =
+  | 'unexpected_item'
+  | 'product_defect'
+  | 'packaging_defect';
+
+export interface RecountFindingInput {
+  clientEventId: string;
+  recountLineId?: string | null;
+  lasyncroVariantId: string;
+  locationCode: string;
+  findingType: RecountFindingType;
+  quantity: number;
+  notes?: string;
+}
+
+/**
+ * RECOUNT-EXCEPTIONS-80
+ *
+ * Persist a physical observation without changing inventory truth.
+ * Findings are evidence only; correction remains downstream of review/commit.
+ */
+export async function createRecountFinding(
+  trx: Knex.Transaction,
+  params: {
+    shopId: number;
+    recountTaskId: string;
+    reportedBy: number;
+    finding: RecountFindingInput;
+  }
+): Promise<Record<string, unknown>> {
+  const { shopId, recountTaskId, reportedBy, finding } = params;
+  const normalizedNotes = finding.notes?.trim() || null;
+
+  const existingByEvent = await trx('inventory_recount_findings')
+    .where({
+      shop_id: shopId,
+      client_event_id: finding.clientEventId,
+    })
+    .select(
+      'recount_finding_id',
+      'recount_task_id',
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'finding_type',
+      'quantity',
+      'notes',
+      'reported_by',
+      'reported_at'
+    )
+    .first();
+
+  if (existingByEvent) {
+    const samePayload =
+      existingByEvent.recount_task_id === recountTaskId &&
+      (existingByEvent.recount_line_id ?? null) === (finding.recountLineId ?? null) &&
+      existingByEvent.lasyncro_variant_id === finding.lasyncroVariantId &&
+      existingByEvent.location_code === finding.locationCode &&
+      existingByEvent.finding_type === finding.findingType &&
+      Number(existingByEvent.quantity) === finding.quantity &&
+      (existingByEvent.notes ?? null) === normalizedNotes &&
+      existingByEvent.reported_by === reportedBy;
+
+    if (!samePayload) {
+      throw new Error(
+        '[RECOUNT_FINDING] client_event_id already used for a different finding'
+      );
+    }
+
+    console.info('[RECOUNT_FINDING_REPLAYED]', {
+      recountTaskId,
+      recountFindingId: existingByEvent.recount_finding_id,
+      clientEventId: finding.clientEventId,
+      shopId,
+      reportedBy,
+    });
+
+    return existingByEvent;
+  }
+
+  if (!Number.isSafeInteger(finding.quantity) || finding.quantity <= 0) {
+    throw new Error('[RECOUNT_FINDING] quantity must be a positive whole number');
+  }
+
+  const task = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select('status', 'claimed_by')
+    .first();
+
+  if (!task) {
+    throw new Error(`[RECOUNT_FINDING] Task not found: ${recountTaskId}`);
+  }
+
+  if (!['claimed', 'counting'].includes(task.status)) {
+    throw new Error(
+      `[RECOUNT_FINDING] Task not countable, status: ${task.status}`
+    );
+  }
+
+  if (task.claimed_by !== reportedBy) {
+    throw new Error('[RECOUNT_FINDING] Task claimed by different operator');
+  }
+
+  const variant = await trx('variants')
+    .where({
+      shop_id: shopId,
+      lasyncro_variant_id: finding.lasyncroVariantId,
+    })
+    .select('lasyncro_variant_id')
+    .first();
+
+  if (!variant) {
+    throw new Error(
+      `[RECOUNT_FINDING] Variant not found: ${finding.lasyncroVariantId}`
+    );
+  }
+
+  const taskLocation = await trx('inventory_recount_lines')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+      location_code: finding.locationCode,
+    })
+    .select('recount_line_id')
+    .first();
+
+  if (!taskLocation) {
+    throw new Error(
+      '[RECOUNT_FINDING] location_code must be part of the recount task'
+    );
+  }
+
+  if (finding.findingType === 'unexpected_item') {
+    if (finding.recountLineId) {
+      throw new Error(
+        '[RECOUNT_FINDING] unexpected_item recount_line_id must be omitted'
+      );
+    }
+  } else {
+    if (!finding.recountLineId) {
+      throw new Error(
+        '[RECOUNT_FINDING] defect finding requires a recount line'
+      );
+    }
+
+    const line = await trx('inventory_recount_lines')
+      .where({
+        shop_id: shopId,
+        recount_task_id: recountTaskId,
+        recount_line_id: finding.recountLineId,
+      })
+      .select(
+        'lasyncro_variant_id',
+        'location_code'
+      )
+      .first();
+
+    if (!line) {
+      throw new Error(
+        `[RECOUNT_FINDING] Recount line not found: ${finding.recountLineId}`
+      );
+    }
+
+    if (
+      line.lasyncro_variant_id !== finding.lasyncroVariantId ||
+      line.location_code !== finding.locationCode
+    ) {
+      throw new Error(
+        '[RECOUNT_FINDING] defect finding variant and location must be identical to its recount line'
+      );
+    }
+  }
+
+  const inserted = await trx('inventory_recount_findings')
+    .insert({
+      recount_task_id: recountTaskId,
+      recount_line_id: finding.recountLineId ?? null,
+      shop_id: shopId,
+      client_event_id: finding.clientEventId,
+      lasyncro_variant_id: finding.lasyncroVariantId,
+      location_code: finding.locationCode,
+      finding_type: finding.findingType,
+      quantity: finding.quantity,
+      notes: normalizedNotes,
+      reported_by: reportedBy,
+    })
+    .onConflict(
+      trx.raw(
+        '(shop_id, client_event_id) WHERE client_event_id IS NOT NULL'
+      )
+    )
+    .ignore()
+    .returning([
+      'recount_finding_id',
+      'recount_task_id',
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'finding_type',
+      'quantity',
+      'notes',
+      'reported_by',
+      'reported_at',
+    ]);
+
+  let created = inserted[0];
+
+  if (!created) {
+    created = await trx('inventory_recount_findings')
+      .where({
+        shop_id: shopId,
+        client_event_id: finding.clientEventId,
+      })
+      .select(
+        'recount_finding_id',
+        'recount_task_id',
+        'recount_line_id',
+        'lasyncro_variant_id',
+        'location_code',
+        'finding_type',
+        'quantity',
+        'notes',
+        'reported_by',
+        'reported_at'
+      )
+      .first();
+
+    if (!created) {
+      throw new Error(
+        '[RECOUNT_FINDING] idempotent replay could not load persisted finding'
+      );
+    }
+
+    const samePayload =
+      created.recount_task_id === recountTaskId &&
+      (created.recount_line_id ?? null) === (finding.recountLineId ?? null) &&
+      created.lasyncro_variant_id === finding.lasyncroVariantId &&
+      created.location_code === finding.locationCode &&
+      created.finding_type === finding.findingType &&
+      Number(created.quantity) === finding.quantity &&
+      (created.notes ?? null) === normalizedNotes &&
+      created.reported_by === reportedBy;
+
+    if (!samePayload) {
+      throw new Error(
+        '[RECOUNT_FINDING] client_event_id already used for a different finding'
+      );
+    }
+
+    console.info('[RECOUNT_FINDING_REPLAYED]', {
+      recountTaskId,
+      recountFindingId: created.recount_finding_id,
+      clientEventId: finding.clientEventId,
+      shopId,
+      reportedBy,
+    });
+
+    return created;
+  }
+
+  console.info('[RECOUNT_FINDING_RECORDED]', {
+    recountTaskId,
+    recountFindingId: created.recount_finding_id,
+    findingType: created.finding_type,
+    shopId,
+    reportedBy,
+  });
+
+  return created;
+}
+
+export async function listRecountFindings(
+  trx: Knex.Transaction,
+  shopId: number,
+  recountTaskId: string
+): Promise<Array<Record<string, unknown>>> {
+  const task = await trx('inventory_recount_tasks')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select('recount_task_id')
+    .first();
+
+  if (!task) {
+    throw new Error(`[RECOUNT_FINDING] Task not found: ${recountTaskId}`);
+  }
+
+  return trx('inventory_recount_findings')
+    .where({
+      shop_id: shopId,
+      recount_task_id: recountTaskId,
+    })
+    .select(
+      'recount_finding_id',
+      'recount_task_id',
+      'recount_line_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'finding_type',
+      'quantity',
+      'notes',
+      'reported_by',
+      'reported_at'
+    )
+    .orderBy('reported_at', 'asc');
 }

@@ -40,6 +40,24 @@ export type CountingTask = {
   counted_count: number;
 };
 
+export type CountingFindingType =
+  | 'unexpected_item'
+  | 'product_defect'
+  | 'packaging_defect';
+
+export type CountingFinding = {
+  recount_finding_id: string;
+  recount_task_id: string;
+  recount_line_id: string | null;
+  lasyncro_variant_id: string;
+  location_code: string;
+  finding_type: CountingFindingType;
+  quantity: number;
+  notes: string | null;
+  reported_by: number | null;
+  reported_at: string;
+};
+
 export type CountingLine = {
   recount_line_id: string;
   lasyncro_variant_id: string;
@@ -60,6 +78,19 @@ export type CountingSessionPageProps = {
   task: CountingTask;
   onComplete: () => void;
   onFetchLines: (taskId: string) => Promise<CountingLine[]>;
+  onFetchFindings: (taskId: string) => Promise<CountingFinding[]>;
+  onCreateFinding: (
+    taskId: string,
+    params: {
+      client_event_id: string;
+      recount_line_id?: string | null;
+      lasyncro_variant_id: string;
+      location_code: string;
+      finding_type: CountingFindingType;
+      quantity: number;
+      notes?: string;
+    }
+  ) => Promise<CountingFinding>;
   onClaimTask: (taskId: string) => Promise<void>;
   onResolveBarcode: (
     scannedValue: string
@@ -124,6 +155,8 @@ export default function CountingSessionPage({
   task,
   onComplete,
   onFetchLines,
+  onFetchFindings,
+  onCreateFinding,
   onClaimTask,
   onResolveBarcode,
   onRecordCount,
@@ -150,6 +183,19 @@ export default function CountingSessionPage({
   const [skipTargetId, setSkipTargetId] = useState<string | null>(null);
   const [skipReason, setSkipReason] = useState<CountingSkipReason | null>(null);
   const [skipNotes, setSkipNotes] = useState('');
+
+  // RECOUNT-EXCEPTIONS-80: findings describe physical observations only.
+  // They never alter counted quantity or inventory truth.
+  const [, setFindings] = useState<CountingFinding[]>([]);
+  const [findingDraft, setFindingDraft] = useState<{
+    client_event_id: string;
+    line: CountingLine | null;
+    lasyncro_variant_id: string;
+    location_code: string;
+    finding_type: CountingFindingType;
+  } | null>(null);
+  const [findingQuantity, setFindingQuantity] = useState('1');
+  const [findingNotes, setFindingNotes] = useState('');
 
   // RECOUNT-BINLIST-62 — the domain is location-centric, not line-centric.
   // Lines arrive already sorted into walk order (RECOUNT-WALKORDER-27), so
@@ -216,7 +262,10 @@ export default function CountingSessionPage({
 
       try {
         const loaded = await onFetchLines(task.recount_task_id);
+        const loadedFindings = await onFetchFindings(task.recount_task_id);
+
         setLines(loaded);
+        setFindings(loadedFindings);
 
         // RECOUNT-RESUME-POSITION-72: reopening an in-progress count should
         // resume at its first unresolved bin instead of restarting at brief.
@@ -238,7 +287,7 @@ export default function CountingSessionPage({
         setLoading(false);
       }
     })();
-  }, [task.recount_task_id, onFetchLines]);
+  }, [task.recount_task_id, onFetchLines, onFetchFindings]);
 
   useEffect(() => {
     if (phase === 'location') {
@@ -316,9 +365,18 @@ export default function CountingSessionPage({
       );
 
       if (!match) {
-        setError(
-          `That item is not expected at ${activeBin.location_code}.`
-        );
+        // A resolved barcode physically observed in this bin is evidence,
+        // even when the recount line set did not expect it here.
+        setFindingDraft({
+          client_event_id: crypto.randomUUID(),
+          line: null,
+          lasyncro_variant_id: resolved.lasyncro_variant_id,
+          location_code: activeBin.location_code,
+          finding_type: 'unexpected_item',
+        });
+        setFindingQuantity('1');
+        setFindingNotes('');
+        setScanInput('');
         return;
       }
 
@@ -462,6 +520,64 @@ export default function CountingSessionPage({
     setPhase('location');
   };
 
+  const handleSaveFinding = async () => {
+    if (!findingDraft || submitting) return;
+
+    const rawQuantity = findingQuantity.trim();
+
+    if (!/^\d+$/.test(rawQuantity)) {
+      setError('Enter a positive whole-number quantity.');
+      return;
+    }
+
+    const quantity = Number(rawQuantity);
+
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+      setError('Enter a positive whole-number quantity.');
+      return;
+    }
+
+    if (
+      findingDraft.line?.counted_quantity !== null &&
+      findingDraft.line?.counted_quantity !== undefined &&
+      quantity > findingDraft.line.counted_quantity
+    ) {
+      setError('Defect quantity cannot exceed the physical quantity counted.');
+      return;
+    }
+
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const created = await onCreateFinding(task.recount_task_id, {
+        client_event_id: findingDraft.client_event_id,
+        recount_line_id: findingDraft.line?.recount_line_id ?? null,
+        lasyncro_variant_id: findingDraft.lasyncro_variant_id,
+        location_code: findingDraft.location_code,
+        finding_type: findingDraft.finding_type,
+        quantity,
+        ...(findingNotes.trim() ? { notes: findingNotes.trim() } : {}),
+      });
+
+      setFindings((previous) => [...previous, created]);
+      setFindingDraft(null);
+      setFindingQuantity('1');
+      setFindingNotes('');
+
+      setTimeout(() => scanInputRef.current?.focus(), 50);
+    } catch (findingError) {
+      setError(
+        errorMessage(
+          findingError,
+          'This physical finding could not be saved. Try again.'
+        )
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleFinish = async () => {
     if (unresolvedLines.length > 0 || submitting) return;
 
@@ -571,6 +687,29 @@ export default function CountingSessionPage({
           >
             {line.counted_quantity}
           </Typography>
+        )}
+
+        {counted && Number(line.counted_quantity) > 0 && (
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              setError(null);
+              setFindingDraft({
+                client_event_id: crypto.randomUUID(),
+                line,
+                lasyncro_variant_id: line.lasyncro_variant_id,
+                location_code: line.location_code,
+                finding_type: 'product_defect',
+              });
+              setFindingQuantity('1');
+              setFindingNotes('');
+            }}
+            disabled={submitting}
+            sx={{ minWidth: 'auto', px: 0.75, fontSize: 11 }}
+          >
+            Report defect
+          </Button>
         )}
 
         {skipped && (
@@ -904,6 +1043,134 @@ export default function CountingSessionPage({
           </Button>
         </Box>
       )}
+
+      <Dialog
+        open={findingDraft !== null}
+        onClose={() => {
+          if (!submitting) {
+            setFindingDraft(null);
+            setError(null);
+          }
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>
+          {findingDraft?.finding_type === 'unexpected_item'
+            ? 'Unexpected item found'
+            : 'Report defective stock'}
+        </DialogTitle>
+
+        <DialogContent>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {error}
+            </Alert>
+          )}
+
+          <Typography
+            sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2 }}
+          >
+            {findingDraft?.finding_type === 'unexpected_item'
+              ? `This item is not expected at ${findingDraft.location_code}. Record what you physically found.`
+              : 'Keep these units in the physical count. Record only the units that are defective.'}
+          </Typography>
+
+          {findingDraft?.line && (
+            <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+              <Button
+                variant={
+                  findingDraft.finding_type === 'product_defect'
+                    ? 'contained'
+                    : 'outlined'
+                }
+                onClick={() =>
+                  setFindingDraft((previous) =>
+                    previous
+                      ? { ...previous, finding_type: 'product_defect' }
+                      : previous
+                  )
+                }
+                disabled={submitting}
+              >
+                Product defect
+              </Button>
+
+              <Button
+                variant={
+                  findingDraft.finding_type === 'packaging_defect'
+                    ? 'contained'
+                    : 'outlined'
+                }
+                onClick={() =>
+                  setFindingDraft((previous) =>
+                    previous
+                      ? { ...previous, finding_type: 'packaging_defect' }
+                      : previous
+                  )
+                }
+                disabled={submitting}
+              >
+                Packaging defect
+              </Button>
+            </Box>
+          )}
+
+          <TextField
+            fullWidth
+            label="Quantity"
+            value={findingQuantity}
+            onChange={(event) => {
+              setFindingQuantity(event.target.value);
+              setError(null);
+            }}
+            disabled={submitting}
+            inputProps={{
+              inputMode: 'numeric',
+              pattern: '[0-9]*',
+            }}
+          />
+
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            value={findingNotes}
+            onChange={(event) => setFindingNotes(event.target.value)}
+            placeholder="Optional note"
+            disabled={submitting}
+            sx={{ mt: 2 }}
+          />
+
+          {findingDraft?.line && (
+            <Typography
+              sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 1 }}
+            >
+              Physically counted: {findingDraft.line.counted_quantity}
+            </Typography>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setFindingDraft(null);
+              setError(null);
+            }}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => void handleSaveFinding()}
+            disabled={submitting || !findingQuantity.trim()}
+          >
+            {submitting ? 'Saving…' : 'Record finding'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={skipTargetId !== null}

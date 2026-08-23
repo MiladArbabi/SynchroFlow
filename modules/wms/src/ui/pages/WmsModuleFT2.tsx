@@ -27,6 +27,8 @@ import CountingSessionPage, {
   type CountingLine,
   type CountingSkipReason,
   type CountingTask,
+  type CountingFinding,
+  type CountingFindingType,
 } from './CountingSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
@@ -218,6 +220,19 @@ export type WmsModuleFT2Props = {
   /** Count execution — operator-facing tasks only. */
   recountTasks?: CountingTask[];
   onFetchCountingLines: (taskId: string) => Promise<CountingLine[]>;
+  onFetchCountingFindings: (taskId: string) => Promise<CountingFinding[]>;
+  onCreateCountingFinding: (
+    taskId: string,
+    params: {
+      client_event_id: string;
+      recount_line_id?: string | null;
+      lasyncro_variant_id: string;
+      location_code: string;
+      finding_type: CountingFindingType;
+      quantity: number;
+      notes?: string;
+    }
+  ) => Promise<CountingFinding>;
   onClaimCountingTask: (taskId: string) => Promise<void>;
   onRecordCountingLine: (
     taskId: string,
@@ -714,6 +729,8 @@ function WmsModuleFT2Inner({
   recountLocked,
   recountTasks,
   onFetchCountingLines,
+  onFetchCountingFindings,
+  onCreateCountingFinding,
   onClaimCountingTask,
   onRecordCountingLine,
   onSkipCountingLine,
@@ -943,6 +960,8 @@ function WmsModuleFT2Inner({
         task={activeSession.task}
         onComplete={exitSession}
         onFetchLines={onFetchCountingLines}
+        onFetchFindings={onFetchCountingFindings}
+        onCreateFinding={onCreateCountingFinding}
         onClaimTask={onClaimCountingTask}
         onResolveBarcode={onResolveBarcode}
         onRecordCount={onRecordCountingLine}

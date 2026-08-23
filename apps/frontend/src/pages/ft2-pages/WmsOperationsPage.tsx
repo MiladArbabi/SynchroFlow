@@ -18,6 +18,8 @@ import type {
   PackOrder,
   CountingLine,
   CountingSkipReason,
+  CountingFinding,
+  CountingFindingType,
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
@@ -443,6 +445,35 @@ export default function WmsOperationsPage() {
     []
   );
 
+  const handleFetchCountingFindings = useCallback(
+    async (taskId: string): Promise<CountingFinding[]> => {
+      const { data } = await axiosInstance.get(
+        `/api/v1/wms/recount-tasks/${taskId}/findings`
+      );
+      return data.findings ?? [];
+    },
+    []
+  );
+
+  const handleCreateCountingFinding = useCallback(async (
+    taskId: string,
+    params: {
+      client_event_id: string;
+      recount_line_id?: string | null;
+      lasyncro_variant_id: string;
+      location_code: string;
+      finding_type: CountingFindingType;
+      quantity: number;
+      notes?: string;
+    }
+  ): Promise<CountingFinding> => {
+    const { data } = await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/findings`,
+      params
+    );
+    return data.finding;
+  }, []);
+
   const handleClaimCountingTask = useCallback(async (taskId: string) => {
     await axiosInstance.post(
       `/api/v1/wms/recount-tasks/${taskId}/claim`
@@ -558,6 +589,8 @@ export default function WmsOperationsPage() {
       recountLocked={recountLocked}
       recountTasks={recountTasks}
       onFetchCountingLines={handleFetchCountingLines}
+      onFetchCountingFindings={handleFetchCountingFindings}
+      onCreateCountingFinding={handleCreateCountingFinding}
       onClaimCountingTask={handleClaimCountingTask}
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}

@@ -13,6 +13,9 @@ import {
   commitRecount,
   listRecountTasks,
   skipLine,
+  createRecountFinding,
+  listRecountFindings,
+  type RecountFindingType,
 } from '../../services/wms/inventoryRecount.service.js';
 
 /**
@@ -43,6 +46,7 @@ function recountErrorStatus(message: string): number {
     message === 'PROBLEM_BIN_NOT_CONFIGURED' ||
     message.includes('already claimed') ||
     message.includes('already resolved') ||
+    message.includes('client_event_id already used') ||
     message.includes('not claimable') ||
     message.includes('different operator') ||
     message.includes('not countable') ||
@@ -508,5 +512,131 @@ export async function httpListRecountTasks(req: Request, res: Response) {
     return res.status(200).json({ tasks });
   } catch (error) {
     return respondRecountError(res, 'LIST', error);
+  }
+}
+
+const RECOUNT_FINDING_TYPES: RecountFindingType[] = [
+  'unexpected_item',
+  'product_defect',
+  'packaging_defect',
+];
+
+export async function httpCreateRecountFinding(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+
+  if (!shopId || !userId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const recountTaskId = String(req.params.taskId ?? '');
+  const {
+    client_event_id,
+    recount_line_id,
+    lasyncro_variant_id,
+    location_code,
+    finding_type,
+    quantity,
+    notes,
+  } = req.body ?? {};
+
+  if (!recountTaskId) {
+    return res.status(400).json({ error: 'taskId is required' });
+  }
+
+  if (
+    typeof lasyncro_variant_id !== 'string' ||
+    !lasyncro_variant_id ||
+    typeof location_code !== 'string' ||
+    !location_code ||
+    !RECOUNT_FINDING_TYPES.includes(finding_type)
+  ) {
+    return res.status(400).json({
+      error:
+        'lasyncro_variant_id, location_code, and a valid finding_type are required',
+    });
+  }
+
+  if (
+    typeof client_event_id !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      client_event_id
+    )
+  ) {
+    return res.status(400).json({
+      error: 'client_event_id must be a valid UUID',
+    });
+  }
+
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    return res.status(400).json({
+      error: 'quantity must be a positive whole number',
+    });
+  }
+
+  if (
+    recount_line_id !== undefined &&
+    recount_line_id !== null &&
+    typeof recount_line_id !== 'string'
+  ) {
+    return res.status(400).json({
+      error: 'recount_line_id must be a string when provided',
+    });
+  }
+
+  if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+    return res.status(400).json({
+      error: 'notes must be a string when provided',
+    });
+  }
+
+  try {
+    const finding = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      return createRecountFinding(trx, {
+        shopId,
+        recountTaskId,
+        reportedBy: userId,
+        finding: {
+          clientEventId: client_event_id,
+          recountLineId: recount_line_id ?? null,
+          lasyncroVariantId: lasyncro_variant_id,
+          locationCode: location_code,
+          findingType: finding_type,
+          quantity,
+          notes,
+        },
+      });
+    });
+
+    return res.status(201).json({ finding });
+  } catch (error) {
+    return respondRecountError(res, 'FINDING', error);
+  }
+}
+
+export async function httpListRecountFindings(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+
+  if (!shopId) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const recountTaskId = String(req.params.taskId ?? '');
+
+  if (!recountTaskId) {
+    return res.status(400).json({ error: 'taskId is required' });
+  }
+
+  try {
+    const findings = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return listRecountFindings(trx, shopId, recountTaskId);
+    });
+
+    return res.status(200).json({ findings });
+  } catch (error) {
+    return respondRecountError(res, 'FINDING_LIST', error);
   }
 }

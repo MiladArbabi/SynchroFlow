@@ -101,6 +101,8 @@ import {
   httpCommitRecountTask,
   httpListRecountTasks,
   httpSkipRecountLine,
+  httpCreateRecountFinding,
+  httpListRecountFindings,
 } from './inventoryRecount.controller.js';
 
 /**
@@ -790,6 +792,24 @@ router.get(
   requireTier('core'),
   requireAction('wms:recount:read'),
   httpGetRecountLines
+);
+
+router.get(
+  '/recount-tasks/:taskId/findings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:read'),
+  httpListRecountFindings
+);
+
+router.post(
+  '/recount-tasks/:taskId/findings',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:count'),
+  httpCreateRecountFinding
 );
 
 router.post(

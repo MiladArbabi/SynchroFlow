@@ -9,6 +9,8 @@ export type {
   CountingTask,
   CountingLine,
   CountingSkipReason,
+  CountingFinding,
+  CountingFindingType,
 } from './pages/CountingSessionPage.js';
 export { default as PickSessionPage } from './pages/PickSessionPage.js';
 export { default as PackSessionPage } from './pages/PackSessionPage.js';

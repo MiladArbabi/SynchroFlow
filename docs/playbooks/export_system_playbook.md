@@ -433,7 +433,9 @@ Two enforced invariants:
    write stock. Non-zero variance goes to `manual_review`; owner/admin accepts
    with a `variance_reason`, requests a recount (new line with
    `recount_of_line_id`), or escalates to `problem_center_tasks` with
-   `source='count'`. Only `commitRecount()` writes accepted
+   `source='count'` and `exception_type='recount_variance'`. Escalation
+   transfers correction ownership to Problem Center, so `commitRecount()`
+   excludes those lines. Only non-escalated accepted lines become
    `reconciliation_correction` movements.
 
 `expected_quantity` is snapshotted when the line is created and never re-read.
@@ -452,6 +454,8 @@ change the quantity the operator is being compared against.
     closeCount
     reviewLine
     commitRecount
+    createRecountFinding
+    listRecountFindings
 
 Suggested scope keeps recounts short by selecting only inventory the ledger has
 reason to distrust: negative on_hand, variants carrying unlocated sale debt,
@@ -484,6 +488,15 @@ Endpoints:
     GET /recount-tasks/:taskId/lines
       wms:recount:read
       Returns operator lines. expected_quantity is never exposed during counting.
+
+    GET /recount-tasks/:taskId/findings
+      wms:recount:read
+      Returns persisted physical findings for the recount task.
+
+    POST /recount-tasks/:taskId/findings
+      wms:recount:count
+      Persists unexpected-item or defect evidence without changing inventory.
+      client_event_id provides DB-enforced idempotency.
 
     POST /recount-tasks/:taskId/claim
       wms:recount:claim
@@ -566,12 +579,12 @@ recount implementation.
 
 ### Remaining recount work
 
-Step 4 is not built:
-
-- `InventoryRecountSessionPage.tsx`;
-- operator flow: brief -> location scan -> count loop -> summary -> complete;
 - owner/admin variance review surface;
 - printable Inventory Count Sheet.
+
+The Warehouse counting session is shipped, including bin-batched blind
+execution, skip handling, refresh/resume positioning, and physical finding
+capture for unexpected items and defective stock.
 
 Recount remains Core-tier inventory correctness functionality, not a Growth
 analytics feature.

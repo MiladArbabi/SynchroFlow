@@ -125,9 +125,82 @@ Rules that must survive future edits:
 - Neither gate displays its own answer. The bin and product inputs use generic
   placeholders (`RECOUNT-GATE-PREFILL-56`); showing the expected code or SKU
   turns verification into transcription.
-- A scan matching nothing in the active bin is rejected. Recording unexpected
-  items is tracked separately as `RECOUNT-FOUND-UNLISTED-59` — it must never
-  become a variance-bearing line, because an item found in bin B that is on the
-  books at bin A is a relocation, and committing it as surplus inflates stock.
+- A resolved barcode matching nothing in the active bin is persisted as an
+  `unexpected_item` finding (`RECOUNT-EXCEPTIONS-80`). It never becomes a
+  variance-bearing recount line and never changes inventory directly. An item
+  found in bin B that is on the books at bin A may be a relocation; treating it
+  as surplus would inflate stock.
 - Blind counting is unchanged: no expected quantity, variance, movement window,
   or contested state reaches this screen.
+
+## Physical findings (RECOUNT-EXCEPTIONS-80)
+
+Physical observations are persisted separately from quantitative count truth.
+
+`inventory_recount_lines` remains authoritative for counted quantity:
+
+- counted `0` means the operator checked and found the expected item absent;
+- counted quantities are compared with the movement-adjusted expected quantity;
+- missing/low/high stock is derived from that comparison, not reported as a
+  separate blind-pass finding.
+
+`inventory_recount_findings` records qualitative evidence:
+
+- `unexpected_item`;
+- `product_defect`;
+- `packaging_defect`.
+
+Every finding retains task, optional recount line, variant, location, quantity,
+operator, timestamp, and optional notes. Defective-but-present units remain
+included in `counted_quantity`; reporting a defect never subtracts them.
+
+Endpoints:
+
+    GET  /api/v1/wms/recount-tasks/:taskId/findings
+      wms:recount:read
+
+    POST /api/v1/wms/recount-tasks/:taskId/findings
+      wms:recount:count
+
+The POST requires a client-generated `client_event_id`. Migration 0161 adds a
+tenant-scoped unique partial index on `(shop_id, client_event_id)`. Replaying
+the same event and payload returns the original finding; reusing the same event
+ID with a different payload returns HTTP 409. A genuinely new observation gets
+a new event ID.
+
+### Finding invariants
+
+1. A valid unexpected-item scan is persisted instead of discarded.
+2. An unexpected item never becomes a recount variance line.
+3. Defective-but-present stock remains part of the physical count.
+4. Creating a finding never writes `inventory_movements` or changes
+   `inventory_truth`.
+5. Finding provenance includes operator, task, variant, location, quantity, and
+   time.
+6. Blind counting still exposes no expected quantity or variance information.
+
+### Recount escalation ownership
+
+Escalating a reviewed variance creates a Problem Center task with:
+
+    source = 'count'
+    exception_type = 'recount_variance'
+    source_exception_id = recount_line_id
+
+Once handed off, Problem Center is the sole correction owner for that line.
+`commitRecount()` excludes recount lines already referenced by a
+`problem_center_tasks` row with `source='count'`, preventing the same variance
+from becoming both a recount reconciliation correction and a later Problem
+Center stock adjustment.
+
+Verified on 2026-08-23:
+
+- previously failing escalation returned HTTP 200 and created one open
+  `recount_variance` Problem Center task;
+- the escalated line was excluded from recount commit eligibility;
+- unexpected-item and defect findings persisted through the Warehouse UI;
+- defect reporting left the counted quantity unchanged;
+- finding creation produced zero reconciliation-correction movements;
+- identical `client_event_id` replay returned the same finding and one DB row;
+- conflicting reuse of the same event ID returned HTTP 409;
+- invalid finding/line relationships returned HTTP 400 rather than 500.
