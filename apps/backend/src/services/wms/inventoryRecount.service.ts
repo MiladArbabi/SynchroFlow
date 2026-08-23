@@ -186,7 +186,6 @@ export async function createRecountTask(
     assignedTo?: number | null;
     locationCode?: string;
     variantIds?: string[];
-    blind?: boolean;
     notes?: string;
   }
 ): Promise<{ recount_task_id: string; label: string; line_count: number }> {
@@ -235,7 +234,8 @@ export async function createRecountTask(
        * assigned_to null = first claim wins. One status, two dispatch modes.
        */
       status: 'dispatched',
-      blind: params.blind ?? true,
+      // RECOUNT-BLIND-BYPASS-71: counting is structurally blind.
+      blind: true,
       assigned_to: params.assignedTo ?? null,
       created_by: createdBy,
       notes: params.notes ?? null,
@@ -316,7 +316,7 @@ export async function getOperatorLines(
 ): Promise<any[]> {
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
-    .select('blind')
+    .select('recount_task_id')
     .first();
   if (!task) throw new Error(`[RECOUNT_LINES] Task not found: ${recountTaskId}`);
 
@@ -325,7 +325,7 @@ export async function getOperatorLines(
   const cols = ['recount_line_id', 'lasyncro_variant_id', 'location_code',
                 'counted_quantity', 'count_method', 'scan_count', 'counted_at',
                 'skip_reason', 'skipped_at'];
-  if (!task.blind) cols.push('expected_quantity');
+  // RECOUNT-BLIND-BYPASS-71: never expose system quantity during operator counting.
 
     /**
    * RECOUNT-WALKORDER-27: the operator walks THIS order, so it matters more

@@ -136,6 +136,11 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
   if (blind !== undefined && typeof blind !== 'boolean') {
     return res.status(400).json({ error: 'blind must be a boolean' });
   }
+  if (blind === false) {
+    return res.status(400).json({
+      error: 'blind=false is not supported; recount tasks are always blind during counting',
+    });
+  }
 
   try {
     const task = await db.transaction(async (trx) => {
@@ -149,7 +154,6 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
         assignedTo: assigned_to ?? null,
         locationCode: location_code,
         variantIds: variant_ids,
-        blind,
         notes,
       });
 

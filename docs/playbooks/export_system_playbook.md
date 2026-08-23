@@ -422,8 +422,10 @@ including inventory counts.
 
 Two enforced invariants:
 
-1. BLIND — `expected_quantity` is stripped server-side by
-   `getOperatorLines()` while `tasks.blind` is true. It is not a UI convention.
+1. BLIND — operator counting is structurally blind. `POST /recount-tasks`
+   rejects `blind=false`, `createRecountTask()` always persists `blind=true`,
+   and `getOperatorLines()` never selects `expected_quantity`, including for
+   legacy/non-blind rows. This is a server invariant, not a UI convention.
    Receive's auto-confirm-at-expected behaviour must NOT be copied here because
    that would reveal the expected quantity through behaviour.
 
@@ -481,7 +483,7 @@ Endpoints:
 
     GET /recount-tasks/:taskId/lines
       wms:recount:read
-      Returns operator lines. Blind tasks do not expose expected_quantity.
+      Returns operator lines. expected_quantity is never exposed during counting.
 
     POST /recount-tasks/:taskId/claim
       wms:recount:claim
@@ -809,10 +811,11 @@ assigned to user 1 appeared for the owner and was correctly absent from operator
 
 ### Warehouse counting execution
 
-The operator session is deliberately blind. `getOperatorLines()` exposes safe
-identity and navigation context only: location code, product title, variant
-title, SKU, image, and the operator's own count/skip state. It never exposes
-`expected_quantity`, `variance`, `window_delta`, or contested state while blind.
+The operator session is deliberately and structurally blind.
+`getOperatorLines()` exposes safe identity and navigation context only:
+location code, product title, variant title, SKU, image, and the operator's own
+count/skip state. It never exposes `expected_quantity`, `variance`,
+`window_delta`, or contested state during operator counting.
 
 Execution flow:
 
