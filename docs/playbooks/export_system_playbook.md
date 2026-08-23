@@ -839,7 +839,17 @@ inside the session from the line payload.
 
 Product confirmation resolves through the existing WMS barcode/SKU resolver and
 must match the line's `lasyncro_variant_id`. The session preserves
-`countTaskId` in the URL so an in-progress count restores after refresh.
+`countTaskId` in the URL. Reopening a `claimed` or `counting` task owned by the
+current user restores directly to the first unresolved bin's location-confirmation
+step instead of restarting at the brief screen. Persisted line resolutions remain
+authoritative across refreshes (RECOUNT-RESUME-POSITION-72).
+
+Resume is ownership-aware: an operator may only continue a task where
+`claimed_by` matches the authenticated user. A dispatched task assigned to a
+different user and an in-progress task claimed by a different user are disabled
+in the Counts list and are not auto-restored from a forced `countTaskId` URL.
+Owner/admin takeover is intentionally not implicit; explicit reassignment/takeover
+is tracked separately as RECOUNT-TAKEOVER-85.
 
 Closing the operator session does not imply that inventory was corrected.
 `recordCount()` and `closeCount()` still write no stock. Any required owner
@@ -848,8 +858,9 @@ decision remains downstream of the blind operator workflow.
 Verified live on localhost:5173 against localhost:3000: executable Counts list
 rendered, the session opened, safe product identity displayed, location and
 product gates passed, quantity entry was reached, blind fields/copy did not
-leak, `countTaskId` survived reload, and the verification pass left count-line
-state unchanged.
+leak, claimant-owned `countTaskId` resumed at the unresolved bin after refresh,
+a different claimant's task remained disabled and could not be forced open by
+URL, and persisted count-line state remained unchanged.
 
 **Note for future handlers:** `req.user` is typed and camelCase —
 `shopId`, `userId`, `roles`. Not `shop_id`/`user_id`/`shop_roles`; those are the

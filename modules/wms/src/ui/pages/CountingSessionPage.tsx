@@ -217,6 +217,16 @@ export default function CountingSessionPage({
       try {
         const loaded = await onFetchLines(task.recount_task_id);
         setLines(loaded);
+
+        // RECOUNT-RESUME-POSITION-72: reopening an in-progress count should
+        // resume at its first unresolved bin instead of restarting at brief.
+        // Location confirmation is intentionally required again after refresh.
+        if (task.status === 'claimed' || task.status === 'counting') {
+          const nextUnresolvedLine = loaded.find((line) => !isResolved(line));
+
+          setActiveBinCode(nextUnresolvedLine?.location_code ?? null);
+          setPhase(nextUnresolvedLine ? 'location' : 'summary');
+        }
       } catch (loadError) {
         setError(
           errorMessage(

@@ -114,6 +114,8 @@ export default function WmsOperationsPage() {
 
   const { user } = useAuth();
   const userRole = user?.role ?? 'operator';
+  const currentUserId =
+    user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
@@ -560,6 +562,7 @@ export default function WmsOperationsPage() {
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}
       onCloseCountingTask={handleCloseCountingTask}
+      currentUserId={currentUserId}
       pendingCountTaskId={searchParams.get('countTaskId')}
       onCountSessionEnter={(id) =>
         setSearchParams({ countTaskId: id }, { replace: true })

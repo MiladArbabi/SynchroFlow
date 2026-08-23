@@ -237,6 +237,8 @@ export type WmsModuleFT2Props = {
   ) => Promise<void>;
   onCloseCountingTask: (taskId: string) => Promise<void>;
 
+  /** Authenticated user ID used to enforce recount claimant ownership in UI. */
+  currentUserId?: number | null;
   /** Count task ID from URL param — restores an active counting session. */
   pendingCountTaskId?: string | null;
   /** Called when an operator enters a counting session. */
@@ -569,12 +571,28 @@ export type PackFreeScanApiResponse =
 const CountingTaskCard = memo(function CountingTaskCard({
   task,
   onOpen,
+  currentUserId,
 }: {
   task: CountingTask;
   onOpen: (task: CountingTask) => void;
+  currentUserId?: number | null;
 }) {
   const continuing =
     task.status === 'claimed' || task.status === 'counting';
+
+  // RECOUNT-RESUME-POSITION-72: operators may only start/resume work they own.
+  // Owner/admin takeover or reassignment must be explicit.
+  const assignedToOther =
+    task.status === 'dispatched' &&
+    task.assigned_to !== null &&
+    task.assigned_to !== currentUserId;
+
+  const claimedByOther =
+    continuing &&
+    task.claimed_by !== null &&
+    task.claimed_by !== currentUserId;
+
+  const blockedByOwnership = assignedToOther || claimedByOther;
 
   return (
     <Box sx={{
@@ -612,10 +630,17 @@ const CountingTaskCard = memo(function CountingTaskCard({
       <Button
         variant={continuing ? 'contained' : 'outlined'}
         size="small"
+        disabled={blockedByOwnership}
         onClick={() => onOpen(task)}
         sx={{ flexShrink: 0 }}
       >
-        {continuing ? 'Continue' : 'Start count'}
+        {assignedToOther
+          ? 'Assigned'
+          : claimedByOther
+          ? 'Claimed'
+          : continuing
+          ? 'Continue'
+          : 'Start count'}
       </Button>
     </Box>
   );
@@ -693,6 +718,7 @@ function WmsModuleFT2Inner({
   onRecordCountingLine,
   onSkipCountingLine,
   onCloseCountingTask,
+  currentUserId,
   pendingCountTaskId,
   onCountSessionEnter,
 }: WmsModuleFT2Props) {
@@ -723,16 +749,24 @@ function WmsModuleFT2Inner({
       (candidate) =>
         candidate.recount_task_id === pendingCountTaskId &&
         (
-          candidate.status === 'dispatched' ||
-          candidate.status === 'claimed' ||
-          candidate.status === 'counting'
+          (
+            candidate.status === 'dispatched' &&
+            (
+              candidate.assigned_to === null ||
+              candidate.assigned_to === currentUserId
+            )
+          ) ||
+          (
+            (candidate.status === 'claimed' || candidate.status === 'counting') &&
+            candidate.claimed_by === currentUserId
+          )
         )
     );
 
     if (task) {
       setActiveSession({ type: 'count', task });
     }
-  }, [pendingCountTaskId, recountTasks]);
+  }, [pendingCountTaskId, recountTasks, currentUserId]);
 
   useEffect(() => {
     if (pendingPickBatchId) {
@@ -1248,6 +1282,7 @@ function WmsModuleFT2Inner({
             <CountingTaskCard
               key={task.recount_task_id}
               task={task}
+              currentUserId={currentUserId}
               onOpen={(selectedTask) => {
                 onCountSessionEnter?.(selectedTask.recount_task_id);
                 setActiveSession({
