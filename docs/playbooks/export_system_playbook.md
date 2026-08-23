@@ -826,6 +826,12 @@ Execution flow:
       -> repeat unresolved lines
       -> Finish count only when every line is resolved
 
+A recount line is write-once during operator counting. Once resolved by either
+a physical count or an explicit skip, both count and skip endpoints reject any
+second resolution with HTTP 409. Corrections must use the deliberate
+review/recount path; normal operator actions never overwrite prior count or skip
+history (RECOUNT-RECOUNT-OVERWRITE-74).
+
 Quantity `0` is valid and means the location was physically checked and empty.
 Skipped lines remain distinct from counted lines. The task card therefore does
 not infer remaining work from `counted_count`; exact resolved progress is derived

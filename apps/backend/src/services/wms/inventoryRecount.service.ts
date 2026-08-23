@@ -403,10 +403,19 @@ export async function recordCount(
       'lasyncro_variant_id',
       'location_code',
       'window_from',
-      'created_at'
+      'created_at',
+      'counted_at',
+      'skip_reason'
     )
+    .forUpdate()
     .first();
   if (!line) throw new Error(`[RECOUNT_COUNT] Line not found: ${recountLineId}`);
+
+  // RECOUNT-RECOUNT-OVERWRITE-74: normal counting is write-once.
+  // Corrections must use an explicit recount/review path, never overwrite history.
+  if (line.counted_at || line.skip_reason) {
+    throw new Error('[RECOUNT_COUNT] Line already resolved');
+  }
 
   /**
    * RECOUNT-FRESH-37: expected_quantity was snapshotted at task creation and
@@ -515,9 +524,15 @@ export async function skipLine(
 
   const line = await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_line_id: recountLineId, recount_task_id: recountTaskId })
-    .select('recount_line_id')
+    .select('recount_line_id', 'counted_at', 'skip_reason')
+    .forUpdate()
     .first();
   if (!line) throw new Error(`[RECOUNT_SKIP] Line not found: ${recountLineId}`);
+
+  // RECOUNT-RECOUNT-OVERWRITE-74: resolution is write-once.
+  if (line.counted_at || line.skip_reason) {
+    throw new Error('[RECOUNT_SKIP] Line already resolved');
+  }
 
   await trx('inventory_recount_lines')
     .where({ shop_id: shopId, recount_line_id: recountLineId })

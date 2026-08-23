@@ -42,6 +42,7 @@ function recountErrorStatus(message: string): number {
   if (
     message === 'PROBLEM_BIN_NOT_CONFIGURED' ||
     message.includes('already claimed') ||
+    message.includes('already resolved') ||
     message.includes('not claimable') ||
     message.includes('different operator') ||
     message.includes('not countable') ||
