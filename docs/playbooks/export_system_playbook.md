@@ -917,3 +917,58 @@ recount creation surface needs the same warehouse selector as the others.
 **Verified live:** `{"scope":"full"}` with no warehouse_id created CNT-1-0002
 (10 lines); an explicit id created CNT-1-0003; a non-string id returned 400.
 Test tasks were removed afterwards.
+
+## Inventory/Products export CTA — EXP-CTA-INVENTORY-99, 2026-08-23
+
+Wired the existing `products` export to `/inventory` (Intelligence tab).
+No backend change: the route, the 9-column `EXPORT_COLUMNS.products`
+registry entry, and the `Inventory Valuation` QUICK_REPORTS card all
+already existed and were already reachable from the Reports page. The
+only thing missing was reaching them *in context* — a merchant looking
+at suspect stock had to leave for Settings to pull the sheet they were
+about to reconcile against.
+
+**Pattern (identical to Orders, now confirmed canonical for module CTAs):**
+
+```text
+module package renders a prop-gated ghost pill
+    {onExport && (<Box onClick={onExport}>Export →</Box>)}
+        ↓
+ft2-page owns drawer state and mounts ExportDrawer
+    reportIds={['products']}   — pre-filtered per §7
+```
+
+The callback prop is not stylistic. `modules/products/tsconfig.json`
+scopes `rootDir`/`include` to `src/**/*`, so a module-side file cannot
+import `ExportDrawer` from `apps/frontend` — see modules-ux-playbook §14.
+Threading a handler down is the only thing that compiles.
+
+CTA is Tier 2 ghost pill per CTA playbook §2: it opens a drawer, it
+commits nothing.
+
+**Header restructure:** ProductsModuleFT2's header was a single unbroken
+column with no action slot. Wrapped title + action in a `space-between`
+row using breakpoint-based direction (`{ xs: 'column', sm: 'row' }`) per
+modules-ux-playbook §18 — a flat `flexWrap: 'wrap'` squeezes the title
+toward its flex-basis floor before the action wraps.
+
+**Verified live 2026-08-23:** desktop and mid-width render clean, drawer
+opens with one card, picker exposes 9 columns, both a full and a 3-column
+download round-trip `filters.columns` correctly. CSV reconciled exactly
+against the ledger: 17 rows for 17 variants, Σ on_hand = 183 = the
+inventory_truth total. `reconciliation_correction` count 0 before and
+after — an export must never write an inventory correction.
+
+**Known, registered, not fixed here:** `EXP-LOCATIONS-ROOT-106` (every
+row carries a useless `WH-1-ROOT=0` suffix), `EXP-DRAWER-PILL-100`
+(expanded picker overhangs the card in the ~400px drawer),
+`ENT-COLSELECT-BYPASS-96` (the Growth gate on column selection exists
+only in the frontend PLAN_FEATURES map; `GET /exports/columns` is
+requireTier('core') and no backend check enforces column_selection).
+
+**Withdrawn during this work:** the two open items the prior handover
+carried for Export are both already done. `orders-blocked` no longer
+exists in exportReports.ts and no call site references it. The Reports
+page consolidation shipped — ShopSettingsReportsPage imports the same
+QUICK_REPORTS as ExportDrawer, and the config header declares it single
+source. Do not re-scope either.

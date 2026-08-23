@@ -8,4 +8,4 @@ export type ProductsUiIntent = {
     type: 'START_ONBOARDING';
     taskId?: 'add-products' | 'complete-product-data' | 'review-product-readiness';
 };
-export default function ProductsModule(props: ProductsModuleProps): import("react/jsx-runtime").JSX.Element;
+export default function ProductsModule(props: ProductsModuleProps): import("react").JSX.Element;

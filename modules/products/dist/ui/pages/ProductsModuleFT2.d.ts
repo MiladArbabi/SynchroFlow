@@ -125,6 +125,13 @@ export interface ProductsModuleFT2DataProps {
         skusWithSalesCount: number | null;
         totalSkusObserved: number | null;
     } | null;
+    /**
+     * Module-level export CTA (EXP-CTA-INVENTORY-99).
+     * Handler is owned by the app shell because ExportDrawer lives in
+     * apps/frontend and modules/products' tsconfig rootDir forbids the
+     * import — see modules-ux-playbook §14 module boundary.
+     */
+    onExport?: () => void | Promise<void>;
     trend?: unknown;
     signals?: unknown;
     productDataIntegrity?: unknown;
@@ -136,4 +143,4 @@ export interface ProductsModuleFT2DataProps {
     currency?: CurrencyContext;
 }
 export type ProductsModuleFT2Props = ProductsModuleFT2DataProps;
-export default function ProductsModuleFT2(props: ProductsModuleFT2Props): import("react/jsx-runtime").JSX.Element;
+export default function ProductsModuleFT2(props: ProductsModuleFT2Props): import("react").JSX.Element;

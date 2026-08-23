@@ -204,3 +204,32 @@ Verified on 2026-08-23:
 - identical `client_event_id` replay returned the same finding and one DB row;
 - conflicting reuse of the same event ID returned HTTP 409;
 - invalid finding/line relationships returned HTTP 400 rather than 500.
+
+## Counting is a Core+ capability — RECOUNT-TIER-CONFLICT-97, 2026-08-23
+
+`POST /recount-tasks` and `GET /recount-tasks` are gated
+`requireTier('core')`, one tier above every other WMS route in
+`wms.routes.ts` (all `starter`) and above all five `wms.*` keys in the
+frontend PLAN_FEATURES registry, which carry a comment stating WMS is
+free on Starter and not a tier wall.
+
+**This is deliberate, not an oversight.** Recorded so it is not
+re-litigated:
+
+- The Starter exemption covers *execution* — pick, pack, stow, receive.
+  Those move units already accounted for. Counting does not move units;
+  it challenges the ledger and terminates in a reconciliation
+  correction. Different class of operation.
+- Every export route is `requireTier('core')`. A Starter merchant who
+  counted and found a discrepancy could not export the sheet to
+  reconcile against. The workflow only becomes whole at Core.
+- It shipped this way and is live in production. Lowering to Starter is
+  a giveaway, cheap to do later; raising is expensive to reverse.
+
+**Consequence — RECOUNT-TIER-UI-103, blocks RECOUNT-CTA-33a/33b:**
+PLAN_FEATURES has no recount key, so a count CTA would render for a
+Starter merchant, who would fill in a scope and receive a 403 from the
+create endpoint. Add `'wms.recount': 'core'` and gate the CTA
+presentation on it before the CTA ships. Unlike
+`exports.column_selection`, this entitlement key sits over a real
+backend gate, so the presentation gate is honest rather than cosmetic.

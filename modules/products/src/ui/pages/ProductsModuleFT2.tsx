@@ -140,6 +140,14 @@ export interface ProductsModuleFT2DataProps {
     totalSkusObserved: number | null;
   } | null;
   // Unused legacy fields — kept for prop-compat, not rendered
+  /**
+   * Module-level export CTA (EXP-CTA-INVENTORY-99).
+   * Handler is owned by the app shell because ExportDrawer lives in
+   * apps/frontend and modules/products' tsconfig rootDir forbids the
+   * import — see modules-ux-playbook §14 module boundary.
+   */
+  onExport?: () => void | Promise<void>;
+
   trend?: unknown;
   signals?: unknown;
   productDataIntegrity?: unknown;
@@ -360,7 +368,7 @@ function InboundRow({ po, isOverdue }: {
 export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { context, operatorSummary, dataFreshness, currency } = props;
+  const { context, operatorSummary, dataFreshness, currency, onExport } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -436,7 +444,18 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
     <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
       {/* ── 1. HEADER ─────────────────────────────────────────── */}
-      <Box sx={{ mb: 2.5 }}>
+      {/* EXP-CTA-INVENTORY-99: title column + action row.
+          Breakpoint-based wrap per modules-ux-playbook §18 — flat
+          flexWrap:'wrap' squeezes the title before the action wraps. */}
+      <Box sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        alignItems: { xs: 'flex-start', sm: 'flex-start' },
+        justifyContent: 'space-between',
+        gap: 1.5,
+        mb: 2.5,
+      }}>
+      <Box sx={{ minWidth: 0 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
           <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 }} />
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
@@ -449,6 +468,19 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         <Typography sx={{ fontSize: 13, color: 'var(--ink-3)' }}>
           {signalParts.length > 0 ? signalParts.join(' · ') : 'Loading inventory signals…'}
         </Typography>
+      </Box>
+        {/* Tier 2 ghost pill per modules-ux-playbook §2 and
+            export_system_playbook §6 — opens a drawer, commits nothing. */}
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexShrink: 0 }}>
+          {onExport && (
+            <Box
+              onClick={onExport}
+              sx={{ display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+            >
+              Export →
+            </Box>
+          )}
+        </Box>
       </Box>
 
       {/* ── DATA TRUST BAR ────────────────────────────────────── */}

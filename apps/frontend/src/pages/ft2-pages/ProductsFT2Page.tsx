@@ -24,6 +24,7 @@ import type { ProductsOperatorSummary } from '../products/useProductsOperatorSum
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ProductsModuleFT2 } from '@lasyncro/products';
+import { ExportDrawer } from 'components/ExportDrawer';
 import ProductsCatalogPage from './ProductsCatalogPage';
 import ProductsCostsPage from './ProductsCostsPage';
 import ProductsWmsReadinessPage from './ProductsWmsReadinessPage';
@@ -39,7 +40,8 @@ export default function ProductsFT2Page() {
 
   const snapshotQuery = useProductsFt2Snapshot(range);
   const operatorQuery = useProductsOperatorSummary(range);
-  const { displayCurrency, locale } = useEntitlements();
+  const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
+  const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
 
   return (
@@ -61,6 +63,7 @@ export default function ProductsFT2Page() {
               {...props}
               operatorSummary={operatorSummary}
               currency={{ displayCurrency, locale, rates }}
+              onExport={async () => setExportDrawerOpen(true)}
             />
           );
         })()} />
@@ -70,6 +73,14 @@ export default function ProductsFT2Page() {
         <Route path="/data-quality"   element={<ProductsWmsReadinessPage />} />
         <Route path="*"               element={<Navigate to="/inventory" replace />} />
       </Routes>
+      {/* EXP-CTA-INVENTORY-99 — pre-filtered to this view per
+          export_system_playbook §7. */}
+      <ExportDrawer
+        open={exportDrawerOpen}
+        onClose={() => setExportDrawerOpen(false)}
+        userTier={tier}
+        reportIds={['products']}
+      />
     </>
   );
 }

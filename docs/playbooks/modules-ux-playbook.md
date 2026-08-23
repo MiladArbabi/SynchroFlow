@@ -850,3 +850,34 @@ comes from cross-axis alignment. `alignItems: 'start'` lets children shrink
 to intrinsic content width, leaving dead space beside them when stacked;
 `'stretch'` fills the row. Found missing in Orders, Outbound, and Sourcing
 (all set `'start'`); Overview's TRIAGE layout was correct from the start.
+
+## 19. Committed `dist` is not in sync with `src` — BUILD-DIST-STALE-101, 2026-08-23
+
+**The trap:** `apps/frontend` resolves module packages through
+`package.json`'s `"types": "./dist/ui/index.d.ts"` — committed build
+output, not source. Adding a prop to a module component and running
+`tsc` on that module passes (its own tsconfig compiles straight from
+`src`), while `apps/frontend` fails with "Property does not exist",
+because it is type-checking against a stale `.d.ts`.
+
+Vite's dev server transpiles source, so the *runtime* works and the
+button renders. Only the typecheck fails. This is §18's "green build
+does not verify a rendered surface" rule running backwards: red
+typecheck, working runtime.
+
+**Same root cause as DEPLOY-FAILURES-87**, which built the backend
+against a stale `modules/shared/dist` and could not see a newly exported
+symbol. Different package, identical failure.
+
+**Rule going forward:** any change to a module package's public surface
+(props, exports, types) requires `npm run build -w modules/<name>` in
+the same change, before the dependent app is type-checked. Not
+`npm run build -w apps/frontend` — the module only.
+
+**Second-order consequence, expect it:** committed `dist` drifts from
+`src` across this monorepo. Building `modules/products` for a one-prop
+addition regenerated 10 files, only 3 of which related to the change —
+the other 7 were pre-existing drift in unrelated components. Doc §21 of
+the prior handover recorded the same for `modules/shared`. Stage the
+full build output rather than cherry-picking; leaving the rest behind
+recommits the drift. Declare it as a consequence, not an accident.

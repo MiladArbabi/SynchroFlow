@@ -81,7 +81,7 @@ function InboundRow({ po, isOverdue }) {
 export default function ProductsModuleFT2(props) {
     const theme = useTheme();
     const navigate = useNavigate();
-    const { context, operatorSummary, dataFreshness, currency } = props;
+    const { context, operatorSummary, dataFreshness, currency, onExport } = props;
     const fmt$ = (n) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
     const os = operatorSummary;
     const sellable = os?.sellability.sellable ?? 0;
@@ -152,7 +152,14 @@ export default function ProductsModuleFT2(props) {
         signalParts.push(`${os.inbound.total_units_expected} units inbound`);
     if (os?.warehouse?.pick_zone_occupancy_pct != null)
         signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
-    return (_jsxs(Box, { sx: { p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }, children: [_jsxs(Box, { sx: { mb: 2.5 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Live" })] }), _jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Inventory" }), _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: signalParts.length > 0 ? signalParts.join(' · ') : 'Loading inventory signals…' })] }), dataFreshness && Object.values(dataFreshness).some(v => v === 'stale') && (_jsxs(Box, { sx: {
+    return (_jsxs(Box, { sx: { p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }, children: [_jsxs(Box, { sx: {
+                    display: 'flex',
+                    flexDirection: { xs: 'column', sm: 'row' },
+                    alignItems: { xs: 'flex-start', sm: 'flex-start' },
+                    justifyContent: 'space-between',
+                    gap: 1.5,
+                    mb: 2.5,
+                }, children: [_jsxs(Box, { sx: { minWidth: 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: theme.palette.success.main, flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Live" })] }), _jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Inventory" }), _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: signalParts.length > 0 ? signalParts.join(' · ') : 'Loading inventory signals…' })] }), _jsx(Box, { sx: { display: 'flex', gap: 1, alignItems: 'center', mt: 0.5, flexShrink: 0 }, children: onExport && (_jsx(Box, { onClick: onExport, sx: { display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Export \u2192" })) })] }), dataFreshness && Object.values(dataFreshness).some(v => v === 'stale') && (_jsxs(Box, { sx: {
                     display: 'flex', alignItems: 'center', gap: 1.5,
                     px: 2, py: 1, mb: 2.5,
                     bgcolor: alpha(theme.palette.warning.main, theme.palette.mode === 'dark' ? 0.12 : 0.06),

@@ -16,4 +16,4 @@ export type ProductsDiagnosticCardProps = {
  * - No lifecycle awareness
  * - One message, one optional CTA
  */
-export declare function ProductsDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: ProductsDiagnosticCardProps): import("react/jsx-runtime").JSX.Element;
+export declare function ProductsDiagnosticCard({ title, message, ctaLabel, onCtaClick, testId, }: ProductsDiagnosticCardProps): import("react").JSX.Element;
