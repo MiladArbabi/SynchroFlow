@@ -386,11 +386,14 @@ git status --short --branch
 git diff --check
 ```
 
-## 8.2 Build the shared database package
+## 8.2 Build backend workspace dependencies
 
 ```bash
+npm run build -w modules/shared
 npm run build -w packages/backend-core
 ```
+
+`@lasyncro/shared` resolves from generated `modules/shared/dist`, so it must be rebuilt from source before compiling the backend.
 
 ## 8.3 Build the backend and compiled migrations
 
@@ -554,9 +557,12 @@ The current workflow performs these steps.
 ## 10.4 Build the migration runner
 
 ```yaml
+npm run build -w modules/shared
 npm run build -w packages/backend-core
 SKIP_DEPS=1 npm run build -w apps/backend
 ```
+
+`SKIP_DEPS=1` is safe here only because the required workspace dependencies have already been rebuilt from source.
 
 This produces the compiled runner:
 
@@ -1017,6 +1023,7 @@ psql "$LOCAL_PRIVILEGED_URL" \
   " \
   > /tmp/prod-checksums.txt
 
+npm run build -w modules/shared
 npm run build -w packages/backend-core
 SKIP_DEPS=1 npm run build -w apps/backend
 

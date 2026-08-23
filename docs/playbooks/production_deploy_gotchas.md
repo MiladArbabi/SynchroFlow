@@ -1,5 +1,29 @@
 # Production Deploy — Gotchas
 
+## Stale workspace `dist` can break backend builds (DEPLOY-FAILURES-87)
+
+Workspace packages such as `@lasyncro/shared` expose their public package
+surface from `dist`, not directly from `src`. A source export may therefore
+exist while downstream consumers still compile against stale generated output.
+
+On 2026-08-23, Fly Deploy failed repeatedly with:
+
+    Module '"@lasyncro/shared"' has no exported member
+    'STOW_TASK_OPEN_STATUSES'.
+
+`modules/shared/src/index.ts` exported the contract, but
+`modules/shared/dist/index.d.ts` was stale. The Fly workflow compiled the
+backend with `SKIP_DEPS=1` without rebuilding `modules/shared`.
+
+Required order:
+
+    npm run build -w modules/shared
+    npm run build -w packages/backend-core
+    SKIP_DEPS=1 npm run build -w apps/backend
+
+Rebuild workspace dependencies from source before compiling a consumer whose
+package resolution points at generated `dist`.
+
 ## Failed migration jobs block runtime deployment
 
 A failing external migration job aborts the GitHub workflow before `flyctl
