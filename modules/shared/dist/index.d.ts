@@ -4,6 +4,7 @@ export * from './contracts/onboarding.js';
 export * from './contracts/free-tier.js';
 export * from './contracts/returns-quality-contract.js';
 export * from './contracts/finances-intelligence.js';
+export * from './contracts/work-queue-statuses.js';
 export * from './modules/module-presence.js';
 export * from './ui-contracts.js';
 export { default } from './ui/ModuleEntry.js';

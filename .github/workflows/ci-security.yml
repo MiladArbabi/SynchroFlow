@@ -78,6 +78,7 @@ jobs:
 
       - name: Build security boundary
         run: |
+          npm run build -w modules/shared
           npm run build -w packages/backend-core
           SKIP_DEPS=1 npm run build -w apps/backend
 
