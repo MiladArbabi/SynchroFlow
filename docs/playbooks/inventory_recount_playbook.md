@@ -118,6 +118,57 @@ Invariant:
 - Preview classification is one reason per bin, severity ordered: `negative_on_hand` → `unlocated_sale` → `dormant`.
 - Verification for RECOUNT-PREVIEW-NOTENANT-123 proved both previously-unreached branches (`negative_on_hand`, `dormant`) and confirmed `inventory_movements` remained unchanged during the rolled-back fixture.
 
+## Reconcile inventory entry point — RECOUNT-CTA-33a
+
+`RECOUNT-CTA-33a` adds the first merchant-facing entry point for creating inventory reconciliation work from Warehouse → Operations.
+
+### Merchant-facing semantics
+
+The top-level action is **Reconcile inventory**, not “Create count”.
+
+The wording is intentional: the merchant goal is to reconcile physical warehouse stock against system inventory, not to understand that laSyncro creates an internal recount-task record.
+
+Current terminology:
+
+- Warehouse header CTA: `Reconcile inventory`
+- Dialog title: `Reconcile inventory`
+- Helper copy: `Count what’s physically in your warehouse and compare it with system stock.`
+- Existing task family: `Inventory checks`
+- WorkTally metric remains `COUNTING`
+- Single-bin action: `Check this bin`
+- Suggested-scope action: `Check suggested bins`
+
+### Entry-point UX contract
+
+- `Reconcile inventory` is a distinct Tier-1 action in the Warehouse page header.
+- WorkTally is informational only; the `COUNTING` metric is not a hidden CTA.
+- The action remains visible even when there are zero existing recount tasks.
+- The create dialog loads suggested bins and team assignees.
+- A merchant may:
+  - select one bin → `scope: location`;
+  - check all current suggestions → `scope: suggested`;
+  - optionally assign a team member;
+  - optionally add notes.
+- The UI does not expose `variant_set` or `full`.
+- The UI does not send `blind`; blind counting remains enforced by the server.
+- `warehouse_id` is omitted and resolves through the backend default-warehouse rule.
+- After a successful create, the existing recount-task query is refreshed.
+- Creation does not auto-enter the counting session.
+
+### Verification
+
+Live browser verification confirmed:
+
+- WorkTally remained display-only.
+- `Reconcile inventory` was visible in the Warehouse header without scrolling.
+- The reconciliation dialog loaded suggested bins, assignee, notes, and both approved actions.
+- `Check this bin` enabled after selecting a bin.
+- `Inventory checks` rendered as the task-family heading.
+- Module rebuild passed.
+- Frontend TypeScript remained at the pre-existing 19-error baseline with zero errors in the touched WMS surfaces.
+
+The broader Operations-page consolidation is tracked separately as `WMS-OPS-QUEUE-125`. Recount-session compression and scan-derived quantity display are tracked separately as `RECOUNT-SESSION-UX-124`.
+
 ## Warehouse counting session — bin-batched execution
 
 `RECOUNT-BINLIST-62`: the session groups lines by `location_code` and works one
@@ -239,10 +290,17 @@ re-litigated:
 - It shipped this way and is live in production. Lowering to Starter is
   a giveaway, cheap to do later; raising is expensive to reverse.
 
-**Consequence — RECOUNT-TIER-UI-103, blocks RECOUNT-CTA-33a/33b:**
-PLAN_FEATURES has no recount key, so a count CTA would render for a
-Starter merchant, who would fill in a scope and receive a 403 from the
-create endpoint. Add `'wms.recount': 'core'` and gate the CTA
-presentation on it before the CTA ships. Unlike
-`exports.column_selection`, this entitlement key sits over a real
-backend gate, so the presentation gate is honest rather than cosmetic.
+**Consequence — RECOUNT-TIER-UI-103, still open after RECOUNT-CTA-33a:**
+`PLAN_FEATURES` still has no `'wms.recount'` key, so explicit
+plan/entitlement presentation gating is not implemented.
+
+`RECOUNT-CTA-33a` partially mitigates this by deriving `recountLocked`
+from the recount-task query error state: when that query fails, the
+reconciliation CTA is disabled. This prevents a known-failed recount
+surface from remaining actionable, but it is not equivalent to an
+explicit tier gate because any recount query error produces the same
+locked state.
+
+Add `'wms.recount': 'core'` and gate presentation on that entitlement
+to resolve `RECOUNT-TIER-UI-103`. The backend Core-tier gate remains
+authoritative.

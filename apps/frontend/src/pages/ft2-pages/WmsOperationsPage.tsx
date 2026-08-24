@@ -455,6 +455,28 @@ export default function WmsOperationsPage() {
     []
   );
 
+  const handleFetchCountingPreview = useCallback(async () => {
+    const { data } = await axiosInstance.get(
+      '/api/v1/wms/recount-tasks/preview'
+    );
+    return data.bins ?? [];
+  }, []);
+
+  const handleFetchCountingAssignees = useCallback(async () => {
+    const { data } = await axiosInstance.get('/api/v1/operators/team');
+    return data.operators ?? [];
+  }, []);
+
+  const handleCreateCountingTask = useCallback(async (input: {
+    scope: 'location' | 'suggested';
+    location_code?: string;
+    assigned_to?: number | null;
+    notes?: string;
+  }) => {
+    await axiosInstance.post('/api/v1/wms/recount-tasks', input);
+    refetch();
+  }, [refetch]);
+
   const handleCreateCountingFinding = useCallback(async (
     taskId: string,
     params: {
@@ -588,6 +610,9 @@ export default function WmsOperationsPage() {
       openReceiveJobCount={openReceiveJobs.length}
       recountLocked={recountLocked}
       recountTasks={recountTasks}
+      onFetchCountingPreview={handleFetchCountingPreview}
+      onFetchCountingAssignees={handleFetchCountingAssignees}
+      onCreateCountingTask={handleCreateCountingTask}
       onFetchCountingLines={handleFetchCountingLines}
       onFetchCountingFindings={handleFetchCountingFindings}
       onCreateCountingFinding={handleCreateCountingFinding}

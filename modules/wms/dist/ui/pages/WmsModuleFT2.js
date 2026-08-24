@@ -1,14 +1,16 @@
-import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
 import { useState, memo, useEffect, useRef } from 'react';
-import { Box, Typography, CircularProgress, Alert, TextField, } from '@mui/material';
+import { Box, Typography, CircularProgress, Alert, TextField, Button, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, } from '@mui/material';
 import { ScanBarcode, Package } from 'lucide-react';
 import PickSessionPage from './PickSessionPage.js';
 import PackSessionPage from './PackSessionPage.js';
 import ReceiveSessionPage from './ReceiveSessionPage.js';
 import StowSessionPage from './StowSessionPage.js';
+import CountingSessionPage from './CountingSessionPage.js';
 import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import ReturnSessionPage from './ReturnSessionPage.js';
+import { WorkTally, isAllClear } from '../components/WorkTally.js';
 const STATUS_LABELS = {
     pending: { label: 'Available', color: 'primary' },
     picking: { label: 'In Progress', color: 'warning' },
@@ -129,7 +131,100 @@ const StowTaskCard = memo(function StowTaskCard({ task, onOpen, }) {
                     transition: 'opacity 0.15s ease',
                 }, children: isClaimed ? 'Resume stow →' : 'Start stow →' })] }));
 });
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, }) {
+const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentUserId, }) {
+    const continuing = task.status === 'claimed' || task.status === 'counting';
+    // RECOUNT-RESUME-POSITION-72: operators may only start/resume work they own.
+    // Owner/admin takeover or reassignment must be explicit.
+    const assignedToOther = task.status === 'dispatched' &&
+        task.assigned_to !== null &&
+        task.assigned_to !== currentUserId;
+    const claimedByOther = continuing &&
+        task.claimed_by !== null &&
+        task.claimed_by !== currentUserId;
+    const blockedByOwnership = assignedToOther || claimedByOther;
+    return (_jsxs(Box, { sx: {
+            bgcolor: 'var(--surface)',
+            border: '1px solid var(--rule)',
+            borderRadius: '12px',
+            p: '16px 18px',
+            mb: 1.25,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+        }, children: [_jsxs(Box, { sx: { minWidth: 0, flex: 1 }, children: [_jsx(Typography, { sx: {
+                            fontSize: 14,
+                            fontWeight: 600,
+                            color: 'var(--ink)',
+                        }, children: task.label }), _jsxs(Typography, { sx: {
+                            fontSize: 12,
+                            fontWeight: 300,
+                            color: 'var(--ink-3)',
+                            mt: 0.375,
+                        }, children: [task.line_count, " checks", task.counted_count > 0
+                                ? ` · ${task.counted_count} counted`
+                                : ''] })] }), _jsx(Button, { variant: continuing ? 'contained' : 'outlined', size: "small", disabled: blockedByOwnership, onClick: () => onOpen(task), sx: { flexShrink: 0 }, children: assignedToOther
+                    ? 'Assigned'
+                    : claimedByOther
+                        ? 'Claimed'
+                        : continuing
+                            ? 'Continue'
+                            : 'Start count' })] }));
+});
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
+    const [countDialogOpen, setCountDialogOpen] = useState(false);
+    const [countDialogLoading, setCountDialogLoading] = useState(false);
+    const [countDialogError, setCountDialogError] = useState(null);
+    const [countPreviewBins, setCountPreviewBins] = useState([]);
+    const [countAssignees, setCountAssignees] = useState([]);
+    const [selectedCountBin, setSelectedCountBin] = useState(null);
+    const [countAssignedTo, setCountAssignedTo] = useState('');
+    const [countNotes, setCountNotes] = useState('');
+    const [countCreating, setCountCreating] = useState(false);
+    const openCountDialog = async () => {
+        setCountDialogOpen(true);
+        setCountDialogLoading(true);
+        setCountDialogError(null);
+        setSelectedCountBin(null);
+        setCountAssignedTo('');
+        setCountNotes('');
+        try {
+            const [bins, assignees] = await Promise.all([
+                onFetchCountingPreview(),
+                onFetchCountingAssignees(),
+            ]);
+            setCountPreviewBins(bins);
+            setCountAssignees(assignees);
+        }
+        catch (error) {
+            setCountDialogError(error instanceof Error ? error.message : 'Failed to load count setup.');
+        }
+        finally {
+            setCountDialogLoading(false);
+        }
+    };
+    const createCount = async (scope) => {
+        if (scope === 'location' && !selectedCountBin)
+            return;
+        setCountCreating(true);
+        setCountDialogError(null);
+        try {
+            await onCreateCountingTask({
+                scope,
+                ...(scope === 'location'
+                    ? { location_code: selectedCountBin ?? undefined }
+                    : {}),
+                assigned_to: countAssignedTo === '' ? null : countAssignedTo,
+                ...(countNotes.trim() ? { notes: countNotes.trim() } : {}),
+            });
+            setCountDialogOpen(false);
+        }
+        catch (error) {
+            setCountDialogError(error instanceof Error ? error.message : 'Failed to create count.');
+        }
+        finally {
+            setCountCreating(false);
+        }
+    };
     // Auto-enter receive session if handed off from Suppliers portal via URL param
     const [activeSession, setActiveSession] = useState(pendingReceiveSession
         ? { type: 'receive', ...pendingReceiveSession }
@@ -147,6 +242,19 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
         }
     }, [pendingStowTaskId]);
     useEffect(() => {
+        if (!pendingCountTaskId)
+            return;
+        const task = (recountTasks ?? []).find((candidate) => candidate.recount_task_id === pendingCountTaskId &&
+            ((candidate.status === 'dispatched' &&
+                (candidate.assigned_to === null ||
+                    candidate.assigned_to === currentUserId)) ||
+                ((candidate.status === 'claimed' || candidate.status === 'counting') &&
+                    candidate.claimed_by === currentUserId)));
+        if (task) {
+            setActiveSession({ type: 'count', task });
+        }
+    }, [pendingCountTaskId, recountTasks, currentUserId]);
+    useEffect(() => {
         if (pendingPickBatchId) {
             enterPickSession(pendingPickBatchId, false).catch(() => { });
         }
@@ -154,6 +262,11 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     const [loadingSession, setLoadingSession] = useState(false);
     const [sessionError, setSessionError] = useState(null);
     const batches = data?.batches ?? [];
+    // Warehouse execution owns only physical counting work.
+    // manual_review belongs to the owner decision surface, not this floor list.
+    const countingTasks = (recountTasks ?? []).filter((task) => task.status === 'dispatched' ||
+        task.status === 'claimed' ||
+        task.status === 'counting');
     const enterPickSession = async (batchId, claim) => {
         setLoadingSession(true);
         setSessionError(null);
@@ -248,10 +361,89 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                 // because that would let the scanner advance without a warehouse mutation.
                 Promise.reject(new Error('Stow confirmation is unavailable. Return to Operations and try again.')) }));
     }
+    if (activeSession?.type === 'count') {
+        return (_jsx(CountingSessionPage, { task: activeSession.task, onComplete: exitSession, onFetchLines: onFetchCountingLines, onFetchFindings: onFetchCountingFindings, onCreateFinding: onCreateCountingFinding, onClaimTask: onClaimCountingTask, onResolveBarcode: onResolveBarcode, onRecordCount: onRecordCountingLine, onSkipLine: onSkipCountingLine, onCloseTask: onCloseCountingTask }));
+    }
     if (activeSession?.type === 'return') {
         return (_jsx(ReturnSessionPage, { returnJobId: activeSession.returnJobId, onFetchReturnJob: onFetchReturnJob, onAddReturnLine: onAddReturnLine, onProcessReturnLine: onProcessReturnLine, onCompleteReturnJob: onCompleteReturnJob, onComplete: exitSession }));
     }
-    return (_jsxs(Box, { sx: { p: '30px 24px', maxWidth: 720, mx: 'auto' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Warehouse" }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }, children: "Pick and pack active batches." })] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 } })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px 22px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.625, mb: 2 }, children: [_jsx(Box, { sx: {
+    /**
+   * Counts are TASKS, not units. A batch mid-pack counts under both Picking
+   * and Packing on purpose — it needs a picker's attention and a packer's,
+   * and on a real floor those are different operators.
+   *
+   * NOTE: /batches returns { batches: [...] }, not a bare array.
+   */
+    const workCounts = {
+        picking: (data?.batches ?? []).filter((b) => Number(b.units_picked) < Number(b.total_units)).length,
+        packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
+        puttingAway: (stowTasks ?? []).length,
+        receiving: openReceiveJobCount ?? 0,
+        counting: countingTasks.length,
+    };
+    return (_jsxs(Box, { sx: { p: '30px 24px', maxWidth: 720, mx: 'auto' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Warehouse" }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }, children: isAllClear(workCounts)
+                                    ? 'All clear — nothing waiting.'
+                                    : 'Work waiting to be done.' })] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }, children: _jsx(Button, { variant: "contained", disabled: recountLocked, onClick: () => {
+                                void openCountDialog();
+                            }, sx: {
+                                bgcolor: 'var(--accent)',
+                                color: 'var(--accent-ink)',
+                                borderRadius: '6px',
+                                fontWeight: 600,
+                                '&:hover': { bgcolor: 'var(--accent-hover)' },
+                            }, children: "Reconcile inventory" }) })] }), _jsx(WorkTally, { counts: workCounts, countingLocked: recountLocked }), _jsxs(Dialog, { open: countDialogOpen, onClose: () => {
+                    if (!countCreating)
+                        setCountDialogOpen(false);
+                }, fullWidth: true, maxWidth: "sm", children: [_jsx(DialogTitle, { children: "Reconcile inventory" }), _jsxs(DialogContent, { dividers: true, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: "Count what\u2019s physically in your warehouse and compare it with system stock." }), countDialogLoading && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', py: 4 }, children: _jsx(CircularProgress, { size: 24 }) })), countDialogError && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: countDialogError })), !countDialogLoading && (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }, children: "Suggested bins" }), countPreviewBins.length === 0 ? (_jsx(Alert, { severity: "info", sx: { mb: 2 }, children: "No suggested bins right now." })) : (_jsx(Box, { sx: { display: 'grid', gap: 0.75, mb: 2.5 }, children: countPreviewBins.map((bin) => {
+                                            const selected = selectedCountBin === bin.location_code;
+                                            return (_jsxs(Box, { component: "button", type: "button", onClick: () => setSelectedCountBin(bin.location_code), sx: {
+                                                    width: '100%',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'space-between',
+                                                    gap: 2,
+                                                    px: 1.5,
+                                                    py: 1.25,
+                                                    borderRadius: '10px',
+                                                    border: selected
+                                                        ? '1px solid var(--ink)'
+                                                        : '1px solid var(--rule)',
+                                                    bgcolor: selected
+                                                        ? 'rgba(255,255,255,0.05)'
+                                                        : 'transparent',
+                                                    color: 'var(--ink)',
+                                                    font: 'inherit',
+                                                    textAlign: 'left',
+                                                    cursor: 'pointer',
+                                                }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 600 }, children: bin.location_code }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.variant_count, " variant", bin.variant_count === 1 ? '' : 's', ' · ', bin.reason.replace(/_/g, ' ')] })] }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.units, " units"] })] }, bin.location_code));
+                                        }) })), _jsxs(TextField, { select: true, fullWidth: true, size: "small", label: "Assign to", value: countAssignedTo, onChange: (event) => {
+                                            const value = event.target.value;
+                                            setCountAssignedTo(value === '' ? '' : Number(value));
+                                        }, sx: { mb: 2 }, children: [_jsx(MenuItem, { value: "", children: "Anyone can claim" }), countAssignees.map((operator) => {
+                                                const name = `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                                                    `Operator ${operator.user_id}`;
+                                                return (_jsxs(MenuItem, { value: operator.user_id, children: [name, " \u00B7 ", operator.role] }, operator.user_id));
+                                            })] }), _jsx(TextField, { fullWidth: true, size: "small", label: "Notes", placeholder: "Optional note", multiline: true, minRows: 2, value: countNotes, onChange: (event) => setCountNotes(event.target.value) })] }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => setCountDialogOpen(false), disabled: countCreating, sx: { color: 'var(--accent)' }, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => {
+                                    void createCount('location');
+                                }, disabled: countDialogLoading ||
+                                    countCreating ||
+                                    !selectedCountBin, sx: {
+                                    bgcolor: 'var(--accent)',
+                                    color: 'var(--accent-ink)',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                    '&:hover': { bgcolor: 'var(--accent-hover)' },
+                                }, children: "Check this bin" }), _jsx(Button, { variant: "contained", onClick: () => {
+                                    void createCount('suggested');
+                                }, disabled: countDialogLoading ||
+                                    countCreating ||
+                                    countPreviewBins.length === 0, sx: {
+                                    bgcolor: 'var(--accent)',
+                                    color: 'var(--accent-ink)',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                    '&:hover': { bgcolor: 'var(--accent-hover)' },
+                                }, children: "Check suggested bins" })] })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px 22px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.625, mb: 2 }, children: [_jsx(Box, { sx: {
                                     width: 40, height: 40, borderRadius: '10px',
                                     bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -317,7 +509,32 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                     textAlign: 'center', py: 8,
                     bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
                     borderRadius: '14px',
-                }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id))), !isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (_jsxs(Box, { sx: { mt: batches.length > 0 ? 3 : 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Stow tasks" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [(stowTasks ?? []).length, " pending"] })] }), (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onOpen: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); } }, task.stow_task_id)))] }))] }));
+                }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id))), !isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (_jsxs(Box, { sx: { mt: batches.length > 0 ? 3 : 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }, children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Stow tasks" }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [(stowTasks ?? []).length, " pending"] })] }), (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onOpen: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); } }, task.stow_task_id)))] })), !isLoading && !loadingSession && (_jsxs(Box, { sx: {
+                    mt: batches.length > 0 || (stowTasks ?? []).length > 0
+                        ? 3
+                        : 0,
+                }, children: [_jsx(Box, { sx: {
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1.5,
+                            mb: 1.5,
+                        }, children: _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }, children: [_jsx(Typography, { sx: {
+                                        fontSize: 10.5,
+                                        fontWeight: 500,
+                                        letterSpacing: '0.12em',
+                                        textTransform: 'uppercase',
+                                        color: 'var(--ink-4)',
+                                    }, children: "Inventory checks" }), _jsxs(Typography, { sx: {
+                                        fontSize: 11,
+                                        fontWeight: 300,
+                                        color: 'var(--ink-4)',
+                                    }, children: [countingTasks.length, " waiting"] })] }) }), countingTasks.length > 0 && countingTasks.map((task) => (_jsx(CountingTaskCard, { task: task, currentUserId: currentUserId, onOpen: (selectedTask) => {
+                            onCountSessionEnter?.(selectedTask.recount_task_id);
+                            setActiveSession({
+                                type: 'count',
+                                task: selectedTask,
+                            });
+                        } }, task.recount_task_id)))] }))] }));
 }
 export default function WmsModuleFT2(props) {
     return _jsx(ModuleErrorBoundary, { moduleName: "wms", children: _jsx(WmsModuleFT2Inner, { ...props }) });

@@ -1,6 +1,7 @@
 import { type LineItem, type ConfirmScanParams, type ReportExceptionParams, type CreateProblemTaskParams } from './PickSessionPage.js';
 import { type PackOrder } from './PackSessionPage.js';
 import { type ReceiveJobLine } from './ReceiveSessionPage.js';
+import { type CountingLine, type CountingSkipReason, type CountingTask, type CountingFinding, type CountingFindingType } from './CountingSessionPage.js';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
 /**
@@ -191,6 +192,61 @@ export type WmsModuleFT2Props = {
         }[];
     }[];
     readyToPackCount?: number;
+    /**
+     * Work tally sources. Passed through rather than fetched here — this
+     * component receives all data by prop (no context, no hooks of its own),
+     * matching readyToPackOrders/readyToPackCount.
+     */
+    openReceiveJobCount?: number;
+    /** True when the count routes returned 403 — Core tier required. */
+    recountLocked?: boolean;
+    /** Count execution — operator-facing tasks only. */
+    recountTasks?: CountingTask[];
+    onFetchCountingPreview: () => Promise<Array<{
+        location_code: string;
+        reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
+        variant_count: number;
+        units: number;
+    }>>;
+    onFetchCountingAssignees: () => Promise<Array<{
+        user_id: number;
+        first_name: string | null;
+        last_name: string | null;
+        role: string;
+    }>>;
+    onCreateCountingTask: (input: {
+        scope: 'location' | 'suggested';
+        location_code?: string;
+        assigned_to?: number | null;
+        notes?: string;
+    }) => Promise<void>;
+    onFetchCountingLines: (taskId: string) => Promise<CountingLine[]>;
+    onFetchCountingFindings: (taskId: string) => Promise<CountingFinding[]>;
+    onCreateCountingFinding: (taskId: string, params: {
+        client_event_id: string;
+        recount_line_id?: string | null;
+        lasyncro_variant_id: string;
+        location_code: string;
+        finding_type: CountingFindingType;
+        quantity: number;
+        notes?: string;
+    }) => Promise<CountingFinding>;
+    onClaimCountingTask: (taskId: string) => Promise<void>;
+    onRecordCountingLine: (taskId: string, lineId: string, params: {
+        counted_quantity: number;
+        count_method: 'bin_quantity';
+    }) => Promise<void>;
+    onSkipCountingLine: (taskId: string, lineId: string, params: {
+        skip_reason: CountingSkipReason;
+        notes?: string;
+    }) => Promise<void>;
+    onCloseCountingTask: (taskId: string) => Promise<void>;
+    /** Authenticated user ID used to enforce recount claimant ownership in UI. */
+    currentUserId?: number | null;
+    /** Count task ID from URL param — restores an active counting session. */
+    pendingCountTaskId?: string | null;
+    /** Called when an operator enters a counting session. */
+    onCountSessionEnter?: (taskId: string) => void;
 };
 export interface PackFreeScanLineItem {
     lasyncro_line_item_id: string;

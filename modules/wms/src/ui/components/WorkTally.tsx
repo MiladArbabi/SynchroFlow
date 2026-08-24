@@ -35,7 +35,7 @@ export interface WorkTallyProps {
    * Counting is Core-tier: a Starter tenant gets 403 from the recount routes
    * rather than an empty list. Locked renders the row as unavailable instead
    * of as zero — a zero would be a lie about work that may exist.
-   */
+  */
   countingLocked?: boolean;
   onSelect?: (key: keyof WorkTallyCounts) => void;
 }

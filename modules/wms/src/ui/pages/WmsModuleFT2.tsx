@@ -7,6 +7,11 @@ import {
   Alert,
   TextField,
   Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem,
 } from '@mui/material';
 import { ScanBarcode, Package } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
@@ -219,6 +224,24 @@ export type WmsModuleFT2Props = {
 
   /** Count execution — operator-facing tasks only. */
   recountTasks?: CountingTask[];
+  onFetchCountingPreview: () => Promise<Array<{
+    location_code: string;
+    reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
+    variant_count: number;
+    units: number;
+  }>>;
+  onFetchCountingAssignees: () => Promise<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>;
+  onCreateCountingTask: (input: {
+    scope: 'location' | 'suggested';
+    location_code?: string;
+    assigned_to?: number | null;
+    notes?: string;
+  }) => Promise<void>;
   onFetchCountingLines: (taskId: string) => Promise<CountingLine[]>;
   onFetchCountingFindings: (taskId: string) => Promise<CountingFinding[]>;
   onCreateCountingFinding: (
@@ -728,6 +751,9 @@ function WmsModuleFT2Inner({
   openReceiveJobCount,
   recountLocked,
   recountTasks,
+  onFetchCountingPreview,
+  onFetchCountingAssignees,
+  onCreateCountingTask,
   onFetchCountingLines,
   onFetchCountingFindings,
   onCreateCountingFinding,
@@ -739,6 +765,75 @@ function WmsModuleFT2Inner({
   pendingCountTaskId,
   onCountSessionEnter,
 }: WmsModuleFT2Props) {
+  const [countDialogOpen, setCountDialogOpen] = useState(false);
+  const [countDialogLoading, setCountDialogLoading] = useState(false);
+  const [countDialogError, setCountDialogError] = useState<string | null>(null);
+  const [countPreviewBins, setCountPreviewBins] = useState<Array<{
+    location_code: string;
+    reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
+    variant_count: number;
+    units: number;
+  }>>([]);
+  const [countAssignees, setCountAssignees] = useState<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>([]);
+  const [selectedCountBin, setSelectedCountBin] = useState<string | null>(null);
+  const [countAssignedTo, setCountAssignedTo] = useState<number | ''>('');
+  const [countNotes, setCountNotes] = useState('');
+  const [countCreating, setCountCreating] = useState(false);
+
+  const openCountDialog = async () => {
+    setCountDialogOpen(true);
+    setCountDialogLoading(true);
+    setCountDialogError(null);
+    setSelectedCountBin(null);
+    setCountAssignedTo('');
+    setCountNotes('');
+
+    try {
+      const [bins, assignees] = await Promise.all([
+        onFetchCountingPreview(),
+        onFetchCountingAssignees(),
+      ]);
+      setCountPreviewBins(bins);
+      setCountAssignees(assignees);
+    } catch (error) {
+      setCountDialogError(
+        error instanceof Error ? error.message : 'Failed to load count setup.'
+      );
+    } finally {
+      setCountDialogLoading(false);
+    }
+  };
+
+  const createCount = async (scope: 'location' | 'suggested') => {
+    if (scope === 'location' && !selectedCountBin) return;
+
+    setCountCreating(true);
+    setCountDialogError(null);
+
+    try {
+      await onCreateCountingTask({
+        scope,
+        ...(scope === 'location'
+          ? { location_code: selectedCountBin ?? undefined }
+          : {}),
+        assigned_to: countAssignedTo === '' ? null : countAssignedTo,
+        ...(countNotes.trim() ? { notes: countNotes.trim() } : {}),
+      });
+      setCountDialogOpen(false);
+    } catch (error) {
+      setCountDialogError(
+        error instanceof Error ? error.message : 'Failed to create count.'
+      );
+    } finally {
+      setCountCreating(false);
+    }
+  };
+
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
     pendingReceiveSession
@@ -1017,6 +1112,22 @@ function WmsModuleFT2Inner({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
+          <Button
+            variant="contained"
+            disabled={recountLocked}
+            onClick={() => {
+              void openCountDialog();
+            }}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            Reconcile inventory
+          </Button>
           {/*<WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} /> */}
           {/* {isOnline && (
             <Box sx={{
@@ -1037,6 +1148,190 @@ function WmsModuleFT2Inner({
 
       {/* WORK TALLY — everything waiting on the floor, above the fold */}
       <WorkTally counts={workCounts} countingLocked={recountLocked} />
+
+      <Dialog
+        open={countDialogOpen}
+        onClose={() => {
+          if (!countCreating) setCountDialogOpen(false);
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>Reconcile inventory</DialogTitle>
+
+        <DialogContent dividers>
+          <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2 }}>
+            Count what’s physically in your warehouse and compare it with system stock.
+          </Typography>
+
+          {countDialogLoading && (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
+
+          {countDialogError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {countDialogError}
+            </Alert>
+          )}
+
+          {!countDialogLoading && (
+            <>
+              <Typography
+                sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }}
+              >
+                Suggested bins
+              </Typography>
+
+              {countPreviewBins.length === 0 ? (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  No suggested bins right now.
+                </Alert>
+              ) : (
+                <Box sx={{ display: 'grid', gap: 0.75, mb: 2.5 }}>
+                  {countPreviewBins.map((bin) => {
+                    const selected = selectedCountBin === bin.location_code;
+
+                    return (
+                      <Box
+                        key={bin.location_code}
+                        component="button"
+                        type="button"
+                        onClick={() => setSelectedCountBin(bin.location_code)}
+                        sx={{
+                          width: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 2,
+                          px: 1.5,
+                          py: 1.25,
+                          borderRadius: '10px',
+                          border: selected
+                            ? '1px solid var(--ink)'
+                            : '1px solid var(--rule)',
+                          bgcolor: selected
+                            ? 'rgba(255,255,255,0.05)'
+                            : 'transparent',
+                          color: 'var(--ink)',
+                          font: 'inherit',
+                          textAlign: 'left',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <Box>
+                          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+                            {bin.location_code}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                            {bin.variant_count} variant{bin.variant_count === 1 ? '' : 's'}
+                            {' · '}
+                            {bin.reason.replace(/_/g, ' ')}
+                          </Typography>
+                        </Box>
+
+                        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                          {bin.units} units
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+
+              <TextField
+                select
+                fullWidth
+                size="small"
+                label="Assign to"
+                value={countAssignedTo}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCountAssignedTo(value === '' ? '' : Number(value));
+                }}
+                sx={{ mb: 2 }}
+              >
+                <MenuItem value="">Anyone can claim</MenuItem>
+                {countAssignees.map((operator) => {
+                  const name =
+                    `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                    `Operator ${operator.user_id}`;
+
+                  return (
+                    <MenuItem key={operator.user_id} value={operator.user_id}>
+                      {name} · {operator.role}
+                    </MenuItem>
+                  );
+                })}
+              </TextField>
+
+              <TextField
+                fullWidth
+                size="small"
+                label="Notes"
+                placeholder="Optional note"
+                multiline
+                minRows={2}
+                value={countNotes}
+                onChange={(event) => setCountNotes(event.target.value)}
+              />
+            </>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setCountDialogOpen(false)}
+            disabled={countCreating}
+            sx={{ color: 'var(--accent)' }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => {
+              void createCount('location');
+            }}
+            disabled={
+              countDialogLoading ||
+              countCreating ||
+              !selectedCountBin
+            }
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            Check this bin
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => {
+              void createCount('suggested');
+            }}
+            disabled={
+              countDialogLoading ||
+              countCreating ||
+              countPreviewBins.length === 0
+            }
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            Check suggested bins
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* LOADING */}
       {(isLoading || loadingSession) && (
@@ -1265,7 +1560,7 @@ function WmsModuleFT2Inner({
       )}
 
       {/* COUNTS */}
-      {!isLoading && !loadingSession && countingTasks.length > 0 && (
+      {!isLoading && !loadingSession && (
         <Box sx={{
           mt:
             batches.length > 0 || (stowTasks ?? []).length > 0
@@ -1278,26 +1573,29 @@ function WmsModuleFT2Inner({
             gap: 1.5,
             mb: 1.5,
           }}>
-            <Typography sx={{
-              fontSize: 10.5,
-              fontWeight: 500,
-              letterSpacing: '0.12em',
-              textTransform: 'uppercase',
-              color: 'var(--ink-4)',
-            }}>
-              Counts
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+              <Typography sx={{
+                fontSize: 10.5,
+                fontWeight: 500,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: 'var(--ink-4)',
+              }}>
+                Inventory checks
+              </Typography>
 
-            <Typography sx={{
-              fontSize: 11,
-              fontWeight: 300,
-              color: 'var(--ink-4)',
-            }}>
-              {countingTasks.length} waiting
-            </Typography>
+              <Typography sx={{
+                fontSize: 11,
+                fontWeight: 300,
+                color: 'var(--ink-4)',
+              }}>
+                {countingTasks.length} waiting
+              </Typography>
+            </Box>
+
           </Box>
 
-          {countingTasks.map((task) => (
+          {countingTasks.length > 0 && countingTasks.map((task) => (
             <CountingTaskCard
               key={task.recount_task_id}
               task={task}
