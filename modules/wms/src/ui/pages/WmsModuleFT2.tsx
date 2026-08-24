@@ -1,5 +1,5 @@
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
-import { useState, memo, useEffect, useRef } from 'react';
+import { useState, memo, useEffect, useRef, type ReactNode } from 'react';
 import {
   Box,
   Typography,
@@ -12,8 +12,9 @@ import {
   DialogContent,
   DialogActions,
   MenuItem,
+  Collapse,
 } from '@mui/material';
-import { ScanBarcode, Package } from 'lucide-react';
+import { ScanBarcode, Package, ChevronDown, ChevronUp } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
@@ -684,6 +685,67 @@ const CountingTaskCard = memo(function CountingTaskCard({
   );
 });
 
+function WorkQueueFamily({
+  title,
+  summary,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  summary: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Box sx={{ border: '1px solid var(--rule)', borderRadius: '8px', overflow: 'hidden' }}>
+      <Box
+        component="button"
+        type="button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+        sx={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1.5,
+          px: 2,
+          py: 1.5,
+          border: 0,
+          bgcolor: 'transparent',
+          color: 'var(--ink)',
+          font: 'inherit',
+          textAlign: 'left',
+          cursor: 'pointer',
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.03)' },
+        }}
+      >
+        <Typography sx={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)' }}>
+          {title}
+        </Typography>
+        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+          {summary}
+        </Typography>
+        <Box sx={{ flex: 1 }} />
+        <ChevronDown
+          size={16}
+          color="var(--ink-4)"
+          style={{
+            transform: expanded ? 'rotate(180deg)' : 'none',
+            transition: 'transform 150ms ease',
+          }}
+        />
+      </Box>
+      <Collapse in={expanded}>
+        <Box sx={{ px: 2, pb: 2 }}>
+          {children}
+        </Box>
+      </Collapse>
+    </Box>
+  );
+}
+
 type ActiveSession =
   | { type: 'pick'; batchId: string; lineItems: LineItem[] }
   | { type: 'pack'; freeScanResult: PackFreeScanResult }
@@ -918,6 +980,10 @@ function WmsModuleFT2Inner({
   const [packScanLoading, setPackScanLoading] = useState(false);
   const [packScanError, setPackScanError] = useState<string | null>(null);
   const [readyToPackOpen, setReadyToPackOpen] = useState(false);
+  const [pickPackExpanded, setPickPackExpanded] = useState(true);
+  const [puttingAwayExpanded, setPuttingAwayExpanded] = useState(false);
+  const [inventoryChecksExpanded, setInventoryChecksExpanded] = useState(false);
+  const [showAllInventoryChecks, setShowAllInventoryChecks] = useState(false);
   const packInputRef = useRef<HTMLInputElement>(null);
   const packErrorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1347,23 +1413,57 @@ function WmsModuleFT2Inner({
         </Alert>
       )}
 
-      {/* PACK MODE PANEL — always-on free-scan surface (WEB-PACK-02) */}
-      <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '20px 22px', mb: 2.75 }}>
+      {/* QUICK SCAN PANEL — always-on free-scan surface (WEB-PACK-02) */}
+      <Box sx={{ bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }}>
 
-        {/* Header row */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.625, mb: 2 }}>
+        {/* Compact always-on scan row */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
           <Box sx={{
-            width: 40, height: 40, borderRadius: '10px',
+            width: 32, height: 32, borderRadius: '8px',
             bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             flexShrink: 0,
           }}>
             {packScanLoading
-              ? <CircularProgress size={18} sx={{ color: 'var(--accent)' }} />
-              : <ScanBarcode size={20} color={packScanError ? '#E5484D' : 'var(--accent)'} />}
+              ? <CircularProgress size={16} sx={{ color: 'var(--accent)' }} />
+              : <ScanBarcode size={18} color={packScanError ? '#E5484D' : 'var(--accent)'} />}
           </Box>
-          <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)' }}>Pack mode</Typography>
-          <Box sx={{ flex: 1 }} />
+          <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)', flexShrink: 0 }}>Quick scan</Typography>
+
+          {/* Scan input */}
+          <Box sx={{
+            flex: '1 1 280px',
+            minWidth: 0,
+            bgcolor: 'var(--bg)',
+            border: '1.5px solid',
+            borderColor: packScanError ? 'error.main' : 'rgba(255,107,43,0.45)',
+            borderRadius: '8px',
+            px: 1.5, py: 0.75,
+          }}>
+            <TextField
+              inputRef={packInputRef}
+              fullWidth
+              variant="standard"
+              placeholder="Scan an item or invoice barcode to begin packing"
+              disabled={packScanLoading}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  const val = packInputRef.current?.value.trim();
+                  if (val) void handlePackFreeScan(val);
+                }
+              }}
+              autoComplete="off"
+              InputProps={{ disableUnderline: true }}
+              sx={{
+                '& .MuiInputBase-input': {
+                  fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
+                  fontSize: 15, color: 'var(--ink-3)',
+                  '&::placeholder': { color: 'var(--ink-4)' },
+                },
+              }}
+            />
+          </Box>
+
           {/* Status pill */}
           <Box sx={{
             display: 'flex', alignItems: 'center', gap: 0.75,
@@ -1386,47 +1486,36 @@ function WmsModuleFT2Inner({
 
         {/* Error alert */}
         {packScanError && (
-          <Alert severity="error" sx={{ mb: 1.5, py: 0.5, fontSize: 13, borderRadius: '8px' }}>
+          <Alert severity="error" sx={{ mt: 1, py: 0.5, fontSize: 13, borderRadius: '8px' }}>
             {packScanError}
           </Alert>
         )}
 
-        {/* Scan input */}
-        <Box sx={{
-          bgcolor: 'var(--bg)',
-          border: '1.5px solid',
-          borderColor: packScanError ? 'error.main' : 'rgba(255,107,43,0.45)',
-          borderRadius: '10px',
-          px: 2.25, py: 1.875, mb: 1.25,
-        }}>
-          <TextField
-            inputRef={packInputRef}
-            fullWidth
-            variant="standard"
-            placeholder="Scan an item or invoice barcode to begin packing"
-            disabled={packScanLoading}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                const val = packInputRef.current?.value.trim();
-                if (val) void handlePackFreeScan(val);
-              }
-            }}
-            autoComplete="off"
-            InputProps={{ disableUnderline: true }}
-            sx={{
-              '& .MuiInputBase-input': {
-                fontFamily: '"DM Mono", "SF Mono", ui-monospace, monospace',
-                fontSize: 15, color: 'var(--ink-3)',
-                '&::placeholder': { color: 'var(--ink-4)' },
-              },
-            }}
-          />
-        </Box>
-        <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
+        <Typography sx={{ mt: 0.75, fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
           Scanner auto-submits · manual entry: press Enter
         </Typography>
       </Box>
 
+      {!isLoading && !loadingSession && (
+        <Box sx={{ mt: 3 }}>
+          <Typography sx={{
+            fontSize: 10.5,
+            fontWeight: 500,
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: 'var(--ink-4)',
+            mb: 1.5,
+          }}>
+            Work queue
+          </Typography>
+
+          <Box sx={{ display: 'grid', gap: 1.25 }}>
+            <WorkQueueFamily
+              title="Pick & pack"
+              summary={`${batches.length} active ${batches.length === 1 ? 'batch' : 'batches'} · ${readyToPackCount ?? 0} ready to pack`}
+              expanded={pickPackExpanded}
+              onToggle={() => setPickPackExpanded((value) => !value)}
+            >
       {/* READY TO PACK — orders picked, no pack claim yet. Click to see LSU-/LSO- codes to scan. */}
       {!!readyToPackCount && readyToPackCount > 0 && (
         <Box sx={{
@@ -1538,17 +1627,15 @@ function WmsModuleFT2Inner({
         />
       ))}
 
+            </WorkQueueFamily>
+
       {/* STOW TASKS */}
-      {!isLoading && !loadingSession && (stowTasks ?? []).length > 0 && (
-        <Box sx={{ mt: batches.length > 0 ? 3 : 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
-            <Typography sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
-              Stow tasks
-            </Typography>
-            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-              {(stowTasks ?? []).length} pending
-            </Typography>
-          </Box>
+            <WorkQueueFamily
+              title="Putting away"
+              summary={`${(stowTasks ?? []).length} ${(stowTasks ?? []).length === 1 ? 'task' : 'tasks'}`}
+              expanded={puttingAwayExpanded}
+              onToggle={() => setPuttingAwayExpanded((value) => !value)}
+            >
           {(stowTasks ?? []).map((task) => (
             <StowTaskCard
               key={task.stow_task_id}
@@ -1556,46 +1643,23 @@ function WmsModuleFT2Inner({
               onOpen={(id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); }}
             />
           ))}
-        </Box>
-      )}
+            </WorkQueueFamily>
 
       {/* COUNTS */}
-      {!isLoading && !loadingSession && (
-        <Box sx={{
-          mt:
-            batches.length > 0 || (stowTasks ?? []).length > 0
-              ? 3
-              : 0,
-        }}>
-          <Box sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1.5,
-            mb: 1.5,
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
-              <Typography sx={{
-                fontSize: 10.5,
-                fontWeight: 500,
-                letterSpacing: '0.12em',
-                textTransform: 'uppercase',
-                color: 'var(--ink-4)',
-              }}>
-                Inventory checks
-              </Typography>
-
-              <Typography sx={{
-                fontSize: 11,
-                fontWeight: 300,
-                color: 'var(--ink-4)',
-              }}>
-                {countingTasks.length} waiting
-              </Typography>
-            </Box>
-
-          </Box>
-
-          {countingTasks.length > 0 && countingTasks.map((task) => (
+            <WorkQueueFamily
+              title="Inventory checks"
+              summary={`${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`}
+              expanded={inventoryChecksExpanded}
+              onToggle={() => {
+                if (inventoryChecksExpanded) setShowAllInventoryChecks(false);
+                setInventoryChecksExpanded((value) => !value);
+              }}
+            >
+          {countingTasks.length > 0 && (
+            showAllInventoryChecks
+              ? countingTasks
+              : countingTasks.slice(0, 4)
+          ).map((task) => (
             <CountingTaskCard
               key={task.recount_task_id}
               task={task}
@@ -1609,6 +1673,32 @@ function WmsModuleFT2Inner({
               }}
             />
           ))}
+          {countingTasks.length > 4 && (
+            <Box
+              onClick={() => setShowAllInventoryChecks((value) => !value)}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 0.5,
+                px: 2.5,
+                py: 1.125,
+                borderTop: '1px solid var(--rule)',
+                color: 'var(--accent)',
+                cursor: 'pointer',
+                '&:hover': { opacity: 0.75 },
+              }}
+            >
+              <Typography sx={{ fontSize: 11, fontWeight: 500 }}>
+                {showAllInventoryChecks
+                  ? 'Show less'
+                  : `See ${countingTasks.length - 4} more`}
+              </Typography>
+              {showAllInventoryChecks ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+            </Box>
+          )}
+            </WorkQueueFamily>
+          </Box>
         </Box>
       )}
     </Box>

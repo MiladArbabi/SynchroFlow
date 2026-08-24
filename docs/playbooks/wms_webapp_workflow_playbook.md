@@ -196,6 +196,78 @@ Review-based inspect phases MUST show:
 linear progress bar. Its persistent work context is `Stow N of M`, the active
 bin, `N placed here · M remaining`, and one next-action instruction.
 
+### Warehouse Operations home — WMS-OPS-QUEUE-125
+
+Warehouse → Operations is the operator's cross-workflow landing surface. It
+must expose what work exists without turning the page into a stack of
+independent, permanently expanded workflow sections.
+
+Current home-page hierarchy:
+
+1. Warehouse header with the global `Reconcile inventory` action.
+2. WorkTally with `PICKING`, `PACKING`, `PUTTING AWAY`, `RECEIVING`, and
+   `COUNTING` as informational metrics only.
+3. Compact `Quick scan` surface.
+4. `WORK QUEUE` containing workflow-family reveal groups.
+
+Work Queue families:
+
+- **Pick & pack**
+  - contains the existing ready-to-pack orders and active batch cards;
+  - defaults open;
+  - its header reports active-batch and ready-to-pack totals.
+- **Putting away**
+  - contains the existing stow task cards;
+  - defaults closed;
+  - its header reports the total task count.
+- **Inventory checks**
+  - contains the existing counting task cards;
+  - defaults closed;
+  - its header reports the full task count.
+- **Receiving** remains represented in WorkTally only until Operations has an
+  actual receiving-task list to reveal. Do not create an empty family for
+  visual symmetry.
+
+Workflow-family headers are reveal controls only. They must not contain
+mutation CTAs. Existing workflow actions stay inside their task cards.
+
+Multiple workflow families may remain open simultaneously. The single-open
+accordion rule in `modules-ux-playbook.md` is specific to the Order Flow
+Blocked Orders exception and does not apply to this Operations work queue.
+
+Expanded Inventory checks use bounded reveal:
+
+- show the first 4 task cards by default;
+- when more exist, use the canonical centered `See N more` / `Show less`
+  control from `modules-ux-playbook.md`;
+- preserve the total family count in the accordion header;
+- collapsing the family resets it to the first 4 cards.
+
+`Quick scan` is the compact presentation of the existing webapp free-scan
+entry point. Its scanner contract is unchanged:
+
+- the `TextField` remains continuously mounted;
+- scanner input refocus behavior remains intact;
+- Enter-to-submit remains primary;
+- loading/error/session transitions remain unchanged;
+- the existing `Listening` / `Resolving…` / `Hold` state remains visible.
+
+`WMS-OPS-QUEUE-125` is a composition and density change only. Existing
+`BatchCard`, `StowTaskCard`, `CountingTaskCard`, ready-to-pack row behavior,
+workflow handlers, and backend/API contracts were not changed.
+
+Verification completed in the live browser:
+
+- accordion default states passed;
+- independent and multiple-open reveal behavior passed;
+- existing task cards rendered correctly;
+- Inventory checks bounded reveal and reset behavior passed;
+- reveal styling matched the canonical Orders Outbound pattern;
+- compact `Quick scan` rendered with scanner behavior intact;
+- `modules/wms` build passed;
+- frontend TypeScript remained at the existing 19-error baseline with zero
+  errors in `WmsModuleFT2.tsx`.
+
 ---
 
 ## 5. Session Persistence — Refresh Recovery
