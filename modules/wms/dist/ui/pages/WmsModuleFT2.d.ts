@@ -137,6 +137,7 @@ export type WmsModuleFT2Props = {
     }>;
     onRefresh: () => void;
     onSessionExit?: () => void;
+    onCountFinished?: (label: string) => void;
     /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
     stowTasks?: WmsStowTask[];
     onClaimStowTask?: (taskId: string) => Promise<void>;
@@ -234,7 +235,7 @@ export type WmsModuleFT2Props = {
     onClaimCountingTask: (taskId: string) => Promise<void>;
     onRecordCountingLine: (taskId: string, lineId: string, params: {
         counted_quantity: number;
-        count_method: 'bin_quantity';
+        count_method: 'unit_scan' | 'bin_quantity';
     }) => Promise<void>;
     onSkipCountingLine: (taskId: string, lineId: string, params: {
         skip_reason: CountingSkipReason;

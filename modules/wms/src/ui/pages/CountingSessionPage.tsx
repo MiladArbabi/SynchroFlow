@@ -13,11 +13,9 @@ import {
   Typography,
 } from '@mui/material';
 import {
-  CheckCircle2,
   MapPin,
+  Minus,
   PackageCheck,
-  ScanBarcode,
-  SkipForward,
 } from 'lucide-react';
 
 export type CountingSkipReason =
@@ -76,7 +74,7 @@ export type CountingLine = {
 
 export type CountingSessionPageProps = {
   task: CountingTask;
-  onComplete: () => void;
+  onComplete: (finishedLabel?: string) => void;
   onFetchLines: (taskId: string) => Promise<CountingLine[]>;
   onFetchFindings: (taskId: string) => Promise<CountingFinding[]>;
   onCreateFinding: (
@@ -100,7 +98,7 @@ export type CountingSessionPageProps = {
     lineId: string,
     params: {
       counted_quantity: number;
-      count_method: 'bin_quantity';
+      count_method: 'unit_scan' | 'bin_quantity';
     }
   ) => Promise<void>;
   onSkipLine: (
@@ -114,7 +112,7 @@ export type CountingSessionPageProps = {
   onCloseTask: (taskId: string) => Promise<void>;
 };
 
-type Phase = 'brief' | 'location' | 'bin' | 'summary' | 'complete';
+type Phase = 'location' | 'bin';
 
 type CountingBin = {
   location_code: string;
@@ -165,9 +163,8 @@ export default function CountingSessionPage({
 }: CountingSessionPageProps) {
   const locationInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
-  const quantityRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  const [phase, setPhase] = useState<Phase>('brief');
+  const [phase, setPhase] = useState<Phase>('location');
   const [lines, setLines] = useState<CountingLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -175,9 +172,7 @@ export default function CountingSessionPage({
 
   const [locationInput, setLocationInput] = useState('');
   const [scanInput, setScanInput] = useState('');
-  const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>(
-    {}
-  );
+  const [scanTally, setScanTally] = useState<Record<string, number>>({});
 
   const [activeBinCode, setActiveBinCode] = useState<string | null>(null);
   const [skipTargetId, setSkipTargetId] = useState<string | null>(null);
@@ -273,8 +268,12 @@ export default function CountingSessionPage({
         if (task.status === 'claimed' || task.status === 'counting') {
           const nextUnresolvedLine = loaded.find((line) => !isResolved(line));
 
-          setActiveBinCode(nextUnresolvedLine?.location_code ?? null);
-          setPhase(nextUnresolvedLine ? 'location' : 'summary');
+          setActiveBinCode(
+            nextUnresolvedLine?.location_code ??
+              loaded[loaded.length - 1]?.location_code ??
+              null
+          );
+          setPhase(nextUnresolvedLine ? 'location' : 'bin');
         }
       } catch (loadError) {
         setError(
@@ -311,8 +310,8 @@ export default function CountingSessionPage({
 
       const next = firstOpenBin();
 
-      setActiveBinCode(next?.location_code ?? null);
-      setPhase(next ? 'location' : 'summary');
+      setActiveBinCode(next?.location_code ?? bins[bins.length - 1]?.location_code ?? null);
+      setPhase(next ? 'location' : 'bin');
     } catch (startError) {
       setError(
         errorMessage(
@@ -324,6 +323,15 @@ export default function CountingSessionPage({
       setSubmitting(false);
     }
   };
+
+  const autoStartedForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loading) return;
+    if (autoStartedForRef.current === task.recount_task_id) return;
+    autoStartedForRef.current = task.recount_task_id;
+    void handleStart();
+  }, [loading, task.recount_task_id]);
 
   const handleLocation = () => {
     if (!activeBin) {
@@ -380,11 +388,12 @@ export default function CountingSessionPage({
         return;
       }
 
+      setScanTally((previous) => ({
+        ...previous,
+        [match.recount_line_id]: (previous[match.recount_line_id] ?? 0) + 1,
+      }));
       setScanInput('');
-      setTimeout(
-        () => quantityRefs.current[match.recount_line_id]?.focus(),
-        50
-      );
+      setTimeout(() => scanInputRef.current?.focus(), 50);
     } catch (scanError) {
       setError(
         errorMessage(scanError, 'Barcode could not be resolved. Try again.')
@@ -394,21 +403,15 @@ export default function CountingSessionPage({
     }
   };
 
-  const handleCount = async (line: CountingLine) => {
-    if (submitting) return;
-
-    const raw = (quantityInputs[line.recount_line_id] ?? '').trim();
-
-    if (!/^\d+$/.test(raw)) {
-      setError('Enter a whole number, including 0 when the bin is empty.');
-      return;
-    }
-
-    const quantity = Number(raw);
+  const handleResolveLine = async (
+    line: CountingLine,
+    quantity: number
+  ): Promise<boolean> => {
+    if (submitting) return false;
 
     if (!Number.isSafeInteger(quantity) || quantity < 0) {
       setError('Enter a valid whole-number quantity.');
-      return;
+      return false;
     }
 
     setSubmitting(true);
@@ -417,7 +420,7 @@ export default function CountingSessionPage({
     try {
       await onRecordCount(task.recount_task_id, line.recount_line_id, {
         counted_quantity: quantity,
-        count_method: 'bin_quantity',
+        count_method: 'unit_scan',
       });
 
       setLines((previous) =>
@@ -426,7 +429,7 @@ export default function CountingSessionPage({
             ? {
                 ...entry,
                 counted_quantity: quantity,
-                count_method: 'bin_quantity',
+                count_method: 'unit_scan',
                 counted_at: new Date().toISOString(),
                 skip_reason: null,
                 skipped_at: null,
@@ -435,13 +438,8 @@ export default function CountingSessionPage({
         )
       );
 
-      setQuantityInputs((previous) => {
-        const next = { ...previous };
-        delete next[line.recount_line_id];
-        return next;
-      });
-
       setTimeout(() => scanInputRef.current?.focus(), 50);
+      return true;
     } catch (countError) {
       setError(
         errorMessage(
@@ -449,8 +447,24 @@ export default function CountingSessionPage({
           'Count could not be saved. Check the connection and try again.'
         )
       );
+      return false;
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleFinishBin = async () => {
+    if (!activeBin || submitting) return;
+
+    for (const line of activeBin.lines) {
+      if (isResolved(line)) continue;
+
+      const ok = await handleResolveLine(
+        line,
+        scanTally[line.recount_line_id] ?? 0
+      );
+
+      if (!ok) break;
     }
   };
 
@@ -512,7 +526,7 @@ export default function CountingSessionPage({
     setScanInput('');
 
     if (!next) {
-      setPhase('summary');
+      setPhase('bin');
       return;
     }
 
@@ -589,7 +603,7 @@ export default function CountingSessionPage({
       // Blind counting ends with a simple acknowledgement that the task
       // reached the server.
       await onCloseTask(task.recount_task_id);
-      setPhase('complete');
+      onComplete(task.label);
     } catch (closeError) {
       setError(
         errorMessage(closeError, 'Count could not be finished. Try again.')
@@ -721,36 +735,62 @@ export default function CountingSessionPage({
         )}
 
         {!resolved && (
-          <>
-            <TextField
-              inputRef={(element: HTMLInputElement | null) => {
-                quantityRefs.current[line.recount_line_id] = element;
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {(scanTally[line.recount_line_id] ?? 0) > 0 && (
+              <Button
+                size="small"
+                onClick={() =>
+                  setScanTally((previous) => ({
+                    ...previous,
+                    [line.recount_line_id]: Math.max(
+                      0,
+                      (previous[line.recount_line_id] ?? 0) - 1
+                    ),
+                  }))
+                }
+                disabled={submitting}
+                aria-label="Undo last scan"
+                sx={{ minWidth: 24, px: 0.25 }}
+              >
+                <Minus size={13} />
+              </Button>
+            )}
+
+            <Typography
+              sx={{
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--ink)',
+                minWidth: 20,
+                textAlign: 'right',
               }}
-              value={quantityInputs[line.recount_line_id] ?? ''}
-              onChange={(event) =>
-                setQuantityInputs((previous) => ({
-                  ...previous,
-                  [line.recount_line_id]: event.target.value,
-                }))
-              }
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') void handleCount(line);
-              }}
-              placeholder="Qty"
-              size="small"
-              disabled={submitting}
-              autoComplete="off"
-              inputProps={{
-                inputMode: 'numeric',
-                pattern: '[0-9]*',
-                autoComplete: 'off',
-                style: { textAlign: 'right', padding: '6px 8px', fontSize: 13 },
-              }}
-              sx={{ width: 72 }}
-            />
+            >
+              {scanTally[line.recount_line_id] ?? 0}
+            </Typography>
+
+            {(scanTally[line.recount_line_id] ?? 0) === 0 && (
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => void handleResolveLine(line, 0)}
+                disabled={submitting}
+                sx={{ minWidth: 'auto', px: 0.5, fontSize: 11 }}
+              >
+                None here
+              </Button>
+            )}
 
             <Button
               size="small"
+              variant="text"
               onClick={() => {
                 setError(null);
                 setSkipReason(null);
@@ -758,12 +798,11 @@ export default function CountingSessionPage({
                 setSkipTargetId(line.recount_line_id);
               }}
               disabled={submitting}
-              aria-label="Cannot count this item"
-              sx={{ minWidth: 32, px: 0.5 }}
+              sx={{ minWidth: 'auto', px: 0.5, fontSize: 11 }}
             >
-              <SkipForward size={15} />
+              Can't count
             </Button>
-          </>
+          </Box>
         )}
       </Box>
     );
@@ -801,55 +840,6 @@ export default function CountingSessionPage({
         <Alert severity="error" sx={{ mb: 2, borderRadius: '10px' }}>
           {error}
         </Alert>
-      )}
-
-      {phase === 'brief' && (
-        <Box
-          sx={{
-            bgcolor: 'var(--surface)',
-            border: '1px solid var(--rule)',
-            borderRadius: '14px',
-            p: 3,
-          }}
-        >
-          <ScanBarcode size={28} color="var(--accent)" />
-
-          <Typography
-            sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
-          >
-            {bins.length - binsComplete}{' '}
-            {bins.length - binsComplete === 1 ? 'bin' : 'bins'} remaining
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: 13,
-              fontWeight: 300,
-              color: 'var(--ink-3)',
-              mt: 0.75,
-              mb: 2.5,
-            }}
-          >
-            Scan the bin, then scan each item and enter what you physically
-            see. System quantities stay hidden while you count.
-          </Typography>
-
-          <Button
-            variant="contained"
-            onClick={() => void handleStart()}
-            disabled={submitting || Boolean(error && lines.length === 0)}
-          >
-            {submitting
-              ? 'Starting…'
-              : binsComplete > 0
-              ? 'Continue count'
-              : 'Start count'}
-          </Button>
-
-          <Button onClick={onComplete} disabled={submitting} sx={{ ml: 1 }}>
-            Back
-          </Button>
-        </Box>
       )}
 
       {phase === 'location' && activeBin && (
@@ -931,10 +921,29 @@ export default function CountingSessionPage({
               </Typography>
             </Box>
 
-            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              Bin {activeBinNumber} of {bins.length} · {activeBinResolved} of{' '}
-              {activeBin.lines.length} items
-            </Typography>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 0.25,
+              }}
+            >
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                Bin {activeBinNumber} of {bins.length} · {activeBinResolved} of{' '}
+                {activeBin.lines.length} items
+              </Typography>
+
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => onComplete()}
+                disabled={submitting}
+                sx={{ minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }}
+              >
+                Leave count
+              </Button>
+            </Box>
           </Box>
 
           <TextField
@@ -957,90 +966,36 @@ export default function CountingSessionPage({
             {activeBin.lines.map(renderRow)}
           </Box>
 
-          {activeBinComplete && (
+          {activeBinComplete ? (
+            firstOpenBin() ? (
+              <Button
+                variant="contained"
+                onClick={handleNextBin}
+                disabled={submitting}
+                sx={{ mt: 2 }}
+              >
+                Next Bin
+              </Button>
+            ) : (
+              <Button
+                variant="contained"
+                onClick={() => void handleFinish()}
+                disabled={submitting}
+                sx={{ mt: 2 }}
+              >
+                Finish Count
+              </Button>
+            )
+          ) : (
             <Button
               variant="contained"
-              onClick={handleNextBin}
+              onClick={() => void handleFinishBin()}
               disabled={submitting}
               sx={{ mt: 2 }}
             >
-              {firstOpenBin() ? 'Next bin' : 'Review count'}
+              Done With This Bin
             </Button>
           )}
-        </Box>
-      )}
-
-      {phase === 'summary' && (
-        <Box
-          sx={{
-            bgcolor: 'var(--surface)',
-            border: '1px solid var(--rule)',
-            borderRadius: '14px',
-            p: 3,
-          }}
-        >
-          <CheckCircle2 size={30} color="var(--accent)" />
-
-          <Typography
-            sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
-          >
-            All bins counted
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: 13,
-              fontWeight: 300,
-              color: 'var(--ink-3)',
-              mt: 0.75,
-              mb: 2.5,
-            }}
-          >
-            Finish the count to send it for the next required step.
-          </Typography>
-
-          <Button
-            variant="contained"
-            onClick={() => void handleFinish()}
-            disabled={submitting || unresolvedLines.length > 0}
-          >
-            {submitting ? 'Finishing…' : 'Finish count'}
-          </Button>
-        </Box>
-      )}
-
-      {phase === 'complete' && (
-        <Box
-          sx={{
-            bgcolor: 'var(--surface)',
-            border: '1px solid var(--rule)',
-            borderRadius: '14px',
-            p: 3,
-          }}
-        >
-          <CheckCircle2 size={32} color="var(--accent)" />
-
-          <Typography
-            sx={{ fontSize: 19, fontWeight: 600, color: 'var(--ink)', mt: 1.5 }}
-          >
-            Count submitted
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: 13,
-              fontWeight: 300,
-              color: 'var(--ink-3)',
-              mt: 0.75,
-              mb: 2.5,
-            }}
-          >
-            Your count has been submitted. You can return to Warehouse.
-          </Typography>
-
-          <Button variant="contained" onClick={onComplete}>
-            Back to Warehouse
-          </Button>
         </Box>
       )}
 

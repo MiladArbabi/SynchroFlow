@@ -157,6 +157,7 @@ export type WmsModuleFT2Props = {
   }>;
   onRefresh: () => void;
   onSessionExit?: () => void;
+  onCountFinished?: (label: string) => void;
   /** Stow tasks — pending stock that needs to be put away after receive or cancelled pick */
   stowTasks?: WmsStowTask[];
   onClaimStowTask?: (taskId: string) => Promise<void>;
@@ -263,7 +264,7 @@ export type WmsModuleFT2Props = {
     lineId: string,
     params: {
       counted_quantity: number;
-      count_method: 'bin_quantity';
+      count_method: 'unit_scan' | 'bin_quantity';
     }
   ) => Promise<void>;
   onSkipCountingLine: (
@@ -785,6 +786,7 @@ function WmsModuleFT2Inner({
   onConfirmShipment,
   onRefresh,
   onSessionExit,
+  onCountFinished,
   isOnline,
   queuedCount,
   stowTasks,
@@ -1025,10 +1027,13 @@ function WmsModuleFT2Inner({
     }
   };
 
-  const exitSession = () => {
+  const exitSession = (finishedLabel?: string) => {
     setActiveSession(null);
     onRefresh();
     onSessionExit?.();
+    if (finishedLabel) {
+      onCountFinished?.(finishedLabel);
+    }
   };
 
   // Active pick session

@@ -304,3 +304,52 @@ locked state.
 Add `'wms.recount': 'core'` and gate presentation on that entitlement
 to resolve `RECOUNT-TIER-UI-103`. The backend Core-tier gate remains
 authoritative.
+
+
+## Scan-derived counting session — RECOUNT-SESSION-UX-124 / RECOUNT-LEAVE-AFFORDANCE-134, 2026-08-24
+
+The operator counting surface is a single working flow. The former
+brief, summary, and complete presentation phases were removed; the
+active session moves between location and bin work only.
+
+**Blind counting remains load-bearing.** Expected system quantity is
+not shown to the operator. A design that presents expected and scanned
+quantities side by side would turn the workflow into a sighted count
+and violates the recount contract.
+
+Counting now uses the pre-existing `unit_scan` recount method. This was
+already supported by the backend enum alongside `bin_quantity`; the
+frontend had simply never wired it and previously hardcoded
+`bin_quantity`.
+
+Scans accumulate in a client-side tally for the active bin. A recount
+line is write-once during operator counting, so the client must not
+POST once per scan. Each unresolved line is written exactly once when
+the bin is resolved:
+
+- scanned units resolve with `count_method: 'unit_scan'`;
+- "None here" resolves the line with counted quantity `0`;
+- "Can't count" skips the line and leaves `counted_quantity` NULL.
+
+Skipped lines therefore cannot become reconciliation corrections.
+
+The server remains the accountability boundary. Closing a count refuses
+unresolved lines; any non-zero variance enters manual review; accepting
+a variance requires `variance_reason`; and `commitRecount()` is the
+recount path that writes the resulting `reconciliation_correction` to
+`inventory_movements`.
+
+"Leave count" is an exit, not successful completion. It returns the
+operator to Operations without emitting the completed-count
+acknowledgement.
+
+**Interactive-colour rule:** text actions must remain visually
+distinguishable from static muted text. Do not apply a muted static-text
+colour token to an actionable text button merely because its position
+suggests interactivity. `RECOUNT-LEAVE-AFFORDANCE-134` was resolved by
+removing its explicit muted colour override and inheriting the same
+interactive treatment as "None here" and "Can't count".
+
+The scan tally remains intentionally volatile until bin resolution.
+Durability and warning behaviour on leaving with unsaved scans remain
+tracked separately as `RECOUNT-TALLY-VOLATILE-127`.

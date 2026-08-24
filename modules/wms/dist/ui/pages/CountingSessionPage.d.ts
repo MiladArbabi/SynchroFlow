@@ -42,7 +42,7 @@ export type CountingLine = {
 };
 export type CountingSessionPageProps = {
     task: CountingTask;
-    onComplete: () => void;
+    onComplete: (finishedLabel?: string) => void;
     onFetchLines: (taskId: string) => Promise<CountingLine[]>;
     onFetchFindings: (taskId: string) => Promise<CountingFinding[]>;
     onCreateFinding: (taskId: string, params: {
@@ -60,7 +60,7 @@ export type CountingSessionPageProps = {
     } | null>;
     onRecordCount: (taskId: string, lineId: string, params: {
         counted_quantity: number;
-        count_method: 'bin_quantity';
+        count_method: 'unit_scan' | 'bin_quantity';
     }) => Promise<void>;
     onSkipLine: (taskId: string, lineId: string, params: {
         skip_reason: CountingSkipReason;

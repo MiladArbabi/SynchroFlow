@@ -190,7 +190,7 @@ function WorkQueueFamily({ title, summary, expanded, onToggle, children, }) {
                             transition: 'transform 150ms ease',
                         } })] }), _jsx(Collapse, { in: expanded, children: _jsx(Box, { sx: { px: 2, pb: 2 }, children: children }) })] }));
 }
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
     const [countDialogOpen, setCountDialogOpen] = useState(false);
     const [countDialogLoading, setCountDialogLoading] = useState(false);
     const [countDialogError, setCountDialogError] = useState(null);
@@ -355,10 +355,13 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                 packInputRef.current.value = '';
         }
     };
-    const exitSession = () => {
+    const exitSession = (finishedLabel) => {
         setActiveSession(null);
         onRefresh();
         onSessionExit?.();
+        if (finishedLabel) {
+            onCountFinished?.(finishedLabel);
+        }
     };
     // Active pick session
     if (activeSession?.type === 'pick') {

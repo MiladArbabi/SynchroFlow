@@ -24,7 +24,7 @@ import type {
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
 import { useSearchParams } from 'react-router-dom';
-import { Box, Typography, TextField } from '@mui/material';
+import { Alert, Box, Typography, TextField } from '@mui/material';
 import { AlertTriangle } from 'lucide-react';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
@@ -143,6 +143,7 @@ export default function WmsOperationsPage() {
     receiveJobId: string; poId: string; supplierName: string; lines: import('@lasyncro/wms').ReceiveJobLine[];
   } | null>(null);
   const [showQzPrompt, setShowQzPrompt] = useState(false);
+  const [finishedCountLabel, setFinishedCountLabel] = useState<string | null>(null);
 
   useEffect(() => {
     const receiveJobId = searchParams.get('receiveJobId');
@@ -507,7 +508,7 @@ export default function WmsOperationsPage() {
     lineId: string,
     params: {
       counted_quantity: number;
-      count_method: 'bin_quantity';
+      count_method: 'unit_scan' | 'bin_quantity';
     }
   ) => {
     await axiosInstance.post(
@@ -594,6 +595,11 @@ export default function WmsOperationsPage() {
 
   return (
     <>
+    {finishedCountLabel && (
+      <Alert severity="success" onClose={() => setFinishedCountLabel(null)}>
+        {finishedCountLabel} counted and submitted for review.
+      </Alert>
+    )}
     {problemBinMissing && <ProblemBinPrompt
       binInput={binInput}
       setBinInput={setBinInput}
@@ -620,6 +626,7 @@ export default function WmsOperationsPage() {
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}
       onCloseCountingTask={handleCloseCountingTask}
+      onCountFinished={setFinishedCountLabel}
       currentUserId={currentUserId}
       pendingCountTaskId={searchParams.get('countTaskId')}
       onCountSessionEnter={(id) =>
