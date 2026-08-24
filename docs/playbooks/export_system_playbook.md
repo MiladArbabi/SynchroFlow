@@ -972,3 +972,74 @@ exists in exportReports.ts and no call site references it. The Reports
 page consolidation shipped — ShopSettingsReportsPage imports the same
 QUICK_REPORTS as ExportDrawer, and the config header declares it single
 source. Do not re-scope either.
+
+## PRODUCTS-PULSE-STOCKOUT-105 — never key a Map on variant id alone, 2026-08-24
+
+`inventory_truth` is keyed `(shop_id, lasyncro_variant_id, location_code)` —
+**one row per variant PER LOCATION.** Any code that selects raw rows and folds
+them into `new Map()` keyed on variant id alone is last-write-wins, and the PK
+btree orders `location_code` last, so the 0-unit `WH-1-ROOT` row arrives last
+and silently clobbers real stock.
+
+`/inventory` reported **17 of 17 stocked out while the ledger held 183 units
+across 12 bins.** It typechecked cleanly and ran for months.
+
+**Rule: aggregate in SQL before the Map, or key on the composite.**
+Both patterns already existed and were correct:
+
+    exports.controller.ts:523        COALESCE(SUM(it.on_hand_quantity), 0)  → 183 correct
+    demandIntelligence.service.ts    SUM(it.available_quantity), groupBy    → correct
+    inventoryRecount.service.ts:253  Map keyed `${variant_id}:${location_code}` → correct
+    ProductsOperatorFacts.service.ts:115  raw rows, Map on variant id       → THE BUG
+
+Blast radius audited: five Map-builders over `inventory_truth`, four cleared
+with quoted source. This was the only instance.
+
+**Which column gates which signal — MIXED BY DESIGN.**
+The prior comment said "classify by TRUE on_hand (not clamped sellable)". That
+concern is preserved, not discarded: `sellable_quantity` is
+`generated always as (available_quantity) stored` and cannot represent a
+negative, so **phantom must keep reading summed `on_hand`** or a recorded
+contradiction would be hidden. What it did not anticipate is that the same
+field also gated stocked-out, where clamping is correct behaviour:
+
+    on_hand < 0    → PHANTOM       physical-integrity signal
+    sellable == 0  → STOCKED OUT   "can this be sold" — the axis
+                                   RECOUNT-SELLABLE-30 settled for the codebase
+    otherwise      → READY TO SELL
+
+Closes `PRODUCTS-SELLABLE-COLUMN-108`: the file header always documented
+`sellable_quantity` as the source and the gate never read it.
+
+**A SUMMED on_hand can go negative where a single row cannot**, so the phantom
+branch is now reachable where it previously never fired. Proven with a planted
+`-999` in a rolled-back transaction: `ready 12→11, phantom 0→1`.
+
+**`WH-1-ROOT` needed no special-casing.** All 17 root rows are `on_hand = 0`, so
+they contribute nothing to a SUM. Recount already excludes warehouse-root rows
+from suggested scope "because there is no physical shelf for an operator to
+count" (RECOUNT-SELLABLE-30). Its presentation suffix in CSVs remains
+`EXP-LOCATIONS-ROOT-106`.
+
+**Verified live 2026-08-24** on localhost:5173: headline `17 stocked out` →
+`5 stocked out`; pulse rail `Ready to sell 0 of 17` → `12 of 17`, `Stocked out
+17` → `5`, `Phantom 0` unchanged. Dead capital `$842` and the non-moving-stock
+action unchanged, confirming they run off `demandIntelligence`'s correct
+aggregation and were never downstream of this bug.
+
+**Registered, not fixed here:**
+- `PULSE-COMMITTED-RAIL-113` (Med) — fully-reserved stock (`on_hand 1,
+  sellable 0`, SKU `HOM-79602-2754`) now reads *stocked out*: true but
+  incomplete. A three-state rail (Ready to sell / Committed / Stocked out)
+  resolves it and `PRODUCTS-RESERVED-SEMANTICS-109`. Needs a frame approved;
+  touches the module package, so it carries a `dist` rebuild.
+- `PRODUCTS-STOCKOUT-DUAL-114` (Med) — two independent stockout counts reach
+  `/inventory`. `demandIntelligence` filters `product_type='physical'`,
+  `p.status='active'`, `v.status='active'`; this service does not. The PO card
+  reads "3 stocked-out SKUs" against the rail's 5. Expected, not a regression.
+- `FACTS-MAPMISS-112` — **withdrawn.** The `!` at the `inventoryMap.get` call
+  is guarded by an explicit `.has()` check that `continue`s first.
+
+**Baseline for this area:** `apps/backend` tsc is **exit 0, zero errors**.
+Capture it before backend work — `build:dev` ends in `|| true`, so tsc failures
+do not fail the dev build (RECOUNT-AUDIT-TYPE-23).

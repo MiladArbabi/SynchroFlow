@@ -112,12 +112,22 @@ export async function getProductsOperatorFacts(
   // ─────────────────────────────────────────
   // Inventory truth — sellable_quantity per variant
   // ─────────────────────────────────────────
+  // PRODUCTS-PULSE-STOCKOUT-105: inventory_truth is keyed
+  // (shop_id, lasyncro_variant_id, location_code) — one row PER LOCATION.
+  // Selecting raw rows and folding them into a Map keyed on variant id alone
+  // is last-write-wins, and the PK btree orders location_code last, so the
+  // 0-unit WH-1-ROOT row always arrived last and clobbered real stock:
+  // 183 units across 12 bins were reported as 17/17 stocked out.
+  // Aggregate per variant BEFORE the Map, as exports.controller.ts and
+  // demandIntelligence.service.ts already do.
   const inventoryRows = await qb('inventory_truth')
     .where('shop_id', shopId)
     .whereIn('lasyncro_variant_id', allVariantIds)
-    .select(['lasyncro_variant_id', 'sellable_quantity', 'on_hand_quantity']);
+    .groupBy('lasyncro_variant_id')
+    .select('lasyncro_variant_id')
+    .sum({ sellable_quantity: 'sellable_quantity', on_hand_quantity: 'on_hand_quantity' });
 
-    const inventoryMap = new Map(
+  const inventoryMap = new Map(
     inventoryRows.map((r: any) => [r.lasyncro_variant_id, {
       sellable: Number(r.sellable_quantity),
       onHand: Number(r.on_hand_quantity),
@@ -144,14 +154,26 @@ export async function getProductsOperatorFacts(
       noInventoryCount++;
       continue;
     }
-    // A row exists. Classify by TRUE on_hand (not clamped sellable):
-    //  - on_hand < 0  → PHANTOM: recorded contradiction (sold without recorded receiving)
-    //  - on_hand === 0 → ZERO STOCK: genuinely empty
-    //  - on_hand > 0  → SELLABLE
-    const { onHand } = inventoryMap.get(v.lasyncro_variant_id)!;
+    // PRODUCTS-PULSE-STOCKOUT-105 / PRODUCTS-SELLABLE-COLUMN-108:
+    // MIXED COLUMNS BY DESIGN. Supersedes the prior "classify by TRUE on_hand
+    // (not clamped sellable)" rule, whose concern is PRESERVED: sellable
+    // cannot represent a negative, so phantom must keep reading summed on_hand
+    // or a recorded contradiction would be hidden.
+    //   on_hand < 0   -> PHANTOM: sold without recorded receiving.
+    //   sellable == 0 -> STOCKED OUT: nothing can be sold from this variant.
+    //   otherwise     -> READY TO SELL.
+    // Ready/stocked-out answer "can this be sold", so they read sellable
+    // (generated always as available_quantity, netting out reservations) —
+    // the axis RECOUNT-SELLABLE-30 settled for the codebase, and the source
+    // this file's own header (:18) always documented.
+    // A SUMMED on_hand can go negative where a single row would not, so the
+    // phantom branch is now reachable where it previously never fired.
+    // Fully-reserved stock (on_hand > 0, sellable 0) reads stocked out — true
+    // but incomplete; the Committed state is PULSE-COMMITTED-RAIL-113.
+    const { onHand, sellable } = inventoryMap.get(v.lasyncro_variant_id)!;
     if (onHand < 0) {
       phantomCount++;
-    } else if (onHand === 0) {
+    } else if (sellable === 0) {
       zeroStockCount++;
     } else {
       sellableCount++;
