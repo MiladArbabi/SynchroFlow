@@ -15,6 +15,8 @@ import {
   skipLine,
   createRecountFinding,
   listRecountFindings,
+  previewSuggestedBins,
+  resolveDefaultWarehouseId,
   type RecountFindingType,
 } from '../../services/wms/inventoryRecount.service.js';
 
@@ -217,6 +219,31 @@ export const httpClaimRecountTask = async (req: Request, res: Response) => {
     });
   } catch (error) {
     return respondRecountError(res, 'CLAIM', error);
+  }
+};
+
+export const httpPreviewSuggestedBins = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const requestedWarehouseId = String(
+    req.query.warehouse_id ?? ''
+  ).trim();
+
+  try {
+    const bins = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      const warehouseId =
+        requestedWarehouseId ||
+        await resolveDefaultWarehouseId(trx, shopId);
+
+      return previewSuggestedBins(trx, shopId, warehouseId);
+    });
+
+    return res.status(200).json({ bins });
+  } catch (error) {
+    return respondRecountError(res, 'READ', error);
   }
 };
 

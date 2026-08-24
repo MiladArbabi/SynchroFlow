@@ -66,20 +66,42 @@ async function nextRecountLabel(
  * Returns bin-grain rows; root rows are excluded because there is no shelf to
  * walk to.
  */
-export async function selectSuggestedLines(
-  trx: Knex.Transaction,
-  shopId: number,
-  warehouseId: string
-): Promise<RecountLineInput[]> {
-  const rows = await trx.raw(
-    `WITH root AS (
+/**
+ * RECOUNT-CTA-33c: the suspect CTE, shared by the creation path and the
+ * preview. Three criteria are OR-ed; a bin can match more than one.
+ *   negative_on_hand  on_hand < 0            — a recorded contradiction
+ *   unlocated_sale    sale with no pick      — stock left without a movement
+ *   dormant           no movement in 60 days — nothing has confirmed it
+ * reason ranks by severity (1 = worst) so a bin reports ONE answer to
+ * "why should I walk there", not a list. Root location and non-sellable
+ * zones are excluded per RECOUNT-SELLABLE-30.
+ */
+function suspectCte(shopId: number): string {
+  return `WITH root AS (
       SELECT root_location_code FROM warehouses
       WHERE warehouse_id = ? AND shop_id = ?
     ),
       suspect AS (
       SELECT it.lasyncro_variant_id, it.location_code,
+              it.on_hand_quantity,
               wl.position_x, wl.position_y,
-              lane.position_y AS lane_y, lane.position_x AS lane_x
+              lane.position_y AS lane_y, lane.position_x AS lane_x,
+              CASE
+                WHEN it.on_hand_quantity < 0 THEN 'negative_on_hand'
+                WHEN it.lasyncro_variant_id IN (
+                  SELECT DISTINCT lasyncro_variant_id FROM inventory_movements
+                  WHERE shop_id = ${shopId} AND triggered_by = 'reconciliation_unlocated'
+                ) THEN 'unlocated_sale'
+                ELSE 'dormant'
+              END AS reason,
+              CASE
+                WHEN it.on_hand_quantity < 0 THEN 1
+                WHEN it.lasyncro_variant_id IN (
+                  SELECT DISTINCT lasyncro_variant_id FROM inventory_movements
+                  WHERE shop_id = ${shopId} AND triggered_by = 'reconciliation_unlocated'
+                ) THEN 2
+                ELSE 3
+              END AS reason_rank
       FROM inventory_truth it
       JOIN warehouse_locations wl
         ON wl.shop_id = it.shop_id
@@ -89,30 +111,6 @@ export async function selectSuggestedLines(
         AND lane.location_code = wl.parent_location_code
       WHERE it.shop_id = ?
         AND it.location_code <> (SELECT root_location_code FROM root)
-        /**
-          * RECOUNT-SELLABLE-30 — sellable stock only.
-          * ------------------------------------------
-          * Recount exists to prevent overselling and phantom stock. Both are
-          * risks against SELLABLE inventory, so the axis is "can this be sold",
-          * not "does stock rest here" (the -27 reasoning, superseded).
-          *
-          * pick    — where sellable stock lives.
-          * storage — the column DEFAULT (migration 0108:105,
-          *           floor-planning.controller.ts:653). A merchant who never
-          *           opens the floor planner has EVERY bin defaulted to this,
-          *           so excluding it would return an empty scope for exactly
-          *           the user most likely to have phantom stock.
-          *
-          * Everything else is deliberately held out of the sellable path:
-          * pack/ship/receive/kitting are mid-workflow; returns/problem/
-          * quarantine are held back pending owner disposition. Counting them
-          * cannot reduce overselling risk.
-          *
-          * No NULL branch needed — zone_type has a DB default, so a bin
-          * cannot exist without one.
-          *
-          * scope='suggested' only. 'full' means full.
-          */
         AND wl.zone_type IN ('pick', 'storage')
         AND (
           it.on_hand_quantity < 0
@@ -128,23 +126,89 @@ export async function selectSuggestedLines(
               AND m.occurred_at > NOW() - INTERVAL '60 days'
           )
         )
-    )
-    /**
-      * RECOUNT-WALKORDER-27b: lane-grouped, not raw coordinates.
-      * (position_x, position_y) returned A-1, B-1, C-1 — the front of every
-      * lane, forcing the operator to traverse each lane once per column.
-      * Grouping by the bin's parent lane first sweeps A fully, then B, then C,
-      * and is layout-independent (works whether lanes run along x or y).
-      */
-    SELECT lasyncro_variant_id, location_code FROM suspect
-    ORDER BY COALESCE(lane_y, 9999) ASC,
+    )`;
+}
+
+/**
+ * Walk order: lane, then bin within lane (RECOUNT-WALKORDER-27b).
+ */
+const SUSPECT_WALK_ORDER = `ORDER BY COALESCE(lane_y, 9999) ASC,
               COALESCE(lane_x, 9999) ASC,
               COALESCE(position_x, 9999) ASC,
               COALESCE(position_y, 9999) ASC,
-              location_code ASC`,
+              location_code ASC`;
+
+/**
+ * Creation path. Returns one row PER LINE (variant x location).
+ * Contract unchanged by RECOUNT-CTA-33c: still exactly
+ * lasyncro_variant_id + location_code, same order. The consumer at the
+ * inventory_recount_lines insert maps field-by-field, but this is the
+ * write path that terminates in a reconciliation_correction — its output
+ * is deliberately not widened.
+ */
+export async function selectSuggestedLines(
+  trx: Knex.Transaction,
+  shopId: number,
+  warehouseId: string
+): Promise<RecountLineInput[]> {
+  const rows = await trx.raw(
+    `${suspectCte(shopId)}
+    SELECT lasyncro_variant_id, location_code FROM suspect
+    ${SUSPECT_WALK_ORDER}`,
     [warehouseId, shopId, shopId, shopId]
   );
   return rows.rows;
+}
+
+export interface SuspectBinPreview {
+  location_code: string;
+  reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
+  variant_count: number;
+  units: number;
+  position_x: number | null;
+  position_y: number | null;
+}
+
+/**
+ * Preview path. Returns one row PER BIN, not per line — a bin holding four
+ * suspect variants is one map marker and one report row, but four recount
+ * lines. Read-only: creates nothing, writes nothing.
+ * reason is the most severe matched (MIN of reason_rank).
+ *
+ * RECOUNT-PREVIEW-NOTENANT-123: callers must supply a tenant-framed
+ * transaction. The query reads FORCE-RLS inventory/warehouse tables and must
+ * never run against the shared Knex pool without SET LOCAL tenant context.
+ */
+export async function previewSuggestedBins(
+  trx: Knex.Transaction,
+  shopId: number,
+  warehouseId: string
+): Promise<SuspectBinPreview[]> {
+  const rows = await trx.raw(
+    `${suspectCte(shopId)}
+    SELECT location_code,
+           (ARRAY_AGG(reason ORDER BY reason_rank ASC))[1] AS reason,
+           COUNT(*)::integer AS variant_count,
+           COALESCE(SUM(on_hand_quantity), 0)::integer AS units,
+           MIN(position_x) AS position_x,
+           MIN(position_y) AS position_y,
+           MIN(COALESCE(lane_y, 9999)) AS ord_lane_y,
+           MIN(COALESCE(lane_x, 9999)) AS ord_lane_x,
+           MIN(COALESCE(position_x, 9999)) AS ord_x,
+           MIN(COALESCE(position_y, 9999)) AS ord_y
+    FROM suspect
+    GROUP BY location_code
+    ORDER BY ord_lane_y ASC, ord_lane_x ASC, ord_x ASC, ord_y ASC, location_code ASC`,
+    [warehouseId, shopId, shopId, shopId]
+  );
+  return rows.rows.map((r: any) => ({
+    location_code: r.location_code,
+    reason: r.reason,
+    variant_count: Number(r.variant_count),
+    units: Number(r.units),
+    position_x: r.position_x === null ? null : Number(r.position_x),
+    position_y: r.position_y === null ? null : Number(r.position_y),
+  }));
 }
 
 /**

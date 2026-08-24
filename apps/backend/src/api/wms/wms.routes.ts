@@ -103,6 +103,7 @@ import {
   httpSkipRecountLine,
   httpCreateRecountFinding,
   httpListRecountFindings,
+  httpPreviewSuggestedBins,
 } from './inventoryRecount.controller.js';
 
 /**
@@ -783,6 +784,15 @@ router.get(
   requireTier('core'),
   requireAction('wms:recount:read'),
   httpListRecountTasks
+);
+
+router.get(
+  '/recount-tasks/preview',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:read'),
+  httpPreviewSuggestedBins
 );
 
 router.get(

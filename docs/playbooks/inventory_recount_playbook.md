@@ -105,6 +105,19 @@ spellings now map to 409.
 change, never two. Closing a task still requires every line counted or explicitly
 skipped — this was only ever an HTTP classification defect.
 
+## Suggested-count preview tenant boundary — RECOUNT-PREVIEW-NOTENANT-123
+
+`GET /api/v1/wms/recount-tasks/preview` is a read-only preview of suspect bins for count creation.
+
+Invariant:
+
+- `previewSuggestedBins()` accepts `Knex.Transaction`, never the shared Knex pool.
+- The HTTP boundary must open a transaction and set `SET LOCAL "app.current_tenant"` before calling it.
+- `inventory_truth`, `inventory_movements`, `warehouses`, and `warehouse_locations` are FORCE-RLS tables; preview reads outside that tenant frame are invalid.
+- `warehouse_id` may be omitted and resolves through the existing default-warehouse rule.
+- Preview classification is one reason per bin, severity ordered: `negative_on_hand` → `unlocated_sale` → `dormant`.
+- Verification for RECOUNT-PREVIEW-NOTENANT-123 proved both previously-unreached branches (`negative_on_hand`, `dormant`) and confirmed `inventory_movements` remained unchanged during the rolled-back fixture.
+
 ## Warehouse counting session — bin-batched execution
 
 `RECOUNT-BINLIST-62`: the session groups lines by `location_code` and works one
