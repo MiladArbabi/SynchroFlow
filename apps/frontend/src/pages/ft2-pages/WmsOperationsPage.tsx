@@ -29,6 +29,7 @@ import { AlertTriangle } from 'lucide-react';
 import { printViaQz } from 'utils/qzPrint';
 import { QzTrayOnboardingPrompt } from '../../components/QzTrayOnboardingPrompt';
 import { hasQzPromptBeenDismissed, dismissQzPrompt } from 'utils/qzPrompt';
+import { UpgradePrompt } from '../../components/UpgradePrompt';
 
 /**
  * ProblemBinPrompt
@@ -107,6 +108,7 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
 
 export default function WmsOperationsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
     data, isLoading, isError, refetch, stowTasks, settings,
     openReceiveJobs, recountTasks, recountLocked,
@@ -616,6 +618,7 @@ export default function WmsOperationsPage() {
       openReceiveJobCount={openReceiveJobs.length}
       recountLocked={recountLocked}
       recountTasks={recountTasks}
+      onRecountUpgrade={() => setRecountUpgradeOpen(true)}
       onFetchCountingPreview={handleFetchCountingPreview}
       onFetchCountingAssignees={handleFetchCountingAssignees}
       onCreateCountingTask={handleCreateCountingTask}
@@ -678,6 +681,13 @@ export default function WmsOperationsPage() {
       onAddReturnLine={handleAddReturnLine}
       onProcessReturnLine={handleProcessReturnLine}
       onCompleteReturnJob={handleCompleteReturnJob}
+    />
+   <UpgradePrompt
+      requiredTier="core"
+      mode="modal"
+      featureName="Reconcile inventory"
+      open={recountUpgradeOpen}
+      onClose={() => setRecountUpgradeOpen(false)}
     />
    { showQzPrompt && (
     <QzTrayOnboardingPrompt

@@ -69,6 +69,7 @@ const PLAN_FEATURES = {
   'wms.stow':                  'starter',
   'wms.problem_center':        'starter',
   'wms.receive':               'starter',   // inbound receive flow — lot tracking builds on this
+  'wms.recount':               'core',
   // Returns
   // 'returns.lot_attribution': 'growth', // PHASE 2 — batch-level return attribution via lot tracking (A-014)
 

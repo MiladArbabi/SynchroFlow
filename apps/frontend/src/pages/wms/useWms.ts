@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 import type { WmsStowTask } from '@lasyncro/wms';
 import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
+import { usePlanEntitlement } from '../../hooks/usePlanEntitlement';
 
 /**
  * WMS HOOK
@@ -11,6 +12,9 @@ import { RECEIVE_JOB_OPEN_STATUSES } from '@lasyncro/shared';
  * Polls every 10s — operators need near-realtime batch and stow status.
  */
 export function useWms() {
+  const { can } = usePlanEntitlement();
+  const recountEntitled = can('wms.recount');
+
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['wms', 'batches'],
     queryFn: () =>
@@ -49,9 +53,8 @@ export function useWms() {
 
   /**
    * Work tally — counting tasks. Every recount route is requireTier('core'),
-   * so a Starter tenant gets 403 here rather than an empty list. The error is
-   * surfaced deliberately: the tally renders Counting as locked, not as zero.
-   * Not retried — a 403 is an answer, not a failure.
+   * so Starter tenants are locked immediately instead of probing the backend.
+   * Runtime errors still lock the tally for entitled merchants.
    */
   const {
     data: recountTasksData,
@@ -61,6 +64,7 @@ export function useWms() {
     queryKey: ['wms', 'recount-tasks'],
     queryFn: () =>
       axiosInstance.get('/api/v1/wms/recount-tasks').then((r) => r.data.tasks),
+    enabled: recountEntitled,
     refetchInterval: 10_000,
     retry: false,
   });
@@ -71,13 +75,13 @@ export function useWms() {
     settings: settingsData ?? null,
     openReceiveJobs: receiveJobsData ?? [],
     recountTasks: recountTasksData ?? [],
-    recountLocked: recountIsError,
+    recountLocked: !recountEntitled || recountIsError,
     refetch: () => {
       void refetch();
       void refetchStow();
       void refetchSettings();
       void refetchReceiveJobs();
-      void refetchRecountTasks();
+      if (recountEntitled) void refetchRecountTasks();
     },
   };
 }

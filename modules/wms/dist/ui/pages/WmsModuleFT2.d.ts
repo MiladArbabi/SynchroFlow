@@ -201,6 +201,7 @@ export type WmsModuleFT2Props = {
     openReceiveJobCount?: number;
     /** True when the count routes returned 403 — Core tier required. */
     recountLocked?: boolean;
+    onRecountUpgrade?: () => void;
     /** Count execution — operator-facing tasks only. */
     recountTasks?: CountingTask[];
     onFetchCountingPreview: () => Promise<Array<{

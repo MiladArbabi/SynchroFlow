@@ -290,20 +290,33 @@ re-litigated:
 - It shipped this way and is live in production. Lowering to Starter is
   a giveaway, cheap to do later; raising is expensive to reverse.
 
-**Consequence — RECOUNT-TIER-UI-103, still open after RECOUNT-CTA-33a:**
-`PLAN_FEATURES` still has no `'wms.recount'` key, so explicit
-plan/entitlement presentation gating is not implemented.
+**Frontend entitlement parity — RECOUNT-TIER-UI-103, resolved 2026-08-25:**
 
-`RECOUNT-CTA-33a` partially mitigates this by deriving `recountLocked`
-from the recount-task query error state: when that query fails, the
-reconciliation CTA is disabled. This prevents a known-failed recount
-surface from remaining actionable, but it is not equivalent to an
-explicit tier gate because any recount query error produces the same
-locked state.
+`PLAN_FEATURES` now declares `'wms.recount': 'core'`, matching the
+authoritative backend `requireTier('core')` boundary.
 
-Add `'wms.recount': 'core'` and gate presentation on that entitlement
-to resolve `RECOUNT-TIER-UI-103`. The backend Core-tier gate remains
-authoritative.
+The frontend no longer waits for a failed recount request to discover
+that the merchant is not entitled:
+
+- `useWms()` derives entitlement with `can('wms.recount')`;
+- the recount-task query is disabled when the merchant is not entitled;
+- `recountLocked` is true immediately when entitlement is absent;
+- `recountIsError` remains a secondary runtime lock for entitled
+  merchants.
+
+Starter merchants are not shown cached or fabricated recount task
+counts. The Counting tally remains `—`, and Inventory checks presents
+`Core · Upgrade to view` without exposing task names or counts.
+
+The locked `Reconcile inventory` action remains clickable rather than
+rendering as a dead disabled control. It carries a visible Core badge
+and opens the canonical `UpgradePrompt`; the upgrade action routes to
+`/settings/billing`. Core merchants retain the normal recount dialog
+and task-list behaviour.
+
+The backend Core-tier gate remains authoritative. Frontend gating is
+presentation and request suppression, not a replacement for server
+authorization.
 
 
 ## Scan-derived counting session — RECOUNT-SESSION-UX-124 / RECOUNT-LEAVE-AFFORDANCE-134, 2026-08-24

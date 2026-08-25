@@ -14,7 +14,7 @@ import {
   MenuItem,
   Collapse,
 } from '@mui/material';
-import { ScanBarcode, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { ScanBarcode, Package, ChevronDown, ChevronUp, ArrowUp } from 'lucide-react';
 import { WmsConnectionBadge } from '../components/WmsConnectionBadge.js';
 import PickSessionPage, {
   type LineItem,
@@ -223,6 +223,7 @@ export type WmsModuleFT2Props = {
   openReceiveJobCount?: number;
   /** True when the count routes returned 403 — Core tier required. */
   recountLocked?: boolean;
+  onRecountUpgrade?: () => void;
 
   /** Count execution — operator-facing tasks only. */
   recountTasks?: CountingTask[];
@@ -815,6 +816,7 @@ function WmsModuleFT2Inner({
   openReceiveJobCount,
   recountLocked,
   recountTasks,
+  onRecountUpgrade,
   onFetchCountingPreview,
   onFetchCountingAssignees,
   onCreateCountingTask,
@@ -919,6 +921,11 @@ function WmsModuleFT2Inner({
   }, [pendingStowTaskId]);
 
   useEffect(() => {
+    if (recountLocked) {
+      setActiveSession((session) => session?.type === 'count' ? null : session);
+      return;
+    }
+
     if (!pendingCountTaskId) return;
 
     const task = (recountTasks ?? []).find(
@@ -942,7 +949,7 @@ function WmsModuleFT2Inner({
     if (task) {
       setActiveSession({ type: 'count', task });
     }
-  }, [pendingCountTaskId, recountTasks, currentUserId]);
+  }, [pendingCountTaskId, recountTasks, currentUserId, recountLocked]);
 
   useEffect(() => {
     if (pendingPickBatchId) {
@@ -1120,7 +1127,7 @@ function WmsModuleFT2Inner({
     );
   }
 
-  if (activeSession?.type === 'count') {
+  if (activeSession?.type === 'count' && !recountLocked) {
     return (
       <CountingSessionPage
         task={activeSession.task}
@@ -1164,7 +1171,7 @@ function WmsModuleFT2Inner({
     packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
     puttingAway: (stowTasks ?? []).length,
     receiving: openReceiveJobCount ?? 0,
-    counting: countingTasks.length,
+    counting: recountLocked ? 0 : countingTasks.length,
   };
 
   return (
@@ -1183,22 +1190,41 @@ function WmsModuleFT2Inner({
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }}>
-          <Button
-            variant="contained"
-            disabled={recountLocked}
-            onClick={() => {
-              void openCountDialog();
-            }}
-            sx={{
-              bgcolor: 'var(--accent)',
-              color: 'var(--accent-ink)',
-              borderRadius: '6px',
-              fontWeight: 600,
-              '&:hover': { bgcolor: 'var(--accent-hover)' },
-            }}
-          >
-            Reconcile inventory
-          </Button>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (recountLocked) {
+                  onRecountUpgrade?.();
+                  return;
+                }
+                void openCountDialog();
+              }}
+              sx={{
+                bgcolor: 'var(--accent)',
+                color: 'var(--accent-ink)',
+                borderRadius: '6px',
+                fontWeight: 600,
+                '&:hover': { bgcolor: 'var(--accent-hover)' },
+              }}
+            >
+              Reconcile inventory
+            </Button>
+            {recountLocked && (
+              <Box sx={{
+                display: 'flex', alignItems: 'center', gap: '2px',
+                bgcolor: 'var(--accent-ghost)',
+                border: '1px solid var(--accent-border)',
+                borderRadius: '4px',
+                px: '4px', py: '1px',
+              }}>
+                <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
+                <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
+                  Core
+                </Typography>
+              </Box>
+            )}
+          </Box>
           {/*<WmsConnectionBadge isOnline={isOnline} queuedCount={queuedCount} /> */}
           {/* {isOnline && (
             <Box sx={{
@@ -1653,14 +1679,18 @@ function WmsModuleFT2Inner({
       {/* COUNTS */}
             <WorkQueueFamily
               title="Inventory checks"
-              summary={`${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`}
+              summary={recountLocked ? 'Core · Upgrade to view' : `${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`}
               expanded={inventoryChecksExpanded}
               onToggle={() => {
+                if (recountLocked) {
+                  onRecountUpgrade?.();
+                  return;
+                }
                 if (inventoryChecksExpanded) setShowAllInventoryChecks(false);
                 setInventoryChecksExpanded((value) => !value);
               }}
             >
-          {countingTasks.length > 0 && (
+          {!recountLocked && countingTasks.length > 0 && (
             showAllInventoryChecks
               ? countingTasks
               : countingTasks.slice(0, 4)
@@ -1678,7 +1708,7 @@ function WmsModuleFT2Inner({
               }}
             />
           ))}
-          {countingTasks.length > 4 && (
+          {!recountLocked && countingTasks.length > 4 && (
             <Box
               onClick={() => setShowAllInventoryChecks((value) => !value)}
               sx={{

@@ -2,7 +2,7 @@ import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-run
 // modules/wms/src/ui/pages/WmsModuleFT2.tsx
 import { useState, memo, useEffect, useRef } from 'react';
 import { Box, Typography, CircularProgress, Alert, TextField, Button, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Collapse, } from '@mui/material';
-import { ScanBarcode, Package, ChevronDown, ChevronUp } from 'lucide-react';
+import { ScanBarcode, Package, ChevronDown, ChevronUp, ArrowUp } from 'lucide-react';
 import PickSessionPage from './PickSessionPage.js';
 import PackSessionPage from './PackSessionPage.js';
 import ReceiveSessionPage from './ReceiveSessionPage.js';
@@ -190,7 +190,7 @@ function WorkQueueFamily({ title, summary, expanded, onToggle, children, }) {
                             transition: 'transform 150ms ease',
                         } })] }), _jsx(Collapse, { in: expanded, children: _jsx(Box, { sx: { px: 2, pb: 2 }, children: children }) })] }));
 }
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onRecountUpgrade, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
     const [countDialogOpen, setCountDialogOpen] = useState(false);
     const [countDialogLoading, setCountDialogLoading] = useState(false);
     const [countDialogError, setCountDialogError] = useState(null);
@@ -262,6 +262,10 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
         }
     }, [pendingStowTaskId]);
     useEffect(() => {
+        if (recountLocked) {
+            setActiveSession((session) => session?.type === 'count' ? null : session);
+            return;
+        }
         if (!pendingCountTaskId)
             return;
         const task = (recountTasks ?? []).find((candidate) => candidate.recount_task_id === pendingCountTaskId &&
@@ -273,7 +277,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
         if (task) {
             setActiveSession({ type: 'count', task });
         }
-    }, [pendingCountTaskId, recountTasks, currentUserId]);
+    }, [pendingCountTaskId, recountTasks, currentUserId, recountLocked]);
     useEffect(() => {
         if (pendingPickBatchId) {
             enterPickSession(pendingPickBatchId, false).catch(() => { });
@@ -388,7 +392,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                 // because that would let the scanner advance without a warehouse mutation.
                 Promise.reject(new Error('Stow confirmation is unavailable. Return to Operations and try again.')) }));
     }
-    if (activeSession?.type === 'count') {
+    if (activeSession?.type === 'count' && !recountLocked) {
         return (_jsx(CountingSessionPage, { task: activeSession.task, onComplete: exitSession, onFetchLines: onFetchCountingLines, onFetchFindings: onFetchCountingFindings, onCreateFinding: onCreateCountingFinding, onClaimTask: onClaimCountingTask, onResolveBarcode: onResolveBarcode, onRecordCount: onRecordCountingLine, onSkipLine: onSkipCountingLine, onCloseTask: onCloseCountingTask }));
     }
     if (activeSession?.type === 'return') {
@@ -406,19 +410,29 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
         packing: new Set((readyToPackOrders ?? []).map((o) => o.pick_batch_id)).size,
         puttingAway: (stowTasks ?? []).length,
         receiving: openReceiveJobCount ?? 0,
-        counting: countingTasks.length,
+        counting: recountLocked ? 0 : countingTasks.length,
     };
     return (_jsxs(Box, { sx: { p: '30px 24px', maxWidth: 720, mx: 'auto' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 2, mb: 3 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Warehouse" }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }, children: isAllClear(workCounts)
                                     ? 'All clear — nothing waiting.'
-                                    : 'Work waiting to be done.' })] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }, children: _jsx(Button, { variant: "contained", disabled: recountLocked, onClick: () => {
-                                void openCountDialog();
-                            }, sx: {
-                                bgcolor: 'var(--accent)',
-                                color: 'var(--accent-ink)',
-                                borderRadius: '6px',
-                                fontWeight: 600,
-                                '&:hover': { bgcolor: 'var(--accent-hover)' },
-                            }, children: "Reconcile inventory" }) })] }), _jsx(WorkTally, { counts: workCounts, countingLocked: recountLocked }), _jsxs(Dialog, { open: countDialogOpen, onClose: () => {
+                                    : 'Work waiting to be done.' })] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexShrink: 0 }, children: _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: '6px' }, children: [_jsx(Button, { variant: "contained", onClick: () => {
+                                        if (recountLocked) {
+                                            onRecountUpgrade?.();
+                                            return;
+                                        }
+                                        void openCountDialog();
+                                    }, sx: {
+                                        bgcolor: 'var(--accent)',
+                                        color: 'var(--accent-ink)',
+                                        borderRadius: '6px',
+                                        fontWeight: 600,
+                                        '&:hover': { bgcolor: 'var(--accent-hover)' },
+                                    }, children: "Reconcile inventory" }), recountLocked && (_jsxs(Box, { sx: {
+                                        display: 'flex', alignItems: 'center', gap: '2px',
+                                        bgcolor: 'var(--accent-ghost)',
+                                        border: '1px solid var(--accent-border)',
+                                        borderRadius: '4px',
+                                        px: '4px', py: '1px',
+                                    }, children: [_jsx(ArrowUp, { size: 8, color: "var(--accent)", strokeWidth: 2.5 }), _jsx(Typography, { sx: { fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }, children: "Core" })] }))] }) })] }), _jsx(WorkTally, { counts: workCounts, countingLocked: recountLocked }), _jsxs(Dialog, { open: countDialogOpen, onClose: () => {
                     if (!countCreating)
                         setCountDialogOpen(false);
                 }, fullWidth: true, maxWidth: "sm", children: [_jsx(DialogTitle, { children: "Reconcile inventory" }), _jsxs(DialogContent, { dividers: true, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: "Count what\u2019s physically in your warehouse and compare it with system stock." }), countDialogLoading && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', py: 4 }, children: _jsx(CircularProgress, { size: 24 }) })), countDialogError && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: countDialogError })), !countDialogLoading && (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }, children: "Suggested bins" }), countPreviewBins.length === 0 ? (_jsx(Alert, { severity: "info", sx: { mb: 2 }, children: "No suggested bins right now." })) : (_jsx(Box, { sx: { display: 'grid', gap: 0.75, mb: 2.5 }, children: countPreviewBins.map((bin) => {
@@ -545,11 +559,15 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                             textAlign: 'center', py: 8,
                                             bgcolor: 'var(--surface)', border: '1px dashed var(--rule)',
                                             borderRadius: '14px',
-                                        }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id)))] }), _jsx(WorkQueueFamily, { title: "Putting away", summary: `${(stowTasks ?? []).length} ${(stowTasks ?? []).length === 1 ? 'task' : 'tasks'}`, expanded: puttingAwayExpanded, onToggle: () => setPuttingAwayExpanded((value) => !value), children: (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onOpen: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); } }, task.stow_task_id))) }), _jsxs(WorkQueueFamily, { title: "Inventory checks", summary: `${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`, expanded: inventoryChecksExpanded, onToggle: () => {
+                                        }, children: [_jsx(ScanBarcode, { size: 36, color: "var(--ink-4)" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-4)', mt: 1.5 }, children: "No active batches \u2014 waiting for release." })] })), !isLoading && !loadingSession && batches.map((batch) => (_jsx(BatchCard, { batch: batch, onClaim: (id) => void enterPickSession(id, true), onContinuePick: (id) => void enterPickSession(id, false), gridLocations: gridLocations, onFetchLineItems: onFetchLineItems }, batch.pick_batch_id)))] }), _jsx(WorkQueueFamily, { title: "Putting away", summary: `${(stowTasks ?? []).length} ${(stowTasks ?? []).length === 1 ? 'task' : 'tasks'}`, expanded: puttingAwayExpanded, onToggle: () => setPuttingAwayExpanded((value) => !value), children: (stowTasks ?? []).map((task) => (_jsx(StowTaskCard, { task: task, onOpen: (id) => { onStowSessionEnter?.(id); setActiveSession({ type: 'stow', taskId: id }); } }, task.stow_task_id))) }), _jsxs(WorkQueueFamily, { title: "Inventory checks", summary: recountLocked ? 'Core · Upgrade to view' : `${countingTasks.length} ${countingTasks.length === 1 ? 'task' : 'tasks'}`, expanded: inventoryChecksExpanded, onToggle: () => {
+                                    if (recountLocked) {
+                                        onRecountUpgrade?.();
+                                        return;
+                                    }
                                     if (inventoryChecksExpanded)
                                         setShowAllInventoryChecks(false);
                                     setInventoryChecksExpanded((value) => !value);
-                                }, children: [countingTasks.length > 0 && (showAllInventoryChecks
+                                }, children: [!recountLocked && countingTasks.length > 0 && (showAllInventoryChecks
                                         ? countingTasks
                                         : countingTasks.slice(0, 4)).map((task) => (_jsx(CountingTaskCard, { task: task, currentUserId: currentUserId, onOpen: (selectedTask) => {
                                             onCountSessionEnter?.(selectedTask.recount_task_id);
@@ -557,7 +575,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                                 type: 'count',
                                                 task: selectedTask,
                                             });
-                                        } }, task.recount_task_id))), countingTasks.length > 4 && (_jsxs(Box, { onClick: () => setShowAllInventoryChecks((value) => !value), sx: {
+                                        } }, task.recount_task_id))), !recountLocked && countingTasks.length > 4 && (_jsxs(Box, { onClick: () => setShowAllInventoryChecks((value) => !value), sx: {
                                             display: 'flex',
                                             alignItems: 'center',
                                             justifyContent: 'center',
