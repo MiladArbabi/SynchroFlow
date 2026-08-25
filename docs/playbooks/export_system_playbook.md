@@ -134,7 +134,7 @@ hardcoded whitelist. No date filtering - products are not a time series.
 |---|---|---|---|
 | Orders / Overview | `Export →` | CSV | Core+ |
 | Returns | `Export →` | CSV | Core+ |
-| Finances | `Export →` | CSV | Core+ |
+| Finances | _(suppressed — module disabled, EXP-FINANCES-ORPHANED-139)_ | CSV | Core+ |
 | Products / Inventory Valuation | `Export ->` | CSV | Core+ |
 | WMS Analytics (Sprint 2) | `Export →` | CSV | Core+ |
 | Orders / Outbound | `Export →` | CSV | Core+ |
@@ -306,7 +306,7 @@ duplicate summaries already available inside the product.
   endpoint, `brief_exported` activation milestone, and the now-unused `pdfkit`
   dependency. Historical `brief_exported` audit rows remain untouched.
 
-- **2026-06-24** — Overview's `Export brief →` CTA now opens `ExportDrawer` (page-level fixed slide-in, per §6 CTA Placement Rule) instead of hardcoding the PDF brief download. Drawer offers Brief (PDF), All Orders / Returns / Finances (CSV) — reuses existing Sprint 1 endpoints, no new backend work. Canonical report list moved from `ShopSettingsReportsPage.tsx` to `apps/frontend/src/config/exportReports.ts` (single source, both surfaces import it). True `.xlsx` still not implemented — tracked separately.
+- **2026-06-24** — Overview's `Export brief →` CTA now opens `ExportDrawer` (page-level fixed slide-in, per §6 CTA Placement Rule) instead of hardcoding the PDF brief download. Drawer offers Brief (PDF), All Orders / Returns (CSV). **Superseded 2026-08-25: Overview has no ExportDrawer call site at all — see EXP-FINANCES-ORPHANED-139 §Verification** — reuses existing Sprint 1 endpoints, no new backend work. Canonical report list moved from `ShopSettingsReportsPage.tsx` to `apps/frontend/src/config/exportReports.ts` (single source, both surfaces import it). True `.xlsx` still not implemented — tracked separately.
 - **2026-06-30** — Orders module's `Export →` CTA (ORDM-01) fixed: was a
   hardcoded blob-download bypassing the drawer entirely, despite §6
   specifying the standard drawer pattern. Now opens `ExportDrawer` with
@@ -1043,3 +1043,73 @@ aggregation and were never downstream of this bug.
 **Baseline for this area:** `apps/backend` tsc is **exit 0, zero errors**.
 Capture it before backend work — `build:dev` ends in `|| true`, so tsc failures
 do not fail the dev build (RECOUNT-AUDIT-TYPE-23).
+
+
+## Finances export suppressed — EXP-FINANCES-ORPHANED-139, 2026-08-25
+
+Finances and its submodules (Intelligence, margin, cashflow) are disabled by
+product decision. Finances is suppressed at **three** surfaces, all commented
+rather than deleted so restoration is one coherent uncomment:
+
+```text
+apps/frontend/src/lifecycle/LifecycleRouteHost.tsx:281   route
+apps/frontend/src/runtime/navBootstrap.ts:130-144        nav item
+apps/frontend/src/config/exportReports.ts:49-57          quick report
+```
+
+The backend is deliberately untouched: `/api/v1/exports/finances`
+(`exports.routes.ts:55-61`) and `FINANCES_COLUMNS`
+(`exports.controller.ts:168-176`) remain live and Core-gated. §5's Finances
+column list is still accurate.
+
+### QuickReport has no module-availability field
+
+`QuickReport` (`exportReports.ts`) gates on `tier` only. There is no
+`moduleId`/`requiredModuleId` field, so a report for a disabled module cannot
+be filtered automatically — suppression is manual. Tracked as
+`EXP-MODULE-AVAILABILITY-140`.
+
+### Trap — module gating is not testable in DEV
+
+`apps/frontend/src/navigation/resolveNavVisibility.ts:62`:
+
+```ts
+if (import.meta.env.DEV) return 'enabled';
+```
+
+The module-entitlement gate returns `enabled` unconditionally in development,
+*before* `requiredModuleId` is ever checked. Any module-gating fix is therefore
+unverifiable locally, and a local "it renders correctly" observation proves
+nothing about production. This is why suppression here is a comment rather than
+a `requiredModuleId` entry. Tracked as `NAV-MODULEGATE-DEV-BYPASS-141`.
+
+### Export CTA scope rule
+
+Every `ExportDrawer` call site passes an explicit single-report `reportIds`:
+
+```text
+ProductsFT2Page:82      ['products']
+OrdersFT2Page:111       ['orders-all']
+ReturnsOverviewPage:278 ['returns']
+OrdersOutboundPage:1158 ['orders-outbound']
+```
+
+**A module drawer exports that module's own data.** The full report set is
+offered only at `/settings/reports`. Overview has no `ExportDrawer` call site
+and is not getting one — it holds no data of its own, so an export there could
+only mean "all reports", which is the Reports page by another name. A pointer
+to Reports is tracked as `OVERVIEW-REPORTS-POINTER-142`.
+
+### Withdrawn
+
+`EXP-CTA-FINANCES-110` — no CTA can be wired into a disabled module. Reopens
+only if Finances is restored.
+
+### Verification
+
+Reports page (`/settings/reports`) live-verified: four quick reports render
+(All Orders, Shipped Orders, Returns Analysis, Inventory Valuation), Finances
+absent, remaining entries unchanged. The four `ExportDrawer` call sites were
+proven by grep to pass explicit `reportIds` excluding `finances`; Overview was
+proven to have no call site. `apps/frontend` tsc held at its 19-error baseline
+with zero errors in the touched file.

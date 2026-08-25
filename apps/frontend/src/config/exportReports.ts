@@ -46,7 +46,9 @@ export const QUICK_REPORTS: QuickReport[] = [
     endpoint: '/api/v1/exports/returns',
     filename: 'lasyncro-returns',
   },
-  {
+  /* FINANCES — module disabled (EXP-FINANCES-ORPHANED-139).
+     Restore together with the route and nav entry. */
+  /* {
     id: 'finances',
     title: 'Finances & Margin',
     description: 'Order-level gross revenue, cost, and margin percentage.',
@@ -54,7 +56,7 @@ export const QUICK_REPORTS: QuickReport[] = [
     tier: 'core',
     endpoint: '/api/v1/exports/finances',
     filename: 'lasyncro-finances',
-  },
+  }, */
   {
     id: 'products',
     title: 'Inventory Valuation',
