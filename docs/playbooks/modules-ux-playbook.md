@@ -185,7 +185,9 @@ Canonical reveal control:
 - Body copy uses `fontWeight: 300`
 - Section/card titles usually use `fontWeight: 500`
 - Metric values and CTAs use `fontWeight: 600`
-- Never hardcode hex colors in components — always use tokens or `theme.palette.*`
+- Never hardcode hex colors in components — always use tokens or
+  `theme.palette.*`, but only palette keys that `buildPalette()` actually
+  assigns (see §20 — an unassigned key is not safe)
 - Never use `color="secondary"` on MUI Buttons — renders MUI amber, not LaSyncro orange
 - Clickable elements: always `<Box>` — never `<Typography>` (semantic correctness)
 
@@ -881,3 +883,69 @@ the other 7 were pre-existing drift in unrelated components. Doc §21 of
 the prior handover recorded the same for `modules/shared`. Stage the
 full build output rather than cherry-picking; leaving the rest behind
 recommits the drift. Declare it as a consequence, not an accident.
+
+
+## 20. An unassigned palette key is not a safe default — THEME-TEXT-DISABLED-MISSING-137, 2026-08-25
+
+`apps/frontend/src/themes/palette.ts` assigned `text.primary` and
+`text.secondary` but never `text.disabled`. Meanwhile 27 call sites across 12
+files referenced it.
+
+### Why the omission breaks dark mode specifically
+
+`themes/index.tsx` supplies palettes through MUI's `colorSchemes` API — each
+scheme gets its own independent `buildPalette()` output:
+
+```ts
+colorSchemes: {
+  light: { palette: buildPalette(ThemeMode.LIGHT) },
+  dark:  { palette: buildPalette(ThemeMode.DARK)  },
+}
+```
+
+A key omitted from `buildPalette()` never passes through its `isDark` branch, so
+both schemes fall back to the same MUI default. That default is not
+scheme-aware: it rendered near-black, which is legible on light surfaces and
+invisible on `--surface` / `background.paper` in dark mode.
+
+**Rule: every palette key a call site uses must be explicitly assigned in
+`buildPalette()`, with both branches of `isDark`.** An omitted key is not "the
+MUI default" — it is a value that will look correct in one scheme and broken in
+the other, and no amount of call-site patching fixes the class.
+
+### Blast radius, for future reference
+
+27 references in 12 files, in three syntactic forms that all resolve to the same
+palette lookup:
+
+```text
+theme.palette.text.disabled   6   lucide `color` prop
+'text.disabled'              14   MUI sx string
+color="text.disabled"         7   JSX prop
+```
+
+Grepping only one form undercounts. Search the dotted path, not a single syntax.
+
+### Doctrine note
+
+`palette.ts:40-41` states: *"One surface + one text color per mode. No grey
+scales. No ambiguity."* `text.disabled` was defined anyway
+(`isDark ? '#6B7280' : '#94A3B8'`). The reasoning: 27 sites already reference it,
+so this closes a gap rather than opening a new tier. The doctrine still holds
+against inventing *new* greys ad hoc.
+
+### Verification
+
+Live-verified in both colour schemes on three surfaces covering all three
+syntactic forms: `PickSessionPage` step tracker (7 refs, lucide form),
+Overview live map via `WarehouseGrid` (JSX prop form), and Settings → Billing
+(4 refs, sx form). `apps/frontend` tsc held at its 19-error baseline with zero
+errors in the touched file.
+
+The remaining nine files were **accepted by inspection, not live-verified**:
+`Ft1ChecklistShell`, `PostTrialInterstitial`, `MembersPage`, `WelcomePage`,
+`CountingSessionPage`, `StowSessionPage`, `BinCell`,
+`SuppliersPortalModuleFT2`, `FloorPlanningModuleFT2`.
+
+Closes `PICK-TRACKER-INACTIVE-ICON-136` (the canonical `PickSessionPage:669`
+inactive-node icon carried the same latent defect).

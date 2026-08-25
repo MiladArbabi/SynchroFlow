@@ -87,6 +87,11 @@ export function buildPalette(mode: ThemeMode): ThemeOptions['palette'] {
     text: {
       primary: neutralText,
       secondary: isDark ? '#9CA3AF' : '#475569',
+      // Defined explicitly: 27 call sites across 12 files reference
+      // text.disabled. Without this key both colour schemes fall through to
+      // MUI's built-in default, which is not scheme-aware and renders
+      // illegibly in dark mode (THEME-TEXT-DISABLED-MISSING-137).
+      disabled: isDark ? '#6B7280' : '#94A3B8',
     },
 
     divider: isDark ? 'rgba(255,255,255,0.08)' : '#E5E7EB',
