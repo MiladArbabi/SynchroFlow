@@ -363,6 +363,64 @@ suggests interactivity. `RECOUNT-LEAVE-AFFORDANCE-134` was resolved by
 removing its explicit muted colour override and inheriting the same
 interactive treatment as "None here" and "Can't count".
 
-The scan tally remains intentionally volatile until bin resolution.
-Durability and warning behaviour on leaving with unsaved scans remain
-tracked separately as `RECOUNT-TALLY-VOLATILE-127`.
+The scan tally is persisted provisionally in `sessionStorage` from
+`RECOUNT-TALLY-VOLATILE-127` onward; see the section below.
+
+## Scan tally durability — RECOUNT-TALLY-VOLATILE-127, 2026-08-25
+
+### Provisional persistence contract
+
+Two `sessionStorage` keys, both scoped by recount task id:
+
+```text
+recount-scan-tally-${recount_task_id}
+recount-verified-location-${recount_task_id}
+```
+
+Written on scan and undo. Restored on remount or refresh, filtered to
+lines that are still unresolved. Cleared on successful line count, on
+skip, on advancing to another bin, and on recount completion.
+
+**Component unmount alone does NOT clear either key.** Leaving a session
+and returning restores the provisional tally. This is deliberate.
+
+### Why the tally accumulates client-side
+
+The recount line is write-once during operator counting: once
+`counted_at` or `skip_reason` exists, a further count write is rejected.
+A line therefore has exactly one write, so scans cannot be checkpointed
+per scan and must accumulate provisionally until bin resolution.
+
+### Trap — `theme.palette.text.disabled` is unassigned
+
+`apps/frontend/src/themes/palette.ts` assigns `text.primary` and
+`text.secondary` only. `text.disabled` is never assigned and falls
+through to MUI's default, a fixed light-mode value applied in both
+colour schemes.
+
+Any glyph or label using `theme.palette.text.disabled` against
+`background.paper` is invisible in dark mode and legible in light mode.
+The two-step tracker's inactive node icon hit exactly this. The fix was
+`var(--ink-3)`, which resolves per scheme through the theme's
+`MuiCssBaseline` token injection.
+
+Do not use `theme.palette.text.disabled` until the palette gap is closed
+under `THEME-TEXT-DISABLED-MISSING-137`.
+
+### Deliberate exclusions
+
+- Leave-count messaging was not implemented. Slice 1A made the original
+  warn-and-discard design incoherent, since leaving no longer discards.
+  Current behaviour is silent persistence. Tracked as
+  `RECOUNT-LEAVE-SEMANTICS-138`.
+- `PickSessionPage` carries the identical inactive-icon expression and
+  the same latent dark-mode defect. Tracked as
+  `PICK-TRACKER-INACTIVE-ICON-136`. Do not copy that node's colour
+  handling as canonical.
+
+### Verification
+
+Tracker verified live in both colour schemes: inactive node icon legible
+in dark mode, unchanged behaviour in light mode. Tally and verified
+location confirmed to survive refresh; resolved-line tallies confirmed
+not to return.

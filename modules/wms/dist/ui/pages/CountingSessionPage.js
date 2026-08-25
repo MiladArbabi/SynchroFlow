@@ -1,8 +1,8 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 // modules/wms/src/ui/pages/CountingSessionPage.tsx
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Typography, } from '@mui/material';
-import { MapPin, Minus, PackageCheck, } from 'lucide-react';
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Paper, TextField, Typography, useTheme, } from '@mui/material';
+import { CheckCircle, MapPin, Minus, PackageCheck, } from 'lucide-react';
 const SKIP_OPTIONS = [
     { value: 'bin_inaccessible', label: 'Cannot access bin' },
     { value: 'stock_in_motion', label: 'Stock is moving' },
@@ -17,6 +17,47 @@ function locationMatches(scanned, locationCode) {
 function isResolved(line) {
     return line.counted_at !== null || line.skipped_at !== null;
 }
+function scanTallyStorageKey(recountTaskId) {
+    return `recount-scan-tally-${recountTaskId}`;
+}
+function verifiedLocationStorageKey(recountTaskId) {
+    return `recount-verified-location-${recountTaskId}`;
+}
+function normalizeScanTally(tally) {
+    return Object.fromEntries(Object.entries(tally).filter(([, value]) => Number.isSafeInteger(value) && value > 0));
+}
+function persistScanTally(storageKey, tally) {
+    const normalized = normalizeScanTally(tally);
+    if (Object.keys(normalized).length === 0) {
+        sessionStorage.removeItem(storageKey);
+        return;
+    }
+    sessionStorage.setItem(storageKey, JSON.stringify(normalized));
+}
+function readScanTally(storageKey) {
+    const stored = sessionStorage.getItem(storageKey);
+    if (!stored)
+        return {};
+    try {
+        const parsed = JSON.parse(stored);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed))
+            return {};
+        return normalizeScanTally(parsed);
+    }
+    catch {
+        sessionStorage.removeItem(storageKey);
+        return {};
+    }
+}
+function filterTallyForUnresolvedLines(tally, currentLines) {
+    const unresolvedLineIds = new Set(currentLines.filter((line) => !isResolved(line)).map((line) => line.recount_line_id));
+    return Object.fromEntries(Object.entries(normalizeScanTally(tally)).filter(([lineId]) => unresolvedLineIds.has(lineId)));
+}
+function removeLineFromTally(tally, recountLineId) {
+    const next = { ...tally };
+    delete next[recountLineId];
+    return next;
+}
 function errorMessage(error, fallback) {
     const responseError = error?.response?.data?.error;
     if (responseError)
@@ -26,6 +67,7 @@ function errorMessage(error, fallback) {
     return fallback;
 }
 export default function CountingSessionPage({ task, onComplete, onFetchLines, onFetchFindings, onCreateFinding, onClaimTask, onResolveBarcode, onRecordCount, onSkipLine, onCloseTask, }) {
+    const theme = useTheme();
     const locationInputRef = useRef(null);
     const scanInputRef = useRef(null);
     const [phase, setPhase] = useState('location');
@@ -36,6 +78,8 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
     const [locationInput, setLocationInput] = useState('');
     const [scanInput, setScanInput] = useState('');
     const [scanTally, setScanTally] = useState({});
+    const tallyStorageKey = useMemo(() => scanTallyStorageKey(task.recount_task_id), [task.recount_task_id]);
+    const verifiedLocationKey = useMemo(() => verifiedLocationStorageKey(task.recount_task_id), [task.recount_task_id]);
     const [activeBinCode, setActiveBinCode] = useState(null);
     const [skipTargetId, setSkipTargetId] = useState(null);
     const [skipReason, setSkipReason] = useState(null);
@@ -78,6 +122,8 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
     const activeBinNumber = activeBin
         ? bins.findIndex((bin) => bin.location_code === activeBin.location_code) + 1
         : 0;
+    const isLocationPhase = phase === 'location';
+    const isCountPhase = phase === 'bin';
     const firstOpenBin = (fromIndex = 0) => {
         for (let index = fromIndex; index < bins.length; index += 1) {
             if (bins[index].lines.some((line) => !isResolved(line))) {
@@ -85,6 +131,16 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
             }
         }
         return null;
+    };
+    const updateScanTally = (updater) => {
+        setScanTally((previous) => {
+            const next = normalizeScanTally(updater(previous));
+            persistScanTally(tallyStorageKey, next);
+            return next;
+        });
+    };
+    const clearLineScanTally = (recountLineId) => {
+        updateScanTally((previous) => removeLineFromTally(previous, recountLineId));
     };
     useEffect(() => {
         void (async () => {
@@ -95,15 +151,24 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                 const loadedFindings = await onFetchFindings(task.recount_task_id);
                 setLines(loaded);
                 setFindings(loadedFindings);
+                const restoredTally = filterTallyForUnresolvedLines(readScanTally(tallyStorageKey), loaded);
+                setScanTally(restoredTally);
+                persistScanTally(tallyStorageKey, restoredTally);
                 // RECOUNT-RESUME-POSITION-72: reopening an in-progress count should
                 // resume at its first unresolved bin instead of restarting at brief.
                 // Location confirmation is intentionally required again after refresh.
                 if (task.status === 'claimed' || task.status === 'counting') {
                     const nextUnresolvedLine = loaded.find((line) => !isResolved(line));
-                    setActiveBinCode(nextUnresolvedLine?.location_code ??
+                    const nextActiveBinCode = nextUnresolvedLine?.location_code ??
                         loaded[loaded.length - 1]?.location_code ??
-                        null);
-                    setPhase(nextUnresolvedLine ? 'location' : 'bin');
+                        null;
+                    const savedVerifiedLocation = sessionStorage.getItem(verifiedLocationKey);
+                    const locationStillVerified = nextActiveBinCode !== null && savedVerifiedLocation === nextActiveBinCode;
+                    if (savedVerifiedLocation && !locationStillVerified) {
+                        sessionStorage.removeItem(verifiedLocationKey);
+                    }
+                    setActiveBinCode(nextActiveBinCode);
+                    setPhase(!nextUnresolvedLine || locationStillVerified ? 'bin' : 'location');
                 }
             }
             catch (loadError) {
@@ -113,7 +178,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                 setLoading(false);
             }
         })();
-    }, [task.recount_task_id, onFetchLines, onFetchFindings]);
+    }, [task.recount_task_id, onFetchLines, onFetchFindings, tallyStorageKey, verifiedLocationKey]);
     useEffect(() => {
         if (phase === 'location') {
             setTimeout(() => locationInputRef.current?.focus(), 50);
@@ -132,8 +197,14 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                 await onClaimTask(task.recount_task_id);
             }
             const next = firstOpenBin();
-            setActiveBinCode(next?.location_code ?? bins[bins.length - 1]?.location_code ?? null);
-            setPhase(next ? 'location' : 'bin');
+            const nextActiveBinCode = next?.location_code ?? bins[bins.length - 1]?.location_code ?? null;
+            const savedVerifiedLocation = sessionStorage.getItem(verifiedLocationKey);
+            const locationStillVerified = nextActiveBinCode !== null && savedVerifiedLocation === nextActiveBinCode;
+            if (savedVerifiedLocation && !locationStillVerified) {
+                sessionStorage.removeItem(verifiedLocationKey);
+            }
+            setActiveBinCode(nextActiveBinCode);
+            setPhase(!next || locationStillVerified ? 'bin' : 'location');
         }
         catch (startError) {
             setError(errorMessage(startError, 'Failed to start this count. Return to Warehouse and try again.'));
@@ -162,6 +233,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
         }
         setError(null);
         setLocationInput('');
+        sessionStorage.setItem(verifiedLocationKey, activeBin.location_code);
         setPhase('bin');
     };
     // A scan does not commit anything on its own -- unlike stow, a count needs a
@@ -195,7 +267,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                 setScanInput('');
                 return;
             }
-            setScanTally((previous) => ({
+            updateScanTally((previous) => ({
                 ...previous,
                 [match.recount_line_id]: (previous[match.recount_line_id] ?? 0) + 1,
             }));
@@ -233,6 +305,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                     skipped_at: null,
                 }
                 : entry));
+            clearLineScanTally(line.recount_line_id);
             setTimeout(() => scanInputRef.current?.focus(), 50);
             return true;
         }
@@ -278,6 +351,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                     skipped_at: new Date().toISOString(),
                 }
                 : entry));
+            clearLineScanTally(skipTargetId);
             setSkipTargetId(null);
             setSkipReason(null);
             setSkipNotes('');
@@ -298,6 +372,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
         setError(null);
         setLocationInput('');
         setScanInput('');
+        sessionStorage.removeItem(verifiedLocationKey);
         if (!next) {
             setPhase('bin');
             return;
@@ -359,6 +434,9 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
             // Blind counting ends with a simple acknowledgement that the task
             // reached the server.
             await onCloseTask(task.recount_task_id);
+            sessionStorage.removeItem(tallyStorageKey);
+            sessionStorage.removeItem(verifiedLocationKey);
+            setScanTally({});
             onComplete(task.label);
         }
         catch (closeError) {
@@ -424,7 +502,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                         gap: 0.5,
                         flexShrink: 0,
                         whiteSpace: 'nowrap',
-                    }, children: [(scanTally[line.recount_line_id] ?? 0) > 0 && (_jsx(Button, { size: "small", onClick: () => setScanTally((previous) => ({
+                    }, children: [(scanTally[line.recount_line_id] ?? 0) > 0 && (_jsx(Button, { size: "small", onClick: () => updateScanTally((previous) => ({
                                 ...previous,
                                 [line.recount_line_id]: Math.max(0, (previous[line.recount_line_id] ?? 0) - 1),
                             })), disabled: submitting, "aria-label": "Undo last scan", sx: { minWidth: 24, px: 0.25 }, children: _jsx(Minus, { size: 13 }) })), _jsx(Typography, { sx: {
@@ -445,33 +523,95 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                             fontWeight: 700,
                             color: 'var(--ink)',
                             lineHeight: 1.1,
-                        }, children: "Count inventory" }), _jsxs(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }, children: [binsComplete, " of ", bins.length, ' ', bins.length === 1 ? 'bin' : 'bins', " counted"] })] }), error && (_jsx(Alert, { severity: "error", sx: { mb: 2, borderRadius: '10px' }, children: error })), phase === 'location' && activeBin && (_jsxs(Box, { sx: {
-                    bgcolor: 'var(--surface)',
-                    border: '1px solid var(--rule)',
-                    borderRadius: '14px',
-                    p: 3,
-                }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }, children: [_jsx(MapPin, { size: 18, color: "var(--accent)" }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 600, color: 'var(--ink)' }, children: "Scan the bin barcode" })] }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)', mb: 1.5 }, children: ["Bin ", activeBinNumber, " of ", bins.length, " \u00B7", ' ', activeBin.lines.length, ' ', activeBin.lines.length === 1 ? 'item' : 'items', " to check"] }), _jsx(TextField, { inputRef: locationInputRef, fullWidth: true, value: locationInput, onChange: (event) => setLocationInput(event.target.value.toUpperCase()), onKeyDown: (event) => {
-                            if (event.key === 'Enter')
-                                handleLocation();
-                        }, placeholder: "Scan bin barcode", disabled: submitting, autoComplete: "off", inputProps: { autoComplete: 'off' } }), _jsx(Button, { variant: "contained", onClick: handleLocation, disabled: !locationInput.trim() || submitting, sx: { mt: 1.5 }, children: "Confirm bin" })] })), phase === 'bin' && activeBin && (_jsxs(Box, { sx: {
+                        }, children: "Count inventory" }), _jsxs(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', mt: 0.75 }, children: [binsComplete, " of ", bins.length, ' ', bins.length === 1 ? 'bin' : 'bins', " counted"] })] }), error && (_jsx(Alert, { severity: "error", sx: { mb: 2, borderRadius: '10px' }, children: error })), activeBin && (_jsxs(Box, { sx: {
                     bgcolor: 'var(--surface)',
                     border: '1px solid var(--rule)',
                     borderRadius: '14px',
                     p: 2.25,
-                }, children: [_jsxs(Box, { sx: {
-                            display: 'flex',
-                            alignItems: 'baseline',
-                            justifyContent: 'space-between',
-                            mb: 1.25,
-                        }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(MapPin, { size: 17, color: "var(--accent)" }), _jsx(Typography, { sx: { fontSize: 20, fontWeight: 700, color: 'var(--ink)' }, children: activeBin.location_code })] }), _jsxs(Box, { sx: {
+                }, children: [_jsxs(Box, { sx: { mb: 1.5 }, children: [_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', mb: 0.5 }, children: [_jsxs(Typography, { variant: "caption", color: "text.secondary", children: ["Bin ", activeBinNumber, " of ", bins.length] }), _jsxs(Typography, { variant: "caption", color: "text.secondary", children: [activeBinResolved, " of ", activeBin.lines.length, " items"] })] }), _jsx(LinearProgress, { variant: "determinate", value: isCountPhase ? 100 : 0, sx: {
+                                    borderRadius: 1,
+                                    height: 3,
+                                    bgcolor: 'action.hover',
+                                    '& .MuiLinearProgress-bar': { bgcolor: 'var(--accent)' },
+                                } })] }), _jsx(Paper, { variant: "outlined", sx: { mb: 1.5, p: 2, borderRadius: 2, bgcolor: 'background.default' }, children: _jsxs(Box, { sx: { position: 'relative', height: 100 }, children: [_jsx(Box, { sx: {
+                                        position: 'absolute',
+                                        left: 0,
+                                        right: 0,
+                                        top: 19,
+                                        height: 3,
+                                        bgcolor: 'action.disabledBackground',
+                                        borderRadius: 1,
+                                        overflow: 'hidden',
+                                    }, children: _jsx(Box, { sx: {
+                                            height: '100%',
+                                            width: isCountPhase ? '66%' : '0%',
+                                            bgcolor: theme.palette.success.main,
+                                            borderRadius: 1,
+                                            transition: 'width 0.55s ease',
+                                        } }) }), _jsx(Box, { sx: { position: 'absolute', left: 'calc(33% - 20px)', top: 0, width: 40 }, children: _jsx(Box, { sx: {
+                                            width: 40,
+                                            height: 40,
+                                            borderRadius: '50%',
+                                            bgcolor: isLocationPhase ? 'var(--accent)' : theme.palette.success.main,
+                                            border: `2.5px solid ${isLocationPhase ? 'var(--accent)' : theme.palette.success.main}`,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'background 0.3s, border-color 0.3s',
+                                            ...(isLocationPhase && {
+                                                '@keyframes countNodePulse': {
+                                                    '0%': { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
+                                                    '70%': { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
+                                                    '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
+                                                },
+                                                animation: 'countNodePulse 1.3s ease-out infinite',
+                                            }),
+                                        }, children: isLocationPhase ? (_jsx(MapPin, { size: 18, color: "white" })) : (_jsx(CheckCircle, { size: 18, color: "white" })) }) }), _jsxs(Box, { sx: { position: 'absolute', left: 'calc(33% - 50px)', top: 48, width: 100, textAlign: 'center' }, children: [_jsx(Typography, { sx: {
+                                                fontSize: 9,
+                                                fontWeight: 500,
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.07em',
+                                                color: isLocationPhase ? 'var(--ink)' : theme.palette.success.main,
+                                                mb: 0.5,
+                                                transition: 'color 0.3s',
+                                            }, children: isLocationPhase ? 'Scan Location' : '✓ Confirmed' }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, fontFamily: 'monospace', color: 'text.primary' }, children: activeBin.location_code })] }), _jsx(Box, { sx: { position: 'absolute', left: 'calc(66% - 20px)', top: 0, width: 40 }, children: _jsx(Box, { sx: {
+                                            width: 40,
+                                            height: 40,
+                                            borderRadius: '50%',
+                                            bgcolor: isLocationPhase ? 'background.paper' : 'var(--accent)',
+                                            border: `2.5px solid ${isLocationPhase ? theme.palette.divider : 'var(--accent)'}`,
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            transition: 'background 0.3s, border-color 0.3s',
+                                            ...(isCountPhase && {
+                                                '@keyframes countNodePulse': {
+                                                    '0%': { boxShadow: '0 0 0 0 rgba(255,107,43,0.55)' },
+                                                    '70%': { boxShadow: '0 0 0 10px rgba(255,107,43,0)' },
+                                                    '100%': { boxShadow: '0 0 0 0 rgba(255,107,43,0)' },
+                                                },
+                                                animation: 'countNodePulse 1.3s ease-out infinite',
+                                            }),
+                                        }, children: _jsx(PackageCheck, { size: 18, color: isLocationPhase ? 'var(--ink-3)' : 'white' }) }) }), _jsxs(Box, { sx: { position: 'absolute', left: 'calc(66% - 50px)', top: 48, width: 100, textAlign: 'center' }, children: [_jsx(Typography, { sx: {
+                                                fontSize: 9,
+                                                fontWeight: 500,
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.07em',
+                                                color: isLocationPhase ? 'text.disabled' : 'var(--ink)',
+                                                mb: 0.5,
+                                                transition: 'color 0.3s',
+                                            }, children: isLocationPhase ? 'Up next' : 'Count Contents' }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: 'text.primary', lineHeight: 1.3 }, children: [activeBin.lines.length, " ", activeBin.lines.length === 1 ? 'item' : 'items'] })] })] }) }), isLocationPhase && (_jsxs(Box, { children: [_jsx(TextField, { inputRef: locationInputRef, fullWidth: true, value: locationInput, onChange: (event) => setLocationInput(event.target.value.toUpperCase()), onKeyDown: (event) => {
+                                    if (event.key === 'Enter')
+                                        handleLocation();
+                                }, placeholder: "Scan bin barcode", disabled: submitting, autoComplete: "off", inputProps: { autoComplete: 'off' } }), _jsx(Button, { variant: "contained", onClick: handleLocation, disabled: !locationInput.trim() || submitting, sx: { mt: 1.5 }, children: "Confirm bin" })] })), isCountPhase && (_jsxs(Box, { children: [_jsxs(Box, { sx: {
                                     display: 'flex',
-                                    flexDirection: 'column',
-                                    alignItems: 'flex-end',
-                                    gap: 0.25,
-                                }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: ["Bin ", activeBinNumber, " of ", bins.length, " \u00B7 ", activeBinResolved, " of", ' ', activeBin.lines.length, " items"] }), _jsx(Button, { variant: "text", size: "small", onClick: () => onComplete(), disabled: submitting, sx: { minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }, children: "Leave count" })] })] }), _jsx(TextField, { inputRef: scanInputRef, fullWidth: true, size: "small", value: scanInput, onChange: (event) => setScanInput(event.target.value), onKeyDown: (event) => {
-                            if (event.key === 'Enter')
-                                void handleScan();
-                        }, placeholder: "Scan product barcode", disabled: submitting || activeBinComplete, autoComplete: "off", inputProps: { autoComplete: 'off' }, sx: { mb: 1.25 } }), _jsx(Box, { sx: { borderTop: '1px solid var(--rule)' }, children: activeBin.lines.map(renderRow) }), activeBinComplete ? (firstOpenBin() ? (_jsx(Button, { variant: "contained", onClick: handleNextBin, disabled: submitting, sx: { mt: 2 }, children: "Next Bin" })) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinish(), disabled: submitting, sx: { mt: 2 }, children: "Finish Count" }))) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinishBin(), disabled: submitting, sx: { mt: 2 }, children: "Done With This Bin" }))] })), _jsxs(Dialog, { open: findingDraft !== null, onClose: () => {
+                                    alignItems: 'baseline',
+                                    justifyContent: 'space-between',
+                                    mb: 1.25,
+                                }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(MapPin, { size: 17, color: "var(--accent)" }), _jsx(Typography, { sx: { fontSize: 20, fontWeight: 700, color: 'var(--ink)' }, children: activeBin.location_code })] }), _jsx(Button, { variant: "text", size: "small", onClick: () => onComplete(), disabled: submitting, sx: { minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }, children: "Leave count" })] }), _jsx(TextField, { inputRef: scanInputRef, fullWidth: true, size: "small", value: scanInput, onChange: (event) => setScanInput(event.target.value), onKeyDown: (event) => {
+                                    if (event.key === 'Enter')
+                                        void handleScan();
+                                }, placeholder: "Scan product barcode", disabled: submitting || activeBinComplete, autoComplete: "off", inputProps: { autoComplete: 'off' }, sx: { mb: 1.25 } }), _jsx(Box, { sx: { borderTop: '1px solid var(--rule)' }, children: activeBin.lines.map(renderRow) }), activeBinComplete ? (firstOpenBin() ? (_jsx(Button, { variant: "contained", onClick: handleNextBin, disabled: submitting, sx: { mt: 2 }, children: "Next Bin" })) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinish(), disabled: submitting, sx: { mt: 2 }, children: "Finish Count" }))) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinishBin(), disabled: submitting, sx: { mt: 2 }, children: "Done With This Bin" }))] }))] })), _jsxs(Dialog, { open: findingDraft !== null, onClose: () => {
                     if (!submitting) {
                         setFindingDraft(null);
                         setError(null);
