@@ -184,7 +184,7 @@ export const EXPORT_COLUMNS: Record<ExportResource, ColumnDef[]> = {
     { key: 'available', label: 'Available', sql: 'COALESCE(SUM(it.available_quantity), 0)' },
     { key: 'reserved', label: 'Reserved', sql: 'COALESCE(SUM(it.reserved_quantity), 0)' },
     { key: 'extended_value', label: 'Extended value', sql: 'ROUND(v.unit_cost * COALESCE(SUM(it.on_hand_quantity), 0), 2)' },
-    { key: 'locations', label: 'Locations', sql: "string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code)" },
+    { key: 'locations', label: 'Locations', sql: "string_agg(it.location_code || '=' || it.on_hand_quantity, '; ' ORDER BY it.location_code) FILTER (WHERE it.on_hand_quantity > 0)" },
   ],
 };
 

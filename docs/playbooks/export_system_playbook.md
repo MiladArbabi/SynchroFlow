@@ -959,8 +959,7 @@ against the ledger: 17 rows for 17 variants, Σ on_hand = 183 = the
 inventory_truth total. `reconciliation_correction` count 0 before and
 after — an export must never write an inventory correction.
 
-**Known, registered, not fixed here:** `EXP-LOCATIONS-ROOT-106` (every
-row carries a useless `WH-1-ROOT=0` suffix), `EXP-DRAWER-PILL-100`
+**Known, registered, not fixed here:** `EXP-DRAWER-PILL-100`
 (expanded picker overhangs the card in the ~400px drawer),
 `ENT-COLSELECT-BYPASS-96` (the Growth gate on column selection exists
 only in the frontend PLAN_FEATURES map; `GET /exports/columns` is
@@ -1018,8 +1017,8 @@ branch is now reachable where it previously never fired. Proven with a planted
 **`WH-1-ROOT` needed no special-casing.** All 17 root rows are `on_hand = 0`, so
 they contribute nothing to a SUM. Recount already excludes warehouse-root rows
 from suggested scope "because there is no physical shelf for an operator to
-count" (RECOUNT-SELLABLE-30). Its presentation suffix in CSVs remains
-`EXP-LOCATIONS-ROOT-106`.
+count" (RECOUNT-SELLABLE-30). Its presentation suffix in CSVs was removed under
+`EXP-LOCATIONS-ROOT-106` (2026-08-25, section below).
 
 **Verified live 2026-08-24** on localhost:5173: headline `17 stocked out` →
 `5 stocked out`; pulse rail `Ready to sell 0 of 17` → `12 of 17`, `Stocked out
@@ -1113,3 +1112,76 @@ absent, remaining entries unchanged. The four `ExportDrawer` call sites were
 proven by grep to pass explicit `reportIds` excluding `finances`; Overview was
 proven to have no call site. `apps/frontend` tsc held at its 19-error baseline
 with zero errors in the touched file.
+
+
+## Locations column shows only where stock is — EXP-LOCATIONS-ROOT-106, 2026-08-25
+
+Every row of the Products/Inventory Valuation CSV carried a `WH-1-ROOT=0`
+segment. Fixed by filtering the aggregate:
+
+```sql
+string_agg(it.location_code || '=' || it.on_hand_quantity, '; '
+           ORDER BY it.location_code) FILTER (WHERE it.on_hand_quantity > 0)
+```
+
+### Root is a real location_code, not only a parent
+
+The first audit round concluded no ROOT value could reach the export, reasoning
+that `WH-1-ROOT` appears in `warehouse_locations.parent_location_code` and the
+aggregate never reads that column. **That conclusion was wrong**, and the
+exported CSV disproved it: `WH-1-ROOT` is also a `location_code` in its own
+right, in both `warehouse_locations` and `inventory_truth` (17 rows, one per
+variant, all `on_hand_quantity = 0`).
+
+Where a claim about output is checkable against real output, check it there.
+Reasoning about which columns an expression reads is not proof about what it
+emits.
+
+### Why filter on quantity, not on the root code
+
+The filter is location-agnostic: it hardcodes no root code and needs no
+`warehouse_locations.type` lookup, so it survives multi-warehouse unchanged. It
+also removes genuine zero rows at real bins (`A-1=0` disappeared while `A-1=2`
+remained).
+
+A `Locations` column answers *where the stock is*; `X=0` answers nothing, and
+the `on_hand` column already carries the zero. This agrees with
+`RECOUNT-SELLABLE-30`, which excludes warehouse-root rows from suggested recount
+scope because there is no physical shelf to count — the same conclusion reached
+from the other end.
+
+### Empty cell, not NULL
+
+`string_agg` with a FILTER matching nothing returns NULL. Verified in the CSV
+writer's output: it serialises as an **empty cell**, not the literal `null`. No
+`COALESCE` is required. Four variants have no positive-quantity row anywhere and
+render blank while still showing `0` in `on_hand`, `available`, `reserved`, and
+`extended_value` — the LEFT JOIN contract in §5 is unaffected.
+
+### Both surfaces share one registry
+
+The CSV downloaded from the Inventory module drawer and from
+`/settings/reports` are **byte-identical**. Both resolve through the same column
+registry and endpoint, so the two surfaces cannot drift.
+
+### Known limitation, not fixed here
+
+`A-3=17; C-1=3` is a packed string. It is readable but not pivotable, not
+filterable, and not summable by warehouse without text-to-columns — the exact
+spreadsheet work laSyncro exists to remove. A location-grain report (one row per
+variant x location, with a `warehouse` column) is tracked as
+`EXP-LOCATION-GRAIN-146`; it is the count-ready saved cut named in §17 and is
+sequenced with that roadmap, not with this defect.
+
+Separately, the 17 zero-quantity root rows in `inventory_truth` — exactly one
+per variant — look like a seeding or default-placement artifact rather than
+inventory truth. Tracked as `INV-TRUTH-ROOT-PLACEHOLDER-145`. The export should
+not render them either way.
+
+### Verification
+
+Live-verified 2026-08-25 by downloading Inventory Valuation from both surfaces:
+zero `WH-1-ROOT` occurrences (previously on 16 of 16 data rows), `A-1=0` gone
+while `A-1=2` remained, four empty Locations cells matching the four
+zero-stock variants, all other columns unchanged. `apps/backend` tsc held at its
+zero-error baseline.
