@@ -101,6 +101,7 @@ const GROWTH_FLAGS = [
   ...CORE_FLAGS,
   'orders.advanced_filters',
   'customers.segmentation',
+  'exports.column_selection',
   'specter.full_capture',
   'returns.analysis',           // Returns correlation + supplier trend analysis
   'problem-center.analytics',   // Cross-module problem intelligence + trend reporting
@@ -130,7 +131,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
    * Core ($79/month)
    * - 2 seats + extra seats at $15/seat/mo
    * - 2,000 orders ingested/mo — soft cap, degraded priority above limit
-   * - 200 orders shipped via WMS/mo — overage at $0.08/order
+   * - 500 fulfilled orders via WMS/mo included — overage at $0.08/order
    * - Adds WMS, Returns, Products
    */
   core: {
@@ -138,7 +139,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     // WHY: Core commercially includes two non-owner seats; paid extras are additive.
     seatLimit: 2,
     monthlyOrderCap: 2000,
-    shippedOrderCap: 200,
+    shippedOrderCap: 500,
     specterSessionCap: 5000,
     modules: CORE_MODULES,
     flags: CORE_FLAGS,
@@ -148,7 +149,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
    * Growth ($179/month)
    * - 5 seats + extra seats at $12/seat/mo
    * - 10,000 orders ingested/mo
-   * - 1,000 orders shipped via WMS/mo — overage at $0.08/order
+   * - 2,500 fulfilled orders via WMS/mo included — overage at $0.08/order
    * - Adds intelligence: Cash Flow, LTV, Demand, Specter
    * - 14-day free trial on signup (MON-07)
    * - Annual billing at 20% discount (MON-08)
@@ -157,7 +158,7 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
     monthlyPriceCents: 17900,
     seatLimit: 5,
     monthlyOrderCap: 10000,
-    shippedOrderCap: 1000,
+    shippedOrderCap: 2500,
     specterSessionCap: 25000,
     modules: GROWTH_MODULES,
     flags: GROWTH_FLAGS,
@@ -190,6 +191,10 @@ export function getTierConfig(tier: Tier): TierConfig {
     throw new Error(`[tiers] Unrecognized tier: "${tier}"`);
   }
   return config;
+}
+
+export function tierHasFlag(tier: Tier, flag: string): boolean {
+  return TIER_CONFIG[tier].flags.includes(flag);
 }
 
 /**

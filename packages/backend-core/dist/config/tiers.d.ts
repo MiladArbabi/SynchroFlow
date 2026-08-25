@@ -3,7 +3,7 @@ export type Tier = (typeof TIERS)[number];
 export interface TierConfig {
     /** Display price in USD cents/month. 0 = free. */
     monthlyPriceCents: number;
-    /** Max operator seats. Infinity = unlimited. */
+    /** Max non-owner seats. Owner is excluded. Infinity = unlimited. */
     seatLimit: number;
     /** Max orders ingested per calendar month. Infinity = unlimited. */
     monthlyOrderCap: number;
@@ -29,6 +29,7 @@ export declare const TIER_CONFIG: Record<Tier, TierConfig>;
  * Throws if tier is not recognized — fail loud, never silently degrade.
  */
 export declare function getTierConfig(tier: Tier): TierConfig;
+export declare function tierHasFlag(tier: Tier, flag: string): boolean;
 /**
  * Returns true if the given string is a valid Tier.
  */

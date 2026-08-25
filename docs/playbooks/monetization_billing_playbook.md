@@ -433,11 +433,18 @@ also fixes the tab bar, or vice versa.
 
 ### 13.2 The real enforcement is the backend route, not the frontend
 
-The frontend layers above are UX — they hide/show/badge things. The only
-thing that actually stops a request is `requireTier()` in the Express route
-chain (`authenticateToken → requireFt2 → requireTier → requireAction`).
-**A frontend-only gate with no backend `requireTier` counterpart is not a
-gate — it's a suggestion.** Every confirmed bug this session was a case of
+The frontend layers above are UX — they hide/show/badge things. Security
+enforcement must remain backend-owned. Route-level access is commonly enforced
+through `requireTier()` / `requireAction()`, while narrower capabilities may
+require field- or operation-level checks inside controllers/services.
+
+Canonical feature checks should derive from backend tier configuration rather
+than duplicate hardcoded tier comparisons. For example,
+`exports.column_selection` is a Growth flag in `TIER_CONFIG`, and export
+controllers enforce custom column selection with `tierHasFlag()`.
+
+**A frontend-only gate with no corresponding backend enforcement is not a
+security gate — it's a suggestion.** Every confirmed bug this session was a case of
 exactly that.
 
 ### 13.3 Confirmed live defects found and fixed (2026-07-14)

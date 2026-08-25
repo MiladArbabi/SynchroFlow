@@ -961,9 +961,15 @@ after — an export must never write an inventory correction.
 
 **Known, registered, not fixed here:** `EXP-DRAWER-PILL-100`
 (expanded picker overhangs the card in the ~400px drawer),
-`ENT-COLSELECT-BYPASS-96` (the Growth gate on column selection exists
-only in the frontend PLAN_FEATURES map; `GET /exports/columns` is
-requireTier('core') and no backend check enforces column_selection).
+`ENT-BACKEND-PARITY-98` established backend parity for export column
+selection. `exports.column_selection` is now a canonical Growth flag in
+`TIER_CONFIG`, and all four export controllers enforce `filters.columns`
+through `tierHasFlag(tier, 'exports.column_selection')`. The route itself
+remains Core+ because Core merchants may use standard exports without custom
+column selection.
+
+`ENT-COLSELECT-BYPASS-96` remains relevant for any remaining client/API path
+that can bypass the intended field-level entitlement contract.
 
 **Withdrawn during this work:** the two open items the prior handover
 carried for Export are both already done. `orders-blocked` no longer

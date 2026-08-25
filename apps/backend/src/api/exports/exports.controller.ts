@@ -30,17 +30,13 @@ import { Request, Response } from 'express';
 import type { Knex } from 'knex';
 import { format as csvFormat } from '@fast-csv/format';
 import { withTenant } from '@lasyncro/backend-core/db.js';
-import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
+import { Tier, TIERS, tierHasFlag } from '@lasyncro/backend-core/config/tiers.js';
 import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function resolvedTier(req: Request): Tier {
   const raw = req.user?.tier ?? 'starter';
   return TIERS.includes(raw as Tier) ? (raw as Tier) : 'starter';
-}
-
-function isAtLeastGrowth(tier: Tier): boolean {
-  return TIERS.indexOf(tier) >= TIERS.indexOf('growth');
 }
 
 // Mirrors the native `fulfillment_status_type` enum (see migration 0006 +
@@ -264,7 +260,7 @@ export async function exportOrders(req: Request, res: Response) {
     // entitled to it — a different meaning from InvalidFilterError, so it
     // does not route through that hierarchy. Absent filters.columns must
     // behave exactly as before this feature existed, at every tier.
-    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
       return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
     }
 
@@ -368,7 +364,7 @@ export async function exportReturns(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
       return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
     }
 
@@ -438,7 +434,7 @@ export async function exportFinances(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
       return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
     }
 
@@ -503,7 +499,7 @@ export async function exportProducts(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { status, columns } = filters;
 
-    if ('columns' in filters && !isAtLeastGrowth(tier)) {
+    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
       return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
     }
 
