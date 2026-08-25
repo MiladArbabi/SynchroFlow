@@ -28,6 +28,70 @@ function getStripe(): Stripe {
   return new Stripe(key, { apiVersion: '2026-06-24.dahlia' });
 }
 
+export interface StripeOverageDelivery {
+  shopId: number;
+  stripeCustomerId: string;
+  overageUnits: number;
+  idempotencyKey: string;
+  occurredAt: Date | string;
+}
+
+/**
+ * MON-ALLOW-04
+ * Strict Stripe delivery primitive for durable outbox processing.
+ *
+ * Unlike reportShippedOrderOverage(), this function:
+ * - accepts immutable billing facts already calculated at pack-complete;
+ * - does not recompute usage from current mutable subscription state;
+ * - uses Stripe's meter-event identifier for retry deduplication;
+ * - throws on every delivery/configuration failure.
+ */
+export async function deliverStripeOverageEvent(
+  input: StripeOverageDelivery,
+): Promise<void> {
+  if (!input.stripeCustomerId) {
+    throw new Error('STRIPE_OVERAGE_CUSTOMER_MISSING');
+  }
+
+  if (!Number.isSafeInteger(input.overageUnits) || input.overageUnits <= 0) {
+    throw new Error('STRIPE_OVERAGE_UNITS_INVALID');
+  }
+
+  if (!input.idempotencyKey) {
+    throw new Error('STRIPE_OVERAGE_IDEMPOTENCY_KEY_MISSING');
+  }
+
+  const occurredAt = new Date(input.occurredAt);
+  const timestamp = Math.floor(occurredAt.getTime() / 1000);
+
+  if (!Number.isFinite(timestamp)) {
+    throw new Error('STRIPE_OVERAGE_OCCURRED_AT_INVALID');
+  }
+
+  const meterId = process.env.STRIPE_METER_ID_OVERAGE;
+  if (!meterId) {
+    throw new Error('STRIPE_METER_ID_OVERAGE_NOT_CONFIGURED');
+  }
+
+  const stripe = getStripe();
+
+  await stripe.billing.meterEvents.create({
+    event_name: 'overage',
+    identifier: input.idempotencyKey,
+    timestamp,
+    payload: {
+      stripe_customer_id: input.stripeCustomerId,
+      value: String(input.overageUnits),
+    },
+  });
+
+  console.info('[stripe.meter] durable overage accepted', {
+    shopId: input.shopId,
+    overageUnits: input.overageUnits,
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
 /**
  * Reports shipped order overage units to Stripe Meter.
  * Only reports units above the tier's shippedOrderCap.

@@ -204,7 +204,7 @@ Observed state:
 - committed `wms.controller.ts` already selected and used `shop_subscriptions.allow_overage`.
 - therefore a clean deployment of `main` to an environment that had never seen local `0156` could execute committed code against a schema that could not contain the required column.
 
-The deploy-safety repair is to ship `0156` independently. `0157_make_billing_outbox_durable` and the broader billing work are separate scope.
+The deploy-safety repair was to ship `0156` independently. At the time of that repair, `0157_make_billing_outbox_durable` and the broader billing work remained separate scope. That follow-up was subsequently resolved under `DEPLOY-MIGRATION-0157` as a coupled migration/runtime unit rather than a standalone migration.
 
 #### Local DB connection contract
 
@@ -271,6 +271,31 @@ This established that `0156` is independently shippable.
 
 Because `0156` itself had not been committed/deployed previously, this incident does not require adding a historical drift warning to an older migration file. The defect was the committed-runtime/uncommitted-schema dependency itself.
 
+
+### 2026-08-25 — `DEPLOY-MIGRATION-0157`: migration changes an existing runtime dispatch contract
+
+`0157_make_billing_outbox_durable` was locally applied while its source migration and matching durable dispatcher work remained uncommitted.
+
+Unlike `0156`, `0157` is not safe to classify as a migration-only deploy repair. It changes the existing outbox dispatcher contract by excluding `billing/overage` from generic dispatch and introduces the claim/mark/failure functions used by the durable billing worker.
+
+The atomic production unit is therefore:
+
+- `0157_make_billing_outbox_durable.ts`
+- `domain-event-outbox.dispatcher.ts`
+- `stripe.meter.service.ts`
+- `shopify.events.service.ts`
+
+Shipping the dispatcher without `0157` would make runtime calls to missing DB functions. Shipping `0157` without the durable dispatcher would exclude `billing/overage` from generic dispatch without activating its intended durable delivery path.
+
+Verification completed before commit:
+
+- full `fresh_scratch` and `prod_scratch` production-mode migration rehearsals;
+- isolated bounded DOWN/UP proving `0157` applies directly after `0156` and rollback restores the old dispatcher contract;
+- `sf_app` EXECUTE grants on all three durable billing functions;
+- controlled one-pass worker acceptance for success, failure/backoff, published-event replay, and concurrent claim behavior;
+- no real Stripe or Shopify billing request during controlled worker acceptance.
+
+Standing rule: when a migration modifies the behavior of an existing database function consumed by runtime code, audit the **runtime coupling**, not only migration ordering or schema independence. A migration can be technically reversible and independently applicable while still being unsafe to deploy without the matching runtime change.
 
 ## 8. Standing Workflow Reminder
 

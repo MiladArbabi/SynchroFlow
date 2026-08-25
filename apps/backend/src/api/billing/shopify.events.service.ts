@@ -182,6 +182,77 @@ async function submitEvent(
   }
 }
 
+export interface ShopifyOverageDelivery {
+  shopId: number;
+  shopGid: string;
+  overageUnits: number;
+  idempotencyKey: string;
+  occurredAt: Date | string;
+}
+
+/**
+ * MON-ALLOW-04
+ * Strict Shopify App Events delivery primitive for durable outbox processing.
+ *
+ * Accepts immutable billing facts captured by the pack-complete transaction
+ * and throws on delivery/configuration failure so the outbox may retry.
+ */
+export async function deliverShopifyOverageEvent(
+  input: ShopifyOverageDelivery,
+): Promise<void> {
+  if (!input.shopGid) {
+    throw new Error('SHOPIFY_OVERAGE_SHOP_GID_MISSING');
+  }
+
+  if (!Number.isSafeInteger(input.overageUnits) || input.overageUnits <= 0) {
+    throw new Error('SHOPIFY_OVERAGE_UNITS_INVALID');
+  }
+
+  if (!input.idempotencyKey) {
+    throw new Error('SHOPIFY_OVERAGE_IDEMPOTENCY_KEY_MISSING');
+  }
+
+  const occurredAt = new Date(input.occurredAt);
+
+  if (!Number.isFinite(occurredAt.getTime())) {
+    throw new Error('SHOPIFY_OVERAGE_OCCURRED_AT_INVALID');
+  }
+
+  const eventHandle = requireEnvironmentValue(
+    'SHOPIFY_APP_EVENTS_METER_HANDLE',
+  );
+
+  const event: ShopifyAppEvent = {
+    shop_id: input.shopGid,
+    event_handle: eventHandle,
+    timestamp: occurredAt.toISOString(),
+    idempotency_key: input.idempotencyKey,
+    attributes: {
+      value: input.overageUnits,
+    },
+  };
+
+  let accessToken = await getAccessToken();
+
+  try {
+    await submitEvent(event, accessToken);
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 401) {
+      throw error;
+    }
+
+    cachedToken = null;
+    accessToken = await getAccessToken();
+    await submitEvent(event, accessToken);
+  }
+
+  console.info('[shopify.events] durable billing event accepted', {
+    shopId: input.shopId,
+    overageUnits: input.overageUnits,
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
 /**
  * Reports already-calculated shipped-order overage units to Shopify.
  *

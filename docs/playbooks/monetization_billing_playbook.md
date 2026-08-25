@@ -1385,7 +1385,7 @@ Both files were confirmed gitignored with no git history (`git log --all -- .env
 
 ## 27. Shopify App Events Usage Reporting — SHB-05-C/D/E/F (verified 2026-07-18)
 
-Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID, app-level client credentials, a published meter handle, and deterministic event submission. The persistence and isolated reporting layers are now implemented; provider dispatch and live billing validation remain open.
+Shopify App Events usage reporting requires the merchant’s canonical GraphQL Shop GID, app-level client credentials, a published meter handle, and deterministic event submission. The persistence and isolated reporting layers are implemented. Durable provider dispatch is now implemented through the billing outbox path documented in §28. Controlled worker/state-machine acceptance is complete; one controlled live provider billing validation remains separate.
 
 ### Database and OAuth persistence
 
@@ -1400,7 +1400,7 @@ Shopify App Events usage reporting requires the merchant’s canonical GraphQL S
 
 - The billing event handle is `shipped-order`.
 - Early-access, Core, and Growth charge `$0.08` per reported unit.
-- LaSyncro reports only units above the local tier allowance: Early-access `50`, Core `200`, and Growth `1,000` shipped orders per billing period.
+- Current canonical allowances are Starter/Early-access `50`, Core `500`, and Growth `2,500` fulfilled orders per billing period.
 - Scale remains unlimited and has no shipped-order usage meter.
 - Core, Growth, and Scale use a 14-day trial; the free Early-access plan does not require a trial.
 
@@ -1440,12 +1440,12 @@ App Events uses the same Dev Dashboard client ID and secret as the Shopify app. 
 
 ### Remaining SHB-05 scope
 
-- **SHB-05-A/B:** dispatch overage reporting by `billing_provider` while preserving the existing Stripe path.
+- **SHB-05-A/B:** durable provider dispatch by `billing_provider` is implemented through the billing outbox worker. Controlled worker acceptance passed without external provider calls; live provider billing validation remains separate.
 - **SHB-05-G:** ensure an open usage period exists before provider reporting is activated.
 - **SHB-05-F deployment:** configure the three App Events variables in each deployed runtime.
 - **AUD-C16:** Shopify extra-seat billing remains a separate unresolved product decision.
 
-The Shopify-billed shipped-order path remains hard-cap-only until provider dispatch, open-period handling, deployed secrets, and one controlled billable event are live-verified. SHB-08a also remains open for the final uninstall/reinstall cycle.
+Durable provider dispatch is no longer the infrastructure blocker. Shopify usage activation still depends on the required open-period state, deployed provider secrets, and one controlled live billable-event validation.
 ### SHB-08a closed + SHB-DRIFT-03 discovered and closed (verified 2026-07-23)
 
 SHB-08a (live uninstall/reinstall cycle, deferred since Sprint 2 as "the final pre-submission gate") was finally executed live against production. It surfaced a real, independent bug: migration 0022's `if (tableExists) return` guard caused shop_module_entitlements_open_module_unique (the partial unique index backing the OAuth callback's entitlement-seeding ON CONFLICT clause) to be silently skipped on prod, where the table had an undocumented pre-existing origin. Knex recorded 0022 as applied with no error. Result: every new Shopify install failed at the finalize-integration step with Postgres 42P10.
@@ -1455,3 +1455,68 @@ Root-caused via a full evidence chain: route manifest -> webhook registration so
 Live-verified end-to-end against app.lasyncro.com and development-store-15820042357: fresh OAuth install completed cleanly (previously failed with "Failed to finalize integration"), webhookSubscriptions query confirmed exactly one APP_UNINSTALLED subscription pointing at the correct prod callback URL, uninstall correctly fired the webhook and set uninstalled_at (Stripe-billed shop correctly skipped the Shopify-tier downgrade branch, tier remained scale as expected), and reinstall correctly cleared uninstalled_at and re-registered the webhook subscription.
 
 SHB-08a is now closed. SHB-DRIFT-03 is closed. No further pre-submission blockers remain in this series.
+
+## 28. Durable Billing Overage Outbox — `DEPLOY-MIGRATION-0157` / `MON-ALLOW-04` (worker/state-machine verified 2026-08-25)
+
+### Atomic production unit
+
+The durable billing path is one coupled infrastructure unit:
+
+- `apps/backend/migrations/20260821193000_0157_make_billing_outbox_durable.ts`
+- `apps/backend/src/workers/domain-event-outbox.dispatcher.ts`
+- `apps/backend/src/api/billing/stripe.meter.service.ts`
+- `apps/backend/src/api/billing/shopify.events.service.ts`
+
+`0157` must not be treated as an isolated schema migration. It changes the generic outbox contract so `billing/overage` events are excluded from `dispatch_domain_event_outbox_batch(integer)` and instead handled by the durable billing dispatcher.
+
+The migration adds:
+
+- `first_attempt_at`
+- `last_attempt_at`
+- `processing_at`
+- partial index `idx_domain_event_outbox_processing_at`
+- `claim_billing_overage_outbox()`
+- `mark_billing_overage_outbox_published(bigint)`
+- `record_billing_overage_outbox_failure(bigint, text)`
+
+The three billing functions are executable by the restricted `sf_app` runtime role.
+
+### Dispatcher contract
+
+`domain-event-outbox.dispatcher.ts` routes from immutable `event_payload.billing_provider`:
+
+- `stripe` → `deliverStripeOverageEvent()`
+- `shopify` → `deliverShopifyOverageEvent()`
+
+Successful provider delivery explicitly marks the outbox row published. Failure records durable retry metadata and releases the processing claim according to the SQL state machine introduced by `0157`.
+
+For controlled verification, the worker exposes `dispatchBillingOverageOnce()` with injectable Stripe/Shopify delivery dependencies. Production behavior is unchanged: the normal dispatcher loop calls the same one-pass function with the real provider implementations as defaults.
+
+### Migration verification
+
+`0157` passed:
+
+- migration-only TypeScript compilation;
+- full production-mode `fresh_scratch` rehearsal;
+- full production-mode `prod_scratch` rehearsal;
+- restricted-runtime `sf_app` EXECUTE privilege verification;
+- direct proof that generic dispatch excludes `billing/overage`;
+- isolated bounded `0157` DOWN/UP immediately after `0156`.
+
+The bounded rollback proved that DOWN leaves `0156` intact, removes only the `0157` attempt/claim objects, and restores the pre-0157 generic dispatcher behavior. Re-applying `0157` restored the durable contract.
+
+### Controlled worker acceptance
+
+Worker acceptance ran against an isolated scratch database as restricted `sf_app`, with injected providers so no real Stripe or Shopify billing request could occur.
+
+Verified:
+
+- Stripe success: exactly one provider call; row marked published; attempt timestamps populated; no error remains.
+- Published-row replay: a second dispatcher pass does not redeliver.
+- Shopify controlled failure: exactly one provider call; row remains unpublished; `retry_count` increments; `last_error` persists; processing claim clears.
+- Immediate retry: backoff prevents immediate redelivery.
+- Concurrent two-pass claim: exactly one provider call; atomic claiming prevents duplicate delivery.
+
+This acceptance proves the durable worker/DB state machine and routing contract. It does **not** claim successful external Stripe or Shopify billing API acceptance. One controlled live provider billing validation remains a separate provider-E2E gate.
+
+The broader `MON-ALLOW-04` WMS five-case commercial runtime matrix also remains separate from this durable-outbox infrastructure slice.
