@@ -192,13 +192,93 @@ All eight were the exact same root cause (§1). Listed for reference so nobody r
 
 ---
 
+
+### 2026-08-25 — `DEPLOY-MIGRATION-DRIFT-89`: committed code depended on an uncommitted migration
+
+This was **not migration ordering drift**. Migration numbers were contiguous.
+
+Observed state:
+
+- `20260821180000_0156_add_allow_overage_to_shop_subscriptions.ts` existed locally but was untracked.
+- Its compiled `.js` already existed under `apps/backend/dist/migrations/` and had been applied to the local DB.
+- committed `wms.controller.ts` already selected and used `shop_subscriptions.allow_overage`.
+- therefore a clean deployment of `main` to an environment that had never seen local `0156` could execute committed code against a schema that could not contain the required column.
+
+The deploy-safety repair is to ship `0156` independently. `0157_make_billing_outbox_durable` and the broader billing work are separate scope.
+
+#### Local DB connection contract
+
+Root `.env` defines PostgreSQL connectivity using:
+
+- `PGHOST`
+- `PGPORT`
+- `PGUSER`
+- `PGPASSWORD`
+- `PGDATABASE`
+- `PGMIGRATION_USER`
+- `PGMIGRATION_PASSWORD`
+
+A fresh shell must not assume `DATABASE_URL` already exists.
+
+For ordinary standalone application-role SQL:
+
+    set -a
+    . ./.env
+    set +a
+    export DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+
+`PGUSER` is the restricted application role (`sf_app` locally).
+
+Do not print `DATABASE_URL`, `PGPASSWORD`, or migration credentials.
+
+#### Scratch migration role contract
+
+Scratch databases are owned/administered by the configured migration role, not `sf_app`.
+
+For production-mode migration rehearsal, both URLs must target the same scratch database with different roles:
+
+    export NODE_ENV=production
+    export DATABASE_URL="postgresql://${PGMIGRATION_USER}:${PGMIGRATION_PASSWORD}@${PGHOST}:${PGPORT}/fresh_scratch"
+    export APP_DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@${PGHOST}:${PGPORT}/fresh_scratch"
+
+`DATABASE_URL` is the privileged migration connection.
+
+`APP_DATABASE_URL` is the restricted runtime connection required by production database configuration.
+
+Use the equivalent pair for `prod_scratch`.
+
+Using `sf_app` to drop/create scratch databases fails ownership/permission checks. Omitting `APP_DATABASE_URL` causes the production-mode migration runner to fail before migrations execute.
+
+#### Bounded migration proof
+
+`migrate:latest` is insufficient when proving migration N can ship independently of later migration N+1, because it applies every pending migration.
+
+For an independent-shippability check:
+
+1. create an isolated scratch database;
+2. apply migrations sequentially with Knex `migrate:up <filename>` only through the target migration;
+3. verify the target appears in `knex_migrations`;
+4. verify the later migration does not appear;
+5. verify the resulting schema directly.
+
+For `0156`, this proof passed:
+
+    0156 recorded
+    0157 absent
+    shop_subscriptions.allow_overage = boolean, NOT NULL, default true
+
+This established that `0156` is independently shippable.
+
+Because `0156` itself had not been committed/deployed previously, this incident does not require adding a historical drift warning to an older migration file. The defect was the committed-runtime/uncommitted-schema dependency itself.
+
+
 ## 8. Standing Workflow Reminder
 
 This playbook supplements, not replaces, the existing AUDIT → IMPLEMENT → DOCUMENT → COMMIT workflow. The addition is:
 
 - **AUDIT phase for drift-suspected issues must include a real schema diff or a direct prod query — never conclude "probably fine" from migration file inspection alone.**
 - **IMPLEMENT phase for any prod-drift fix must go through the full dev/prod rehearsal sequence in §4 before touching real prod.**
-- **DOCUMENT phase must include a drift warning added to the original migration file**, using this template:
+- **DOCUMENT phase for historical migration-content drift must include a drift warning added to the original migration file.** This does not apply when the defect is an uncommitted migration dependency and no already-run migration file was amended. Use this template:
 
 ```typescript
 /**
