@@ -949,3 +949,73 @@ The remaining nine files were **accepted by inspection, not live-verified**:
 
 Closes `PICK-TRACKER-INACTIVE-ICON-136` (the canonical `PickSessionPage:669`
 inactive-node icon carried the same latent defect).
+
+## 21. WMS CTA tier standardization — WMS-CTA-CONSISTENCY-34, 2026-08-26
+
+Applies the existing §2 Tier-1/Tier-2 CTA doctrine to WMS Operations
+(`WmsModuleFT2.tsx`, `CountingSessionPage.tsx`), where several
+workflow-commit buttons had never adopted it and fell through to MUI's
+default `palette.primary` (structural blue) — the exact "NEVER acceptable"
+pattern §2 already lists: `<Button variant="contained">` with no `sx`
+accent override renders MUI default blue.
+
+### Tier 1 corrected
+
+`background: var(--accent)` / `text: var(--accent-ink)` applied to:
+
+- `WmsModuleFT2`: Start count, Continue count
+- `CountingSessionPage`: Confirm bin, Next Bin, Done With This Bin, Finish
+  Count, Record finding, Skip item, None here
+
+`None here` commits a zero-count resolution — not a dismissal — so it is
+Tier 1 despite previously being styled as a plain text link. `Start
+count`/`Continue` open a counting session whose mount effect auto-claims the
+task server-side on a first-time start; the click is a real workflow-state
+trigger, not mere navigation, even though the button's own handler only sets
+local view state.
+
+### Tier 2 stays neutral, not raw MUI blue
+
+The finding-type toggle (Product defect / Packaging defect) and skip-reason
+options are selections, not commits — the commit is a separate, adjacent
+button (Record finding / Skip item). They previously used
+`variant={selected ? 'contained' : 'outlined'}` with no color override,
+which also fell through to MUI primary blue. Corrected to a neutral
+treatment built entirely from existing tokens: `var(--ink)` / `var(--rule)`
+idle (matching the existing suggested-bins select-all ghost pattern),
+`var(--surface)` / `var(--rule-2)` selected (the same neutral
+elevated-surface/stronger-border pair already used for active/selected
+state elsewhere, e.g. the module tab bar's active tab). No new token was
+introduced.
+
+### Scope stayed WMS-local
+
+`palette.ts`'s `primary.main` is structural blue, and its own header states
+it is "the SINGLE SOURCE OF TRUTH for color" — directly in tension with this
+doc's §2 Tier-1 orange-accent doctrine. That tension is **not** resolved by
+this issue; only the specific WMS call sites were corrected to use the
+tokens this doc already specifies. `palette.ts`, any global `MuiButton`
+override, and backend/API behavior were not touched — the app-wide question
+of which system governs remains open.
+
+### Token hygiene — closes the WMS portion of CTA-023
+
+The pick-batch CTA family in `WmsModuleFT2.tsx` hardcoded `#10151E` instead
+of `var(--accent-ink)` (same value, so the fix changed no rendered pixel).
+This is the same defect class §8/§9 already track as **CTA-023** ("migrate
+hardcoded `#10151E` → `var(--accent-ink)` ... once the token exists"); this
+issue closes the WMS occurrence found during its own audit. The other files
+in that sweep (`FulfillmentQueuePage.tsx` ×2, `WmsAnalyticsPage.tsx`,
+`ReleaseQueuePage.tsx`, `BlockedOrdersPage.tsx`, `OrdersOutboundPage.tsx`
+×2) were not touched, and CTA-023 remains open until they are.
+
+### Verification
+
+Focused frontend regression: `tests/unit/ui/wms/WmsCtaTierConsistency.test.tsx`,
+21/21 passing (RED baseline before implementation: 14 failed / 7 passed, on
+exactly the buttons and toggles listed above). `test:config`, the WMS
+build, and `git diff --check` all passed. Contrast itself was **live-browser
+verified in both light and dark mode**, not covered by an automated
+pixel/color-computation check — dark accent-ink text on the filled orange
+buttons is the intended, doctrine-correct result (§8), not a defect to "fix"
+toward white.

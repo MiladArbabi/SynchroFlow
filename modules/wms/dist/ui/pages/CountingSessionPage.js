@@ -3,6 +3,33 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, LinearProgress, Paper, TextField, Typography, useTheme, } from '@mui/material';
 import { CheckCircle, MapPin, Minus, PackageCheck, } from 'lucide-react';
+// WMS-CTA-CONSISTENCY-34: canonical Tier-1 commit/workflow-action treatment —
+// same token pair already used by the Reconcile-inventory and Create-count
+// actions in WmsModuleFT2. Without this, an unstyled contained MUI button
+// falls through to the theme's default primary palette (structural blue),
+// which is what caused these session-progression actions to render blue
+// instead of orange.
+export const WMS_TIER1_ACTION_SX = {
+    bgcolor: 'var(--accent)',
+    color: 'var(--accent-ink)',
+    '&:hover': { bgcolor: 'var(--accent-hover)' },
+};
+// WMS-CTA-CONSISTENCY-34: neutral Tier-2 selection-only treatment for the
+// finding-type and skip-reason toggle groups below. Deliberately not
+// accent-filled and not MUI primary blue — these are selections, not
+// commits (the commit is a separate button further down this form). Idle
+// state mirrors the existing suggested-bins select-all ghost treatment in
+// WmsModuleFT2; the selected state reuses the surface/stronger-rule pair
+// already used for active/selected state elsewhere (e.g. the module tab
+// bar's active tab) — no new token invented.
+export function wmsTier2SelectionSx(selected) {
+    return {
+        bgcolor: selected ? 'var(--surface)' : 'transparent',
+        border: `1px solid ${selected ? 'var(--rule-2)' : 'var(--rule)'}`,
+        color: 'var(--ink)',
+        fontWeight: selected ? 700 : 600,
+    };
+}
 const SKIP_OPTIONS = [
     { value: 'bin_inaccessible', label: 'Cannot access bin' },
     { value: 'stock_in_motion', label: 'Stock is moving' },
@@ -511,7 +538,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                                 color: 'var(--ink)',
                                 minWidth: 20,
                                 textAlign: 'right',
-                            }, children: scanTally[line.recount_line_id] ?? 0 }), (scanTally[line.recount_line_id] ?? 0) === 0 && (_jsx(Button, { size: "small", variant: "text", onClick: () => void handleResolveLine(line, 0), disabled: submitting, sx: { minWidth: 'auto', px: 0.5, fontSize: 11 }, children: "None here" })), _jsx(Button, { size: "small", variant: "text", onClick: () => {
+                            }, children: scanTally[line.recount_line_id] ?? 0 }), (scanTally[line.recount_line_id] ?? 0) === 0 && (_jsx(Button, { size: "small", variant: "contained", onClick: () => void handleResolveLine(line, 0), disabled: submitting, sx: { ...WMS_TIER1_ACTION_SX, minWidth: 'auto', px: 0.75, fontSize: 11 }, children: "None here" })), _jsx(Button, { size: "small", variant: "text", onClick: () => {
                                 setError(null);
                                 setSkipReason(null);
                                 setSkipNotes('');
@@ -603,7 +630,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                                             }, children: isLocationPhase ? 'Up next' : 'Count Contents' }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: 'text.primary', lineHeight: 1.3 }, children: [activeBin.lines.length, " ", activeBin.lines.length === 1 ? 'item' : 'items'] })] })] }) }), isLocationPhase && (_jsxs(Box, { children: [_jsx(TextField, { inputRef: locationInputRef, fullWidth: true, value: locationInput, onChange: (event) => setLocationInput(event.target.value.toUpperCase()), onKeyDown: (event) => {
                                     if (event.key === 'Enter')
                                         handleLocation();
-                                }, placeholder: "Scan bin barcode", disabled: submitting, autoComplete: "off", inputProps: { autoComplete: 'off' } }), _jsx(Button, { variant: "contained", onClick: handleLocation, disabled: !locationInput.trim() || submitting, sx: { mt: 1.5 }, children: "Confirm bin" })] })), isCountPhase && (_jsxs(Box, { children: [_jsxs(Box, { sx: {
+                                }, placeholder: "Scan bin barcode", disabled: submitting, autoComplete: "off", inputProps: { autoComplete: 'off' } }), _jsx(Button, { variant: "contained", onClick: handleLocation, disabled: !locationInput.trim() || submitting, sx: { ...WMS_TIER1_ACTION_SX, mt: 1.5 }, children: "Confirm bin" })] })), isCountPhase && (_jsxs(Box, { children: [_jsxs(Box, { sx: {
                                     display: 'flex',
                                     alignItems: 'baseline',
                                     justifyContent: 'space-between',
@@ -611,7 +638,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                                 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(MapPin, { size: 17, color: "var(--accent)" }), _jsx(Typography, { sx: { fontSize: 20, fontWeight: 700, color: 'var(--ink)' }, children: activeBin.location_code })] }), _jsx(Button, { variant: "text", size: "small", onClick: () => onComplete(), disabled: submitting, sx: { minWidth: 'auto', px: 0, fontSize: 11, textTransform: 'none' }, children: "Leave count" })] }), _jsx(TextField, { inputRef: scanInputRef, fullWidth: true, size: "small", value: scanInput, onChange: (event) => setScanInput(event.target.value), onKeyDown: (event) => {
                                     if (event.key === 'Enter')
                                         void handleScan();
-                                }, placeholder: "Scan product barcode", disabled: submitting || activeBinComplete, autoComplete: "off", inputProps: { autoComplete: 'off' }, sx: { mb: 1.25 } }), _jsx(Box, { sx: { borderTop: '1px solid var(--rule)' }, children: activeBin.lines.map(renderRow) }), activeBinComplete ? (firstOpenBin() ? (_jsx(Button, { variant: "contained", onClick: handleNextBin, disabled: submitting, sx: { mt: 2 }, children: "Next Bin" })) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinish(), disabled: submitting, sx: { mt: 2 }, children: "Finish Count" }))) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinishBin(), disabled: submitting, sx: { mt: 2 }, children: "Done With This Bin" }))] }))] })), _jsxs(Dialog, { open: findingDraft !== null, onClose: () => {
+                                }, placeholder: "Scan product barcode", disabled: submitting || activeBinComplete, autoComplete: "off", inputProps: { autoComplete: 'off' }, sx: { mb: 1.25 } }), _jsx(Box, { sx: { borderTop: '1px solid var(--rule)' }, children: activeBin.lines.map(renderRow) }), activeBinComplete ? (firstOpenBin() ? (_jsx(Button, { variant: "contained", onClick: handleNextBin, disabled: submitting, sx: { ...WMS_TIER1_ACTION_SX, mt: 2 }, children: "Next Bin" })) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinish(), disabled: submitting, sx: { ...WMS_TIER1_ACTION_SX, mt: 2 }, children: "Finish Count" }))) : (_jsx(Button, { variant: "contained", onClick: () => void handleFinishBin(), disabled: submitting, sx: { ...WMS_TIER1_ACTION_SX, mt: 2 }, children: "Done With This Bin" }))] }))] })), _jsxs(Dialog, { open: findingDraft !== null, onClose: () => {
                     if (!submitting) {
                         setFindingDraft(null);
                         setError(null);
@@ -620,15 +647,11 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                             ? 'Unexpected item found'
                             : 'Report defective stock' }), _jsxs(DialogContent, { children: [error && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: error })), _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: findingDraft?.finding_type === 'unexpected_item'
                                     ? `This item is not expected at ${findingDraft.location_code}. Record what you physically found.`
-                                    : 'Keep these units in the physical count. Record only the units that are defective.' }), findingDraft?.line && (_jsxs(Box, { sx: { display: 'flex', gap: 1, mb: 2 }, children: [_jsx(Button, { variant: findingDraft.finding_type === 'product_defect'
-                                            ? 'contained'
-                                            : 'outlined', onClick: () => setFindingDraft((previous) => previous
+                                    : 'Keep these units in the physical count. Record only the units that are defective.' }), findingDraft?.line && (_jsxs(Box, { sx: { display: 'flex', gap: 1, mb: 2 }, children: [_jsx(Button, { variant: "outlined", onClick: () => setFindingDraft((previous) => previous
                                             ? { ...previous, finding_type: 'product_defect' }
-                                            : previous), disabled: submitting, children: "Product defect" }), _jsx(Button, { variant: findingDraft.finding_type === 'packaging_defect'
-                                            ? 'contained'
-                                            : 'outlined', onClick: () => setFindingDraft((previous) => previous
+                                            : previous), disabled: submitting, sx: wmsTier2SelectionSx(findingDraft.finding_type === 'product_defect'), children: "Product defect" }), _jsx(Button, { variant: "outlined", onClick: () => setFindingDraft((previous) => previous
                                             ? { ...previous, finding_type: 'packaging_defect' }
-                                            : previous), disabled: submitting, children: "Packaging defect" })] })), _jsx(TextField, { fullWidth: true, label: "Quantity", value: findingQuantity, onChange: (event) => {
+                                            : previous), disabled: submitting, sx: wmsTier2SelectionSx(findingDraft.finding_type === 'packaging_defect'), children: "Packaging defect" })] })), _jsx(TextField, { fullWidth: true, label: "Quantity", value: findingQuantity, onChange: (event) => {
                                     setFindingQuantity(event.target.value);
                                     setError(null);
                                 }, disabled: submitting, inputProps: {
@@ -637,7 +660,7 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                                 } }), _jsx(TextField, { fullWidth: true, multiline: true, minRows: 2, value: findingNotes, onChange: (event) => setFindingNotes(event.target.value), placeholder: "Optional note", disabled: submitting, sx: { mt: 2 } }), findingDraft?.line && (_jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 1 }, children: ["Physically counted: ", findingDraft.line.counted_quantity] }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => {
                                     setFindingDraft(null);
                                     setError(null);
-                                }, disabled: submitting, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => void handleSaveFinding(), disabled: submitting || !findingQuantity.trim(), children: submitting ? 'Saving…' : 'Record finding' })] })] }), _jsxs(Dialog, { open: skipTargetId !== null, onClose: () => {
+                                }, disabled: submitting, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => void handleSaveFinding(), disabled: submitting || !findingQuantity.trim(), sx: WMS_TIER1_ACTION_SX, children: submitting ? 'Saving…' : 'Record finding' })] })] }), _jsxs(Dialog, { open: skipTargetId !== null, onClose: () => {
                     if (!submitting)
                         setSkipTargetId(null);
                 }, fullWidth: true, maxWidth: "xs", children: [_jsx(DialogTitle, { children: "Why can\u2019t this item be counted?" }), _jsxs(DialogContent, { children: [_jsx(Box, { sx: {
@@ -645,11 +668,11 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
                                     gridTemplateColumns: '1fr',
                                     gap: 1,
                                     pt: 0.5,
-                                }, children: SKIP_OPTIONS.map((option) => (_jsx(Button, { variant: skipReason === option.value ? 'contained' : 'outlined', onClick: () => {
+                                }, children: SKIP_OPTIONS.map((option) => (_jsx(Button, { variant: "outlined", onClick: () => {
                                         setSkipReason(option.value);
                                         setError(null);
-                                    }, disabled: submitting, sx: { justifyContent: 'flex-start' }, children: option.label }, option.value))) }), skipReason === 'other' && (_jsx(TextField, { fullWidth: true, multiline: true, minRows: 2, value: skipNotes, onChange: (event) => setSkipNotes(event.target.value), placeholder: "What prevented the count?", disabled: submitting, sx: { mt: 2 } }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => setSkipTargetId(null), disabled: submitting, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => void handleSkip(), disabled: !skipReason ||
+                                    }, disabled: submitting, sx: { ...wmsTier2SelectionSx(skipReason === option.value), justifyContent: 'flex-start' }, children: option.label }, option.value))) }), skipReason === 'other' && (_jsx(TextField, { fullWidth: true, multiline: true, minRows: 2, value: skipNotes, onChange: (event) => setSkipNotes(event.target.value), placeholder: "What prevented the count?", disabled: submitting, sx: { mt: 2 } }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => setSkipTargetId(null), disabled: submitting, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => void handleSkip(), disabled: !skipReason ||
                                     submitting ||
-                                    (skipReason === 'other' && !skipNotes.trim()), children: submitting ? 'Saving…' : 'Skip item' })] })] })] }));
+                                    (skipReason === 'other' && !skipNotes.trim()), sx: WMS_TIER1_ACTION_SX, children: submitting ? 'Saving…' : 'Skip item' })] })] })] }));
 }
 //# sourceMappingURL=CountingSessionPage.js.map

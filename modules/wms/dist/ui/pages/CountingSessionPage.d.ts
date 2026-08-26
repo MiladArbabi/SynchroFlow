@@ -1,3 +1,16 @@
+export declare const WMS_TIER1_ACTION_SX: {
+    readonly bgcolor: "var(--accent)";
+    readonly color: "var(--accent-ink)";
+    readonly '&:hover': {
+        readonly bgcolor: "var(--accent-hover)";
+    };
+};
+export declare function wmsTier2SelectionSx(selected: boolean): {
+    readonly bgcolor: "transparent" | "var(--surface)";
+    readonly border: "1px solid var(--rule-2)" | "1px solid var(--rule)";
+    readonly color: "var(--ink)";
+    readonly fontWeight: 600 | 700;
+};
 export type CountingSkipReason = 'bin_inaccessible' | 'stock_in_motion' | 'bin_not_found' | 'other';
 export type CountingTask = {
     recount_task_id: string;

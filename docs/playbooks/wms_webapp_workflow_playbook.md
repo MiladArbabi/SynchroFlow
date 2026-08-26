@@ -598,6 +598,8 @@ Before writing any code for a new webapp workflow, run through this checklist:
 | WEBHOOK-01 | Backend | ✅ RESOLVED June 2, 2026 — products/create + products/update webhooks registered. Dual-secret HMAC verification fixed. REST→GQL normalizer built. End-to-end verified. | P1 |
 | UX-RESYNC-01 | Top Nav | ✅ RESOLVED June 2, 2026 — Live pill wired to Catalog Sync popover. Shows status, counts, recently synced products, ghost-orange resync trigger. GitHub #999 + #1000 filed for future expansion. | P2 |
 | GH-998 | Backend | Per-unit barcode tracking (inventory_units table) | P3 |
+| RECOUNT-LEVEL-GRANULARITY-35 | Counting | Level-aware bin/storage-location model — Floor Planning models `rack_levels`, but operational bin selection (recount, pick, stow) currently selects the whole bin/location, not a level within it. Discovered during WMS-CTA-CONSISTENCY-34 live review. Requires WORKSHOP before implementation. | Pending WORKSHOP |
+| WMS-PICK-MAP-ISOMETRIC-36 | Pick | Replace/reevaluate the current flat pick map against the canonical spatial/isometric warehouse canvas (`IsometricCanvas`). Should be considered after RECOUNT-LEVEL-GRANULARITY-35 is resolved. Discovered during WMS-CTA-CONSISTENCY-34 live review. Requires WORKSHOP before implementation. | Pending WORKSHOP |
 
 ---
 

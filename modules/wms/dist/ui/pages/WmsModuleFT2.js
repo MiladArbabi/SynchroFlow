@@ -7,7 +7,7 @@ import PickSessionPage from './PickSessionPage.js';
 import PackSessionPage from './PackSessionPage.js';
 import ReceiveSessionPage from './ReceiveSessionPage.js';
 import StowSessionPage from './StowSessionPage.js';
-import CountingSessionPage from './CountingSessionPage.js';
+import CountingSessionPage, { WMS_TIER1_ACTION_SX, } from './CountingSessionPage.js';
 import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import { mapRecountPreviewBinsToCanvas, selectAllRecountBins, toggleRecountBinSelection, } from './recountSelection.js';
 export { mapRecountPreviewBinsToCanvas, } from './recountSelection.js';
@@ -87,7 +87,7 @@ const BatchCard = memo(function BatchCard({ batch, onClaim, onContinuePick, grid
                     '&:hover': { opacity: 0.75 },
                 }, children: [mapLoading ? _jsx(CircularProgress, { size: 11, sx: { mr: 0.5 } }) : null, mapOpen ? 'Hide map' : 'Show pick map'] })), mapOpen && gridLocations && (_jsxs(Box, { sx: { mb: 2, border: '1px solid var(--rule)', borderRadius: '8px', p: 1, bgcolor: 'var(--bg-2)', overflowX: 'auto' }, children: [_jsx(WarehouseGrid, { locations: gridLocations, highlightedBins: pickLocations, pickPath: pickLocations, zoneTypes: ['pick'], mode: "pick", variant: "mini" }), pickLocations.length > 0 && (_jsxs(Typography, { sx: { fontSize: 10, color: 'var(--ink-4)', mt: 0.5, letterSpacing: '0.06em' }, children: ["Pick route: ", pickLocations.join(' → ')] }))] })), _jsxs(Box, { sx: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2.75, mb: 2 }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }, children: "Picking" }), _jsxs(Typography, { sx: { fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }, children: [batch.units_picked, "/", batch.total_units] })] }), _jsx(Box, { sx: { height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }, children: _jsx(Box, { sx: { width: `${pickProgress}%`, height: '100%', bgcolor: 'var(--ok, #4CAF7A)', borderRadius: '4px', transition: 'width 0.3s ease' } }) })] }), _jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', mb: 0.875 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: 'var(--ink-2)' }, children: "Packing" }), _jsxs(Typography, { sx: { fontSize: 12.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }, children: [batch.units_packed, "/", batch.total_units] })] }), _jsx(Box, { sx: { height: 7, borderRadius: '4px', bgcolor: 'var(--rule)', overflow: 'hidden' }, children: _jsx(Box, { sx: { width: `${packProgress}%`, height: '100%', bgcolor: 'var(--accent)', borderRadius: '4px', transition: 'width 0.3s ease' } }) })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', pt: 1.75, borderTop: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: isPicking ? 'Picking in progress' : isPickComplete ? 'Picking done · awaiting pack scan' : isPacking ? 'Packing in progress' : 'Available' }), _jsx(Box, { sx: { flex: 1 } }), ctaLabel && (_jsx(Box, { component: "button", onClick: handleCta, disabled: isPickComplete, sx: {
                             fontSize: 12, fontWeight: 600,
-                            color: isPickComplete ? 'var(--ink-3)' : '#10151E',
+                            color: isPickComplete ? 'var(--ink-3)' : 'var(--accent-ink)',
                             bgcolor: isPickComplete ? 'var(--rule)' : 'var(--accent)',
                             border: 'none', borderRadius: '8px',
                             px: 2.25, py: 1,
@@ -164,7 +164,7 @@ const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentU
                             mt: 0.375,
                         }, children: [task.line_count, " checks", task.counted_count > 0
                                 ? ` · ${task.counted_count} counted`
-                                : ''] })] }), _jsx(Button, { variant: continuing ? 'contained' : 'outlined', size: "small", disabled: blockedByOwnership, onClick: () => onOpen(task), sx: { flexShrink: 0 }, children: assignedToOther
+                                : ''] })] }), _jsx(Button, { variant: "contained", size: "small", disabled: blockedByOwnership, onClick: () => onOpen(task), sx: { ...WMS_TIER1_ACTION_SX, flexShrink: 0 }, children: assignedToOther
                     ? 'Assigned'
                     : claimedByOther
                         ? 'Claimed'

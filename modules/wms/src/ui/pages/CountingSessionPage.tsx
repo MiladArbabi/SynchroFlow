@@ -22,6 +22,35 @@ import {
   PackageCheck,
 } from 'lucide-react';
 
+// WMS-CTA-CONSISTENCY-34: canonical Tier-1 commit/workflow-action treatment —
+// same token pair already used by the Reconcile-inventory and Create-count
+// actions in WmsModuleFT2. Without this, an unstyled contained MUI button
+// falls through to the theme's default primary palette (structural blue),
+// which is what caused these session-progression actions to render blue
+// instead of orange.
+export const WMS_TIER1_ACTION_SX = {
+  bgcolor: 'var(--accent)',
+  color: 'var(--accent-ink)',
+  '&:hover': { bgcolor: 'var(--accent-hover)' },
+} as const;
+
+// WMS-CTA-CONSISTENCY-34: neutral Tier-2 selection-only treatment for the
+// finding-type and skip-reason toggle groups below. Deliberately not
+// accent-filled and not MUI primary blue — these are selections, not
+// commits (the commit is a separate button further down this form). Idle
+// state mirrors the existing suggested-bins select-all ghost treatment in
+// WmsModuleFT2; the selected state reuses the surface/stronger-rule pair
+// already used for active/selected state elsewhere (e.g. the module tab
+// bar's active tab) — no new token invented.
+export function wmsTier2SelectionSx(selected: boolean) {
+  return {
+    bgcolor: selected ? 'var(--surface)' : 'transparent',
+    border: `1px solid ${selected ? 'var(--rule-2)' : 'var(--rule)'}`,
+    color: 'var(--ink)',
+    fontWeight: selected ? 700 : 600,
+  } as const;
+}
+
 export type CountingSkipReason =
   | 'bin_inaccessible'
   | 'stock_in_motion'
@@ -903,10 +932,10 @@ export default function CountingSessionPage({
             {(scanTally[line.recount_line_id] ?? 0) === 0 && (
               <Button
                 size="small"
-                variant="text"
+                variant="contained"
                 onClick={() => void handleResolveLine(line, 0)}
                 disabled={submitting}
-                sx={{ minWidth: 'auto', px: 0.5, fontSize: 11 }}
+                sx={{ ...WMS_TIER1_ACTION_SX, minWidth: 'auto', px: 0.75, fontSize: 11 }}
               >
                 None here
               </Button>
@@ -1143,7 +1172,7 @@ export default function CountingSessionPage({
                 variant="contained"
                 onClick={handleLocation}
                 disabled={!locationInput.trim() || submitting}
-                sx={{ mt: 1.5 }}
+                sx={{ ...WMS_TIER1_ACTION_SX, mt: 1.5 }}
               >
                 Confirm bin
               </Button>
@@ -1206,7 +1235,7 @@ export default function CountingSessionPage({
                     variant="contained"
                     onClick={handleNextBin}
                     disabled={submitting}
-                    sx={{ mt: 2 }}
+                    sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
                   >
                     Next Bin
                   </Button>
@@ -1215,7 +1244,7 @@ export default function CountingSessionPage({
                     variant="contained"
                     onClick={() => void handleFinish()}
                     disabled={submitting}
-                    sx={{ mt: 2 }}
+                    sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
                   >
                     Finish Count
                   </Button>
@@ -1225,7 +1254,7 @@ export default function CountingSessionPage({
                   variant="contained"
                   onClick={() => void handleFinishBin()}
                   disabled={submitting}
-                  sx={{ mt: 2 }}
+                  sx={{ ...WMS_TIER1_ACTION_SX, mt: 2 }}
                 >
                   Done With This Bin
                 </Button>
@@ -1270,11 +1299,7 @@ export default function CountingSessionPage({
           {findingDraft?.line && (
             <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
               <Button
-                variant={
-                  findingDraft.finding_type === 'product_defect'
-                    ? 'contained'
-                    : 'outlined'
-                }
+                variant="outlined"
                 onClick={() =>
                   setFindingDraft((previous) =>
                     previous
@@ -1283,16 +1308,13 @@ export default function CountingSessionPage({
                   )
                 }
                 disabled={submitting}
+                sx={wmsTier2SelectionSx(findingDraft.finding_type === 'product_defect')}
               >
                 Product defect
               </Button>
 
               <Button
-                variant={
-                  findingDraft.finding_type === 'packaging_defect'
-                    ? 'contained'
-                    : 'outlined'
-                }
+                variant="outlined"
                 onClick={() =>
                   setFindingDraft((previous) =>
                     previous
@@ -1301,6 +1323,7 @@ export default function CountingSessionPage({
                   )
                 }
                 disabled={submitting}
+                sx={wmsTier2SelectionSx(findingDraft.finding_type === 'packaging_defect')}
               >
                 Packaging defect
               </Button>
@@ -1357,6 +1380,7 @@ export default function CountingSessionPage({
             variant="contained"
             onClick={() => void handleSaveFinding()}
             disabled={submitting || !findingQuantity.trim()}
+            sx={WMS_TIER1_ACTION_SX}
           >
             {submitting ? 'Saving…' : 'Record finding'}
           </Button>
@@ -1385,13 +1409,13 @@ export default function CountingSessionPage({
             {SKIP_OPTIONS.map((option) => (
               <Button
                 key={option.value}
-                variant={skipReason === option.value ? 'contained' : 'outlined'}
+                variant="outlined"
                 onClick={() => {
                   setSkipReason(option.value);
                   setError(null);
                 }}
                 disabled={submitting}
-                sx={{ justifyContent: 'flex-start' }}
+                sx={{ ...wmsTier2SelectionSx(skipReason === option.value), justifyContent: 'flex-start' }}
               >
                 {option.label}
               </Button>
@@ -1428,6 +1452,7 @@ export default function CountingSessionPage({
               submitting ||
               (skipReason === 'other' && !skipNotes.trim())
             }
+            sx={WMS_TIER1_ACTION_SX}
           >
             {submitting ? 'Saving…' : 'Skip item'}
           </Button>

@@ -35,6 +35,7 @@ import CountingSessionPage, {
   type CountingTask,
   type CountingFinding,
   type CountingFindingType,
+  WMS_TIER1_ACTION_SX,
 } from './CountingSessionPage.js';
 import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import {
@@ -466,7 +467,7 @@ const BatchCard = memo(function BatchCard({
             disabled={isPickComplete}
             sx={{
               fontSize: 12, fontWeight: 600,
-              color: isPickComplete ? 'var(--ink-3)' : '#10151E',
+              color: isPickComplete ? 'var(--ink-3)' : 'var(--accent-ink)',
               bgcolor: isPickComplete ? 'var(--rule)' : 'var(--accent)',
               border: 'none', borderRadius: '8px',
               px: 2.25, py: 1,
@@ -680,11 +681,11 @@ const CountingTaskCard = memo(function CountingTaskCard({
       </Box>
 
       <Button
-        variant={continuing ? 'contained' : 'outlined'}
+        variant="contained"
         size="small"
         disabled={blockedByOwnership}
         onClick={() => onOpen(task)}
-        sx={{ flexShrink: 0 }}
+        sx={{ ...WMS_TIER1_ACTION_SX, flexShrink: 0 }}
       >
         {assignedToOther
           ? 'Assigned'
