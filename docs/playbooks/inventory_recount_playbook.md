@@ -410,7 +410,9 @@ removing its explicit muted colour override and inheriting the same
 interactive treatment as "None here" and "Can't count".
 
 The scan tally is persisted provisionally in `sessionStorage` from
-`RECOUNT-TALLY-VOLATILE-127` onward; see the section below.
+`RECOUNT-TALLY-VOLATILE-127` onward; see the section below. The exact
+"Leave count" contract (what it does and does not do) is documented in
+`RECOUNT-LEAVE-SEMANTICS-138` further below.
 
 ## Scan tally durability — RECOUNT-TALLY-VOLATILE-127, 2026-08-25
 
@@ -459,6 +461,10 @@ under `THEME-TEXT-DISABLED-MISSING-137`.
   warn-and-discard design incoherent, since leaving no longer discards.
   Current behaviour is silent persistence. Tracked as
   `RECOUNT-LEAVE-SEMANTICS-138`.
+  **Resolved 2026-08-26** — see the `RECOUNT-LEAVE-SEMANTICS-138` section
+  below: explicit reassurance copy was added, the exact non-destructive
+  contract was made permanent regression coverage, and no warn-and-discard
+  modal was introduced (there is nothing to discard).
 - `PickSessionPage` carries the identical inactive-icon expression and
   the same latent dark-mode defect. Tracked as
   `PICK-TRACKER-INACTIVE-ICON-136`. Do not copy that node's colour
@@ -470,3 +476,82 @@ Tracker verified live in both colour schemes: inactive node icon legible
 in dark mode, unchanged behaviour in light mode. Tally and verified
 location confirmed to survive refresh; resolved-line tallies confirmed
 not to return.
+
+## Leave-count semantics — RECOUNT-LEAVE-SEMANTICS-138, 2026-08-26
+
+"Leave count" is non-destructive navigation — not task release, and not a
+discard.
+
+### Why the old warn-and-discard concept doesn't apply
+
+`RECOUNT-TALLY-VOLATILE-127`'s "Deliberate exclusions" (above) flagged that
+its own persistence work already made the original "Leave and discard
+unsaved scans?" design incoherent — leaving no longer discards anything, so
+a warning built around discarding would be actively wrong, not merely
+unnecessary. Direct audit confirmed no such warning exists anywhere in the
+current source: no confirmation modal, no discard or unsaved-progress copy.
+
+### The exact contract
+
+Clicking "Leave count":
+
+- calls the session's `onComplete()` callback with **zero arguments** —
+  distinct from the successful-finish path, which calls
+  `onComplete(task.label)`;
+- calls no mutation callback — not `onCloseTask`, `onRecordCount`,
+  `onSkipLine`, nor `onCreateFinding`;
+- does not clear `recount-scan-tally-${recount_task_id}` or
+  `recount-verified-location-${recount_task_id}` (the two keys
+  `RECOUNT-TALLY-VOLATILE-127` established, above);
+- does not release `claimed_by` and does not change task status — once
+  claimed, the task remains claimed by that operator, exactly as before
+  this issue;
+- shows no confirmation/discard modal, by design. Since nothing destructive
+  happens, gating the click behind a confirmation step would only slow the
+  operator down for no protective benefit.
+
+### Operator-facing reassurance
+
+The session now shows **"Progress is saved automatically."** near "Leave
+count" — `fontSize: 11`, `var(--ink-4)`, the same subordinate-caption
+treatment already used elsewhere in this session (e.g. the finding dialog's
+"Physically counted: X" line) — so it reads as explanatory, not as another
+action competing with the workflow-commit CTAs. It does not gate or confirm
+the click. The button label itself is unchanged: "Leave count".
+
+### Re-entry / resume — unchanged
+
+Re-entering the same task restores the persisted tally and verified
+location exactly as `RECOUNT-TALLY-VOLATILE-127` describes (above), and
+resumes at the task's first unresolved bin (`RECOUNT-RESUME-POSITION-72`) —
+not necessarily the exact bin the operator was standing in when they left.
+Persisting the *exact* last-active bin was deliberately left out of scope
+for this issue.
+
+### Boundary with RECOUNT-CLAIM-ABANDONED-131
+
+This issue does not touch claim/release semantics. There is currently no
+release/unclaim endpoint anywhere in the recount API, and Leave does not
+call one. Whether or how an abandoned claim should ever be released remains
+entirely owned by `RECOUNT-CLAIM-ABANDONED-131` — not designed or
+implemented here.
+
+### Verification
+
+`tests/unit/ui/wms/RecountLeaveSemantics.test.tsx` — 4 focused contracts,
+rendering `CountingSessionPage` directly with controlled props and
+pre-seeded `sessionStorage`. RED baseline before implementation: 3 passed /
+1 failed — only the reassurance-copy contract failed, since the
+persistence/non-mutation/no-modal behaviour was already correct and this
+suite now makes that permanent regression coverage rather than an
+audit-only claim. GREEN after implementation: 4/4. Sibling
+`WmsCtaTierConsistency` regression re-run alongside it: 25/25 (confirms the
+new copy did not regress `WMS-CTA-CONSISTENCY-34`'s CTA-hierarchy guard for
+this same button). `test:config`: frontend TEST_COUNT 100,
+`UNOWNED=0`, `MULTI_OWNED=0`. `modules/wms` build and `git diff --check`
+both passed.
+
+Live-verified in both colour schemes: reassurance copy visible and
+positioned near "Leave count", the button remains visually secondary,
+and leave/re-entry preserves tally and verified location exactly as
+before this issue.

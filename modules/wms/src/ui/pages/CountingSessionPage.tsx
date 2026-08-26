@@ -1209,6 +1209,21 @@ export default function CountingSessionPage({
                 </Button>
               </Box>
 
+              {/* RECOUNT-LEAVE-SEMANTICS-138: tally and verified-location
+                  already persist in sessionStorage across leave/re-entry —
+                  this just makes that existing durability visible so the
+                  operator doesn't hesitate before leaving. */}
+              <Typography
+                sx={{
+                  fontSize: 11,
+                  color: 'var(--ink-4)',
+                  textAlign: 'right',
+                  mb: 1.25,
+                }}
+              >
+                Progress is saved automatically.
+              </Typography>
+
               <TextField
                 inputRef={scanInputRef}
                 fullWidth
