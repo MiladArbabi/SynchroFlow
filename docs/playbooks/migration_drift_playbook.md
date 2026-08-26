@@ -22,7 +22,7 @@ This happened **eight separate times** in this codebase's history before it was 
 6. Nobody notices until the missing table/column/policy causes a real failure — sometimes weeks later, sometimes never (if the code path hadn't fired yet).
 
 ### Why this is so dangerous
-Local dev and CI both build their databases by running every migration from empty (`npm run dev:setup`, `test:setup`). This means **local dev can never reveal this class of bug.** Everything works perfectly on your machine, in review, and in CI — and is still broken in prod. The only way to catch it is to compare prod's *actual* schema against what the *current migration files* would produce from scratch.
+Fresh local setups and the disposable backend-integration harness build databases by running migrations from empty (`npm run dev:setup`, `npm run test:integration`). That fresh-schema verification still **cannot reveal migration drift already present in production.** A clean local/test database can work perfectly while production remains frozen at an older version of an already-executed migration. The only way to catch that class of drift is to compare production's *actual* schema against what the current migration files would produce from scratch.
 
 ---
 

@@ -94,25 +94,26 @@ If auth is broken, **fix auth** — do not bypass it.
 
 ---
 
-## 🧪 Database & Seed Expectations
+## 🧪 Database & Environment Expectations
 
-E2E tests assume:
+Playwright E2E is an **explicit test path** and is not part of `npm test` or
+`npm run test:fast`.
 
-- Database is reset before runs
-- `DEV_SEED_MODE=full_identity`
-- Test user has:
-  - User record
-  - Shop record
-  - Active shop membership
+The former shared test-setup path has been removed. E2E tests must not
+assume an implicit `db:reset`, `DEV_SEED_MODE=full_identity`, or globally
+seeded identity.
 
-This is enforced via:
-```
+Current Playwright configuration starts the backend with `NODE_ENV=test`.
+The database/environment required by a particular E2E scenario must therefore
+be prepared deliberately and must never point at production.
 
-npm run test:setup
+The disposable `synchroflow_test_*` lifecycle currently belongs to the Jest
+backend-integration path (`npm run test:integration`). Playwright has not yet
+been migrated onto that harness, so do not assume E2E database isolation from
+the integration-test infrastructure.
 
-```
-
-If a test fails due to missing identity, that is **correct behavior**.
+Tests should create or explicitly declare the minimum identity/state they
+require. Missing required identity should fail rather than be bypassed.
 
 ---
 

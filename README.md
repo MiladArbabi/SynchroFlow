@@ -124,10 +124,10 @@ npm run dev:full
 
 ```bash
 # Run tests
-npm run test:e2e          # End-to-end tests
-npm test -w ui           # Frontend unit tests
-npm test -w api          # Backend tests
-
+npm test                    # Safe DB-free foundation gate
+npm run test:integration    # Backend integration on disposable migrated DB
+npm run test:frontend       # Legacy/diagnostic frontend suite (non-gating)
+npm run test:e2e            # Explicit Playwright E2E
 # Database management
 npm run migrate -w api   # Run migrations
 npm run seed -w api      # Seed test data
