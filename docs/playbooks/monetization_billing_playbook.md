@@ -13,8 +13,8 @@ Single source of truth: `packages/backend-core/src/config/tiers.ts`
 | Tier | Price (USD/mo) | Seats | Order cap/mo | Shipped order cap/mo |
 |---|---|---|---|---|
 | Starter | Free | Owner only (0 non-owner seats) | 50 | 50 |
-| Core | $79 | 2 non-owner seats | 2,000 | 200 |
-| Growth | $179 | 5 non-owner seats | 10,000 | 1,000 |
+| Core | $79 | 2 non-owner seats | 2,000 | 500 |
+| Growth | $179 | 5 non-owner seats | 10,000 | 2,500 |
 | Scale | $349 | Unlimited | Unlimited | Unlimited |
 
 - Seat count excludes the shop owner — limits apply to operators/admins only
@@ -286,7 +286,9 @@ After the fix:
 
 `domain_events` is intentionally append-only, so the implementation-test event remains in the local canonical log. Mutable test subscription, usage, and Shopify-installation state was restored afterward.
 
-### MON-PPO-03 — Starter WMS execution enforcement
+### MON-PPO-03 — Starter WMS execution enforcement (historical; superseded by MON-ALLOW-04)
+
+> **Superseded commercial behavior:** this section records the earlier Starter PPO design and its 2026-08-21 verification. The current contract is defined by MON-ALLOW-04 in §29: Starter always hard-stops above its included 50 fulfilled orders; configurable overage applies only to Core and Growth.
 
 `apps/backend/src/api/wms/wms.controller.ts` → `httpCompletePack`
 
@@ -375,6 +377,7 @@ Mutable subscription, usage, batch, and alert fixtures were restored after each 
 | SEG-022-B | Pay-per-order Stripe Customer flow (lazy setup, no card at signup) | ✅ Done (2026-07-14) |
 | MON-PPO-02 | Preserve Shopify ingestion beyond commercial allowance | ✅ Done (2026-08-21) |
 | MON-PPO-03 | Starter WMS shipped-cap + PPO enforcement | ✅ Done (2026-08-21) |
+| MON-ALLOW-04 | Fulfilled-order allowances + merchant overage preference + regression protection | ✅ Done (2026-08-26) |
 
 ---
 
@@ -814,7 +817,7 @@ versus wrapped in `withTenant()` against the same row returned
 Fixed by wrapping both reads (`shop_subscriptions`,
 `shop_usage_metrics`) inside `withTenant(shopId, ...)`. Live-verified
 end-to-end post-fix: seeded a shop at `shipped_orders: 210` against
-Core's `shippedOrderCap: 200`, called the function with
+Core's then-current `shippedOrderCap: 200` (historical; current cap is `500`), called the function with
 `newlyShipped: 10`, and confirmed a correct `[stripe.meter] overage
 reported` log with accurate math (`overageUnits: 10`) and a successful
 Stripe Meter Event API call.
@@ -1520,3 +1523,196 @@ Verified:
 This acceptance proves the durable worker/DB state machine and routing contract. It does **not** claim successful external Stripe or Shopify billing API acceptance. One controlled live provider billing validation remains a separate provider-E2E gate.
 
 The broader `MON-ALLOW-04` WMS five-case commercial runtime matrix also remains separate from this durable-outbox infrastructure slice.
+
+## 29. MON-ALLOW-04 — Fulfilled-Order Allowances and Merchant Overage Preference
+
+- **Runtime verified:** 2026-08-25
+- **Automated regression verified:** 2026-08-26
+
+### Current commercial contract
+
+Canonical fulfilled-order allowances are:
+
+| Tier | Included fulfilled orders / period | Beyond allowance |
+|---|---:|---|
+| Starter | 50 | Hard stop |
+| Core | 500 | Merchant may enable or disable overage |
+| Growth | 2,500 | Merchant may enable or disable overage |
+| Scale | Unlimited | No cap enforcement |
+
+Starter does not participate in configurable paid overage. `allow_overage` is relevant only to Core and Growth.
+
+At `pack-complete`, the projected usage is evaluated atomically inside the same transaction that updates the batch, usage counter, ready-to-ship alert, and any `billing/overage` event.
+
+Current behavior:
+
+- Starter within 50 → allow completion.
+- Starter above 50 → `403 SHIPPED_ORDER_CAP_REACHED`.
+- Core/Growth within the included allowance → allow completion regardless of `allow_overage`.
+- Core/Growth above the allowance with `allow_overage=false` → `403 OVERAGE_DISABLED`.
+- Core/Growth above the allowance with `allow_overage=true` → allow completion when the required provider facts are available and persist a durable `billing/overage` event for only the newly over-cap units.
+- Scale → unlimited; no finite shipped-order-cap branch.
+
+Rejected cap/overage checks occur before pack completion side effects, so the batch remains `packing`, usage does not increment, no ready-to-ship alert is created, and no billing event is persisted.
+
+### Merchant preference API
+
+Migration `0156_add_allow_overage_to_shop_subscriptions` persists the merchant preference on `shop_subscriptions.allow_overage`.
+
+`GET /api/v1/billing/subscription` exposes `allow_overage`.
+
+`PATCH /api/v1/billing/overage`:
+
+- requires authenticated `billing:write`;
+- accepts only a boolean `allow_overage`;
+- returns `400 INVALID_ALLOW_OVERAGE` for non-boolean input;
+- permits configuration only for Core and Growth;
+- returns `409 OVERAGE_NOT_CONFIGURABLE` for Starter and Scale;
+- updates only the persisted preference; WMS remains the enforcement boundary.
+
+The preference API was independently runtime-verified: Core/Growth toggles persisted correctly, invalid input returned 400, Starter/Scale returned 409, GET reflected the stored value, and the verification baseline was restored.
+
+### Five-case WMS runtime acceptance matrix
+
+The final matrix was executed against disposable migrated scratch databases through the real API-only WMS endpoint:
+
+`POST /api/v1/wms/batch/:batchId/pack-complete`
+
+The durable outbox worker was intentionally absent so no real Stripe or Shopify provider call could occur.
+
+| Case | State | Result | Post-state |
+|---|---|---|---|
+| 1 | Starter, `49 + 1` | HTTP 200 | usage `50`, batch `pack_complete`, one ready-to-ship alert, no billing event |
+| 2 | Starter, `50 + 1` | HTTP 403 `SHIPPED_ORDER_CAP_REACHED` | usage remains `50`, batch remains `packing`, no alert/event |
+| 3 | Core, `499 + 1`, `allow_overage=false` | HTTP 200 | usage `500`, batch `pack_complete`, one alert, no billing event |
+| 4 | Growth, `2500 + 1`, `allow_overage=false` | HTTP 403 `OVERAGE_DISABLED` | usage remains `2500`, batch remains `packing`, no alert/event |
+| 5 | Growth, `2500 + 1`, `allow_overage=true`, Stripe provider facts present | HTTP 200 | usage `2501`, batch `pack_complete`, one alert, exactly one `billing/overage` event and one outbox row |
+
+Case 5 persisted the following event payload facts:
+
+- `billing_provider = stripe`
+- `overage_units = 1`
+- `tier = growth`
+- `included_allowance = 2500`
+- `current_before = 2500`
+- `projected_after = 2501`
+- `usage_period_id` captured from the open usage period
+- `batch_id` captured from the completed batch
+- deterministic `idempotency_key` present
+- `stripe_customer_id` preserved from the subscription state captured inside the transaction
+
+For automated regression purposes, only provider-delivery fields consumed by
+the durable dispatcher are treated as contractual:
+
+- `billing_provider`
+- `overage_units`
+- `idempotency_key`
+- `stripe_customer_id` on the Stripe path
+- `shop_gid` on the Shopify path
+
+The remaining persisted fields (`tier`, `included_allowance`,
+`current_before`, `projected_after`, `usage_period_id`, `batch_id`) are useful
+business/debugging context, but are not asserted by the commercial regression
+suite merely to freeze payload shape.
+
+The trigger-created outbox row remained:
+
+- `published_at = NULL`
+- `processing_at = NULL`
+- `retry_count = 0`
+- `first_attempt_at = NULL`
+- `last_attempt_at = NULL`
+
+That proves pack-complete persists the durable delivery fact without performing provider I/O itself. Provider claim/delivery/retry behavior is separately verified in §28.
+
+All five scratch databases, fixtures, API-only processes, and temporary verification artifacts were removed after acceptance. No primary database state was changed.
+
+### Automated regression protection
+
+Permanent regression protection now exists on the disposable
+`synchroflow_test_*` integration-test infrastructure.
+
+#### Merchant preference API
+
+File:
+
+`tests/integration/billing/allow-overage-preference.test.ts`
+
+Targeted execution:
+
+```sh
+npm run test:integration -- --testPathPatterns allow-overage-preference
+```
+
+Verified 2026-08-26:
+
+- 1 suite passed;
+- 11 tests passed;
+- Core and Growth persist explicit `allow_overage=true/false`;
+- Starter and Scale reject configuration without mutating persistence;
+- non-boolean input returns `INVALID_ALLOW_OVERAGE` without mutation;
+- missing subscription state resolves to `allow_overage=true` on GET without
+  creating a subscription row;
+- changing the preference creates no billing domain event/outbox record and
+  does not change shipped-order usage.
+
+Protected contracts:
+
+- `OVERAGE-PREF-01`
+- `OVERAGE-PREF-02`
+- `OVERAGE-PREF-03`
+- `OVERAGE-PREF-04`
+- `OVERAGE-PREF-05`
+
+#### WMS commercial enforcement
+
+File:
+
+`tests/integration/wms/shipped-order-commercial-enforcement.test.ts`
+
+Targeted execution:
+
+```sh
+npm run test:integration -- --testPathPatterns shipped-order-commercial-enforcement
+```
+
+Verified 2026-08-26:
+
+- 1 suite passed;
+- 5 tests passed;
+- Starter `49 + 1` succeeds and increments usage exactly once;
+- Starter `50 + 1` rejects with `SHIPPED_ORDER_CAP_REACHED`;
+- Core `499 + 1` succeeds with `allow_overage=false` and remains non-billable;
+- Growth `2500 + 1` with `allow_overage=false` rejects with
+  `OVERAGE_DISABLED`;
+- Growth `2500 + 1` with `allow_overage=true` succeeds and persists exactly
+  one `billing/overage` domain event plus exactly one related outbox row;
+- both rejection paths preserve batch state, usage, billing-event state, and
+  outbox state atomically.
+
+Protected contracts:
+
+- `COMMERCIAL-01`
+- `COMMERCIAL-02`
+- `COMMERCIAL-03`
+- `COMMERCIAL-04`
+- `COMMERCIAL-05`
+- `ATOMICITY-01`
+
+These regression suites deliberately protect business decisions, persistence,
+atomicity, and durable billing intent. They do not assert human-readable copy,
+UI structure, commercial alert wording, or incidental payload metadata.
+
+Both suites run through `createApp()` and the real restricted-runtime Postgres
+path. They do not start the billing outbox worker and make no real Stripe or
+Shopify provider call.
+
+The generic `wms_batch_ready_to_ship` alert remains an operational
+pack-complete side effect; it is not treated as a commercial allowance alert
+or as part of these commercial regression contracts.
+
+### Remaining provider-E2E boundary
+
+The commercial WMS matrix and durable worker/state-machine acceptance are complete.
+
+They do not claim a live external Stripe or Shopify billing acceptance for the newly persisted event. That remains the separate provider-E2E gate already documented in §28.

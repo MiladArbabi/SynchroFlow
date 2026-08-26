@@ -15,6 +15,7 @@ import {
   getSubscription,
   getUsage,
   addSeats,
+  updateOveragePreference,
 } from './billing.controller.js';
 
 const router = Router();
@@ -35,5 +36,13 @@ router.post('/setup-payment-method', authenticateToken, requireAction('billing:w
 
 // POST /api/v1/billing/add-seats — add extra team seats to existing subscription (AUD-C16)
 router.post('/add-seats', authenticateToken, requireAction('billing:write'), addSeats);
+
+// PATCH /api/v1/billing/overage — Core/Growth overage preference (MON-ALLOW-04)
+router.patch(
+  '/overage',
+  authenticateToken,
+  requireAction('billing:write'),
+  updateOveragePreference
+);
 
 export default router;
