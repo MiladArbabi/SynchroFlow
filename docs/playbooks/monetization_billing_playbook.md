@@ -1817,7 +1817,9 @@ Runtime verified: 2026-08-26. Automated regression verified: 2026-08-26.
 ### Deferred with IDs
 
 ```text
-ENT-403-SILENT-117            High  COLUMN_SELECTION_REQUIRES_GROWTH has no
+ENT-403-SILENT-117            Med  CLOSED 2026-08-26 — see §31. Rescoped from
+                                    High after audit: ColumnPicker:179 disables
+                                    selection, so the 403 is drift-only, not
                                     frontend handler; axiosConfig branches only
                                     on TIER_INSUFFICIENT; MembersPage:228
                                     suppresses generic 403. Denial is invisible.
@@ -1840,3 +1842,131 @@ individually reviewed. No coverage claim is made for them.
 
 There was no pre-existing `products` backend-integration suite;
 `CONTRACT-ENT-MOUNT-01` is this handler's first integration coverage.
+
+---
+
+## 31. Reactive Entitlement Denial — `ENT-403-SILENT-117` (verified 2026-08-26)
+
+### What the audit actually found
+
+The issue was carried as High on the belief that merchants were hitting
+silent entitlement denials in normal use. **They were not.** `ColumnPicker:179`
+disables the checkboxes for non-Growth merchants, so
+`COLUMN_SELECTION_REQUIRES_GROWTH` is not reachable through the UI.
+**Downgraded to Med** and rescoped as a drift backstop.
+
+The structural finding stands, and it is the reason the issue was worth doing:
+
+```text
+Denial UI renders only where the frontend PREDICTED the denial.
+No denial UI is reachable from a caught API error, anywhere.
+```
+
+`UpgradePrompt` is reached from 13+ surfaces, every one of them driven by
+`usePlanEntitlement` / `PLAN_FEATURES` before any request is made. Per
+`ENT-CONTRACT-01`, `PLAN_FEATURES` is presentation-only and is *permitted* to
+drift from backend truth — so the reactive path is not a redundant net. It is
+the only thing covering the case the pre-emptive layer is explicitly not
+authoritative for.
+
+### New contracts
+
+```text
+ENT-CONTRACT-04  A backend entitlement denial is identified by its error code,
+                 never by bare 403 status. The client reads the code through
+                 one shared helper.
+
+ENT-CONTRACT-05  Where the client can distinguish an entitlement denial, it
+                 must not tell the merchant to retry. Retry can never succeed
+                 against an entitlement gate.
+```
+
+`-05` is the one that mattered in practice. "Export failed — please try again"
+is worse than silence: it instructs the merchant to do something futile.
+
+### The 403 vocabulary — 26 distinct values, four categories
+
+The backend emits far more than the two codes the issue named. A two-code
+predicate would have been wrong on arrival.
+
+| Category | Upgrade resolves it? | Codes |
+|---|---|---|
+| **Entitlement** | Yes — helper matches these | `TIER_INSUFFICIENT`, `TIER_INSUFFICIENT_FIELD`, `COLUMN_SELECTION_REQUIRES_GROWTH`, `SEAT_LIMIT_REACHED`, `SHIPPED_ORDER_CAP_REACHED` |
+| **Role/permission** | No | `ACTION_FORBIDDEN`, `NO_ROLE_ASSIGNED`, `FORBIDDEN`, `CANNOT_REVOKE_OWNER` |
+| **Ownership (WMS)** | No | prose values — "Batch not owned by this operator", etc. |
+| **Session/context/OAuth** | No | `SESSION_COMPROMISED`, `NO_ACTIVE_SHOP_MEMBERSHIP`, `SHOP_CONTEXT_REQUIRED` |
+
+Two deliberate exclusions, both commented in the helper:
+
+- **`OVERAGE_DISABLED`** is tier-adjacent but resolves by toggling the
+  merchant's `allow_overage` preference (§29), not by upgrading. Telling that
+  merchant to upgrade would be wrong.
+- **Role denials** are tracked as `ENT-MEMBERS-403-BLANK-151`, not here.
+
+**Several 403s use human prose as the error value.** Prose is not a code.
+`isEntitlementDenial` matches by exact equality against a frozen allowlist and
+must never use substring or regex matching.
+
+### Implementation
+
+`apps/frontend/src/api/entitlementDenial.ts` — framework-free, exports
+`ENTITLEMENT_DENIAL_CODES` (frozen) and `isEntitlementDenial(error: unknown)`.
+Applied at `ExportDrawer.tsx:55` and `ShopSettingsReportsPage.tsx:64`.
+
+`axiosConfig.ts:269` was **not** touched. The interceptor still refreshes on
+`TIER_INSUFFICIENT` and runs before any caller catch, so the helper cannot
+intercept a refreshable stale claim.
+
+### Regression protection, and one honest limitation
+
+```text
+CONTRACT-ENT-DENIAL-01  tests/contract/entitlementDenial.contract.test.ts
+                        17 assertions: 5 allowlisted codes true; 12 false
+                        (OVERAGE_DISABLED, role codes, prose values, bare
+                        403, 401+TIER_INSUFFICIENT, 500, null, {}, network).
+                        Strong — this proves classification.
+
+CONTRACT-ENT-DENIAL-02  Static scan: no export catch sets a retry-suggesting
+                        string without importing the helper.
+```
+
+**`-02` is weaker than it looks, and this is deliberate to record.** During
+implementation a ternary catch body was written; the scan went red purely
+because it could not *see* the generic string, and the source was reformatted
+to if/else to satisfy it. A ternary and an if/else are behaviourally
+identical. So `-02` is partly a formatting rule wearing a contract's name.
+
+What it genuinely protects: a third export path setting a generic string
+**without importing the helper**. That invariant is real and is why it was
+kept. What it does not protect: correct classification — `-01` does that.
+
+**If you hit a red `-02` after writing a ternary, the test is the problem, not
+your code.** Improve the scan or narrow it to the import check. Do not
+reformat working code to appease it.
+
+Runtime verified: 2026-08-26. Automated regression verified: 2026-08-26.
+
+### Deliberately not done
+
+- **The other ~11 hand-rolled catches.** No forcing event; repo-wide catch
+  migration was an explicit non-goal.
+- **No modal or hook infrastructure.** `UpgradePrompt mode="modal"` would be a
+  better experience, but this path fires only on drift and there is no evidence
+  drift has ever occurred. Inline copy is the proportionate fix; the modal is a
+  small step from here if drift proves real.
+- **Live browser verification skipped.** Reaching the new copy requires forcing
+  synthetic drift, so there is no genuine user-facing flow to approve.
+  Verification replacement: `CONTRACT-ENT-DENIAL-01` proves classification.
+
+### Spun off
+
+```text
+ENT-MEMBERS-403-BLANK-151  MembersPage:65,228 — a role 403 suppresses the
+                           error alert and the table, rendering nothing.
+                           Suppressing "please refresh" is arguably correct
+                           (refresh cannot help); rendering nothing is not.
+                           Permissions UX, not entitlement.
+EXP-DRAWER-DUPLICATE-152   ExportDrawer:44-45 and ShopSettingsReportsPage:49-50
+                           duplicate the export body construction wholesale.
+                           Same dual-maintenance shape as -118's dual mount.
+```

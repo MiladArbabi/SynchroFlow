@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
 import { X, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
+import { isEntitlementDenial } from 'api/entitlementDenial';
 import { QUICK_REPORTS, isTierSufficient, MIME, type QuickReport } from '../config/exportReports';
 import { FormatBadge } from './ExportFormatBadge';
 import { ColumnPicker, type ColumnPickerSelection } from './ColumnPicker';
@@ -51,8 +52,12 @@ function ExportRow({
       a.download = `${report.filename}-${new Date().toISOString().split('T')[0]}.${report.format}`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      setError('Export failed — please try again.');
+    } catch (err) {
+      if (isEntitlementDenial(err)) {
+        setError('Custom column selection is available on Growth. Export the standard columns, or upgrade to continue.');
+      } else {
+        setError('Export failed — please try again.');
+      }
     } finally {
       setLoading(false);
     }
