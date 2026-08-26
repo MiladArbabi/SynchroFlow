@@ -25,7 +25,7 @@ router.get('/ft2', authenticateToken, requireFt2, getProductsFt2);
  * intelligence data. requireTier('core') added; FTEP exemption
  * (requireFt2) intentionally left untouched per original design note.
  */
-router.get('/operator-summary', authenticateToken, requireTier('core'), getProductsOperatorSummaryHandler);
+router.get('/operator-summary', authenticateToken, getProductsOperatorSummaryHandler);
 
 /**
  * SECURITY FIX (audit ISS-P-PRODUCTS-01): product list had zero tier

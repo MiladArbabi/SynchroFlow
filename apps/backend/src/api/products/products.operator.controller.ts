@@ -8,6 +8,7 @@ import {
 } from '@lasyncro/backend-core/utils/ft2Period.js';
 import { isValidTier } from '@lasyncro/backend-core/config/tiers.js';
 import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
+import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
 
 /**
  * GET /api/v1/modules/products/operator-summary
@@ -34,6 +35,17 @@ export async function getProductsOperatorSummaryHandler(
       return;
     }
 
+    const rawTier = req.user?.tier;
+    const tier = isValidTier(rawTier) ? rawTier : 'starter';
+    if (!meetsTier(req, 'core')) {
+      res.status(403).json({
+        error: 'TIER_INSUFFICIENT',
+        required: 'core',
+        current: tier,
+      });
+      return;
+    }
+
     const preset = req.query.preset as FT2DateRangePreset | undefined;
     const period = preset
       ? preset === 'custom'
@@ -45,8 +57,6 @@ export async function getProductsOperatorSummaryHandler(
         : resolveFt2PeriodFromPreset({ preset })
       : getFt2Period();
 
-    const rawTier = req.user?.tier;
-    const tier = isValidTier(rawTier) ? rawTier : 'starter';
     const windowSince = tierDataWindowSince(tier);
     const clampedPeriod = windowSince && new Date(period.from) < windowSince
       ? { from: windowSince.toISOString(), to: period.to }

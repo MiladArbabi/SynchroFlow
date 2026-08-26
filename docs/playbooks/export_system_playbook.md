@@ -1076,7 +1076,7 @@ be filtered automatically — suppression is manual. Tracked as
 
 ### Trap — module gating is not testable in DEV
 
-`apps/frontend/src/navigation/resolveNavVisibility.ts:62`:
+`apps/frontend/src/navigation/resolveNavVisibility.ts:64`:
 
 ```ts
 if (import.meta.env.DEV) return 'enabled';

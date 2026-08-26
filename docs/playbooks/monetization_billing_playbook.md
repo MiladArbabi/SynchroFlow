@@ -1716,3 +1716,127 @@ or as part of these commercial regression contracts.
 The commercial WMS matrix and durable worker/state-machine acceptance are complete.
 
 They do not claim a live external Stripe or Shopify billing acceptance for the newly persisted event. That remains the separate provider-E2E gate already documented in §28.
+
+---
+
+## 30. Entitlement Enforcement Placement — `ENT-PATTERN-AUDIT-147` / `ENT-FT2-TIER-CLASS-118` (verified 2026-08-26)
+
+### The pattern, as audited
+
+Two enforcement mechanisms exist. They do not share a vocabulary.
+
+| | `requireTier` | `tierHasFlag` |
+|---|---|---|
+| Defined | `require-entitlement.middleware.ts:66` | `tiers.ts:196` |
+| Sites | 133, route middleware | 4, inside `exports.controller.ts` |
+| Gates on | tier ordinal via `TIER_ORDER` | flag string |
+| Denial | `403 TIER_INSUFFICIENT` + `required`/`current` | `403 COLUMN_SELECTION_REQUIRES_GROWTH` |
+
+Entitlement truth is sound: `resolveTierForShop` -> signed JWT claim ->
+`resolveTier`. The weakness is **placement**, not the source of truth.
+Route-level gating is per-mount, so a second mount of the same handler is
+unprotected by construction. Controller-level gating is mount-invariant.
+
+### Ratified contracts
+
+```text
+ENT-CONTRACT-01  Entitlement truth is the server-issued JWT tier claim from
+                 resolveTierForShop. Frontend PLAN_FEATURES is presentation
+                 only and is never security authority.
+
+ENT-CONTRACT-02  A handler reachable at more than one mount is gated inside
+                 the controller, not at the route.
+
+ENT-CONTRACT-03  Every entitlement denial emits 403 plus a machine-readable
+                 error code the client can distinguish from generic failure.
+```
+
+### `ENT-FACT-01` — the dual mount table is deliberate
+
+`/api/v1/<domain>` and `/api/v1/modules/<domain>` are both intentional mounts
+(`bootstrap/express.ts:104-114`). This is ratified product architecture, not a
+defect. **Do not collapse it.** It is the reason `ENT-CONTRACT-02` exists.
+
+### `ENT-FT2-TIER-CLASS-118` — the defect it caught
+
+`getProductsOperatorSummaryHandler` was mounted twice: `products.routes.ts:28`
+with `requireTier('core')`, and `products.ft2.routes.ts:24` with no gate. Any
+authenticated Starter merchant could read Core-gated operator-summary data via
+`/api/v1/modules/products/operator-summary`.
+
+Fixed per `ENT-CONTRACT-02`: the gate moved into the controller using the
+existing `meetsTier(req, 'core')` predicate, and `requireTier('core')` was
+removed from the route so both mounts carry identical chains.
+
+Two constraints the fix must preserve:
+
+1. **The denial emits `TIER_INSUFFICIENT`**, matching
+   `require-entitlement.middleware.ts:65-70` exactly. `axiosConfig.ts:269`
+   refreshes the access token only on that error code; a bespoke code would
+   break stale-claim recovery on this route.
+2. **The gate runs before query parsing.** Sited after the `shopId` 401 check
+   and before preset/period resolution. An intermediate implementation placed
+   it after parsing, and an unentitled caller sending malformed date params
+   received `500` instead of `403` — caught by regression test before commit.
+
+### Regression protection
+
+```text
+CONTRACT-ENT-MOUNT-01  tests/integration/entitlement-mounts.test.ts
+                       Starter denied and Core allowed at BOTH mounts,
+                       plus the malformed-param ordering case.
+
+CONTRACT-ENT-MOUNT-02  tests/contract/entitlementMounts.contract.test.ts
+                       Static scan: no handler symbol is registered at two
+                       mounts with divergent entitlement middleware chains.
+                       Parser proven against the known -118 pair before use.
+```
+
+Repo-wide, four handler symbols are dual-mounted; only `-118` had divergent
+chains. The scan's blast radius is small and it is safe to keep repo-wide.
+
+Runtime verified: 2026-08-26. Automated regression verified: 2026-08-26.
+
+### Deliberately not done
+
+- **`PLAN_FEATURES` was not converged with the backend flag vocabulary.**
+  21 frontend keys have no backend flag, but the two vocabularies model
+  different things (module/feature presentation vs tier ordinal). Four of the
+  six growth-tier orphans are correctly `requireTier`-gated at route level;
+  two have no backend route at all. The divergence is benign.
+- **The other 132 `requireTier` sites were not migrated.** Repo-wide inward
+  migration is an explicit non-goal — no forcing event, enormous regression
+  surface.
+- **`products/catalog` and `products/wms-readiness` were not gated.** Both are
+  single-mount, and `wms-readiness.controller.ts:6` documents all-tier
+  visibility as intended policy. Gating them would invent product policy from
+  a defect report.
+- **Paused surfaces untouched**: `customers.ft2`, `finances`, `specter`,
+  `analytics` are planned for removal and out of scope unless they block.
+
+### Deferred with IDs
+
+```text
+ENT-403-SILENT-117            High  COLUMN_SELECTION_REQUIRES_GROWTH has no
+                                    frontend handler; axiosConfig branches only
+                                    on TIER_INSUFFICIENT; MembersPage:228
+                                    suppresses generic 403. Denial is invisible.
+ENT-OPERATORS-TEAM-UNGATED-122 Med  operators.routes.ts:25,31 expose team roster
+                                    and availability behind authenticateToken
+                                    alone, unlike every members.routes.ts twin.
+ENT-TIER-DOWNGRADE-STALE-150   Med  Refresh fires only on TIER_INSUFFICIENT, a
+                                    stale-LOW claim. A downgrade leaves a
+                                    stale-HIGH claim that emits no 403 and never
+                                    refreshes. Window: 15m (token.service.ts:209).
+ENT-COLSELECT-BYPASS-96         --  Gated inside the controller at all 4 sites,
+                                    therefore mount-invariant. No residual bypass
+                                    found. CLOSURE RECOMMENDED, NOT TAKEN.
+```
+
+Not assessed: 23 further `*.routes.ts` carry zero `requireTier`. Most are
+legitimately ungated (auth, system, currency, notifications, user-state,
+waitlist, shopify). `orders.routes.ts` and `finances.routes.ts` were not
+individually reviewed. No coverage claim is made for them.
+
+There was no pre-existing `products` backend-integration suite;
+`CONTRACT-ENT-MOUNT-01` is this handler's first integration coverage.
