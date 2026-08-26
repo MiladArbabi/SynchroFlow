@@ -2,6 +2,9 @@ import { type LineItem, type ConfirmScanParams, type ReportExceptionParams, type
 import { type PackOrder } from './PackSessionPage.js';
 import { type ReceiveJobLine } from './ReceiveSessionPage.js';
 import { type CountingLine, type CountingSkipReason, type CountingTask, type CountingFinding, type CountingFindingType } from './CountingSessionPage.js';
+import { type RecountPreviewBin } from './recountSelection.js';
+export { mapRecountPreviewBinsToCanvas, } from './recountSelection.js';
+export type { RecountBinCanvasSelection, RecountPreviewBin, } from './recountSelection.js';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
 /**
@@ -204,12 +207,7 @@ export type WmsModuleFT2Props = {
     onRecountUpgrade?: () => void;
     /** Count execution — operator-facing tasks only. */
     recountTasks?: CountingTask[];
-    onFetchCountingPreview: () => Promise<Array<{
-        location_code: string;
-        reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
-        variant_count: number;
-        units: number;
-    }>>;
+    onFetchCountingPreview: () => Promise<RecountPreviewBin[]>;
     onFetchCountingAssignees: () => Promise<Array<{
         user_id: number;
         first_name: string | null;
@@ -217,8 +215,9 @@ export type WmsModuleFT2Props = {
         role: string;
     }>>;
     onCreateCountingTask: (input: {
-        scope: 'location' | 'suggested';
+        scope: 'location' | 'locations' | 'suggested';
         location_code?: string;
+        location_codes?: string[];
         assigned_to?: number | null;
         notes?: string;
     }) => Promise<void>;

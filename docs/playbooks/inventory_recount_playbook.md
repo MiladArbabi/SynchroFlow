@@ -138,6 +138,10 @@ Current terminology:
 - Single-bin action: `Check this bin`
 - Suggested-scope action: `Check suggested bins`
 
+  Updated in `RECOUNT-CTA-33b`: the suggested-scope action is now `Select all
+  suggested bins`, and bin selection is multi-select rather than single-bin —
+  see below.
+
 ### Entry-point UX contract
 
 - `Reconcile inventory` is a distinct Tier-1 action in the Warehouse page header.
@@ -168,6 +172,48 @@ Live browser verification confirmed:
 - Frontend TypeScript remained at the pre-existing 19-error baseline with zero errors in the touched WMS surfaces.
 
 The broader Operations-page consolidation is tracked separately as `WMS-OPS-QUEUE-125`. Recount-session compression and scan-derived quantity display are tracked separately as `RECOUNT-SESSION-UX-124`.
+
+## Multi-location recount selection — RECOUNT-CTA-33b
+
+`RECOUNT-CTA-33b` extends the `RECOUNT-CTA-33a` Reconcile-inventory dialog with independent multi-bin selection on the canonical warehouse/isometric canvas, replacing single-bin-only selection.
+
+### Selection UX
+
+- The dialog renders suggested recount bins on the same `IsometricCanvas` used elsewhere in Warehouse; see `overview-live-map-playbook.md` §6.13 for the underlying `onZoneClick` contract.
+- Clicking a suggested bin toggles that bin independently. Any number of bins may be selected at once and stay highlighted; clicking a selected bin again deselects it.
+- `Select all suggested bins` (renamed from `Check suggested bins`) selects every suggested bin. It is selection-only — it does not create a recount task and does not close the dialog.
+- Creation remains a separate, explicit action: `Create count · N bin(s)`.
+
+### Backend contract
+
+`POST /api/v1/wms/recount-tasks` with:
+
+```text
+scope: "locations"
+location_codes: string[]
+```
+
+- `location_codes` must be non-empty.
+- Every entry must be a non-empty string.
+- Duplicate entries are rejected.
+- Empty, blank, and duplicate `location_codes` are all rejected with `400` and write zero rows (no task, no lines) — proven in `tests/integration/wms/recount-multi-location.test.ts`.
+- On success, exactly one recount task is created, and only the explicitly selected `location_codes` become recount lines.
+
+`recount_task_scope` (migration `20260826130000_0162_add_locations_recount_scope.ts`) adds the `locations` value alongside the existing `full`, `location`, `variant_set`, `suggested` scopes. Rollback is intentionally a no-op — PostgreSQL cannot safely drop an enum value in place.
+
+### UI architecture
+
+- Pure selection/canvas-mapping helpers live in `modules/wms/src/ui/pages/recountSelection.ts`, kept separate from the presentational WMS module.
+- API ownership (issuing the create-count request) stays in `WmsOperationsPage`, not the WMS module.
+
+### Verification
+
+- Backend focused integration: `tests/integration/wms/recount-multi-location.test.ts` — 1 suite / 4 tests, run against a disposable `synchroflow_test_*` database.
+- Frontend focused: `wms-recount-bin-selection.test.ts`, `wms-recount-bin-canvas.test.ts` — 2 suites / 4 tests.
+- Live browser, light and dark mode: multi-select, independent deselect, select-all (selection-only, dialog stays open), explicit create, CTA copy.
+- Selected-label contrast on a coloured/risk overlay and dark-mode bin visibility were live-browser verified — see `overview-live-map-playbook.md` §6.14. Not covered by an automated visual-regression check.
+
+A follow-up, `WMS-CTA-CONSISTENCY-34`, will separately audit whether WMS CTAs use the canonical `var(--accent)`/`var(--accent-ink)` Tier-1 tokens and whether the blue ghost "Count" controls are correctly classified. Not addressed here.
 
 ## Warehouse counting session — bin-batched execution
 

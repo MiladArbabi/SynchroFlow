@@ -7,6 +7,7 @@
     "build": "rm -f tsconfig.tsbuildinfo && rm -rf dist && tsc -b tsconfig.json"
   },
   "dependencies": {
+    "@lasyncro/shared": "1.0.0",
     "@lasyncro/ui-ft2": "0.1.0"
   },
   "exports": {

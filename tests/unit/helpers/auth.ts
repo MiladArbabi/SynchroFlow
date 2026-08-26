@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 export function issueTestToken(input: {
   userId: number;
   shopId: number;
+  tier?: 'starter' | 'core' | 'growth' | 'scale';
 }) {
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) {
@@ -17,6 +18,7 @@ export function issueTestToken(input: {
       user_id: input.userId,
       shop_id: input.shopId,
       shop_roles: ['owner'],
+      tier: input.tier,
       scopes: [],
       session_id: 'test-session',
       token_version: 1,

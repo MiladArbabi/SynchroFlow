@@ -36,7 +36,21 @@ import CountingSessionPage, {
   type CountingFinding,
   type CountingFindingType,
 } from './CountingSessionPage.js';
-import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import {
+  mapRecountPreviewBinsToCanvas,
+  selectAllRecountBins,
+  toggleRecountBinSelection,
+  type RecountPreviewBin,
+} from './recountSelection.js';
+
+export {
+  mapRecountPreviewBinsToCanvas,
+} from './recountSelection.js';
+export type {
+  RecountBinCanvasSelection,
+  RecountPreviewBin,
+} from './recountSelection.js';
 import type { WarehouseLocation } from '@lasyncro/shared/ui';
 import ReturnSessionPage, { AddReturnLineInput, CompleteReturnJobInput, ReturnJobDetail, UpdateReturnLineInput } from './ReturnSessionPage.js';
 import { WorkTally, isAllClear, type WorkTallyCounts } from '../components/WorkTally.js';
@@ -105,6 +119,7 @@ export type WmsStowConfirmResult = {
   quantity_total: number;
   placed_now: number;
 };
+
 
 export type WmsModuleFT2Props = {
   data: WmsData;
@@ -227,12 +242,7 @@ export type WmsModuleFT2Props = {
 
   /** Count execution — operator-facing tasks only. */
   recountTasks?: CountingTask[];
-  onFetchCountingPreview: () => Promise<Array<{
-    location_code: string;
-    reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
-    variant_count: number;
-    units: number;
-  }>>;
+  onFetchCountingPreview: () => Promise<RecountPreviewBin[]>;
   onFetchCountingAssignees: () => Promise<Array<{
     user_id: number;
     first_name: string | null;
@@ -240,8 +250,9 @@ export type WmsModuleFT2Props = {
     role: string;
   }>>;
   onCreateCountingTask: (input: {
-    scope: 'location' | 'suggested';
+    scope: 'location' | 'locations' | 'suggested';
     location_code?: string;
+    location_codes?: string[];
     assigned_to?: number | null;
     notes?: string;
   }) => Promise<void>;
@@ -834,19 +845,14 @@ function WmsModuleFT2Inner({
   const [countDialogOpen, setCountDialogOpen] = useState(false);
   const [countDialogLoading, setCountDialogLoading] = useState(false);
   const [countDialogError, setCountDialogError] = useState<string | null>(null);
-  const [countPreviewBins, setCountPreviewBins] = useState<Array<{
-    location_code: string;
-    reason: 'negative_on_hand' | 'unlocated_sale' | 'dormant';
-    variant_count: number;
-    units: number;
-  }>>([]);
+  const [countPreviewBins, setCountPreviewBins] = useState<RecountPreviewBin[]>([]);
   const [countAssignees, setCountAssignees] = useState<Array<{
     user_id: number;
     first_name: string | null;
     last_name: string | null;
     role: string;
   }>>([]);
-  const [selectedCountBin, setSelectedCountBin] = useState<string | null>(null);
+  const [selectedCountBins, setSelectedCountBins] = useState<string[]>([]);
   const [countAssignedTo, setCountAssignedTo] = useState<number | ''>('');
   const [countNotes, setCountNotes] = useState('');
   const [countCreating, setCountCreating] = useState(false);
@@ -855,7 +861,7 @@ function WmsModuleFT2Inner({
     setCountDialogOpen(true);
     setCountDialogLoading(true);
     setCountDialogError(null);
-    setSelectedCountBin(null);
+    setSelectedCountBins([]);
     setCountAssignedTo('');
     setCountNotes('');
 
@@ -875,18 +881,26 @@ function WmsModuleFT2Inner({
     }
   };
 
-  const createCount = async (scope: 'location' | 'suggested') => {
-    if (scope === 'location' && !selectedCountBin) return;
+  const toggleCountBin = (locationCode: string) => {
+    setSelectedCountBins((current) =>
+      toggleRecountBinSelection(current, locationCode)
+    );
+  };
+
+  const selectAllSuggestedCountBins = () => {
+    setSelectedCountBins(selectAllRecountBins(countPreviewBins));
+  };
+
+  const createCount = async () => {
+    if (selectedCountBins.length === 0) return;
 
     setCountCreating(true);
     setCountDialogError(null);
 
     try {
       await onCreateCountingTask({
-        scope,
-        ...(scope === 'location'
-          ? { location_code: selectedCountBin ?? undefined }
-          : {}),
+        scope: 'locations',
+        location_codes: selectedCountBins,
         assigned_to: countAssignedTo === '' ? null : countAssignedTo,
         ...(countNotes.trim() ? { notes: countNotes.trim() } : {}),
       });
@@ -899,6 +913,14 @@ function WmsModuleFT2Inner({
       setCountCreating(false);
     }
   };
+
+  const countBinCanvasSelection = mapRecountPreviewBinsToCanvas(
+    gridLocations,
+    countPreviewBins
+  );
+  const selectedCanvasBins = selectedCountBins.filter((locationCode) =>
+    countBinCanvasSelection.selectableCodes.has(locationCode)
+  );
 
   // Auto-enter receive session if handed off from Suppliers portal via URL param
   const [activeSession, setActiveSession] = useState<ActiveSession>(
@@ -1286,55 +1308,96 @@ function WmsModuleFT2Inner({
                   No suggested bins right now.
                 </Alert>
               ) : (
-                <Box sx={{ display: 'grid', gap: 0.75, mb: 2.5 }}>
-                  {countPreviewBins.map((bin) => {
-                    const selected = selectedCountBin === bin.location_code;
-
-                    return (
-                      <Box
-                        key={bin.location_code}
-                        component="button"
-                        type="button"
-                        onClick={() => setSelectedCountBin(bin.location_code)}
-                        sx={{
-                          width: '100%',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 2,
-                          px: 1.5,
-                          py: 1.25,
-                          borderRadius: '10px',
-                          border: selected
-                            ? '1px solid var(--ink)'
-                            : '1px solid var(--rule)',
-                          bgcolor: selected
-                            ? 'rgba(255,255,255,0.05)'
-                            : 'transparent',
-                          color: 'var(--ink)',
-                          font: 'inherit',
-                          textAlign: 'left',
-                          cursor: 'pointer',
+                <>
+                  {countBinCanvasSelection.canvasZones.length > 0 && (
+                    <Box
+                      sx={{
+                        height: 260,
+                        border: '1px solid var(--rule)',
+                        borderRadius: '8px',
+                        bgcolor: 'var(--bg-2)',
+                        overflow: 'hidden',
+                        mb: countBinCanvasSelection.fallbackBins.length > 0 ? 1.5 : 2.5,
+                      }}
+                    >
+                      <IsometricCanvas
+                        zones={countBinCanvasSelection.canvasZones}
+                        onZoneClick={(locationCode) => {
+                          if (
+                            countBinCanvasSelection.selectableCodes.has(locationCode)
+                          ) {
+                            toggleCountBin(locationCode);
+                          }
                         }}
-                      >
-                        <Box>
-                          <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
-                            {bin.location_code}
-                          </Typography>
-                          <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                            {bin.variant_count} variant{bin.variant_count === 1 ? '' : 's'}
-                            {' · '}
-                            {bin.reason.replace(/_/g, ' ')}
-                          </Typography>
-                        </Box>
+                        focusedBins={
+                          selectedCanvasBins.length > 0
+                            ? selectedCanvasBins
+                            : undefined
+                        }
+                        focusTone="risk"
+                        focusDimOpacity={0.58}
+                        showLegend={false}
+                        showControls={false}
+                        disablePan
+                        autoFit
+                        fitPhysicalFloorFirst
+                        fitPadding={0.82}
+                      />
+                    </Box>
+                  )}
 
-                        <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                          {bin.units} units
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                </Box>
+                  {countBinCanvasSelection.fallbackBins.length > 0 && (
+                    <Box sx={{ display: 'grid', gap: 0.75, mb: 2.5 }}>
+                      {countBinCanvasSelection.fallbackBins.map((bin) => {
+                        const selected = selectedCountBins.includes(bin.location_code);
+
+                        return (
+                          <Box
+                            key={bin.location_code}
+                            component="button"
+                            type="button"
+                            onClick={() => toggleCountBin(bin.location_code)}
+                            sx={{
+                              width: '100%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'space-between',
+                              gap: 2,
+                              px: 1.5,
+                              py: 1.25,
+                              borderRadius: '10px',
+                              border: selected
+                                ? '2px solid var(--accent)'
+                                : '1px solid var(--rule)',
+                              bgcolor: selected
+                                ? 'var(--bg-3)'
+                                : 'var(--bg-2)',
+                              color: 'var(--ink)',
+                              font: 'inherit',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            <Box>
+                              <Typography sx={{ fontSize: 14, fontWeight: 600 }}>
+                                {bin.location_code}
+                              </Typography>
+                              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                                {bin.variant_count} variant{bin.variant_count === 1 ? '' : 's'}
+                                {' · '}
+                                {bin.reason.replace(/_/g, ' ')}
+                              </Typography>
+                            </Box>
+
+                            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                              {bin.units} units
+                            </Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  )}
+                </>
               )}
 
               <TextField
@@ -1387,37 +1450,34 @@ function WmsModuleFT2Inner({
           </Button>
 
           <Button
-            variant="contained"
-            onClick={() => {
-              void createCount('location');
-            }}
-            disabled={
-              countDialogLoading ||
-              countCreating ||
-              !selectedCountBin
-            }
-            sx={{
-              bgcolor: 'var(--accent)',
-              color: 'var(--accent-ink)',
-              borderRadius: '6px',
-              fontWeight: 600,
-              '&:hover': { bgcolor: 'var(--accent-hover)' },
-            }}
-          >
-            Check this bin
-          </Button>
-
-          <Button
-            variant="contained"
-            onClick={() => {
-              void createCount('suggested');
-            }}
+            variant="outlined"
+            onClick={selectAllSuggestedCountBins}
             disabled={
               countDialogLoading ||
               countCreating ||
               countPreviewBins.length === 0
             }
             sx={{
+              borderColor: 'var(--rule)',
+              color: 'var(--ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+            }}
+          >
+            Select all suggested bins
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => {
+              void createCount();
+            }}
+            disabled={
+              countDialogLoading ||
+              countCreating ||
+              selectedCountBins.length === 0
+            }
+            sx={{
               bgcolor: 'var(--accent)',
               color: 'var(--accent-ink)',
               borderRadius: '6px',
@@ -1425,7 +1485,9 @@ function WmsModuleFT2Inner({
               '&:hover': { bgcolor: 'var(--accent-hover)' },
             }}
           >
-            Check suggested bins
+            {`Create count · ${selectedCountBins.length} ${
+              selectedCountBins.length === 1 ? 'bin' : 'bins'
+            }`}
           </Button>
         </DialogActions>
       </Dialog>

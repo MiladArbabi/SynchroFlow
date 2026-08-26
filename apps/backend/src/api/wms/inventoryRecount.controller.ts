@@ -90,6 +90,7 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
     scope,
     assigned_to,
     location_code,
+    location_codes,
     variant_ids,
     blind,
     notes,
@@ -108,10 +109,10 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'warehouse_id must be a string' });
   }
 
-  const scopes = ['full', 'location', 'variant_set', 'suggested'];
+  const scopes = ['full', 'location', 'locations', 'variant_set', 'suggested'];
   if (!scopes.includes(scope)) {
     return res.status(400).json({
-      error: 'scope must be full, location, variant_set, or suggested',
+      error: 'scope must be full, location, locations, variant_set, or suggested',
     });
   }
 
@@ -119,6 +120,34 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
     return res.status(400).json({
       error: 'location_code is required when scope=location',
     });
+  }
+
+  let normalizedLocationCodes: string[] | undefined;
+
+  if (scope === 'locations') {
+    if (!Array.isArray(location_codes) || location_codes.length === 0) {
+      return res.status(400).json({
+        error: 'location_codes must be a non-empty array when scope=locations',
+      });
+    }
+
+    if (
+      !location_codes.every(
+        (code: unknown) => typeof code === 'string' && code.trim().length > 0
+      )
+    ) {
+      return res.status(400).json({
+        error: 'location_codes must contain only non-empty strings when scope=locations',
+      });
+    }
+
+    normalizedLocationCodes = location_codes.map((code: string) => code.trim());
+
+    if (new Set(normalizedLocationCodes).size !== normalizedLocationCodes.length) {
+      return res.status(400).json({
+        error: 'location_codes must contain unique values when scope=locations',
+      });
+    }
   }
 
   if (
@@ -160,6 +189,7 @@ export const httpCreateRecountTask = async (req: Request, res: Response) => {
         createdBy: userId,
         assignedTo: assigned_to ?? null,
         locationCode: location_code,
+        locationCodes: normalizedLocationCodes,
         variantIds: variant_ids,
         notes,
       });

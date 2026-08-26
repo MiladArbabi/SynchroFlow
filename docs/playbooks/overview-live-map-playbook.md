@@ -584,6 +584,50 @@ Bay proportions: 40% of the wall-facing extent, 35% deep.
 (centre 10, 2.75) resolves north. Both render as berths; all other zones
 unchanged.
 
+### 6.13 Multi-select consumers — `onZoneClick` (RECOUNT-CTA-33b)
+
+`onSelect(locationCode | null)` is single-selection state: it toggles one code
+and emits `null` when the current selection is cleared. A consumer that needs
+independent multi-selection cannot reuse that toggle-to-null semantic without
+changing it for every other consumer.
+
+**Additive.** `onZoneClick?: (locationCode: string) => void` fires on every
+physical-zone click, alongside the existing `onSelect` callback — it does not
+replace or alter `onSelect`. Every existing single-select consumer, and
+`onSelect`'s own toggle/`null` behaviour, is unchanged.
+
+First consumer: the WMS Reconcile-inventory dialog (`WmsModuleFT2`), which
+owns its own multi-select list independently of the canvas's internal
+single-selection state, and drives `focusedBins`/`focusTone="risk"` from that
+list.
+
+**Verified.** Independent per-bin toggle, multi-bin highlight, and deselect —
+live-browser verified in the Reconcile-inventory dialog canvas.
+
+### 6.14 Selected-label and dark-mode zone contrast (RECOUNT-CTA-33b)
+
+Two contrast defects in `IsometricBox`, both live-browser verified in light
+and dark mode — not covered by an automated visual-regression check:
+
+- **Selected label on a coloured overlay.** The top-face label used
+  `var(--accent)` unconditionally when selected. `focusTone="risk"` (and the
+  occupancy heatmap's `fillOverride`) paint a saturated red/orange top face,
+  and `--accent` is also orange, so a selected label on that fill lost
+  contrast. The label now falls back to `var(--bg)` — the token this file
+  already uses for text on saturated fills (the Problem Center badge, the
+  edge-label plate) — whenever a colour overlay is active; the unselected /
+  base-fill case is unchanged.
+- **Dark-mode `--zone-storage`.** Every physical-zone base fill resolves to
+  the single `--zone-storage` RGB token regardless of `colorKey`
+  (`ZONE_COLORS`/`ZONE_STROKE`), and unlike every other `--zone-*` token it
+  was identical between light and dark schemes. Its value (`36,48,80`) sits
+  within 5 points of lightness of dark-mode `--bg-2` (`28,39,64`) at the same
+  hue/saturation, so unselected and dimmed bins were nearly indistinguishable
+  from the dark canvas. Corrected the dark-scheme value only, same
+  hue/saturation family, lifted lightness — no new colour system, no change
+  to the light-mode value or any other `--zone-*` token (those stay
+  mode-invariant on purpose, same rule as `--accent`).
+
 ## 7. Pulse card — merged layout
 
 The right card absorbs both decisions and stats without becoming a junk drawer. Rules:

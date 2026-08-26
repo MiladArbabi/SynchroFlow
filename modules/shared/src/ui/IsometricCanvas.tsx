@@ -243,6 +243,8 @@ interface BoxProps {
   dockBay?: DockBay | null;
   isFrame: boolean;
   isDimmed?: boolean;
+  /** Opt-in opacity for focus/filter dimming. Defaults to the historic 0.25. */
+  dimmedOpacity?: number;
   /**
    * FP-214: warehouse_locations.active = false. Distinct from isDimmed —
    * isDimmed is transient view state (filter rail, focus overlay) and clears
@@ -266,6 +268,7 @@ function IsometricBox({
   isHoverDimmed,
   isFrame,
   isDimmed,
+  dimmedOpacity,
   isInactive,
   label,
   rackLevels,
@@ -305,6 +308,12 @@ function IsometricBox({
 
   // Apply the active overlay colour to the complete bin.
   const fill = focusFill ?? fillOverride ?? baseFill;
+  // RECOUNT-CTA-33b: focusFill/fillOverride paint a saturated red/orange top
+  // face (e.g. focusTone="risk"). var(--accent) is also orange, so a selected
+  // label loses contrast on that fill — var(--bg) is the existing high-contrast
+  // text-on-saturated-fill token already used elsewhere in this file (see the
+  // problem-count badge and EdgeLabelPlate below).
+  const hasColoredOverlay = focusFill != null || fillOverride != null;
 
   // Per-level fill cycles dark → light → default every three levels.
   const LEVEL_ALPHA_FACTORS = [0.85, 0.55, 1.0];
@@ -376,7 +385,7 @@ function IsometricBox({
       style={{ cursor: 'pointer' }}
       opacity={
         isDimmed
-          ? 0.25
+          ? (dimmedOpacity ?? 0.25)
           : isInactive
             ? 0.4
             : isHoverDimmed
@@ -435,7 +444,7 @@ function IsometricBox({
             textAnchor="middle" dominantBaseline="middle"
             fontSize={fontSize}
             fontFamily="monospace" fontWeight={isSelected ? 700 : 600}
-            fill={isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)'}
+            fill={isSelected ? (hasColoredOverlay ? 'var(--bg)' : 'var(--accent)') : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)'}
             style={{ pointerEvents: 'none', userSelect: 'none' }}>
             {label}
           </text>
@@ -511,6 +520,8 @@ function IsometricBox({
 export interface IsometricCanvasProps {
   zones: WarehouseZone[];
   onSelect?: (locationCode: string | null) => void;
+  /** Fires for every physical-zone click without changing onSelect toggle semantics. */
+  onZoneClick?: (locationCode: string) => void;
   filteredCodes?: Set<string>;
   highlightZoneTypes?: Set<string>;
   /**
@@ -530,6 +541,8 @@ export interface IsometricCanvasProps {
   focusedBins?: string[];
   /** Semantic colour applied to bins contained in focusedBins. */
   focusTone?: FocusTone;
+  /** Opt-in contrast for non-focused bins; default preserves existing rendering. */
+  focusDimOpacity?: number;
   occupancy?: Record<string, { on_hand_quantity: number }>;
   showFloor?: boolean;
   showBins?: boolean;
@@ -653,7 +666,8 @@ export interface IsometricCanvasProps {
 }
 export function IsometricCanvas({ 
     zones, 
-    onSelect, 
+    onSelect,
+    onZoneClick,
     filteredCodes, 
     highlightZoneTypes,
     enableHoverFocus = false,
@@ -661,6 +675,7 @@ export function IsometricCanvas({
     stationPulseById,
     focusedBins,
     focusTone,
+    focusDimOpacity = 0.25,
     occupancy,
     showFloor = true, 
     showBins = true, 
@@ -1034,6 +1049,7 @@ export function IsometricCanvas({
   });
 
   function handleSelect(code: string) {
+    onZoneClick?.(code);
     const next = selected === code ? null : code;
     setSelected(next);
     onSelect?.(next);
@@ -1329,6 +1345,7 @@ export function IsometricCanvas({
                         !focusedBins.includes(zone.location_code))
                     )
                   }
+                  dimmedOpacity={focusDimOpacity}
                   focusTone={
                     !isFrame &&
                     zone.type === 'bin' &&

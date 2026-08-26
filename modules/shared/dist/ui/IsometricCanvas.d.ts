@@ -16,6 +16,8 @@ type FocusTone = 'empty' | 'risk';
 export interface IsometricCanvasProps {
     zones: WarehouseZone[];
     onSelect?: (locationCode: string | null) => void;
+    /** Fires for every physical-zone click without changing onSelect toggle semantics. */
+    onZoneClick?: (locationCode: string) => void;
     filteredCodes?: Set<string>;
     highlightZoneTypes?: Set<string>;
     /**
@@ -35,6 +37,8 @@ export interface IsometricCanvasProps {
     focusedBins?: string[];
     /** Semantic colour applied to bins contained in focusedBins. */
     focusTone?: FocusTone;
+    /** Opt-in contrast for non-focused bins; default preserves existing rendering. */
+    focusDimOpacity?: number;
     occupancy?: Record<string, {
         on_hand_quantity: number;
     }>;
@@ -162,7 +166,7 @@ export interface IsometricCanvasProps {
      */
     onRefresh?: () => void;
 }
-export declare function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, enableHoverFocus, locationPulseByCode, stationPulseById, focusedBins, focusTone, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, fitPhysicalFloorFirst, apronReserveRatio, showLegend, showControls, showWarehouseContext, onWarehouseContextClick, disablePan, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
+export declare function IsometricCanvas({ zones, onSelect, onZoneClick, filteredCodes, highlightZoneTypes, enableHoverFocus, locationPulseByCode, stationPulseById, focusedBins, focusTone, focusDimOpacity, occupancy, showFloor, showBins, initialZoom, initialOffset, autoFit, fitPadding, fitPhysicalFloorFirst, apronReserveRatio, showLegend, showControls, showWarehouseContext, onWarehouseContextClick, disablePan, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }: IsometricCanvasProps): import("react").JSX.Element;
 export declare function IsometricZoneView({ zone, width, height }: IsometricZoneViewProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=IsometricCanvas.d.ts.map

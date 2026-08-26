@@ -8,7 +8,9 @@ import PackSessionPage from './PackSessionPage.js';
 import ReceiveSessionPage from './ReceiveSessionPage.js';
 import StowSessionPage from './StowSessionPage.js';
 import CountingSessionPage from './CountingSessionPage.js';
-import { ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
+import { mapRecountPreviewBinsToCanvas, selectAllRecountBins, toggleRecountBinSelection, } from './recountSelection.js';
+export { mapRecountPreviewBinsToCanvas, } from './recountSelection.js';
 import ReturnSessionPage from './ReturnSessionPage.js';
 import { WorkTally, isAllClear } from '../components/WorkTally.js';
 const STATUS_LABELS = {
@@ -196,7 +198,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     const [countDialogError, setCountDialogError] = useState(null);
     const [countPreviewBins, setCountPreviewBins] = useState([]);
     const [countAssignees, setCountAssignees] = useState([]);
-    const [selectedCountBin, setSelectedCountBin] = useState(null);
+    const [selectedCountBins, setSelectedCountBins] = useState([]);
     const [countAssignedTo, setCountAssignedTo] = useState('');
     const [countNotes, setCountNotes] = useState('');
     const [countCreating, setCountCreating] = useState(false);
@@ -204,7 +206,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
         setCountDialogOpen(true);
         setCountDialogLoading(true);
         setCountDialogError(null);
-        setSelectedCountBin(null);
+        setSelectedCountBins([]);
         setCountAssignedTo('');
         setCountNotes('');
         try {
@@ -222,17 +224,21 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
             setCountDialogLoading(false);
         }
     };
-    const createCount = async (scope) => {
-        if (scope === 'location' && !selectedCountBin)
+    const toggleCountBin = (locationCode) => {
+        setSelectedCountBins((current) => toggleRecountBinSelection(current, locationCode));
+    };
+    const selectAllSuggestedCountBins = () => {
+        setSelectedCountBins(selectAllRecountBins(countPreviewBins));
+    };
+    const createCount = async () => {
+        if (selectedCountBins.length === 0)
             return;
         setCountCreating(true);
         setCountDialogError(null);
         try {
             await onCreateCountingTask({
-                scope,
-                ...(scope === 'location'
-                    ? { location_code: selectedCountBin ?? undefined }
-                    : {}),
+                scope: 'locations',
+                location_codes: selectedCountBins,
                 assigned_to: countAssignedTo === '' ? null : countAssignedTo,
                 ...(countNotes.trim() ? { notes: countNotes.trim() } : {}),
             });
@@ -245,6 +251,8 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
             setCountCreating(false);
         }
     };
+    const countBinCanvasSelection = mapRecountPreviewBinsToCanvas(gridLocations, countPreviewBins);
+    const selectedCanvasBins = selectedCountBins.filter((locationCode) => countBinCanvasSelection.selectableCodes.has(locationCode));
     // Auto-enter receive session if handed off from Suppliers portal via URL param
     const [activeSession, setActiveSession] = useState(pendingReceiveSession
         ? { type: 'receive', ...pendingReceiveSession }
@@ -435,56 +443,66 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                     }, children: [_jsx(ArrowUp, { size: 8, color: "var(--accent)", strokeWidth: 2.5 }), _jsx(Typography, { sx: { fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }, children: "Core" })] }))] }) })] }), _jsx(WorkTally, { counts: workCounts, countingLocked: recountLocked }), _jsxs(Dialog, { open: countDialogOpen, onClose: () => {
                     if (!countCreating)
                         setCountDialogOpen(false);
-                }, fullWidth: true, maxWidth: "sm", children: [_jsx(DialogTitle, { children: "Reconcile inventory" }), _jsxs(DialogContent, { dividers: true, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: "Count what\u2019s physically in your warehouse and compare it with system stock." }), countDialogLoading && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', py: 4 }, children: _jsx(CircularProgress, { size: 24 }) })), countDialogError && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: countDialogError })), !countDialogLoading && (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }, children: "Suggested bins" }), countPreviewBins.length === 0 ? (_jsx(Alert, { severity: "info", sx: { mb: 2 }, children: "No suggested bins right now." })) : (_jsx(Box, { sx: { display: 'grid', gap: 0.75, mb: 2.5 }, children: countPreviewBins.map((bin) => {
-                                            const selected = selectedCountBin === bin.location_code;
-                                            return (_jsxs(Box, { component: "button", type: "button", onClick: () => setSelectedCountBin(bin.location_code), sx: {
-                                                    width: '100%',
-                                                    display: 'flex',
-                                                    alignItems: 'center',
-                                                    justifyContent: 'space-between',
-                                                    gap: 2,
-                                                    px: 1.5,
-                                                    py: 1.25,
-                                                    borderRadius: '10px',
-                                                    border: selected
-                                                        ? '1px solid var(--ink)'
-                                                        : '1px solid var(--rule)',
-                                                    bgcolor: selected
-                                                        ? 'rgba(255,255,255,0.05)'
-                                                        : 'transparent',
-                                                    color: 'var(--ink)',
-                                                    font: 'inherit',
-                                                    textAlign: 'left',
-                                                    cursor: 'pointer',
-                                                }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 600 }, children: bin.location_code }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.variant_count, " variant", bin.variant_count === 1 ? '' : 's', ' · ', bin.reason.replace(/_/g, ' ')] })] }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.units, " units"] })] }, bin.location_code));
-                                        }) })), _jsxs(TextField, { select: true, fullWidth: true, size: "small", label: "Assign to", value: countAssignedTo, onChange: (event) => {
+                }, fullWidth: true, maxWidth: "sm", children: [_jsx(DialogTitle, { children: "Reconcile inventory" }), _jsxs(DialogContent, { dividers: true, children: [_jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: "Count what\u2019s physically in your warehouse and compare it with system stock." }), countDialogLoading && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', py: 4 }, children: _jsx(CircularProgress, { size: 24 }) })), countDialogError && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: countDialogError })), !countDialogLoading && (_jsxs(_Fragment, { children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }, children: "Suggested bins" }), countPreviewBins.length === 0 ? (_jsx(Alert, { severity: "info", sx: { mb: 2 }, children: "No suggested bins right now." })) : (_jsxs(_Fragment, { children: [countBinCanvasSelection.canvasZones.length > 0 && (_jsx(Box, { sx: {
+                                                    height: 260,
+                                                    border: '1px solid var(--rule)',
+                                                    borderRadius: '8px',
+                                                    bgcolor: 'var(--bg-2)',
+                                                    overflow: 'hidden',
+                                                    mb: countBinCanvasSelection.fallbackBins.length > 0 ? 1.5 : 2.5,
+                                                }, children: _jsx(IsometricCanvas, { zones: countBinCanvasSelection.canvasZones, onZoneClick: (locationCode) => {
+                                                        if (countBinCanvasSelection.selectableCodes.has(locationCode)) {
+                                                            toggleCountBin(locationCode);
+                                                        }
+                                                    }, focusedBins: selectedCanvasBins.length > 0
+                                                        ? selectedCanvasBins
+                                                        : undefined, focusTone: "risk", focusDimOpacity: 0.58, showLegend: false, showControls: false, disablePan: true, autoFit: true, fitPhysicalFloorFirst: true, fitPadding: 0.82 }) })), countBinCanvasSelection.fallbackBins.length > 0 && (_jsx(Box, { sx: { display: 'grid', gap: 0.75, mb: 2.5 }, children: countBinCanvasSelection.fallbackBins.map((bin) => {
+                                                    const selected = selectedCountBins.includes(bin.location_code);
+                                                    return (_jsxs(Box, { component: "button", type: "button", onClick: () => toggleCountBin(bin.location_code), sx: {
+                                                            width: '100%',
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            justifyContent: 'space-between',
+                                                            gap: 2,
+                                                            px: 1.5,
+                                                            py: 1.25,
+                                                            borderRadius: '10px',
+                                                            border: selected
+                                                                ? '2px solid var(--accent)'
+                                                                : '1px solid var(--rule)',
+                                                            bgcolor: selected
+                                                                ? 'var(--bg-3)'
+                                                                : 'var(--bg-2)',
+                                                            color: 'var(--ink)',
+                                                            font: 'inherit',
+                                                            textAlign: 'left',
+                                                            cursor: 'pointer',
+                                                        }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 600 }, children: bin.location_code }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.variant_count, " variant", bin.variant_count === 1 ? '' : 's', ' · ', bin.reason.replace(/_/g, ' ')] })] }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [bin.units, " units"] })] }, bin.location_code));
+                                                }) }))] })), _jsxs(TextField, { select: true, fullWidth: true, size: "small", label: "Assign to", value: countAssignedTo, onChange: (event) => {
                                             const value = event.target.value;
                                             setCountAssignedTo(value === '' ? '' : Number(value));
                                         }, sx: { mb: 2 }, children: [_jsx(MenuItem, { value: "", children: "Anyone can claim" }), countAssignees.map((operator) => {
                                                 const name = `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
                                                     `Operator ${operator.user_id}`;
                                                 return (_jsxs(MenuItem, { value: operator.user_id, children: [name, " \u00B7 ", operator.role] }, operator.user_id));
-                                            })] }), _jsx(TextField, { fullWidth: true, size: "small", label: "Notes", placeholder: "Optional note", multiline: true, minRows: 2, value: countNotes, onChange: (event) => setCountNotes(event.target.value) })] }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => setCountDialogOpen(false), disabled: countCreating, sx: { color: 'var(--accent)' }, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => {
-                                    void createCount('location');
-                                }, disabled: countDialogLoading ||
-                                    countCreating ||
-                                    !selectedCountBin, sx: {
-                                    bgcolor: 'var(--accent)',
-                                    color: 'var(--accent-ink)',
-                                    borderRadius: '6px',
-                                    fontWeight: 600,
-                                    '&:hover': { bgcolor: 'var(--accent-hover)' },
-                                }, children: "Check this bin" }), _jsx(Button, { variant: "contained", onClick: () => {
-                                    void createCount('suggested');
-                                }, disabled: countDialogLoading ||
+                                            })] }), _jsx(TextField, { fullWidth: true, size: "small", label: "Notes", placeholder: "Optional note", multiline: true, minRows: 2, value: countNotes, onChange: (event) => setCountNotes(event.target.value) })] }))] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: () => setCountDialogOpen(false), disabled: countCreating, sx: { color: 'var(--accent)' }, children: "Cancel" }), _jsx(Button, { variant: "outlined", onClick: selectAllSuggestedCountBins, disabled: countDialogLoading ||
                                     countCreating ||
                                     countPreviewBins.length === 0, sx: {
+                                    borderColor: 'var(--rule)',
+                                    color: 'var(--ink)',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                }, children: "Select all suggested bins" }), _jsx(Button, { variant: "contained", onClick: () => {
+                                    void createCount();
+                                }, disabled: countDialogLoading ||
+                                    countCreating ||
+                                    selectedCountBins.length === 0, sx: {
                                     bgcolor: 'var(--accent)',
                                     color: 'var(--accent-ink)',
                                     borderRadius: '6px',
                                     fontWeight: 600,
                                     '&:hover': { bgcolor: 'var(--accent-hover)' },
-                                }, children: "Check suggested bins" })] })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }, children: [_jsx(Box, { sx: {
+                                }, children: `Create count · ${selectedCountBins.length} ${selectedCountBins.length === 1 ? 'bin' : 'bins'}` })] })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }, children: [_jsx(Box, { sx: {
                                     width: 32, height: 32, borderRadius: '8px',
                                     bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',

@@ -180,6 +180,13 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--rule':          '#E8E6E0',
           '--rule-2':        '#D1CFC8',
           '--space-azure':   '#1FA8FF',
+          // Every zone-* below is mode-invariant on purpose: --zone-storage is
+          // the one neutral "physical zone" base fill (ZONE_COLORS in
+          // IsometricCanvas.tsx maps every colorKey to this single RGB triple
+          // regardless of zone type), while the rest are vivid operational-
+          // state overlay colours that must read the same in both schemes,
+          // same rule as --accent. See the dark-mode block below for why
+          // --zone-storage alone gets a lightened dark-mode value.
           '--zone-lane':       '217,179,83',
           '--zone-shelf':      '217,179,83',
           '--zone-warehouse':  '217,179,83',
@@ -259,7 +266,13 @@ export default function ThemeCustomization({ children }: ThemeCustomizationProps
           '--zone-lane':       '217,179,83',
           '--zone-shelf':      '217,179,83',
           '--zone-warehouse':  '217,179,83',
-          '--zone-storage':    '36,48,80',
+          // RECOUNT-CTA-33b: light-mode value (36,48,80) is ~H221° S38% L23%,
+          // essentially the same hue/sat as --bg-2 dark (28,39,64, ~H221°
+          // S39% L18%) — only 5pt of lightness apart, which is why unselected/
+          // dimmed bins nearly disappeared into the dark canvas. Lightened to
+          // ~L48% at the same hue/sat so it stays visually the same "neutral
+          // navy" family while reading clearly against the dark background.
+          '--zone-storage':    '76,105,169',
           '--zone-pick':       '31,168,255',
           '--zone-pack':       '255,107,43',
           '--zone-receive':    '76,175,122',

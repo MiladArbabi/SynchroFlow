@@ -122,7 +122,7 @@ function EdgeLabelPlate({ label, start, end, zoom, }) {
 function pts(...coords) {
     return coords.map(c => `${c.sx.toFixed(1)},${c.sy.toFixed(1)}`).join(' ');
 }
-function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isHoverDimmed, isFrame, isDimmed, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone, isCritical, dockBay, }) {
+function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isHoverDimmed, isFrame, isDimmed, dimmedOpacity, isInactive, label, rackLevels, zoom, onClick, flipped, occupancyFraction, focusTone, isCritical, dockBay, }) {
     const baseFill = ZONE_COLORS[colorKey] ?? ZONE_COLORS.storage;
     const stroke = ZONE_STROKE[colorKey] ?? ZONE_STROKE.storage;
     const selStroke = 'var(--accent)';
@@ -148,6 +148,12 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isH
             : null;
     // Apply the active overlay colour to the complete bin.
     const fill = focusFill ?? fillOverride ?? baseFill;
+    // RECOUNT-CTA-33b: focusFill/fillOverride paint a saturated red/orange top
+    // face (e.g. focusTone="risk"). var(--accent) is also orange, so a selected
+    // label loses contrast on that fill — var(--bg) is the existing high-contrast
+    // text-on-saturated-fill token already used elsewhere in this file (see the
+    // problem-count badge and EdgeLabelPlate below).
+    const hasColoredOverlay = focusFill != null || fillOverride != null;
     // Per-level fill cycles dark → light → default every three levels.
     const LEVEL_ALPHA_FACTORS = [0.85, 0.55, 1.0];
     function levelFill(levelIndex) {
@@ -209,7 +215,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isH
     return (
     /* Group opacity keeps top, sides, labels, and strokes in one focus state. */
     _jsxs("g", { onClick: onClick, style: { cursor: 'pointer' }, opacity: isDimmed
-            ? 0.25
+            ? (dimmedOpacity ?? 0.25)
             : isInactive
                 ? 0.4
                 : isHoverDimmed
@@ -223,7 +229,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isH
                             : 1, strokeDasharray: isInactive ? '3 2' : undefined, opacity: isFlat ? 0.6 : 1 }), isCritical && (_jsx("polygon", { points: pts(...topFacePoints), fill: criticalStroke, fillOpacity: 0.10, stroke: criticalStroke, strokeWidth: 1.2, style: { pointerEvents: 'none' } })), isSelected && (_jsx("polygon", { points: pts(...topFacePoints), fill: "none", stroke: selStroke, strokeWidth: "2", strokeDasharray: "4 2", opacity: "0.8" })), (() => {
                 const centre = project(wx + ww / 2, wy + wd / 2, wh + 0.05, zoom, flipped);
                 const fontSize = Math.max(7, Math.min(10, TILE_W * zoom * ww * 0.12));
-                return (_jsx("text", { x: centre.sx, y: centre.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: fontSize, fontFamily: "monospace", fontWeight: isSelected ? 700 : 600, fill: isSelected ? 'var(--accent)' : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)', style: { pointerEvents: 'none', userSelect: 'none' }, children: label }));
+                return (_jsx("text", { x: centre.sx, y: centre.sy, textAnchor: "middle", dominantBaseline: "middle", fontSize: fontSize, fontFamily: "monospace", fontWeight: isSelected ? 700 : 600, fill: isSelected ? (hasColoredOverlay ? 'var(--bg)' : 'var(--accent)') : isFrame ? `rgba(${zoneRGBVar('lane')},0.9)` : 'var(--ink)', style: { pointerEvents: 'none', userSelect: 'none' }, children: label }));
             })(), !isFlat && Array.from({ length: renderedRackLevels }, (_, i) => {
                 const z0 = i * LEVEL_HEIGHT;
                 const z1 = (i + 1) * LEVEL_HEIGHT;
@@ -271,7 +277,7 @@ function IsometricBox({ wx, wy, ww, wd, wh, colorKey, isSelected, isHovered, isH
                 return (_jsx("g", { children: faces.map((f, fi) => (_jsx("polygon", { points: pts(...f.pts), fill: f.fill, stroke: faceStroke, strokeWidth: isCritical ? 0.8 : 0.4 }, fi))) }, i));
             })] }));
 }
-export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneTypes, enableHoverFocus = false, locationPulseByCode, stationPulseById, focusedBins, focusTone, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, fitPhysicalFloorFirst = false, apronReserveRatio = 0.22, showLegend = true, showControls = true, showWarehouseContext = false, onWarehouseContextClick, disablePan = false, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey = false, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
+export function IsometricCanvas({ zones, onSelect, onZoneClick, filteredCodes, highlightZoneTypes, enableHoverFocus = false, locationPulseByCode, stationPulseById, focusedBins, focusTone, focusDimOpacity = 0.25, occupancy, showFloor = true, showBins = true, initialZoom = 0.9, initialOffset = { x: 420, y: 120 }, autoFit = true, fitPadding = 0.68, fitPhysicalFloorFirst = false, apronReserveRatio = 0.22, showLegend = true, showControls = true, showWarehouseContext = false, onWarehouseContextClick, disablePan = false, stations, liveActivity, packQueueCount, stowPending, problemByLocation, problemTaskTotal, unlocatedProblemTaskTotal, showMarkerKey = false, stowPendingTotal, receiveAtDock, receiveAtDockTotal, onUnplacedZonesClick, overlay, summaryCounts, onRefresh, }) {
     const svgRef = useRef(null);
     const [zoom, setZoom] = useState(initialZoom);
     const [offset, setOffset] = useState(initialOffset);
@@ -591,6 +597,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
         return flipped ? db - da : da - db;
     });
     function handleSelect(code) {
+        onZoneClick?.(code);
         const next = selected === code ? null : code;
         setSelected(next);
         onSelect?.(next);
@@ -835,7 +842,7 @@ export function IsometricCanvas({ zones, onSelect, filteredCodes, highlightZoneT
                                             !highlightZoneTypes.has(zone.zone_type ?? '')) ||
                                             (focusedBins != null &&
                                                 zone.type === 'bin' &&
-                                                !focusedBins.includes(zone.location_code))), focusTone: !isFrame &&
+                                                !focusedBins.includes(zone.location_code))), dimmedOpacity: focusDimOpacity, focusTone: !isFrame &&
                                             zone.type === 'bin' &&
                                             focusedBins?.includes(zone.location_code)
                                             ? focusTone

@@ -245,10 +245,11 @@ export async function createRecountTask(
   params: {
     shopId: number;
     warehouseId?: string;
-    scope: 'full' | 'location' | 'variant_set' | 'suggested';
+    scope: 'full' | 'location' | 'locations' | 'variant_set' | 'suggested';
     createdBy: number;
     assignedTo?: number | null;
     locationCode?: string;
+    locationCodes?: string[];
     variantIds?: string[];
     notes?: string;
   }
@@ -271,6 +272,31 @@ export async function createRecountTask(
       }
       q.where({ location_code: params.locationCode });
     }
+
+    if (scope === 'locations') {
+      if (!params.locationCodes?.length) {
+        throw new Error(
+          '[RECOUNT_CREATE] scope=locations requires locationCodes'
+        );
+      }
+
+      const warehouseLocations = await trx('warehouse_locations')
+        .where({
+          shop_id: shopId,
+          warehouse_id: warehouseId,
+        })
+        .whereIn('location_code', params.locationCodes)
+        .pluck('location_code');
+
+      if (warehouseLocations.length !== params.locationCodes.length) {
+        throw new Error(
+          '[RECOUNT_CREATE] scope=locations requires every locationCode to belong to the selected warehouse'
+        );
+      }
+
+      q.whereIn('location_code', params.locationCodes);
+    }
+
     if (scope === 'variant_set') {
       if (!params.variantIds?.length) {
         throw new Error('[RECOUNT_CREATE] scope=variant_set requires variantIds');
@@ -278,6 +304,19 @@ export async function createRecountTask(
       q.whereIn('lasyncro_variant_id', params.variantIds);
     }
     lines = await q.select('lasyncro_variant_id', 'location_code');
+
+    if (scope === 'locations') {
+      const resolvedCodes = new Set(lines.map((line) => line.location_code));
+      const unresolvedCode = params.locationCodes?.find(
+        (locationCode) => !resolvedCodes.has(locationCode)
+      );
+
+      if (unresolvedCode) {
+        throw new Error(
+          '[RECOUNT_CREATE] scope=locations requires inventory lines for every selected location'
+        );
+      }
+    }
   }
 
   if (lines.length === 0) {

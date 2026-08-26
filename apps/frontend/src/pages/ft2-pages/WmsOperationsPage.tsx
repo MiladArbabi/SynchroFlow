@@ -471,8 +471,9 @@ export default function WmsOperationsPage() {
   }, []);
 
   const handleCreateCountingTask = useCallback(async (input: {
-    scope: 'location' | 'suggested';
+    scope: 'location' | 'locations' | 'suggested';
     location_code?: string;
+    location_codes?: string[];
     assigned_to?: number | null;
     notes?: string;
   }) => {
