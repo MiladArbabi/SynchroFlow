@@ -72,6 +72,7 @@ export const ACTION_ROLE_MAP: Record<string, string[]> = {
   'wms:recount:count':        ['owner', 'admin', 'operator'],
   'wms:recount:review':       ['owner', 'admin'],
   'wms:recount:commit':       ['owner', 'admin'],
+  'wms:recount:reassign':     ['owner', 'admin'],
 
   // ── RETURNS ────────────────────────────────────────────────
   'returns:read':             ['owner', 'admin', 'operator'],

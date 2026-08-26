@@ -6,6 +6,7 @@ import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
 import {
   createRecountTask,
   claimRecountTask,
+  reassignRecountTask,
   getOperatorLines,
   recordCount,
   closeCount,
@@ -39,7 +40,11 @@ function recountErrorStatus(message: string): number {
   if (
     message.includes('requires') ||
     message.includes('must be') ||
-    message.includes('No lines match')
+    message.includes('No lines match') ||
+    // RECOUNT-CLAIM-ABANDONED-131: bad reassignment target — a validation
+    // failure on caller-supplied input, not a task-state conflict.
+    message.includes('not an active member') ||
+    message.includes('does not have recount counting permission')
   ) {
     return 400;
   }
@@ -55,12 +60,30 @@ function recountErrorStatus(message: string): number {
     message.includes('not closable') ||
     message.includes('not yet counted') || message.includes('not yet resolved') ||
     message.includes('not in review') ||
-    message.includes('not committable')
+    message.includes('not committable') ||
+    // RECOUNT-CLAIM-ABANDONED-131
+    message.includes('not reassignable')
   ) {
     return 409;
   }
 
   return 500;
+}
+
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: a stable, machine-readable code for the one
+ * case a stale open session needs to distinguish from every other 409 —
+ * "this task's ownership changed out from under you" — without the frontend
+ * substring-matching English error prose. Once a session is actively inside
+ * a claimed/counting task, "owned by a different operator" can only mean a
+ * reassignment happened (claim itself requires status='dispatched' and
+ * claimed_by=null, so it can never produce this message for an
+ * already-claimed task) — see inventoryRecount.service.ts's claim/count/
+ * skip/close/finding gates.
+ */
+function recountErrorCode(message: string): string | undefined {
+  if (message.includes('different operator')) return 'RECOUNT_OWNERSHIP_CHANGED';
+  return undefined;
 }
 
 function respondRecountError(
@@ -70,6 +93,7 @@ function respondRecountError(
 ) {
   const message = getErrorMessage(error);
   const status = recountErrorStatus(message);
+  const code = status !== 500 ? recountErrorCode(message) : undefined;
 
   console.error(`[RECOUNT_${operation}_FAILED]`, { error: message });
 
@@ -77,6 +101,7 @@ function respondRecountError(
     error: status === 500
       ? `Inventory recount ${operation.toLowerCase()} failed: ${message}`
       : message,
+    ...(code ? { code } : {}),
   });
 }
 
@@ -249,6 +274,56 @@ export const httpClaimRecountTask = async (req: Request, res: Response) => {
     });
   } catch (error) {
     return respondRecountError(res, 'CLAIM', error);
+  }
+};
+
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: owner/admin-only explicit recovery for an
+ * abandoned claimed/counting task. requireAction('wms:recount:reassign')
+ * (wms.routes.ts) already proves the ACTING caller is owner/admin before this
+ * handler runs; reassignRecountTask (service) validates the TARGET.
+ */
+export const httpReassignRecountTask = async (req: Request, res: Response) => {
+  const shopId = req.user?.shopId;
+  const userId = req.user?.userId;
+  if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
+
+  /**
+   * RECOUNT-CLAIM-ABANDONED-131: explicit, independent owner/admin guard —
+   * NOT a substitute for requireAction('wms:recount:reassign') (wms.routes.ts),
+   * an ADDITIONAL one. requireAction resolves through the shop-configurable
+   * permission map (isActionAllowed / shop_role_permissions), which a shop
+   * could misconfigure to grant 'operator' this action; this check reads the
+   * trusted JWT shop_roles claim directly and cannot be overridden by shop
+   * config, mirroring httpListRecountTasks's `privileged` computation (same
+   * file) for the same reason: variance/ownership visibility must not be
+   * gateable by a client-influenced permission row.
+   */
+  const roles: string[] = req.user?.roles ?? [];
+  const isOwnerOrAdmin = roles.includes('owner') || roles.includes('admin');
+  if (!isOwnerOrAdmin) {
+    return res.status(403).json({ error: 'ACTION_FORBIDDEN', action: 'wms:recount:reassign' });
+  }
+
+  const recountTaskId = String(req.params.taskId ?? '');
+  if (!recountTaskId) {
+    return res.status(400).json({ error: 'taskId is required' });
+  }
+
+  const targetUserId = Number(req.body?.target_user_id);
+  if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+    return res.status(400).json({ error: 'target_user_id is required' });
+  }
+
+  try {
+    const result = await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      return reassignRecountTask(trx, shopId, recountTaskId, userId, targetUserId);
+    });
+
+    return res.status(200).json({ task: result });
+  } catch (error) {
+    return respondRecountError(res, 'REASSIGN', error);
   }
 };
 

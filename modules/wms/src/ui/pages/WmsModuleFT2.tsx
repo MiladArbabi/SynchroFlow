@@ -272,6 +272,12 @@ export type WmsModuleFT2Props = {
     }
   ) => Promise<CountingFinding>;
   onClaimCountingTask: (taskId: string) => Promise<void>;
+  /**
+   * RECOUNT-CLAIM-ABANDONED-131: owner/admin explicit recovery for an
+   * abandoned claimed/counting task. Backend re-validates the target and the
+   * acting user's own privilege regardless of what canReassignCount renders.
+   */
+  onReassignCountingTask?: (taskId: string, targetUserId: number) => Promise<void>;
   onRecordCountingLine: (
     taskId: string,
     lineId: string,
@@ -292,6 +298,13 @@ export type WmsModuleFT2Props = {
 
   /** Authenticated user ID used to enforce recount claimant ownership in UI. */
   currentUserId?: number | null;
+  /**
+   * RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only, derived from the
+   * single-role AuthContext exposure — same pattern as the existing
+   * canReleaseBatch check in WmsOperationsPage. Backend requireAction is the
+   * real authority regardless of this prop's value.
+   */
+  canReassignCount?: boolean;
   /** Count task ID from URL param — restores an active counting session. */
   pendingCountTaskId?: string | null;
   /** Called when an operator enters a counting session. */
@@ -625,10 +638,15 @@ const CountingTaskCard = memo(function CountingTaskCard({
   task,
   onOpen,
   currentUserId,
+  canReassignCount,
+  onReassignRequest,
 }: {
   task: CountingTask;
   onOpen: (task: CountingTask) => void;
   currentUserId?: number | null;
+  /** RECOUNT-CLAIM-ABANDONED-131: advisory only — backend is authoritative. */
+  canReassignCount?: boolean;
+  onReassignRequest?: (task: CountingTask) => void;
 }) {
   const continuing =
     task.status === 'claimed' || task.status === 'counting';
@@ -646,6 +664,11 @@ const CountingTaskCard = memo(function CountingTaskCard({
     task.claimed_by !== currentUserId;
 
   const blockedByOwnership = assignedToOther || claimedByOther;
+
+  // RECOUNT-CLAIM-ABANDONED-131: only on another operator's active
+  // (claimed/counting) claim — never dispatched, never the viewer's own
+  // task, never manual_review/committed (both fall outside `continuing`).
+  const showReassign = Boolean(canReassignCount) && claimedByOther;
 
   return (
     <Box sx={{
@@ -680,21 +703,43 @@ const CountingTaskCard = memo(function CountingTaskCard({
         </Typography>
       </Box>
 
-      <Button
-        variant="contained"
-        size="small"
-        disabled={blockedByOwnership}
-        onClick={() => onOpen(task)}
-        sx={{ ...WMS_TIER1_ACTION_SX, flexShrink: 0 }}
-      >
-        {assignedToOther
-          ? 'Assigned'
-          : claimedByOther
-          ? 'Claimed'
-          : continuing
-          ? 'Continue'
-          : 'Start count'}
-      </Button>
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }}>
+        <Button
+          variant="contained"
+          size="small"
+          disabled={blockedByOwnership}
+          onClick={() => onOpen(task)}
+          sx={{ ...WMS_TIER1_ACTION_SX, flexShrink: 0 }}
+        >
+          {assignedToOther
+            ? 'Assigned'
+            : claimedByOther
+            ? 'Claimed'
+            : continuing
+            ? 'Continue'
+            : 'Start count'}
+        </Button>
+
+        {showReassign && (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => onReassignRequest?.(task)}
+            sx={{
+              borderColor: 'var(--rule)',
+              color: 'var(--ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              fontSize: 11,
+              px: 1,
+              py: 0.25,
+              minWidth: 'auto',
+            }}
+          >
+            Reassign count
+          </Button>
+        )}
+      </Box>
     </Box>
   );
 });
@@ -836,10 +881,12 @@ function WmsModuleFT2Inner({
   onFetchCountingFindings,
   onCreateCountingFinding,
   onClaimCountingTask,
+  onReassignCountingTask,
   onRecordCountingLine,
   onSkipCountingLine,
   onCloseCountingTask,
   currentUserId,
+  canReassignCount,
   pendingCountTaskId,
   onCountSessionEnter,
 }: WmsModuleFT2Props) {
@@ -857,6 +904,59 @@ function WmsModuleFT2Inner({
   const [countAssignedTo, setCountAssignedTo] = useState<number | ''>('');
   const [countNotes, setCountNotes] = useState('');
   const [countCreating, setCountCreating] = useState(false);
+
+  // RECOUNT-CLAIM-ABANDONED-131
+  const [reassignTask, setReassignTask] = useState<CountingTask | null>(null);
+  const [reassignTargets, setReassignTargets] = useState<Array<{
+    user_id: number;
+    first_name: string | null;
+    last_name: string | null;
+    role: string;
+  }>>([]);
+  const [reassignLoading, setReassignLoading] = useState(false);
+  const [reassignError, setReassignError] = useState<string | null>(null);
+  const [reassignTargetId, setReassignTargetId] = useState<number | ''>('');
+  const [reassignSubmitting, setReassignSubmitting] = useState(false);
+
+  const openReassignDialog = async (task: CountingTask) => {
+    setReassignTask(task);
+    setReassignTargetId('');
+    setReassignError(null);
+    setReassignLoading(true);
+    try {
+      const targets = await onFetchCountingAssignees();
+      setReassignTargets(targets);
+    } catch (error) {
+      setReassignError(
+        error instanceof Error ? error.message : 'Failed to load team operators.'
+      );
+    } finally {
+      setReassignLoading(false);
+    }
+  };
+
+  const closeReassignDialog = () => {
+    setReassignTask(null);
+    setReassignTargetId('');
+    setReassignError(null);
+  };
+
+  const submitReassign = async () => {
+    if (!reassignTask || reassignTargetId === '') return;
+    setReassignSubmitting(true);
+    setReassignError(null);
+    try {
+      await onReassignCountingTask?.(reassignTask.recount_task_id, reassignTargetId);
+      onRefresh();
+      closeReassignDialog();
+    } catch (error) {
+      setReassignError(
+        error instanceof Error ? error.message : 'Reassignment failed. Try again.'
+      );
+    } finally {
+      setReassignSubmitting(false);
+    }
+  };
 
   const openCountDialog = async () => {
     setCountDialogOpen(true);
@@ -1493,6 +1593,87 @@ function WmsModuleFT2Inner({
         </DialogActions>
       </Dialog>
 
+      {/* RECOUNT-CLAIM-ABANDONED-131: small, focused — pick a target, explicit
+          confirm, no one-click takeover. Not a redesign of the task card. */}
+      <Dialog
+        open={reassignTask !== null}
+        onClose={reassignSubmitting ? undefined : closeReassignDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>Reassign count</DialogTitle>
+
+        <DialogContent>
+          {reassignTask && (
+            <Typography sx={{ fontSize: 13, color: 'var(--ink-3)', mb: 2 }}>
+              {reassignTask.label} is currently claimed by another operator.
+              Choose who should take it over.
+            </Typography>
+          )}
+
+          {reassignError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {reassignError}
+            </Alert>
+          )}
+
+          <TextField
+            select
+            fullWidth
+            size="small"
+            label="Reassign to"
+            value={reassignTargetId}
+            disabled={reassignLoading || reassignSubmitting}
+            onChange={(event) => {
+              const value = event.target.value;
+              setReassignTargetId(value === '' ? '' : Number(value));
+            }}
+          >
+            <MenuItem value="" disabled>
+              {reassignLoading ? 'Loading operators…' : 'Select an operator'}
+            </MenuItem>
+            {reassignTargets
+              .filter((operator) => operator.user_id !== reassignTask?.claimed_by)
+              .map((operator) => {
+                const name =
+                  `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                  `Operator ${operator.user_id}`;
+
+                return (
+                  <MenuItem key={operator.user_id} value={operator.user_id}>
+                    {name} · {operator.role}
+                  </MenuItem>
+                );
+              })}
+          </TextField>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={closeReassignDialog}
+            disabled={reassignSubmitting}
+            sx={{ color: 'var(--accent)' }}
+          >
+            Cancel
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() => void submitReassign()}
+            disabled={reassignTargetId === '' || reassignSubmitting}
+            sx={{
+              bgcolor: 'var(--accent)',
+              color: 'var(--accent-ink)',
+              borderRadius: '6px',
+              fontWeight: 600,
+              '&:hover': { bgcolor: 'var(--accent-hover)' },
+            }}
+          >
+            {reassignSubmitting ? 'Reassigning…' : 'Reassign count'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* LOADING */}
       {(isLoading || loadingSession) && (
         <Box sx={{ display: 'flex', justifyContent: 'center', pt: 6 }}>
@@ -1762,6 +1943,8 @@ function WmsModuleFT2Inner({
               key={task.recount_task_id}
               task={task}
               currentUserId={currentUserId}
+              canReassignCount={canReassignCount}
+              onReassignRequest={(t) => void openReassignDialog(t)}
               onOpen={(selectedTask) => {
                 onCountSessionEnter?.(selectedTask.recount_task_id);
                 setActiveSession({

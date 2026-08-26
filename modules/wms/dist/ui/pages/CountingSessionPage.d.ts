@@ -22,6 +22,13 @@ export type CountingTask = {
     claimed_by: number | null;
     created_at: string;
     claimed_at: string | null;
+    /**
+     * RECOUNT-CLAIM-ABANDONED-131: opaque id, fresh on every claim/reassignment
+     * (migration 0163). Scopes browser-local provisional state to this specific
+     * claim instance — see scanTallyStorageKey/verifiedLocationStorageKey.
+     * Null on legacy/never-reassigned rows predating this column.
+     */
+    claim_generation: string | null;
     line_count: number;
     counted_count: number;
 };

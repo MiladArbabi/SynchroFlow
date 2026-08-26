@@ -233,6 +233,12 @@ export type WmsModuleFT2Props = {
         notes?: string;
     }) => Promise<CountingFinding>;
     onClaimCountingTask: (taskId: string) => Promise<void>;
+    /**
+     * RECOUNT-CLAIM-ABANDONED-131: owner/admin explicit recovery for an
+     * abandoned claimed/counting task. Backend re-validates the target and the
+     * acting user's own privilege regardless of what canReassignCount renders.
+     */
+    onReassignCountingTask?: (taskId: string, targetUserId: number) => Promise<void>;
     onRecordCountingLine: (taskId: string, lineId: string, params: {
         counted_quantity: number;
         count_method: 'unit_scan' | 'bin_quantity';
@@ -244,6 +250,13 @@ export type WmsModuleFT2Props = {
     onCloseCountingTask: (taskId: string) => Promise<void>;
     /** Authenticated user ID used to enforce recount claimant ownership in UI. */
     currentUserId?: number | null;
+    /**
+     * RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only, derived from the
+     * single-role AuthContext exposure — same pattern as the existing
+     * canReleaseBatch check in WmsOperationsPage. Backend requireAction is the
+     * real authority regardless of this prop's value.
+     */
+    canReassignCount?: boolean;
     /** Count task ID from URL param — restores an active counting session. */
     pendingCountTaskId?: string | null;
     /** Called when an operator enters a counting session. */

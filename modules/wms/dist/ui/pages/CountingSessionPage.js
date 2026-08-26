@@ -44,11 +44,65 @@ function locationMatches(scanned, locationCode) {
 function isResolved(line) {
     return line.counted_at !== null || line.skipped_at !== null;
 }
-function scanTallyStorageKey(recountTaskId) {
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: keys are scoped by claim_generation, not just
+ * task id — a reassignment always writes a fresh generation (migration 0163),
+ * so a new claimant can never read a previous claimant's leftover local
+ * state, and A -> B -> A does not collide with A's first-generation tally.
+ *
+ * claimGeneration is null only for a task claimed before this column existed
+ * and never since reassigned (nullable, non-backfilled migration). 'legacy'
+ * is a fixed sentinel for that one transitional case — not a task+user or
+ * claimed_at fallback: the moment this task is ever reassigned,
+ * claim_generation becomes a real (non-null) value and the key changes,
+ * correctly cutting the new claimant over to fresh keys.
+ */
+function claimGenerationSegment(claimGeneration) {
+    return claimGeneration ?? 'legacy';
+}
+function scanTallyStorageKey(recountTaskId, claimGeneration) {
+    return `recount-scan-tally-${recountTaskId}-${claimGenerationSegment(claimGeneration)}`;
+}
+function verifiedLocationStorageKey(recountTaskId, claimGeneration) {
+    return `recount-verified-location-${recountTaskId}-${claimGenerationSegment(claimGeneration)}`;
+}
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: the pre-generation key format
+ * (recount-scan-tally-${taskId} / recount-verified-location-${taskId}, no
+ * generation suffix) that every session used before this migration.
+ */
+function legacyScanTallyStorageKey(recountTaskId) {
     return `recount-scan-tally-${recountTaskId}`;
 }
-function verifiedLocationStorageKey(recountTaskId) {
+function legacyVerifiedLocationStorageKey(recountTaskId) {
     return `recount-verified-location-${recountTaskId}`;
+}
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: one-time compatibility migration for an
+ * already-active task whose provisional local state predates the
+ * claim_generation column (task.claim_generation === null).
+ *
+ * Safe ONLY when claim_generation is null: before reassignment existed, an
+ * active task could only ever have had ONE claim generation across its
+ * lifetime — claim only ever happens from status='dispatched', and no
+ * release/reassign/reset path existed to produce a second one. So "the old
+ * task-only key" and "this task's legacy generation" are provably the same
+ * data, not a guess. The moment this task is ever claimed again or
+ * reassigned, claim_generation becomes a real UUID and this function is
+ * never consulted again for it.
+ *
+ * No-op if the new key already has a value (already migrated, or this
+ * session already wrote fresh state under the 'legacy' key) or if there is
+ * no old value to migrate.
+ */
+function migrateLegacyStorageKey(oldKey, newKey) {
+    if (sessionStorage.getItem(newKey) !== null)
+        return;
+    const oldValue = sessionStorage.getItem(oldKey);
+    if (oldValue === null)
+        return;
+    sessionStorage.setItem(newKey, oldValue);
+    sessionStorage.removeItem(oldKey);
 }
 function normalizeScanTally(tally) {
     return Object.fromEntries(Object.entries(tally).filter(([, value]) => Number.isSafeInteger(value) && value > 0));
@@ -85,10 +139,22 @@ function removeLineFromTally(tally, recountLineId) {
     delete next[recountLineId];
     return next;
 }
+// RECOUNT-CLAIM-ABANDONED-131: stable copy for a stale session — the old
+// claimant's tab is still open after an owner/admin reassigned this task.
+// Deliberately does not say "discarded" or "committed": the local tally is
+// still sitting in this browser's sessionStorage, untouched — it simply can
+// no longer be submitted from this session.
+const OWNERSHIP_CHANGED_MESSAGE = 'This count was reassigned. Your session is no longer active.';
 function errorMessage(error, fallback) {
-    const responseError = error?.response?.data?.error;
-    if (responseError)
-        return responseError;
+    const response = error?.response?.data;
+    // RECOUNT_OWNERSHIP_CHANGED is the one stable code the backend emits for
+    // this case (inventoryRecount.controller.ts's recountErrorCode) — matched
+    // on the code, not by pattern-matching the underlying English message.
+    if (response?.code === 'RECOUNT_OWNERSHIP_CHANGED') {
+        return OWNERSHIP_CHANGED_MESSAGE;
+    }
+    if (response?.error)
+        return response.error;
     if (error instanceof Error && error.message)
         return error.message;
     return fallback;
@@ -105,8 +171,8 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
     const [locationInput, setLocationInput] = useState('');
     const [scanInput, setScanInput] = useState('');
     const [scanTally, setScanTally] = useState({});
-    const tallyStorageKey = useMemo(() => scanTallyStorageKey(task.recount_task_id), [task.recount_task_id]);
-    const verifiedLocationKey = useMemo(() => verifiedLocationStorageKey(task.recount_task_id), [task.recount_task_id]);
+    const tallyStorageKey = useMemo(() => scanTallyStorageKey(task.recount_task_id, task.claim_generation), [task.recount_task_id, task.claim_generation]);
+    const verifiedLocationKey = useMemo(() => verifiedLocationStorageKey(task.recount_task_id, task.claim_generation), [task.recount_task_id, task.claim_generation]);
     const [activeBinCode, setActiveBinCode] = useState(null);
     const [skipTargetId, setSkipTargetId] = useState(null);
     const [skipReason, setSkipReason] = useState(null);
@@ -173,6 +239,15 @@ export default function CountingSessionPage({ task, onComplete, onFetchLines, on
         void (async () => {
             setLoading(true);
             setError(null);
+            // RECOUNT-CLAIM-ABANDONED-131: one-time compatibility migration, must
+            // run before either storage key below is read. Only ever applies to a
+            // task claimed before the claim_generation column existed and never
+            // since reassigned — see migrateLegacyStorageKey's own comment for why
+            // that makes this safe.
+            if (task.claim_generation === null) {
+                migrateLegacyStorageKey(legacyScanTallyStorageKey(task.recount_task_id), tallyStorageKey);
+                migrateLegacyStorageKey(legacyVerifiedLocationStorageKey(task.recount_task_id), verifiedLocationKey);
+            }
             try {
                 const loaded = await onFetchLines(task.recount_task_id);
                 const loadedFindings = await onFetchFindings(task.recount_task_id);

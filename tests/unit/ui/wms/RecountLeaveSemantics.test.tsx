@@ -19,9 +19,13 @@ import CountingSessionPage, {
 const TASK_ID = 'task-138';
 const LINE_ID = 'line-138';
 const LOCATION_CODE = 'A-1';
+// RECOUNT-CLAIM-ABANDONED-131: storage keys are now claim-generation-scoped,
+// not task-only — see CountingSessionPage.tsx's scanTallyStorageKey/
+// verifiedLocationStorageKey.
+const CLAIM_GENERATION = 'gen-138';
 
-const TALLY_STORAGE_KEY = `recount-scan-tally-${TASK_ID}`;
-const VERIFIED_LOCATION_STORAGE_KEY = `recount-verified-location-${TASK_ID}`;
+const TALLY_STORAGE_KEY = `recount-scan-tally-${TASK_ID}-${CLAIM_GENERATION}`;
+const VERIFIED_LOCATION_STORAGE_KEY = `recount-verified-location-${TASK_ID}-${CLAIM_GENERATION}`;
 const SEEDED_TALLY_JSON = JSON.stringify({ [LINE_ID]: 3 });
 
 const task: CountingTask = {
@@ -34,6 +38,7 @@ const task: CountingTask = {
   claimed_by: 7,
   created_at: '2026-08-26T00:00:00.000Z',
   claimed_at: '2026-08-26T00:00:00.000Z',
+  claim_generation: CLAIM_GENERATION,
   line_count: 1,
   counted_count: 0,
 };

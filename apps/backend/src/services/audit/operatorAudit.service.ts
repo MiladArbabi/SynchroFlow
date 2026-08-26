@@ -46,7 +46,9 @@ export type AuditActionType =
   | 'recount_claim'
   | 'recount_close'
   | 'recount_line_review'
-  | 'recount_commit';
+  | 'recount_commit'
+  // RECOUNT-CLAIM-ABANDONED-131: owner/admin explicit ownership recovery.
+  | 'recount_reassign';
 export type AuditEntityType =
   | 'receive_job'
   | 'stow_task'

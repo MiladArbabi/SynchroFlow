@@ -94,6 +94,7 @@ import {
 import {
   httpCreateRecountTask,
   httpClaimRecountTask,
+  httpReassignRecountTask,
   httpGetRecountLines,
   httpRecordRecountLine,
   httpCloseRecountTask,
@@ -829,6 +830,20 @@ router.post(
   requireTier('core'),
   requireAction('wms:recount:claim'),
   httpClaimRecountTask
+);
+
+// RECOUNT-CLAIM-ABANDONED-131: explicit owner/admin recovery for an
+// abandoned claimed/counting task. requireAction enforces the ACTING user is
+// owner/admin; the target operator's own eligibility is validated inside
+// reassignRecountTask (service layer), since middleware can only check the
+// requesting user, not an arbitrary target.
+router.post(
+  '/recount-tasks/:taskId/reassign',
+  authenticateToken,
+  requireFt2,
+  requireTier('core'),
+  requireAction('wms:recount:reassign'),
+  httpReassignRecountTask
 );
 
 router.post(

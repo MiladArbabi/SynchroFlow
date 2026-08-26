@@ -133,7 +133,7 @@ const StowTaskCard = memo(function StowTaskCard({ task, onOpen, }) {
                     transition: 'opacity 0.15s ease',
                 }, children: isClaimed ? 'Resume stow →' : 'Start stow →' })] }));
 });
-const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentUserId, }) {
+const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentUserId, canReassignCount, onReassignRequest, }) {
     const continuing = task.status === 'claimed' || task.status === 'counting';
     // RECOUNT-RESUME-POSITION-72: operators may only start/resume work they own.
     // Owner/admin takeover or reassignment must be explicit.
@@ -144,6 +144,10 @@ const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentU
         task.claimed_by !== null &&
         task.claimed_by !== currentUserId;
     const blockedByOwnership = assignedToOther || claimedByOther;
+    // RECOUNT-CLAIM-ABANDONED-131: only on another operator's active
+    // (claimed/counting) claim — never dispatched, never the viewer's own
+    // task, never manual_review/committed (both fall outside `continuing`).
+    const showReassign = Boolean(canReassignCount) && claimedByOther;
     return (_jsxs(Box, { sx: {
             bgcolor: 'var(--surface)',
             border: '1px solid var(--rule)',
@@ -164,13 +168,22 @@ const CountingTaskCard = memo(function CountingTaskCard({ task, onOpen, currentU
                             mt: 0.375,
                         }, children: [task.line_count, " checks", task.counted_count > 0
                                 ? ` · ${task.counted_count} counted`
-                                : ''] })] }), _jsx(Button, { variant: "contained", size: "small", disabled: blockedByOwnership, onClick: () => onOpen(task), sx: { ...WMS_TIER1_ACTION_SX, flexShrink: 0 }, children: assignedToOther
-                    ? 'Assigned'
-                    : claimedByOther
-                        ? 'Claimed'
-                        : continuing
-                            ? 'Continue'
-                            : 'Start count' })] }));
+                                : ''] })] }), _jsxs(Box, { sx: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5, flexShrink: 0 }, children: [_jsx(Button, { variant: "contained", size: "small", disabled: blockedByOwnership, onClick: () => onOpen(task), sx: { ...WMS_TIER1_ACTION_SX, flexShrink: 0 }, children: assignedToOther
+                            ? 'Assigned'
+                            : claimedByOther
+                                ? 'Claimed'
+                                : continuing
+                                    ? 'Continue'
+                                    : 'Start count' }), showReassign && (_jsx(Button, { variant: "outlined", size: "small", onClick: () => onReassignRequest?.(task), sx: {
+                            borderColor: 'var(--rule)',
+                            color: 'var(--ink)',
+                            borderRadius: '6px',
+                            fontWeight: 600,
+                            fontSize: 11,
+                            px: 1,
+                            py: 0.25,
+                            minWidth: 'auto',
+                        }, children: "Reassign count" }))] })] }));
 });
 function WorkQueueFamily({ title, summary, expanded, onToggle, children, }) {
     return (_jsxs(Box, { sx: { border: '1px solid var(--rule)', borderRadius: '8px', overflow: 'hidden' }, children: [_jsxs(Box, { component: "button", type: "button", "aria-expanded": expanded, onClick: onToggle, sx: {
@@ -192,7 +205,7 @@ function WorkQueueFamily({ title, summary, expanded, onToggle, children, }) {
                             transition: 'transform 150ms ease',
                         } })] }), _jsx(Collapse, { in: expanded, children: _jsx(Box, { sx: { px: 2, pb: 2 }, children: children }) })] }));
 }
-function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onRecountUpgrade, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, pendingCountTaskId, onCountSessionEnter, }) {
+function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFetchReceiveJob, onInspectReceiveLine, onReportReceiveException, onCloseReceiveJob, onPrintUnitLabels, onClaimBatch, onFetchLineItems, onResolveBarcode, onConfirmScan, onReportException, onCreateProblemTask, onPickComplete, onClaimPack, onFetchPackOrders, onPackFreeScan, onConfirmPackScan, onReportPackException, onPrintLabel, onPrintInvoice, onPackComplete, onConfirmShipment, onRefresh, onSessionExit, onCountFinished, isOnline, queuedCount, stowTasks, onClaimStowTask, onConfirmStow, onFetchStowTasks, onResolveLocation, onAssignStowLocation, gridLocations, pendingReceiveSession, pendingStowTaskId, onStowSessionEnter, pendingPickBatchId, onPickSessionEnter, pendingPackBatchId, onPackSessionEnter, onRaisePackDecision, onPollPackDecision, onFetchReturnJob, onAddReturnLine, onProcessReturnLine, onCompleteReturnJob, readyToPackOrders, readyToPackCount, openReceiveJobCount, recountLocked, recountTasks, onRecountUpgrade, onFetchCountingPreview, onFetchCountingAssignees, onCreateCountingTask, onFetchCountingLines, onFetchCountingFindings, onCreateCountingFinding, onClaimCountingTask, onReassignCountingTask, onRecordCountingLine, onSkipCountingLine, onCloseCountingTask, currentUserId, canReassignCount, pendingCountTaskId, onCountSessionEnter, }) {
     const [countDialogOpen, setCountDialogOpen] = useState(false);
     const [countDialogLoading, setCountDialogLoading] = useState(false);
     const [countDialogError, setCountDialogError] = useState(null);
@@ -202,6 +215,51 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
     const [countAssignedTo, setCountAssignedTo] = useState('');
     const [countNotes, setCountNotes] = useState('');
     const [countCreating, setCountCreating] = useState(false);
+    // RECOUNT-CLAIM-ABANDONED-131
+    const [reassignTask, setReassignTask] = useState(null);
+    const [reassignTargets, setReassignTargets] = useState([]);
+    const [reassignLoading, setReassignLoading] = useState(false);
+    const [reassignError, setReassignError] = useState(null);
+    const [reassignTargetId, setReassignTargetId] = useState('');
+    const [reassignSubmitting, setReassignSubmitting] = useState(false);
+    const openReassignDialog = async (task) => {
+        setReassignTask(task);
+        setReassignTargetId('');
+        setReassignError(null);
+        setReassignLoading(true);
+        try {
+            const targets = await onFetchCountingAssignees();
+            setReassignTargets(targets);
+        }
+        catch (error) {
+            setReassignError(error instanceof Error ? error.message : 'Failed to load team operators.');
+        }
+        finally {
+            setReassignLoading(false);
+        }
+    };
+    const closeReassignDialog = () => {
+        setReassignTask(null);
+        setReassignTargetId('');
+        setReassignError(null);
+    };
+    const submitReassign = async () => {
+        if (!reassignTask || reassignTargetId === '')
+            return;
+        setReassignSubmitting(true);
+        setReassignError(null);
+        try {
+            await onReassignCountingTask?.(reassignTask.recount_task_id, reassignTargetId);
+            onRefresh();
+            closeReassignDialog();
+        }
+        catch (error) {
+            setReassignError(error instanceof Error ? error.message : 'Reassignment failed. Try again.');
+        }
+        finally {
+            setReassignSubmitting(false);
+        }
+    };
     const openCountDialog = async () => {
         setCountDialogOpen(true);
         setCountDialogLoading(true);
@@ -502,7 +560,22 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                     borderRadius: '6px',
                                     fontWeight: 600,
                                     '&:hover': { bgcolor: 'var(--accent-hover)' },
-                                }, children: `Create count · ${selectedCountBins.length} ${selectedCountBins.length === 1 ? 'bin' : 'bins'}` })] })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }, children: [_jsx(Box, { sx: {
+                                }, children: `Create count · ${selectedCountBins.length} ${selectedCountBins.length === 1 ? 'bin' : 'bins'}` })] })] }), _jsxs(Dialog, { open: reassignTask !== null, onClose: reassignSubmitting ? undefined : closeReassignDialog, fullWidth: true, maxWidth: "xs", children: [_jsx(DialogTitle, { children: "Reassign count" }), _jsxs(DialogContent, { children: [reassignTask && (_jsxs(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)', mb: 2 }, children: [reassignTask.label, " is currently claimed by another operator. Choose who should take it over."] })), reassignError && (_jsx(Alert, { severity: "error", sx: { mb: 2 }, children: reassignError })), _jsxs(TextField, { select: true, fullWidth: true, size: "small", label: "Reassign to", value: reassignTargetId, disabled: reassignLoading || reassignSubmitting, onChange: (event) => {
+                                    const value = event.target.value;
+                                    setReassignTargetId(value === '' ? '' : Number(value));
+                                }, children: [_jsx(MenuItem, { value: "", disabled: true, children: reassignLoading ? 'Loading operators…' : 'Select an operator' }), reassignTargets
+                                        .filter((operator) => operator.user_id !== reassignTask?.claimed_by)
+                                        .map((operator) => {
+                                        const name = `${operator.first_name ?? ''} ${operator.last_name ?? ''}`.trim() ||
+                                            `Operator ${operator.user_id}`;
+                                        return (_jsxs(MenuItem, { value: operator.user_id, children: [name, " \u00B7 ", operator.role] }, operator.user_id));
+                                    })] })] }), _jsxs(DialogActions, { children: [_jsx(Button, { onClick: closeReassignDialog, disabled: reassignSubmitting, sx: { color: 'var(--accent)' }, children: "Cancel" }), _jsx(Button, { variant: "contained", onClick: () => void submitReassign(), disabled: reassignTargetId === '' || reassignSubmitting, sx: {
+                                    bgcolor: 'var(--accent)',
+                                    color: 'var(--accent-ink)',
+                                    borderRadius: '6px',
+                                    fontWeight: 600,
+                                    '&:hover': { bgcolor: 'var(--accent-hover)' },
+                                }, children: reassignSubmitting ? 'Reassigning…' : 'Reassign count' })] })] }), (isLoading || loadingSession) && (_jsx(Box, { sx: { display: 'flex', justifyContent: 'center', pt: 6 }, children: _jsx(CircularProgress, { size: 24 }) })), (isError || sessionError) && (_jsx(Alert, { severity: "error", sx: { mb: 3, borderRadius: '10px' }, children: sessionError ?? 'Failed to load warehouse data. Please refresh.' })), _jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', p: '12px 14px', mb: 2.75 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.25, flexWrap: { xs: 'wrap', md: 'nowrap' } }, children: [_jsx(Box, { sx: {
                                     width: 32, height: 32, borderRadius: '8px',
                                     bgcolor: packScanError ? 'rgba(229,72,77,0.12)' : 'var(--accent-ghost)',
                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -587,7 +660,7 @@ function WmsModuleFT2Inner({ data, isLoading, isError, onCreateReceiveJob, onFet
                                     setInventoryChecksExpanded((value) => !value);
                                 }, children: [!recountLocked && countingTasks.length > 0 && (showAllInventoryChecks
                                         ? countingTasks
-                                        : countingTasks.slice(0, 4)).map((task) => (_jsx(CountingTaskCard, { task: task, currentUserId: currentUserId, onOpen: (selectedTask) => {
+                                        : countingTasks.slice(0, 4)).map((task) => (_jsx(CountingTaskCard, { task: task, currentUserId: currentUserId, canReassignCount: canReassignCount, onReassignRequest: (t) => void openReassignDialog(t), onOpen: (selectedTask) => {
                                             onCountSessionEnter?.(selectedTask.recount_task_id);
                                             setActiveSession({
                                                 type: 'count',

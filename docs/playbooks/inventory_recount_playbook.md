@@ -118,6 +118,11 @@ Invariant:
 - Preview classification is one reason per bin, severity ordered: `negative_on_hand` → `unlocated_sale` → `dormant`.
 - Verification for RECOUNT-PREVIEW-NOTENANT-123 proved both previously-unreached branches (`negative_on_hand`, `dormant`) and confirmed `inventory_movements` remained unchanged during the rolled-back fixture.
 
+Fresh-merchant / zero-operational-bin preview and creation-dialog empty-state
+behavior — distinguishing a true zero-bin fresh install from "bins exist but
+no suggestions" — is tracked separately as `RECOUNT-FRESH-NOBINS-40`
+(status: pending AUDIT). Not addressed here.
+
 ## Reconcile inventory entry point — RECOUNT-CTA-33a
 
 `RECOUNT-CTA-33a` adds the first merchant-facing entry point for creating inventory reconciliation work from Warehouse → Operations.
@@ -530,11 +535,11 @@ for this issue.
 
 ### Boundary with RECOUNT-CLAIM-ABANDONED-131
 
-This issue does not touch claim/release semantics. There is currently no
+This issue does not touch claim/release semantics. There is no
 release/unclaim endpoint anywhere in the recount API, and Leave does not
-call one. Whether or how an abandoned claim should ever be released remains
-entirely owned by `RECOUNT-CLAIM-ABANDONED-131` — not designed or
-implemented here.
+call one. `RECOUNT-CLAIM-ABANDONED-131` (resolved — see below) added
+owner/admin-initiated **reassignment**, not release; Leave still does not
+call it, and the two remain independent actions.
 
 ### Verification
 
@@ -555,3 +560,156 @@ Live-verified in both colour schemes: reassurance copy visible and
 positioned near "Leave count", the button remains visually secondary,
 and leave/re-entry preserves tally and verified location exactly as
 before this issue.
+
+## Reassignment recovery for abandoned claims — RECOUNT-CLAIM-ABANDONED-131, 2026-08-26
+
+An explicit owner/admin recovery mechanism for a recount claimed by an
+operator who is no longer working it — an abandoned tab, a departed shift, a
+claim that should move to someone else. This is explicit reassignment, not
+automatic release; there is still no path that reclaims a stale claim on its
+own (see Deliberate exclusions below).
+
+### Relationship to "Leave count"
+
+Unchanged by this issue — see `RECOUNT-LEAVE-SEMANTICS-138` above. "Leave
+count" exits the session, preserves progress, and does not release
+`claimed_by`. It still does not call the reassignment endpoint below; the
+two remain independent actions with independent triggers (operator choice
+vs. owner/admin recovery).
+
+### Endpoint
+
+`POST /api/v1/wms/recount-tasks/:taskId/reassign`
+Body: `{ "target_user_id": <number> }`
+
+Reassignable only from `claimed` or `counting`. `manual_review` and
+`committed` are rejected — those states are past the point where an
+ownership transfer is the applicable recovery.
+
+### Authorization — two independent checks on the ACTING user
+
+1. Route-level `requireAction('wms:recount:reassign')` (`wms.routes.ts`),
+   restricted to `owner`/`admin` (`require-action.middleware.ts`) — this
+   resolves through the shop-configurable `isActionAllowed` permission map,
+   which a shop could in principle misconfigure.
+2. `httpReassignRecountTask` (`inventoryRecount.controller.ts`)
+   additionally reads the trusted JWT `shop_roles` claim directly and
+   requires `owner`/`admin` there too, independent of shop config — the
+   same pattern `httpListRecountTasks` already uses for its `privileged`
+   computation, for the same reason: ownership/variance authority must not
+   be gateable by a client-influenced permission row.
+
+Both checks gate the requester. Neither validates the TARGET — middleware
+can only inspect the requesting user.
+
+### Target validation (`reassignRecountTask`, `inventoryRecount.service.ts`)
+
+The target must:
+
+- have active membership in the same shop (`shop_memberships`,
+  `revoked_at IS NULL` — the same predicate `GET /operators/team` already
+  uses, not a new activity flag);
+- be permitted to count — `isActionAllowed(shopId, 'wms:recount:count',
+  membership.role)` run against the target's role, reusing the identical
+  check `requireAction` runs for the acting user, not a parallel permission
+  model.
+
+### Atomicity and progress preservation
+
+One transaction, one `UPDATE` — not release-then-claim. A two-step version
+would leave a window where the task is unclaimed and any operator could
+grab it ahead of the intended target.
+
+Written: `claimed_by`, `assigned_to`, `claimed_at` (now), `claim_generation`
+(fresh `gen_random_uuid()`), `updated_at`.
+
+Untouched: `status`, resolved counts, skips, findings, unresolved lines —
+reassignment moves ownership only, never task progress.
+
+### `claim_generation`
+
+Migration `20260826180000_0163_add_claim_generation_to_recount_tasks.ts`
+adds a nullable UUID column to `inventory_recount_tasks`. Additive, no
+backfill — every pre-existing row keeps `claim_generation = NULL`; only a
+claim or a reassignment writes a value going forward, matching the
+0158/0162 precedent of non-destructive additive columns.
+`claimRecountTask` also stamps a fresh `claim_generation` on the initial
+claim, not only on reassignment.
+
+**Why.** `RECOUNT-TALLY-VOLATILE-127`'s provisional `sessionStorage` keys
+were scoped by task id alone. A reassigned claimant's browser would
+otherwise restore the PREVIOUS claimant's leftover scan tally under that
+same key. `claim_generation` makes that impossible by construction — the
+frontend keys storage by task **and** generation:
+
+    recount-scan-tally-${taskId}-${claimGeneration}
+    recount-verified-location-${taskId}-${claimGeneration}
+
+(`CountingSessionPage.tsx` — `scanTallyStorageKey` /
+`verifiedLocationStorageKey`). `claimGeneration` is deliberately not
+derived from `claimed_at`: WORKSHOP required an opaque generation id,
+independent of any timestamp-formatting concern in a storage key.
+
+**Legacy compatibility.** A task claimed before this column existed
+(`claim_generation === null`) keys under the literal segment `legacy`
+instead of a UUID. `migrateLegacyStorageKey` copies the old task-only key
+(`recount-scan-tally-${taskId}`, no suffix) into the new `-legacy` key
+once, then deletes the old key — safe only because, before reassignment
+existed, a claimed task could only ever have had one claim generation
+across its lifetime (claim only ever starts from `dispatched`; no
+release/reassign path existed to produce a second one), so the old
+task-only key and the task's legacy generation are provably the same data.
+The moment that task is claimed again or reassigned, `claim_generation`
+becomes a real UUID and this migration path is never consulted again for
+it. A UUID generation never reads a task-only legacy key.
+
+### Old-claimant rejection and the concurrency contract
+
+`recordCount`, `skipLine`, `createFinding`, and `closeCount` all read
+`claimed_by` inside the same row-locked (`forUpdate`) transaction boundary
+`reassignRecountTask` uses, and reject once `claimed_by` no longer matches
+the caller.
+
+This is a required invariant, not merely an implementation note:
+reassignment and every recount-owned mutation serialize on the same
+`inventory_recount_tasks` row lock. Verified sequence:
+
+1. A reassignment transaction acquires the row lock and updates ownership.
+2. An old-claimant mutation (count/skip/finding/close) begins concurrently
+   and blocks on the same row.
+3. The reassignment commits.
+4. The old-claimant transaction wakes, re-reads `claimed_by` under its own
+   lock, observes the new owner, and is rejected. Its mutation does not
+   commit.
+
+A stale open tab belonging to the old claimant additionally shows a
+stable client-side message: *"This count was reassigned. Your session is
+no longer active."* (`CountingSessionPage.tsx`).
+
+### Audit
+
+Reassignment writes `recount_reassign` (`operatorAudit.service.ts` —
+`AuditActionType`), recording `previous_claimant`, `new_claimant`,
+`previous_claim_generation`, and `new_claim_generation`.
+
+### Deliberate exclusions
+
+- No TTL, stale-claim timeout, heartbeat, cron, or background worker
+  release. Recovery is explicit owner/admin action only.
+- No release-on-Leave was introduced by this issue. "Leave count" still
+  does not release `claimed_by` — see the Leave-count boundary note above.
+
+### Verification
+
+Backend integration — `tests/integration/wms/recount-reassignment.test.ts`:
+21/21 PASS. Frontend focused —
+`tests/unit/ui/wms/RecountReassignAffordance.test.tsx` and
+`tests/unit/ui/wms/RecountLeaveSemantics.test.tsx` (extended for this
+issue), plus `tests/unit/helpers/auth.ts`: 45/45 PASS. `test:config`
+ownership: `backend-legacy` 128, `backend-integration` 17, `contract` 4,
+`frontend` 101, `UNOWNED=0`, `MULTI_OWNED=0`. `modules/wms` build PASS,
+backend `tsc --noEmit` PASS, `git diff --check` PASS.
+
+Live browser: reassignment recovery flow exercised and accepted. A later
+local DB reset/full-seed removed the temporary seeded data used for that
+run; this does not invalidate the completed verification evidence.

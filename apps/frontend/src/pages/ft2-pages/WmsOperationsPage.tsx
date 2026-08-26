@@ -121,6 +121,9 @@ export default function WmsOperationsPage() {
   const currentUserId =
     user?.id ?? (user as { userId?: number } | null)?.userId ?? null;
   const canReleaseBatch = userRole === 'owner' || userRole === 'admin';
+  // RECOUNT-CLAIM-ABANDONED-131: advisory UI gate only — backend
+  // requireAction('wms:recount:reassign') is the real authority.
+  const canReassignRecount = userRole === 'owner' || userRole === 'admin';
 
   const httpPost = useCallback(async (url: string, body: Record<string, unknown>) => {
     await axiosInstance.post(url, body);
@@ -506,6 +509,17 @@ export default function WmsOperationsPage() {
     );
   }, []);
 
+  // RECOUNT-CLAIM-ABANDONED-131
+  const handleReassignCountingTask = useCallback(async (
+    taskId: string,
+    targetUserId: number
+  ) => {
+    await axiosInstance.post(
+      `/api/v1/wms/recount-tasks/${taskId}/reassign`,
+      { target_user_id: targetUserId }
+    );
+  }, []);
+
   const handleRecordCountingLine = useCallback(async (
     taskId: string,
     lineId: string,
@@ -627,11 +641,13 @@ export default function WmsOperationsPage() {
       onFetchCountingFindings={handleFetchCountingFindings}
       onCreateCountingFinding={handleCreateCountingFinding}
       onClaimCountingTask={handleClaimCountingTask}
+      onReassignCountingTask={handleReassignCountingTask}
       onRecordCountingLine={handleRecordCountingLine}
       onSkipCountingLine={handleSkipCountingLine}
       onCloseCountingTask={handleCloseCountingTask}
       onCountFinished={setFinishedCountLabel}
       currentUserId={currentUserId}
+      canReassignCount={canReassignRecount}
       pendingCountTaskId={searchParams.get('countTaskId')}
       onCountSessionEnter={(id) =>
         setSearchParams({ countTaskId: id }, { replace: true })

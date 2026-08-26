@@ -1,6 +1,7 @@
 import { Knex } from 'knex';
 import { v5 as uuidv5 } from 'uuid';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
+import { isActionAllowed } from '../permissions/permissionCache.service.js';
 
 /**
  * INVENTORY RECOUNT SERVICE (INV-PHYSICAL-COUNT-13 / INV-RECON-WRITER-14)
@@ -403,9 +404,130 @@ export async function claimRecountTask(
 
   await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
-    .update({ status: 'claimed', claimed_by: userId, claimed_at: trx.fn.now(), updated_at: trx.fn.now() });
+    .update({
+      status: 'claimed',
+      claimed_by: userId,
+      claimed_at: trx.fn.now(),
+      // RECOUNT-CLAIM-ABANDONED-131: a fresh, opaque generation id per claim —
+      // see migration 0163. Isolates browser-local provisional state so a
+      // future reassignment's new claimant never inherits stale local scans.
+      claim_generation: trx.raw('gen_random_uuid()'),
+      updated_at: trx.fn.now(),
+    });
 
   console.info('[RECOUNT_TASK_CLAIMED]', { recountTaskId, userId, shopId });
+}
+
+export interface ReassignRecountTaskResult {
+  recount_task_id: string;
+  status: string;
+  previous_claimed_by: number | null;
+  new_claimed_by: number;
+  previous_claim_generation: string | null;
+  new_claim_generation: string;
+  claimed_at: Date;
+}
+
+/**
+ * RECOUNT-CLAIM-ABANDONED-131: explicit owner/admin recovery for an abandoned
+ * active claim (claimed/counting only — see the status guard below).
+ *
+ * This is deliberately ONE atomic ownership transfer, not a release-then-claim
+ * two-step: a two-step version would create a window where the task is
+ * unclaimed and any operator could grab it before the intended target does.
+ *
+ * Caller authorization (only an owner/admin may call this at all) is enforced
+ * by the wms:recount:reassign route permission, not here — this function's
+ * own job is validating the TARGET, which route-level requireAction cannot
+ * express (it only ever checks the requesting user).
+ */
+export async function reassignRecountTask(
+  trx: Knex.Transaction,
+  shopId: number,
+  recountTaskId: string,
+  actingUserId: number,
+  targetUserId: number
+): Promise<ReassignRecountTaskResult> {
+  // Same row-lock boundary as claim/count/skip/close/finding — see
+  // recordCount's comment for why: without this lock, a concurrent count
+  // could read the pre-reassignment claimed_by and commit after this
+  // transaction, violating "once reassignment commits, no later write by the
+  // old claimant can commit."
+  const task = await trx('inventory_recount_tasks')
+    .where({ shop_id: shopId, recount_task_id: recountTaskId })
+    .select('status', 'claimed_by', 'claim_generation')
+    .forUpdate()
+    .first();
+
+  if (!task) throw new Error(`[RECOUNT_REASSIGN] Task not found: ${recountTaskId}`);
+  if (!['claimed', 'counting'].includes(task.status)) {
+    throw new Error(`[RECOUNT_REASSIGN] Task not reassignable in status: ${task.status}`);
+  }
+
+  // Target must be an active member of THIS shop — same predicate already
+  // used by GET /operators/team and every other active-membership check in
+  // this codebase (shop_memberships.revoked_at IS NULL). Deliberately not a
+  // new activity flag.
+  const membership = await trx('shop_memberships')
+    .where({ shop_id: shopId, user_id: targetUserId })
+    .whereNull('revoked_at')
+    .select('role')
+    .first();
+
+  if (!membership) {
+    throw new Error('[RECOUNT_REASSIGN] Target is not an active member of this shop');
+  }
+
+  // Target must actually be permitted to count — reuses the same
+  // shop-configurable permission check requireAction uses for the requesting
+  // user (isActionAllowed), applied here to the TARGET's role instead. No
+  // parallel permission model.
+  const targetCanCount = await isActionAllowed(shopId, 'wms:recount:count', membership.role);
+  if (!targetCanCount) {
+    throw new Error('[RECOUNT_REASSIGN] Target does not have recount counting permission');
+  }
+
+  const [updated] = await trx('inventory_recount_tasks')
+    .where({ shop_id: shopId, recount_task_id: recountTaskId })
+    .update({
+      claimed_by: targetUserId,
+      assigned_to: targetUserId,
+      claimed_at: trx.fn.now(),
+      claim_generation: trx.raw('gen_random_uuid()'),
+      updated_at: trx.fn.now(),
+      // status, lines, findings intentionally untouched — see file header
+      // guard above and requirement 6.
+    })
+    .returning(['status', 'claimed_at', 'claim_generation']);
+
+  await writeAuditLog(trx, {
+    shopId,
+    operatorId: actingUserId,
+    actionType: 'recount_reassign',
+    entityType: 'recount_task',
+    entityId: recountTaskId,
+    metadata: {
+      previous_claimant: task.claimed_by,
+      new_claimant: targetUserId,
+      previous_claim_generation: task.claim_generation,
+      new_claim_generation: updated.claim_generation,
+    },
+  });
+
+  console.info('[RECOUNT_TASK_REASSIGNED]', {
+    recountTaskId, shopId, actingUserId,
+    previousClaimant: task.claimed_by, newClaimant: targetUserId,
+  });
+
+  return {
+    recount_task_id: recountTaskId,
+    status: updated.status,
+    previous_claimed_by: task.claimed_by,
+    new_claimed_by: targetUserId,
+    previous_claim_generation: task.claim_generation,
+    new_claim_generation: updated.claim_generation,
+    claimed_at: updated.claimed_at,
+  };
 }
 
 /**
@@ -487,9 +609,13 @@ export async function recordCount(
     throw new Error(`[RECOUNT_COUNT] Counted quantity must be a non-negative integer, got ${countedQuantity}`);
   }
 
+  // RECOUNT-CLAIM-ABANDONED-131: locked so a concurrent reassignment cannot
+  // commit claimed_by=B between this read and this transaction's commit —
+  // same row-lock boundary claimRecountTask already uses.
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status', 'claimed_by')
+    .forUpdate()
     .first();
   if (!task) throw new Error(`[RECOUNT_COUNT] Task not found: ${recountTaskId}`);
   if (task.claimed_by !== countedBy) {
@@ -613,9 +739,11 @@ export async function skipLine(
     throw new Error('[RECOUNT_SKIP] skip_reason "other" requires notes — an unexplained skip is not actionable');
   }
 
+  // RECOUNT-CLAIM-ABANDONED-131: same row-lock boundary as claim/count/close.
   const task = await trx('inventory_recount_tasks')
     .where({ shop_id: shopId, recount_task_id: recountTaskId })
     .select('status', 'claimed_by')
+    .forUpdate()
     .first();
   if (!task) throw new Error(`[RECOUNT_SKIP] Task not found: ${recountTaskId}`);
   if (task.claimed_by !== skippedBy) {
@@ -995,6 +1123,9 @@ export async function listRecountTasks(
       't.claimed_by',
       't.created_at',
       't.claimed_at',
+      // RECOUNT-CLAIM-ABANDONED-131: exposed so the frontend can scope
+      // browser-local provisional state to this specific claim instance.
+      't.claim_generation',
       trx.raw(
         `(SELECT COUNT(*)::int FROM inventory_recount_lines l
           WHERE l.shop_id = t.shop_id AND l.recount_task_id = t.recount_task_id
@@ -1115,12 +1246,16 @@ export async function createRecountFinding(
     throw new Error('[RECOUNT_FINDING] quantity must be a positive whole number');
   }
 
+  // RECOUNT-CLAIM-ABANDONED-131: findings enforce claimed_by exactly like
+  // recordCount/skipLine, so they share the same reassignment race and the
+  // same row-lock fix.
   const task = await trx('inventory_recount_tasks')
     .where({
       shop_id: shopId,
       recount_task_id: recountTaskId,
     })
     .select('status', 'claimed_by')
+    .forUpdate()
     .first();
 
   if (!task) {
