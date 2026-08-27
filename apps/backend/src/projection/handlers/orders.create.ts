@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { Knex } from 'knex';
 
 import { FirstInsightService } from '../../services/first-insight.service.js';
+import { resolveFoundingOwner } from '../../services/founding-owner.service.js';
 
 /**
  * REVENUE UNIT MATERIALIZATION
@@ -88,20 +89,12 @@ export async function handleOrdersCreate({
       '../../services/lifecycle-transition.service.js'
     );
 
-    const foundingOwner = await trx('shop_memberships')
-      .where({ shop_id: shopId, role: 'owner' })
-      .orderBy('created_at', 'asc')
-      .orderBy('id', 'asc')
-      .first<{ user_id: number }>('user_id');
-
-    if (!foundingOwner?.user_id) {
-      throw new Error(`LIFECYCLE_FOUNDING_OWNER_MISSING: shopId=${shopId}`);
-    }
+    const foundingOwnerUserId = await resolveFoundingOwner(shopId, trx);
 
     await LifecycleTransitionService.auditIfTransitioned(
       {
         // Lifecycle is shop-scoped but permanently anchored to the founding owner.
-        userId: foundingOwner.user_id,
+        userId: foundingOwnerUserId,
         shopId,
         currentPhase: 'FT0',
       },
@@ -110,7 +103,7 @@ export async function handleOrdersCreate({
 
     debugLog('[FT0_ENTRY_FROM_INGESTION]', {
       shopId,
-      userId: foundingOwner.user_id,
+      userId: foundingOwnerUserId,
     });
   }
 

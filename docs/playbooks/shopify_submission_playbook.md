@@ -264,6 +264,23 @@ To verify end-to-end install works, watch for this sequence in `fly logs`:
 [FT2_READINESS_CHECK] { ready: true }
 ```
 
+### Zero-order install is still a valid install (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02, verified 2026-08-27)
+
+The sequence above assumes the store has at least one order (`orders/create` →
+first insight → `[FT0_COMPLETED_EVENT_EMITTED]`). A genuinely empty store that
+authoritatively completes sync emits no `orders/create` and no
+`lifecycle/first_insight_delivered`; instead `updateIntegrationStatus(COMPLETED,
+error:null)` emits one `integration/sync_completed`, the ambient projection
+worker runs the zero-order lifecycle materializer, and the tenant reaches
+**FT1 / readiness** with `ft0_state = COMPLETED`
+(`completion_reason {"orders":0,"source":"integration/sync_completed"}`) and a
+`system_readiness_state` row — no fake order required, `GET /api/v1/aha/signal`
+returns priority 0 ("You're connected — no orders yet."). Explicit FT2
+confirmation is still required. Do not read an empty reviewer/dev store that
+reached FT1 this way as a broken install. The PCD-restricted fallback path does
+**not** emit `integration/sync_completed` and is not an authoritative
+completion. Full model: `docs/playbooks/lifecycle_playbook.md` §2b.
+
 ---
 
 ## Shopify App Capabilities

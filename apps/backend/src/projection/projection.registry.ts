@@ -12,6 +12,7 @@ import { handleLifecycleFT0Completed } from './handlers/lifecycle.ft0_completed.
 import { handleLifecycleFT2Confirmed } from './handlers/lifecycle.ft2_confirmed.js';
 import { handleLifecycleFirstInsightDelivered } from './handlers/lifecycle.first_insight_delivered.js';
 import { handleIntegrationSyncRequested } from './handlers/integration.sync_requested.js';
+import { handleIntegrationSyncCompleted } from './handlers/integration.sync_completed.js';
 import { handleReconciliationIntentCaptured } from './handlers/reconciliation.intentCaptured.js';
 import { handleOrdersSyncStarted } from './handlers/orders.sync_started.js';
 import { handleCatalogProductSyncReceived } from './handlers/catalog.product_sync_received.js';
@@ -49,6 +50,15 @@ export const projectionRegistry: Record<string, ProjectionHandler> = {
   'orders/sync': handleOrdersCreate,
   'orders/sync_started': handleOrdersSyncStarted,
   'integration/sync_requested': handleIntegrationSyncRequested,
+  /**
+   * ZERO-ORDER FT0 ENTRY (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02)
+   * -----------------------------------------------------------
+   * Emitted by shopifyIntegrationStatus.service.ts on every authoritative
+   * (non-PCD-fallback) sync completion. No-ops unless the shop has zero
+   * orders and no lifecycle snapshot yet — see the handler's own header
+   * for the full self-exclusion contract against orders.create.
+   */
+  'integration/sync_completed': handleIntegrationSyncCompleted,
   'orders/paid': handleOrdersPaid,
   /**
    * SHIPPING ADDRESS CORRECTED (GH-1036, 2026-07-02)

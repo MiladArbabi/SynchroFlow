@@ -14,8 +14,8 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 | Phase | Meaning | Entry Condition |
 |---|---|---|
 | `FT_MINUS_ONE` | Registered, no Shopify connection | **Implicit** — no row exists yet in `user_lifecycle_snapshot`. Never explicitly persisted; see §2a. |
-| `FT0` | Shopify connected, sync in progress | First `orders/create` domain event processed |
-| `FT1` | Trust gate passed — data confirmed | `ft0.completed` domain event processed |
+| `FT0` | Shopify connected, sync running or done | First `orders/create` processed (populated store, §2) — **or**, for a store that authoritatively synced with zero orders, `integration/sync_completed` (§2b) |
+| `FT1` | Trust gate passed — data confirmed | `ft0.completed` processed (§2) — **or** the shared FT0/FT1 materializer running inline from `integration/sync_completed` (§2b); the zero-order path reaches FT1 without emitting `ft0.completed` |
 | `FT2` | Full platform access | User clicks "Unlock Insights" → `lifecycle/ft2_confirmed` emitted |
 
 **Source of truth:** `user_lifecycle_snapshot.phase` per shop.  
@@ -26,7 +26,7 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 
 ## 2. The Canonical Event Chain
 
-This is the exact sequence that must complete for a new merchant to reach FT2. Every step is mandatory and sequential.
+This is the exact sequence a merchant **with at least one order** follows to reach FT2. Every step is mandatory and sequential. A store that authoritatively completes sync with **zero orders** still executes steps 2–3 (OAuth callback / integration row, then Shopify sync) normally, but never emits `orders/create` — so from there it takes the zero-order path in §2b in place of the populated-store lifecycle steps 4–6; steps 7–10 (explicit FT2 confirmation) are then identical.
 
 ```
 1. User registers → shop created → phase = FT_MINUS_ONE (implicit — no row
@@ -140,7 +140,108 @@ freshly Shopify-installed tenant with zero orders synced is expected
 design, not a defect.** Do not treat it as a precondition failure, and do
 not block §8 Step 2 (inserting the offline `integrations` row) on a
 snapshot existing first — nothing in the lifecycle write-authority contract
-requires one to.
+requires one to. **This holds only until the shop's first `orders/create`
+or an authoritative zero-order `integration/sync_completed` (§2b):** an
+empty store is no longer left indefinitely snapshot-less once its sync
+authoritatively completes — §2b then writes the first snapshot straight
+through to `FT1`.
+
+### 2b. The authoritative zero-order completion path (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02, verified end to end 2026-08-27)
+
+Steps 2–3 (OAuth callback / integration row, then Shopify sync) still happen
+normally for an empty store. But `orders/create` never fires for a store that
+synced successfully with no orders, so the populated-store lifecycle branch
+that begins at step 4 (`orders.create` → first insight → `ft0.completed`) can
+never advance it — such a tenant used to stay implicitly at `FT_MINUS_ONE`
+forever. There is now a second, parallel FT0-entry path for exactly that case.
+**Zero orders is a valid authoritative Shopify state.**
+
+**Populated-store path (unchanged, §2):**
+`orders/create` → first insight → `ft0.completed` → FT0 completion → FT1.
+
+**Zero-order path (new):**
+authoritative sync `COMPLETED` + `error` null → `integration/sync_completed`
+→ shared zero-order lifecycle materializer → FT0 completion / readiness → FT1.
+
+**Trigger — authoritative sync completion only.** The sole emitter of
+`integration/sync_completed` is
+`shopifyIntegrationStatus.service.ts::updateIntegrationStatus`, and only when
+called with `status: 'COMPLETED'` and `error: null`. In the **same
+transaction** as the `integrations.sync_status` write it inserts one
+`integration/sync_completed` domain event; the existing
+`auto_create_domain_event_outbox` trigger creates the outbox row. There is no
+producer-side dedup key — a shop may legitimately complete sync many times
+(reinstall, resync); duplicates are absorbed by the handler's own state guard.
+
+**The PCD-restricted fallback is NOT authoritative.**
+`shopify-fallback.service.ts` writes `sync_status` directly and never calls
+`updateIntegrationStatus`, so it structurally cannot emit
+`integration/sync_completed`. A PCD-limited completion must never be described
+or treated as an authoritative sync.
+
+**Handler — `integration.sync_completed.ts` (registry key `integration/sync_completed`).**
+The ambient projection worker runs the shared FT0/FT1 materializer
+(`ft0-completion-materializer.service.ts`, extracted from
+`lifecycle.ft0_completed.ts` — one code path, two entry points). The handler
+**self-excludes** (no-ops) when either:
+
+- a `user_lifecycle_snapshot` row already exists for the shop (some other path —
+  normally `orders.create` — already anchored it), or
+- the shop's live `orders` count is `> 0` (the §2 INGESTION-DRIVEN block owns
+  FT0 entry for populated stores).
+
+Otherwise it resolves the shop's founding owner via
+`founding-owner.service.ts` (`shop_memberships`, `role='owner'`, earliest
+`created_at`/`id`) — the **same** resolution the §2 path and the
+Founding-owner invariant below use — and materializes:
+`ft0_state` = `COMPLETED` with `completion_reason`
+`{"orders":0,"source":"integration/sync_completed"}`,
+`system_readiness_state` created, `user_lifecycle_snapshot` transitioned
+straight through to `FT1`. No `ft0.completed` domain event is emitted on this
+path.
+
+**FirstInsight is decoupled.** `FirstInsightService` / `FT0CompletionService`
+are never called and no `lifecycle/first_insight_delivered` event is emitted —
+"first insight" has no meaning for a store with no orders, and zero-order
+lifecycle completion does not require it.
+
+**FT2 is still explicit.** This path stops at FT1 / readiness. The merchant
+still has to click "Unlock Insights" (§2 steps 8–10); the zero-order path
+never silently promotes to FT2.
+
+**Aha signal.** Through the real authenticated controller path
+(`GET /api/v1/aha/signal`), an authoritatively-synced zero-order store returns
+priority `0`:
+headline `You're connected — no orders yet.`
+detail `Your Shopify sync finished successfully. You can set up your warehouse
+now — insights will start populating when your first orders arrive.`
+
+**OAuth boundary unchanged (see §2 step 2 and §8).** The signed App Store
+install route only creates the tenant + OAuth state and 302s to Shopify; the
+`integrations` row still appears at the real OAuth callback after token
+exchange. For deterministic offline certification the canonical fixture from
+`tests/integration/lifecycle/zero-order-sync-completion.test.ts` is reused —
+`integrations(shop_id, platform='shopify', platform_shop_name=<fresh domain>,
+access_token_encrypted='offline-test-token-no-network-call',
+sync_status='SYNCING_ORDERS')`, no `shopify_app_installations` row. That is
+lifecycle certification only, **not** a complete Shopify provider installation.
+
+**Final runtime verification (2026-08-27).** A fresh tenant created through the
+real signed App Store install route (one owner, one warehouse + one
+warehouse-root location, zero bins, zero orders, no snapshot, zero tenant
+domain events, no `integrations` row, Growth trial / Shopify billing, WMS
+settings) had the offline fixture row added, then the production
+`updateIntegrationStatus({ status: 'COMPLETED', error: null })` was invoked. It
+emitted exactly one `integration/sync_completed`; the already-running ambient
+projection worker consumed it naturally (cursor advanced 1 → 2, no manual
+cursor write), the zero-order materializer ran, `user_lifecycle_snapshot`
+reached `FT1`, `ft0_state` = `COMPLETED`, `system_readiness_state` was created,
+no fake/test order existed, no `lifecycle/first_insight_delivered` event, no
+projection failure/quarantine, the worker stayed alive, and
+`GET /api/v1/aha/signal` returned priority 0. Focused suites: backend
+integration 3/3 suites (24 tests), `AhaMomentPage` frontend unit 1/1 (11
+tests), backend `tsc` 0 errors; the disposable test DB was dropped with no
+orphan and `synchroflow_db` preserved.
 
 ---
 
@@ -161,6 +262,7 @@ requires one to.
 | File | Triggered by |
 |---|---|
 | `apps/backend/src/projection/handlers/orders.create.ts` | `orders/create` — triggers `FirstInsightService` post-commit |
+| `apps/backend/src/projection/handlers/integration.sync_completed.ts` | `integration/sync_completed` — zero-order FT0/FT1 entry (§2b). No-ops if a `user_lifecycle_snapshot` exists or `orders` count > 0. Shares `ft0-completion-materializer.service.ts` with the `ft0.completed` handler. |
 | `apps/backend/src/projection/handlers/lifecycle.first_insight_delivered.ts` | `lifecycle/first_insight_delivered` — calls `FT0CompletionService` |
 | `apps/backend/src/projection/handlers/lifecycle.ft0_completed.ts` | `ft0.completed` — writes `ft0_state`, `system_readiness_state`, transitions to FT1. Registered under the key `ft0/completed`: `projection.engine.ts:237` rewrites dots to slashes before the registry lookup, so emitted and registered spellings differ by design. Do not "fix" one to match the other. |
 | `apps/backend/src/projection/handlers/lifecycle.ft2_confirmed.ts` | `lifecycle/ft2_confirmed` — writes `ft2_state`, transitions to FT2 |
@@ -266,7 +368,7 @@ The lifecycle system is **event-sourced**. All state transitions happen inside t
 1. **Controllers emit domain events only** — never write lifecycle tables directly
 2. **Projection handlers own all lifecycle writes** — `ft0_state`, `system_readiness_state`, `user_lifecycle_snapshot`
 3. **Events are immutable** — `domain_events` has a trigger that prevents UPDATE/DELETE
-4. **FT0 is edge-triggered** — `lifecycle/first_insight_delivered` fires it once. If it fails, there is no automatic retry. The event is idempotency-guarded by `domain_events_shop_first_insight_unique` constraint.
+4. **FT0 is edge-triggered** — for a populated store `lifecycle/first_insight_delivered` drives it (idempotency-guarded by the `domain_events_shop_first_insight_unique` constraint); for a zero-order store `integration/sync_completed` drives it via §2b. There is no automatic retry on either path. `integration/sync_completed` may legitimately recur on later authoritative resync/reinstall completions — the zero-order FT0/FT1 materialization is nonetheless one-time, because the handler no-ops once a `user_lifecycle_snapshot` row exists (also no-ops when `orders` count > 0).
 5. **Projection tables are trigger-guarded** — `order_fulfillment_status` and others require `SET LOCAL "synchroflow.projection" = 'true'` before writes. Only the projection engine sets this.
 
 ### What triggers each lifecycle event
@@ -274,6 +376,7 @@ The lifecycle system is **event-sourced**. All state transitions happen inside t
 | Domain Event | Emitted by | Processed by |
 |---|---|---|
 | `orders/create` | Shopify sync / webhook | `orders.create` handler |
+| `integration/sync_completed` | `updateIntegrationStatus(COMPLETED, error:null)` — authoritative sync only; the PCD fallback bypasses this emitter | `integration.sync_completed` handler — zero-order FT0/FT1 entry (§2b) |
 | `lifecycle/first_insight_delivered` | `FirstInsightService` (post-commit after first order) | `lifecycle.first_insight_delivered` handler |
 | `ft0.completed` | `FT0CompletionService` | `lifecycle.ft0_completed` handler |
 | `lifecycle/ft2_confirmed` | `lifecycle.controller.ts confirmFt2` | `lifecycle.ft2_confirmed` handler |

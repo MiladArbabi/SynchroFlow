@@ -65,7 +65,7 @@ interface AhaSupportingCard {
 }
 
 interface AhaSignal {
-  priority: 1 | 2 | 3 | 4 | 6;
+  priority: 0 | 1 | 2 | 3 | 4 | 6;
   headline: string;
   detail: string;
   revenueImpact: number | null;
@@ -83,6 +83,7 @@ interface AhaSignalResponse {
 
 function getPriorityVisual(priority: AhaSignal['priority']) {
   switch (priority) {
+    case 0: return { icon: CheckCircle,   color: ACCENT,    bg: ACCENT_GHOST,             border: ACCENT_BORDER,           label: 'Connected' };
     case 1: return { icon: AlertTriangle, color: '#EF4444', bg: 'rgba(239,68,68,0.08)', border: 'rgba(239,68,68,0.20)', label: 'Needs attention' };
     case 2: return { icon: Clock,         color: '#F59E0B', bg: 'rgba(245,158,11,0.08)', border: 'rgba(245,158,11,0.20)', label: 'Urgent' };
     case 3: return { icon: Users,         color: '#8B5CF6', bg: 'rgba(139,92,246,0.08)', border: 'rgba(139,92,246,0.20)', label: 'Strategic' };
@@ -281,7 +282,7 @@ const AhaMomentPage: React.FC = () => {
                   textTransform: 'uppercase',
                   mb: 1.25,
                 }}>
-                  LaSyncro found this in your store
+                  {signal.priority === 0 ? "You're connected" : 'LaSyncro found this in your store'}
                 </Typography>
 
                 {/* Headline */}
@@ -375,7 +376,9 @@ const AhaMomentPage: React.FC = () => {
                   </Button>
 
                   <Typography sx={{ fontSize: '0.72rem', color: pal.textHint, textAlign: 'center' }}>
-                    {signal.priority === 6
+                    {signal.priority === 0
+                      ? 'Set up your warehouse — insights arrive with your first order.'
+                      : signal.priority === 6
                       ? 'Set up your Morning Brief and track your operation daily.'
                       : 'Unlock to see the full picture — and what to do about it.'}
                   </Typography>

@@ -4,10 +4,12 @@
 // -------------------
 // GET /api/v1/aha/signal
 //
-// Runs the 6-signal priority cascade and returns the highest-priority
-// Aha signal for the authenticated shop.
+// Runs the priority cascade and returns the highest-priority Aha signal
+// for the authenticated shop.
 //
 // SIGNAL PRIORITY (evaluated in order, first match wins):
+//   0 — Zero-order connected (SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02) —
+//       authoritative sync completed, live orders count is 0
 //   1 — Stock-out risk     (any SKU < 7 days stock)
 //   2 — SLA risk           (any order SLA breached)
 //   3 — Revenue concentration (top 10% customers > 30% revenue)
@@ -26,7 +28,7 @@ import { computeDemandIntelligence } from '../../services/demand/demandIntellige
 
 // ─── Signal shape ─────────────────────────────────────────────────────────────
 
-export type AhaSignalPriority = 1 | 2 | 3 | 4 | 6;
+export type AhaSignalPriority = 0 | 1 | 2 | 3 | 4 | 6;
 
 export interface AhaSupportingCard {
   label: string;
@@ -61,6 +63,83 @@ export async function getAhaSignal(req: Request, res: Response) {
   try {
     const shopId = req.user?.shopId;
     if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+    // ── Signal 0: Zero-order connected ───────────────────────────────────────
+    // SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02 — a genuinely empty, authoritatively
+    // completed store must not be told "LaSyncro found this in your store"
+    // (nothing was found) nor left to fall through to the generic priority-6
+    // "operation looks healthy" copy. Live DB facts only — never inferred
+    // from lifecycle phase, which says nothing about sync outcome or order
+    // volume. Reached before signal 1 by design: an empty store cannot have
+    // a real stock-out/SLA/revenue/fulfilment signal, so those checks would
+    // either no-op or (worse) fire on stale/irrelevant data.
+    const zeroOrderCheck = await withTenant(shopId, async (trx) => {
+      const integration = await trx('integrations')
+        .where({ shop_id: shopId })
+        .first('sync_status', 'sync_last_error');
+
+      const authoritativeSync =
+        integration?.sync_status === 'COMPLETED' &&
+        (integration?.sync_last_error ?? null) === null;
+
+      if (!authoritativeSync) {
+        return { qualifies: false, productCount: 0 };
+      }
+
+      const orderCountRow = await trx('orders')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('* as count')
+        .first();
+
+      const orderCount = Number(orderCountRow?.count ?? 0);
+      if (orderCount > 0) {
+        return { qualifies: false, productCount: 0 };
+      }
+
+      const productCountRow = await trx('products')
+        .where({ shop_id: shopId })
+        .count<{ count: string }>('* as count')
+        .first();
+
+      return {
+        qualifies: true,
+        productCount: Number(productCountRow?.count ?? 0),
+      };
+    });
+
+    if (zeroOrderCheck.qualifies) {
+      const signal: AhaSignal = {
+        priority: 0,
+        headline: "You're connected — no orders yet.",
+        detail:
+          "Your Shopify sync finished successfully. You can set up your warehouse now — insights will start populating when your first orders arrive.",
+        revenueImpact: null,
+        cards: [
+          {
+            label: 'Sync status',
+            value: 'Complete',
+            sublabel: 'Shopify connection ready',
+          },
+          {
+            label: 'Products synced',
+            value: String(zeroOrderCheck.productCount),
+            sublabel: 'from your catalogue',
+          },
+          {
+            label: 'Orders synced',
+            value: '0',
+            sublabel: 'no orders yet',
+          },
+        ],
+        // Structurally present for response-shape compatibility with every
+        // other signal — AhaMomentPage does not read either field for
+        // routing/button behavior in this issue (locked CTA contract).
+        deepLink: '/overview',
+        ctaLabel: 'Unlock Insights',
+      };
+
+      return res.json({ signal, evaluatedAt: new Date().toISOString() });
+    }
 
     // ── Signal 1: Stock-out risk ─────────────────────────────────────────────
     // Condition: any SKU with < 7 days of stock at current 30-day velocity
