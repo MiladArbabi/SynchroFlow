@@ -10,9 +10,17 @@
  * Rebuild distinguishes the two by instanceof, NOT by matching error message
  * strings, which silently stop working when a message is reworded.
  *
- * SCOPE: rebuild skips these; the runtime worker still rethrows them. A
- * malformed producer must never be silently tolerated during live ingestion —
- * see projection.engine.ts CANONICAL_NORMALIZATION_FAILED_FATAL.
+ * SCOPE (PROJECTION-CURSOR-STALL-08): this typed class is fatal to the EVENT,
+ * never to the pipeline. On encountering one:
+ * - all projection writes for that event roll back (projection.engine.ts
+ *   CANONICAL_NORMALIZATION_FAILED_FATAL — no partial state)
+ * - rebuild records it in domain_event_projection_failures and skips it
+ * - the runtime DB projection worker records it in the same table and advances
+ *   the global cursor past it (atomically), logs [PROJECTION_EVENT_QUARANTINED]
+ *   at ERROR, and continues — one deterministic poison event can no longer stall
+ *   projection for every tenant
+ * Non-canonical failures (DB, tenant frame, handler, schema guard) stay fatal to
+ * the worker in both paths.
  */
 export class CanonicalContractError extends Error {
   public readonly tag: string;
