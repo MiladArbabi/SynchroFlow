@@ -716,7 +716,8 @@ run; this does not invalidate the completed verification evidence.
 
 ## Fresh/reviewer-shaped bin-availability contract — RECOUNT-FRESH-NOBINS-40, 2026-08-27
 
-**Status: VERIFIED — ready for commit.**
+**Status: CLOSED — committed and pushed as `307c205a`
+("fix(wms): handle fresh zero-bin recount onboarding").**
 
 The Reconcile Inventory creation dialog previously collapsed two distinct
 merchant states into the identical "No suggested bins right now." copy: a
@@ -838,10 +839,29 @@ fix.
 - `modules/wms` build: PASS. `git diff --check`: PASS.
 - Frontend-wide `tsc`: 19 pre-existing baseline errors, 0 in this issue's
   touched surfaces — the baseline is not this issue's failure.
-- Full live-browser click-through in both color schemes was not completed
-  in-session (no browser-driving capability available to the executing
-  agent); the fresh-tenant DB-state verification above and the automated
-  RED→GREEN regression evidence are the verification of record.
+- Full live-browser click-through, both color schemes, all three
+  availability states — see the matrix below.
+
+### Live-browser verification matrix
+
+**State A — zero bins (`no_bins_configured`).** PASS, light and dark.
+Verified: onboarding copy rendered; supporting explanation rendered;
+Tier-1 "Set Up Bins" rendered; healthy-state copy absent; Create Count
+unavailable; clicking "Set Up Bins" navigated to exactly
+`/floor-planning?tab=setup&view=canvas`; Floor Planning actually rendered
+— Setup tab, Canvas view.
+
+**State B — bins configured / zero suggestions (`no_suggestions`).** PASS,
+light and dark. Verified: "No bins currently need reconciliation." shown;
+no "Set Up Bins" CTA; no fresh-install onboarding copy; Create Count
+unavailable; no manual non-suggested-bin selection introduced (that
+remains `RECOUNT-MANUAL-NONSUGGESTED-41`, parked below).
+
+**State C — suggestions available (`suggestions_available`).** PASS.
+Verified on the rich `owner@test.com` tenant: suggested-bin canvas
+rendered; individual selection worked; Select All Suggested Bins worked;
+Create Count enabled after valid selection; real inventory-count task
+creation succeeded.
 
 ### Parked follow-up issues (not implemented here)
 
