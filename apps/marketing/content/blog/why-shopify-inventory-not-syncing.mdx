@@ -1,27 +1,27 @@
 ---
 title: "Shopify Inventory Not Syncing?"
 titleAccent: "Here's How to Fix It"
-description: "When Shopify inventory stops syncing, the cause is usually an app conflict, a failed webhook, a location mismatch, or an API rate limit. Here is how to find which one is breaking your sync — and fix it in minutes."
+description: "When Shopify inventory stops syncing, the cause is usually an app conflict, a failed webhook, a location mismatch, or an API rate limit. Here is how to find which one is breaking your sync — and what to check first."
 date: "2026-05-01"
-lastReviewed: "2026-07-24"
+lastReviewed: "2026-08-27"
 author: "LaSyncro"
 tags: ["shopify", "inventory", "sync", "operations"]
 primaryKeyword: "shopify inventory not syncing"
 secondaryKeywords: ["shopify stock discrepancy", "shopify inventory drift", "shopify inventory inaccurate"]
 vector: 1
-cta_text: "LaSyncro keeps your inventory accurate in real time — no manual reconciliation."
+cta_text: "LaSyncro records traceable warehouse movements and uses supported Shopify sync paths to update inventory from verified events."
 cta_url: "https://app.lasyncro.com/register"
 faq:
   - question: "Why is my Shopify inventory not syncing?"
-    answer: "Shopify inventory loses accuracy when orders are processed faster than stock updates propagate, when multiple sales channels compete for the same stock, when warehouse movements happen without being recorded in Shopify, or when third-party apps write conflicting inventory values simultaneously."
+    answer: "Shopify inventory can lose accuracy when order, webhook, API, or app updates are delayed or retried, when multiple systems write inventory from stale data, when warehouse movements happen without being recorded in Shopify, or when location assignments do not match how fulfillment actually works."
   - question: "How do I fix inventory sync issues in Shopify?"
-    answer: "Short-term: audit your app stack for conflicting inventory writers, disable multi-location if you operate a single warehouse, and run a manual stock count to reset your baseline. Long-term: implement a scan-based warehouse system where every physical movement updates Shopify instantly."
+    answer: "Short-term: audit your app stack for conflicting inventory writers, disable unused fulfillment locations, align order routing with where stock is genuinely available, and run a stock count to reset your baseline. Long-term: use warehouse workflows where physical movements create verified events that can feed supported Shopify inventory updates."
   - question: "What is inventory drift in Shopify?"
     answer: "Inventory drift is the gradual accumulation of small discrepancies between Shopify stock counts and physical stock levels. It compounds over time from unrecorded movements, return processing delays, and sync lag between integrated apps."
   - question: "Does Shopify have built-in inventory sync?"
     answer: "Shopify tracks inventory natively but does not automatically reconcile physical warehouse movements with its stock counts. Any movement that happens outside of a Shopify order — a return stowed in the wrong location, a damaged item removed from stock, a transfer between locations — requires a manual adjustment or a connected warehouse system."
   - question: "How often should I do a Shopify stock count?"
-    answer: "Most merchants doing manual stock counts do them monthly or quarterly — by which point hundreds of small discrepancies have accumulated. With a scan-based warehouse system, your stock count is continuous: every scan updates Shopify, so your count is always accurate."
+    answer: "Manual stock-count cadence depends on order volume, SKU risk, returns, and how many systems can change inventory. A scan-based warehouse system can make counts more continuous by recording verified movement events, but those events still need reliable Shopify sync paths and exception handling."
 relatedLinks:
   - href: "/blog/how-to-fix-inventory-drift-shopify"
     title: "How to Fix Inventory Drift in Shopify"
@@ -63,24 +63,24 @@ Shopify inventory stops syncing accurately when warehouse movements happen faste
   leftHeading="Inventory not syncing"
   leftItems="Conflicting app writes|Unrecorded movements|Multi-location misconfiguration|Return processing gaps"
   rightLabel="The fix"
-  rightHeading="Real-time accuracy"
-  rightItems="One authoritative inventory writer|Scan-based movements|Single active location|Returns restocked on scan"
+  rightHeading="Traceable accuracy"
+  rightItems="One authoritative inventory writer|Scan-based movements|Aligned fulfillment locations|Returns with restock evidence"
   caption="Most Shopify inventory sync problems trace back to six root causes — each with a specific fix."
 />
 
-If your Shopify stock counts do not match what is physically on your shelves, you are not alone. Inventory sync is the most common operational problem reported by Shopify merchants running their own warehouse — and it compounds silently until a customer orders something you do not actually have.
+If your Shopify stock counts do not match what is physically on your shelves, you are not alone. Inventory sync is a common operational problem for Shopify merchants running their own warehouse — and it compounds silently until a customer orders something you do not actually have.
 
 This article covers the six root causes, how to fix each one, and when manual fixes stop being enough.
 
 ## Why Does Shopify Inventory Get Out of Sync?
 
-Shopify's inventory system is designed around orders. When a customer buys something, Shopify decrements stock. When you restock, you adjust manually or via an integration. That model works when your operation is simple. It breaks when reality moves faster than Shopify can track it.
+Shopify's inventory system is designed around orders and inventory states. When a customer buys something, available inventory becomes committed to that order. When you restock, you adjust quantities manually or via an integration. That model works when your operation is simple. It breaks when reality moves faster than your systems can record it.
 
 ### 1. Conflicting App Writes
 
-If you have multiple apps with inventory write permissions — a fulfilment app, a returns app, a forecasting tool, a marketplace connector — they can overwrite each other's stock values. App A updates inventory to 47. App B, running a sync 30 seconds later, overwrites it back to 52 based on its own cached value. The result is inventory that oscillates and never stabilises.
+If you have multiple apps with inventory write permissions — a fulfilment app, a returns app, a forecasting tool, a marketplace connector — they can write conflicting stock values depending on how each integration is implemented. For example, one app might update inventory to 47 while another later writes 52 from stale cached data. The result is inventory that oscillates and never stabilises.
 
-**Fix:** In Shopify admin, audit every app with inventory write permissions. Keep only one authoritative inventory writer. All others should read only.
+**Fix:** In Shopify admin, audit every app with inventory write permissions. Keep one authoritative inventory writer for inventory-changing workflows. All others should read only where they do not need to control stock.
 
 ### 2. Failed or Delayed Webhooks
 
@@ -102,54 +102,54 @@ Every time stock moves in your warehouse without a corresponding update in Shopi
 
 ### 5. Multi-Location Misconfiguration
 
-Shopify's multi-location feature is powerful but easy to misconfigure. If you operate from a single warehouse but have multiple locations enabled, stock can be silently allocated to a location that is never fulfilled from — making items appear unavailable when they are physically in stock.
+Shopify's multi-location feature is powerful but easy to misconfigure. If active fulfillment locations and inventory assignments do not match your actual operation, stock can be allocated to a location that is not the right place to fulfill the order — making items appear unavailable when they are physically in stock elsewhere.
 
-**Fix:** If you operate from one warehouse, disable unused locations in Shopify admin and consolidate all stock to your active location. Audit which location your sales channel is set to fulfil from.
+**Fix:** Disable unused fulfillment locations, ensure active fulfillment locations and inventory assignments match the actual operation, and align order routing with where stock is genuinely available.
 
 ### 6. Return Processing Gaps
 
-Returns are the most consistent source of inventory drift for high-volume merchants. A return arrives, gets checked, sits in a returns area — and is never restocked in Shopify. Meanwhile Shopify still shows that unit as sold. Over a month with 50 returns, that is 50 units of invisible stock.
+Returns can create sync problems when the physical return and the Shopify restock happen at different times. A return arrives, gets checked, sits in a returns area — and is never restocked in Shopify. Meanwhile Shopify still shows that unit as sold.
 
-**Fix:** Build a returns processing step that includes a Shopify restock action. Every return checked and approved gets immediately restocked in Shopify before it is put away physically.
+**Fix:** Build a returns processing step that includes a verified restock decision and the appropriate Shopify update before sellable stock is put away physically.
 
 <ProductVisual
   badge="Product · Inventory Sync"
-  title="Every pick, pack, receive and stow updates Shopify in real time — sync failures become structurally impossible"
-  caption="The permanent fix is not a setting change. It is closing the gap between physical movements and system updates entirely."
+  title="Pick, pack, receive, and stow recorded as traceable warehouse movement events"
+  caption="The durable fix is not only a setting change. It is closing the gap between physical movements and system updates with verified events."
 />
 
 ## How to Fix Shopify Inventory Sync — Step by Step
 
-1. **Audit your app permissions.** Go to Shopify admin → Apps → click each app → check inventory permissions. Remove write access from all but one authoritative source.
+1. **Audit your app permissions.** Go to Shopify admin → Settings → Apps → click each app → check inventory permissions. Remove write access from apps that should not control stock.
 2. **Check integration delivery and retry logs.** Look for failed or delayed webhooks, throttled API requests, and inventory updates that were never successfully retried.
-3. **Run a full stock count.** Count every SKU physically and reconcile against Shopify. This resets your baseline. Use Shopify's built-in inventory count tool or export to CSV.
-4. **Consolidate locations.** If you run one warehouse, ensure only one Shopify location is active and all stock is assigned to it.
+3. **Run a full stock count.** Count every SKU physically and reconcile against Shopify. This resets your baseline. Use Shopify's Inventory page, inventory quantity adjustments, or inventory CSV import/export.
+4. **Align locations.** Disable unused fulfillment locations, ensure active locations reflect where stock can actually ship from, and align order routing with that reality.
 5. **Fix your returns flow.** Add a Shopify restock step to your returns process before items are put away.
 6. **Log all non-order movements.** Create a simple daily log for any stock movement that does not originate from a Shopify order. Process it in Shopify the same day.
 
-After these six steps, your inventory will be accurate. The question is how long it stays that way.
+After these six steps, you should have a cleaner inventory baseline. The question is how long it stays that way.
 
 <ArticleImage
   src="ba-scan-locations.png"
-  alt="LaSyncro mobile scanning interface showing warehouse location management and real-time Shopify inventory updates"
-  caption="Every scan — pick, pack, receive, stow — updates Shopify instantly."
+  alt="LaSyncro mobile scanning interface showing warehouse location management and traceable inventory movements"
+  caption="Scans create warehouse movement evidence that supported Shopify sync paths can use."
 />
 
 ## When Manual Fixes Stop Working
 
 The six steps above work. The problem is they require consistent human discipline across every shift, every day, with every team member. As your order volume grows, the surface area for drift grows with it.
 
-At 20 orders a day, manual reconciliation is manageable. At 100 orders a day, with returns, damaged stock, and multiple team members picking simultaneously, it becomes a part-time job — and mistakes still happen.
+Manual reconciliation can be manageable while order volume is low and one person controls inventory. As transaction volume grows, with returns, damaged stock, multiple systems, or multiple team members touching inventory, it becomes recurring operational work — and mistakes still happen.
 
-This is the point where merchants move from manual fixes to a scan-based warehouse system. Instead of recording movements after the fact, every physical action — a pick, a pack, a receive, a stow — triggers an immediate Shopify inventory update via a scan. The system of record becomes the warehouse floor, not a spreadsheet or a memory.
+This is the point where merchants move from manual fixes to a scan-based warehouse system. Instead of recording movements after the fact, each physical action — a pick, a pack, a receive, a stow — creates a verified warehouse event that can support Shopify inventory updates. The system of record becomes the warehouse floor, not a spreadsheet or a memory.
 
-LaSyncro is built exactly for this transition point. Every scan your team makes updates inventory in real time. Every movement is timestamped, attributed to an operator, and logged permanently. Inventory drift becomes structurally impossible rather than something you manage.
+LaSyncro is built exactly for this transition point. Warehouse movements are timestamped, attributed to an operator, and logged as traceable events. Supported Shopify sync and write-back paths can then update Shopify from verified warehouse activity, reducing drift risk and making discrepancies easier to trace.
 
 If you are still weighing whether a full system is warranted, [where Shopify's native tools end and a WMS begins](/blog/shopify-warehouse-management) breaks down the gap in more detail, and our [best WMS for Shopify small business comparison](/blog/best-wms-for-shopify-small-business) covers the specific options by scale.
 
 <ArticleImage
   src="ba-flow-strip.png"
-  alt="LaSyncro warehouse operations dashboard showing real-time inventory sync across pick, pack, receive and stow workflows"
-  caption="Every warehouse movement updates Shopify inventory in real time — no manual reconciliation."
+  alt="LaSyncro warehouse operations dashboard showing traceable inventory movement events across pick, pack, receive and stow workflows"
+  caption="Warehouse movement events give Shopify updates an operational source to sync from."
   priority={true}
 />
