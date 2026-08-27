@@ -1,26 +1,26 @@
 ---
 title: "How to Stop Overselling on Shopify: Causes and Fixes"
 seo_note: "Title targets action-oriented stop-overselling intent while preserving relevance for Shopify overselling queries already earning GSC impressions."
-description: "Shopify overselling usually comes from disabled inventory tracking, continue-selling settings, app sync delays, or low-stock race conditions. Here is how to find the cause and stop it before your next customer is affected."
+description: "Shopify overselling usually comes from disabled inventory tracking, continue-selling settings, app sync delays, or low-stock routing and timing gaps. Here is how to find the cause and stop it before your next customer is affected."
 date: "2026-05-08"
-lastReviewed: "2026-06-09"
+lastReviewed: "2026-08-27"
 author: "LaSyncro"
 tags: ["shopify", "inventory", "overselling", "operations"]
 primaryKeyword: "shopify overselling problem"
 secondaryKeywords: ["shopify overselling fix", "stop overselling shopify", "shopify inventory accuracy"]
 vector: 1
-cta_text: "LaSyncro prevents overselling by syncing inventory in real time from every warehouse scan."
+cta_text: "LaSyncro helps reduce overselling risk by turning receiving, picking, stowing, and return work into traceable warehouse events Shopify can sync from."
 cta_url: "https://app.lasyncro.com/register"
-cta_label: "Check your overselling risk"
+cta_label: "Check stock risk"
 faq:
   - question: "Why does Shopify allow overselling?"
-    answer: "Shopify allows overselling when inventory tracking is disabled for a product, when the 'Continue selling when out of stock' setting is enabled, when multiple sales channels compete for the same stock simultaneously, or when third-party apps have inventory write permissions that conflict with each other."
+    answer: "Shopify can allow overselling when inventory tracking is disabled for a product, when 'Continue selling when out of stock' is enabled, when order routing assigns demand to a location without enough stock, or when apps update inventory from stale data."
   - question: "How do I stop overselling on Shopify?"
-    answer: "Enable inventory tracking on every product, disable 'Continue selling when out of stock', audit all apps with inventory write permissions, and ensure your physical stock movements update Shopify in real time. For merchants with high order volume, a scan-based warehouse system eliminates the lag between physical stock changes and Shopify inventory counts."
+    answer: "Enable inventory tracking on every stocked product, disable 'Continue selling when out of stock' unless you intentionally take pre-orders, audit apps with inventory write permissions, use Safety stock unavailable inventory when you need a reserve, and make physical stock movements traceable enough that Shopify can be updated from verified warehouse events."
   - question: "What causes overselling on Shopify?"
-    answer: "The four main causes are: inventory tracking disabled on products, race conditions where two customers buy the last unit simultaneously, sync delays between Shopify and third-party apps, and unrecorded physical movements that reduce actual stock below what Shopify thinks is available."
+    answer: "The four main causes are: inventory tracking disabled on products, 'Continue selling when out of stock' enabled, low-stock or multi-location timing and routing gaps, and sync delays or app conflicts that let Shopify's available quantity drift from physical stock."
   - question: "Does Shopify have built-in overselling protection?"
-    answer: "Shopify has basic overselling protection when inventory tracking is enabled — it will decline orders when stock reaches zero. However this protection breaks down with multiple sales channels, high-volume simultaneous orders, and when physical stock counts drift from Shopify's records due to unrecorded warehouse movements."
+    answer: "Shopify has basic online overselling protection when inventory tracking is enabled and 'Continue selling when out of stock' is off: tracked online products normally cannot be purchased at zero by default. Exceptions include POS behavior, multi-location routing, and inventory drift caused by unrecorded warehouse movements or conflicting app writes."
   - question: "How do I refund a customer for an oversold item on Shopify?"
     answer: "In Shopify admin, go to the order, click Refund, select the oversold items, and issue a full refund. Always notify the customer immediately with a personal message — not a template. Offer a discount on their next order. The faster you communicate, the lower the likelihood of a chargeback or negative review."
 relatedLinks:
@@ -50,17 +50,17 @@ import HeroVisual from '@/components/article/HeroVisual'
 import ProductVisual from '@/components/article/ProductVisual'
 
 <QuickAnswer>
-Shopify overselling happens when your physical stock count falls below what Shopify thinks is available. The four root causes are: (1) inventory tracking disabled on products, (2) "continue selling when out of stock" enabled, (3) race conditions on low-stock items during simultaneous orders, and (4) sync delays between apps with conflicting inventory write permissions. Each has a direct fix covered below.
+Shopify overselling happens when the quantity available to sell in Shopify is higher than what your operation can actually fulfil. The four root causes are: (1) inventory tracking disabled on products, (2) "Continue selling when out of stock" enabled, (3) low-stock or multi-location timing and routing gaps, and (4) sync delays between apps with conflicting inventory write permissions. Each has a direct fix covered below.
 </QuickAnswer>
 
 <HeroVisual
   leftLabel="The cause"
   leftHeading="Overselling"
-  leftItems="Tracking disabled on products|Continue selling when out of stock|Race conditions on low stock|App sync delays"
+  leftItems="Tracking disabled on products|Continue selling when out of stock|Low-stock routing and timing gaps|App sync delays"
   rightLabel="The fix"
   rightHeading="Accurate inventory"
-  rightItems="Tracking enabled on all SKUs|Hard stop at zero stock|Safety stock buffer|Single inventory writer"
-  caption="Overselling happens when Shopify's count doesn't match physical reality. Four causes — four direct fixes."
+  rightItems="Tracking enabled on all SKUs|Default stop at zero stock|Safety stock held as unavailable|Single inventory writer"
+  caption="Overselling happens when Shopify's sellable count gets ahead of physical or fulfillable reality. Four causes — four direct fixes."
 />
 
 An oversold order is one of the worst operational failures a Shopify merchant can have. You have taken a customer's money for something you cannot fulfil. You now have to choose between disappointing them with a refund, delaying their order while you restock, or finding the item elsewhere at a cost to your margin.
@@ -71,11 +71,11 @@ The good news is that overselling is almost always preventable. It happens for p
 
 ### 1. Inventory Tracking Is Disabled
 
-This is the most common cause — and the most overlooked. When inventory tracking is disabled on a product in Shopify, Shopify will accept orders for that product regardless of actual stock levels. It has no way to know when you have run out.
+This is the most common cause — and the most overlooked. When inventory tracking is disabled on a product in Shopify, Shopify has no stock count to enforce for online purchasing. It has no way to know when you have run out.
 
-This setting often gets disabled accidentally during product imports, bulk edits, or when a third-party app resets product settings. A single import of 500 products with tracking disabled can silently create overselling risk across your entire catalogue.
+This setting often gets disabled accidentally during product imports, bulk edits, or when a third-party app resets product settings. A product import with tracking disabled can silently create overselling risk across your catalogue.
 
-**Fix:** In Shopify admin, go to Products → Export → check the "Inventory tracked" column for every active product. Any product showing FALSE needs to be updated. For large catalogues, use a bulk edit to enable tracking across all products simultaneously.
+**Fix:** In Shopify admin, go to Products → Export and check the inventory tracking fields in your product CSV. Current Shopify exports use fields such as "Inventory tracker" or "Variant Inventory Tracker"; stocked Shopify inventory should be tracked by Shopify, while a blank tracker means inventory is not being tracked. For large catalogues, use product bulk editing or an import to turn on Track quantity for stocked products.
 
 ### 2. "Continue Selling When Out of Stock" Is Enabled
 
@@ -83,33 +83,33 @@ Shopify has a setting per product that allows orders to continue even when inven
 
 Like disabled tracking, this setting often gets enabled accidentally during imports or by apps that reset product configurations.
 
-**Fix:** Audit every product for this setting. In Shopify admin → Products → filter by "Overselling allowed" if your Shopify plan supports it, or export and check the CSV. Disable this setting on every stocked product.
+**Fix:** Audit every product for this setting. In Shopify admin, review the product inventory settings or export your product CSV and check "Continue selling when out of stock" / "Variant Inventory Policy". A policy of "continue" allows sales after zero; "deny" prevents online purchases after tracked available inventory reaches zero. Disable continue-selling on every stocked product that is not intentionally sold as a pre-order.
 
 <ArticleImage
   src="ba-stock-risk.png"
   alt="Shopify stock risk signals showing low inventory levels that lead to overselling"
-  caption="Real-time stock risk visibility prevents overselling before it reaches a customer."
+  caption="Stock-risk visibility can help teams act before low stock becomes an oversold order."
 />
 
 ### 3. Race Conditions on Low-Stock Items
 
-When a product drops to 1 or 2 units, simultaneous orders can both pass Shopify's inventory check before either transaction completes. Customer A and Customer B both see 1 unit available, both add to cart, both check out within seconds of each other — and Shopify processes both orders before the inventory count updates.
+When a product drops to 1 or 2 units, treat it as operationally risky — but do not assume the root cause is always an undocumented storefront checkout race. Shopify's documented behavior is that tracked online inventory normally cannot be purchased at zero by default when "Continue selling when out of stock" is off.
 
-This is a genuine limitation of Shopify's inventory model at high order velocity. It becomes more common during flash sales, promotions, or when a product goes viral.
+Overselling can still appear around low stock when order routing assigns demand to a location without enough inventory, when POS staff sell below zero after a warning, or when an app writes inventory from stale data. Shopify also documents concurrency protection for inventory API mutations, so timing issues are real; the safer merchant diagnosis is low-stock exposure plus configuration, routing, or sync risk.
 
-**Fix:** Set a safety stock buffer in Shopify. Instead of allowing sales down to zero, set your reorder point 2 to 5 units above zero depending on your order velocity. This gives you a buffer against race conditions and also gives you time to reorder before you actually run out.
+**Fix:** Use Shopify's Safety stock unavailable state when you need a reserve. Moving units from Available to Unavailable → Safety stock keeps them in your on-hand count but removes them from the sellable quantity. Reorder points and low-stock alerts are planning tools; they do not by themselves reserve stock from sale.
 
 ### 4. Sync Delays and App Conflicts
 
 If you use multiple apps with inventory write permissions — a returns app, a marketplace connector, a forecasting tool, a fulfilment integration — they can each update inventory based on slightly stale data. App A sees 10 units, decrements to 8, writes 8 to Shopify. App B, running a sync 20 seconds later, also saw 10 units before the first update, decrements to 9, and writes 9 to Shopify — overwriting App A's correct count of 8. The result is an inflated inventory count that enables overselling.
 
-**Fix:** Audit every app with Shopify inventory write access. In Shopify admin → Apps → check permissions for each installed app. Designate one authoritative inventory writer and remove write access from all others.
+**Fix:** Audit every app with Shopify inventory write access. In Shopify admin, go to Settings → Apps, open each relevant app, and review Activity and permissions. Designate one authoritative inventory writer for inventory-changing workflows and remove write access from apps that should not control stock.
 
 {/* SEO note: this section covers Shopify inventory-state and edge-case queries that appear around overselling searches. */}
 
 ## What Shopify's Inventory Count Actually Means
 
-A Shopify product can look available to customers even when the operational picture is more complicated. The number that matters on the storefront is not just how many units exist in the building. Shopify separates inventory into states such as on hand, available, committed, and unavailable.
+A Shopify product can look available to customers even when the operational picture is more complicated. The number that matters on the storefront is not just how many units exist in the building. Shopify separates inventory into states such as on hand, available, committed, unavailable, and incoming.
 
 For overselling, the important distinction is this:
 
@@ -117,27 +117,28 @@ For overselling, the important distinction is this:
 - **Committed** is stock already attached to existing orders
 - **Unavailable** is stock that exists but should not be sold
 - **Available** is what can still be sold online
+- **Incoming** is stock expected from a transfer or inventory app, but not yet available to sell
 
 Overselling happens when the available number is higher than physical reality. That can happen because a return was counted too early, damaged stock was not removed, stock was moved between locations without being recorded, or an app wrote an old count back into Shopify.
 
 There are also edge cases. Draft orders, POS activity, marketplace connectors, and high-speed checkout flows can all create timing gaps if inventory is not updated from one reliable source. If you run flash sales or sell the same SKU across Shopify, Amazon, eBay, Etsy, or retail POS, treat low-stock SKUs as risk items before they hit zero.
 
-**Fix:** For any SKU with fewer than 5 units available, check the physical shelf count, committed orders, unavailable stock, and app sync history before trusting the storefront number.
+**Fix:** For low-stock SKUs, check the physical shelf count, committed orders, unavailable stock, incoming stock, and app sync history before trusting the storefront number.
 
 ## How to Audit Your Current Overselling Risk
 
 <ProductVisual
   badge="Product · Stock Risk"
-  title="Stock-out risks surfaced days before they impact revenue — demand intelligence built from real sales velocity"
-  caption="LaSyncro surfaces restock risk before it becomes an oversold order. Not a report — a live operational signal."
+  title="Stock-out and reorder risks surfaced from real sales velocity"
+  caption="LaSyncro demand intelligence can surface stockout and reorder risk before it becomes a customer-facing problem."
 />
 
 Before fixing anything, establish your current exposure:
 
-1. Export your Shopify products CSV and check "Tracked" and "Continue selling" columns for every SKU
-2. Go to Shopify admin → Apps and list every app with inventory write permissions
-3. Check your last 90 days of orders for any that were fulfilled with negative inventory — these are confirmed oversell events
-4. Compare your Shopify inventory counts against a physical count for your top 20 SKUs by order volume
+1. Export your Shopify products CSV and check inventory tracking fields such as "Inventory tracker" / "Variant Inventory Tracker" plus "Continue selling when out of stock" / "Variant Inventory Policy" for every stocked SKU
+2. Go to Shopify admin → Settings → Apps and review Activity and permissions for every app that can write inventory
+3. Review recent orders, inventory adjustments, and customer refunds for cases where recorded available stock went below zero or required manual correction
+4. Compare your Shopify inventory counts against a physical count for fast-moving or high-risk SKUs
 
 The gap between step 4's numbers is your current inventory drift — the silent overselling risk that exists right now regardless of your settings.
 
@@ -155,13 +156,13 @@ Every time a warehouse movement happens without a corresponding Shopify update �
 
 <ArticleImage
   src="restock-vs-recieve.png"
-  alt="LaSyncro returns processing workflow showing restock versus reject decisions with real-time Shopify inventory updates"
-  caption="Returns restocked at the point of scan — not at the end of a shift."
+  alt="LaSyncro returns processing workflow showing restock versus reject decisions with traceable inventory movement records"
+  caption="Returns processed through verified scan and stow events — not left until the end of a shift."
 />
 
-The permanent fix is closing the gap entirely: every physical stock movement updates Shopify in real time via a scan. When your warehouse team picks an item, Shopify decrements immediately. When a return is stowed, Shopify increments immediately. When a delivery arrives, Shopify updates as each unit is scanned in.
+The durable fix is closing that gap as much as possible: warehouse scans create traceable movement events, and supported Shopify inventory-sync paths can update Shopify from verified warehouse actions. When your warehouse team picks, receives, stows, or returns stock, the priority is a reliable event record Shopify can trust rather than a delayed spreadsheet update.
 
-This is what LaSyncro's warehouse scan layer does. Every scan — pick, pack, receive, stow — is a real-time Shopify inventory update. Overselling becomes structurally unlikely because your Shopify count no longer depends on delayed manual updates or disconnected spreadsheets.
+This is what LaSyncro's warehouse scan layer is built around. Picks, packs, receipts, and stows create traceable warehouse movements; supported Shopify sync paths can then update Shopify from verified events. Overselling risk drops because Shopify no longer depends only on delayed manual updates or disconnected spreadsheets.
 
 {/* SEO note: closing section gives problem-aware readers a clear next step after the diagnostic content. */}
 
@@ -172,9 +173,9 @@ If you are seeing oversold orders today, start with the configuration fixes firs
 1. Confirm inventory tracking is enabled on every stocked SKU
 2. Disable "Continue selling when out of stock" for products that are not pre-orders
 3. Review every app with inventory write access
-4. Count your top 20 fast-moving SKUs against Shopify's available inventory
-5. Add a safety stock buffer for low-stock, high-velocity products
+4. Count fast-moving or high-risk SKUs against Shopify's available inventory
+5. If you need a reserve, move units into Shopify's Safety stock unavailable state instead of relying on a reorder point alone
 
 If those fixes do not stop the problem, the issue is no longer just Shopify configuration. It is warehouse drift. That means stock is moving physically before Shopify knows about it.
 
-At that point, the priority is simple: every receive, stow, pick, pack, return, and adjustment needs to update Shopify at the moment the work happens. See [where Shopify's native tools end and warehouse management begins](/blog/shopify-warehouse-management) for the full breakdown.
+At that point, the priority is simple: every receive, stow, pick, pack, return, and adjustment needs to create a verified warehouse event that can support Shopify inventory updates. See [where Shopify's native tools end and warehouse management begins](/blog/shopify-warehouse-management) for the full breakdown.
