@@ -126,8 +126,17 @@ module.exports = {
     // Real Express app + real Postgres integration tests.
     {
       displayName: 'backend-integration',
+      // PROJECTION-CURSOR-STALL-08 Slice 3 — fail-closed BEFORE any test file or
+      // fixture loads unless PGDATABASE is a disposable synchroflow_test_* DB
+      // created by scripts/with-test-db.js (`npm run test:integration`).
+      globalSetup: '<rootDir>/tests/setup/backend-integration.global-setup.js',
       testEnvironment: 'node',
-      setupFiles: ['<rootDir>/tests/setup/jest.node.js'],
+      // TEST-DB-ISOLATION-11 Slice 2 — runtime-context disposable-DB guard, in
+      // addition to globalSetup (orchestration context). backend-integration only.
+      setupFiles: [
+        '<rootDir>/tests/setup/jest.node.js',
+        '<rootDir>/tests/setup/backend-integration.runtime-db-guard.js',
+      ],
       testMatch: [
         '<rootDir>/tests/integration/**/*.test.ts',
         '<rootDir>/tests/integration/**/*.test.tsx'

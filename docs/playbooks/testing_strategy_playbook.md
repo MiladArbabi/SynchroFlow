@@ -96,6 +96,7 @@ generate synchroflow_test_*
 → create DB with migration role
 → run all migrations
 → verify runtime access as sf_app
+→ hand the child PGDATABASE=<generated> + SYNCHROFLOW_DISPOSABLE_TEST_DB=1
 → execute backend-integration Jest project serially
 → close connections
 → drop disposable DB
@@ -121,6 +122,55 @@ Integration databases start from **migrations only**. There is no implicit
 
 Legacy DB-backed tests remain serial until their fixture isolation is strong
 enough for safe parallel execution.
+
+### Disposable-DB isolation enforcement (TEST-DB-ISOLATION-11)
+
+`scripts/with-test-db.js` sets `SYNCHROFLOW_DISPOSABLE_TEST_DB=1` in the child
+environment alongside the generated `PGDATABASE`. That marker is the positive
+signal that a disposable `synchroflow_test_*` database is in play.
+
+Shared pure predicate:
+
+```text
+packages/backend-core/src/config/test-database-safety.ts
+disposable-name contract: ^synchroflow_test_[A-Za-z0-9_]+$
+```
+
+Under `NODE_ENV=test`, before any knex pool is constructed:
+
+- an explicit, non-empty, non-disposable `PGDATABASE` is rejected;
+- with `SYNCHROFLOW_DISPOSABLE_TEST_DB=1`, a missing or unsafe `PGDATABASE` is
+  rejected (the disposable DB was lost — fail closed);
+- without the harness marker, the historical `backend-legacy` `.env` fallback
+  remains temporarily supported.
+
+Both the normal backend-core DB construction (`config/database.config.ts`) and
+the privileged `systemDb` (`system-db.ts`) run this check.
+
+The `backend-integration` Jest project additionally has two independent
+fail-closed guards over the same disposable-name contract:
+
+- `tests/setup/backend-integration.global-setup.js` — orchestration context;
+- `tests/setup/backend-integration.runtime-db-guard.js` (`setupFiles`) — the
+  test-runtime context that actually constructs the pools.
+
+Verified behavior:
+
+- a runtime canary proved that during `backend-integration` execution **both**
+  the normal DB client and `systemDb` resolve to the exact generated
+  `synchroflow_test_*` database;
+- direct, unsafe `backend-integration` Jest execution pointed at `synchroflow_db`
+  is rejected before any test file runs;
+- formal no-leak acceptance: selected real-DB integration suites ran against a
+  generated disposable DB, that DB was dropped afterward, zero orphan
+  `synchroflow_test_*` databases remained, `synchroflow_db` stayed present, and
+  every tracked `synchroflow_db` contamination marker was unchanged (Δ0).
+
+Scope boundary: historical `backend-legacy` tests that still rely on the old
+shared-DB `.env` fallback are **not** migrated by this issue; that cleanup is
+tracked separately as **TEST-INFRA-FOUNDATION-12**. This guarantee covers the
+`backend-integration` disposable harness and the explicit test-mode unsafe-DB
+targeting described above — not yet every backend test.
 
 ---
 
@@ -421,3 +471,10 @@ disposable `synchroflow_test_*` infrastructure rather than resetting
 `PGDATABASE`.
 
 This rule takes precedence over historical test patterns.
+
+As of **TEST-DB-ISOLATION-11** this is enforced for the `backend-integration`
+project, not merely conventional: under `NODE_ENV=test` the backend-core DB
+config, `systemDb`, and two `backend-integration` boundary guards fail closed
+unless `PGDATABASE` matches `^synchroflow_test_[A-Za-z0-9_]+$`. The
+`backend-legacy` `.env` fallback stays permitted until
+**TEST-INFRA-FOUNDATION-12**. See §3 "Disposable-DB isolation enforcement".

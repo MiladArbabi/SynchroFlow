@@ -1,10 +1,26 @@
 // apps/backend/src/config/database.config.ts
 import dotenv from 'dotenv';
 import path from 'path';
-// --- LOAD ENV (MANDATORY FOR ALL RUNTIMES) ---
-dotenv.config({
-    path: path.resolve(process.cwd(), '.env'),
-});
+import { assertDisposableTestDatabase } from './test-database-safety.js';
+// --- LOAD ENV (SCOPED — TEST-DB-ISOLATION-11) ---
+// Under NODE_ENV=test the test-database identity MUST come from the invoking
+// environment (scripts/with-test-db.js), never from developer `.env`. The
+// fail-closed check runs on the INHERITED PGDATABASE BEFORE any dotenv call so
+// `.env` can never rescue a missing/unsafe test PGDATABASE when the disposable
+// harness is running. Non-test runtimes keep the original "dotenv first" order.
+if (process.env.NODE_ENV === 'test') {
+    assertDisposableTestDatabase(process.env.PGDATABASE, {
+        harness: process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB === '1',
+    });
+    if (process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB !== '1') {
+        // No disposable harness — preserve the legacy backend-legacy `.env`
+        // fallback for this issue only (TEST-INFRA-FOUNDATION-12 removes it).
+        dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+    }
+}
+else {
+    dotenv.config({ path: path.resolve(process.cwd(), '.env') });
+}
 const environment = process.env.NODE_ENV || 'development';
 if (environment === 'production' && !process.env.APP_DATABASE_URL) {
     throw new Error('FATAL: APP_DATABASE_URL must be set to the restricted sf_app connection in production.');

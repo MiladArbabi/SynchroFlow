@@ -1,4 +1,5 @@
 import knex from 'knex';
+import { assertDisposableTestDatabase } from './config/test-database-safety.js';
 /**
  * Privileged maintenance connection.
  *
@@ -7,6 +8,14 @@ import knex from 'knex';
  * runtime client. Only explicit CLI/maintenance entry points may import it.
  */
 const environment = process.env.NODE_ENV || 'development';
+// TEST-DB-ISOLATION-11 — same fail-closed test-database identity check as
+// database.config.ts, before the systemDb pool is constructed. No dotenv here
+// (this module never loaded env itself).
+if (environment === 'test') {
+    assertDisposableTestDatabase(process.env.PGDATABASE, {
+        harness: process.env.SYNCHROFLOW_DISPOSABLE_TEST_DB === '1',
+    });
+}
 const systemConfig = {
     client: 'pg',
     connection: environment === 'production'

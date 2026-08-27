@@ -75,6 +75,10 @@ function buildChildEnv(testDatabase) {
   return Object.assign({}, process.env, {
     NODE_ENV: 'test',
     PGDATABASE: testDatabase,
+    // TEST-DB-ISOLATION-11: positive signal that a disposable synchroflow_test_*
+    // DB is in play. backend-core DB config fails closed (never `.env`-falls back
+    // to synchroflow_db) when this is set and PGDATABASE is missing/unsafe.
+    SYNCHROFLOW_DISPOSABLE_TEST_DB: '1',
     PGHOST: process.env.PGHOST,
     PGPORT: process.env.PGPORT,
     PGUSER: process.env.PGUSER,
