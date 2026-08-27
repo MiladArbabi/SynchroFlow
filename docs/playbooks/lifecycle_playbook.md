@@ -13,7 +13,7 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 
 | Phase | Meaning | Entry Condition |
 |---|---|---|
-| `FT_MINUS_ONE` | Registered, no Shopify connection | Default on registration |
+| `FT_MINUS_ONE` | Registered, no Shopify connection | **Implicit** — no row exists yet in `user_lifecycle_snapshot`. Never explicitly persisted; see §2a. |
 | `FT0` | Shopify connected, sync in progress | First `orders/create` domain event processed |
 | `FT1` | Trust gate passed — data confirmed | `ft0.completed` domain event processed |
 | `FT2` | Full platform access | User clicks "Unlock Insights" → `lifecycle/ft2_confirmed` emitted |
@@ -29,15 +29,27 @@ FT_MINUS_ONE → FT0 → FT1 → FT2
 This is the exact sequence that must complete for a new merchant to reach FT2. Every step is mandatory and sequential.
 
 ```
-1. User registers → shop created → phase = FT_MINUS_ONE
+1. User registers → shop created → phase = FT_MINUS_ONE (implicit — no row
+   is written yet; see §2a)
 
 2. OAuth CALLBACK → integration row inserted (sync_status = PENDING)
-   └─ Written at the callback (integration.controller.ts:406,418), AFTER the
-      token exchange with Shopify — not when OAuth is initiated. A tenant that
-      has only started OAuth, or that arrived via handleShopifyInstall (which
-      seeds integration_oauth_states and 302s to Shopify), has NO integration
-      row yet. The callback 502s on ACCESS_TOKEN_MISSING, so it cannot be
-      driven offline.
+   └─ Written at the callback (`handleOAuthCallback`, `integration.controller.ts`),
+      AFTER the token exchange with Shopify — not when OAuth is initiated. A
+      tenant that has only started OAuth, or that arrived via
+      handleShopifyInstall (which seeds integration_oauth_states and 302s to
+      Shopify), has NO integration row yet. The callback 502s on
+      ACCESS_TOKEN_MISSING, so it cannot be driven offline.
+   └─ **Persistence drift (found 2026-08-27):** the same callback now also
+      writes `shopify_app_installations` — added since this section was
+      first written, commented "SINGLE SOURCE OF TRUTH FOR SHOPIFY TOKEN" in
+      source, and what `execution.guard.ts`'s `proceed_fulfillment` check,
+      Shopify-provider overage billing, packing-slip URL, and order-invoice
+      endpoints all actually read. `FT0CompletionService` and
+      `FT2EvaluatorService`'s SYNC GUARD read `integrations` only — §8's
+      offline `integrations`-only fixture remains sufficient for lifecycle
+      progression and deterministic fresh-install/release tests, but it is
+      **not** a complete simulation of a real Shopify installation; anything
+      reading `shopify_app_installations` will not find a row.
    └─ domain event: integration/sync_requested → outbox → projection worker
 
 3. Shopify sync runs (shopify.service.ts)
@@ -83,14 +95,52 @@ This is the exact sequence that must complete for a new merchant to reach FT2. E
 
 10. Frontend lifecycle polling detects FT2 → routes to main app
 
-> ⚠️ **FT2 evaluator is bypassed under test.** `ft2-evaluator.service.ts:92`
-> returns `eligible: true` with all blockers skipped whenever
+> ⚠️ **FT2 evaluator is bypassed under test.** `ft2-evaluator.service.ts:93`
+> (verified current as of 2026-08-27) returns `eligible: true` with all blockers skipped whenever
 > `NODE_ENV === 'test'`. Jest sets that by default, so a lifecycle test will
 > pass step 8 without exercising any data-coverage check. The SYNC GUARD at
 > line 70 runs *above* the bypass and is unconditional in every environment —
 > no `integrations` row with `sync_status = 'COMPLETED'` means blocked,
 > test or not. See `tests/integration/fresh-install-release-path.test.ts`.
 ```
+
+### 2a. FT_MINUS_ONE is implicit, not a persisted row (verified 2026-08-27, RECOUNT-FRESH-NOBINS-40)
+
+Registration (`registerUser`, `auth.controller.ts`) does **not** insert a
+`user_lifecycle_snapshot` row. `LifecycleProjectionService.projectForMembership`
+(called at both registration and Shopify install) computes `shopLevel` from
+`system_readiness_state`/`ft2_state`; for a brand-new shop this resolves to
+`FT_MINUS_ONE`, at which point it explicitly returns without writing
+anything (`[LIFECYCLE_PROJECTION][NO_ACTION]`) — its own header rule is
+"Must NOT write snapshot directly." `LifecycleService.resolveForUser` (the
+single read authority behind `GET /api/v1/lifecycle`) queries
+`user_lifecycle_snapshot` by `shop_id`; when no row exists it returns the
+hardcoded literal `'FT_MINUS_ONE'` — no write occurs on read either. This is
+by design, stated directly in `lifecycle.service.ts`'s own header comment:
+"Absence of snapshot == FT_MINUS_ONE."
+
+**The first persisted snapshot row is written at `FT0`, not `FT_MINUS_ONE`.**
+The only INSERT site for `user_lifecycle_snapshot` in the codebase is
+`LifecycleTransitionService.auditIfTransitioned`, gated to
+`AUDITABLE_TRANSITIONS = {'FT_MINUS_ONE->FT0', 'FT0->FT1', 'FT1->FT2'}` — no
+transition ever targets `'FT_MINUS_ONE'` itself. In practice this first
+write happens inside the `orders.create` projection handler's
+"INGESTION-DRIVEN" block on the FIRST `orders/create` event — before
+`lifecycle/first_insight_delivered` or `ft0.completed` even fire — and
+resolves the founding owner from `shop_memberships` (`role='owner'`,
+earliest `created_at`/`id`), the same mechanism the Founding-owner
+invariant section below describes. By the time
+`lifecycle.ft0_completed.ts` runs its own FT0-transition attempt, the
+snapshot is usually already at `FT0`, so its idempotency guard skips with
+`[FT0_TRANSITION_SKIP_ALREADY_PAST]` and proceeds straight to FT0→FT1 —
+this is why step 6 above hedges "(if applicable)".
+
+**A missing `user_lifecycle_snapshot` row for a freshly registered or
+freshly Shopify-installed tenant with zero orders synced is expected
+design, not a defect.** Do not treat it as a precondition failure, and do
+not block §8 Step 2 (inserting the offline `integrations` row) on a
+snapshot existing first — nothing in the lifecycle write-authority contract
+requires one to.
 
 ---
 
@@ -169,8 +219,10 @@ const result = await db.transaction(async trx => {
 // AsyncLocalStorage, which this pattern never populates. That is the
 // SEC-RLS-P0-b class behind the 2026-08-06 production outage.
 // This doc previously marked it "ALSO CORRECT". It is not. Prefer withTenant().
-// Live sites still on it: lifecycle.controller.ts:288,
-// ft2-evaluator.service.ts:63 and :126 (LIFECYCLE-ALS-01).
+// Live sites still on it: lifecycle.controller.ts's confirmFt2 (line drifted
+// to :292 as of 2026-08-27 — verify against source rather than trusting this
+// number), ft2-evaluator.service.ts:63 and :126 (both confirmed current as
+// of 2026-08-27) (LIFECYCLE-ALS-01).
 
 // ❌ WRONG — bare db() call on strict RLS table
 const result = await db('orders').where({ shop_id: shopId }).count('* as count').first();
@@ -270,8 +322,7 @@ SELECT event_type, event_time FROM domain_events
 | `[FT0][BLOCKED][NO_ORDERS]` | Orders query returned 0 — likely RLS missing tenant context |
 | `[FT0][BLOCKED][INSIGHT_EVENT_NOT_FOUND]` | `lifecycle/first_insight_delivered` event not in DB |
 | `[FT0_TRANSITION_SKIP_ALREADY_PAST]` | Phase already at or past FT0 — idempotency guard |
-| `[FT2_READINESS_CHECK] ready: true` | `system_readiness_state` row exists ✅ |
-| `[FT2_READINESS_CHECK] ready: false` | Row missing — FT0 completion likely failed |
+| ~~`[FT2_READINESS_CHECK] ready: true/false`~~ | **Dead as of 2026-08-27** — the `console.info` call in `lifecycle.controller.ts`'s readiness handler is commented out. The underlying behavior (`ready: !!readiness` in the JSON response) is unchanged; only the log line is gone. Read the HTTP response body instead of grepping for this signal. |
 | `[FIRST_INSIGHT_POST_COMMIT_FAILED]` | `FirstInsightService` failed — check RLS tenant context |
 
 ### If FT0 is stuck
@@ -327,6 +378,35 @@ curl -s -o /dev/null -w 'install %{http_code}\n' \
 ```
 
 Expect `302`. Read back the new `shops.id` and `users.id` — both are needed below.
+
+### Step 1 (alternative) — `/auth/register` as the offline fixture bootstrap (verified 2026-08-27)
+
+`POST /api/v1/auth/register` is a safer substitute for the HMAC install
+above when the goal is a deterministic fresh-account fixture rather than
+proving the install/HMAC path itself. `registerUser` (`auth.controller.ts`)
+creates, on the same restricted transaction pattern as the HMAC install
+path:
+
+- a real, immediately login-capable owner (a real password — not the HMAC
+  path's password-login-disabled ghost user);
+- the shop (`createTenantShop`/`setTenantContext`);
+- one warehouse (`is_default: true`) and its root `warehouse_locations` row
+  (`type: 'warehouse'`, zero bins);
+- `shop_wms_settings`, `shop_memberships` (`role: 'owner'`);
+- a 14-day Growth-tier trial subscription and entitlements
+  (`EntitlementsService.applyFromCommercialGrant`).
+
+It does **not** insert `integration_oauth_states`, `integrations`, or
+`shopify_app_installations` — Steps 2-5 below proceed unchanged from this
+starting point. The resulting founding-owner identity is real and already
+login-capable, which removes the need for Step 4's synthetic-JWT
+workaround below — a normal `POST /api/v1/auth/login` for that user
+produces an equivalent token via the same `issueAuthTokens(...)` call
+shape the HMAC/ghost-user path also uses.
+
+Prefer this over the HMAC install path whenever the test does not need to
+exercise HMAC/redirect/install-specific behavior itself. Used for
+`RECOUNT-FRESH-NOBINS-40`'s live verification.
 
 ### Step 2 — the integration row (must precede Step 3)
 
@@ -434,6 +514,24 @@ confirmed FT2 lifecycle"}` until Step 4 lands — that is `requireFt2`, not a bu
 > **No batch cancel endpoint exists** (REV-HARD-13). Released orders cannot be
 > returned to the pool, and `inventory_movements` is append-only by trigger.
 > Budget one throwaway tenant per release test rather than planning to reset one.
+
+### Offline fixture vs. real Shopify OAuth — do not conflate (verified 2026-08-27)
+
+Everything in this §8 ladder proves category **A: an offline
+reviewer-shaped fixture** — deterministic lifecycle/recount/release
+behavior without a real Shopify store. It does **not** prove category
+**B: a real Shopify-provider OAuth/install smoke or certification test** —
+actual HMAC/redirect, `admin/oauth/access_token` token exchange, real
+scopes, real `shopify_app_installations` persistence from a genuine
+install. No automated test in this repository currently exercises B — a
+search for real token-exchange mocking (`axios`, `nock`, or the literal
+`admin/oauth/access_token` path) across `tests/` returns nothing; the
+existing install/OAuth-adjacent tests
+(`shopify-install-provisions-wms-settings.test.ts`,
+`fresh-install-release-path.test.ts`) both use this same offline
+`encrypt('offline-test-token-no-network-call')` pattern as Step 2 above.
+Do not present a passing offline-fixture run as evidence that real OAuth
+works.
 
 ---
 

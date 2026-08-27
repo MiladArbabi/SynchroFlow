@@ -261,6 +261,13 @@ export type WmsModuleFT2Props = {
     pendingCountTaskId?: string | null;
     /** Called when an operator enters a counting session. */
     onCountSessionEnter?: (taskId: string) => void;
+    /**
+     * RECOUNT-FRESH-NOBINS-40: Reconcile Inventory's zero-bin empty state.
+     * Navigation ownership stays at the page level (WmsOperationsPage), not
+     * in this presentational module — same division already used for the
+     * create-count API call.
+     */
+    onSetupBinsClick: () => void;
 };
 export interface PackFreeScanLineItem {
     lasyncro_line_item_id: string;

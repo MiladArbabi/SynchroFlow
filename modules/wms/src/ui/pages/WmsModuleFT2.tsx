@@ -39,11 +39,13 @@ import CountingSessionPage, {
 } from './CountingSessionPage.js';
 import { IsometricCanvas, ModuleErrorBoundary, WarehouseGrid } from '@lasyncro/shared/ui';
 import {
+  classifyRecountBinAvailability,
   mapRecountPreviewBinsToCanvas,
   selectAllRecountBins,
   toggleRecountBinSelection,
   type RecountPreviewBin,
 } from './recountSelection.js';
+import { RecountEmptyState } from '../components/RecountEmptyState.js';
 
 export {
   mapRecountPreviewBinsToCanvas,
@@ -309,6 +311,13 @@ export type WmsModuleFT2Props = {
   pendingCountTaskId?: string | null;
   /** Called when an operator enters a counting session. */
   onCountSessionEnter?: (taskId: string) => void;
+  /**
+   * RECOUNT-FRESH-NOBINS-40: Reconcile Inventory's zero-bin empty state.
+   * Navigation ownership stays at the page level (WmsOperationsPage), not
+   * in this presentational module — same division already used for the
+   * create-count API call.
+   */
+  onSetupBinsClick: () => void;
 };
 
 const STATUS_LABELS: Record<string, {
@@ -889,6 +898,7 @@ function WmsModuleFT2Inner({
   canReassignCount,
   pendingCountTaskId,
   onCountSessionEnter,
+  onSetupBinsClick,
 }: WmsModuleFT2Props) {
   const [countDialogOpen, setCountDialogOpen] = useState(false);
   const [countDialogLoading, setCountDialogLoading] = useState(false);
@@ -1021,6 +1031,10 @@ function WmsModuleFT2Inner({
   );
   const selectedCanvasBins = selectedCountBins.filter((locationCode) =>
     countBinCanvasSelection.selectableCodes.has(locationCode)
+  );
+  const recountBinAvailability = classifyRecountBinAvailability(
+    gridLocations,
+    countPreviewBins
   );
 
   // Auto-enter receive session if handed off from Suppliers portal via URL param
@@ -1398,18 +1412,19 @@ function WmsModuleFT2Inner({
 
           {!countDialogLoading && (
             <>
-              <Typography
-                sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }}
-              >
-                Suggested bins
-              </Typography>
+              <RecountEmptyState
+                availability={recountBinAvailability}
+                onSetupBinsClick={onSetupBinsClick}
+              />
 
-              {countPreviewBins.length === 0 ? (
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  No suggested bins right now.
-                </Alert>
-              ) : (
+              {recountBinAvailability === 'suggestions_available' && (
                 <>
+                  <Typography
+                    sx={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-3)', mb: 1 }}
+                  >
+                    Suggested bins
+                  </Typography>
+
                   {countBinCanvasSelection.canvasZones.length > 0 && (
                     <Box
                       sx={{

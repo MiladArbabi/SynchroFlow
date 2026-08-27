@@ -120,8 +120,8 @@ Invariant:
 
 Fresh-merchant / zero-operational-bin preview and creation-dialog empty-state
 behavior — distinguishing a true zero-bin fresh install from "bins exist but
-no suggestions" — is tracked separately as `RECOUNT-FRESH-NOBINS-40`
-(status: pending AUDIT). Not addressed here.
+no suggestions" — is `RECOUNT-FRESH-NOBINS-40` (status: **VERIFIED**, see the
+dedicated section near the end of this document). Not addressed here.
 
 ## Reconcile inventory entry point — RECOUNT-CTA-33a
 
@@ -713,3 +713,143 @@ backend `tsc --noEmit` PASS, `git diff --check` PASS.
 Live browser: reassignment recovery flow exercised and accepted. A later
 local DB reset/full-seed removed the temporary seeded data used for that
 run; this does not invalidate the completed verification evidence.
+
+## Fresh/reviewer-shaped bin-availability contract — RECOUNT-FRESH-NOBINS-40, 2026-08-27
+
+**Status: VERIFIED — ready for commit.**
+
+The Reconcile Inventory creation dialog previously collapsed two distinct
+merchant states into the identical "No suggested bins right now." copy: a
+merchant with zero warehouse bins configured at all, and a merchant with
+bins already configured but nothing currently needing reconciliation. A
+fresh/reviewer-shaped tenant landed in the first state with no visible path
+forward.
+
+### Availability classification
+
+`classifyRecountBinAvailability(gridLocations, previewBins)`
+(`modules/wms/src/ui/pages/recountSelection.ts`) now resolves one of four
+states:
+
+- `unknown` — the warehouse-grid query has not resolved yet
+  (`gridLocations === undefined`), regardless of preview-bin count.
+  **Must never be presented as "zero bins configured."** The component
+  renders nothing in this state rather than guessing.
+- `no_bins_configured` — grid resolved, zero `type='bin'` locations exist.
+  The root warehouse location itself does **not** count as a bin; an
+  unpositioned `type='bin'` row (no parent, not yet placed on the floor)
+  **does** count as a configured bin.
+- `no_suggestions` — grid resolved, at least one `type='bin'` location
+  exists, but the preview returned zero suggested bins.
+- `suggestions_available` — the preview returned at least one bin. This
+  takes priority even if the grid query has not resolved yet.
+
+### Zero-bin onboarding contract (`no_bins_configured`)
+
+Shown in `RecountEmptyState`:
+
+- "Set up your warehouse bins before creating an inventory count."
+  (`Alert severity="info"`);
+- supporting copy: recounts check physical storage locations, not products
+  in the abstract;
+- a Tier-1 "Set up bins" CTA (`WMS_TIER1_ACTION_SX`).
+
+Clicking "Set up bins" navigates to exactly
+`/floor-planning?tab=setup&view=canvas` (see Navigation regression below).
+Create Count remains unavailable — there is nothing to select.
+
+### Bins-exist / zero-suggestions contract (`no_suggestions`)
+
+Shown: "No bins currently need reconciliation." Neither the onboarding
+copy nor the "Set up bins" CTA renders. Create Count remains unavailable
+under current suggested-bin-only creation behavior — a merchant with
+configured bins but no active suggestion still cannot manually target an
+arbitrary bin from this dialog (tracked separately, see Parked issues
+below).
+
+### Suggestions-exist behavior — unchanged
+
+`suggestions_available` preserves existing `RECOUNT-CTA-33b` behavior:
+suggested-bin isometric/canvas view, independent per-bin selection, Select
+all suggested bins, Create Count enabling after selection, and real
+count-task creation.
+
+### Fresh/reviewer-shaped live verification
+
+A real reviewer-shaped tenant was created through `POST /api/v1/auth/register`
+(shop_id=2, user_id=3, owner) — real login-capable owner, one warehouse, one
+root `warehouse_locations` row (`WH-2-ROOT`), zero bins, no Shopify
+connection, implicit `FT_MINUS_ONE` (see `lifecycle_playbook.md` §2a for why
+that is not a persisted row). The offline fixture pattern from
+`lifecycle_playbook.md` §8 was then used — a canonical encrypted
+`integrations` row (`sync_status=COMPLETED`), followed by
+`seed_fresh_install.cli.ts` run exactly once (3 products, 5 orders,
+inventory rooted at `WH-2-ROOT`, zero bins preserved).
+
+Lifecycle progressed through the real ladder — implicit `FT_MINUS_ONE` →
+first `orders/create` → `FT0` → `lifecycle/first_insight_delivered` →
+`ft0.completed` → `FT1` → user-confirmed "Unlock Insights" → `FT2` — with DB
+state verified at both FT1 and FT2: `user_lifecycle_snapshot.user_id=3`
+correctly anchored to the founding owner at each phase, `ft0_state`/
+`system_readiness_state`/`ft2_state` present, 5 orders, zero bins, `WH-2-ROOT`
+only throughout.
+
+The Reconcile Inventory dialog rendered the `no_bins_configured` state
+correctly on this tenant.
+
+### Navigation regression discovered and fixed during live verify
+
+The "Set up bins" CTA rendered correctly but was a live no-op — clicking it
+left the URL and rendered page unchanged. Root cause: `WmsOperationsPage`
+imported `navigate` from the internal `runtime` module
+(`apps/frontend/src/runtime/registerRoute.ts`), whose `navigate()` is a
+"fallback only" helper that calls raw `window.history.pushState`/
+`replaceState` directly — it never notifies the React Router tree
+(`<BrowserRouter>`/`<Routes>`), so the rendered page never actually swaps.
+
+Fixed to use React Router's `useNavigate()` (the app-wide convention — 60+
+call sites; the actual working precedent for this exact destination is
+`OverviewFT2Page.tsx`, not the previously-assumed `ProductsWmsReadinessPage.tsx`,
+which carries the same `runtime.navigate` defect — see Parked issues below).
+`handleSetupBinsClick` now calls
+`navigate('/floor-planning?tab=setup&view=canvas')` — the exact destination
+required, landing on Floor Planning's Setup tab in canvas view, not a bare
+`/floor-planning`.
+
+A new page-level behavioral regression test,
+`tests/unit/ui/wms/WmsOperationsPage.floorPlanningNav.test.tsx`, mounts
+`WmsOperationsPage` under a real `MemoryRouter`/`Routes` pair and asserts an
+actual rendered-route swap plus exact query parameters (`tab=setup`,
+`view=canvas`) — not merely that the callback was invoked. The existing
+`RecountFreshNoBins.test.tsx` renders `RecountEmptyState` in isolation and
+only proves callback invocation; it could not have caught this defect, and
+that limitation is now documented in the new test file itself. RED (against
+the unfixed `runtime.navigate` implementation) reproduced the exact live
+symptom — WMS page content stayed on screen, no route swap. GREEN after the
+fix.
+
+### Verification
+
+- New navigation regression: 1/1 PASS.
+- Existing recount frontend suites re-run unmodified: `RecountFreshNoBins`,
+  `wms-recount-bin-canvas`, `wms-recount-bin-selection` — 16/16 PASS.
+- `test:config`: `backend-legacy` 128, `backend-integration` 17, `contract`
+  4, `frontend` 103, `UNOWNED=0`, `MULTI_OWNED=0`.
+- `modules/wms` build: PASS. `git diff --check`: PASS.
+- Frontend-wide `tsc`: 19 pre-existing baseline errors, 0 in this issue's
+  touched surfaces — the baseline is not this issue's failure.
+- Full live-browser click-through in both color schemes was not completed
+  in-session (no browser-driving capability available to the executing
+  agent); the fresh-tenant DB-state verification above and the automated
+  RED→GREEN regression evidence are the verification of record.
+
+### Parked follow-up issues (not implemented here)
+
+- `RECOUNT-MANUAL-NONSUGGESTED-41` — a merchant with configured bins but no
+  active suggestion still cannot manually target an arbitrary bin from this
+  dialog.
+- `RECOUNT-ROOT-CREATE-GUARD-42` — guard behavior for count creation against
+  the root warehouse location itself.
+- `WMS-READINESS-NAV-44` — `ProductsWmsReadinessPage.tsx` uses the same
+  Router-less `runtime.navigate` fallback at two call sites and likely
+  carries the identical no-op route-swap defect.

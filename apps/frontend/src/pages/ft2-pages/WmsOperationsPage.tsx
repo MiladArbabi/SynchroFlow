@@ -23,7 +23,7 @@ import type {
 } from '@lasyncro/wms';
 import { useAuth } from 'contexts/AuthContext';
 import { useWarehouseGrid } from '../floor-planning/useWarehouseGrid';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Box, Typography, TextField } from '@mui/material';
 import { AlertTriangle } from 'lucide-react';
 import { printViaQz } from 'utils/qzPrint';
@@ -107,6 +107,7 @@ function ProblemBinPrompt({ binInput, setBinInput, binSaving, binError, onSave }
  */
 
 export default function WmsOperationsPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [recountUpgradeOpen, setRecountUpgradeOpen] = useState(false);
   const {
@@ -509,6 +510,15 @@ export default function WmsOperationsPage() {
     );
   }, []);
 
+  // RECOUNT-FRESH-NOBINS-40 — navigation ownership stays at the page level,
+  // not inside the presentational WMS module. Must use React Router's
+  // useNavigate(), not runtime.navigate() — the latter only calls
+  // window.history.pushState/replaceState and never notifies the active
+  // <Routes> tree, so the rendered page never actually changes.
+  const handleSetupBinsClick = useCallback(() => {
+    navigate('/floor-planning?tab=setup&view=canvas');
+  }, [navigate]);
+
   // RECOUNT-CLAIM-ABANDONED-131
   const handleReassignCountingTask = useCallback(async (
     taskId: string,
@@ -652,6 +662,7 @@ export default function WmsOperationsPage() {
       onCountSessionEnter={(id) =>
         setSearchParams({ countTaskId: id }, { replace: true })
       }
+      onSetupBinsClick={handleSetupBinsClick}
       onCreateReceiveJob={handleCreateReceiveJob}
       onFetchReceiveJob={handleFetchReceiveJob}
       onInspectReceiveLine={handleInspectReceiveLine}
