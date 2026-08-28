@@ -424,6 +424,111 @@ COMPLETED`, `completion_reason {"orders":0,"source":"integration/sync_completed"
 proof above — one authoritative recovery, verified from both the empty-store
 engine angle and the recovery-path ownership angle.
 
+### Fresh-install Shopify App Store certification passed end-to-end (SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, 2026-08-28)
+
+**Result: PASS / closed candidate.** The full canonical fresh-install chain is
+certified — pristine Shopify dev store → signed App Store install entry →
+tenant / bootstrap → real Shopify consent → OAuth callback / token exchange →
+effective-scope validation → provider persistence → `sync_requested` → canonical
+real-provider initial sync → authoritative zero-product / zero-order completion →
+`sync_completed` → FT0 completion / readiness → reviewer-visible Aha state →
+explicit confirmation → FT2 / AppLayout. No implementation change was required
+during the run. -06 and -07 repaired defects found while certifying earlier
+stores; -03 is the final fresh-store proof that the complete path now succeeds
+with no recovery.
+
+**Fresh store.** `4th-lasyncro-dev-store.myshopify.com` — Shopify Basic dev
+store, test-data generation off, feature preview off, no products or orders
+added. Resulting tenant `shop_id = 6` / `user_id = 6`; integration
+`integration_id = 3`.
+
+**P0 — pristine baseline.** Before the install entry the target domain had
+`shopify_app_installations = 0`, `integrations = 0`,
+`integration_oauth_states = 0` — no reused laSyncro provider association.
+
+**P1 — signed install entry.** One signed
+`GET /api/v1/integrations/shopify/install` returned `HTTP 302` to
+`4th-lasyncro-dev-store.myshopify.com/admin/oauth/authorize` with `client_id`
+present, OAuth state length 32, redirect URI
+`http://localhost:3000/api/v1/integrations/oauth/callback/shopify`, and exactly
+the 10 required scopes (`read_products`, `read_orders`, `read_customers`,
+`read_inventory`, `write_inventory`, `read_locations`, `read_fulfillments`,
+`write_fulfillments`, `read_merchant_managed_fulfillment_orders`,
+`write_merchant_managed_fulfillment_orders`) — scope match true. No redirect was
+followed for this shape check.
+
+**P1 bootstrap.** Ghost owner (`role = owner`,
+`entry_channel = shopify_app_store`, password-login disabled); exactly one OAuth
+state (`platform = shopify`, `install_source = app_store`, length 32, unexpired);
+one Main warehouse (`root_location_code = WH-6-ROOT`, one `warehouse_locations`
+row, `type = warehouse`, no bins); one `shop_wms_settings` row; subscription
+`tier = growth` / `billing_interval = monthly` / `billing_currency = USD` /
+`billing_provider = shopify` / `status = trialing`. Before callback:
+`oauth_states = 1`, `installations = 0`, `integrations = 0`, `orders = 0`.
+
+**P2 — real consent / callback.** The P1 OAuth state was reused; the install
+entry was not re-invoked. The real Shopify "Install app" consent screen showed
+the LaSyncro identity, the unreviewed/development-app warning, and the requested
+data-access sections. The user clicked Install once; the callback / token
+exchange completed and the browser reached the empty-store Aha state.
+
+**P3 — provider persistence.** OAuth state after callback: 0 rows (consumed).
+`shopify_app_installations`: exactly 1 — `id = 2`, `shop_id = 6`,
+`domain = 4th-lasyncro-dev-store.myshopify.com`,
+`shop_gid = gid://shopify/Shop/101756666170`, token persisted encrypted.
+Effective persisted scope count 10, matching the 10 required scopes including
+`read_locations` — proof the active app version and callback grant contract
+include `read_locations`. Integration: `id = 3`, `shop_id = 6`,
+`platform = shopify`,
+`platform_shop_name = 4th-lasyncro-dev-store.myshopify.com`, encrypted provider
+token persisted.
+
+**P4–P6 — real provider initial sync.** Not a synthetic fixture and not manual
+recovery — the fresh OAuth callback enqueued the normal initial-sync path. Final
+integration: `sync_status = COMPLETED`, `sync_progress_current = 0`,
+`sync_progress_total = 0`, `sync_last_error = NULL`. Entity counts all zero
+(`customers`, `external_product_identity_map`, `inventory_movements`,
+`inventory_truth`, `orders`, `products`, `variants`) — authoritative zero-entity
+provider truth; no fake entities created. Domain events for shop 6: event 5
+`integration/sync_requested` (`integration_id = 3`), event 6
+`integration/sync_completed` (`integration_id = 3`), event 7
+`lifecycle/ft2_confirmed` (`user_id = 6`,
+`evaluator_version = ft2-evaluator@v1`) — counts `sync_requested = 1`,
+`sync_completed = 1`, `ft2_confirmed = 1`. Outbox: one row per event, all
+`published_at` populated, `retry_count = 0`, `last_error` NULL. Projection: the
+single global `orders_projection` cursor advanced through event 7, event 6 was
+caught up, shop-6 projection failures 0. There is no separate
+`lifecycle_projection` cursor — the production worker uses the one global
+`orders_projection` cursor for these events, and durable FT2 state proves event
+7 projected.
+
+**P7 — authoritative zero-order / zero-product.** `ft0_state.status = COMPLETED`,
+`completion_reason {"orders":0,"source":"integration/sync_completed"}`,
+`system_readiness_state` materialized. Independently confirms the contracts fixed
+in SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 (`d4dc236b`) and
+SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07 (`5087e6bf`): -06 and -07 repaired
+defects found while certifying earlier stores, -03 proves the complete canonical
+path now succeeds on a fresh store without recovery.
+
+**P8 — reviewer-visible browser path.** Shopify "Install app" → OAuth / callback
+→ laSyncro Aha state → explicit CTA → AppLayout. The Aha screen showed
+"Connected", "You're connected — no orders yet.", sync status Complete, Products
+synced 0, Orders synced 0, and the Unlock Insights CTA. The user clicked the CTA
+explicitly; `lifecycle/ft2_confirmed` was then emitted. Final durable lifecycle:
+`user_lifecycle_snapshot.phase = FT2`, `ft2_state` present,
+`evaluator_version = ft2-evaluator@v1`,
+`expansion_eligibility_state.eligible = true`, system readiness present; the
+frontend then rendered the normal AppLayout / Overview. FT2 promotion is by
+explicit FT1 → FT2 confirmation, never automatic.
+
+**Certification decision.** SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03: **PASS / closed
+candidate.** Certified chain: pristine Shopify dev store → signed App Store
+install entry → tenant / bootstrap → real Shopify consent → OAuth callback /
+token exchange → effective-scope validation → provider persistence →
+`sync_requested` → canonical real-provider initial sync → authoritative
+zero-product / zero-order completion → `sync_completed` → FT0 completion /
+readiness → reviewer-visible Aha state → explicit confirmation → FT2 / AppLayout.
+
 ---
 
 ## Shopify App Capabilities
@@ -500,10 +605,15 @@ was deployed as a new version scope-read-locations-1e36879a
 scope-read-locations-1e36879a is now active; lasyncro-16 is inactive; the
 active app configuration contains all 10 required scopes including
 read_locations. normalizeAndValidateShopifyGrantedScopes was not weakened.
-A successful fresh-provider OAuth is not yet proven — that is
-SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, to be run against a brand-new empty dev
-store. See docs/playbooks/oauth_scopes_location_scope_2026_08_13.md
-section "Active app-version deployment — 2026-08-28".
+A successful fresh-provider OAuth was proven on 2026-08-28 by
+SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, run from P0 against a brand-new empty dev
+store (`4th-lasyncro-dev-store.myshopify.com`, `shop_id = 6`,
+`integration_id = 3`): the real callback persisted all 10 required scopes
+including `read_locations` on the new active version. See "Fresh-install Shopify
+App Store certification passed end-to-end (SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03,
+2026-08-28)" under Install Flow Verification, and
+docs/playbooks/oauth_scopes_location_scope_2026_08_13.md section "Active
+app-version deployment — 2026-08-28".
 
 read_locations is required for human-readable Shopify Location metadata.
 The development-store proof successfully resolved:
@@ -532,7 +642,8 @@ the API, then cleared it and verified the restored null state.
 - Webhook "address already taken" errors on re-install — non-fatal, webhooks already registered
 - `[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing` — resolved by setting `APP_BASE_URL` secret
 - `[INGESTION_STALLED]` watchdog fires after sync on stores with stable order counts — false positive, harmless
-- **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — after a successful authoritative completion, `integrations.updated_at` stayed at the original OAuth/sync timestamp, so `GET /integrations/sync-status` reported a stale `lastSyncedAt` even though `sync_status = COMPLETED`. Observed during SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 live verification; separate issue, not addressed here.
+- **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — after a successful authoritative completion, `integrations.updated_at` stayed at the original OAuth/sync timestamp, so `GET /integrations/sync-status` reported a stale `lastSyncedAt` even though `sync_status = COMPLETED`. Observed during SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 live verification; separate issue, not addressed here. Backend field-freshness — distinct from the frontend-cache issue FE-SYNC-STATUS-STALE-09 below.
+- **FE-SYNC-STATUS-STALE-09 — sync status pill can retain pre-completion React Query state until refetch.** Observed repeatedly in local development: after backend sync had reached `COMPLETED` and authenticated `GET /api/v1/integrations/sync-status` returned `HTTP 200` with `status = COMPLETED`, `integrationId = 3`, progress `0/0`, `percentage = 100`, all counts zero, `lastError = null`, the top-right pill could still show `Syncing` on first entry to AppLayout, flipping to `Live` only after a normal page reload or tab-focus/refetch. Source-level: `IntegrationProvider` queries `integration-status` with no polling/refetch interval; `isSyncComplete` reflects the last React Query result and `TopnavbarContent` renders `Live` only when `isSyncComplete === true`, otherwise `Syncing`; a direct native `fetch` does not update the React Query cache. Non-blocking frontend cache/query-freshness issue — not a backend/provider sync failure, reproduced in development, not proven as a production fresh-install defect (a production screenshot shows the pill/popover can show `Live` correctly, but that is not equivalent fresh-install evidence). Not addressed here.
 **SHOP-REV-01f — pack stage unreachable without wms_barcode.**
 orders.wms_barcode was written in exactly one place: a closure inside
 releasePickBatch (pickBatch.service.ts). Any order reaching pack by another

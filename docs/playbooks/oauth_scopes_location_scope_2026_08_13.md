@@ -379,14 +379,19 @@ scopes, including `read_locations`.
 remains a REQUIRED capability; a fresh install whose grant set omits it still
 fails closed with `SHOPIFY_REQUIRED_SCOPES_MISSING:read_locations`.
 
-### Not yet certified
+### Certified — fresh-provider OAuth proven (2026-08-28)
 
-A successful real fresh-provider OAuth has **not** been demonstrated on the new
-active version. The next certification step is **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03**,
-run from P0 against a **brand-new empty dev store** — not
-`new-dev-dash-for-lasyncro.myshopify.com` and not any previously used store.
-Until that passes, fresh-provider OAuth is not proven and
-SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03 is not closed.
+**SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03 passed**, run from P0 against a brand-new
+empty dev store (`4th-lasyncro-dev-store.myshopify.com`, `shop_id = 6`,
+`integration_id = 3`) — not `new-dev-dash-for-lasyncro.myshopify.com` and not any
+previously used store. The real OAuth callback on the new active version
+persisted all 10 required scopes, including `read_locations`; the canonical
+real-provider initial sync then completed authoritatively with zero entities and
+the tenant reached FT2 via explicit confirmation. Fresh-provider OAuth is
+proven; SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03 is a PASS / closed candidate. Full
+P0–P8 evidence: `docs/playbooks/shopify_submission_playbook.md` → "Fresh-install
+Shopify App Store certification passed end-to-end
+(SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, 2026-08-28)".
 
 ---
 
