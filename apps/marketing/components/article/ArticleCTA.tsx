@@ -37,7 +37,7 @@ export default function ArticleCTA({ variant = 'full', theme = 'legacy', text, h
           flex: 1, fontFamily: isDark ? 'var(--sans)' : "'DM Sans', system-ui, sans-serif",
           fontSize: '14px', color: isDark ? 'var(--ink-2)' : '#3A3835', margin: 0, lineHeight: 1.6,
         }}>
-          {text ?? 'LaSyncro handles this automatically — real-time, no manual work.'}
+          {text ?? 'See how LaSyncro connects Shopify with your warehouse workflows.'}
         </p>
         <a href={targetHref} onClick={handleClick} style={{
           flexShrink: 0, borderRadius: '6px', background: isDark ? 'var(--accent)' : '#FF6B2B',
@@ -71,7 +71,7 @@ export default function ArticleCTA({ variant = 'full', theme = 'legacy', text, h
           fontSize: '14px', fontWeight: 300, lineHeight: 1.6,
           color: isDark ? 'var(--ink-2)' : 'rgba(240,238,232,0.7)', maxWidth: '460px',
         }}>
-          Connect Shopify in 60 seconds. No credit card required.
+          Start your 14-day Growth trial. No credit card required.
         </p>
       </div>
       <a href={targetHref} onClick={handleClick} style={{
