@@ -55,7 +55,7 @@ Inventory drift is the slow accumulation of discrepancies between Shopify's stoc
   caption="Drift is a structural gap between physical reality and system state. Close the gap permanently with scan-based inventory."
 />
 
-Inventory drift is the most underdiagnosed operational problem in Shopify warehouses. Unlike a stockout — which is visible and immediate — drift is invisible. It accumulates slowly, across hundreds of small unrecorded movements, until the gap between Shopify and reality is large enough to cause real problems: oversold orders, phantom stockouts, and demand forecasts built on numbers that do not reflect what is actually on your shelves.
+Inventory drift is the most underdiagnosed operational problem in Shopify warehouses. Unlike a stockout — which is visible and immediate — drift is invisible. It accumulates slowly, across hundreds of small unrecorded movements, until the gap between Shopify and reality is large enough to cause real problems: [oversold orders](/blog/shopify-overselling-problem), phantom stockouts, and demand forecasts built on numbers that do not reflect what is actually on your shelves.
 
 ## What Inventory Drift Actually Is
 
@@ -141,6 +141,8 @@ A drift reconciliation resets your baseline. It does not prevent future drift �
 The root cause of all five drift sources above is the same: a gap between when a physical stock movement happens and when Shopify learns about it. Returns, pick errors, damaged stock, receiving discrepancies — all of these create drift because Shopify is updated after the fact, manually, and inconsistently.
 
 The permanent solution is closing that gap entirely. When every physical movement — pick, pack, receive, stow, return, adjustment — triggers an immediate Shopify update via a scan, there is no window for unrecorded movements to accumulate. The gap between physical reality and Shopify never opens.
+
+At that point, the problem has moved into [warehouse management](/blog/shopify-warehouse-management): the receiving, stowing, picking, returns, and adjustment work Shopify does not control directly.
 
 This is the architecture LaSyncro is built around. Every warehouse scan is a real-time Shopify inventory event. Returns are restocked at the point of scan, not at the end of a shift. Deliveries are received unit by unit against the PO, with any discrepancy recorded immediately. Pick errors trigger an instant correction. The result is a Shopify inventory count that reflects physical reality at all times — not an approximation from this morning's manual adjustment.
 
