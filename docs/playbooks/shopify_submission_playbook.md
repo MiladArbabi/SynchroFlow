@@ -338,13 +338,91 @@ one owned completion row, `published_at` populated, `retry_count = 0`,
 `/overview` rendered. Lifecycle model: `docs/playbooks/lifecycle_playbook.md`
 §2b.
 
-**Separate blocker discovered during live verification.** The first live retry
-exposed `SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07`: `manualSync.controller.ts`
-imported a duplicate `backend-core` Shopify sync stub that attempted
-`FAILED → COMPLETED` directly. That is a distinct issue; it has been implemented
-and verified locally (not yet committed or closed), which is what allowed this
-live -06 recovery to exercise the canonical `apps/backend` `performInitialSync`
-path.
+**Separate blocker resolved during live verification.** The first live retry
+exposed a distinct wiring defect — `manualSync.controller.ts` imported a
+duplicate `backend-core` Shopify sync stub that attempted `FAILED → COMPLETED`
+directly. That defect is resolved and live-verified in
+`SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07` (next subsection), which is what
+allowed this live -06 recovery to exercise the canonical `apps/backend`
+`performInitialSync` path.
+
+### Manual Shopify initial-sync recovery is canonically owned (SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07, live-verified 2026-08-28)
+
+**Canonical owner.**
+`apps/backend/src/services/shopify.service.ts::performInitialSync` is the single
+owner of Shopify initial sync, including manual recovery. `packages/backend-core`
+does **not** own Shopify sync and must never be described as owning it.
+
+**Proven defect.** The route itself was correct —
+`router.post('/manual-initial-sync', authenticateToken, triggerManualInitialSync)`
+— but `apps/backend/src/api/integrations/manualSync.controller.ts` imported
+`@lasyncro/backend-core/services/shopify.service.js`, resolving to
+`packages/backend-core/src/services/shopify.service.ts`, a separate 71-line
+compile-placeholder. That stub queried only Shopify `shop { id }` and then wrote
+`sync_status = 'COMPLETED'` / `sync_last_error = NULL` directly. It did **not**
+run product sync, order pagination, or opening-balance seeding; did **not**
+follow the canonical status progression; did **not** call
+`updateIntegrationStatus()`; and did **not** emit `integration/sync_completed`.
+On a retry from `FAILED` the DB transition guard correctly rejected the write
+with `Illegal sync_status transition: FAILED → COMPLETED`.
+
+**Fix.** `manualSync.controller.ts` now imports `../../services/shopify.service.js`
+(the canonical owner). The duplicate
+`packages/backend-core/src/services/shopify.service.ts` and its stale committed
+build artifacts (`packages/backend-core/dist/services/shopify.service.js`,
+`.../shopify.service.d.ts`) were deleted; a backend-core build was run and
+confirmed the deleted artifacts are not recreated. Zero source importers of
+`@lasyncro/backend-core/services/shopify.service` remain.
+
+**Retry contract unchanged.** The DB transition guard was not weakened. Manual
+recovery from `FAILED` walks `FAILED → SYNCING_PRODUCTS → SYNCING_ORDERS →
+COMPLETED`. No `FAILED → COMPLETED` edge and no shop-specific bypass was added.
+
+**Completion event contract unchanged.** Terminal state is written by
+`updateIntegrationStatus({ status: 'COMPLETED', error: null })`, which atomically
+sets the integration terminal state and emits exactly one
+`integration/sync_completed`. The controller does not create that event itself.
+
+**Automated verification.** canonical-owner source contract PASS; backend-core
+duplicate source absent PASS; backend-core duplicate dist artifacts absent PASS;
+backend-core build PASS with deleted artifacts not recreated; no remaining
+source importer of the backend-core stub; disposable-DB retry from `FAILED` PASS
+with a legal `FAILED → SYNCING_PRODUCTS → SYNCING_ORDERS → COMPLETED`
+progression, exactly one `integration/sync_completed`, exactly one owned
+completion outbox row, and zero fake product/order/inventory/customer entities;
+zero-product initial-sync neighbour PASS; zero-order completion neighbour PASS;
+directly-owned `shopify-sync-orchestrator` unit suite PASS; backend TypeScript
+PASS; test ownership `UNOWNED=0` / `MULTI_OWNED=0`; route semantics unchanged.
+
+**Live verification (2026-08-28).** Same store as -06 —
+`third-lasyncro-dev-store.myshopify.com`, `shop_id = 5`, `integration_id = 2`.
+After the first broken manual retry the integration sat at `sync_status =
+FAILED`, progress `0/0`, `sync_last_error` containing `Illegal sync_status
+transition: FAILED → COMPLETED`, all entity counts zero,
+`integration/sync_requested = 1`, `integration/sync_completed = 0`,
+`orders_projection` cursor `3`, no lifecycle snapshot / `ft0_state` /
+`system_readiness_state`. Runtime wiring before the corrected retry: compiled
+`apps/backend/dist/api/integrations/manualSync.controller.js` contained
+`../../services/shopify.service.js`; API listening on `:3000` with `/health`
+`200`; UI on `:5173`; worker `dist/worker-entry.js` alive. Exactly one corrected
+`POST /api/v1/integrations/manual-initial-sync` (`shopId = 5`,
+`integrationId = 2`) returned `HTTP 200`
+`{"status":"initial_sync_triggered","shopId":5,"integrationId":2}`; the
+immediate authenticated status was `sync_status = COMPLETED`, progress `0/0`,
+`lastError = null`, all counts zero. Final DB proof: integration `COMPLETED`
+with `sync_progress_current = 0`, `sync_progress_total = 0`, `sync_last_error =
+NULL`; customers / `external_product_identity_map` / `inventory_movements` /
+`inventory_truth` / orders / products / variants all zero;
+`integration/sync_requested = 1`, `integration/sync_completed = 1` (completion
+event id `4`, payload `{"integration_id":2}`); exactly one completion outbox row
+with `published_at` populated, `retry_count = 0`, `last_error` NULL;
+`orders_projection` cursor `3 → 4`, `cursor_caught_up = true`, projection
+failures `0`; `user_lifecycle_snapshot` phase `FT1`, `ft0_state.status =
+COMPLETED`, `completion_reason {"orders":0,"source":"integration/sync_completed"}`,
+`system_readiness_state` materialized, browser resolved `FT1` and rendered
+`/overview`. This is the same completion event (`id 4`) recorded in the -06 live
+proof above — one authoritative recovery, verified from both the empty-store
+engine angle and the recovery-path ownership angle.
 
 ---
 

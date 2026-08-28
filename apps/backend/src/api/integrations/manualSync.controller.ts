@@ -19,7 +19,7 @@ import { Request, Response } from 'express';
 import { withTenant } from '@lasyncro/backend-core/db.js';
 import { requireAuthStrict } from '@lasyncro/backend-core/middleware/requireAuthStrict.js';
 import { ShopifyAppService } from '@lasyncro/backend-core/services/shopify-app.service.js';
-import { performInitialSync } from '@lasyncro/backend-core/services/shopify.service.js';
+import { performInitialSync } from '../../services/shopify.service.js';
 
 export async function triggerManualInitialSync(
   req: Request,
