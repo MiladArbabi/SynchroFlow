@@ -529,6 +529,98 @@ token exchange → effective-scope validation → provider persistence →
 zero-product / zero-order completion → `sync_completed` → FT0 completion /
 readiness → reviewer-visible Aha state → explicit confirmation → FT2 / AppLayout.
 
+### SHOP-REVIEW-FRESH-INSTALL-GATE-01 — umbrella CLOSED (2026-08-28)
+
+**Final decision: PASS / CLOSED.**
+
+The original A1–A20 fresh-install App Store review matrix has been reconciled
+against current HEAD (`8e488b20`), existing automated coverage, the authoritative
+playbooks, and the final real Shopify fresh-store certification
+(SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, shop 6). All twenty items are PASS.
+
+| # | Gate | Result |
+| --- | --- | --- |
+| A1 | Signed/HMAC Shopify install entry | PASS |
+| A2 | Tenant + owner bootstrap | PASS |
+| A3 | Root warehouse bootstrap | PASS |
+| A4 | Zero-bin fresh-install continuity | PASS |
+| A5 | Shopify billing/trial bootstrap | PASS |
+| A6 | OAuth state creation | PASS |
+| A7 | OAuth redirect shape | PASS |
+| A8 | OAuth callback / token exchange | PASS |
+| A9 | `integrations` persistence | PASS |
+| A10 | `shopify_app_installations` persistence | PASS |
+| A11 | Required/effective Shopify scopes | PASS |
+| A12 | Initial authoritative Shopify sync | PASS |
+| A13 | Zero-order / zero-product authoritative completion | PASS |
+| A14 | Lifecycle transition from authoritative completion | PASS |
+| A15 | Reviewer-visible Aha state | PASS |
+| A16 | Explicit FT2 confirmation | PASS |
+| A17 | Post-FT2 AppLayout / application access | PASS |
+| A18 | Root-only / no-bin WMS usability | PASS |
+| A19 | Reviewer path independent of dev seed / synthetic data | PASS |
+| A20 | Reinstall / reconnect safety and separation | PASS — one parked non-blocking callback-failure recovery edge |
+
+**Certified reviewer-critical chain.** fresh Shopify Dev store → signed App Store
+install entry → tenant / owner / warehouse / trial bootstrap → real Shopify
+consent → OAuth callback / token exchange → all 10 required scopes persisted,
+including `read_locations` → `integrations` + `shopify_app_installations`
+persisted → `integration/sync_requested` → canonical real-provider initial sync →
+authoritative zero-product / zero-order completion → `integration/sync_completed`
+→ FT0 completion / system readiness → reviewer-visible Aha → explicit Unlock
+Insights confirmation → `lifecycle/ft2_confirmed` → FT2 → normal AppLayout /
+Overview. This exact chain was executed successfully on
+`4th-lasyncro-dev-store.myshopify.com` (`shop_id = 6`, `user_id = 6`,
+`integration_id = 3`); full P0–P8 evidence is recorded above under "Fresh-install
+Shopify App Store certification passed end-to-end
+(SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, 2026-08-28)".
+
+**Work that collectively closes the umbrella:**
+
+- **SHOP-REVIEW-ZERO-ORDER-LIFECYCLE-02** (`1e36879a`) — established authoritative
+  zero-order lifecycle semantics.
+- **SHOPIFY-SCOPE-ACTIVE-VERSION-04** (`516b6356`) — deployed the correct active
+  Shopify scope version, including `read_locations`.
+- **SHOP-REVIEW-ZERO-PRODUCT-SYNC-06** (`d4dc236b`) — fixed the empty-store /
+  zero-product initial-sync defects (opening-balance crash, empty terminal
+  pagination false fatal).
+- **SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07** (`5087e6bf`) — restored the
+  canonical manual-sync owner/path and removed the duplicate backend-core stub.
+- **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03** (`8e488b20`) — provided the final
+  genuinely fresh real-provider end-to-end certification.
+
+**A20 residual edge — SHOP-REVIEW-OAUTH-RETRY-03b (parked, non-blocking).** A20 is
+PASS for the umbrella's required safe-separation / reinstall baseline: the
+fresh-install (`handleShopifyInstall`, HMAC) and authenticated reconnect
+(`initiateOAuth`) paths are distinct and guarded, and a normal reinstall reuses
+existing Shopify installation ownership. Residual edge: if a fresh install creates
+its local tenant but the OAuth callback never completes, there is no
+`shopify_app_installations` row yet, so a later install attempt for that same
+domain may not resolve as a reinstall and could create another tenant. Callback-
+failure recovery edge only; not exercised by the successful normal reviewer path;
+does not block umbrella closure; not fixed here.
+
+**Other parked non-blockers (unchanged — see "Remaining Known Issues
+(Non-blocking)"):**
+
+- **FE-SYNC-STATUS-STALE-09** — frontend React Query freshness; the top-right pill
+  can transiently show `Syncing` until refetch. Backend and the authenticated
+  `GET /api/v1/integrations/sync-status` both report `COMPLETED`; no provider
+  failure. Non-blocking.
+- **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — `integrations.updated_at` not refreshed at
+  completion, so `lastSyncedAt` reads stale while `sync_status = COMPLETED`. Sync
+  status remains correct. Non-blocking.
+- **SHOP-REVIEW-OAUTH-RETRY-03b** — callback-failure retry edge, described above.
+  Non-blocking.
+- **SHOP-REVIEW-NONPCD-SYNC-DEADEND-04 remains unopened** — the final fresh-store
+  certification completed through the canonical `performInitialSync` and never
+  entered the PCD fallback / `DISABLED_ARCHITECTURE_GUARD` path.
+
+**SHOP-REVIEW-FRESH-INSTALL-GATE-01: PASS / CLOSED.** No current OPEN item can
+prevent a brand-new Shopify reviewer store from completing Install → OAuth →
+provider sync → authoritative zero-product / zero-order completion → Aha →
+explicit confirmation → normal app access.
+
 ---
 
 ## Shopify App Capabilities
