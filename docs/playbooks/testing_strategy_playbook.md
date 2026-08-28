@@ -172,6 +172,27 @@ tracked separately as **TEST-INFRA-FOUNDATION-12**. This guarantee covers the
 `backend-integration` disposable harness and the explicit test-mode unsafe-DB
 targeting described above — not yet every backend test.
 
+### Contract-test host portability (TEST-CI-DOTENV-161)
+
+The `contract` project runs in CI with no `.env` on disk (root `.env` is
+git-ignored). `backend-core-test-db-failclosed.test.ts` DB-D / DB-E
+intentionally exercise the legacy `.env`-fallback branch of `database.config`
+(`NODE_ENV` set, no disposable harness, `PGDATABASE` not inherited); they had
+been resolving `synchroflow_db` only because the developer root `.env` happened
+to be present, so they failed in CI.
+
+Invariant: a DB-free contract test that must exercise the dotenv fallback
+supplies its own isolated deterministic fixture — an ephemeral temp dir nested
+inside the repo (so workspace resolution still reaches `<repo>/node_modules`)
+holding a throwaway `.env` with only the non-secret value under test, used as the
+spawned child's `cwd` and removed in a `finally`. Contract tests must never
+depend on a host or developer environment file.
+
+The transitional `backend-legacy` `.env` fallback in `database.config` /
+`system-db` is unchanged; its removal is still tracked as
+**TEST-INFRA-FOUNDATION-12**. Verified: `npx jest tests/contract --runInBand`
+(the CI contract command) passes 8 suites / 66 tests.
+
 ---
 
 ## 4. Jest Project Ownership

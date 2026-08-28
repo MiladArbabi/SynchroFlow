@@ -15,6 +15,7 @@
  * `contract` project — DB-FREE: the children never issue a query; system-db
  * children destroy the lazy pool before exit.
  */
+import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
 
@@ -45,7 +46,7 @@ interface Overrides {
   __HARNESS__?: string;
 }
 
-function runChild(script: string, overrides: Overrides) {
+function runChild(script: string, overrides: Overrides, cwd: string = REPO_ROOT) {
   const env = baseChildEnv();
   for (const [k, v] of Object.entries(overrides)) {
     if (v === null || v === undefined) {
@@ -55,10 +56,29 @@ function runChild(script: string, overrides: Overrides) {
     }
   }
   return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
-    cwd: REPO_ROOT,
+    cwd,
     env,
     encoding: 'utf8',
   });
+}
+
+/**
+ * TEST-CI-DOTENV-161 — DB-D / DB-E exercise the legacy `.env`-fallback branch of
+ * `database.config` (NODE_ENV set, no disposable harness, `PGDATABASE` NOT
+ * inherited). That branch runs `dotenv.config({ path: <cwd>/.env })`, so the
+ * assertion needs a `.env` at the child's cwd. Relying on the developer root
+ * `.env` made these two cases fail wherever it is absent (CI checks it out
+ * git-ignored). Instead, run the child from an isolated temp dir nested INSIDE
+ * the repo — so workspace/package resolution still walks up to
+ * `<repo>/node_modules` — carrying a throwaway `.env` with only the non-secret
+ * `PGDATABASE` the fallback is expected to pick up. `PGDATABASE` is deliberately
+ * NOT passed in the child env: that would bypass the dotenv fallback under test.
+ * Caller must remove the returned dir in a finally block.
+ */
+function makeDotenvFallbackDir(): string {
+  const dir = fs.mkdtempSync(path.join(REPO_ROOT, '.tmp-dotenv-161-'));
+  fs.writeFileSync(path.join(dir, '.env'), 'PGDATABASE=synchroflow_db\n', 'utf8');
+  return dir;
 }
 
 // ── child scripts ────────────────────────────────────────────────────────────
@@ -181,13 +201,22 @@ describe('@lasyncro/backend-core/config/database.config.js', () => {
   });
 
   it('DB-D: NODE_ENV=test + no harness + PGDATABASE missing → legacy .env fallback preserved (synchroflow_db)', () => {
-    const r = runChild(DBCONFIG_SCRIPT, {
-      NODE_ENV: 'test',
-      PGDATABASE: null,
-    });
-    expect(r.status).toBe(0);
-    expect(`${r.stdout}`).toContain('DB=synchroflow_db');
-    expect(`${r.stderr}`).not.toMatch(REFUSAL);
+    const dir = makeDotenvFallbackDir();
+    try {
+      const r = runChild(
+        DBCONFIG_SCRIPT,
+        {
+          NODE_ENV: 'test',
+          PGDATABASE: null,
+        },
+        dir
+      );
+      expect(r.status).toBe(0);
+      expect(`${r.stdout}`).toContain('DB=synchroflow_db');
+      expect(`${r.stderr}`).not.toMatch(REFUSAL);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('DB-D2: NODE_ENV=test + no harness + PGDATABASE="" → existing FATAL missing-env, NOT a REFUSAL', () => {
@@ -202,13 +231,22 @@ describe('@lasyncro/backend-core/config/database.config.js', () => {
   });
 
   it('DB-E: NODE_ENV=development → unchanged development resolution (.env → synchroflow_db)', () => {
-    const r = runChild(DBCONFIG_SCRIPT, {
-      NODE_ENV: 'development',
-      PGDATABASE: null,
-    });
-    expect(r.status).toBe(0);
-    expect(`${r.stdout}`).toContain('DB=synchroflow_db');
-    expect(`${r.stderr}`).not.toMatch(REFUSAL);
+    const dir = makeDotenvFallbackDir();
+    try {
+      const r = runChild(
+        DBCONFIG_SCRIPT,
+        {
+          NODE_ENV: 'development',
+          PGDATABASE: null,
+        },
+        dir
+      );
+      expect(r.status).toBe(0);
+      expect(`${r.stdout}`).toContain('DB=synchroflow_db');
+      expect(`${r.stderr}`).not.toMatch(REFUSAL);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
