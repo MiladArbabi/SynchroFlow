@@ -464,3 +464,10 @@ apps/backend/src/services/shopify/shopifyClient.service.ts
 
 Any future scope addition/removal must audit all four surfaces and complete a
 real OAuth runtime proof before being considered closed.
+
+A DB-free contract test — `tests/contract/shopify-oauth-scope-contract.contract.test.ts`
+(SHOP-REVIEW-OAUTH-REGRESSION-162, `contract` Jest project) — now pins the required
+set, `read_locations`, `SHOPIFY_REQUIRED_SCOPE_STRING`, and the fail-closed
+`normalizeAndValidateShopifyGrantedScopes` behaviour, so scope drift fails CI
+before any OAuth proof. It does not replace the runtime proof for a deliberate
+scope change.
