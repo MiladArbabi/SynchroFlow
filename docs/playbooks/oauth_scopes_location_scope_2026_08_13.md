@@ -254,6 +254,12 @@ Shop location
 This proves that the `read_locations` capability required by the future
 warehouse-to-Shopify-location mapping flow is available.
 
+> Scope of this proof: a Shopify CLI **development preview** plus an
+> authenticated **reconnect** OAuth cycle against
+> `development-store-15820042357.myshopify.com`. It did **not** update the
+> **active Shopify app version** used for a genuine fresh merchant / App Store
+> install. See "Active app-version deployment — 2026-08-28" below.
+
 ---
 
 ## Development-store verification safety
@@ -291,6 +297,96 @@ is a separate explicit operation.
 A Shopify CLI development preview does not itself create the local
 `shopify_app_installations` or `integrations` records. Local connection state
 must still be established through the legitimate LaSyncro OAuth flow.
+
+---
+
+## Active app-version deployment — 2026-08-28 (SHOPIFY-SCOPE-ACTIVE-VERSION-04)
+
+### Dev preview is not the active app-version configuration
+
+`shopify app dev` (previous section) applies a scope set to a local development
+preview against one named dev store. It does **not** change the **active Shopify
+app version** — the configuration Shopify uses for a genuine fresh merchant /
+App Store install. The 2026-08-13 proof was a development-preview grant plus an
+authenticated **reconnect** OAuth cycle; it did not, and was not intended to,
+update the active app-version config.
+
+### 2026-08-28 provider failure that exposed the stale active version
+
+A real fresh-provider OAuth against a brand-new empty dev store
+(`new-dev-dash-for-lasyncro.myshopify.com`) reached Shopify consent and real
+token exchange, then **failed closed in the callback** with:
+
+```text
+SHOPIFY_REQUIRED_SCOPES_MISSING:read_locations
+```
+
+The then-active app version `lasyncro-16`
+(`gid://shopify/Version/1063297220609`, created/released 2026-07-24) carried only
+9 required scopes and omitted `read_locations`. Every other deployable setting
+already matched the canonical config: `application_url`, `embedded=false`,
+`use_legacy_install_flow=false`, both OAuth redirect URLs, webhooks API version
+`2026-04`, the three privacy compliance topics
+(`customers/data_request`, `customers/redact`, `shop/redact`), no extensions.
+
+The failed callback correctly left **no partial provider state**:
+
+```text
+integrations rows                = 0
+shopify_app_installations rows   = 0
+integration/sync_requested events = 0
+```
+
+Root cause was the stale **active app-version configuration** — not
+`normalizeAndValidateShopifyGrantedScopes`, and not an invalid Shopify scope.
+
+### Correction — deploy canonical scopes to a new active version
+
+`shopify.app.toml` remained the canonical source and was **not** changed. The
+fix was an inspect-before-release deployment of the existing canonical config:
+
+1. Create an **unreleased** version from `shopify.app.toml` at main
+   `1e36879a00894818faf74218bcdb12e58a5acd61`:
+   - version tag: `scope-read-locations-1e36879a`
+   - version ID: `gid://shopify/Version/1106942001153`
+   - message: `SHOPIFY-SCOPE-ACTIVE-VERSION-04: add read_locations to canonical OAuth scopes (main 1e36879a)`
+2. Pre-release Dev Dashboard inspection of that version confirmed: `read_locations`
+   present; all 10 required scopes present; redirect URLs unchanged;
+   `embedded=false`; `use_legacy_install_flow=false`; webhooks `2026-04`; privacy
+   subscriptions unchanged; no extensions.
+3. Release the exact verified version.
+
+Post-release:
+
+```text
+scope-read-locations-1e36879a = active
+lasyncro-16                   = inactive
+```
+
+`shopify app deploy` / `shopify app release` changed Shopify configuration only —
+no web / Fly deployment occurred. Repository invariants held: branch `main`,
+`HEAD = 1e36879a00894818faf74218bcdb12e58a5acd61`, `shopify.app.toml` clean,
+tracked/untracked worktree snapshot unchanged.
+
+### Verified invariant after deployment
+
+The **active** Shopify app configuration now contains all 10 canonical required
+scopes, including `read_locations`.
+
+### Not weakened
+
+`normalizeAndValidateShopifyGrantedScopes` was **not** modified. `read_locations`
+remains a REQUIRED capability; a fresh install whose grant set omits it still
+fails closed with `SHOPIFY_REQUIRED_SCOPES_MISSING:read_locations`.
+
+### Not yet certified
+
+A successful real fresh-provider OAuth has **not** been demonstrated on the new
+active version. The next certification step is **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03**,
+run from P0 against a **brand-new empty dev store** — not
+`new-dev-dash-for-lasyncro.myshopify.com` and not any previously used store.
+Until that passes, fresh-provider OAuth is not proven and
+SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03 is not closed.
 
 ---
 

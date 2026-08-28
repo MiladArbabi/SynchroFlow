@@ -337,13 +337,30 @@ shopify_app_installations.scopes
     =
 currentAppInstallation.accessScopes
 
-Runtime verification on 2026-08-13 proved:
+Runtime verification on 2026-08-13 proved (via a Shopify CLI development preview
+plus an authenticated RECONNECT OAuth cycle — not the active app-version config
+for a fresh merchant install):
 
 persisted scope count = 10
 runtime scope count   = 10
 persisted == runtime  = yes
 read_locations        = yes
 write_inventory       = yes
+
+2026-08-28 — SHOPIFY-SCOPE-ACTIVE-VERSION-04:
+A real fresh-provider OAuth on a new empty dev store failed closed in the
+callback with SHOPIFY_REQUIRED_SCOPES_MISSING:read_locations (no partial
+provider state written) — the then-active app version lasyncro-16 still
+carried only 9 required scopes. The canonical shopify.app.toml (unchanged)
+was deployed as a new version scope-read-locations-1e36879a
+(gid://shopify/Version/1106942001153), inspected pre-release, then released.
+scope-read-locations-1e36879a is now active; lasyncro-16 is inactive; the
+active app configuration contains all 10 required scopes including
+read_locations. normalizeAndValidateShopifyGrantedScopes was not weakened.
+A successful fresh-provider OAuth is not yet proven — that is
+SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03, to be run against a brand-new empty dev
+store. See docs/playbooks/oauth_scopes_location_scope_2026_08_13.md
+section "Active app-version deployment — 2026-08-28".
 
 read_locations is required for human-readable Shopify Location metadata.
 The development-store proof successfully resolved:
