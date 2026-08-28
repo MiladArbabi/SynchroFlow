@@ -243,6 +243,27 @@ integration 3/3 suites (24 tests), `AhaMomentPage` frontend unit 1/1 (11
 tests), backend `tsc` 0 errors; the disposable test DB was dropped with no
 orphan and `synchroflow_db` preserved.
 
+**Real Shopify provider confirmation (2026-08-28, SHOP-REVIEW-ZERO-PRODUCT-SYNC-06).**
+The 2026-08-27 run above used the offline fixture row. On 2026-08-28 the same
+zero-order path was exercised end to end against a **real** Shopify installation
+— development store `third-lasyncro-dev-store.myshopify.com`, `shop_id = 5`,
+`integration_id = 2`, real OAuth token with all 10 scopes persisted — via one
+live recovery of a sync that had previously failed. `updateIntegrationStatus`
+emitted exactly one `integration/sync_completed` (event id `4`, payload
+`{"integration_id":2}`) with its single owned outbox row published
+(`retry_count = 0`, `last_error` NULL); the ambient worker advanced the
+`orders_projection` cursor `3 → 4` with `cursor_caught_up = true` and zero
+projection failures; the zero-order materializer took `user_lifecycle_snapshot`
+to `FT1` with `ft0_state = COMPLETED`
+(`completion_reason {"orders":0,"source":"integration/sync_completed"}`) and a
+`system_readiness_state` row; no products, variants, orders, customers,
+`external_product_identity_map`, `inventory_movements` or `inventory_truth` rows
+were created; the browser resolved `FT1` and `/overview` rendered. The two
+Shopify-sync engine fixes that made a genuinely empty store reach this point
+(zero-product opening-balance seeder, empty terminal pagination) are recorded in
+`docs/playbooks/shopify_submission_playbook.md` → "Zero-product / zero-order
+initial sync is engine-safe".
+
 ---
 
 ## 3. Key Files

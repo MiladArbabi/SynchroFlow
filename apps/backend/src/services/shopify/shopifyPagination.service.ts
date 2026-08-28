@@ -29,7 +29,10 @@ export const paginateShopify = async ({
   while (hasNextPage) {
     const page = await fetchPage(cursor);
 
-    if (page.orders.pageInfo.endCursor === lastCursor) {
+    // Genuine stuck-cursor detection: only a REPEATED cursor from a prior page
+    // is a stall. The very first page of an empty/terminal connection reports
+    // endCursor=null, which must not collide with the initial lastCursor=null.
+    if (lastCursor !== null && page.orders.pageInfo.endCursor === lastCursor) {
       console.error('[SHOPIFY_PAGINATION_STUCK]', {
         shopId,
         cursor: lastCursor,

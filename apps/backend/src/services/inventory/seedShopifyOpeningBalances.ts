@@ -5,43 +5,29 @@ import { createShopifyGraphQLClient } from '../../services/shopify-client.factor
 const OPENING_BALANCE_NAMESPACE =
   '9f0e7b9c-6d4a-4e91-bc5e-2a1f8c7d3e44';
 
+/**
+ * Minimal Shopify GraphQL client shape this seeder depends on. The real
+ * `createShopifyGraphQLClient(...)` return value satisfies it. Tests may pass a
+ * deterministic stub via the optional trailing `injectedClient` arg — production
+ * callers pass nothing and get the real factory client unchanged.
+ */
+type ShopifyGraphqlLike = {
+  // `data` is optional to match @shopify/shopify-api's GraphQLClientResponse.
+  request: (query: string, opts?: any) => Promise<{ data?: any }>;
+};
+
 export async function seedShopifyOpeningBalances(
   trx: Knex.Transaction,
   accessToken: string,
   platformShopName: string,
-  shopId: number
+  shopId: number,
+  injectedClient?: ShopifyGraphqlLike
 ) {
-  const client = createShopifyGraphQLClient(
-    accessToken,
-    platformShopName,
-    shopId
-  );
+  const client: ShopifyGraphqlLike =
+    injectedClient ??
+    createShopifyGraphQLClient(accessToken, platformShopName, shopId);
 
-  const debug = await client.request(`
-  query {
-    products(first: 3) {
-      edges {
-        node {
-          title
-          variants(first: 3) {
-            edges {
-              node {
-                id
-                inventoryQuantity
-                inventoryPolicy
-                availableForSale
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-`);
-
-console.log(JSON.stringify(debug.data, null, 2));
-
-const response = await client.request(`
+  const response = await client.request(`
   query {
     products(first: 50) {
       edges {
@@ -59,8 +45,6 @@ const response = await client.request(`
     }
   }
 `);
-
-  console.log(JSON.stringify(response.data.products.edges[0].node.variants.edges[0].node.id));
 
   let missingMappings = 0;
 

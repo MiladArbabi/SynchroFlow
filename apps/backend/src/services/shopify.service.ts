@@ -9,11 +9,24 @@ import { updateIntegrationStatus } from './shopify/shopifyIntegrationStatus.serv
 
 import { syncShopifyOrders } from './shopify/shopifyOrderSync.service.js';
 
+/**
+ * Minimal Shopify GraphQL client shape used by the initial sync. The real
+ * `createShopifyGraphQLClient(...)` return value satisfies it. When
+ * `deps.shopifyClient` is supplied it replaces BOTH the product/order client
+ * here and the client `seedShopifyOpeningBalances` would otherwise build. When
+ * omitted, production behaviour is unchanged — no caller passes `deps`.
+ */
+type ShopifyGraphqlLike = {
+  // `data` is optional to match @shopify/shopify-api's GraphQLClientResponse.
+  request: (query: string, opts?: any) => Promise<{ data?: any }>;
+};
+
 export const performInitialSync = async (
   accessToken: string,
   platformShopName: string,
   shopId: number,
-  integrationId: number
+  integrationId: number,
+  deps?: { shopifyClient?: ShopifyGraphqlLike }
 ) => {
 
   const syncStart = Date.now();
@@ -46,11 +59,13 @@ export const performInitialSync = async (
     return;
   }
 
-  const client = createShopifyGraphQLClient({
-    accessToken,
-    platformShopName,
-    shopId,
-  });
+  const client: ShopifyGraphqlLike =
+    deps?.shopifyClient ??
+    createShopifyGraphQLClient({
+      accessToken,
+      platformShopName,
+      shopId,
+    });
 
   const productsQuery = GET_PRODUCTS_QUERY;
   const ordersQuery = GET_ORDERS_QUERY;
@@ -112,7 +127,8 @@ export const performInitialSync = async (
         trx,
         accessToken,
         platformShopName,
-        shopId
+        shopId,
+        deps?.shopifyClient
       );
 
       /**

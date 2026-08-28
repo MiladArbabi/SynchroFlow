@@ -281,6 +281,71 @@ reached FT1 this way as a broken install. The PCD-restricted fallback path does
 **not** emit `integration/sync_completed` and is not an authoritative
 completion. Full model: `docs/playbooks/lifecycle_playbook.md` §2b.
 
+### Zero-product / zero-order initial sync is engine-safe (SHOP-REVIEW-ZERO-PRODUCT-SYNC-06, live-verified 2026-08-28)
+
+**Authoritative contract.** A fresh Shopify store may legitimately contain
+`products = 0`, `variants = 0`, `orders = 0`, `customers = 0`. That is a valid
+authoritative Shopify state. The canonical initial sync
+(`apps/backend/src/services/shopify.service.ts::performInitialSync`) must still
+walk `PENDING` or `FAILED` → `SYNCING_PRODUCTS` → `SYNCING_ORDERS` →
+`COMPLETED`, finishing with `sync_last_error = NULL` and progress `0/0`, and
+must emit exactly one `integration/sync_completed`. Zero entities must **not**
+cause fake product creation, fake order creation, fake inventory creation, PCD
+fallback, a pagination fatal, or an opening-balance crash.
+
+**Defect A — zero-product opening-balance crash.**
+`apps/backend/src/services/inventory/seedShopifyOpeningBalances.ts` carried
+debug-only diagnostics that dereferenced `response.data.products.edges[0].node`.
+On a valid store with zero products `products.edges = []`, so this threw
+`Cannot read properties of undefined (reading 'node')` and aborted the sync.
+Fix: debug diagnostics removed; the opening-balance seeder is zero-product safe;
+an optional Shopify client injection seam was added for deterministic testing.
+
+**Defect B — empty terminal pagination false fatal.**
+`apps/backend/src/services/shopify/shopifyPagination.service.ts` treated
+`lastCursor = null`, `endCursor = null`, `hasNextPage = false` on the first
+empty orders page as a repeated/stuck cursor and raised a fatal. Fix:
+stuck-cursor detection now applies only when `lastCursor !== null`; a valid
+empty terminal page (`hasNextPage = false`, `endCursor = null`) is accepted.
+
+**Automated verification (complete).** zero-product opening-balance unit
+coverage PASS; product-with-`variants.edges = []` defensive coverage PASS;
+empty terminal pagination coverage PASS; repeated non-null cursor fatal
+regression coverage PASS; disposable-DB zero-product/zero-order initial sync
+PASS; disposable-DB retry from `FAILED` through the canonical state machine
+PASS; zero-order / lifecycle neighbour regressions PASS; source contract
+forbidding numeric first-edge indexing PASS; backend TypeScript PASS; test
+ownership `UNOWNED=0` / `MULTI_OWNED=0`.
+
+**Real live provider proof (2026-08-28).** Development store
+`third-lasyncro-dev-store.myshopify.com` (`shop_id = 5`, `integration_id = 2`).
+Real Shopify OAuth / token exchange had already succeeded with all 10 required
+scopes persisted; the original initial sync failed on the zero-product debug
+dereference above. After the fix and the canonical recovery-path correction, the
+same persisted Shopify installation/token drove one live recovery. Final state —
+integration: `sync_status = COMPLETED`, `sync_progress_current = 0`,
+`sync_progress_total = 0`, `sync_last_error = NULL`. Entity counts:
+`customers = 0`, `external_product_identity_map = 0`, `inventory_movements = 0`,
+`inventory_truth = 0`, `orders = 0`, `products = 0`, `variants = 0`. Domain
+events: `integration/sync_requested = 1`, `integration/sync_completed = 1`; the
+completion event is id `4` with payload `{"integration_id":2}`. Outbox: exactly
+one owned completion row, `published_at` populated, `retry_count = 0`,
+`last_error` NULL. Projection: `orders_projection` cursor advanced `3 → 4`,
+`cursor_caught_up = true`, projection failures `0`. Lifecycle:
+`user_lifecycle_snapshot` phase `FT1`, `ft0_state.status = COMPLETED`,
+`ft0` `completion_reason {"orders":0,"source":"integration/sync_completed"}`,
+`system_readiness_state` materialized. Browser: lifecycle resolved `FT1` and
+`/overview` rendered. Lifecycle model: `docs/playbooks/lifecycle_playbook.md`
+§2b.
+
+**Separate blocker discovered during live verification.** The first live retry
+exposed `SHOP-REVIEW-MANUAL-SYNC-CANONICAL-PATH-07`: `manualSync.controller.ts`
+imported a duplicate `backend-core` Shopify sync stub that attempted
+`FAILED → COMPLETED` directly. That is a distinct issue; it has been implemented
+and verified locally (not yet committed or closed), which is what allowed this
+live -06 recovery to exercise the canonical `apps/backend` `performInitialSync`
+path.
+
 ---
 
 ## Shopify App Capabilities
@@ -389,6 +454,7 @@ the API, then cleared it and verified the restored null state.
 - Webhook "address already taken" errors on re-install — non-fatal, webhooks already registered
 - `[SHOPIFY_WEBHOOK_REGISTRATION_FATAL] APP_BASE_URL missing` — resolved by setting `APP_BASE_URL` secret
 - `[INGESTION_STALLED]` watchdog fires after sync on stores with stable order counts — false positive, harmless
+- **SHOPIFY-SYNC-LAST-SYNCED-AT-08** — after a successful authoritative completion, `integrations.updated_at` stayed at the original OAuth/sync timestamp, so `GET /integrations/sync-status` reported a stale `lastSyncedAt` even though `sync_status = COMPLETED`. Observed during SHOP-REVIEW-ZERO-PRODUCT-SYNC-06 live verification; separate issue, not addressed here.
 **SHOP-REV-01f — pack stage unreachable without wms_barcode.**
 orders.wms_barcode was written in exactly one place: a closure inside
 releasePickBatch (pickBatch.service.ts). Any order reaching pack by another
