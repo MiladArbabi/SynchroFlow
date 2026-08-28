@@ -193,6 +193,24 @@ The transitional `backend-legacy` `.env` fallback in `database.config` /
 **TEST-INFRA-FOUNDATION-12**. Verified: `npx jest tests/contract --runInBand`
 (the CI contract command) passes 8 suites / 66 tests.
 
+### OAuth callback regression (SHOP-REVIEW-OAUTH-REGRESSION-162)
+
+`tests/integration/oauth-callback-provider-mocked.test.ts` is the first
+automated regression that drives the CURRENT stateless DB-backed
+`GET /api/v1/integrations/oauth/callback/shopify` through the real
+route/controller against a disposable `synchroflow_test_*` database, with the
+Shopify token exchange and identity lookup mocked at the `axios` boundary (no
+provider HTTP). It protects the **S3 → S1** transition — a reviewer-fresh tenant
+whose warehouse is **one root location with zero bins** — asserting that both the
+`integrations` and `shopify_app_installations` rows are persisted, that the OAuth
+state is consumed, and that exactly one `integration/sync_requested` domain event
+with its owned outbox row is emitted; the
+token-exchange-failure / missing-access-token / missing-`read_locations`
+fail-closed paths (no partial provider state); unknown and replayed state (403);
+and the **S6** callback-level reinstall merge (`uninstalled_at` cleared, scopes
+refreshed, no tenant/warehouse duplication). It does **not** replace the
+real-provider OAuth proof (SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03).
+
 ---
 
 ## 4. Jest Project Ownership
