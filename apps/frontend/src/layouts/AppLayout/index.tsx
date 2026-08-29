@@ -97,7 +97,7 @@ const AppLayout = (props: AppLayoutProps) => {
   useEffect(() => {
     localStorage.setItem('sidenavState', sidenavState);
 
-    console.info('[SIDENAV][PERSIST]', { sidenavState });
+    /* console.info('[SIDENAV][PERSIST]', { sidenavState }); */
   }, [sidenavState]);
 
   const sidenavWidth = sidenavState === 'EXPANDED'

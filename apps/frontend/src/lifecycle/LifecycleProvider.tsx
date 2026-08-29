@@ -74,9 +74,9 @@ export function LifecycleProvider({
     if (!integration.bootResolved) return;
 
     if (integration.hasIntegration) {
-      console.info('[INTEGRATION_SIGNAL_OBSERVED]', {
+      /* console.info('[INTEGRATION_SIGNAL_OBSERVED]', {
         hasIntegration: integration.hasIntegration,
-      });
+      }); */
     }
   }, [integration.bootResolved, integration.hasIntegration]);
 
