@@ -98,22 +98,30 @@ jobs:
           APP_DATABASE_URL: postgresql://sf_app:sf_app_pass@127.0.0.1:5432/synchroflow_db
         run: npm run test:rls-live -w apps/backend
 
-      # FRESH-INSTALL-04 — functional gate, not a security one.
+      # FRESH-INSTALL-04 — functional Shopify-review regression, not an RLS/
+      # security test.
       #
       # Walks the reviewer's path: HMAC install -> seed -> lifecycle ladder ->
       # POST /wms/batch/release, asserting 201 and reservation_hold movements at
-      # WH-{shopId}-ROOT. This is the endpoint that returned 500 eleven times
-      # during Shopify review (SHOP-REV-02).
+      # WH-{shopId}-ROOT. This is the endpoint that regressed during Shopify
+      # review (SHOP-REV-02).
       #
-      # Runs under NODE_ENV=test, so database.config.ts:47 connects as PGUSER
-      # (sf_user — superuser, rolbypassrls). RLS is therefore NOT enforced here;
-      # that is what the three subtests above cover. Forcing sf_app would also
-      # disable the FT2 evaluator's NODE_ENV=test bypass and turn this into a
-      # data-coverage test, which is not what it asserts.
+      # The preceding RLS checks, migration/release assertions, and live endpoint
+      # regressions use the job's normal CI database context where applicable.
+      # This functional regression is deliberately different: it runs through
+      # scripts/with-test-db.js (via `npm run test:integration`), which generates
+      # its own independent synchroflow_test_* database, migrates it, verifies it,
+      # and drops it. The functional test itself never uses synchroflow_db.
       #
-      # jest is invoked directly rather than via 'npm test', because the root
-      # test:setup script runs db:reset and re-seeds with dev_seed — which would
-      # destroy the migrated database above and rebuild the bin-rich tenant
-      # shape this test exists to avoid.
+      # Step-scoped roles: sf_app is the restricted runtime role (non-superuser,
+      # non-bypassrls) the harness verifies; sf_user is the migration/admin role
+      # that creates and drops the disposable DB. No db:reset / dev_seed /
+      # bin-rich tenant rebuild runs — the root-only fresh-install fixture stays
+      # owned by tests/integration/fresh-install-release-path.test.ts.
       - name: Run fresh-install release path
-        run: npx jest --runInBand --forceExit tests/integration/fresh-install-release-path.test.ts
+        env:
+          PGUSER: sf_app
+          PGPASSWORD: sf_app_pass
+          PGMIGRATION_USER: sf_user
+          PGMIGRATION_PASSWORD: sf_pass
+        run: npm run test:integration -- --testPathPatterns fresh-install-release-path
