@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/lifecycle/LifecycleRouteHost.tsx
 //
 // LifecycleRouteHost
@@ -194,11 +195,11 @@ export function LifecycleRouteHost() {
    */
   if (phase === 'FT1' || phase === 'FT1_READY') {
 
-    console.info('[LIFECYCLE_ROUTE_FT1_READY_RENDER]', {
+    /* console.info('[LIFECYCLE_ROUTE_FT1_READY_RENDER]', {
       phase,
       readiness,
       ts: performance.now(),
-    });
+    }); */
 
   return (
     <Suspense fallback={<PageLoader />}>
