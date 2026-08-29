@@ -208,7 +208,13 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
   const isFt2     = phase === 'FT2_READY';
 
   const navigate  = useNavigate();
-  const { data: alertsData } = useAlerts({ status: 'inbox' });
+  // Alerts is an FT2-protected surface. The topnav is always mounted, so gate
+  // the inbox query on confirmed FT2 — no /api/v1/alerts request, retry, 30s
+  // poll or focus refetch fires while the shop is still FT1.
+  const { data: alertsData } = useAlerts(
+    { status: 'inbox' },
+    { enabled: isFt2 },
+  );
   const allInbox     = alertsData?.data ?? [];
   const unreadAlerts = allInbox.length;
   // Top 6 for the sheet — already ranked by backend (severity → revenue)

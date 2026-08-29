@@ -71,14 +71,29 @@ export type AlertFilters = {
 
 // ─── QUERIES ──────────────────────────────────────────────────────────────────
 
+export type UseAlertsOptions = {
+  /**
+   * Lifecycle-neutral query gate. Defaults to `true` so every existing caller
+   * keeps its current behaviour. Callers mounted in the always-on application
+   * shell (e.g. the topnav bell) pass `false` until the merchant has confirmed
+   * FT2, so no request/retry/poll/focus-refetch hits the FT2-protected
+   * `/api/v1/alerts` endpoint while the shop is still FT1.
+   */
+  enabled?: boolean;
+};
+
 /**
  * useAlerts
  * ---------
  * Fetches ranked alert inbox with tab + filter support.
  * Polls every 30s to match snapshot cycle cadence.
  */
-export function useAlerts(filters: AlertFilters = {}) {
+export function useAlerts(
+  filters: AlertFilters = {},
+  options: UseAlertsOptions = {},
+) {
   const { status = 'inbox', category, severity, source } = filters;
+  const enabled = options.enabled ?? true;
 
   return useQuery<AlertsResponse>({
     queryKey: ['alerts', filters],
@@ -92,7 +107,8 @@ export function useAlerts(filters: AlertFilters = {}) {
       const { data } = await axiosInstance.get(`/api/v1/alerts?${params.toString()}`);
       return data;
     },
-    refetchInterval: status === 'inbox' ? 30_000 : false,
+    enabled,
+    refetchInterval: enabled && status === 'inbox' ? 30_000 : false,
     // Only live inbox needs polling — snoozed/resolved are historical
     placeholderData: (prev) => prev,
   });
