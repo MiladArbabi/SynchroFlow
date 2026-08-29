@@ -104,9 +104,9 @@ export function LifecycleProvider({
       return;
     }
 
-    console.info('[LIFECYCLE][POLLING_WILL_HANDLE_FETCH]', {
+    /* console.info('[LIFECYCLE][POLLING_WILL_HANDLE_FETCH]', {
       shopId: user?.shop_id,
-    });
+    }); */
 
     /**
      * INTENTIONALLY NO-OP
@@ -134,11 +134,11 @@ export function LifecycleProvider({
   useEffect(() => {
     if (!shopId || authLoading) return;
 
-    console.info('[LIFECYCLE_IMMEDIATE_SYNC_TRIGGER]', {
+    /* console.info('[LIFECYCLE_IMMEDIATE_SYNC_TRIGGER]', {
       shopId,
       authLoading,
       ts: performance.now(),
-    });
+    }); */
 
     let cancelled = false;
 
@@ -426,10 +426,10 @@ export function LifecycleProvider({
    * This eliminates first-frame FT_MINUS_ONE leakage.
    */
   if (!isResolved) {
-    console.info('[LIFECYCLE_PROVIDER_BOOT_BLOCK]', {
+    /* console.info('[LIFECYCLE_PROVIDER_BOOT_BLOCK]', {
       phase: state.phase,
       ts: performance.now(),
-    });
+    }); */
 
     return null;
   }

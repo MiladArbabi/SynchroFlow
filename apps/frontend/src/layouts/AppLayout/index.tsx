@@ -85,7 +85,7 @@ const AppLayout = (props: AppLayoutProps) => {
       const savedOnFt2Entry = localStorage.getItem('sidenavState') as SidenavState | null;
       const isValid = savedOnFt2Entry === 'EXPANDED' || savedOnFt2Entry === 'COMPACT';
       setSidenavState(isValid ? savedOnFt2Entry : 'EXPANDED');
-      console.info('[SIDENAV][RESTORE_ON_FT2_ENTRY]', { phase, restored: isValid ? savedOnFt2Entry : 'EXPANDED' });
+      /* console.info('[SIDENAV][RESTORE_ON_FT2_ENTRY]', { phase, restored: isValid ? savedOnFt2Entry : 'EXPANDED' }); */
     }
   }, [isSidenavAllowed, phase, sidenavState]);
 

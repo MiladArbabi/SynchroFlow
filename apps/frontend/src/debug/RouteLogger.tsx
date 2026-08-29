@@ -15,12 +15,12 @@ export function RouteLogger() {
   const { emit } = useUiEvents();
   const location = useLocation();
 
-  console.log('[RouteLogger] render', location.pathname); 
+  /* console.log('[RouteLogger] render', location.pathname); */ 
 
   useEffect(() => {
-    console.log('[RouteLogger] EFFECT FIRED', location.pathname);
+    /* console.log('[RouteLogger] EFFECT FIRED', location.pathname);
 
-    console.debug('[Router] location changed →', location.pathname, window.location.pathname);
+    console.debug('[Router] location changed →', location.pathname, window.location.pathname); */
 
     emit('ui.intent', {
       action: 'page_view',
