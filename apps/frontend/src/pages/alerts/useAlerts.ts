@@ -69,7 +69,39 @@ export type AlertFilters = {
   source?: string;
 };
 
+/** Filters after canonicalization — `status` always present, no `undefined` keys. */
+export type NormalizedAlertFilters = {
+  status: AlertStatus;
+  category?: AlertCategory;
+  severity?: Alert['severity'];
+  source?: string;
+};
+
 // ─── QUERIES ──────────────────────────────────────────────────────────────────
+
+/**
+ * normalizeAlertFilters
+ * ---------------------
+ * Collapse equivalent filter inputs to one canonical shape so query-cache
+ * identity and request identity cannot drift:
+ *
+ *   normalizeAlertFilters({})                 => { status: 'inbox' }
+ *   normalizeAlertFilters({ status: 'inbox' })=> { status: 'inbox' }
+ *
+ * `undefined` properties are dropped, so `useAlerts()` and
+ * `useAlerts({ status: 'inbox' })` produce the SAME queryKey
+ * (`['alerts', { status: 'inbox' }]`) and the SAME URL
+ * (`/api/v1/alerts?status=inbox`) — one cache entry, one request.
+ */
+export function normalizeAlertFilters(
+  filters: AlertFilters = {},
+): NormalizedAlertFilters {
+  const normalized: NormalizedAlertFilters = { status: filters.status ?? 'inbox' };
+  if (filters.category) normalized.category = filters.category;
+  if (filters.severity) normalized.severity = filters.severity;
+  if (filters.source)   normalized.source = filters.source;
+  return normalized;
+}
 
 export type UseAlertsOptions = {
   /**
@@ -80,23 +112,38 @@ export type UseAlertsOptions = {
    * `/api/v1/alerts` endpoint while the shop is still FT1.
    */
   enabled?: boolean;
+  /**
+   * Opt-in ownership of the recurring 30s live-inbox refetch. Defaults to
+   * `false`: an unspecified caller is a passive cache reader (it still fetches
+   * on mount/focus where React Query requires it, but schedules no interval).
+   * Exactly one persistent shell observer (the topnav) passes `true` so the
+   * live cadence has a single owner instead of one timer per call site.
+   */
+  poll?: boolean;
 };
 
 /**
  * useAlerts
  * ---------
  * Fetches ranked alert inbox with tab + filter support.
- * Polls every 30s to match snapshot cycle cadence.
+ *
+ * Live inbox polling is opt-in via `{ poll: true }` — only one persistent
+ * shell observer owns the 30s cadence; every other caller is a passive cache
+ * reader. Historical tabs (`snoozed` / `resolved`) never poll even with
+ * `poll: true`. Filters are canonicalized (`normalizeAlertFilters`) so
+ * equivalent calls share one cache entry and one request.
  */
 export function useAlerts(
   filters: AlertFilters = {},
   options: UseAlertsOptions = {},
 ) {
-  const { status = 'inbox', category, severity, source } = filters;
+  const normalized = normalizeAlertFilters(filters);
+  const { status, category, severity, source } = normalized;
   const enabled = options.enabled ?? true;
+  const poll = options.poll ?? false;
 
   return useQuery<AlertsResponse>({
-    queryKey: ['alerts', filters],
+    queryKey: ['alerts', normalized],
     queryFn: async () => {
       const params = new URLSearchParams();
       params.set('status', status);
@@ -108,8 +155,9 @@ export function useAlerts(
       return data;
     },
     enabled,
-    refetchInterval: enabled && status === 'inbox' ? 30_000 : false,
-    // Only live inbox needs polling — snoozed/resolved are historical
+    // Recurring interval is owned by a single opt-in caller; only the live
+    // inbox is eligible — snoozed/resolved are historical.
+    refetchInterval: enabled && poll && status === 'inbox' ? 30_000 : false,
     placeholderData: (prev) => prev,
   });
 }

@@ -208,12 +208,16 @@ const TopnavbarContent: React.FC<TopnavbarContentProps> = ({ onToggleSidenav }) 
   const isFt2     = phase === 'FT2_READY';
 
   const navigate  = useNavigate();
-  // Alerts is an FT2-protected surface. The topnav is always mounted, so gate
-  // the inbox query on confirmed FT2 — no /api/v1/alerts request, retry, 30s
-  // poll or focus refetch fires while the shop is still FT1.
+  // Alerts is an FT2-protected surface, and the topnav is the SINGLE shell-level
+  // owner of the live inbox poll: it is mounted across the whole authenticated
+  // AppLayout (persists over /overview and /alerts), so `poll: true` here gives
+  // the 30s cadence one owner. Every other consumer (sidenav badge, module-health
+  // dot, AlertsPage) reads the same canonical ['alerts', { status: 'inbox' }]
+  // cache entry without scheduling its own interval. `enabled: isFt2` keeps FT1
+  // fully silent — no request, retry, poll or focus refetch before confirmed FT2.
   const { data: alertsData } = useAlerts(
     { status: 'inbox' },
-    { enabled: isFt2 },
+    { enabled: isFt2, poll: true },
   );
   const allInbox     = alertsData?.data ?? [];
   const unreadAlerts = allInbox.length;

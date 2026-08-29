@@ -82,13 +82,20 @@ Frontend tolerates absence via optional types for forward-compat.
 
 **Hooks:**
 ```
-useAlerts(filters)         GET /alerts, poll 30s (inbox only)
-useAlertCount()            feeds sidenav health dot
+useAlerts(filters)         GET /alerts — shared canonical cache entry per filter set
+useAlertCount()            subscribes to the shared inbox cache — feeds sidenav health dot
 useAcknowledgeAlert()      POST /:id/acknowledge  ✅
 useSnoozeAlert()           POST /:id/snooze        ✅
 useResolveAlert()          POST /:id/resolve        ✅
 useDismissAlert()          DEPRECATED — no-op stub, remove when call sites cleared
 ```
+
+Live inbox data uses one shared canonical React Query cache entry — equivalent
+filter inputs (`useAlerts()` and `useAlerts({ status: 'inbox' })`) normalize to
+the same key. One persistent shell observer (`TopnavbarContent`) owns the
+30-second refresh cadence; every other consumer (`useAlertCount`, the sidenav
+badge, `AlertsPage`) subscribes to that shared data without an independent poll.
+Snoozed and resolved are historical and never poll.
 
 ---
 
