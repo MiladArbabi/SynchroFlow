@@ -90,7 +90,7 @@ if (import.meta.env.DEV) {
     ts: Date.now(),
   });
 
-  console.info('[FUNNEL_TRACE]', (window as any).__FUNNEL_TRACE__);
+  /* console.info('[FUNNEL_TRACE]', (window as any).__FUNNEL_TRACE__); */
 }
 
   // --- ACTUAL EMISSION ---
