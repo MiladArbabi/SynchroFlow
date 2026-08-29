@@ -48,6 +48,52 @@ const encryptToken = (token: string): string => {
 };
 
 /**
+ * SHOP-REVIEW-OAUTH-REGRESSION-162 (Slice 162C) — safe provider-error projection.
+ *
+ * OAuth token-exchange and Shopify Admin API errors must never be logged raw: an
+ * Axios error carries `config.data` (client_secret + OAuth code) and
+ * `config.headers` (`X-Shopify-Access-Token`). This returns ONLY safe scalar
+ * diagnostics — message, HTTP status line, network/axios error code — and never
+ * reads `config`, `request`, request/response headers, response body/`data`, or
+ * the stack.
+ */
+const safeProviderError = (
+  err: unknown
+): { message: string; status?: number; code?: string } => {
+  const message = err instanceof Error ? err.message : String(err);
+  if (axios.isAxiosError(err)) {
+    return { message, status: err.response?.status, code: err.code };
+  }
+  return { message };
+};
+
+/**
+ * SHOP-REVIEW-OAUTH-REGRESSION-162 (Slice 162C) — recognise the two
+ * scope-contract failures thrown by `normalizeAndValidateShopifyGrantedScopes`
+ * (shopifyScopes.ts, owned by Slice 162A) so the callback can fail closed with a
+ * distinct 403 + SECURITY audit instead of a generic token-exchange 502. Reads
+ * only the internal Error message — never a provider payload.
+ */
+const classifyScopeFailure = (
+  err: unknown
+): { reason: string; missing: string[] } | null => {
+  if (!(err instanceof Error)) return null;
+  if (err.message === 'SHOPIFY_GRANTED_SCOPES_MISSING') {
+    return { reason: 'no_granted_scopes', missing: [] };
+  }
+  const prefix = 'SHOPIFY_REQUIRED_SCOPES_MISSING:';
+  if (err.message.startsWith(prefix)) {
+    const missing = err.message
+      .slice(prefix.length)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return { reason: 'required_scopes_missing', missing };
+  }
+  return null;
+};
+
+/**
  * Normalizes shop domain to the correct format for Shopify OAuth
  */
 export const normalizeShopDomain = (shopInput: string): string => {
@@ -345,6 +391,14 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       });
 
       shopifyAccessToken = tokenResponse.data?.access_token;
+
+      // OBS-162B-1: confirm Shopify actually returned an access token BEFORE any
+      // further work — no granted-scope validation, and no Admin GraphQL call
+      // (which would otherwise fire with an undefined Authorization token).
+      if (!shopifyAccessToken) {
+        throw new Error('ACCESS_TOKEN_MISSING');
+      }
+
       shopifyGrantedScopes =
         normalizeAndValidateShopifyGrantedScopes(
           tokenResponse.data?.scope
@@ -391,18 +445,37 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       } catch (err) {
         console.warn(
           '[OAuth] Failed to fetch Shopify currency/identity/GID — using optional metadata fallbacks',
-          err
+          safeProviderError(err)
         );
       }
     } else {
       return res.status(400).json({ error: 'Unsupported platform' });
     }
-
-    if (!shopifyAccessToken) {
-      throw new Error('ACCESS_TOKEN_MISSING');
-    }
   } catch (err) {
-    console.error('[OAuth] Token exchange failed', err);
+    // OBS-162B-2: an incomplete Shopify grant is a permissions problem, not a
+    // token-endpoint failure — fail closed with a distinct 403 + SECURITY audit.
+    const scopeFailure = classifyScopeFailure(err);
+    if (scopeFailure) {
+      audit({
+        level: 'SECURITY',
+        event: 'oauth_scopes_insufficient',
+        userId: oauthContext.userId,
+        metadata: {
+          platform,
+          reason: scopeFailure.reason,
+          ...(scopeFailure.missing.length > 0
+            ? { missing: scopeFailure.missing }
+            : {}),
+        },
+      });
+      return res
+        .status(403)
+        .json({ error: 'Shopify did not grant all required permissions' });
+    }
+
+    // OBS-162B-3: never log the raw Axios error (config.data carries
+    // client_secret + OAuth code).
+    console.error('[OAuth] Token exchange failed', safeProviderError(err));
     return res.status(502).json({ error: 'Failed to exchange OAuth token' });
   }
 

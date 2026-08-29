@@ -379,6 +379,30 @@ scopes, including `read_locations`.
 remains a REQUIRED capability; a fresh install whose grant set omits it still
 fails closed with `SHOPIFY_REQUIRED_SCOPES_MISSING:read_locations`.
 
+### Callback contract for an incomplete grant (SHOP-REVIEW-OAUTH-REGRESSION-162, Slice 162C)
+
+`handleOAuthCallback` now distinguishes an insufficient / missing Shopify grant
+from a token-exchange / provider failure:
+
+- it responds **HTTP 403** with the generic body
+  `{ "error": "Shopify did not grant all required permissions" }` — the internal
+  missing-scope names are **never** placed in the HTTP response — instead of
+  collapsing into the generic token-exchange `502`;
+- it emits a **SECURITY** audit event `oauth_scopes_insufficient` carrying only
+  safe structured metadata (`platform`; a `reason` — `required_scopes_missing`
+  or `no_granted_scopes`; and, only when the internal error names them, the
+  `missing` scope list). No token, OAuth code, secret, header, or provider
+  payload is recorded;
+- a missing `access_token` in Shopify's token response is rejected **before** the
+  Admin GraphQL identity lookup (which previously fired with no Authorization
+  token);
+- provider (Axios) errors are logged through a safe projection — message, HTTP
+  status, network code only — so `client_secret`, the OAuth code, the merchant
+  Admin API token, and request/response bodies and headers are not logged.
+
+This is fail-closed behaviour only; it does not relax the requirement for a real
+OAuth runtime proof on any scope change.
+
 ### Certified — fresh-provider OAuth proven (2026-08-28)
 
 **SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03 passed**, run from P0 against a brand-new

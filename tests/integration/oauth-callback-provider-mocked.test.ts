@@ -42,7 +42,13 @@ jest.mock('axios', () => {
     defaults: { headers: { common: {} } },
   };
   const callable = jest.fn();
-  Object.assign(callable, inst, { create: jest.fn(() => inst) });
+  Object.assign(callable, inst, {
+    create: jest.fn(() => inst),
+    // Real axios sets `isAxiosError: true` on its errors; `safeProviderError`
+    // in the controller narrows on this. Keep the mock's predicate faithful.
+    isAxiosError: (p: unknown) =>
+      !!(p && typeof p === 'object' && (p as { isAxiosError?: unknown }).isAxiosError === true),
+  });
   return { __esModule: true, default: callable };
 });
 
@@ -70,6 +76,25 @@ const GRANT_WITHOUT_READ_LOCATIONS = SHOPIFY_REQUIRED_SCOPES.filter(
 ).join(',');
 
 const SHOP_GID = 'gid://shopify/Shop/999001';
+
+// Slice 162C redaction sentinels — must never surface in any captured log.
+const SENTINEL_CLIENT_SECRET = 'SENTINEL_CLIENT_SECRET_162C';
+const SENTINEL_OAUTH_CODE = 'SENTINEL_OAUTH_CODE_162C';
+const SENTINEL_ADMIN_TOKEN = 'SENTINEL_ADMIN_TOKEN_162C';
+
+/** Canonicalise captured console.* arguments to a single searchable string. */
+function stringifyArg(a: unknown): string {
+  if (typeof a === 'string') return a;
+  if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack ?? ''}`;
+  try {
+    return JSON.stringify(a);
+  } catch {
+    return String(a);
+  }
+}
+function canonicaliseCalls(calls: unknown[][]): string {
+  return calls.map((args) => args.map(stringifyArg).join(' ')).join('\n');
+}
 
 /**
  * Program axios.post for one callback invocation.
@@ -410,22 +435,26 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
   // ─────────────────────────────────────────────────────────────────────────
   // B. Missing access_token in token response
   // ─────────────────────────────────────────────────────────────────────────
-  it('B: token response without access_token -> 502, no persistence, state burned', async () => {
+  it('B: token response without access_token -> 502, NO GraphQL identity call, no persistence, state burned (OBS-162B-1)', async () => {
     const shopDomain = `oauth-cb-noatoken-${Date.now()}.myshopify.com`;
     const { shopId, userId } = await installFreshShop(shopDomain);
     const state = await readOAuthState(userId);
 
-    programAxios({
-      token: { resolve: { data: { scope: FULL_GRANT_STRING } } },
-      // access_token is undefined here, but the identity lookup still fires
-      // before the ACCESS_TOKEN_MISSING guard — mock it so nothing escapes.
-      graphql: { reject: new Error('no token') },
-    });
+    // No `graphql` mock — after OBS-162B-1 the identity lookup must not fire when
+    // Shopify returned no access token.
+    programAxios({ token: { resolve: { data: { scope: FULL_GRANT_STRING } } } });
 
     const res = await callback({ code: 'fake-oauth-code', state, shop: shopDomain });
 
     expect(res.status).toBe(502);
     expect(res.body).toEqual({ error: 'Failed to exchange OAuth token' });
+
+    // Exactly one axios.post — the token endpoint — and never `/graphql.json`.
+    expect(axiosPost).toHaveBeenCalledTimes(1);
+    expect(String(axiosPost.mock.calls[0][0])).toContain(TOKEN_URL_FRAGMENT);
+    for (const call of axiosPost.mock.calls) {
+      expect(String(call[0])).not.toContain(GRAPHQL_URL_FRAGMENT);
+    }
 
     const c = await counts(shopId);
     expect(c.integrationsShopify).toBe(0);
@@ -436,11 +465,12 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
   // ─────────────────────────────────────────────────────────────────────────
   // C. Missing read_locations (fail-closed scope enforcement in the callback)
   // ─────────────────────────────────────────────────────────────────────────
-  it('C: grant missing only read_locations -> callback fails closed (502), no partial provider state, state burned', async () => {
+  it('C: grant missing only read_locations -> 403 insufficient-permissions, SECURITY audit names read_locations, NO GraphQL call, no partial state (OBS-162B-2)', async () => {
     const shopDomain = `oauth-cb-noloc-${Date.now()}.myshopify.com`;
     const { shopId, userId } = await installFreshShop(shopDomain);
     const state = await readOAuthState(userId);
 
+    // No `graphql` mock — scope validation fails before the identity lookup.
     programAxios({
       token: {
         resolve: {
@@ -452,12 +482,85 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
       },
     });
 
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
     const res = await callback({ code: 'fake-oauth-code', state, shop: shopDomain });
+    const auditLines = logSpy.mock.calls
+      .filter((a) => a[0] === '[AUDIT]')
+      .map((a) => String(a[1]));
+    logSpy.mockRestore();
 
-    // CURRENT contract: the normalizer throw is caught by the token-exchange
-    // block -> 502. The error is NOT converted into a success.
-    expect(res.status).toBe(502);
-    expect(res.body).toEqual({ error: 'Failed to exchange OAuth token' });
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      error: 'Shopify did not grant all required permissions',
+    });
+    // The HTTP response must not leak the internal missing-scope names.
+    const bodyStr = JSON.stringify(res.body);
+    expect(bodyStr).not.toContain('read_locations');
+    expect(bodyStr).not.toContain('SHOPIFY_REQUIRED_SCOPES_MISSING');
+
+    const insufficient = auditLines.filter((l) =>
+      l.includes('"event":"oauth_scopes_insufficient"'),
+    );
+    expect(insufficient).toHaveLength(1);
+    const audited = JSON.parse(insufficient[0]);
+    expect(audited.level).toBe('SECURITY');
+    expect(audited.userId).toBe(userId);
+    expect(audited.metadata.platform).toBe('shopify');
+    expect(audited.metadata.reason).toBe('required_scopes_missing');
+    expect(audited.metadata.missing).toEqual(['read_locations']);
+
+    // Identity endpoint never touched.
+    for (const call of axiosPost.mock.calls) {
+      expect(String(call[0])).not.toContain(GRAPHQL_URL_FRAGMENT);
+    }
+
+    const c = await counts(shopId);
+    expect(c.integrationsShopify).toBe(0);
+    expect(c.installations).toBe(0);
+    expect(await oauthStateRows(state)).toBe(0);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // C2. Empty / missing granted-scope value (route-level, OBS-162B-2)
+  // ─────────────────────────────────────────────────────────────────────────
+  it('C2: token response with an empty scope string -> same 403 public contract, SECURITY audit distinguishes the missing/empty grant, no GraphQL call, no partial state', async () => {
+    const shopDomain = `oauth-cb-noscope-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+
+    programAxios({
+      token: {
+        resolve: {
+          data: { access_token: 'fake-shopify-access-token-noscope', scope: '' },
+        },
+      },
+    });
+
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    const res = await callback({ code: 'fake-oauth-code', state, shop: shopDomain });
+    const auditLines = logSpy.mock.calls
+      .filter((a) => a[0] === '[AUDIT]')
+      .map((a) => String(a[1]));
+    logSpy.mockRestore();
+
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      error: 'Shopify did not grant all required permissions',
+    });
+
+    const insufficient = auditLines.filter((l) =>
+      l.includes('"event":"oauth_scopes_insufficient"'),
+    );
+    expect(insufficient).toHaveLength(1);
+    const audited = JSON.parse(insufficient[0]);
+    expect(audited.level).toBe('SECURITY');
+    expect(audited.metadata.reason).toBe('no_granted_scopes');
+    // No fabricated missing-scope list for an empty grant.
+    expect(audited.metadata.missing).toBeUndefined();
+
+    for (const call of axiosPost.mock.calls) {
+      expect(String(call[0])).not.toContain(GRAPHQL_URL_FRAGMENT);
+    }
 
     const c = await counts(shopId);
     expect(c.integrationsShopify).toBe(0);
@@ -612,5 +715,136 @@ describe('SHOP-REVIEW-OAUTH-REGRESSION-162 — OAuth callback (provider-mocked, 
 
     expect(await oauthStateRows(state1)).toBe(0);
     expect(await oauthStateRows(state2)).toBe(0);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Redaction — OBS-162B-3
+  // ─────────────────────────────────────────────────────────────────────────
+  it('token-exchange failure: the raw Axios error (client_secret + OAuth code) never reaches console.error; safe diagnostics remain', async () => {
+    const shopDomain = `oauth-cb-redact-token-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+
+    const axiosError = Object.assign(
+      new Error('Request failed with status code 400'),
+      {
+        isAxiosError: true,
+        code: 'ERR_BAD_REQUEST',
+        response: {
+          status: 400,
+          data: {
+            error: 'invalid_request',
+            error_description: `authorization code ${SENTINEL_OAUTH_CODE} rejected`,
+          },
+        },
+        config: {
+          url: `https://${shopDomain}/admin/oauth/access_token`,
+          data: JSON.stringify({
+            client_id: 'ci-key',
+            client_secret: SENTINEL_CLIENT_SECRET,
+            code: SENTINEL_OAUTH_CODE,
+          }),
+          headers: { 'Content-Type': 'application/json' },
+        },
+        request: {
+          _header: `POST /admin/oauth/access_token HTTP/1.1\r\nbody=${SENTINEL_CLIENT_SECRET}`,
+        },
+      },
+    );
+    programAxios({ token: { reject: axiosError } });
+
+    const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const res = await callback({ code: SENTINEL_OAUTH_CODE, state, shop: shopDomain });
+    const logged = canonicaliseCalls(errSpy.mock.calls);
+    errSpy.mockRestore();
+
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({ error: 'Failed to exchange OAuth token' });
+
+    for (const needle of [
+      SENTINEL_CLIENT_SECRET,
+      SENTINEL_OAUTH_CODE,
+      'client_secret',
+      'error_description',
+      '_header',
+      '"config"',
+      '"request"',
+    ]) {
+      expect(logged).not.toContain(needle);
+    }
+    // Safe diagnostics survive.
+    expect(logged).toContain('[OAuth] Token exchange failed');
+    expect(logged).toContain('Request failed with status code 400');
+    expect(logged).toContain('400');
+    expect(logged).toContain('ERR_BAD_REQUEST');
+
+    const c = await counts(shopId);
+    expect(c.integrationsShopify).toBe(0);
+    expect(c.installations).toBe(0);
+  });
+
+  it('identity-lookup failure: the merchant admin access token never reaches console.warn, and the callback still completes via the optional-metadata fallback', async () => {
+    const shopDomain = `oauth-cb-redact-gql-${Date.now()}.myshopify.com`;
+    const { shopId, userId } = await installFreshShop(shopDomain);
+    const state = await readOAuthState(userId);
+
+    const gqlError = Object.assign(
+      new Error('Request failed with status code 401'),
+      {
+        isAxiosError: true,
+        code: 'ERR_BAD_REQUEST',
+        response: { status: 401, data: { errors: [{ message: 'unauthorized' }] } },
+        config: {
+          url: `https://${shopDomain}/admin/api/2024-01/graphql.json`,
+          data: JSON.stringify({ query: '{ shop { id } }' }),
+          headers: {
+            'X-Shopify-Access-Token': SENTINEL_ADMIN_TOKEN,
+            'Content-Type': 'application/json',
+          },
+        },
+      },
+    );
+    programAxios({
+      token: {
+        resolve: {
+          data: { access_token: SENTINEL_ADMIN_TOKEN, scope: FULL_GRANT_STRING },
+        },
+      },
+      graphql: { reject: gqlError },
+    });
+
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const res = await callback({ code: 'fake-oauth-code', state, shop: shopDomain });
+    const logged = canonicaliseCalls(warnSpy.mock.calls);
+    warnSpy.mockRestore();
+
+    // Optional-metadata fallback: OAuth still completes.
+    expect(res.status).toBe(302);
+    const q = new URL(String(res.headers.location)).searchParams;
+    expect(q.get('connect')).toBe('app_store');
+
+    for (const needle of [
+      SENTINEL_ADMIN_TOKEN,
+      'X-Shopify-Access-Token',
+      '"headers"',
+      '"config"',
+      '"request"',
+    ]) {
+      expect(logged).not.toContain(needle);
+    }
+    expect(logged).toContain(
+      '[OAuth] Failed to fetch Shopify currency/identity/GID',
+    );
+    expect(logged).toContain('401');
+
+    // Persistence still happened; the admin token is stored encrypted, not raw.
+    const c = await counts(shopId);
+    expect(c.integrationsShopify).toBe(1);
+    expect(c.installations).toBe(1);
+    const install = await withTenant(shopId, (trx) =>
+      trx('shopify_app_installations').where({ shop_id: shopId }).first(),
+    );
+    expect(install.access_token).not.toBe(SENTINEL_ADMIN_TOKEN);
+    expect(await oauthStateRows(state)).toBe(0);
   });
 });

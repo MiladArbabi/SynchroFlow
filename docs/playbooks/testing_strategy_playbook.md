@@ -204,9 +204,12 @@ provider HTTP). It protects the **S3 → S1** transition — a reviewer-fresh te
 whose warehouse is **one root location with zero bins** — asserting that both the
 `integrations` and `shopify_app_installations` rows are persisted, that the OAuth
 state is consumed, and that exactly one `integration/sync_requested` domain event
-with its owned outbox row is emitted; the
-token-exchange-failure / missing-access-token / missing-`read_locations`
-fail-closed paths (no partial provider state); unknown and replayed state (403);
+with its owned outbox row is emitted; the token-exchange-failure path, the
+missing-access-token path (502 with **no** Admin GraphQL call — Slice 162C), and
+the incomplete-grant path (**403** `{"error":"Shopify did not grant all required
+permissions"}` + an `oauth_scopes_insufficient` SECURITY audit — Slice 162C) —
+each fail-closed with no partial provider state; provider-error log redaction (no
+`client_secret` / OAuth code / Admin token); unknown and replayed state (403);
 and the **S6** callback-level reinstall merge (`uninstalled_at` cleared, scopes
 refreshed, no tenant/warehouse duplication). It does **not** replace the
 real-provider OAuth proof (SHOP-REVIEW-OAUTH-PROVIDER-SMOKE-03).
