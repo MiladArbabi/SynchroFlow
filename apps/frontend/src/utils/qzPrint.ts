@@ -1,29 +1,45 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // apps/frontend/src/utils/qzPrint.ts
 //
-// WM-47 — QZ Tray Print Dispatch
-// --------------------------------
-// Wraps the qz-tray npm package for silent label routing.
+// WM-47 / SHOP-REVIEW-BARCODE-PRINT-05 — QZ Tray print dispatch
+// ------------------------------------------------------------------
+// Wraps the qz-tray npm package for silent label routing. QZ Tray is an
+// OPTIONAL acceleration path — every caller MUST have a working browser-PDF
+// fallback, and this module never throws.
 //
-// Usage:
-//   const dispatched = await printViaqz(pdfBlob, 'unit_label', axiosInstance);
-//   if (!dispatched) fallback to browser dialog
+// Result contract (SHOP-REVIEW-BARCODE-PRINT-05):
+//   printViaQz() returns a discriminated PrintDispatchResult so the UI can tell
+//   a real silent dispatch ({ status: 'dispatched', printerName }) apart from
+//   the three fallback reasons ({ status: 'fallback', reason }). No QZ /
+//   Axios / SQL internals ever reach the UI.
 //
-// Flow:
-//   1. Connect to QZ Tray (localhost:8182)
-//   2. Fetch default printer for role from /api/v1/wms/printers/default/:role
-//   3. Build QZ print config + data from PDF blob
-//   4. Dispatch silently — no browser dialog
-//   5. Disconnect
+// Ordering (SHOP-REVIEW-BARCODE-PRINT-05):
+//   The configured default printer for the role is looked up FIRST. If none is
+//   configured the QZ websocket connection is NOT attempted at all — a reviewer
+//   with no printer setup should not incur a pointless localhost:8182 failure
+//   before browser printing.
 //
-// If QZ Tray is not running or no default printer is configured for the role,
-// returns false — caller opens PDF blob in browser tab as fallback.
-//
-// Never throws — all errors are caught and return false so the caller
-// always has a working fallback path.
+// Connection lifecycle: the websocket is intentionally left open between prints
+// — repeated warehouse label printing legitimately reuses it. No
+// disconnect-after-every-print, no certificate/signature work here.
 
 import qz from 'qz-tray';
 import type { AxiosInstance } from 'axios';
+
+/**
+ * Why QZ silent dispatch did not happen. Stable, machine-readable, UI-safe.
+ *   no_default_printer — no default printer is configured for the role
+ *   qz_unavailable     — QZ Tray is not running / not reachable
+ *   qz_failed          — QZ Tray was reachable but the print call failed
+ */
+export type PrintFallbackReason =
+  | 'no_default_printer'
+  | 'qz_unavailable'
+  | 'qz_failed';
+
+export type PrintDispatchResult =
+  | { status: 'dispatched'; printerName: string }
+  | { status: 'fallback'; reason: PrintFallbackReason };
 
 let qzConnected = false;
 
@@ -53,26 +69,30 @@ async function getDefaultPrinterName(
 
 /**
  * Attempts to print a PDF blob silently via QZ Tray.
- * Returns true if dispatched, false if QZ Tray unavailable or no printer configured.
- * Caller handles the false case by opening the blob in a browser tab.
+ *
+ * Returns `{ status: 'dispatched', printerName }` only when QZ Tray actually
+ * accepted the job. In every other case returns `{ status: 'fallback', reason }`
+ * and the caller MUST render its durable browser-PDF recovery. Never throws.
  */
 export async function printViaQz(
   pdfBlob: Blob,
   role: string,
   axios: AxiosInstance
-): Promise<boolean> {
+): Promise<PrintDispatchResult> {
+  // 1. Configured printer first — no printer means no reason to touch QZ.
+  const printerName = await getDefaultPrinterName(role, axios);
+  if (!printerName) return { status: 'fallback', reason: 'no_default_printer' };
+
+  // 2. QZ Tray reachable?
+  const connected = await ensureConnected();
+  if (!connected) return { status: 'fallback', reason: 'qz_unavailable' };
+
+  // 3. Dispatch.
   try {
-    const connected = await ensureConnected();
-    if (!connected) return false;
-
-    const printerName = await getDefaultPrinterName(role, axios);
-    if (!printerName) return false;
-
-    // Convert blob to base64
     const arrayBuffer = await pdfBlob.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
     let binary = '';
-    bytes.forEach(b => { binary += String.fromCharCode(b); });
+    bytes.forEach((b) => { binary += String.fromCharCode(b); });
     const base64 = btoa(binary);
 
     const config = qz.configs.create(printerName);
@@ -84,10 +104,10 @@ export async function printViaQz(
     }];
 
     await qz.print(config, data);
-    return true;
+    return { status: 'dispatched', printerName };
   } catch (err) {
     console.warn('[QZ_PRINT_FAILED]', err);
-    return false;
+    return { status: 'fallback', reason: 'qz_failed' };
   }
 }
 

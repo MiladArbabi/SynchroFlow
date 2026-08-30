@@ -1,5 +1,5 @@
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -37,7 +37,7 @@ import type {
   LocationType 
 } from '@lasyncro/shared/ui';
 import { PrintPreviewPanel } from '../components/PrintPreviewPanel.js';
-import type { LabelFormat, PrintableLabel } from '../components/PrintPreviewPanel.js';
+import type { LabelFormat, PrintableLabel, PrintSubmitResult } from '../components/PrintPreviewPanel.js';
 import { BinLogDrawer } from '../components/BinLogDrawer.js';
 // FP-01: shared zone_type colour map, single source of truth with Canvas.
 import { ZONE_COLORS, ZONE_STROKE } from '../components/CanvasEditor.js';
@@ -106,19 +106,18 @@ export type FloorPlanningPageProps = {
   // the blob, so callers don't need to touch it, but the type must reflect
   // what mutateAsync actually resolves to.
   onPrintBarcode?: (locationCode: string) => Promise<Blob>;
-  // FP-17b: null return means FloorPlanningPage already dispatched the
-  // print silently via QZ Tray — PrintPreviewPanel should not also open
-  // a browser tab for the same PDF. A resolved Blob means QZ Tray wasn't
-  // available/configured and the caller must handle it (browser fallback).
-  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
+  // SHOP-REVIEW-BARCODE-PRINT-05: the caller runs the HTTP call + optional QZ
+  // dispatch and returns a discriminated PrintSubmitResult. The Barcodes UI
+  // renders the outcome (QZ dispatched / durable browser PDF / empty / error);
+  // it never opens a browser tab itself.
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
   onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
-  // SHOP-REV-01i: mints the LSP- identity on demand and returns a printable
-  // label for products with no supplier barcode.
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
-  // SHOP-REV-01m: null means already dispatched via QZ Tray, same contract as
-  // onBatchPrintBarcodes.
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
+  // SHOP-REV-01i: mints the LSP- identity on demand. SHOP-REVIEW-BARCODE-PRINT-05:
+  // same PrintSubmitResult contract as the batch callbacks so the per-row button
+  // has the durable browser fallback too.
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
   /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
   activeTab?: 'map' | 'setup' | 'barcodes';
   onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;
@@ -257,10 +256,10 @@ function ProductBarcodesTable({
   onToggleOne, 
   onToggleAll,
 } : { items: ProductBarcode[]; onUpdateProductBarcode?: (
-  lasyncroVariantId: string, 
+  lasyncroVariantId: string,
   barcode: string) => Promise<void>;
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
   selectedIds?: Set<string>;
   onToggleOne?: (id: string) => void;
   onToggleAll?: (ids: string[]) => void;
@@ -272,21 +271,43 @@ function ProductBarcodesTable({
   const [editValue, setEditValue]           = useState('');
   const [saving, setSaving]                 = useState(false);
   const [saveError, setSaveError]           = useState<string | null>(null);
-  // SHOP-REV-01i: per-row print state — a product with no supplier barcode
-  // has no scannable identity until laSyncro mints one. Deliberately scoped
-  // to the unassigned section: products that already carry a supplier
-  // EAN/UPC scan fine and need no laSyncro label.
+  // SHOP-REV-01i / SHOP-REVIEW-BARCODE-PRINT-05: per-row print state. Only one
+  // row prints at a time, so a single "active outcome" record is enough. The
+  // browser-fallback blob URL lives here so the reviewer keeps a durable
+  // Open/Download control even when a popup is blocked.
   const [printingId, setPrintingId]         = useState<string | null>(null);
-  const [printError, setPrintError]         = useState<string | null>(null);
+  type RowPrint = { id: string; kind: 'dispatched' | 'browser' | 'error'; msg: string; url?: string };
+  const [rowPrint, setRowPrint]             = useState<RowPrint | null>(null);
+  const rowUrlRef = useRef<string | null>(null);
+  function setRowUrl(blob: Blob | null): string | undefined {
+    if (rowUrlRef.current) { URL.revokeObjectURL(rowUrlRef.current); rowUrlRef.current = null; }
+    if (!blob) return undefined;
+    const u = URL.createObjectURL(blob);
+    rowUrlRef.current = u;
+    return u;
+  }
+  useEffect(() => () => { if (rowUrlRef.current) URL.revokeObjectURL(rowUrlRef.current); }, []);
 
   async function handlePrint(lasyncroVariantId: string) {
     if (!onPrintProductBarcode) return;
     setPrintingId(lasyncroVariantId);
-    setPrintError(null);
+    setRowPrint(null);
+    setRowUrl(null);
     try {
-      await onPrintProductBarcode(lasyncroVariantId);
+      const result = await onPrintProductBarcode(lasyncroVariantId);
+      if (result.outcome === 'dispatched') {
+        setRowPrint({ id: lasyncroVariantId, kind: 'dispatched', msg: `Sent to ${result.printerName}` });
+      } else if (result.outcome === 'browser') {
+        const url = setRowUrl(result.blob);
+        setRowPrint({ id: lasyncroVariantId, kind: 'browser', msg: 'Ready to print in your browser', url });
+        try { if (url) window.open(url, '_blank'); } catch { /* controls remain */ }
+      } else if (result.outcome === 'empty') {
+        setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'This product is no longer available. Refresh and try again.' });
+      } else {
+        setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: result.message ?? 'Could not prepare the label. Please try again.' });
+      }
     } catch {
-      setPrintError(lasyncroVariantId);
+      setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'Could not prepare the label. Please try again.' });
     } finally {
       setPrintingId(null);
     }
@@ -511,27 +532,53 @@ function ProductBarcodesTable({
                               commits a write (mints the LSP- identity and
                               dispatches to the printer), unlike the Edit action
                               above which only opens an inline editor. Error uses
-                              --critical-ink per §18; never hardcode severity hex. */}
-                          {onPrintProductBarcode && (
-                            <Box
-                              onClick={() => { if (printingId !== item.lasyncro_variant_id) void handlePrint(item.lasyncro_variant_id); }}
-                              sx={{
-                                display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                px: 1.25, py: 0.5,
-                                fontSize: 11, fontWeight: 600,
-                                whiteSpace: 'nowrap',
-                                bgcolor: printError === item.lasyncro_variant_id ? 'var(--critical-ink)' : 'var(--accent)',
-                                color: 'var(--accent-ink)',
-                                borderRadius: '6px',
-                                cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
-                                opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
-                                '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
-                              }}
-                            >
-                              <Tag size={11} />
-                              {printingId === item.lasyncro_variant_id ? 'Printing…' : printError === item.lasyncro_variant_id ? 'Retry' : 'Print label'}
-                            </Box>
-                          )}
+                              --critical-ink per §18; never hardcode severity hex.
+                              SHOP-REVIEW-BARCODE-PRINT-05: durable browser
+                              Open/Download recovery when QZ did not dispatch. */}
+                          {onPrintProductBarcode && (() => {
+                            const rp = rowPrint?.id === item.lasyncro_variant_id ? rowPrint : null;
+                            const isError = rp?.kind === 'error';
+                            return (
+                              <Box sx={{ display: 'inline-flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-start' }}>
+                                <Box
+                                  onClick={() => { if (printingId !== item.lasyncro_variant_id) void handlePrint(item.lasyncro_variant_id); }}
+                                  sx={{
+                                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                    px: 1.25, py: 0.5,
+                                    fontSize: 11, fontWeight: 600,
+                                    whiteSpace: 'nowrap',
+                                    bgcolor: isError ? 'var(--critical-ink)' : 'var(--accent)',
+                                    color: 'var(--accent-ink)',
+                                    borderRadius: '6px',
+                                    cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
+                                    opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
+                                    '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
+                                  }}
+                                >
+                                  <Tag size={11} />
+                                  {printingId === item.lasyncro_variant_id ? 'Printing…' : isError ? 'Retry' : 'Print label'}
+                                </Box>
+                                {rp?.kind === 'dispatched' && (
+                                  <Typography sx={{ fontSize: 10.5, color: 'var(--ink-4)' }}>{rp.msg}</Typography>
+                                )}
+                                {rp?.kind === 'browser' && rp.url && (
+                                  <Box sx={{ display: 'inline-flex', gap: 1, alignItems: 'center' }}>
+                                    <Box component="a" href={rp.url} target="_blank" rel="noopener noreferrer"
+                                      sx={{ fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                      Open PDF
+                                    </Box>
+                                    <Box component="a" href={rp.url} download="product-label.pdf"
+                                      sx={{ fontSize: 10.5, color: 'var(--ink-3)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }}>
+                                      Download
+                                    </Box>
+                                  </Box>
+                                )}
+                                {rp?.kind === 'error' && (
+                                  <Typography sx={{ fontSize: 10.5, color: 'var(--critical-ink)' }}>{rp.msg}</Typography>
+                                )}
+                              </Box>
+                            );
+                          })()}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -599,11 +646,10 @@ function BarcodesTab({
   onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) =>Promise<void>;
   activeSubTab?: 'locations' | 'products';
   onSubTabChange?: (subTab: 'locations' | 'products') => void;
-  // FP-17b: null means already printed via QZ Tray, see outer interface
-  // comment above for full rationale.
-  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
-  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
-  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
+  // SHOP-REVIEW-BARCODE-PRINT-05: PrintSubmitResult contract — see outer props.
+  onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
+  onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
+  onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
 }) {
   const [subTab, setSubTab] = useState<'locations' | 'products'>(activeSubTab ?? 'locations');
   const [locFilter, setLocFilter]     = useState<LocationFilter>('all');
@@ -641,8 +687,13 @@ function BarcodesTab({
   });
   // SHOP-REV-01m: the barcoded + active filter moved here from inside
   // PrintPreviewPanel — it is a location concept with no product equivalent.
+  // SHOP-REVIEW-BARCODE-PRINT-05 §10: order the preview by the same key the
+  // print endpoint sorts on (httpBatchPrintBarcodes → ORDER BY location_code)
+  // so the first-sheet preview is truthful about what prints first.
   const selectedZoneLabels: PrintableLabel[] = zones
     .filter((z) => selected.has(z.location_code) && z.active)
+    .slice()
+    .sort((a, b) => (a.location_code < b.location_code ? -1 : a.location_code > b.location_code ? 1 : 0))
     .map((z) => ({ id: z.location_code, code: z.barcode ?? z.location_code, caption: z.location_code }));
   const allFilteredCodes    = filteredZones.map((z) => z.location_code);
   const allSelected         = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
@@ -653,8 +704,17 @@ function BarcodesTab({
   const prodWithSupplier = productBarcodes.filter((p) => p.barcode !== null);
   const prodWithLasyncro = productBarcodes.filter((p) => p.lasyncro_barcode !== null);
 
+  // SHOP-REVIEW-BARCODE-PRINT-05 §10: match httpBatchPrintProductBarcodes
+  // (ORDER BY v.sku). Postgres sorts NULLs last on ASC, so null SKUs trail.
   const selectedProductLabels: PrintableLabel[] = productBarcodes
     .filter((p) => prodSelected.has(p.lasyncro_variant_id))
+    .slice()
+    .sort((a, b) => {
+      if (a.sku === b.sku) return 0;
+      if (a.sku == null) return 1;
+      if (b.sku == null) return -1;
+      return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0;
+    })
     .map((p) => ({
       id: p.lasyncro_variant_id,
       // Preview shows the LSP- code where one exists; a variant with none yet

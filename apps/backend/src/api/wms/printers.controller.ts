@@ -2,11 +2,15 @@
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { getErrorMessage } from '@lasyncro/backend-core';
-// FP-18: mirrors the printer_role Postgres enum (migrations 0106, 0127).
+// FP-18: mirrors the printer_role Postgres enum (migrations 0106, 0127, 0136).
 // Validated at the controller layer so an invalid role returns a clean
 // 400 instead of a raw Postgres constraint error leaking through as a
 // 500 — keep this list in sync if the enum ever changes.
-const VALID_PRINTER_ROLES = ['unit_label', 'invoice', 'problem_label', 'location_label', 'general'] as const;
+// SHOP-REVIEW-BARCODE-PRINT-05: `product_label` (enum value added by migration
+// 0136) was missing here, so an owner could never register a product-label
+// printer and the QZ silent path for Floor Planning → Barcodes product labels
+// was permanently unreachable.
+const VALID_PRINTER_ROLES = ['unit_label', 'invoice', 'problem_label', 'location_label', 'product_label', 'general'] as const;
 /**
  * PRINTERS CONTROLLER (WM-47)
  * ----------------------------

@@ -1,4 +1,5 @@
 import type { WarehouseLocation, BinOccupancy, BinLogResponse, BinStats, WarehouseLocationType, WarehouseZone } from '@lasyncro/shared/ui';
+import type { PrintSubmitResult } from '../components/PrintPreviewPanel.js';
 /**
  * FLOOR PLANNING MODULE — FT2 SURFACE
  * -------------------------------------
@@ -54,11 +55,11 @@ export type FloorPlanningPageProps = {
     }) => Promise<void>;
     onDeleteZone?: (locationCode: string) => Promise<void>;
     onPrintBarcode?: (locationCode: string) => Promise<Blob>;
-    onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<Blob | null>;
+    onBatchPrintBarcodes?: (locationCodes: string[], formatId: string) => Promise<PrintSubmitResult>;
     onToggleZoneActive?: (locationCode: string, active: boolean) => Promise<void>;
     onUpdateProductBarcode?: (lasyncroVariantId: string, barcode: string) => Promise<void>;
-    onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<void>;
-    onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<Blob | null>;
+    onPrintProductBarcode?: (lasyncroVariantId: string) => Promise<PrintSubmitResult>;
+    onBatchPrintProductBarcodes?: (lasyncroVariantIds: string[], formatId: string) => Promise<PrintSubmitResult>;
     /** Controlled tab — gate page syncs to URL search params for persistence across refreshes */
     activeTab?: 'map' | 'setup' | 'barcodes';
     onTabChange?: (tab: 'map' | 'setup' | 'barcodes') => void;

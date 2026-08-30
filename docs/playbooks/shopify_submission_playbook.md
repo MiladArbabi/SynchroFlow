@@ -2258,3 +2258,206 @@ direct release revalidates current server state; transaction rollback is proven
 behaviourally; the concurrent inventory race maps to a controlled HTTP 409; the
 full R1–R20 regression matrix is green; and the fresh-install / reviewer release
 path remains green.
+
+---
+
+## SHOP-REVIEW-BARCODE-PRINT-05 — reviewer-safe barcode printing
+
+**Status (2026-08-30): ENGINEERING VERIFIED — pending deploy / production certification.**
+`ENGINEERING_VERIFICATION = PASS`. This is not yet final operational closure —
+see "Production status" below.
+
+### Historical context
+
+The original Shopify reviewer barcode rejection (ref 102766) had barcode
+*assignment / generation / empty-preview* symptoms — products with no scannable
+identity, misleading counts, a consequently empty preview. That core
+barcode-generation path was repaired and reviewer-certified earlier
+(SHOP-REV-01g minted the LSP- identity endpoint, 01i/01m the product-label
+print + preview panel). **BARCODE-PRINT-05 does not touch barcode generation.**
+It closes the remaining *print-experience* risk observed during certification:
+
+- QZ Tray dependency behaviour;
+- browser-fallback reliability;
+- popup blocking;
+- silent / console-only UI states;
+- multi-sheet printing;
+- the no-printer reviewer path.
+
+### Root cause
+
+Floor Planning → Barcodes opened the fallback PDF with `window.open` **only
+after an asynchronous chain**: the label-generation API call, then a QZ / default
+-printer discovery step (a ~1 s `localhost:8182` websocket attempt + a printer
+lookup), then a delayed `window.open`. A normal browser treats that `window.open`
+as non-user-initiated and can block it. When blocked, the reviewer had **no
+durable Open/Download recovery**, and several success/error branches were
+`console.warn`/`console.error` only — so Print appeared unresponsive.
+
+Also found:
+
+- **Batch print sent only the first sheet's IDs** (`items.slice(0,
+  labelsPerSheet)`) while the panel advertised "N labels · M sheets".
+- **Empty selection** left the "Print sheet" button enabled; the handler
+  silently early-returned.
+- **`product_label`** existed in the `printer_role` Postgres enum (migration
+  0136) but was missing from the backend `VALID_PRINTER_ROLES` allow-list, so an
+  owner could never register a product-label printer and the QZ product path was
+  permanently unreachable.
+
+### Final product contract
+
+**QZ Tray is OPTIONAL.** Floor Planning → Barcodes has exactly two outcomes.
+
+**Direct printer path** — a configured default printer for the role **and** QZ
+Tray reachable **and** the dispatch succeeds → the UI reports **"Sent to
+&lt;printer&gt;"**. This is a *dispatch* claim only; it is not proof the printer
+physically produced the label.
+
+**Browser path** — no default printer **or** QZ unavailable **or** QZ dispatch
+failure → the generated PDF stays available through persistent **"Open printable
+PDF"** and **"Download PDF"** controls. Browser printing does **not** depend on
+popup permissions (the controls are the reviewer's own click).
+
+A Shopify reviewer can complete barcode printing without: installing QZ Tray,
+configuring a warehouse printer, or allow-listing popups. A concise on-surface
+hint states *"Printer app optional — labels can also be opened as a PDF and
+printed from your browser."*
+
+### Implementation summary
+
+| Area | Behaviour |
+| --- | --- |
+| **A. `qzPrint` result model** | `PrintDispatchResult` = `{ status: 'dispatched'; printerName }` \| `{ status: 'fallback'; reason: 'no_default_printer' \| 'qz_unavailable' \| 'qz_failed' }`. The **default-printer lookup runs before the QZ websocket connection**; with no configured printer it returns `fallback/no_default_printer` immediately and never touches `localhost:8182`. No QZ certificate/signature work, no forced disconnect-after-print, no new retries. |
+| **B. Browser fallback** | The PDF `Blob` is retained in UI state; persistent Open/Download controls render from it. A best-effort automatic open may occur but is never required for success. Object URLs are revoked on replacement and on unmount, and are **not** revoked on an arbitrary timer while the controls are still shown. |
+| **C. Print states** | `idle` → `preparing` (visible progress, Print disabled) → `browser_ready` (Open/Download) \| `qz_dispatched` ("Sent to &lt;printer&gt;") \| `error` (safe visible message, retry available). No reviewer-facing branch is console-only. |
+| **D. Batch selection** | Every selected ID is submitted; the backend PDF generator paginates. The visual panel may show the first sheet while truthfully reporting "N labels · M sheets · sheet 1 of M". |
+| **E. Empty selection** | The "Print sheet" button is disabled; the handler keeps a defensive early return. The batch endpoints independently return a controlled `400` for empty arrays. |
+| **F. Product-label printer role** | `product_label` added to `VALID_PRINTER_ROLES`. **No migration** — the DB enum already contained it. Unknown roles still `400`. |
+
+### Files / ownership
+
+Production source:
+
+- `apps/frontend/src/utils/qzPrint.ts`
+- `apps/frontend/src/pages/ft2-pages/FloorPlanningPage.tsx`
+- `apps/frontend/src/pages/floor-planning/useZoneManagement.ts`
+- `apps/frontend/src/pages/ft2-pages/WmsOperationsPage.tsx` *(mechanical adaptation to the structured `printViaQz` result only)*
+- `apps/backend/src/api/wms/printers.controller.ts`
+- `modules/floor-planning/src/ui/components/PrintPreviewPanel.tsx`
+- `modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx`
+- `modules/floor-planning/src/ui/index.ts`
+
+Tests:
+
+- `tests/unit/frontend/qzPrint.test.ts`
+- `tests/unit/ui/floor-planning/PrintPreviewPanel.test.tsx`
+- `tests/unit/ui/floor-planning/ProductBarcodesTable.lifecycle.test.tsx`
+- `tests/integration/floor-planning/barcode-print.test.ts`
+
+`modules/floor-planning/dist/*` was regenerated because the host app consumes the
+module's built public API (`PrintSubmitResult` / the changed callback prop
+types); the dist churn is restricted to the 11 changed floor-planning artifacts.
+
+### Automated evidence (final formal verification)
+
+| Suite / check | Result |
+| --- | --- |
+| `qzPrint` utility (`tests/unit/frontend/qzPrint.test.ts`) | 5 / 5 PASS |
+| `PrintPreviewPanel` (`tests/unit/ui/floor-planning/PrintPreviewPanel.test.tsx`) | 14 / 14 PASS |
+| Per-row `ProductBarcodesTable` object-URL lifecycle | 3 / 3 PASS |
+| Adjacent WMS regression (`WmsOperationsPage.floorPlanningNav.test.tsx`) | 1 / 1 PASS |
+| Backend `barcode-print` integration (disposable DB) | 11 / 11 PASS |
+| Disposable DB harness | PASS (created / migrated / runtime-ok / dropped; 0 orphans) |
+| `tsc -p apps/backend/tsconfig.json` / `…/tsconfig.migrations.json` | EXIT 0 / EXIT 0 |
+| `tsc -p apps/frontend/tsconfig.json` | 19 known unrelated baseline errors only; zero issue-file errors |
+| `tsc -p tests/tsconfig.json` | sole known baseline `tests/integration/auth/register-no-auth-side-effects.test.ts(39,4) TS1005`; zero issue-test errors |
+
+### Multi-sheet PDF proof (maintained integration suite)
+
+Both from `tests/integration/floor-planning/barcode-print.test.ts`, asserted on
+the real HTTP response with `PDFDocument.load(response).getPageCount()`:
+
+| Fixture | Format | Sheet capacity | Expected pages | Actual pages |
+| --- | --- | --- | --- | --- |
+| BE2b — 30 tenant-owned active locations | `avery-5160` | 24 / sheet | 2 | 2 |
+| BE4b — 30 tenant-owned pre-barcoded product variants | `avery-5160` | 24 / sheet | 2 | 2 |
+
+The earlier `dist/pdfprobe.mjs` was a throwaway verification probe and is **not**
+the acceptance evidence.
+
+### Acceptance matrix
+
+| BP | Scenario | Result |
+| --- | --- | --- |
+| BP1 | Existing location/product barcode → preview renders | PASS |
+| BP2 | Full selection → full multi-page printable PDF | PASS |
+| BP3 | No QZ installed → browser fallback | PASS |
+| BP4 | QZ unavailable → fallback | PASS |
+| BP5 | No default printer → QZ connection skipped + fallback | PASS |
+| BP6 | QZ print failure → fallback | PASS |
+| BP7 | Popup blocked → Open/Download recovery remains | PASS |
+| BP8 | Empty selection → Print disabled | PASS |
+| BP9 | QZ dispatch success → truthful "Sent to &lt;printer&gt;" | PASS |
+| BP10 | Browser fallback never claims physical print | PASS |
+| BP11 | Repeated print works | PASS |
+| BP12 | No tenant / secret leakage | PASS |
+| BP13 | 400 / 404 / 500 → reviewer-visible error | PASS |
+| BP14 | Honest multi-sheet preview / count | PASS |
+| BP15 | `product_label` configurable as a valid printer role | PASS |
+| BP16 | Object-URL lifecycle — **batch and per-row product**, both behaviourally covered | PASS |
+| BP17 | Adjacent WMS QZ callers preserved | PASS |
+
+No `PASS*`, `STATIC_ONLY`, or `INCOMPLETE` markers remain.
+
+### Reviewer without QZ Tray
+
+**`REVIEWER_WITHOUT_QZ = YES`** — a critical App Store-review statement.
+Evidence: a missing default printer skips the QZ connection entirely; the server
+PDF is still generated; the `browser_ready` state is shown; "Open printable PDF"
+and "Download PDF" are both available; a blocked popup cannot strand the
+reviewer (the controls persist); no QZ onboarding or install is required; and no
+branch produces a dead button.
+
+### Shared infrastructure
+
+`apps/frontend/src/utils/qzPrint.ts` is shared. The adjacent WMS callers — receive
+**unit labels** and **invoices** on `WmsOperationsPage` — were mechanically
+adapted to the structured dispatch result (`dispatch.status === 'dispatched'` →
+done; otherwise the existing `openBlobInTab` + QZ onboarding prompt). Their UX
+was **not** redesigned. The carrier **shipping-label** flow was not changed.
+
+### Deferred (tracked, not blockers)
+
+- **BP-D6** — `warehouse_locations.last_printed_at` records generation/request
+  timing, not proven physical print completion. DEFER.
+- **BP-D10** — `dymo-1x2` client/server `paperSize` string mismatch (equivalent
+  geometry). DEFER.
+- **BP-D11** — duplicated client/server label-geometry definitions ("synced by
+  comment only"). DEFER.
+- **BP-D14** — product preview cannot show a barcode that is minted on print.
+  DEFER.
+- **BP-D16** — adjacent Canvas single-location / shipping-label popup UX beyond
+  the mechanical shared-`qzPrint` adaptation. DEFER.
+
+Any prior barcode table/summary inconsistency remains a separate item.
+
+### Out of scope / unchanged
+
+No change to: barcode value generation, the LSP- barcode format, Shopify
+identity, inventory, product/location assignment semantics, mint-on-print
+semantics, PDF barcode encoding, migrations, Shopify OAuth, or the WMS release
+system. No QZ certificate/signature architecture was introduced. Reviewers are
+not required to install QZ.
+
+### Production status
+
+**`PRODUCTION_CERTIFICATION = PENDING`.** This issue has **not** yet gone
+through commit/push → CI → deploy → production reviewer-path smoke. Do not assume
+the live production Barcodes surface contains this fix until deployment occurs.
+Engineering verification is complete; final operational closure requires the
+commit/deploy pipeline and a production reviewer-path smoke.
+
+**SHOP-REVIEW-BARCODE-PRINT-05 = ENGINEERING CLOSED / PRODUCTION CERTIFICATION
+PENDING.** Other Shopify App Review risks remain tracked separately; the overall
+App Review project is not closed by this section.

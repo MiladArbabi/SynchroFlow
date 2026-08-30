@@ -119,8 +119,12 @@ export function usePrintBarcode() {
         .post(`/api/v1/floor-planning/zones/${locationCode}/print`, {}, { responseType: 'blob' })
         .then(r => r.data as Blob),
     onSuccess: async (blob) => {
-      const dispatched = await printViaQz(blob, 'location_label', axiosInstance);
-      if (!dispatched) {
+      // Single-location print from the canvas editor (outside the Barcodes tab).
+      // SHOP-REVIEW-BARCODE-PRINT-05 only reworks the Barcodes surface; this
+      // path keeps its existing best-effort behaviour, adapted to printViaQz's
+      // structured result.
+      const dispatch = await printViaQz(blob, 'location_label', axiosInstance);
+      if (dispatch.status !== 'dispatched') {
         const url = window.open(URL.createObjectURL(blob), '_blank');
         if (!url) console.warn('[FP-15] Label popup blocked — check browser popup settings');
       }
@@ -153,16 +157,17 @@ export function useBatchPrintBarcodes() {
 export function usePrintProductBarcode() {
   const qc = useQueryClient();
   return useMutation({
+    // SHOP-REVIEW-BARCODE-PRINT-05: this hook now only fetches the label PDF.
+    // FloorPlanningPage.onPrintProductBarcode owns the QZ dispatch + fallback
+    // outcome (submitPrint), and the Barcodes UI renders the durable
+    // Open/Download recovery. Doing dispatch here as well would double-print.
     mutationFn: (lasyncroVariantId: string) =>
       axiosInstance
         .post(`/api/v1/floor-planning/products/${lasyncroVariantId}/print`, {}, { responseType: 'blob' })
         .then(r => r.data as Blob),
-    onSuccess: async (blob) => {
-      const dispatched = await printViaQz(blob, 'product_label', axiosInstance);
-      if (!dispatched) {
-        const win = window.open(URL.createObjectURL(blob), '_blank');
-        if (!win) console.warn('[SHOP-REV-01i] Product label popup blocked — check browser popup settings');
-      }
+    onSuccess: () => {
+      // The endpoint mints the LSP- identity on first print — refresh so the
+      // Barcodes tab shows the newly minted code without a manual refresh.
       void qc.invalidateQueries({ queryKey: ['floor-planning'] });
     },
   });

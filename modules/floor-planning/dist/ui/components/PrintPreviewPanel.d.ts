@@ -1,16 +1,3 @@
-/**
- * PrintPreviewPanel — Barcodes tab right panel.
- *
- * Renders a live label sheet preview for barcoded warehouse locations.
- * Supports 4 label formats — each controls grid layout, label dimensions,
- * and @media print page size.
- *
- * Barcode type is Code128 for all formats in Phase 1.
- * Phase 2: user-selectable barcode type per format.
- *
- * Print isolation: #lasyncro-print-sheet is the only element visible
- * during window.print() — all other app chrome is hidden via @media print.
- */
 export interface LabelFormat {
     id: string;
     label: string;
@@ -32,12 +19,39 @@ export interface PrintableLabel {
     code: string;
     caption: string;
 }
+/**
+ * SHOP-REVIEW-BARCODE-PRINT-05 — why QZ silent dispatch did not happen.
+ * Mirrors PrintFallbackReason in apps/frontend/src/utils/qzPrint.ts. Kept as a
+ * local type so the module has no dependency on the host app.
+ */
+export type PrintFallbackReason = 'no_default_printer' | 'qz_unavailable' | 'qz_failed';
+/**
+ * Outcome of a caller's batch-print submission. The caller owns the HTTP call
+ * and the (optional) QZ dispatch; the panel owns the resulting UI.
+ *   dispatched — QZ Tray accepted the job for `printerName`
+ *   browser    — a printable PDF exists; render durable Open/Download controls
+ *   empty      — server had nothing printable in the selection (400/404)
+ *   error      — any other failure; message is already UI-safe if present
+ */
+export type PrintSubmitResult = {
+    outcome: 'dispatched';
+    printerName: string;
+} | {
+    outcome: 'browser';
+    blob: Blob;
+    reason: PrintFallbackReason;
+} | {
+    outcome: 'empty';
+} | {
+    outcome: 'error';
+    message?: string;
+};
 interface PrintPreviewPanelProps {
     items: PrintableLabel[];
     formats: LabelFormat[];
     defaultFormatId: string;
     emptyMessage: string;
-    onBatchPrint?: (ids: string[], formatId: string) => Promise<Blob | null>;
+    onBatchPrint?: (ids: string[], formatId: string) => Promise<PrintSubmitResult>;
 }
 export declare function PrintPreviewPanel({ items, formats, defaultFormatId, emptyMessage, onBatchPrint }: PrintPreviewPanelProps): import("react").JSX.Element;
 export {};

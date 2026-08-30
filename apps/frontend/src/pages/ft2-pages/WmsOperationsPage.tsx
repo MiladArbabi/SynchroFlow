@@ -272,8 +272,10 @@ export default function WmsOperationsPage() {
       { responseType: 'blob' }
     );
     const blob = new Blob([response.data], { type: 'application/pdf' });
-    const dispatched = await printViaQz(blob, 'unit_label', axiosInstance);
-    if (!dispatched) {
+    // SHOP-REVIEW-BARCODE-PRINT-05: printViaQz now returns a structured result.
+    // Behaviour here is unchanged — dispatched → done; anything else → browser tab.
+    const dispatch = await printViaQz(blob, 'unit_label', axiosInstance);
+    if (dispatch.status !== 'dispatched') {
       openBlobInTab(blob);
       if (!hasQzPromptBeenDismissed()) setShowQzPrompt(true);
     }
@@ -285,8 +287,8 @@ export default function WmsOperationsPage() {
       { responseType: 'blob' }
     );
     const blob = new Blob([response.data], { type: 'application/pdf' });
-    const dispatched = await printViaQz(blob, 'invoice', axiosInstance);
-    if (!dispatched) {
+    const dispatch = await printViaQz(blob, 'invoice', axiosInstance);
+    if (dispatch.status !== 'dispatched') {
       openBlobInTab(blob);
       if (!hasQzPromptBeenDismissed()) setShowQzPrompt(true);
     }

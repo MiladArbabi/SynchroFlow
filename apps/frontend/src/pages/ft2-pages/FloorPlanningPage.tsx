@@ -2,8 +2,10 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { axiosInstance } from 'api/axiosConfig';
+import { AxiosError } from 'axios';
 import { printViaQz } from 'utils/qzPrint';
 import { FloorPlanningModuleFT2 } from '@lasyncro/floor-planning';
+import type { PrintSubmitResult } from '@lasyncro/floor-planning';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGrid, useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useBinLog } from '../floor-planning/useBinLog';
@@ -62,6 +64,28 @@ export default function FloorPlanningPage() {
       .catch(() => setVariantFocusBins([]));
   }, [variantId]);
 
+  // SHOP-REVIEW-BARCODE-PRINT-05: generate the label PDF, attempt optional QZ
+  // dispatch, and hand the Barcodes UI a discriminated outcome. The UI owns all
+  // browser-tab / download behaviour — this page never calls window.open.
+  const submitPrint = async (
+    fetchBlob: () => Promise<Blob>,
+    role: 'location_label' | 'product_label',
+  ): Promise<PrintSubmitResult> => {
+    let blob: Blob;
+    try {
+      blob = await fetchBlob();
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined;
+      if (status === 400 || status === 404) return { outcome: 'empty' };
+      return { outcome: 'error', message: 'Could not generate the labels. Please try again.' };
+    }
+    const dispatch = await printViaQz(blob, role, axiosInstance);
+    if (dispatch.status === 'dispatched') {
+      return { outcome: 'dispatched', printerName: dispatch.printerName };
+    }
+    return { outcome: 'browser', blob, reason: dispatch.reason };
+  };
+
   return (
     <>
       {/* Warehouse-level tab bar — mirrors WmsPage and WmsAnalyticsPage */}
@@ -88,27 +112,19 @@ export default function FloorPlanningPage() {
         onToggleZoneActive={(code, active) => updateZone.mutateAsync({ locationCode: code, active })}
         onUpdateZone={(code, payload) => updateZone.mutateAsync({ locationCode: code, ...payload })}
         onPrintBarcode={(locationCode) => printBarcode.mutateAsync(locationCode)}
-        // FP-17b: tries silent QZ Tray dispatch (role location_label)
-        // first. Returns null when QZ printed successfully — signals
-        // PrintPreviewPanel to skip opening a browser tab, avoiding a
-        // double-print of the same label sheet. Returns the blob so
-        // PrintPreviewPanel falls back to the browser tab when QZ Tray
-        // is unavailable or not configured.
-        onBatchPrintBarcodes={async (locationCodes, formatId) => {
-          const blob = await batchPrintBarcodes.mutateAsync({ locationCodes, formatId });
-          const dispatched = await printViaQz(blob, 'location_label', axiosInstance);
-          return dispatched ? null : blob;
-        }}
+        // SHOP-REVIEW-BARCODE-PRINT-05: PDF → optional QZ dispatch → discriminated
+        // outcome. No window.open here; the Barcodes UI renders the result and
+        // owns the durable browser Open/Download recovery.
+        onBatchPrintBarcodes={(locationCodes, formatId) =>
+          submitPrint(() => batchPrintBarcodes.mutateAsync({ locationCodes, formatId }), 'location_label')
+        }
         onUpdateProductBarcode={(variantId, barcode) => updateProductBarcode.mutateAsync({ lasyncroVariantId: variantId, barcode })}
-        onPrintProductBarcode={(variantId) => printProductBarcode.mutateAsync(variantId).then(() => undefined)}
-        // SHOP-REV-01m: mirrors onBatchPrintBarcodes — null means QZ already
-        // dispatched silently, so PrintPreviewPanel skips the browser tab and
-        // the sheet isn't printed twice.
-        onBatchPrintProductBarcodes={async (ids, formatId) => {
-          const blob = await batchPrintProductBarcodes.mutateAsync({ lasyncroVariantIds: ids, formatId });
-          const dispatched = await printViaQz(blob, 'product_label', axiosInstance);
-          return dispatched ? null : blob;
-        }}
+        onPrintProductBarcode={(variantId) =>
+          submitPrint(() => printProductBarcode.mutateAsync(variantId), 'product_label')
+        }
+        onBatchPrintProductBarcodes={(ids, formatId) =>
+          submitPrint(() => batchPrintProductBarcodes.mutateAsync({ lasyncroVariantIds: ids, formatId }), 'product_label')
+        }
         activeTab={activeTab}
         onTabChange={(tab) => setSearchParams(prev => { prev.set('tab', tab); return prev; })}
         activeView={activeView}

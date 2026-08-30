@@ -1,6 +1,6 @@
 import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
 // modules/floor-planning/src/ui/pages/FloorPlanningModuleFT2.tsx
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { Box, Paper, Typography, Alert, Chip, Divider, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Collapse, IconButton, Tab, Tabs, Checkbox, Button, FormControl, InputLabel, MenuItem, Select, } from '@mui/material';
 import { LayoutDashboard, Tag, PackageSearch, ChevronDown, ChevronUp, Map, ScrollText, Eye, EyeOff, Trash2, Plus } from 'lucide-react';
 import { ModuleErrorBoundary, ModuleLoadingSkeleton } from '@lasyncro/shared/ui';
@@ -59,22 +59,55 @@ function ProductBarcodesTable({ items, onUpdateProductBarcode, onPrintProductBar
     const [editValue, setEditValue] = useState('');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
-    // SHOP-REV-01i: per-row print state — a product with no supplier barcode
-    // has no scannable identity until laSyncro mints one. Deliberately scoped
-    // to the unassigned section: products that already carry a supplier
-    // EAN/UPC scan fine and need no laSyncro label.
+    // SHOP-REV-01i / SHOP-REVIEW-BARCODE-PRINT-05: per-row print state. Only one
+    // row prints at a time, so a single "active outcome" record is enough. The
+    // browser-fallback blob URL lives here so the reviewer keeps a durable
+    // Open/Download control even when a popup is blocked.
     const [printingId, setPrintingId] = useState(null);
-    const [printError, setPrintError] = useState(null);
+    const [rowPrint, setRowPrint] = useState(null);
+    const rowUrlRef = useRef(null);
+    function setRowUrl(blob) {
+        if (rowUrlRef.current) {
+            URL.revokeObjectURL(rowUrlRef.current);
+            rowUrlRef.current = null;
+        }
+        if (!blob)
+            return undefined;
+        const u = URL.createObjectURL(blob);
+        rowUrlRef.current = u;
+        return u;
+    }
+    useEffect(() => () => { if (rowUrlRef.current)
+        URL.revokeObjectURL(rowUrlRef.current); }, []);
     async function handlePrint(lasyncroVariantId) {
         if (!onPrintProductBarcode)
             return;
         setPrintingId(lasyncroVariantId);
-        setPrintError(null);
+        setRowPrint(null);
+        setRowUrl(null);
         try {
-            await onPrintProductBarcode(lasyncroVariantId);
+            const result = await onPrintProductBarcode(lasyncroVariantId);
+            if (result.outcome === 'dispatched') {
+                setRowPrint({ id: lasyncroVariantId, kind: 'dispatched', msg: `Sent to ${result.printerName}` });
+            }
+            else if (result.outcome === 'browser') {
+                const url = setRowUrl(result.blob);
+                setRowPrint({ id: lasyncroVariantId, kind: 'browser', msg: 'Ready to print in your browser', url });
+                try {
+                    if (url)
+                        window.open(url, '_blank');
+                }
+                catch { /* controls remain */ }
+            }
+            else if (result.outcome === 'empty') {
+                setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'This product is no longer available. Refresh and try again.' });
+            }
+            else {
+                setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: result.message ?? 'Could not prepare the label. Please try again.' });
+            }
         }
         catch {
-            setPrintError(lasyncroVariantId);
+            setRowPrint({ id: lasyncroVariantId, kind: 'error', msg: 'Could not prepare the label. Please try again.' });
         }
         finally {
             setPrintingId(null);
@@ -120,19 +153,23 @@ function ProductBarcodesTable({ items, onUpdateProductBarcode, onPrintProductBar
     const unassignedAllOn = unassigned.length > 0 && unassigned.every((i) => sel.has(i.lasyncro_variant_id));
     return (_jsxs(Box, { children: [_jsx(TextField, { placeholder: "Filter by SKU or barcode...", size: "small", fullWidth: true, value: filter, onChange: (e) => setFilter(e.target.value), sx: { mb: 2 }, InputProps: { sx: { fontFamily: 'monospace', fontSize: 13 } } }), assigned.length === 0 && unassigned.length === 0 ? (_jsxs(Paper, { variant: "outlined", sx: { textAlign: 'center', py: 6, borderRadius: 2, borderStyle: 'dashed' }, children: [_jsx(PackageSearch, { size: 36, style: { opacity: 0.3 } }), _jsx(Typography, { variant: "body2", color: "text.secondary", sx: { mt: 2 }, children: "No product barcodes found." })] })) : (_jsxs(_Fragment, { children: [assigned.length > 0 && (_jsx(TableContainer, { component: Paper, variant: "outlined", sx: { borderRadius: 2, mb: 2 }, children: _jsxs(Table, { size: "small", children: [_jsx(TableHead, { children: _jsxs(TableRow, { children: [selectable && (_jsx(TableCell, { padding: "checkbox", sx: { width: 40 }, children: _jsx(Checkbox, { size: "small", checked: assignedAllOn, indeterminate: filtered.some((i) => sel.has(i.lasyncro_variant_id)) && !assignedAllOn, onChange: () => onToggleAll?.(filtered.map((i) => i.lasyncro_variant_id)), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } } }) })), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "LaSyncroID" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "SKU" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "SupplierBarcode" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11, width: 80 } })] }) }), _jsxs(TableBody, { children: [filtered.map((item) => (_jsxs(TableRow, { hover: true, selected: sel.has(item.lasyncro_variant_id), children: [selectable && (_jsx(TableCell, { padding: "checkbox", children: _jsx(Checkbox, { size: "small", checked: sel.has(item.lasyncro_variant_id), onChange: () => onToggleOne?.(item.lasyncro_variant_id), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } } }) })), _jsxs(TableCell, { sx: { fontFamily: 'monospace', fontSize: 11 }, children: [item.lasyncro_variant_id.slice(0, 8), "\u2026"] }), _jsx(TableCell, { sx: { fontSize: 12 }, children: item.sku ?? _jsx(Typography, { variant: "caption", color: "text.disabled", children: "\u2014" }) }), _jsx(TableCell, { sx: { fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }, children: editingId === item.lasyncro_variant_id ? (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75 }, children: [_jsx(TextField, { size: "small", value: editValue, onChange: (e) => setEditValue(e.target.value), onKeyDown: (e) => { if (e.key === 'Enter')
                                                                     void handleSave(item.lasyncro_variant_id); if (e.key === 'Escape')
-                                                                    setEditingId(null); }, autoFocus: true, inputProps: { style: { fontFamily: 'monospace', fontSize: 12, padding: '2px 6px' } }, sx: { width: 140 }, error: !!saveError, helperText: saveError ?? undefined }), _jsx(Box, { onClick: () => void handleSave(item.lasyncro_variant_id), sx: { px: 1, py: 0.25, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }, children: saving ? '…' : 'Save' }), _jsx(Box, { onClick: () => setEditingId(null), sx: { fontSize: 11, color: 'var(--ink-4)', cursor: 'pointer' }, children: "\u2715" })] })) : (item.barcode) }), _jsx(TableCell, { children: onUpdateProductBarcode && editingId !== item.lasyncro_variant_id && (_jsx(Box, { onClick: () => { setEditingId(item.lasyncro_variant_id); setEditValue(item.barcode ?? ''); setSaveError(null); }, sx: { fontSize: 10, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', letterSpacing: '0.04em', '&:hover': { textDecoration: 'underline' } }, children: "Edit" })) })] }, item.lasyncro_variant_id))), filtered.length === 0 && (_jsx(TableRow, { children: _jsx(TableCell, { colSpan: selectable ? 5 : 4, sx: { textAlign: 'center', color: 'text.secondary', py: 3 }, children: "No results match your filter." }) }))] })] }) })), unassigned.length > 0 && (_jsxs(Paper, { variant: "outlined", sx: { borderRadius: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5, cursor: 'pointer' }, onClick: () => setShowUnassigned((v) => !v), children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsxs(Typography, { variant: "body2", color: "text.secondary", children: [unassigned.length, " product", unassigned.length > 1 ? 's' : '', " without barcode"] }), _jsx(Chip, { label: "No barcode", size: "small", color: "default" })] }), _jsx(IconButton, { size: "small", children: showUnassigned ? _jsx(ChevronUp, { size: 16 }) : _jsx(ChevronDown, { size: 16 }) })] }), _jsxs(Collapse, { in: showUnassigned, children: [_jsx(Divider, {}), _jsxs(Table, { size: "small", children: [_jsx(TableHead, { children: _jsxs(TableRow, { children: [selectable && (_jsx(TableCell, { padding: "checkbox", sx: { width: 40 }, children: _jsx(Checkbox, { size: "small", checked: unassignedAllOn, indeterminate: unassigned.some((i) => sel.has(i.lasyncro_variant_id)) && !unassignedAllOn, onChange: () => toggleAllUnassigned(unassigned.map((i) => i.lasyncro_variant_id)), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } } }) })), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "LaSyncro ID" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "SKU" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11, width: 160 } })] }) }), _jsx(TableBody, { children: unassigned.map((item) => (_jsxs(TableRow, { hover: true, selected: sel.has(item.lasyncro_variant_id), children: [selectable && (_jsx(TableCell, { padding: "checkbox", children: _jsx(Checkbox, { size: "small", checked: sel.has(item.lasyncro_variant_id), onChange: () => toggleUnassigned(item.lasyncro_variant_id), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } } }) })), _jsxs(TableCell, { sx: { fontFamily: 'monospace', fontSize: 11 }, children: [item.lasyncro_variant_id.slice(0, 8), "\u2026"] }), _jsx(TableCell, { sx: { fontSize: 12 }, children: item.sku ?? _jsx(Typography, { variant: "caption", color: "text.disabled", children: "\u2014" }) }), _jsx(TableCell, { children: onPrintProductBarcode && (_jsxs(Box, { onClick: () => { if (printingId !== item.lasyncro_variant_id)
-                                                                    void handlePrint(item.lasyncro_variant_id); }, sx: {
-                                                                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                                                                    px: 1.25, py: 0.5,
-                                                                    fontSize: 11, fontWeight: 600,
-                                                                    whiteSpace: 'nowrap',
-                                                                    bgcolor: printError === item.lasyncro_variant_id ? 'var(--critical-ink)' : 'var(--accent)',
-                                                                    color: 'var(--accent-ink)',
-                                                                    borderRadius: '6px',
-                                                                    cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
-                                                                    opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
-                                                                    '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
-                                                                }, children: [_jsx(Tag, { size: 11 }), printingId === item.lasyncro_variant_id ? 'Printing…' : printError === item.lasyncro_variant_id ? 'Retry' : 'Print label'] })) })] }, item.lasyncro_variant_id))) })] })] })] }))] }))] }));
+                                                                    setEditingId(null); }, autoFocus: true, inputProps: { style: { fontFamily: 'monospace', fontSize: 12, padding: '2px 6px' } }, sx: { width: 140 }, error: !!saveError, helperText: saveError ?? undefined }), _jsx(Box, { onClick: () => void handleSave(item.lasyncro_variant_id), sx: { px: 1, py: 0.25, borderRadius: 1, bgcolor: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.6 : 1 }, children: saving ? '…' : 'Save' }), _jsx(Box, { onClick: () => setEditingId(null), sx: { fontSize: 11, color: 'var(--ink-4)', cursor: 'pointer' }, children: "\u2715" })] })) : (item.barcode) }), _jsx(TableCell, { children: onUpdateProductBarcode && editingId !== item.lasyncro_variant_id && (_jsx(Box, { onClick: () => { setEditingId(item.lasyncro_variant_id); setEditValue(item.barcode ?? ''); setSaveError(null); }, sx: { fontSize: 10, fontWeight: 600, color: 'var(--accent)', cursor: 'pointer', letterSpacing: '0.04em', '&:hover': { textDecoration: 'underline' } }, children: "Edit" })) })] }, item.lasyncro_variant_id))), filtered.length === 0 && (_jsx(TableRow, { children: _jsx(TableCell, { colSpan: selectable ? 5 : 4, sx: { textAlign: 'center', color: 'text.secondary', py: 3 }, children: "No results match your filter." }) }))] })] }) })), unassigned.length > 0 && (_jsxs(Paper, { variant: "outlined", sx: { borderRadius: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2, py: 1.5, cursor: 'pointer' }, onClick: () => setShowUnassigned((v) => !v), children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsxs(Typography, { variant: "body2", color: "text.secondary", children: [unassigned.length, " product", unassigned.length > 1 ? 's' : '', " without barcode"] }), _jsx(Chip, { label: "No barcode", size: "small", color: "default" })] }), _jsx(IconButton, { size: "small", children: showUnassigned ? _jsx(ChevronUp, { size: 16 }) : _jsx(ChevronDown, { size: 16 }) })] }), _jsxs(Collapse, { in: showUnassigned, children: [_jsx(Divider, {}), _jsxs(Table, { size: "small", children: [_jsx(TableHead, { children: _jsxs(TableRow, { children: [selectable && (_jsx(TableCell, { padding: "checkbox", sx: { width: 40 }, children: _jsx(Checkbox, { size: "small", checked: unassignedAllOn, indeterminate: unassigned.some((i) => sel.has(i.lasyncro_variant_id)) && !unassignedAllOn, onChange: () => toggleAllUnassigned(unassigned.map((i) => i.lasyncro_variant_id)), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' }, '&.MuiCheckbox-indeterminate': { color: 'var(--accent)' } } }) })), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "LaSyncro ID" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11 }, children: "SKU" }), _jsx(TableCell, { sx: { fontWeight: 700, fontSize: 11, width: 160 } })] }) }), _jsx(TableBody, { children: unassigned.map((item) => (_jsxs(TableRow, { hover: true, selected: sel.has(item.lasyncro_variant_id), children: [selectable && (_jsx(TableCell, { padding: "checkbox", children: _jsx(Checkbox, { size: "small", checked: sel.has(item.lasyncro_variant_id), onChange: () => toggleUnassigned(item.lasyncro_variant_id), sx: { color: 'var(--ink-4)', '&.Mui-checked': { color: 'var(--accent)' } } }) })), _jsxs(TableCell, { sx: { fontFamily: 'monospace', fontSize: 11 }, children: [item.lasyncro_variant_id.slice(0, 8), "\u2026"] }), _jsx(TableCell, { sx: { fontSize: 12 }, children: item.sku ?? _jsx(Typography, { variant: "caption", color: "text.disabled", children: "\u2014" }) }), _jsx(TableCell, { children: onPrintProductBarcode && (() => {
+                                                                const rp = rowPrint?.id === item.lasyncro_variant_id ? rowPrint : null;
+                                                                const isError = rp?.kind === 'error';
+                                                                return (_jsxs(Box, { sx: { display: 'inline-flex', flexDirection: 'column', gap: 0.5, alignItems: 'flex-start' }, children: [_jsxs(Box, { onClick: () => { if (printingId !== item.lasyncro_variant_id)
+                                                                                void handlePrint(item.lasyncro_variant_id); }, sx: {
+                                                                                display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                                                                px: 1.25, py: 0.5,
+                                                                                fontSize: 11, fontWeight: 600,
+                                                                                whiteSpace: 'nowrap',
+                                                                                bgcolor: isError ? 'var(--critical-ink)' : 'var(--accent)',
+                                                                                color: 'var(--accent-ink)',
+                                                                                borderRadius: '6px',
+                                                                                cursor: printingId === item.lasyncro_variant_id ? 'wait' : 'pointer',
+                                                                                opacity: printingId === item.lasyncro_variant_id ? 0.6 : 1,
+                                                                                '&:hover': { opacity: printingId === item.lasyncro_variant_id ? 0.6 : 0.88 },
+                                                                            }, children: [_jsx(Tag, { size: 11 }), printingId === item.lasyncro_variant_id ? 'Printing…' : isError ? 'Retry' : 'Print label'] }), rp?.kind === 'dispatched' && (_jsx(Typography, { sx: { fontSize: 10.5, color: 'var(--ink-4)' }, children: rp.msg })), rp?.kind === 'browser' && rp.url && (_jsxs(Box, { sx: { display: 'inline-flex', gap: 1, alignItems: 'center' }, children: [_jsx(Box, { component: "a", href: rp.url, target: "_blank", rel: "noopener noreferrer", sx: { fontSize: 10.5, color: 'var(--accent)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }, children: "Open PDF" }), _jsx(Box, { component: "a", href: rp.url, download: "product-label.pdf", sx: { fontSize: 10.5, color: 'var(--ink-3)', textDecoration: 'none', '&:hover': { textDecoration: 'underline' } }, children: "Download" })] })), rp?.kind === 'error' && (_jsx(Typography, { sx: { fontSize: 10.5, color: 'var(--critical-ink)' }, children: rp.msg }))] }));
+                                                            })() })] }, item.lasyncro_variant_id))) })] })] })] }))] }))] }));
 }
 // SHOP-REV-01m cycle 2: moved out of PrintPreviewPanel so products can supply
 // their own list. Must match SHEET_FORMATS in warehouseLabelPdf.service.ts.
@@ -196,8 +233,13 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
     });
     // SHOP-REV-01m: the barcoded + active filter moved here from inside
     // PrintPreviewPanel — it is a location concept with no product equivalent.
+    // SHOP-REVIEW-BARCODE-PRINT-05 §10: order the preview by the same key the
+    // print endpoint sorts on (httpBatchPrintBarcodes → ORDER BY location_code)
+    // so the first-sheet preview is truthful about what prints first.
     const selectedZoneLabels = zones
         .filter((z) => selected.has(z.location_code) && z.active)
+        .slice()
+        .sort((a, b) => (a.location_code < b.location_code ? -1 : a.location_code > b.location_code ? 1 : 0))
         .map((z) => ({ id: z.location_code, code: z.barcode ?? z.location_code, caption: z.location_code }));
     const allFilteredCodes = filteredZones.map((z) => z.location_code);
     const allSelected = allFilteredCodes.length > 0 && allFilteredCodes.every((c) => selected.has(c));
@@ -206,8 +248,20 @@ function BarcodesTab({ zones, productBarcodes, onUpdateProductBarcode, activeSub
     // theatre.
     const prodWithSupplier = productBarcodes.filter((p) => p.barcode !== null);
     const prodWithLasyncro = productBarcodes.filter((p) => p.lasyncro_barcode !== null);
+    // SHOP-REVIEW-BARCODE-PRINT-05 §10: match httpBatchPrintProductBarcodes
+    // (ORDER BY v.sku). Postgres sorts NULLs last on ASC, so null SKUs trail.
     const selectedProductLabels = productBarcodes
         .filter((p) => prodSelected.has(p.lasyncro_variant_id))
+        .slice()
+        .sort((a, b) => {
+        if (a.sku === b.sku)
+            return 0;
+        if (a.sku == null)
+            return 1;
+        if (b.sku == null)
+            return -1;
+        return a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0;
+    })
         .map((p) => ({
         id: p.lasyncro_variant_id,
         // Preview shows the LSP- code where one exists; a variant with none yet
