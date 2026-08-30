@@ -28,10 +28,60 @@ import { generateWmsBarcode } from './wmsOrderBarcode.service.js';
  *   SET LOCAL "app.current_tenant" = '{shopId}'
  */
 
+/**
+ * SHOP-REVIEW-ORDER-POOL-READINESS-09 — structural release-readiness invariant.
+ * ----------------------------------------------------------------------------
+ * An order is structurally release-eligible only when it has at least one
+ * USABLE WMS LINE: an `order_line_items` row with `quantity > 0` and a
+ * non-null `lasyncro_variant_id`. SKU is deliberately NOT part of the test —
+ * a valid mapped variant with `sku = null` is supported. Nothing is
+ * fabricated; this predicate only ever excludes.
+ *
+ * This exact SQL is shared verbatim by the three authoritative gates so they
+ * cannot drift:
+ *   1. GET /api/v1/wms/order-pool               — pool rows
+ *   2. GET /api/v1/wms/order-pool               — ready_for_release_count FILTER
+ *   3. releaseBatch() eligibleOrders            — server-side Release All / greedy fill
+ *
+ * All three outer queries alias `orders` as `o`, so the correlation column is
+ * a fixed code literal (`o.lasyncro_order_id`) — never an interpolated value.
+ * `order_line_items(lasyncro_order_id)` is indexed (migration 0005), so this
+ * stays an index-only EXISTS probe.
+ */
+export const HAS_USABLE_WMS_LINE_SQL = `EXISTS (
+  SELECT 1
+  FROM order_line_items li
+  WHERE li.lasyncro_order_id = o.lasyncro_order_id
+    AND li.quantity > 0
+    AND li.lasyncro_variant_id IS NOT NULL
+)`;
+
+/**
+ * SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 (Slice B, PART 9) — fail-closed
+ * on partially-mapped Shopify orders.
+ * ----------------------------------------------------------------------------
+ * An order with an unresolved `order_intake_exceptions` row cannot be
+ * represented as a fully warehouse-executable order (SOURCE_NON_WMS —
+ * NO_USABLE_WMS_LINES or PARTIALLY_MAPPED). There is no product contract for a
+ * batch fulfilling only a hidden subset of a Shopify order, so such an order
+ * is NOT READY. Applied verbatim alongside HAS_USABLE_WMS_LINE_SQL in the same
+ * three authoritative gates (pool rows, ready_for_release_count, eligibleOrders)
+ * so the predicate cannot drift. Same `o` alias; `order_intake_exceptions`
+ * is keyed/indexed by shop + resolved_at.
+ */
+export const NO_ACTIVE_INTAKE_EXCEPTION_SQL = `NOT EXISTS (
+  SELECT 1
+  FROM order_intake_exceptions oie
+  WHERE oie.lasyncro_order_id = o.lasyncro_order_id
+    AND oie.resolved_at IS NULL
+)`;
+
 export type SkippedReleaseOrderReason =
   | 'blocked'
   | 'already_batched'
   | 'status_changed'
+  | 'no_releasable_lines'
+  | 'intake_exception'
   | 'not_in_pool';
 
 export interface SkippedReleaseOrder {
@@ -97,6 +147,8 @@ const getSkippedReleaseLabel = (
 
   if (reason === 'already_batched') return 'Already in a pick batch';
   if (reason === 'status_changed') return 'Status changed';
+  if (reason === 'no_releasable_lines') return 'No releasable items';
+  if (reason === 'intake_exception') return 'Needs review — intake exception';
   return 'Not in release pool';
 };
 
@@ -170,6 +222,16 @@ export async function releaseBatch(
     .where('o.shop_id', shopId)
     .whereIn('ofs.status', ['pending', 'processing'])
     .whereNull('pbo.lasyncro_order_id')
+    // SHOP-REVIEW-ORDER-POOL-READINESS-09: a structurally empty order (zero
+    // usable WMS lines) must never be greedily selected or accepted from an
+    // explicit priority_order_ids list. Defense-in-depth — the order-pool
+    // query already excludes it, but releaseBatch is independently
+    // authoritative because UI/pool state can be stale.
+    .whereRaw(HAS_USABLE_WMS_LINE_SQL)
+    // SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 (PART 9): an order with an
+    // unresolved intake exception (fully non-WMS or partially mapped) is not
+    // fully executable — fail closed here too, consistently with the pool query.
+    .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
     .select('o.lasyncro_order_id', 'ofs.is_priority_flagged', 'las.is_shipping_sla_breached')
     .orderByRaw('ofs.is_priority_flagged DESC, COALESCE(las.is_shipping_sla_breached, false) DESC, o.order_created_at ASC');
     
@@ -206,7 +268,14 @@ export async function releaseBatch(
         'ofs.status',
         'pbo.pick_batch_id',
         'oc.constraint_type',
-        'oc.block_type'
+        'oc.block_type',
+        // SHOP-REVIEW-ORDER-POOL-READINESS-09: lets the classifier distinguish
+        // "order exists for this shop but has zero usable WMS lines" from a
+        // generic not_in_pool. Same shared predicate as eligibleOrders.
+        trx.raw(`${HAS_USABLE_WMS_LINE_SQL} as has_usable_wms_line`),
+        // SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10: and "exists, has lines,
+        // but a partially-mapped intake exception makes it unsafe to release".
+        trx.raw(`${NO_ACTIVE_INTAKE_EXCEPTION_SQL} as has_no_active_intake_exception`)
       );
 
     const invalidById = new Map(invalidRows.map(row => [row.lasyncro_order_id, row]));
@@ -214,6 +283,18 @@ export async function releaseBatch(
     for (const orderId of invalidPriorityIds) {
       const row = invalidById.get(orderId);
 
+      /**
+       * Deterministic classification priority (existing reasons unchanged):
+       *   no row for this shop        -> not_in_pool         (cross-tenant / unknown)
+       *   active constraint           -> blocked
+       *   already holds a batch row   -> already_batched
+       *   status left pending/processing -> status_changed
+       *   exists + pending + unblocked + unbatched but no usable WMS line
+       *                               -> no_releasable_lines   (Slice A)
+       *   has usable line(s) but an unresolved intake exception
+       *                               -> intake_exception      (Slice B, PART 9)
+       *   otherwise                   -> not_in_pool
+       */
       const reason: SkippedReleaseOrderReason = !row
         ? 'not_in_pool'
         : row.constraint_type
@@ -222,6 +303,10 @@ export async function releaseBatch(
         ? 'already_batched'
         : !['pending', 'processing'].includes(row.status)
         ? 'status_changed'
+        : !row.has_usable_wms_line
+        ? 'no_releasable_lines'
+        : !row.has_no_active_intake_exception
+        ? 'intake_exception'
         : 'not_in_pool';
 
       skippedOrders.push({

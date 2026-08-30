@@ -17,6 +17,7 @@ import { resolveFoundingOwner } from '../../services/founding-owner.service.js';
 import { writeOrderRevenueUnits } from '../../workers/reconciliation/revenue-units.writer.js';
 import { debugLog } from '../projection.utils.js';
 import { evaluateAlertRulesForOrder } from '../../services/alerts/alertRules.service.js';
+import { upsertOrderIntakeException } from '../orderIntakeException.js';
 
 const ORDER_UUID_NAMESPACE =
   '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
@@ -447,10 +448,39 @@ export async function handleOrdersCreate({
       ?? payload.line_items
       ?? [];
 
+    /**
+     * SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 — intake accounting.
+     * -------------------------------------------------------------------------
+     * A Shopify line with no variant identity used to `continue` silently.
+     * It is still omitted (there is no valid WMS variant to persist — nothing
+     * is fabricated), but the omission is now counted and logged, and an
+     * order-level intake exception is persisted after the loop when the order
+     * did not fully map. Fatal integrity paths below stay fail-closed and are
+     * only annotated with structured diagnostics.
+     */
+    const sourceLineCount = lineEdges.length;
+    let usableLineCount = 0;
+    let nonWmsLineCount = 0;
+
     for (const edge of lineEdges) {
       const li = edge.node ?? edge;
       let variantGid = li.variant?.id ?? li.variantId ?? li.variant_id ?? null;
-      if (!variantGid) continue;
+      if (!variantGid) {
+        nonWmsLineCount++;
+        console.warn('[ORDER_LINE_INTAKE_EXCEPTION]', {
+          shopId: domainEvent.shop_id,
+          externalOrderId,
+          lasyncroOrderId,
+          classification: 'SOURCE_NON_WMS',
+          reason: 'NO_VARIANT_ID',
+          sourceLineId: li.lineItemId ?? li.id ?? null,
+          quantity: li.quantity ?? null,
+          hasProductId:
+            (li.product?.id ?? li.productId ?? li.product_id ?? null) != null,
+          hasSku: (li.sku ?? li.variant?.sku ?? null) != null,
+        });
+        continue;
+      }
       variantGid = String(variantGid);
       const variantId = variantGid.startsWith('gid://')
         ? variantGid
@@ -461,6 +491,18 @@ export async function handleOrdersCreate({
         .first();
 
       if (!variantIdentity) {
+        // INGESTION_INTEGRITY_ERROR — Shopify supplied a variant id laSyncro
+        // cannot resolve. Stays fatal (fail-closed): this order does not
+        // progress into WMS. Diagnostics only; no intake-exception row is
+        // written because the transaction rolls back on the throw.
+        console.error('[ORDER_LINE_INTAKE_EXCEPTION]', {
+          shopId: domainEvent.shop_id,
+          externalOrderId,
+          lasyncroOrderId,
+          classification: 'INGESTION_INTEGRITY_ERROR',
+          reason: 'VARIANT_IDENTITY_MISSING',
+          externalVariantId: variantId,
+        });
         throw new Error(
           `[ORDER_LINE_ITEM_VARIANT_IDENTITY_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
         );
@@ -471,6 +513,17 @@ export async function handleOrdersCreate({
         .first();
 
       if (!variantRow) {
+        // INGESTION_INTEGRITY_ERROR — resolved identity points at no canonical
+        // variant row. Stays fatal (fail-closed). Diagnostics only.
+        console.error('[ORDER_LINE_INTAKE_EXCEPTION]', {
+          shopId: domainEvent.shop_id,
+          externalOrderId,
+          lasyncroOrderId,
+          classification: 'INGESTION_INTEGRITY_ERROR',
+          reason: 'VARIANT_ROW_MISSING',
+          externalVariantId: variantId,
+          lasyncroVariantId: variantIdentity.lasyncro_variant_id,
+        });
         throw new Error(
           `[ORDER_LINE_ITEM_VARIANT_ROW_MISSING] shopId=${domainEvent.shop_id} order=${externalOrderId} variant=${variantId}`
         );
@@ -508,7 +561,81 @@ export async function handleOrdersCreate({
         .onConflict('lasyncro_line_item_id')
         .merge({ external_line_item_id: lineItemId, updated_at: trx.fn.now() });
 
+        // USABLE WMS LINE == a persisted order_line_items row with quantity > 0
+        // and a non-null lasyncro_variant_id (same contract as Slice A's
+        // HAS_USABLE_WMS_LINE_SQL). lasyncro_variant_id is always set on this
+        // path; quantity is the discriminator.
+        if (Number(quantity) > 0) usableLineCount++;
+
         debugLog('[ORDER_LINE_ITEM_INSERT_SUCCESS]', { externalLineItemId: lineItemId });
+    }
+
+    /**
+     * ORDER-LEVEL INTAKE RESULT (SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10).
+     * -------------------------------------------------------------------------
+     * Persist an order-level intake exception when the Shopify order did not
+     * fully become a WMS-executable order. Two shapes:
+     *
+     *   sourceLineCount > 0 && usableLineCount === 0
+     *     -> NO_USABLE_WMS_LINES (the reproduced reviewer failure)
+     *
+     *   sourceLineCount > usableLineCount && usableLineCount > 0
+     *     -> PARTIALLY_MAPPED. Fail closed: there is NO product contract for a
+     *        warehouse batch fulfilling only a hidden subset of a Shopify order
+     *        while laSyncro represents it as fully executable (release reserves
+     *        every persisted line; shipConfirmation marks the whole order
+     *        fulfilled). PART 9 excludes an order with an active intake
+     *        exception from READY.
+     *
+     * Kind is SOURCE_NON_WMS for both: the only non-fatal drop reason on this
+     * path is NO_VARIANT_ID; the INGESTION_INTEGRITY_ERROR paths above threw
+     * and rolled back, so they never reach here.
+     *
+     * order_constraints is NOT written — this is an intake condition, not an
+     * operational blocker.
+     */
+    if (sourceLineCount > 0 && usableLineCount === 0) {
+      await upsertOrderIntakeException(trx, {
+        lasyncroOrderId,
+        shopId: domainEvent.shop_id,
+        kind: 'SOURCE_NON_WMS',
+        reason: 'NO_USABLE_WMS_LINES',
+        sourceLineCount,
+        usableLineCount,
+        detail: { nonWmsLineCount, lineReasons: ['NO_VARIANT_ID'] },
+      });
+      console.warn('[ORDER_INTAKE_EXCEPTION]', {
+        shopId: domainEvent.shop_id,
+        externalOrderId,
+        lasyncroOrderId,
+        kind: 'SOURCE_NON_WMS',
+        reason: 'NO_USABLE_WMS_LINES',
+        sourceLineCount,
+        usableLineCount,
+      });
+    } else if (sourceLineCount > usableLineCount && usableLineCount > 0) {
+      await upsertOrderIntakeException(trx, {
+        lasyncroOrderId,
+        shopId: domainEvent.shop_id,
+        kind: 'SOURCE_NON_WMS',
+        reason: 'PARTIALLY_MAPPED',
+        sourceLineCount,
+        usableLineCount,
+        detail: {
+          nonWmsLineCount,
+          droppedLineCount: sourceLineCount - usableLineCount,
+          lineReasons: nonWmsLineCount > 0 ? ['NO_VARIANT_ID'] : [],
+        },
+      });
+      console.warn('[ORDER_INTAKE_EXCEPTION]', {
+        shopId: domainEvent.shop_id,
+        externalOrderId,
+        lasyncroOrderId,
+        kind: 'SOURCE_NON_WMS',
+        reason: 'PARTIALLY_MAPPED',
+        sourceLineCount,
+        usableLineCount,
+      });
     }
   } // end if (!existingOrder)
 

@@ -1998,3 +1998,263 @@ If that returns 0 rows after the 6 orders receive an event, the branch is not fi
 
 **Existing 6 rows** repair via `reevaluate-order-constraints.js --shop-id=14/15 --apply`,
 not manual UPDATE — the projection must do the write.
+
+---
+
+## SHOP-REVIEW-RELEASE-SYSTEM-08 — release readiness & intake boundary (CLOSED 2026-08-30)
+
+**Final decision: PASS / CLOSED.** Closes SHOP-REVIEW-RELEASE-SYSTEM-08,
+SHOP-REVIEW-ORDER-POOL-READINESS-09, and SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10.
+
+### Reviewer-facing defect
+
+A Shopify order with source line items but **no usable mapped WMS line** could
+persist as an order with zero usable `order_line_items`, pass constraint
+evaluation vacuously, appear **READY** in the Order Pool, and then make
+`POST /api/v1/wms/batch/release` fail at the final PickBatch empty-order guard.
+The reviewer saw repeated release failures on an order the UI called ready.
+
+**The final guard was correct.** `"Refusing to release an empty order"` is a
+legitimate last-line defense-in-depth check. The defect was upstream: malformed
+and intake-exception orders were allowed to reach READY / release at all. The
+fix is to classify and exclude those orders before they are ever presented as
+releasable — not to change the guard.
+
+### Ratified release-readiness contract
+
+An order is **structurally releasable only when it has at least one usable WMS
+line**: an `order_line_items` row with `quantity > 0` **and**
+`lasyncro_variant_id IS NOT NULL`.
+
+The identical usable-line predicate is applied at all three authoritative gates,
+from one shared definition so they cannot drift:
+
+1. Order Pool rows (`GET /api/v1/wms/order-pool`)
+2. `ready_for_release_count`
+3. PickBatch release eligibility (server-side Release All / greedy fill / explicit selection)
+
+**SKU is deliberately NOT part of this invariant.** An order whose only line has
+`sku = NULL` but a valid mapped `lasyncro_variant_id` and positive quantity
+remains releasable.
+
+The final PickBatch guard `"Refusing to release an empty order"` remains in
+place and must not be weakened. After this work it is simply unreachable through
+legitimate pool / Release API input.
+
+### Intake classification contract
+
+The intake boundary sits upstream of Blocked and the Order Pool:
+
+```
+Shopify / source → intake classification → valid WMS order evaluation
+  → Blocked  OR  Order Pool → Release
+```
+
+Orders that cannot become a warehouse-executable order are recorded in
+`order_intake_exceptions` and excluded from the Order Pool and from release
+while unresolved. They are **not** operational Blocked orders.
+
+| Kind | Meaning | Behaviour |
+| --- | --- | --- |
+| `SOURCE_NON_WMS` / `NO_USABLE_WMS_LINES` | Source order has no usable WMS-mapped lines (custom line, deleted variant → `variant: null`) | No variant or line data fabricated; intake-exception row written; absent from Order Pool; **not** operational Blocked |
+| `PARTIALLY_MAPPED` | At least one usable mapped WMS line **and** at least one source line that cannot safely map | Mapped line persists; order **fails closed** from release until the intake exception is resolved; absent from Order Pool; **not** operational Blocked |
+
+- **Missing SKU alone is not an intake exception** when canonical variant
+  identity is valid.
+- **A present source variant identity that should resolve but cannot** stays a
+  fatal ingestion-integrity error (throw + full projection rollback, diagnostics
+  only). It is **not** silently downgraded to `SOURCE_NON_WMS`, and no order,
+  line, or intake-exception row is persisted for it.
+
+### Blocked vs Intake vs Concurrency — three distinct concepts
+
+| | Concept | Store / signal | Notes |
+| --- | --- | --- | --- |
+| A | **Operational Blocked** | `order_constraints` (existing semantics) | A valid WMS order with an actionable warehouse constraint (oversell, incomplete address, …). May legitimately create an `order_constraints` row. |
+| B | **Intake exception** | `order_intake_exceptions` | Source mapping is incomplete / non-WMS. Does **not** become operational Blocked merely because intake failed. |
+| C | **Concurrent inventory conflict** | `INVENTORY_CHANGED_DURING_RELEASE` → HTTP 409 | Release was initially valid, but authoritative locked inventory changed while competing with another release. Creates **no** intake exception and **no** `order_constraints` row from the race; does **not** silently retry; is **not** a generic HTTP 500. The operator refreshes / re-evaluates / retries against current state. |
+
+These three models are kept separate and must not be conflated.
+
+### R9 (known shortage) vs R14 (concurrent change) — intentional distinction
+
+- **R9 — insufficient inventory known at the release-time pre-check.** The
+  non-locking availability pre-check already sees the shortfall. Existing
+  behaviour is preserved: HTTP `201`; `order_count = 0` when no other order
+  releases; `pick_batch_id = null` when no batch is created; the order is
+  reported through `newly_blocked_orders` on the existing oversell / operational
+  constraint path; **zero partial release state**.
+- **R14 — inventory changed during an overlapping release.** The pre-check was
+  satisfiable; a competing transaction commits first; the reservation-time
+  re-check under `SELECT … FOR UPDATE` sees the changed state. The whole release
+  transaction rolls back; the API returns HTTP `409` with code
+  `INVENTORY_CHANGED_DURING_RELEASE` and a controlled "refresh and try again"
+  message; **no new Blocked or intake state is created solely because of the
+  race**.
+
+These paths are not collapsed into one condition.
+
+### Transaction / concurrency contract
+
+Release is **atomic**. All consequential release work runs inside the outer
+release transaction. A failed downstream release leaves:
+
+- no partial `pick_batches` row
+- no partial `pick_batch_orders` membership
+- no partial `reservation_hold` `inventory_movements` row
+- no partial `pick_reservation_allocations`
+- no `inventory_truth` reservation delta
+
+Concurrency protection:
+
+- release may perform an earlier, non-locking availability pre-check;
+- authoritative reservation-time inventory is locked with `SELECT … FOR UPDATE`;
+- availability is revalidated **after** the lock is held;
+- if the locked availability is below required demand, release raises
+  `InventoryChangedDuringReleaseError` (typed, carries `variantId`,
+  `requiredQuantity`, `availableQuantity`) → full rollback → HTTP `409`
+  (`INVENTORY_CHANGED_DURING_RELEASE`). The generic error path is otherwise
+  unchanged (still HTTP `500` for genuinely unexpected failures).
+
+### Release API — server-authoritative revalidation
+
+Direct `POST /api/v1/wms/batch/release` requests are **authoritative
+server-side requests**, not trust in stale browser Order Pool state. The backend
+revalidates every submitted order against current DB state and returns controlled
+skip reasons:
+
+| Stale / invalid submission | Skip reason |
+| --- | --- |
+| Zero usable WMS line | `no_releasable_lines` |
+| Usable line + unresolved intake exception | `intake_exception` |
+| Genuine active operational constraint | `blocked` |
+| Fulfilled / cancelled / other non-pending status | `status_changed` |
+| Already released / in a batch | `already_batched` |
+| Foreign / cross-tenant / unknown order id | `not_in_pool` |
+
+This revalidation is backend logic, not a frontend responsibility.
+
+### Batch / inventory safety invariants (verified)
+
+- Multiple healthy orders may release into one wave (one batch, exact membership,
+  reservations match aggregate demand).
+- Release All includes only currently eligible healthy orders.
+- A duplicate release request does not create a second batch membership or a
+  second reservation.
+- An already-batched order cannot enter another batch.
+- A cross-tenant order id can never be released.
+- `max_batch_line_items` is authoritative; orders beyond the cap remain eligible
+  for a later wave, not corrupted or lost.
+- Competing releases cannot over-reserve stock; committed reservation never
+  exceeds opening availability.
+- `available_quantity` never goes negative from release; `reserved_quantity`
+  never goes negative.
+- Reservation does not change `on_hand_quantity`.
+- A fresh root-only warehouse (no bins) remains fully supported for release.
+- Adding a configured empty pick bin does not invalidate root-stock release.
+
+### Automated acceptance evidence — formal verification 2026-08-30
+
+| Suite / check | Result |
+| --- | --- |
+| Canonical R1–R20 release matrix | **all PASS** |
+| `release-regression-completion` | 13 / 13 PASS |
+| `release-readiness` (Slice A) | 7 / 7 PASS |
+| `order-intake-classification` (Slice B) | 9 / 9 PASS |
+| `order-intake-classification` + `projection-worker-canonical-quarantine`, one disposable DB | 15 / 15 PASS (intake 9 / 9, quarantine 6 / 6) |
+| `fresh-install-release-path` | 1 / 1 PASS |
+| `batch-reservation-allocations` (unit) | 4 / 4 PASS |
+| Backend TypeScript (`apps/backend/tsconfig.json`) | PASS |
+| Migration TypeScript (`apps/backend/tsconfig.migrations.json`) | PASS |
+| Migration `0164` apply + RLS in disposable harness | PASS |
+| Tenant isolation | PASS |
+| Test-seam containment (no disposable-DB residue) | PASS |
+
+All DB-backed verification ran on disposable `synchroflow_test_*` databases,
+created / migrated / runtime-verified / dropped per run, with zero orphans and
+`synchroflow_db` untouched. `sf_app` confirmed non-superuser and non-`BYPASSRLS`.
+
+**Verification caveat (not a release-system issue).** `tsc -p tests/tsconfig.json`
+still reports one pre-existing unrelated error,
+`tests/integration/auth/register-no-auth-side-effects.test.ts(39,4) TS1005: '}' expected`.
+It does not implicate any release-system file and was not repaired here.
+
+### R1–R20 matrix
+
+| # | Scenario | Result |
+| --- | --- | --- |
+| R1 | Healthy single release | PASS |
+| R2 | Multiple healthy orders, one wave | PASS |
+| R3 | Release All (greedy fill, no explicit selection) | PASS |
+| R4 | Zero-line order excluded from READY / Order Pool | PASS |
+| R5 | Zero-line direct release is a safe no-op | PASS |
+| R6 | Mixed valid + malformed selection — valid releases, invalid skipped | PASS |
+| R7 | Missing SKU with a valid mapped variant stays releasable | PASS |
+| R8 | Null / custom / deleted source line — intake-safe, never a false READY, never crashes release | PASS |
+| R9 | Known insufficient inventory at pre-check → controlled `newly_blocked` (HTTP 201) | PASS |
+| R10 | Duplicate release request — no double batch / reservation | PASS |
+| R11 | Already-batched order cannot enter another batch | PASS |
+| R12 | Fresh root-only warehouse release | PASS |
+| R13 | Configured empty pick-bin transition — root-stock release unaffected | PASS |
+| R14 | Competing / concurrent stock — no over-reservation; loser → HTTP 409 `INVENTORY_CHANGED_DURING_RELEASE` | PASS |
+| R15 | Cross-tenant order selection rejected / skipped | PASS |
+| R16 | Forced downstream failure after release writes begin → complete rollback | PASS |
+| R17 | `max_batch_line_items` cap enforced; overflow orders retained for a later wave | PASS |
+| R18 | Stale Order Pool state (blocked / fulfilled / already-batched) — backend revalidation catches it | PASS |
+| R19 | Cancelled / fulfilled order submitted directly → rejected | PASS |
+| R20 | Reviewer-shaped populated pool — every READY order satisfies the release-readiness invariant | PASS |
+
+(Historical audit statuses such as `MISSING_COVERAGE`,
+`EXISTING_INCOMPLETE_COVERAGE`, and `BLOCKED_BY_TEST_SEAM` — R16 was the last of
+these — are superseded by this record. R14 concurrency counts only because the
+genuine overlapping-transaction proof passes.)
+
+### Migration `20260827120000_0164_create_order_intake_exceptions.ts`
+
+Purpose: persist unresolved intake classification **separately** from operational
+Blocked (`order_constraints`).
+
+- Tenant-scoped via `shop_id`.
+- Row Level Security **enabled** and **forced**.
+- Tenant-isolation policy present (`shop_id = current_setting('app.current_tenant')`).
+- `sf_app` remains non-superuser and non-`BYPASSRLS`.
+- Schema-only: `CREATE TABLE` + a non-negative-counts `CHECK` + RLS + policy. No
+  historical backfill.
+
+### Historical safety / reconciliation
+
+`HISTORICAL_EXCEPTION_BACKFILL_REQUIRES_RECONCILIATION` remains in force.
+Migration `0164` does **not** backfill historical malformed orders. Historical
+zero-usable-line orders are nevertheless prevented from becoming READY by the
+structural release predicate (`quantity > 0 AND lasyncro_variant_id IS NOT NULL`)
+at all three gates. If typed intake-exception records are ever wanted for
+existing historical orders, that requires an explicit reconciliation / replay
+workflow — it does not exist and was not added here.
+
+### Test-only seams (proof provenance)
+
+- **R16** — a deterministic disposable-DB trigger forces a downstream
+  reservation-write failure to prove the outer release transaction rolls back
+  every prior write.
+- **R14 concurrency** — disposable-DB advisory-lock coordination proves two
+  release transactions genuinely overlap (distinct backends, both open at once,
+  confirmed from `pg_locks` / `pg_blocking_pids`) before the barrier is lifted.
+
+Both are **test-only**, confined to disposable `synchroflow_test_*` databases,
+installed and dropped within the test. There is **no runtime fault-injection
+mechanism**, no production trigger or function, and no development-DB residue.
+
+### Issue closures
+
+| Issue | Status |
+| --- | --- |
+| SHOP-REVIEW-RELEASE-SYSTEM-08 | **CLOSED** |
+| SHOP-REVIEW-ORDER-POOL-READINESS-09 | **CLOSED** |
+| SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 | **CLOSED** |
+
+Rationale: the READY invariant is established at all three authoritative gates;
+malformed / non-WMS source lines are classified before normal WMS operation;
+direct release revalidates current server state; transaction rollback is proven
+behaviourally; the concurrent inventory race maps to a controlled HTTP 409; the
+full R1–R20 regression matrix is green; and the fresh-install / reviewer release
+path remains green.

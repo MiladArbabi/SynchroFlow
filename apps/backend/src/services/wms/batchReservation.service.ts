@@ -7,6 +7,43 @@ import {
 const RESERVATION_NAMESPACE =
   'c2d3e4f5-a6b7-8901-bcde-f12345678901';
 
+/**
+ * SHOP-REVIEW-RELEASE-SYSTEM-08 (R14) — a genuine concurrent inventory race.
+ *
+ * The release-time pre-check in pickBatch.service.ts already routes orders that
+ * are short *before* reservation to newly_blocked (that is the R9 path, and it
+ * is unchanged). This typed error means the pre-check WAS satisfiable, but after
+ * `SELECT ... FOR UPDATE` locked the pickable rows another release had already
+ * committed and depleted the stock — CONFLICT_WITH_NEWER_INVENTORY_STATE.
+ *
+ * It is NOT an internal error, an intake exception, an operational Blocked
+ * condition, nor an oversell constraint, and it never persists new business
+ * state: it simply escapes the release so the outer db.transaction rolls back
+ * whole, and the controller maps it to HTTP 409 so the operator can refresh and
+ * retry. Typed (never message-matched) so the mapping needs no SQL/Knex
+ * internals — same rationale as CanonicalContractError.
+ */
+export class InventoryChangedDuringReleaseError extends Error {
+  public readonly code = 'INVENTORY_CHANGED_DURING_RELEASE' as const;
+  public readonly variantId: string | null;
+  public readonly requiredQuantity: number | null;
+  public readonly availableQuantity: number | null;
+
+  constructor(details: {
+    variantId?: string | null;
+    requiredQuantity?: number | null;
+    availableQuantity?: number | null;
+  }) {
+    super('Inventory changed while the batch was being released.');
+    this.name = 'InventoryChangedDuringReleaseError';
+    this.variantId = details.variantId ?? null;
+    this.requiredQuantity = details.requiredQuantity ?? null;
+    this.availableQuantity = details.availableQuantity ?? null;
+    // Required for instanceof to survive TS's ES5 downlevel of Error subclasses.
+    Object.setPrototypeOf(this, InventoryChangedDuringReleaseError.prototype);
+  }
+}
+
 export interface BatchReservationLineItem {
   lasyncro_variant_id: string;
   quantity: number | string;
@@ -352,6 +389,33 @@ export async function reserveBatchInventory(
       .orderBy('it.location_code', 'asc')
       .forUpdate();
 
+  /**
+   * SHOP-REVIEW-RELEASE-SYSTEM-08 (R14) — authoritative post-lock re-check.
+   * `inventoryRows` is now the FOR UPDATE-locked truth. If it can no longer
+   * cover demand, a competing release committed between pickBatch.service.ts's
+   * non-locking pre-check and this lock. That is a concurrency conflict, not a
+   * pre-existing shortfall (R9), so surface it typed: the whole release rolls
+   * back and the caller gets a controlled 409 instead of a generic 500.
+   */
+  const lockedAvailableByVariant = new Map<string, number>();
+  for (const row of inventoryRows) {
+    lockedAvailableByVariant.set(
+      row.lasyncro_variant_id,
+      (lockedAvailableByVariant.get(row.lasyncro_variant_id) ?? 0) +
+        Number(row.available_quantity)
+    );
+  }
+  for (const [variantId, requiredQuantity] of requiredByVariant) {
+    const availableQuantity = lockedAvailableByVariant.get(variantId) ?? 0;
+    if (availableQuantity < requiredQuantity) {
+      throw new InventoryChangedDuringReleaseError({
+        variantId,
+        requiredQuantity,
+        availableQuantity,
+      });
+    }
+  }
+
   const allocations = allocateRequiredQuantities(
     requiredByVariant,
     inventoryRows
@@ -434,9 +498,14 @@ export async function reserveBatchInventory(
       });
 
     if (updatedRows !== 1) {
-      throw new Error(
-        `[PICK_BATCH_SERVICE] Inventory changed while reserving variant ${allocation.lasyncroVariantId} at ${allocation.locationCode}.`
-      );
+      // The FOR UPDATE-locked row changed under us before this UPDATE could
+      // apply the decrement — the same CONFLICT_WITH_NEWER_INVENTORY_STATE as
+      // the post-lock re-check above, surfaced typed for a controlled 409.
+      throw new InventoryChangedDuringReleaseError({
+        variantId: allocation.lasyncroVariantId,
+        requiredQuantity: allocation.quantity,
+        availableQuantity: null,
+      });
     }
   }
 

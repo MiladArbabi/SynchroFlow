@@ -7,7 +7,12 @@ import {
   getTierConfig,
   isValidTier,
 } from '@lasyncro/backend-core/config/tiers.js';
-import { releaseBatch } from '../../services/wms/pickBatch.service.js';
+import {
+  releaseBatch,
+  HAS_USABLE_WMS_LINE_SQL,
+  NO_ACTIVE_INTAKE_EXCEPTION_SQL,
+} from '../../services/wms/pickBatch.service.js';
+import { InventoryChangedDuringReleaseError } from '../../services/wms/batchReservation.service.js';
 import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.service.js';
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
@@ -446,6 +451,27 @@ export const httpReleaseBatch = async (req: Request, res: Response) => {
 
     return res.status(201).json(result);
   } catch (error) {
+    // SHOP-REVIEW-RELEASE-SYSTEM-08 (R14): a genuine concurrent inventory race —
+    // pre-check was satisfiable, but FOR UPDATE-locked stock was no longer
+    // sufficient because another release committed first. The release
+    // transaction has already rolled back whole (this mapping is outside the
+    // db.transaction boundary). Return a controlled 409 so the operator can
+    // refresh and retry; do NOT treat it as a 500, an oversell, or a block.
+    if (error instanceof InventoryChangedDuringReleaseError) {
+      console.warn('[WMS_BATCH_RELEASE_INVENTORY_CONFLICT]', {
+        shopId,
+        variant_id: error.variantId,
+        required_quantity: error.requiredQuantity,
+        available_quantity: error.availableQuantity,
+      });
+      return res.status(409).json({
+        error: 'Inventory changed while the batch was being released. Refresh and try again.',
+        code: error.code,
+        variant_id: error.variantId,
+        required_quantity: error.requiredQuantity,
+        available_quantity: error.availableQuantity,
+      });
+    }
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[WMS_BATCH_RELEASE_FAILED]', { shopId, error: message });
     return res.status(500).json({ error: `Batch release failed: ${message}` });
@@ -3466,6 +3492,17 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
         .where('o.shop_id', shopId)
         .whereIn('ofs.status', ['pending', 'processing'])
         .whereNull('pbo.lasyncro_order_id')
+        // SHOP-REVIEW-ORDER-POOL-READINESS-09: an order with zero usable WMS
+        // lines (no order_line_items row with quantity > 0 and a non-null
+        // lasyncro_variant_id) is not structurally releasable — it must never
+        // appear in the pool or inflate any pool total derived from these
+        // rows. Shared predicate; ready_for_release_count below applies the
+        // identical invariant so the count cannot drift from the rows.
+        .whereRaw(HAS_USABLE_WMS_LINE_SQL)
+        // SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 (PART 9): a partially-mapped
+        // Shopify order (unresolved intake exception) is not fully executable —
+        // fail closed. Same shared predicate as eligibleOrders / the FILTER below.
+        .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
         .orderByRaw('ofs.is_priority_flagged DESC, COALESCE(las.is_shipping_sla_breached, false) DESC, o.order_created_at ASC')
         .select(
           'o.lasyncro_order_id',
@@ -3561,6 +3598,13 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
                 WHERE pbo.lasyncro_order_id IS NULL
                 AND ofs.status IN ('pending', 'processing')
                 AND active_constraints.lasyncro_order_id IS NULL
+                -- SHOP-REVIEW-ORDER-POOL-READINESS-09: identical usable-line
+                -- invariant as the pool rows query above; ready count and
+                -- returned rows stay in lockstep.
+                AND ${HAS_USABLE_WMS_LINE_SQL}
+                -- SHOP-REVIEW-ORDER-INTAKE-CLASSIFICATION-10 (PART 9): and the
+                -- identical intake-exception exclusion, so the count matches the rows.
+                AND ${NO_ACTIVE_INTAKE_EXCEPTION_SQL}
               )::integer as ready_for_release_count
             `),
             trx.raw(`
