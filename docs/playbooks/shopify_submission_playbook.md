@@ -2265,12 +2265,19 @@ path remains green.
 
 **Status (2026-08-30): ENGINEERING VERIFIED / PRODUCTION RECERTIFICATION PENDING.**
 The browser/QZ printing-safety contract below is engineering-verified **and
-deployed**. Production certification of that deployment then found a **separate
-location-label PDF geometry defect** — Zebra 4×6 and Dymo 1×2.125 batch labels
-clipped at the physical page edge. That defect is corrected and
-engineering-verified (see *Production thermal-geometry correction — 2026-08-30*),
-but the corrected thermal PDF has **not** been production re-certified.
-`ENGINEERING_VERIFICATION = PASS` · `PRODUCTION_CERTIFICATION = PENDING`. Not
+deployed**. Two subsequent thermal-label defects were found during production
+certification and each corrected under this same issue:
+
+1. **Clipping** — Zebra 4×6 / Dymo 1×2.125 batch labels clipped at the physical
+   page edge. *Corrected and deployed* (see *Production thermal-geometry
+   correction — 2026-08-30*).
+2. **Caption composition** — after the clipping fix deployed, the location-code
+   caption was still left-aligned and pinned near the page bottom, leaving a
+   large blank band between barcode and text. *Corrected and engineering-verified;
+   not yet deployed* (see *Thermal caption-composition correction — 2026-08-30*).
+
+`ENGINEERING_VERIFICATION = PASS` · `PRODUCTION_CERTIFICATION = PENDING` (caption
+correction awaiting commit → CI → deploy → production Zebra + Dymo re-smoke). Not
 final CLOSED — see "Production status" below.
 
 ### Historical context
@@ -2502,20 +2509,26 @@ media size**, not the nominal label-millimetre box:
 **Single geometry authority.** `computeWarehouseLabelSheetLayout(formatId, count)`
 is now the one source of truth for sheet geometry. It is consumed **both** by
 production PDF rendering — `generateWarehouseLabelSheetPdf` reads its `page`,
-`pageCount`, and per-slot `pageIndex`, `barcode {x, y, width, height}` and
-`caption {x, y, fontSize}` directly — **and** by the automated geometry
-assertions. This closes the former test gap where pagination was covered but
-per-element bounds were not.
+`pageCount`, and per-slot `pageIndex`, `barcode {x, y, width, height}` and the
+caption spec directly — **and** by the automated geometry assertions. This
+closes the former test gap where pagination was covered but per-element bounds
+were not. *(The caption shape was later refined from a flat `{x, y, fontSize}`
+to a discriminated `fixed | thermal-centered` layout — see* Thermal
+caption-composition correction — 2026-08-30 *below.)*
 
 **Corrected bounds (verified).**
 
-| Format | Page | Barcode `x, y, w, h` | Barcode right | Caption `x, y` | Overflow |
+| Format | Page | Barcode `x, y, w, h` | Barcode right | Caption `x, y` (this correction) | Overflow |
 | --- | --- | --- | --- | --- | --- |
 | Zebra 4×6 | 288 × 432 | 4, 168.8, 280, 259.2 | 284 (≤ 288) | 4, 6 | **0** |
 | Dymo 1×2.125 | 72 × 153 | 4, 57.2, 64, 91.8 | 68 (≤ 72) | 4, 6 | **0** |
 
 Both keep a **≥ 4 pt hard horizontal inset** on each side, in addition to the
-existing bwip-js barcode raster padding.
+existing bwip-js barcode raster padding. The **barcode rectangles above are
+final** and unchanged by the later caption work; the `Caption x, y` column
+reflects this clipping correction only — caption placement was subsequently
+recentred and pulled up to the barcode (see *Thermal caption-composition
+correction — 2026-08-30* below).
 
 **Files.**
 
@@ -2541,7 +2554,9 @@ The `barcode-print` suite grew from 11 to 13 cases (BE2c, BE2d added); the
 "11 / 11" row in *Automated evidence* above was the count at the browser/QZ
 verification. Serialized-PDF proof: BE2c/BE2d load the real HTTP response with
 `PDFDocument.load(res.body)` and assert every page's `getSize()`, closing the
-gap between the computed layout and the serialized MediaBox.
+gap between the computed layout and the serialized MediaBox. *(The pure geometry
+suite later grew from 12 to 25 cases with the caption-composition correction
+below; the "12 / 12" figure here is the count at this clipping verification.)*
 
 **Correction matrix.**
 
@@ -2592,21 +2607,175 @@ and on two full re-runs. No production or test code was changed to obtain the
 pass — this is not a thermal regression.
 
 `THERMAL_GEOMETRY_ENGINEERING_VERIFICATION = PASS` ·
+`PRODUCTION_RECERTIFICATION = PENDING`. *(The clipping correction has since been
+deployed; production re-certification then exposed the caption-composition defect
+below.)*
+
+### Thermal caption-composition correction — 2026-08-30
+
+**Production discovery.** After the thermal *clipping* fix deployed, production
+re-certification confirmed the Zebra 4×6 PDF opened with the barcode fully inside
+the page, the caption fully inside the page, and the left/right quiet zones
+restored — the clipping defect was fixed. Re-certification still could not pass,
+because the location-code caption was **left-aligned** and **pinned near the
+physical bottom edge**: Zebra showed roughly **155 pt** of empty vertical space
+between the barcode and the caption, and Dymo about **44 pt** by the same rule.
+This is a composition defect, not clipping.
+
+**Root cause.** The thermal *structural* geometry had been corrected, but the
+caption was still emitted as `x = 4, y = 6` — independent of the barcode centre,
+the barcode bottom, the text width, and the real font ascent. So the caption was
+never centred and its vertical position bore no relation to the barcode.
+
+**Final thermal caption contract** (applies only to `zebra-4x6` and `dymo-1x2`):
+
+- caption **centred horizontally on the barcode rectangle**;
+- caption **directly below the barcode**, with an **exact 6 pt visual gap**
+  measured from the caption glyph ascent-top to the barcode bottom (not
+  baseline-to-barcode);
+- **HelveticaBold, max 10 pt**, **shrink-to-fit** when the code is wider than the
+  barcode, **min 5 pt**;
+- the **complete `location_code` is always retained** — no ellipsis, no
+  truncation, no wrapping, no overflow;
+- if a string cannot fit even at 5 pt the internal fit result is an explicit
+  `fits: false` and the renderer **refuses to draw** (throws) rather than clip
+  silently — a defensive invariant, not reachable for supported codes.
+
+Avery tiled captions are unchanged.
+
+**Caption layout architecture.** `WarehouseLabelCaptionLayout` is now
+discriminated:
+
+- `{ mode: 'fixed'; x; y; fontSize }` — A4 tiled cells (values unchanged);
+- `{ mode: 'thermal-centered'; centerX; barcodeBottom; maxWidth; gapPt;
+  maxFontSize; minFontSize }` — Zebra / Dymo.
+
+`computeWarehouseLabelSheetLayout()` still owns only structural geometry
+(`centerX`, `barcodeBottom`, `maxWidth`, `gapPt`, font-size limits) and remains
+**pure / deterministic / tenant-data-free** — `location_code` never enters the
+layout object. The renderer resolves only the font-dependent final placement.
+
+**Font-fit model.** `fitThermalCaptionFontSize({ text, maxSize, minSize,
+maxWidth, measure })` — uses at 10 pt when it fits; otherwise takes the
+proportional estimate and verifies, nudging down in fixed 0.05 pt steps
+(bounded — no open loop); never below 5 pt; returns
+`{ fits: false, minFontSize, textWidthAtMin, maxWidth }` when impossible. No
+truncation / wrapping / ellipsis. `computeCenteredCaptionX(centerX, textWidth)`
+and `computeThermalCaptionBaselineY(barcodeBottom, gapPt, ascent)` are the other
+two production-consumed / test-exercised helpers.
+
+**Renderer order of operations** (thermal branch): (1) determine the final font
+size via `fitThermalCaptionFontSize`; (2) measure the text width at the **final**
+size; (3) measure the HelveticaBold ascent at the **final** size
+(`font.heightAtSize(size, { descender: false })`); (4) centre x with the final
+width; (5) `y = barcodeBottom − 6 pt − final ascent`; (6) draw the complete
+`location_code`. No stale 10 pt width or ascent survives a shrink.
+
+**Zebra verified result.** Barcode rectangle unchanged —
+`x 4, y 168.8, w 280, h 259.2`; `centerX = 144`. `PICK-0A-02` → 10 pt, x ≈
+116.78, baseline ≈ 155.62, visual gap **6.000 pt**, midpoint 144. `WH-12345-ROOT`
+and `WH-123456-ROOT` also fit Zebra at 10 pt (280 pt usable width). The barcode
+is **not** moved to consume the 4×6 page; whitespace beneath the caption is
+expected and is not the defect.
+
+**Dymo verified result.** Barcode rectangle unchanged —
+`x 4, y 57.2, w 64, h 91.8`; `centerX = 36`.
+
+| Code | final size | width | x | baseline y | visual gap | midpoint |
+| --- | --- | --- | --- | --- | --- | --- |
+| WH-1-ROOT | 10.00 | 57.17 | 7.41 | 44.02 | 6.000 | 36 |
+| WH-999-ROOT | ≈ 9.37 | 64.00 | 4.00 | 44.47 | 6.000 | 36 |
+| WH-12345-ROOT | ≈ 8.06 | 64.00 | 4.00 | 45.41 | 6.000 | 36 |
+| WH-123456-ROOT | ≈ 7.53 | 64.00 | 4.00 | 45.79 | 6.000 | 36 |
+
+Every ordinary fixture (`A`, `B`, `PACK-01`, `PICK-0A-02`, `WH-1-ROOT`,
+`WH-999-ROOT`, `WH-12345-ROOT`, `WH-123456-ROOT`) on Dymo: complete string,
+centred (midpoint 36), width ≤ 64, x ≥ 4, right ≤ 68, font ≥ 5 pt, exact 6 pt
+visual gap, on-page. Baselines differ across the shrunk sizes — no stale-ascent
+bug. Slightly different float representations from the deterministic shrink are
+acceptable.
+
+**Defensive no-fit.** A synthetic oversized string that cannot fit at 5 pt
+returns `fits: false` (`textWidthAtMin > maxWidth`); the renderer throws rather
+than overflow / truncate / wrap / shrink below the floor. Not expected for any
+supported ordinary location code (a 6-digit-shopId root resolves to ≈ 7.5 pt).
+
+**Formal verification (AUTOMATED VERIFY = PASS).**
+
+| Check | Result |
+| --- | --- |
+| Pure geometry suite (`warehouseLabelPdf.geometry.test.ts`) | 25 / 25 PASS |
+| `barcode-print` integration (disposable DB) | 13 / 13 PASS (no BE6 flake this run) |
+| `tsc -p apps/backend/tsconfig.json` / `…/tsconfig.migrations.json` | EXIT 0 / EXIT 0 |
+| `tsc -p tests/tsconfig.json` | only the known unrelated `register-no-auth-side-effects.test.ts(39,4) TS1005` baseline |
+| Disposable DB harness | PASS (created / migrated / runtime-ok / dropped; 0 orphan test DBs) |
+
+No production / Shopify / QZ / printer mutation during verification. The font-fit
+helpers are exercised against the real embedded `StandardFonts.HelveticaBold`
+(and a synthetic linear measure) — no PDF parsing, no OCR.
+
+**Acceptance matrix.**
+
+| ID | Check | Result |
+| --- | --- | --- |
+| CC1 | Zebra caption centred | PASS |
+| CC2 | Zebra exact 6 pt visual gap | PASS |
+| CC3 | Dymo caption centred | PASS |
+| CC4 | Dymo exact 6 pt visual gap (incl. shrunk) | PASS |
+| CC5 | ordinary Dymo codes shrink-to-fit without data loss | PASS |
+| CC6 | ordinary Dymo codes remain ≥ 5 pt | PASS |
+| CC7 | thermal captions fully on-page | PASS |
+| CC8 | thermal barcode rectangles unchanged | PASS |
+| CC9 | Zebra/Dymo MediaBox unchanged | PASS |
+| CC10 | Avery geometry / captions unchanged | PASS |
+| CC11 | barcode value / generator semantics unchanged | PASS |
+| CC12 | explicit no-fit, never overflow | PASS |
+| CC13 | integration 13 / 13 green | PASS |
+| CV1 | renderer uses the final font width | PASS |
+| CV2 | renderer uses the final font ascent | PASS |
+| CV3 | resolved midpoint equals barcode centre | PASS |
+| CV4 | resolved visual gap = 6 pt | PASS |
+| CV5 | no stale 10 pt baseline after shrink | PASS |
+| CV6 | no frontend / dist scope | PASS |
+
+**Files.**
+
+- `apps/backend/src/services/wms/warehouseLabelPdf.service.ts` — caption union,
+  `fitThermalCaptionFontSize` / `computeCenteredCaptionX` /
+  `computeThermalCaptionBaselineY`, thermal caption constants
+  (`THERMAL_CAPTION_GAP_PT = 6`, `THERMAL_CAPTION_MAX_FONT_PT = 10`,
+  `THERMAL_CAPTION_MIN_FONT_PT = 5`), renderer thermal branch.
+- `tests/unit/backend/wms/warehouseLabelPdf.geometry.test.ts` — CC/CV coverage
+  (TC1–TC13 + pure-helper units); geometry suite 12 → 25.
+
+`tests/integration/floor-planning/barcode-print.test.ts` unchanged (0 diff);
+its 13 cases re-run green as the HTTP regression guard.
+
+**Unchanged boundaries.** No change to: the thermal barcode rectangles, the
+Zebra/Dymo MediaBox, page count, `barcodeGenerator.ts`, CODE128, bwip-js options,
+`zone.barcode ?? zone.location_code`, merchant barcode overrides, Avery geometry
+and captions, `productLabelPdf.service.ts`, `generateWarehouseLabelPdf` /
+`generateBinLabel` / `generateLanePlacard`, the frontend, the floor-planning
+module and its `dist`, `qzPrint`, printer roles, Shopify, inventory, OAuth, or
+migrations. No frontend / dist rebuild.
+
+`THERMAL_CAPTION_ENGINEERING_VERIFICATION = PASS` ·
 `PRODUCTION_RECERTIFICATION = PENDING`.
 
 ### Production status
 
 The browser/QZ printing-safety contract is engineering-verified **and deployed**;
 its reviewer-path behaviour (including `REVIEWER_WITHOUT_QZ = YES`) passed
-production observation and was **not** reopened. Production certification of that
-deployment surfaced the Zebra / Dymo location-label PDF geometry defect
-documented in *Production thermal-geometry correction — 2026-08-30*. That
-correction is engineering-verified but has **not** yet gone through commit/push →
-CI → deploy → production re-smoke of **both** Zebra and Dymo location-label
-output. Until that pipeline completes, do not assume the live production Barcodes
-surface produces correct thermal location-label PDFs.
+production observation and was **not** reopened. The thermal **clipping**
+correction (*Production thermal-geometry correction — 2026-08-30*) is also
+deployed. Production re-certification of that deployment then exposed the
+**caption-composition** defect (*Thermal caption-composition correction —
+2026-08-30*): the caption correction is engineering-verified but has **not** yet
+gone through commit/push → CI → deploy → production re-smoke of **both** Zebra and
+Dymo location-label PDFs. Until that pipeline completes, do not assume the live
+production Barcodes surface produces centred, tightly-spaced thermal captions.
 
-**`PRODUCTION_CERTIFICATION = PENDING` (thermal recertification).**
+**`PRODUCTION_CERTIFICATION = PENDING` (caption-composition recertification).**
 
 **SHOP-REVIEW-BARCODE-PRINT-05 = ENGINEERING VERIFIED / PRODUCTION
 RECERTIFICATION PENDING.** Not final CLOSED. Other Shopify App Review risks

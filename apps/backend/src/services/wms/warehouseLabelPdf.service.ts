@@ -206,6 +206,32 @@ export interface WarehouseLabelRect {
   height: number;
 }
 
+/**
+ * Structural caption layout. Text-dependent placement (final font size after
+ * shrink-to-fit, centred x, ascent-derived baseline) is resolved by the renderer
+ * from the embedded font — the pure helper never sees `location_code`.
+ *
+ *   'fixed'            — A4 tiled cells: left-aligned at a fixed (x, y, fontSize).
+ *   'thermal-centered' — one-label-per-page media: the caption is centred under
+ *                        the barcode with a fixed 6pt visual gap and shrinks to
+ *                        fit the barcode width (10pt → 5pt floor).
+ */
+export type WarehouseLabelCaptionLayout =
+  | { mode: 'fixed'; x: number; y: number; fontSize: number }
+  | {
+      mode: 'thermal-centered';
+      /** Horizontal centre to align the caption midpoint to (= barcode midpoint). */
+      centerX: number;
+      /** Barcode bottom edge; the caption's glyph top sits `gapPt` below this. */
+      barcodeBottom: number;
+      /** Usable caption width = barcode width. Caption shrinks to fit within it. */
+      maxWidth: number;
+      /** Visual gap between caption glyph ascent-top and barcode bottom, in pt. */
+      gapPt: number;
+      maxFontSize: number;
+      minFontSize: number;
+    };
+
 export interface WarehouseLabelSlotLayout {
   /** Which generated page (0-based) this label is drawn on. */
   pageIndex: number;
@@ -213,8 +239,8 @@ export interface WarehouseLabelSlotLayout {
   frame: WarehouseLabelRect;
   /** The Code128 image rectangle. */
   barcode: WarehouseLabelRect;
-  /** location_code caption draw origin + size (glyph top ~= y + fontSize). */
-  caption: { x: number; y: number; fontSize: number };
+  /** location_code caption — see WarehouseLabelCaptionLayout. */
+  caption: WarehouseLabelCaptionLayout;
 }
 
 export interface WarehouseLabelSheetLayout {
@@ -235,6 +261,71 @@ export interface WarehouseLabelSheetLayout {
  *  bwip-js raster (paddingwidth: 4) adds its own proportional quiet zone on
  *  top of this. */
 const THERMAL_INSET_PT = 4;
+
+// SHOP-REVIEW-BARCODE-PRINT-05 — thermal caption composition. Shared by Zebra
+// 4x6 and Dymo 1x2.125; no format-specific caption constants.
+const THERMAL_CAPTION_GAP_PT = 6;        // caption ascent-top → barcode bottom
+const THERMAL_CAPTION_MAX_FONT_PT = 10;
+const THERMAL_CAPTION_MIN_FONT_PT = 5;   // floor — below this we fail loudly, never overflow
+
+/** Result of choosing a caption font size for a given code + usable width. */
+export type ThermalCaptionFit =
+  | { fits: true; fontSize: number; textWidth: number }
+  | { fits: false; minFontSize: number; textWidthAtMin: number; maxWidth: number };
+
+/**
+ * Deterministic shrink-to-fit for a thermal caption. Starts at `maxSize`; if the
+ * measured width exceeds `maxWidth`, drops to the proportional estimate and
+ * verifies, nudging down in fixed 0.05pt steps (bounded — never an open loop).
+ * Never returns a size below `minSize`; if the text still overflows at `minSize`
+ * returns `{ fits: false }` so the caller fails loudly rather than clipping.
+ *
+ * `measure` is the real embedded-font measurement
+ * (`font.widthOfTextAtSize`) — production and tests pass the same function.
+ */
+export function fitThermalCaptionFontSize(opts: {
+  text: string;
+  maxSize: number;
+  minSize: number;
+  maxWidth: number;
+  measure: (text: string, size: number) => number;
+}): ThermalCaptionFit {
+  const { text, maxSize, minSize, maxWidth, measure } = opts;
+
+  const wMax = measure(text, maxSize);
+  if (wMax <= maxWidth) return { fits: true, fontSize: maxSize, textWidth: wMax };
+
+  // HelveticaBold advance width scales linearly with size, so this lands at or
+  // just under maxWidth; the loop only absorbs floating-point overshoot.
+  let size = Math.min(maxSize, Math.max(minSize, (maxWidth / wMax) * maxSize));
+  let width = measure(text, size);
+  let guard = 0;
+  while (width > maxWidth && size > minSize && guard < 256) {
+    size = Math.max(minSize, size - 0.05);
+    width = measure(text, size);
+    guard++;
+  }
+
+  if (width <= maxWidth) return { fits: true, fontSize: size, textWidth: width };
+  return { fits: false, minFontSize: minSize, textWidthAtMin: measure(text, minSize), maxWidth };
+}
+
+/** Centred draw-origin x for a caption of `textWidth` whose midpoint should land
+ *  on `centerX`. Shared by the renderer and its tests. */
+export function computeCenteredCaptionX(centerX: number, textWidth: number): number {
+  return centerX - textWidth / 2;
+}
+
+/** Baseline y for a thermal caption so its ascent-top sits exactly `gapPt` below
+ *  the barcode bottom. `ascent` is the real embedded-font ascent at the final
+ *  size (`font.heightAtSize(size, { descender: false })`). */
+export function computeThermalCaptionBaselineY(
+  barcodeBottom: number,
+  gapPt: number,
+  ascent: number,
+): number {
+  return barcodeBottom - gapPt - ascent;
+}
 
 /**
  * Pure, deterministic layout for the batch label sheet — geometry only, no
@@ -258,16 +349,28 @@ export function computeWarehouseLabelSheetLayout(
     const barcodeH = pageH * 0.6;
     const slots: WarehouseLabelSlotLayout[] = [];
     for (let j = 0; j < n; j++) {
+      const barcode = {
+        x: inset,
+        y: pageH - barcodeH - inset,
+        width: pageW - inset * 2,
+        height: barcodeH,
+      };
       slots.push({
         pageIndex: j,
         frame: { x: 0, y: 0, width: pageW, height: pageH },
-        barcode: {
-          x: inset,
-          y: pageH - barcodeH - inset,
-          width: pageW - inset * 2,
-          height: barcodeH,
+        barcode,
+        // SHOP-REVIEW-BARCODE-PRINT-05: caption centred under the barcode with a
+        // fixed 6pt visual gap, shrinking to fit the barcode width. Final size /
+        // x / baseline are resolved by the renderer from the embedded font.
+        caption: {
+          mode: 'thermal-centered',
+          centerX: barcode.x + barcode.width / 2,
+          barcodeBottom: barcode.y,
+          maxWidth: barcode.width,
+          gapPt: THERMAL_CAPTION_GAP_PT,
+          maxFontSize: THERMAL_CAPTION_MAX_FONT_PT,
+          minFontSize: THERMAL_CAPTION_MIN_FONT_PT,
         },
-        caption: { x: inset, y: inset + 2, fontSize: Math.min(10, pageH * 0.15) },
       });
     }
     return {
@@ -298,7 +401,8 @@ export function computeWarehouseLabelSheetLayout(
       pageIndex: Math.floor(j / perPage),
       frame: { x, y, width: labelWpt, height: labelHpt },
       barcode: { x: x + 4, y: y + labelHpt - barcodeH - 4, width: labelWpt - 8, height: barcodeH },
-      caption: { x: x + 4, y: y + 6, fontSize: Math.min(10, labelHpt * 0.15) },
+      // A4 tiled cell — unchanged: left-aligned at a fixed origin.
+      caption: { mode: 'fixed', x: x + 4, y: y + 6, fontSize: Math.min(10, labelHpt * 0.15) },
     });
   }
   return {
@@ -339,13 +443,43 @@ export async function generateWarehouseLabelSheetPdf(
       width: slot.barcode.width,
       height: slot.barcode.height,
     });
-    page.drawText(zone.location_code, {
-      x: slot.caption.x,
-      y: slot.caption.y,
-      size: slot.caption.fontSize,
-      font,
-      color: rgb(0, 0, 0),
-    });
+
+    const cap = slot.caption;
+    if (cap.mode === 'fixed') {
+      page.drawText(zone.location_code, {
+        x: cap.x,
+        y: cap.y,
+        size: cap.fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    } else {
+      // thermal-centered: resolve the font-dependent placement only.
+      const fit = fitThermalCaptionFontSize({
+        text: zone.location_code,
+        maxSize: cap.maxFontSize,
+        minSize: cap.minFontSize,
+        maxWidth: cap.maxWidth,
+        measure: (t, s) => font.widthOfTextAtSize(t, s),
+      });
+      if (!fit.fits) {
+        // Defensive internal invariant. Every supported location_code fits at or
+        // above the 5pt floor (audited: 6-digit-shopId roots resolve to ~7.5pt).
+        // Fail loudly rather than clip or overflow.
+        throw new Error(
+          `[warehouseLabelPdf] location_code "${zone.location_code}" does not fit the ` +
+          `${cap.maxWidth.toFixed(0)}pt thermal caption width at the ${cap.minFontSize}pt floor`,
+        );
+      }
+      const ascent = font.heightAtSize(fit.fontSize, { descender: false });
+      page.drawText(zone.location_code, {
+        x: computeCenteredCaptionX(cap.centerX, fit.textWidth),
+        y: computeThermalCaptionBaselineY(cap.barcodeBottom, cap.gapPt, ascent),
+        size: fit.fontSize,
+        font,
+        color: rgb(0, 0, 0),
+      });
+    }
   }
 
   return Buffer.from(await doc.save());
