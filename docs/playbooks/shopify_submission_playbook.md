@@ -2263,9 +2263,15 @@ path remains green.
 
 ## SHOP-REVIEW-BARCODE-PRINT-05 — reviewer-safe barcode printing
 
-**Status (2026-08-30): ENGINEERING VERIFIED — pending deploy / production certification.**
-`ENGINEERING_VERIFICATION = PASS`. This is not yet final operational closure —
-see "Production status" below.
+**Status (2026-08-30): ENGINEERING VERIFIED / PRODUCTION RECERTIFICATION PENDING.**
+The browser/QZ printing-safety contract below is engineering-verified **and
+deployed**. Production certification of that deployment then found a **separate
+location-label PDF geometry defect** — Zebra 4×6 and Dymo 1×2.125 batch labels
+clipped at the physical page edge. That defect is corrected and
+engineering-verified (see *Production thermal-geometry correction — 2026-08-30*),
+but the corrected thermal PDF has **not** been production re-certified.
+`ENGINEERING_VERIFICATION = PASS` · `PRODUCTION_CERTIFICATION = PENDING`. Not
+final CLOSED — see "Production status" below.
 
 ### Historical context
 
@@ -2450,14 +2456,159 @@ semantics, PDF barcode encoding, migrations, Shopify OAuth, or the WMS release
 system. No QZ certificate/signature architecture was introduced. Reviewers are
 not required to install QZ.
 
+### Production thermal-geometry correction — 2026-08-30
+
+**Discovery.** Production certification of the deployed browser/QZ hardening
+confirmed the reviewer-facing contract works: the Barcodes page renders, format
+selection works, the browser fallback works **without QZ**, "Open printable PDF"
+and "Download PDF" work, generated PDFs open normally, there are no visible
+runtime errors, and Avery output looks correct. Certification nonetheless
+remained **FAIL** because the actual opened **Zebra 4×6** batch *location-label*
+PDF visibly **clipped the barcode at the physical page boundary**. A source
+audit then proved **Dymo 1×2.125** has the identical clipping mechanism and is
+reviewer-selectable, so it was corrected in the same issue rather than waiting
+for a second production failure. (The tall in-app preview scrollbar is **not**
+the defect — see *Preview note* below.)
+
+**Root cause.** `generateWarehouseLabelSheetPdf()` applied one A4-style layout
+rule to **every** format: an 8 mm outer sheet margin, a 2 mm inter-label gap,
+and a top-anchored grid. That is correct for tiled A4 sheet stock but invalid
+for one-label-per-physical-page media, where the page **is** a single label.
+Subtracting an A4 outer margin + row gap from a page whose size already equals
+the label pushed the label off the page:
+
+| Format | Page (pt) | Old barcode right edge | Old caption `y` |
+| --- | --- | --- | --- |
+| Zebra 4×6 | 288 × 432 | ≈ 304.971 (> 288 → clipped right) | ≈ −21.205 (off the bottom) |
+| Dymo 1×2.125 | 72 × 153 | ≈ 89.542 (> 72 → clipped right) | ≈ −22.414 (off the bottom) |
+
+**Corrected geometry contract.** The layout model is now split by format shape:
+
+- **A4 tiled** (`avery-5160`, `avery-5163`) — unchanged: A4 MediaBox, 8 mm sheet
+  margin, 2 mm inter-label gap, column × row grid tiling.
+- **Non-A4 one-label-per-page** (`zebra-4x6`, `dymo-1x2`) — the physical media
+  page is the full label canvas: frame origin `(0, 0)`, **no** A4 outer margin,
+  **no** A4 row gap, exactly **one label per page**, and a **4 pt** internal
+  barcode inset (plus the barcode raster's own quiet-zone padding).
+
+**Physical page authority.** The serialized PDF MediaBox is the **advertised
+media size**, not the nominal label-millimetre box:
+
+| Format | MediaBox (pt) | *not* |
+| --- | --- | --- |
+| Zebra 4×6 | **288 × 432** | 101 × 152 mm |
+| Dymo 1×2.125 | **72 × 153** | 25 × 54 mm |
+
+**Single geometry authority.** `computeWarehouseLabelSheetLayout(formatId, count)`
+is now the one source of truth for sheet geometry. It is consumed **both** by
+production PDF rendering — `generateWarehouseLabelSheetPdf` reads its `page`,
+`pageCount`, and per-slot `pageIndex`, `barcode {x, y, width, height}` and
+`caption {x, y, fontSize}` directly — **and** by the automated geometry
+assertions. This closes the former test gap where pagination was covered but
+per-element bounds were not.
+
+**Corrected bounds (verified).**
+
+| Format | Page | Barcode `x, y, w, h` | Barcode right | Caption `x, y` | Overflow |
+| --- | --- | --- | --- | --- | --- |
+| Zebra 4×6 | 288 × 432 | 4, 168.8, 280, 259.2 | 284 (≤ 288) | 4, 6 | **0** |
+| Dymo 1×2.125 | 72 × 153 | 4, 57.2, 64, 91.8 | 68 (≤ 72) | 4, 6 | **0** |
+
+Both keep a **≥ 4 pt hard horizontal inset** on each side, in addition to the
+existing bwip-js barcode raster padding.
+
+**Files.**
+
+- `apps/backend/src/services/wms/warehouseLabelPdf.service.ts` — `computeWarehouseLabelSheetLayout` helper + the split renderer.
+- `tests/integration/floor-planning/barcode-print.test.ts` — BE2c, BE2d added.
+- `tests/unit/backend/wms/warehouseLabelPdf.geometry.test.ts` — **new** pure geometry suite.
+
+No frontend or `modules/floor-planning/dist` change; no rebuild required.
+
+**Formal verification (AUTOMATED VERIFY = PASS).**
+
+| Check | Result |
+| --- | --- |
+| Pure geometry suite (`warehouseLabelPdf.geometry.test.ts`) | 12 / 12 PASS |
+| `barcode-print` integration (disposable DB) | 13 / 13 PASS |
+| BE2c — 3 Zebra location labels | 3 pages, every page **288 × 432** |
+| BE2d — 3 Dymo location labels | 3 pages, every page **72 × 153** |
+| `tsc -p apps/backend/tsconfig.json` / `…/tsconfig.migrations.json` | EXIT 0 / EXIT 0 |
+| `tsc -p tests/tsconfig.json` | only the known unrelated `register-no-auth-side-effects.test.ts(39,4) TS1005` baseline |
+| Disposable DB harness | PASS (created / migrated / runtime-ok / dropped; 0 orphan test DBs) |
+
+The `barcode-print` suite grew from 11 to 13 cases (BE2c, BE2d added); the
+"11 / 11" row in *Automated evidence* above was the count at the browser/QZ
+verification. Serialized-PDF proof: BE2c/BE2d load the real HTTP response with
+`PDFDocument.load(res.body)` and assert every page's `getSize()`, closing the
+gap between the computed layout and the serialized MediaBox.
+
+**Correction matrix.**
+
+| ID | Check | Result |
+| --- | --- | --- |
+| TG1 | Zebra MediaBox 288 × 432 | PASS |
+| TG2 | Zebra frame / barcode / caption fully in bounds | PASS |
+| TG3 | Zebra ≥ 4 pt barcode quiet-zone inset | PASS |
+| TG4 | Zebra caption on-page, no barcode overlap | PASS |
+| TG5 | Dymo MediaBox 72 × 153 | PASS |
+| TG6 | Dymo frame / barcode / caption fully in bounds | PASS |
+| TG7 | Avery 5160 geometry + pagination preserved | PASS |
+| TG8 | Avery 5163 preserved within accepted pre-existing ≤ 2 pt tolerance | PASS |
+| TG9 | Avery multi-page pagination regression | PASS |
+| TG10 | Barcode value / generator semantics unchanged | PASS |
+| TV1 | Renderer and tests share one geometry authority | PASS |
+| TV2 | Serialized Zebra HTTP PDF correct | PASS |
+| TV3 | Serialized Dymo HTTP PDF correct | PASS |
+| TV4 | Zero thermal overflow | PASS |
+| TV5 | Frontend correction scope: none | PASS |
+| TV6 | Product thermal renderer untouched | PASS |
+| TV7 | Single-zone warehouse print untouched | PASS |
+| TV8 | Zero new type errors | PASS |
+
+**Avery 5163 — DEFER / PRE_EXISTING.** The second-column barcode image can
+extend ≈ **1.655 pt (≈ 0.58 mm)** past the nominal A4 right edge. This is
+pre-existing, was **not** worsened by the thermal correction, does not visibly
+fail in production, and is bounded by an explicit `≤ 2 pt` regression assertion
+that is **local to the Avery-5163 test** — Zebra/Dymo still require **zero**
+overflow. Not fixed here; not a BARCODE-PRINT-05 closure blocker.
+
+**Unchanged boundaries.** No change to `barcodeGenerator.ts`, CODE128, bwip-js
+options, `zone.barcode ?? zone.location_code`, merchant barcode-override
+semantics, `productLabelPdf.service.ts`, single-zone warehouse label generation
+(`generateWarehouseLabelPdf` / `generateBinLabel` / `generateLanePlacard`), the
+frontend Barcodes UI, the `qzPrint` / browser-fallback contract, printer roles,
+Shopify, inventory, OAuth, or migrations. No frontend / dist rebuild.
+
+**Preview note (cosmetic / non-blocking).** The tall Zebra label preview can
+require vertical scrolling because the in-app preview container has a height
+cap. The audit confirmed the logical preview content is fully present and the
+barcode does not overflow its preview box — this is **not** the PDF clipping
+defect and is not marked fixed.
+
+**Flake note.** One first full integration run had **BE6** ("nothing printable →
+404", the untouched product-batch path) fail once; it then passed in isolation
+and on two full re-runs. No production or test code was changed to obtain the
+pass — this is not a thermal regression.
+
+`THERMAL_GEOMETRY_ENGINEERING_VERIFICATION = PASS` ·
+`PRODUCTION_RECERTIFICATION = PENDING`.
+
 ### Production status
 
-**`PRODUCTION_CERTIFICATION = PENDING`.** This issue has **not** yet gone
-through commit/push → CI → deploy → production reviewer-path smoke. Do not assume
-the live production Barcodes surface contains this fix until deployment occurs.
-Engineering verification is complete; final operational closure requires the
-commit/deploy pipeline and a production reviewer-path smoke.
+The browser/QZ printing-safety contract is engineering-verified **and deployed**;
+its reviewer-path behaviour (including `REVIEWER_WITHOUT_QZ = YES`) passed
+production observation and was **not** reopened. Production certification of that
+deployment surfaced the Zebra / Dymo location-label PDF geometry defect
+documented in *Production thermal-geometry correction — 2026-08-30*. That
+correction is engineering-verified but has **not** yet gone through commit/push →
+CI → deploy → production re-smoke of **both** Zebra and Dymo location-label
+output. Until that pipeline completes, do not assume the live production Barcodes
+surface produces correct thermal location-label PDFs.
 
-**SHOP-REVIEW-BARCODE-PRINT-05 = ENGINEERING CLOSED / PRODUCTION CERTIFICATION
-PENDING.** Other Shopify App Review risks remain tracked separately; the overall
-App Review project is not closed by this section.
+**`PRODUCTION_CERTIFICATION = PENDING` (thermal recertification).**
+
+**SHOP-REVIEW-BARCODE-PRINT-05 = ENGINEERING VERIFIED / PRODUCTION
+RECERTIFICATION PENDING.** Not final CLOSED. Other Shopify App Review risks
+remain tracked separately; the overall App Review project is not closed by this
+section.

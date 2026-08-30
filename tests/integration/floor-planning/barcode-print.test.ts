@@ -7,6 +7,8 @@
  *   BE1  POST /zones/:code/print            → application/pdf + sensible filename
  *   BE2  POST /zones/print-batch            → application/pdf (small batch)
  *   BE2b POST /zones/print-batch  30 codes  → application/pdf, PDF has exactly 2 pages
+ *   BE2c POST /zones/print-batch  zebra-4x6 → 1 page/location, MediaBox 288x432pt
+ *   BE2d POST /zones/print-batch  dymo-1x2  → 1 page/location, MediaBox 72x153pt
  *   BE3  POST /products/:variantId/print    → application/pdf
  *   BE4  POST /products/print-batch         → application/pdf (small batch)
  *   BE4b POST /products/print-batch 30 vars → application/pdf, PDF has exactly 2 pages
@@ -20,6 +22,14 @@
  * response with pdf-lib, not inferred. 30 labels at avery-5160 (24/sheet) must
  * be exactly 2 pages — proving no selected item is silently dropped to the
  * first sheet.
+ *
+ * BE2c/BE2d close the thermal-geometry gap (SHOP-REVIEW-BARCODE-PRINT-05): the
+ * production incident clipped the Zebra 4x6 barcode at the page edge because the
+ * A4 tiling margin was applied to a one-label-per-page format. These assert the
+ * physical page size of every generated page. Element-level bounds (barcode /
+ * caption inside the MediaBox) are proven in the pure-geometry unit test
+ * tests/unit/backend/wms/warehouseLabelPdf.geometry.test.ts against the same
+ * layout helper the renderer consumes.
  *
  * Disposable synchroflow_test_* DB only (`npm run test:integration`). No
  * production PDF rendering is asserted pixel-for-pixel — only the HTTP contract
@@ -136,6 +146,12 @@ async function pageCount(buf: Buffer): Promise<number> {
   return doc.getPageCount();
 }
 
+/** Physical size (PDF points) of every page in the response PDF. */
+async function pageSizes(buf: Buffer): Promise<Array<{ width: number; height: number }>> {
+  const doc = await PDFDocument.load(buf);
+  return doc.getPages().map((p) => p.getSize());
+}
+
 /** Create N tenant-owned variants that already carry a lasyncro_barcode, so a
  *  print test exercises pagination rather than mint-on-print. */
 async function seedBarcodedVariants(shopId: number, n: number): Promise<string[]> {
@@ -210,6 +226,54 @@ describe('SHOP-REVIEW-BARCODE-PRINT-05 — barcode print endpoints', () => {
     expect(res.headers['content-disposition']).toMatch(/\.pdf/);
     expect(Buffer.isBuffer(res.body)).toBe(true);
     expect(await pageCount(res.body)).toBe(2);
+  }, 180_000);
+
+  it('BE2c — Zebra 4x6 batch: one physical 288x432pt page per location', async () => {
+    const { shopId, token, rootLocationCode } = await provisionFt2Shop('be2c');
+    const codes = [rootLocationCode];
+    for (let i = 1; i < 3; i++) {
+      codes.push(await createBin(token, rootLocationCode, `BCP-${shopId}-Z${i}`));
+    }
+
+    const res = await request(app)
+      .post('/api/v1/floor-planning/zones/print-batch')
+      .set(authed(token))
+      .buffer(true)
+      .parse(binaryParser)
+      .send({ locationCodes: codes, formatId: 'zebra-4x6' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(Buffer.isBuffer(res.body)).toBe(true);
+    expect(await pageCount(res.body)).toBe(3);           // one label = one page
+    for (const { width, height } of await pageSizes(res.body)) {
+      expect(width).toBeCloseTo(288, 3);                 // 4in — advertised media
+      expect(height).toBeCloseTo(432, 3);                // 6in
+    }
+  }, 180_000);
+
+  it('BE2d — Dymo 1x2.125 batch: one physical 72x153pt page per location', async () => {
+    const { shopId, token, rootLocationCode } = await provisionFt2Shop('be2d');
+    const codes = [rootLocationCode];
+    for (let i = 1; i < 3; i++) {
+      codes.push(await createBin(token, rootLocationCode, `BCP-${shopId}-D${i}`));
+    }
+
+    const res = await request(app)
+      .post('/api/v1/floor-planning/zones/print-batch')
+      .set(authed(token))
+      .buffer(true)
+      .parse(binaryParser)
+      .send({ locationCodes: codes, formatId: 'dymo-1x2' });
+
+    expect(res.status).toBe(200);
+    expect(res.headers['content-type']).toMatch(/application\/pdf/);
+    expect(Buffer.isBuffer(res.body)).toBe(true);
+    expect(await pageCount(res.body)).toBe(3);
+    for (const { width, height } of await pageSizes(res.body)) {
+      expect(width).toBeCloseTo(72, 3);                  // 1in
+      expect(height).toBeCloseTo(153, 3);               // 2.125in
+    }
   }, 180_000);
 
   it('BE3 — single product print returns a PDF', async () => {
