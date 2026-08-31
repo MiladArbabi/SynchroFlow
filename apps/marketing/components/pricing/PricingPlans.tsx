@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import PricingPlanCTA from './PricingPlanCTA'
-import LaunchNotifyForm from '@/components/conversion/LaunchNotifyForm'
+import LaunchNotifyForm, { useShopifyAvailability } from '@/components/conversion/LaunchNotifyForm'
 
 type BillingInterval = 'monthly' | 'annual'
 
@@ -36,7 +36,7 @@ const plans: Plan[] = [
       'Barcode scanning',
       'Orders & fulfillment queue',
       'Real-time stock alerts',
-      '1 sales channel',
+      'Owner only',
       'Email support',
     ],
     featured: false,
@@ -52,7 +52,7 @@ const plans: Plan[] = [
       'Everything in Starter',
       '2,000 synced orders / month included',
       '500 warehouse-processed orders / month included',
-      '$0.08 per additional processed order',
+      '$0.08 per additional processed order when overage is enabled',
       'Returns management',
       'Product catalog',
       'Problem center',
@@ -71,16 +71,16 @@ const plans: Plan[] = [
       'Everything in Core',
       '10,000 synced orders / month included',
       '2,500 warehouse-processed orders / month included',
-      '$0.08 per additional processed order',
+      '$0.08 per additional processed order when overage is enabled',
       'Demand intelligence',
-      'Cash flow & runway',
+      'Cash flow',
       'Customer LTV',
       'Floor planning',
       'Advanced operational analytics',
       '5 non-owner seats included',
     ],
     featured: true,
-    badge: 'Most merchants land here',
+    badge: 'Recommended',
     cta: 'Start free trial',
   },
   {
@@ -112,6 +112,7 @@ function formatUsd(amount: number): string {
 export default function PricingPlans() {
   const [billingInterval, setBillingInterval] =
     useState<BillingInterval>('monthly')
+  const shopifyAvailability = useShopifyAvailability()
 
   const isAnnual = billingInterval === 'annual'
 
@@ -383,6 +384,8 @@ export default function PricingPlans() {
                 cta={plan.cta}
                 featured={plan.featured}
                 billingInterval={billingInterval}
+                shopifyAvailable={shopifyAvailability.available}
+                installUrl={shopifyAvailability.installUrl}
               />
             </div>
           )
@@ -404,11 +407,11 @@ export default function PricingPlans() {
         }}
       >
         <strong style={{ color: 'var(--ink-2)' }}>How usage is counted:</strong>{' '}
-        Synced orders are orders ingested from Shopify into LaSyncro.
-        Warehouse-processed orders are orders completed through LaSyncro&apos;s
-        warehouse fulfillment workflow. Core and Growth include the amounts
-        shown above, then charge $0.08 for each additional warehouse-processed
-        order.
+        Synced orders are orders ingested from Shopify into LaSyncro. A
+        warehouse-processed order is counted when it reaches Pack complete in
+        LaSyncro. Core and Growth include the amounts shown above and can
+        continue above the included allowance at $0.08 per additional processed
+        order when overage is enabled.
       </div>
 
       <div
@@ -435,8 +438,8 @@ export default function PricingPlans() {
             margin: '0 0 12px',
           }}
         >
-          One prevented stockout, oversell, or missed fulfillment window can
-          cover Growth for the month.
+          Built to reduce the operational mistakes that cost growing warehouses
+          time and margin.
         </p>
 
         <p
