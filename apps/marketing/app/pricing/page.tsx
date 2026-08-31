@@ -5,7 +5,7 @@ import PricingPlans from '@/components/pricing/PricingPlans'
 export const metadata: Metadata = {
   title: 'Pricing — LaSyncro',
   description:
-    'Pricing that scales with your warehouse. Start free, add operational control when the work gets serious.',
+    'Pricing that scales with your warehouse. Start with the core warehouse workflow, then add capacity and intelligence as you grow.',
   alternates: { canonical: 'https://www.lasyncro.com/pricing' },
 }
 
@@ -82,7 +82,8 @@ export default function PricingPage() {
             maxWidth: 620,
           }}
         >
-          Start simple. Add operational control when the work gets serious.
+          Start with the core warehouse workflow. Add capacity and intelligence
+          as you grow.
         </p>
 
         <p
@@ -96,7 +97,7 @@ export default function PricingPage() {
             maxWidth: 760,
           }}
         >
-          Every paid plan includes a 14-day Growth trial. No credit card
+          Every new shop starts with a 14-day Growth trial. No credit card
           required. Switch or cancel anytime.
         </p>
       </header>
