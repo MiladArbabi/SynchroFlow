@@ -7,6 +7,8 @@ interface Props {
   cta: string
   featured: boolean
   billingInterval: 'monthly' | 'annual'
+  shopifyAvailable?: boolean
+  installUrl?: string | null
 }
 
 export default function PricingPlanCTA({
@@ -14,17 +16,32 @@ export default function PricingPlanCTA({
   cta,
   featured,
   billingInterval,
+  shopifyAvailable = false,
+  installUrl = null,
 }: Props) {
   const ph = usePostHog()
+  const waitingForLaunch = !shopifyAvailable || !installUrl
+  const isScale = plan.toLowerCase() === 'scale'
+
+  const resolvedCta = waitingForLaunch ? 'Notify me at launch' : cta
+  const resolvedHref = waitingForLaunch
+    ? '#launch-pricing'
+    : isScale
+      ? 'mailto:contact@lasyncro.com?subject=LaSyncro%20Scale%20plan'
+      : installUrl ?? '#launch-pricing'
+  const opensInstallUrl = !waitingForLaunch && !isScale
 
   return (
     <a
-      href="https://app.lasyncro.com"
+      href={resolvedHref}
+      target={opensInstallUrl ? '_blank' : undefined}
+      rel={opensInstallUrl ? 'noopener noreferrer' : undefined}
       onClick={() =>
         ph?.capture('pricing_plan_cta_clicked', {
           plan: plan.toLowerCase(),
-          cta_label: cta,
+          cta_label: resolvedCta,
           billing_interval: billingInterval,
+          shopify_available: !waitingForLaunch,
         })
       }
       style={{
@@ -44,7 +61,7 @@ export default function PricingPlanCTA({
         letterSpacing: '0.02em',
       }}
     >
-      {cta}
+      {resolvedCta}
     </a>
   )
 }
