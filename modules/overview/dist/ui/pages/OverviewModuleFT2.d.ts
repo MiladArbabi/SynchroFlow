@@ -49,6 +49,8 @@ export interface OverviewModuleFT2DataProps {
             module: string;
             deepLink: string;
             revenueImpact: number | null;
+            /** Original alert_type from the alerts aggregator — e.g. "sla_breach", "revenue_at_risk". */
+            alertType?: string;
             /** Short age/recency label — e.g. "14d oldest", "6 orders". Server-provided. */
             ageLabel?: string | null;
             /** Specific CTA label — e.g. "Review queue", "Reorder". Falls back to module default. */
@@ -71,7 +73,6 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
     operationalWarningState: 'clear' | 'warning' | 'unknown';
     onNavigate?: (deepLink: string) => void;
     onRefreshBrief?: () => void;
-    onExportBrief?: () => void;
     onResolveAll?: () => void;
     /**
      * Rendered in the 75% map slot.

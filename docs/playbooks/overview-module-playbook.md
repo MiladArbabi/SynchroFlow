@@ -13,10 +13,51 @@ The Overview has two surfaces, both **derived** — never authored directly:
 
 | Surface | Source table | Written by |
 |---|---|---|
-| Morning brief (greeting, ranked signals, $ at stake) | `morning_brief_snapshots` | `overviewMorningBrief.resolver.ts` → reads `alerts` |
+| Morning brief (greeting, ranked signals, semantic revenue labels) | `morning_brief_snapshots` | `overviewMorningBrief.resolver.ts` → reads `alerts` |
 | Today's Flow (Ready / Picking / Blocked / Breached) | `orders_operational_control_snapshot` + queue metrics | `shopOperationalSnapshot.worker.ts` |
 
 **Critical fact:** the brief resolver reads **only the `alerts` table** (CHANGE POLICY: "Never query raw tables here — always read from `alerts`"). It does not read constraints/orders directly. So to change the brief, you change what's in `alerts` — which means changing the order facts the AL-01 aggregator derives alerts from.
+
+### OV-DATA-02 - Overview decision/revenue semantics (2026-08-31)
+
+**Status:** implementation complete; automated verification PASS; localhost live browser verification PASS; production certification PENDING deployment.
+
+**Problem:** Overview combined the total decision count with blocked revenue as generic `"$X at stake"`, conflating independent operational concepts.
+
+Canonical semantics:
+
+- **BLOCKED:** active constraint prevents an order progressing.
+- **FULFILLMENT SLA:** merchant-configured payment-to-fulfillment duration.
+- **CPT / Carrier Pickup Time:** daily warehouse/carrier cutoff. It is NOT a synonym for Fulfillment SLA.
+
+Final Overview behavior:
+
+- Header: `"N decisions pending. Review the issues below."`
+- SLA signal: `"N orders past Fulfillment SLA"`; `<amount>`; `"order value"`.
+- Blocked signal: `"N orders blocked"`; `<amount>`; `"blocked revenue"`.
+
+Implementation notes:
+
+- Alert calculations and `revenue_impact` values are unchanged.
+- `alertType` is the sole discriminator for revenue labels; do not infer labels from title, id, deepLink, or module.
+- Both `TriageRow` and map-layout `MergedPulseCard` render the semantic labels.
+- No CPT logic, `fulfillment_sla_hours` thresholds, blocker calculations, alert ordering, or revenue calculations changed.
+
+Regression evidence:
+
+- Test ownership: `UNOWNED=0 / MULTI_OWNED=0`.
+- Backend alert copy: `7/7 PASS`.
+- Frontend semantic helper: `5/5 PASS`.
+- Backend TSC: `0 errors`.
+- Overview module build: `PASS`.
+- Localhost live browser: `PASS`.
+
+Deferred separate issues:
+
+- `OV-DATA-02B` - snapshot aggregate-version selection.
+- `SLA-SEM-01` - canonical approaching-Fulfillment-SLA contract.
+- `CPT-MODEL-01` - Order Flow CPT/SLA conflation.
+- `OV-DATA-03` - Business Pulse financial metrics, especially `"Revenue today"` vs `"Collected today"`; not solved by OV-DATA-02.
 
 ---
 
