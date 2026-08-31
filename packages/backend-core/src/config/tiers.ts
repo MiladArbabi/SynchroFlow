@@ -112,16 +112,17 @@ const SCALE_FLAGS = [...GROWTH_FLAGS] as const;
 export const TIER_CONFIG: Record<Tier, TierConfig> = {
   /**
    * Starter (Free)
-   * - 1 seat (owner only)
+   * - Owner only (0 non-owner seats)
    * - 50 orders/month ingestion cap
-   * - Core operational modules only
+   * - 50 WMS-processed orders/month
+   * - Full core Receive→Stow→Pick→Pack→Ship workflow + barcodes
    */
   starter: {
     monthlyPriceCents: 0,
     // WHY: Starter is owner-only; seat enforcement counts non-owner memberships.
     seatLimit: 0,
     monthlyOrderCap: 50,
-    shippedOrderCap: 50, 
+    shippedOrderCap: 50,
     specterSessionCap: 500,
     modules: STARTER_MODULES,
     flags: STARTER_FLAGS,
@@ -129,10 +130,10 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
 
   /**
    * Core ($79/month)
-   * - 2 seats + extra seats at $15/seat/mo
+   * - 2 non-owner seats included + extra seats at $15/seat/mo
    * - 2,000 orders ingested/mo — soft cap, degraded priority above limit
-   * - 500 fulfilled orders via WMS/mo included — overage at $0.08/order
-   * - Adds WMS, Returns, Products
+   * - 500 WMS-processed orders/mo included — overage at $0.08/order when enabled
+   * - Adds Returns, Products, and Problem Center
    */
   core: {
     monthlyPriceCents: 7900,
@@ -147,11 +148,11 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
 
   /**
    * Growth ($179/month)
-   * - 5 seats + extra seats at $12/seat/mo
+   * - 5 non-owner seats included + extra seats at $12/seat/mo
    * - 10,000 orders ingested/mo
-   * - 2,500 fulfilled orders via WMS/mo included — overage at $0.08/order
-   * - Adds intelligence: Cash Flow, LTV, Demand, Specter
-   * - 14-day free trial on signup (MON-07)
+   * - 2,500 WMS-processed orders/mo included — overage at $0.08/order when enabled
+   * - Adds intelligence: Cash Flow, Customer LTV, Demand, Specter, Floor Planning
+   * - 14-day free Growth trial on new-shop signup (MON-07)
    * - Annual billing at 20% discount (MON-08)
    */
   growth: {
@@ -167,8 +168,8 @@ export const TIER_CONFIG: Record<Tier, TierConfig> = {
   /**
    * Scale ($349/month)
    * - Unlimited seats
-   * - Unlimited orders ingested and shipped
-   * - Adds Floor Planning, Barcodes, WMS Advanced
+   * - Unlimited orders ingested and WMS-processed
+   * - Same cumulative Growth module/flag set with unlimited capacity
    */
   scale: {
     monthlyPriceCents: 34900,
