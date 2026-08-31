@@ -21,6 +21,7 @@ const W = { maxWidth: '1200px', margin: '0 auto', padding: '0 5vw' } as const
 
 // Public Pricing currently displays USD.
 // Annual totals mirror the canonical billing pricing configuration.
+// Usage allowances mirror packages/backend-core/src/config/tiers.ts.
 const plans: Plan[] = [
   {
     tier: 'Starter',
@@ -29,7 +30,10 @@ const plans: Plan[] = [
     desc: 'For shops validating LaSyncro before committing to structured warehouse workflows.',
     features: [
       'Real-time inventory sync',
-      'Up to 100 orders/month',
+      '50 synced orders / month',
+      '50 warehouse-processed orders / month',
+      'Receive / stow / pick / pack / ship',
+      'Barcode scanning',
       'Orders & fulfillment queue',
       'Real-time stock alerts',
       '1 sales channel',
@@ -43,17 +47,16 @@ const plans: Plan[] = [
     tier: 'Core',
     monthly: 79,
     annual: 790,
-    desc: 'Run your first structured warehouse workflow without the full intelligence layer.',
+    desc: 'Run a structured warehouse workflow with more volume and operational control.',
     features: [
       'Everything in Starter',
-      'Unlimited orders',
-      'PO receiving',
-      'Pick / pack / stow',
-      'Barcode scanning',
+      '2,000 synced orders / month included',
+      '500 warehouse-processed orders / month included',
+      '$0.08 per additional processed order',
       'Returns management',
       'Product catalog',
-      'Supplier tracking',
-      '2 non-owner seats',
+      'Problem center',
+      '2 non-owner seats included',
     ],
     featured: false,
     badge: null,
@@ -66,13 +69,15 @@ const plans: Plan[] = [
     desc: 'Where operational control turns into margin protection.',
     features: [
       'Everything in Core',
+      '10,000 synced orders / month included',
+      '2,500 warehouse-processed orders / month included',
+      '$0.08 per additional processed order',
       'Demand intelligence',
-      'Stock risk alerts',
       'Cash flow & runway',
-      'Supplier scorecards',
       'Customer LTV',
-      'Slack notifications',
-      '5 non-owner seats',
+      'Floor planning',
+      'Advanced operational analytics',
+      '5 non-owner seats included',
     ],
     featured: true,
     badge: 'Most merchants land here',
@@ -82,13 +87,11 @@ const plans: Plan[] = [
     tier: 'Scale',
     monthly: 349,
     annual: 3350.4,
-    desc: 'For higher-volume teams that need control across people, places, and processes.',
+    desc: 'For higher-volume teams that need more capacity across people and processes.',
     features: [
       'Everything in Growth',
-      'Floor planning',
-      'Multi-warehouse routing',
-      'Role-based permissions',
-      'AI operations intelligence',
+      'Unlimited synced orders',
+      'Unlimited warehouse-processed orders',
       'Unlimited seats',
       'Priority support',
       'Dedicated onboarding',
@@ -384,6 +387,28 @@ export default function PricingPlans() {
             </div>
           )
         })}
+      </div>
+
+      <div
+        style={{
+          maxWidth: 860,
+          margin: '24px auto 0',
+          padding: '18px 20px',
+          border: '1px solid var(--rule)',
+          borderRadius: 14,
+          background: 'var(--surface)',
+          fontFamily: 'var(--sans)',
+          fontSize: 12,
+          lineHeight: 1.65,
+          color: 'var(--ink-3)',
+        }}
+      >
+        <strong style={{ color: 'var(--ink-2)' }}>How usage is counted:</strong>{' '}
+        Synced orders are orders ingested from Shopify into LaSyncro.
+        Warehouse-processed orders are orders completed through LaSyncro&apos;s
+        warehouse fulfillment workflow. Core and Growth include the amounts
+        shown above, then charge $0.08 for each additional warehouse-processed
+        order.
       </div>
 
       <div
