@@ -15,6 +15,7 @@ import { useState, type ReactNode } from 'react';
 import { Box, Collapse, Typography, Skeleton } from '@mui/material';
 import { RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrencyCompact, ModuleErrorBoundary, PulseCard, PulseCardRowData, PulseTone } from '@lasyncro/shared/ui';
+import { buildDecisionPendingSummary, revenueImpactLabel } from './overviewSemantics.js';
 
 // ─── TYPES ────────────────────────────────────────────────────
 
@@ -65,6 +66,8 @@ export interface OverviewModuleFT2DataProps {
       module: string;
       deepLink: string;
       revenueImpact: number | null;
+      /** Original alert_type from the alerts aggregator — e.g. "sla_breach", "revenue_at_risk". */
+      alertType?: string;
       /** Short age/recency label — e.g. "14d oldest", "6 orders". Server-provided. */
       ageLabel?: string | null;
       /** Specific CTA label — e.g. "Review queue", "Reorder". Falls back to module default. */
@@ -191,6 +194,7 @@ function TriageRow({
   const sev = SEV[sevKey(signal.priority)];
   const [expanded, setExpanded] = useState(false);
   const hasTags = (signal.tags?.length ?? 0) > 0;
+  const impactLabel = revenueImpactLabel(signal.alertType);
 
   return (
     <Box sx={{ px: '1.25rem', py: '0.875rem', borderBottom: '1px solid var(--rule)', '&:last-child': { borderBottom: 'none' }, '&:hover': { bgcolor: 'var(--bg-2)' }, transition: 'background 0.1s' }}>
@@ -240,6 +244,11 @@ function TriageRow({
           {signal.revenueImpact != null && (
             <Typography sx={{ fontSize: 14, fontWeight: 700, color: isCritical ? '#E5484D' : 'var(--ink)', fontVariantNumeric: 'tabular-nums', lineHeight: 1.2 }}>
               {formatCurrencyCompact(signal.revenueImpact, currency)}
+            </Typography>
+          )}
+          {signal.revenueImpact != null && impactLabel && (
+            <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
+              {impactLabel}
             </Typography>
           )}
           {signal.ageLabel && (
@@ -378,47 +387,65 @@ function MergedPulseCard({
           <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: '0.625rem' }}>
             Needs a decision
           </Typography>
-          {visibleSignals.map(s => (
-            <Box
-              key={s.id}
-              onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
-              sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
-            >
-              <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
-              <Box sx={{ flex: 1, minWidth: 0 }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
-                  {s.title}
-                </Typography>
-                {s.revenueImpact != null && (
-                  <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
-                    {formatCurrencyCompact(s.revenueImpact, currency)}
+          {visibleSignals.map(s => {
+            const impactLabel = revenueImpactLabel(s.alertType);
+
+            return (
+              <Box
+                key={s.id}
+                onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
+                sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+              >
+                <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
+                    {s.title}
                   </Typography>
-                )}
+                  {s.revenueImpact != null && (
+                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                      {formatCurrencyCompact(s.revenueImpact, currency)}
+                    </Typography>
+                  )}
+                  {s.revenueImpact != null && impactLabel && (
+                    <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
+                      {impactLabel}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
-            </Box>
-          ))}
+            );
+          })}
           {hiddenCount > 0 && (
             <>
               <Collapse in={decisionsExpanded} timeout={180} unmountOnExit>
-                {hiddenSignals.map(s => (
-                  <Box
-                    key={s.id}
-                    onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
-                    sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
-                  >
-                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
-                    <Box sx={{ flex: 1, minWidth: 0 }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
-                        {s.title}
-                      </Typography>
-                      {s.revenueImpact != null && (
-                        <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
-                          {formatCurrencyCompact(s.revenueImpact, currency)}
+                {hiddenSignals.map(s => {
+                  const impactLabel = revenueImpactLabel(s.alertType);
+
+                  return (
+                    <Box
+                      key={s.id}
+                      onClick={() => s.deepLink && onNavigate?.(s.deepLink)}
+                      sx={{ display: 'flex', alignItems: 'flex-start', gap: '8px', py: '6px', cursor: s.deepLink ? 'pointer' : 'default', '&:hover': s.deepLink ? { opacity: 0.8 } : {} }}
+                    >
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: s.priority <= 2 ? '#E5484D' : '#D9A23B', mt: '5px', flexShrink: 0 }} />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }} noWrap>
+                          {s.title}
                         </Typography>
-                      )}
+                        {s.revenueImpact != null && (
+                          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)' }}>
+                            {formatCurrencyCompact(s.revenueImpact, currency)}
+                          </Typography>
+                        )}
+                        {s.revenueImpact != null && impactLabel && (
+                          <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-3)', mt: '2px' }}>
+                            {impactLabel}
+                          </Typography>
+                        )}
+                      </Box>
                     </Box>
-                  </Box>
-                ))}
+                  );
+                })}
               </Collapse>
               <Box
                 onClick={() => setDecisionsExpanded(v => !v)}
@@ -542,11 +569,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     }
 
     if (decisionCount > 0) {
-      const atStake = hasBlockedRevenue
-        ? ` · ${formatCurrencyCompact(blockedRevenue, currency)} at stake`
-        : '';
-
-      return `${decisionCount} decision${decisionCount !== 1 ? 's' : ''} pending${atStake}. Review the issues below.`;
+      return buildDecisionPendingSummary(decisionCount);
     }
 
     if (hasBlockedRevenue) {

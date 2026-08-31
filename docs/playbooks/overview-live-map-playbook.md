@@ -648,7 +648,7 @@ Layout does NOT flip when critical count exceeds 3. The map is the stable front 
 - Top 3 criticals visible in pulse card decisions section.
 - "+N more →" chip in severity red deeplinks to `/order-flow` (the triage surface).
 - The spatial badges on the inbound apron (pulsing red stack) carry the urgency visually for anyone looking at the map.
-- Header summary line already carries the total: "5 decisions pending · $3,800 at stake" — this is the count signal for owners who read text first.
+- Header summary line carries only the count: "N decisions pending. Review the issues below." OV-DATA-02 keeps revenue semantics on each signal row: Fulfillment SLA amounts render as "order value"; blocked-order amounts render as "blocked revenue". Local verification is complete; production certification is pending deployment.
 
 ---
 

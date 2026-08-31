@@ -1,6 +1,7 @@
 // apps/backend/src/services/alerts/alerts.aggregator.ts
 import db, { systemQuery } from '@lasyncro/backend-core/db.js';
 import type { Knex } from 'knex';
+import { buildSlaBreachAlertCopy, buildBlockedRevenueAlertCopy } from './alerts.copy.js';
 
 /**
  * ALERTS AGGREGATOR SERVICE (AL-01)
@@ -302,19 +303,23 @@ async function aggregateSlaAlerts(
     }];
   }
 
+  // Resolution hint (carried in the message): tells owner the job-to-be-done,
+  // not just the problem. "Fulfil these orders" is the one action that clears
+  // this alert. Title/message wording now owned by buildSlaBreachAlertCopy.
+  const breachedOrderValue = Number(row?.total_revenue ?? 0);
+  const slaCopy = buildSlaBreachAlertCopy(count, breachedOrderValue);
+
   return [{
     shop_id:        shopId,
     alert_key:      `sla:shop-${shopId}:shipping_breach`,
     source:         'snapshot',
     alert_type:     'sla_breach',
     severity:       'critical',
-    title:          `${count} order${count > 1 ? 's' : ''} past shipping SLA`,
-    // Resolution hint: tells owner the job-to-be-done, not just the problem.
-    // "Fulfil these orders" is the one action that clears this alert.
-    message: `${count} order${count > 1 ? 's have' : ' has'} breached the shipping SLA — fulfil ${count > 1 ? 'them' : 'it'} now to prevent customer complaints.`,
+    title:          slaCopy.title,
+    message:        slaCopy.message,
     entity_id:      null,
     entity_type:    'shop',
-    revenue_impact: Number(row?.total_revenue ?? 0),
+    revenue_impact: breachedOrderValue,
     is_active:      true,
     category:       'revenue_at_risk',
     audience:       'all',
@@ -367,16 +372,20 @@ async function aggregateRevenueAlerts(
     }];
   }
 
+  // Resolution hint (carried in the message): resolving each order's constraint
+  // (address, stock, payment) directly unblocks the revenue — owner needs to
+  // know the action, not just the symptom. Title/message wording now owned by
+  // buildBlockedRevenueAlertCopy.
+  const blockedCopy = buildBlockedRevenueAlertCopy(constrained, blocked);
+
   return [{
     shop_id:        shopId,
     alert_key:      `revenue:shop-${shopId}:at_risk`,
     source:         'snapshot',
     alert_type:     'revenue_at_risk',
     severity:       blocked > 5000 ? 'critical' : 'warning',
-    title:          `$${Math.round(blocked).toLocaleString()} revenue blocked`,
-    // Resolution hint: resolving each order's constraint (address, stock, payment)
-    // directly unblocks the revenue — owner needs to know the action, not just the symptom.
-    message: `${constrained} constrained order${constrained > 1 ? 's are' : ' is'} blocking $${Math.round(blocked).toLocaleString()} in revenue — resolve each constraint to release it.`,
+    title:          blockedCopy.title,
+    message:        blockedCopy.message,
     entity_id:      null,
     entity_type:    'shop',
     revenue_impact: blocked,
