@@ -34,7 +34,6 @@ export type OverviewModulesFt2Snapshot = {
   pulse: {
     revenueToday?: number | null;
     revenueDeltaVsYesterday?: number | null;
-    collectedRevenue?: number | null;
     atRiskRevenue?: number | null;
     blockedRevenue?: number | null;
     topBlockingType?: string | null;
