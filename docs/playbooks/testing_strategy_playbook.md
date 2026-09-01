@@ -311,7 +311,10 @@ Examples:
 - every Jest test has exactly one owner;
 - destructive test-DB operations fail closed;
 - canonical authority remains in the intended layer;
-- forbidden architectural dependencies remain forbidden.
+- forbidden architectural dependencies remain forbidden;
+- production frontend bundles compile with production `NODE_ENV` semantics
+  (`tests/contract/frontend-production-build-env.test.ts`; see
+  `docs/playbooks/production_deploy_gotchas.md`).
 
 Contract tests should be deterministic and normally DB-free.
 

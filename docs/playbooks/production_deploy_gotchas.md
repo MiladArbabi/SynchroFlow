@@ -251,3 +251,58 @@ Two wrong hypotheses worth not repeating:
 
 REV-HARD-11-FU-01: destroy the Knex pool properly instead of relying on
 force-exit. Backend-core change, not a CI one.
+
+## Frontend production bundle must build with production NODE_ENV (SHOP-REVIEW-SYNC-ANIMATION-THEME-07, 2026-09-01)
+
+Production frontend bundles MUST be compiled with production `NODE_ENV`
+semantics. `import.meta.env.DEV` is statically inlined at build time, and
+several frontend paths branch on it — the dev-only `/dev/activation-preview`
+route, dev diagnostics such as `[AUTH_BOOTSTRAP] waiting for auth resolution`,
+and other `import.meta.env.DEV`-gated behavior.
+
+**2026-09-01 finding.** A production smoke check found
+`https://app.lasyncro.com/dev/activation-preview` rendering in production. Root
+cause: the Docker `build` stage sets `ENV NODE_ENV=development` — intentionally,
+so `npm ci` installs the build/dev dependencies (Vite itself is a devDependency)
+— and the frontend was then built with a bare
+`npm --workspace ./apps/frontend exec -- vite build` that inherited it. For a
+build, an explicitly-set `NODE_ENV=development` overrides Vite's normal
+production default, so `import.meta.env.DEV` compiled in as `true` for the whole
+SPA. This was a build-environment defect only; no lifecycle, OAuth, or
+activation product behavior changed.
+
+**Fix — the build boundary, not the app.**
+
+- `Dockerfile` scopes production `NODE_ENV` to the frontend Vite invocation
+  only; the broader `build` stage stays `NODE_ENV=development` for dependency
+  install:
+
+      RUN NODE_ENV=production npm --workspace ./apps/frontend exec -- vite build
+
+- `apps/frontend/vite.config.ts` fails closed: a `build` command running under
+  an explicit non-production `NODE_ENV` throws
+  `[FRONTEND_PRODUCTION_BUILD_ENV_REQUIRED]` before any bundle is written.
+
+**Verified build semantics (all three supported entry paths).**
+
+- `NODE_ENV=development` build → fails closed with
+  `[FRONTEND_PRODUCTION_BUILD_ENV_REQUIRED]`.
+- `NODE_ENV=production` build → succeeds.
+- `NODE_ENV` unset → succeeds. Vite sets `NODE_ENV=production` (its `build`
+  `defaultNodeEnv`) *before* loading the config, so an ordinary local/package
+  `vite build` / `npm run build` outside Docker stays supported. The invariant
+  only rejects an *explicitly* non-production `NODE_ENV`.
+
+**Regression protection.**
+`tests/contract/frontend-production-build-env.test.ts` (under
+`npm run test:contract`) pins the Docker invocation, proves the
+explicit-development build is rejected, and proves the NODE_ENV-unset and
+explicit-production builds are accepted.
+
+**Certification requirement.** A production-bundle check for this must prove the
+DEV-only code is *compile-time eliminated*, not merely that the route is
+unreachable. The 2026-09-01 correction was certified by a fresh
+`NODE_ENV=production` build whose `dist/` contained none of
+`/dev/activation-preview`, `Tiny sync`,
+`[AUTH_BOOTSTRAP] waiting for auth resolution`, or the
+`ActivationExperiencePreview` symbol, and emitted no preview chunk.

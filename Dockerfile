@@ -53,7 +53,7 @@ RUN npm run build:deps
 # Build frontend bundle only.
 # We intentionally skip `tsc -b` here because existing frontend type errors
 # currently block Docker builds, but Vite can still produce the production SPA.
-RUN npm --workspace ./apps/frontend exec -- vite build
+RUN NODE_ENV=production npm --workspace ./apps/frontend exec -- vite build
 
 # Build backend
 RUN SKIP_DEPS=1 npm --workspace ./apps/backend run build

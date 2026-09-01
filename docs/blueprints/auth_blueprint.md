@@ -499,6 +499,11 @@ Development-only deterministic preview:
 - `apps/frontend/src/activation/activationPreviewFixtures.ts`
 - `/dev/activation-preview`
 
+These are gated by `import.meta.env.DEV` and compile-time eliminated from
+production bundles. The build boundary that guarantees this (production
+frontend builds run with production `NODE_ENV`) is documented in
+`docs/playbooks/production_deploy_gotchas.md`.
+
 ### Authority model
 
 The post-OAuth experience deliberately has three independent clocks:

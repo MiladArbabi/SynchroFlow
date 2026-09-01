@@ -10,7 +10,14 @@ import lasyncroModulesPlugin from './vite-plugins/vite-plugin-lasyncro-modules';
 import { fileURLToPath } from 'node:url';
 const dirname = typeof __dirname !== 'undefined' ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 
-export default defineConfig({
+export default defineConfig(({ command }) => {
+  if (command === 'build' && process.env.NODE_ENV !== 'production') {
+    throw new Error(
+      '[FRONTEND_PRODUCTION_BUILD_ENV_REQUIRED] Vite production builds require NODE_ENV=production'
+    );
+  }
+
+  return {
   plugins: [
     lasyncroModulesPlugin(),
     react(),
@@ -170,4 +177,5 @@ export default defineConfig({
       },
     },
   },
+  };
 });
