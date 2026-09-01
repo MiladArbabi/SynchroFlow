@@ -91,6 +91,7 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
   operationalWarningState: 'clear' | 'warning' | 'unknown';
   onNavigate?: (deepLink: string) => void;
   onRefreshBrief?: () => void;
+  isRefreshingBrief?: boolean;
   onResolveAll?: () => void;
   /**
    * Rendered in the 75% map slot.
@@ -128,6 +129,34 @@ const SEV = {
     band:   'EVERYTHING ELSE',
   },
 } as const;
+
+const refreshButtonSx = (isRefreshingBrief: boolean, withAutoMargin = false) => ({
+  ...(withAutoMargin ? { ml: 'auto' } : {}),
+  display: 'flex',
+  alignItems: 'center',
+  gap: '4px',
+  fontSize: 11,
+  fontWeight: 500,
+  color: 'var(--accent)',
+  bgcolor: 'transparent',
+  border: 'none',
+  cursor: isRefreshingBrief ? 'wait' : 'pointer',
+  opacity: isRefreshingBrief ? 0.6 : 1,
+  p: 0,
+  transition: 'opacity 0.2s',
+  '&:hover': { opacity: isRefreshingBrief ? 0.6 : 0.75 },
+  '@keyframes overviewRefreshSpin': {
+    from: { transform: 'rotate(0deg)' },
+    to: { transform: 'rotate(360deg)' },
+  },
+  '& svg': {
+    animation: isRefreshingBrief ? 'overviewRefreshSpin 900ms linear infinite' : 'none',
+    transformOrigin: 'center',
+    '@media (prefers-reduced-motion: reduce)': {
+      animation: 'none',
+    },
+  },
+});
 type SevKey = keyof typeof SEV;
 
 function sevKey(priority: number): SevKey {
@@ -349,6 +378,7 @@ function MergedPulseCard({
   generatedTime,
   trustWarning,
   onRefreshBrief,
+  isRefreshingBrief = false,
 }: {
   criticalSignals: Signal[];
   watchSignals: Signal[];
@@ -358,6 +388,7 @@ function MergedPulseCard({
   generatedTime: string | null;
   trustWarning: boolean;
   onRefreshBrief?: () => void;
+  isRefreshingBrief?: boolean;
 }) {
   const urgentSignals = [...criticalSignals, ...watchSignals];
   const visibleSignals = urgentSignals.slice(0, 3);
@@ -489,8 +520,13 @@ function MergedPulseCard({
         {onRefreshBrief && (
           <Box
             component="button"
-            onClick={onRefreshBrief}
-            sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
+            type="button"
+            aria-label="Refresh morning brief"
+            disabled={isRefreshingBrief}
+            onClick={() => {
+              if (!isRefreshingBrief) onRefreshBrief();
+            }}
+            sx={refreshButtonSx(isRefreshingBrief, true)}
           >
             <RefreshCw size={11} />
           </Box>
@@ -509,6 +545,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     operationalWarningState,
     onNavigate,
     onRefreshBrief,
+    isRefreshingBrief = false,
     mapContent,
     upgradeTeaser,
   } = props;
@@ -650,6 +687,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
               generatedTime={generatedTime}
               trustWarning={trustWarning}
               onRefreshBrief={onRefreshBrief}
+              isRefreshingBrief={isRefreshingBrief}
             />
           </Box>
         ) : (
@@ -697,8 +735,13 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                   {onRefreshBrief && (
                     <Box
                       component="button"
-                      onClick={onRefreshBrief}
-                      sx={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', p: 0, '&:hover': { opacity: 0.75 } }}
+                      type="button"
+                      aria-label="Refresh morning brief"
+                      disabled={isRefreshingBrief}
+                      onClick={() => {
+                        if (!isRefreshingBrief) onRefreshBrief();
+                      }}
+                      sx={refreshButtonSx(isRefreshingBrief)}
                     >
                       <RefreshCw size={11} />
                     </Box>

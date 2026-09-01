@@ -59,6 +59,53 @@ Deferred separate issues:
 - `CPT-MODEL-01` - Order Flow CPT/SLA conflation.
 - `OV-DATA-03` - Business Pulse financial metrics, especially `"Revenue today"` vs `"Collected today"`; not solved by OV-DATA-02.
 
+### OV-UX-18 - Overview morning-brief refresh boundary (2026-09-01)
+
+**Status:** implementation complete; automated verification PASS; targeted frontend tests `5/5 PASS`; Overview module build PASS; localhost live-browser localized refresh behavior PASS; production certification PENDING deployment.
+
+**Problem:** manual morning-brief refresh previously used a boolean `forceRefresh` inside the React Query key. That created a new query identity on each toggle, made `morningBrief` data become `undefined` while pending, and caused `OverviewModuleFT2` to enter its full loading state. The visible effect was header/body/map/right-side content being replaced by skeletons and the warehouse map visually unmounting/remounting, even though floor/live data itself was not refetched. Alternating clicks also alternated between force and non-force endpoints.
+
+Final refresh contract:
+
+- Canonical morning-brief query identity is stable: `['overview', 'morning-brief']`.
+- Initial/background fetch uses `/api/v1/modules/overview/morning-brief`.
+- Manual refresh always uses `/api/v1/modules/overview/morning-brief?force=true`.
+- Manual refresh is a dedicated operation, not another query identity.
+- Existing morning-brief data remains rendered while manual refresh is pending.
+- Successful manual refresh updates the canonical morning-brief cache.
+- Explicit `isRefreshingBrief` state is propagated to `OverviewModuleFT2`.
+- Duplicate manual refresh requests are guarded.
+- Manual refresh does not invalidate/refetch floor/live-map queries.
+- The warehouse map and unrelated Overview content remain visually stable during morning-brief refresh.
+- Refresh controls use `aria-label="Refresh morning brief"`, `type="button"`, and disabled state while refreshing.
+- `RefreshCw` has pending rotation treatment and reduced-motion handling.
+
+Regression contracts:
+
+- `OV-REFRESH-01` - no document/router reload.
+- `OV-REFRESH-02` - explicit pending state.
+- `OV-REFRESH-03` - pending refresh feedback.
+- `OV-REFRESH-04` - existing content remains visible during refresh.
+- `OV-REFRESH-05` - floor/live queries remain independent.
+- `OV-REFRESH-06` - successful refresh updates canonical morning brief.
+- `OV-REFRESH-07` - every manual refresh uses `force=true`.
+- `OV-REFRESH-08` - duplicate concurrent refresh prevented.
+- `OV-REFRESH-09` - accessible refresh control.
+
+Automated evidence:
+
+- Two targeted frontend suites PASS.
+- Targeted frontend tests: `5/5 PASS`.
+- Overview module build PASS.
+- Generated dist verified.
+- Full refresh-control rendering automation remains partial due known shared-ui Jest import-resolution debt.
+- Live-browser verification covers the consequential interaction boundary.
+
+Deferred separate issues:
+
+- `OV-UX-18B` - Refresh icon pending animation is too subtle / not reliably visible. This does not block OV-UX-18 because the primary localized refresh boundary is fixed.
+- `OV-DATA-03` - Business Pulse financial metrics, especially `"Revenue today"` vs `"Collected today"`; not solved by OV-UX-18.
+
 ---
 
 ## 2. The full pipeline (verified end-to-end)

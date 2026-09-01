@@ -232,11 +232,10 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
 export default function OverviewPageFT2() {
   const navigate = useNavigate();
   const { user, isLoading: authLoading } = useAuth();
-  const [forceRefresh, setForceRefresh] = useState(false);
 
   const overviewModules = useOverviewModulesFt2Snapshot(undefined, !authLoading);
   const trust = useTrustFt2Snapshot(!authLoading);
-  const morningBrief = useMorningBriefSnapshot(forceRefresh, !authLoading);
+  const morningBrief = useMorningBriefSnapshot(!authLoading);
 
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
   const { displayCurrency, tier, hasResolved: entitlementsResolved } = useEntitlements();
@@ -871,6 +870,11 @@ export default function OverviewPageFT2() {
   if (overviewModules.isError) return null;
 
   const overviewProps = mapOverviewFt2Props(overviewModules.data, trust.data ?? null);
+  const morningBriefData =
+    morningBrief.data === undefined &&
+    (morningBrief.isPending || morningBrief.isError)
+      ? undefined
+      : (morningBrief.data ?? null);
 
   return (
     <>
@@ -879,7 +883,7 @@ export default function OverviewPageFT2() {
           {...overviewProps}
           operationalWarningState={operationalWarningState}
           userName={user?.first_name ?? null}
-          morningBrief={isOwnerOrAdmin ? (morningBrief.isPending || morningBrief.isError ? undefined : (morningBrief.data ?? null)) : undefined}
+          morningBrief={isOwnerOrAdmin ? morningBriefData : undefined}
           currency={displayCurrency}
           mapContent={mapContent}
           upgradeTeaser={
@@ -888,7 +892,8 @@ export default function OverviewPageFT2() {
             ) : undefined
           }
           onNavigate={(deepLink) => navigate(deepLink)}
-          onRefreshBrief={() => setForceRefresh(f => !f)}
+          onRefreshBrief={() => { void morningBrief.refreshMorningBrief(); }}
+          isRefreshingBrief={morningBrief.isRefreshingBrief}
         />
     </>
   );
