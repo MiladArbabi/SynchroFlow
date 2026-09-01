@@ -100,6 +100,50 @@ Between the modal opening and `useOrderDetail` resolving, the header title is br
 
 ---
 
+
+### 2.10 ORD-UX-DETAIL-01 — consistent inspect-before-act affordance (verified locally 2026-09-01)
+
+**Problem:** Critical orders did not expose a consistent inspection path. Customer and inventory rows disguised inspection behind action-labelled CTAs (`Fix address`, `Resolve stock`) that only opened the order modal, while SLA-only rows exposed `Prioritize` with no independent way to inspect the order first.
+
+**Locked interaction contract:**
+
+- Every individual Critical order exposes an independent inspection affordance.
+- Inspection opens `EntityDetailModal` for that exact `lasyncro_order_id`.
+- The order identity/details area is the accessible inspection control; the whole row is not clickable.
+- The control exposes a compact Tier-2-style `View →` ghost cue.
+- Customer, inventory, and operational Critical rows do not show misleading row-level remediation CTAs when those CTAs merely open the same modal.
+- Actual remediation remains inside `OrderDetailModalBody`.
+- SLA-only rows retain a separate `Prioritize →` action; inspection and prioritization remain independent.
+- Existing Watch `View →` behaviour remains unchanged.
+
+**Layout contract:**
+
+- Constrained Critical rows use a compact two-column layout: identity/inspection + value.
+- SLA-only rows retain a third column for the real `Prioritize →` action.
+- `View →` and order value share the same visual baseline.
+- The ghost cue uses existing scheme-aware tokens (`var(--surface)`, `var(--accent)`, `var(--accent-border)`) rather than hardcoded light/dark colours.
+
+**Accessibility:** the identity block is a real button with a meaningful accessible label (`View order #… details`) and keyboard focus treatment.
+
+**Regression protection:**
+
+- `tests/unit/ui/order-nexus/OrdersModuleFT2.critical-order-inspection.test.tsx`
+  - 7/7 passing after implementation.
+  - Covers customer, inventory, operational, and SLA-only inspection.
+  - Protects independent SLA prioritization.
+  - Protects removal of misleading constrained-row CTAs.
+  - Protects existing Watch inspection.
+- Combined SLA/Watch + ORD-DETAIL verification: 8/8 passing.
+- Jest ownership: `UNOWNED=0`, `MULTI_OWNED=0`.
+
+**Runtime acceptance:** locally browser-verified in both light and dark modes on 2026-09-01. Behavioural and visual acceptance passed. Production certification remains pending commit/deploy.
+
+**Deliberate exclusions / deferred issues:**
+
+- `ORD-UX-CTA-02` — broader Orders/global CTA-system audit and workshop; current orange filled/ghost doctrine may be visually too heavy.
+- `ORD-UX-CONTRAST-03` — Critical group parent/child hierarchy loses contrast in dark mode.
+- Decision Engine recommendation usefulness is separate work and was not changed here.
+
 ## 3. Members — not started
 
 `MemberDetailPage.tsx` is comprehensive (performance, schedule editor, owner-only cost/notes) but route-mounted (`/team/:userId`), no overlay mechanism exists. Task: wrap existing content in `EntityDetailModal`, swap `useParams` for an `entityId` prop, no new data-fetching needed — content is already built.

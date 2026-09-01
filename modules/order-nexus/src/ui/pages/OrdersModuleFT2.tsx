@@ -524,14 +524,6 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
     }
   };
 
-  const constraintActionLabel = (type: string): string => {
-    switch (type) {
-      case 'inventory': return 'Resolve stock →';
-      case 'customer': return 'Fix address →';
-      default: return 'Resolve issue →';
-    }
-  };
-
   // ── Stage bar ───────────────────────────────────────────────
   const stageData = [
     // DC-04 (2026-08-15): queue_ready_to_ship counts every unblocked unfulfilled
@@ -987,7 +979,9 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                           key={order.lasyncro_order_id}
                           sx={{
                             display: 'grid',
-                            gridTemplateColumns: 'minmax(0,1fr) 90px 118px',
+                            gridTemplateColumns: order.constraintType === null
+                              ? 'minmax(0,1fr) 90px 118px'
+                              : 'minmax(0,1fr) 90px',
                             gap: 1.75,
                             alignItems: 'center',
                             px: 2.5,
@@ -1002,47 +996,73 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                               : 'none',
                           }}
                         >
-                          <Box>
+                          <Box
+                            component="button"
+                            type="button"
+                            aria-label={`View order #${
+                              order.externalOrderId
+                                ? order.externalOrderId
+                                : order.lasyncro_order_id.slice(0, 8).toUpperCase()
+                            } details`}
+                            onClick={() => onOrderClick?.(order.lasyncro_order_id)}
+                            sx={{
+                              display: 'block',
+                              width: '100%',
+                              p: 0,
+                              border: 'none',
+                              bgcolor: 'transparent',
+                              color: 'inherit',
+                              textAlign: 'left',
+                              cursor: 'pointer',
+                              borderRadius: '6px',
+                              '&:hover': { opacity: 0.82 },
+                              '&:focus-visible': {
+                                outline: '1px solid var(--accent-border)',
+                                outlineOffset: '3px',
+                              },
+                            }}
+                          >
                             <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink-2)', mb: 0.375 }}>
                               {order.externalOrderId
                                 ? `#${order.externalOrderId}`
                                 : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                             </Typography>
-                            <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                              {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
-                            </Typography>
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
+                              <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
+                                {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
+                              </Typography>
+                              <Typography
+                                sx={{
+                                  flexShrink: 0,
+                                  fontSize: 11,
+                                  fontWeight: 600,
+                                  color: 'var(--accent)',
+                                  border: '1px solid var(--accent-border)',
+                                  bgcolor: 'var(--surface)',
+                                  borderRadius: '6px',
+                                  px: 0.75,
+                                  py: 0.25,
+                                  lineHeight: 1.2,
+                                }}
+                              >
+                                View →
+                              </Typography>
+                            </Box>
                           </Box>
 
-                          <Box sx={{ textAlign: 'right' }}>
+                          <Box sx={{ textAlign: 'right', alignSelf: 'end' }}>
                             <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
                               {fmt$(order.revenue)}
                             </Typography>
                           </Box>
 
-                          {order.constraintType !== null ? (
-                            <Box
-                              component="button"
-                              onClick={() => onOrderClick?.(order.lasyncro_order_id)}
-                              sx={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: 'var(--accent-ink)',
-                                bgcolor: 'var(--accent)',
-                                border: 'none',
-                                borderRadius: '6px',
-                                py: 1,
-                                textAlign: 'center',
-                                cursor: 'pointer',
-                                '&:hover': { opacity: 0.88 },
-                              }}
-                            >
-                              {constraintActionLabel(order.constraintType)}
-                            </Box>
-                          ) : (
+                          {order.constraintType === null ? (
                             <PrioritizeButton
                               isPriorityFlagged={order.isPriorityFlagged}
                               onPrioritize={() => handlePrioritizeOrder(order.lasyncro_order_id)}
                             />
+                          ) : (
+                            <Box />
                           )}
                         </Box>
                       ))}
