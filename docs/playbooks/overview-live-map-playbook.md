@@ -649,6 +649,7 @@ Layout does NOT flip when critical count exceeds 3. The map is the stable front 
 - "+N more →" chip in severity red deeplinks to `/order-flow` (the triage surface).
 - The spatial badges on the inbound apron (pulsing red stack) carry the urgency visually for anyone looking at the map.
 - Header summary line carries only the count: "N decisions pending. Review the issues below." OV-DATA-02 keeps revenue semantics on each signal row: Fulfillment SLA amounts render as "order value"; blocked-order amounts render as "blocked revenue". Local verification is complete; production certification is pending deployment.
+- Morning-brief manual refresh is localized to the brief. OV-UX-18 keeps the canonical query identity stable (`['overview', 'morning-brief']`), performs manual refresh via `/api/v1/modules/overview/morning-brief?force=true`, preserves existing brief data while pending, and does not invalidate/refetch floor/live-map queries. The map and unrelated Overview content remain visually stable during refresh. Localhost live-browser verification PASS; production certification PENDING deployment. Deferred separately: OV-UX-18B (refresh icon pending animation too subtle / not reliably visible).
 
 ---
 

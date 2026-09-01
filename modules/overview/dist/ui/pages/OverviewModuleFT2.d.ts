@@ -73,6 +73,7 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
     operationalWarningState: 'clear' | 'warning' | 'unknown';
     onNavigate?: (deepLink: string) => void;
     onRefreshBrief?: () => void;
+    isRefreshingBrief?: boolean;
     onResolveAll?: () => void;
     /**
      * Rendered in the 75% map slot.
