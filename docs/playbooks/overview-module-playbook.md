@@ -54,7 +54,6 @@ Regression evidence:
 
 Deferred separate issues:
 
-- `OV-DATA-02B` - snapshot aggregate-version selection.
 - `SLA-SEM-01` - canonical approaching-Fulfillment-SLA contract.
 - `CPT-MODEL-01` - Order Flow CPT/SLA conflation.
 
@@ -103,6 +102,40 @@ Automated evidence:
 Deferred separate issues:
 
 - `OV-UX-18B` - Refresh icon pending animation is too subtle / not reliably visible. This does not block OV-UX-18 because the primary localized refresh boundary is fixed.
+
+### OV-DATA-02B - Overview freshness scope (2026-09-01)
+
+**Status:** implementation complete; automated verification PASS (`6` targeted frontend suites / `15` tests); Overview module build PASS; localhost live-browser verification PASS.
+
+**Audit result:** the suspected snapshot-selector defect was disproven. `morning_brief_snapshots` is unique per shop, and `orders_operational_control_snapshot` is unique on `(shop_id, snapshot_date)`, so the current latest-row selectors are deterministic. The actual issue was a product-contract gap: Overview intentionally combines independently evaluated data sources, but the map layout visually placed `morningBrief.generatedAt` beneath both Needs a Decision and Business Pulse, falsely implying that one timestamp described both surfaces.
+
+Final freshness contract:
+
+- `morningBrief.generatedAt` belongs only to the Morning Brief / Needs a Decision surface.
+- Morning Brief manual refresh remains Morning-Brief-only.
+- Business Pulse does not inherit or display Morning Brief freshness.
+- No shared atomic snapshot version, run ID, or cross-module `asOf` boundary is introduced.
+- In the map layout, Morning Brief freshness and its refresh control appear before Business Pulse and are labelled `Brief updated at <time>`.
+- In the triage layout, freshness remains inside Needs a Decision and is labelled `Brief updated <time>`.
+- Whole-page `Live` semantics are a separate freshness concern and are not redefined by OV-DATA-02B.
+
+Regression contracts:
+
+- `OV-FRESH-01` - Morning Brief `generatedAt` is explicitly labelled as brief freshness.
+- `OV-FRESH-02` - Business Pulse does not inherit Morning Brief freshness.
+- `OV-FRESH-03` - map-layout Morning Brief freshness and refresh controls occur before Business Pulse rather than in a shared footer beneath it.
+- `OV-FRESH-04` - triage freshness remains scoped to Needs a Decision and explicitly identifies itself as brief freshness.
+- `OV-FRESH-05` - manual refresh remains Morning-Brief-only.
+- `OV-FRESH-06` - no shared snapshot/version/`asOf` architecture is introduced.
+
+Verification evidence:
+
+- RED-first freshness-scope regression test failed for the intended semantic reasons before implementation.
+- Targeted frontend verification: `6` suites / `15` tests PASS.
+- Static freshness-scope checks PASS.
+- Existing morning-brief hook remained unchanged.
+- Overview module build PASS and generated dist verified.
+- Localhost browser verification confirmed the freshness row is visually attached to Needs a Decision, Business Pulse begins below its own divider, refresh behavior remains localized, and layout integrity is preserved.
 
 ### OV-DATA-03 - Business Pulse financial semantics (2026-09-01)
 
