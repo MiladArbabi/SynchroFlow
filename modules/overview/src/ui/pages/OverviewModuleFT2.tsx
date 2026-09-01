@@ -486,32 +486,26 @@ function MergedPulseCard({
         </Box>
       )}
 
-      {/* Divider — only when both sections populated */}
-      {urgentSignals.length > 0 && pulse && (
-        <Box sx={{ height: '0.5px', bgcolor: 'var(--rule)' }} />
-      )}
-
-      {/* ── BUSINESS PULSE (inline, embedded PulseCard) — PULSE-01 ── */}
-      {pulse && (
-        <Box sx={{ px: '18px', py: '14px', flex: 1 }}>
-          <PulseCard
-            title="Business pulse"
-            variant="embedded"
-            rows={buildBusinessPulseRows(pulse, currency)}
-            footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
-          />
-        </Box>
-      )}
-
-      {/* ── FOOTER ── */}
-      <Box sx={{ px: '1.25rem', py: '0.625rem', bgcolor: 'var(--bg-2)', borderTop: '0.5px solid var(--rule)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      {/* ── MORNING BRIEF FRESHNESS ── */}
+      <Box
+        sx={{
+          px: '1.25rem',
+          py: '0.625rem',
+          bgcolor: 'var(--bg-2)',
+          borderTop: urgentSignals.length > 0 ? '0.5px solid var(--rule)' : undefined,
+          borderBottom: pulse ? '0.5px solid var(--rule)' : undefined,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+        }}
+      >
         {trustWarning && (
           <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
             Data may be stale ·
           </Typography>
         )}
         <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-          {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
+          {generatedTime ? `Brief updated at ${generatedTime}` : 'Updating brief…'}
         </Typography>
         {onRefreshBrief && (
           <Box
@@ -526,6 +520,18 @@ function MergedPulseCard({
           </Box>
         )}
       </Box>
+
+      {/* ── BUSINESS PULSE (inline, embedded PulseCard) — PULSE-01 ── */}
+      {pulse && (
+        <Box sx={{ px: '18px', py: '14px', flex: 1 }}>
+          <PulseCard
+            title="Business pulse"
+            variant="embedded"
+            rows={buildBusinessPulseRows(pulse, currency)}
+            footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
+          />
+        </Box>
+      )}
     </Box>
   );
 }
@@ -732,7 +738,7 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                    {generatedTime ? `Updated ${generatedTime}` : 'Updating…'}
+                    {generatedTime ? `Brief updated ${generatedTime}` : 'Updating brief…'}
                   </Typography>
                   {onRefreshBrief && (
                     <Box
@@ -829,28 +835,24 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                 <EverythingElse signals={onTrackSignals} onNavigate={onNavigate} currency={currency} />
               )}
 
-              {/* Footer — pinned to the bottom when Business Pulse is taller */}
-                  <Box
-                    sx={{
-                      mt: 'auto',
-                      px: '1.25rem',
-                      py: '0.625rem',
-                      bgcolor: 'var(--bg-2)',
-                      borderTop: '0.5px solid var(--rule)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                    }}
-                  >
-                  {trustWarning && (
+              {/* Morning Brief trust warning */}
+              {trustWarning && (
+                <Box
+                  sx={{
+                    mt: 'auto',
+                    px: '1.25rem',
+                    py: '0.625rem',
+                    bgcolor: 'var(--bg-2)',
+                    borderTop: '0.5px solid var(--rule)',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}
+                >
                   <Typography sx={{ fontSize: 11, fontWeight: 300, color: '#D9A23B' }}>
-                    Data may be stale ·
+                    Data may be stale
                   </Typography>
-                )}
-                <Typography sx={{ fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }}>
-                  {generatedTime ? `Updated at ${generatedTime}` : 'Updating…'}
-                </Typography>
-              </Box>
+                </Box>
+              )}
             </Box>
 
             {pulse && (
