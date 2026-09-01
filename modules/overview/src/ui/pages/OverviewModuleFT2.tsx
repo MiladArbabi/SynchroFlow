@@ -128,7 +128,7 @@ const SEV = {
   },
 } as const;
 
-const refreshButtonSx = (isRefreshingBrief: boolean, withAutoMargin = false) => ({
+const refreshButtonSx = (isRefreshingBrief: boolean, refreshRotationDeg: number, withAutoMargin = false) => ({
   ...(withAutoMargin ? { ml: 'auto' } : {}),
   display: 'flex',
   alignItems: 'center',
@@ -143,15 +143,12 @@ const refreshButtonSx = (isRefreshingBrief: boolean, withAutoMargin = false) => 
   p: 0,
   transition: 'opacity 0.2s',
   '&:hover': { opacity: isRefreshingBrief ? 0.6 : 0.75 },
-  '@keyframes overviewRefreshSpin': {
-    from: { transform: 'rotate(0deg)' },
-    to: { transform: 'rotate(360deg)' },
-  },
   '& svg': {
-    animation: isRefreshingBrief ? 'overviewRefreshSpin 900ms linear infinite' : 'none',
+    transform: `rotate(${refreshRotationDeg}deg)`,
+    transition: 'transform 240ms ease',
     transformOrigin: 'center',
     '@media (prefers-reduced-motion: reduce)': {
-      animation: 'none',
+      transition: 'none',
     },
   },
 });
@@ -376,6 +373,7 @@ function MergedPulseCard({
   trustWarning,
   onRefreshBrief,
   isRefreshingBrief = false,
+  refreshRotationDeg,
 }: {
   criticalSignals: Signal[];
   watchSignals: Signal[];
@@ -386,6 +384,7 @@ function MergedPulseCard({
   trustWarning: boolean;
   onRefreshBrief?: () => void;
   isRefreshingBrief?: boolean;
+  refreshRotationDeg: number;
 }) {
   const urgentSignals = [...criticalSignals, ...watchSignals];
   const visibleSignals = urgentSignals.slice(0, 3);
@@ -520,10 +519,8 @@ function MergedPulseCard({
             type="button"
             aria-label="Refresh morning brief"
             disabled={isRefreshingBrief}
-            onClick={() => {
-              if (!isRefreshingBrief) onRefreshBrief();
-            }}
-            sx={refreshButtonSx(isRefreshingBrief, true)}
+            onClick={onRefreshBrief}
+            sx={refreshButtonSx(isRefreshingBrief, refreshRotationDeg, true)}
           >
             <RefreshCw size={11} />
           </Box>
@@ -562,6 +559,13 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
 
   const [criticalExpanded, setCriticalExpanded] = useState(false);
   const [watchExpanded, setWatchExpanded] = useState(false);
+  const [refreshRotationDeg, setRefreshRotationDeg] = useState(0);
+
+  const handleRefreshBrief = () => {
+    if (isRefreshingBrief || !onRefreshBrief) return;
+    setRefreshRotationDeg((prev) => prev + 180);
+    onRefreshBrief();
+  };
 
   const visibleCriticalSignals = criticalSignals.slice(0, TRIAGE_PREVIEW_LIMIT);
   const hiddenCriticalSignals  = criticalSignals.slice(TRIAGE_PREVIEW_LIMIT);
@@ -683,8 +687,9 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
               onNavigate={onNavigate}
               generatedTime={generatedTime}
               trustWarning={trustWarning}
-              onRefreshBrief={onRefreshBrief}
+              onRefreshBrief={onRefreshBrief ? handleRefreshBrief : undefined}
               isRefreshingBrief={isRefreshingBrief}
+              refreshRotationDeg={refreshRotationDeg}
             />
           </Box>
         ) : (
@@ -735,10 +740,8 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                       type="button"
                       aria-label="Refresh morning brief"
                       disabled={isRefreshingBrief}
-                      onClick={() => {
-                        if (!isRefreshingBrief) onRefreshBrief();
-                      }}
-                      sx={refreshButtonSx(isRefreshingBrief)}
+                      onClick={handleRefreshBrief}
+                      sx={refreshButtonSx(isRefreshingBrief, refreshRotationDeg)}
                     >
                       <RefreshCw size={11} />
                     </Box>
