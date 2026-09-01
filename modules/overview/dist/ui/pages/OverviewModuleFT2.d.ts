@@ -29,8 +29,6 @@ export interface OverviewModuleFT2DataProps {
         revenueToday: number | null;
         /** Delta vs yesterday's gross revenue. */
         revenueDeltaVsYesterday: number | null;
-        /** Revenue collected/realized today. */
-        collectedRevenue: number | null;
         /** Revenue exposed but not yet lost. */
         atRiskRevenue: number | null;
         /** Revenue blocked from shipping. */

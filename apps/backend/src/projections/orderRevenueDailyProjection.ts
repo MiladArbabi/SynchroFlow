@@ -22,10 +22,12 @@ export async function projectRevenueDaily(
 
   const dailyRows = await trx('order_revenue_units_net as runet')
     .join('orders as o', 'o.lasyncro_order_id', 'runet.lasyncro_order_id')
+    .join('shops as s', 's.id', 'o.shop_id')
     .leftJoin('order_risk_snapshot as ors', 'ors.lasyncro_order_id', 'o.lasyncro_order_id')
     .where('o.shop_id', shopId)
+    .andWhere('o.payment_state', 'paid')
     .select(
-      trx.raw('DATE(runet.created_at) as revenue_date'),
+      trx.raw(`(o.order_created_at AT TIME ZONE COALESCE(s.timezone, 'UTC'))::date as revenue_date`),
       trx.raw('SUM(runet.net_revenue) as gross_revenue'),
       trx.raw('COUNT(DISTINCT o.lasyncro_order_id) as order_count'),
       trx.raw(`
@@ -37,7 +39,7 @@ export async function projectRevenueDaily(
         ) as at_risk_revenue
       `)
     )
-    .groupByRaw('DATE(runet.created_at)');
+    .groupByRaw(`(o.order_created_at AT TIME ZONE COALESCE(s.timezone, 'UTC'))::date`);
 
   for (const row of dailyRows) {
 
@@ -65,8 +67,11 @@ export async function projectRevenueDaily(
       .onConflict(['shop_id', 'revenue_date'])
       .merge({
         // EXPLICIT MERGE POLICY: deterministic daily aggregation overwrite
+        gross_revenue: trx.raw('EXCLUDED.gross_revenue'),
+        order_count: trx.raw('EXCLUDED.order_count'),
+        at_risk_revenue: trx.raw('EXCLUDED.at_risk_revenue'),
+        evaluated_at: trx.raw('EXCLUDED.evaluated_at'),
         updated_at: new Date(),
-        // NOTE: include all aggregation fields explicitly to avoid implicit overwrite
       });
   }
 }

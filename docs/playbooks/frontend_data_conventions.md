@@ -27,11 +27,16 @@ converts to UTC and silently shifts the date back one day for any timezone east
 of UTC (Stockholm is UTC+2 in summer). This produced a working-looking resolver
 that matched zero rows.
 
-**Compare dates in SQL, not JS.** Let Postgres label the rows:
+**Compare explicit date keys, not JS-parsed DATE objects.** For merchant-day reads, derive the intended shop-local dates first, then make Postgres return a text date:
 ```ts
-.whereRaw(`revenue_date IN (CURRENT_DATE, CURRENT_DATE - INTERVAL '1 day')`)
-.select(trx.raw(`(revenue_date = CURRENT_DATE) as is_today`), 'gross_revenue')
+.whereIn('revenue_date', [today, yesterday])
+.select(trx.raw('revenue_date::text as revenue_date'), 'gross_revenue')
 ```
+
+OV-DATA-03 added the companion rule for Overview Business Pulse: DB/server
+`CURRENT_DATE` is not merchant truth. `getOverviewPulse` resolves today and
+yesterday from `shops.timezone` (UTC fallback) before querying
+`revenue_projection_daily`.
 
 ## "Latest row" is not "today"
 
@@ -40,8 +45,10 @@ results today/yesterday. On an account with no recent orders this displayed
 45-day-old revenue as "Revenue today". A missing row for today means **no sales
 today → 0**, not "show me the last number you have".
 
-Applies to any snapshot or daily-aggregate read: filter on the date you intend
-to display.
+OV-DATA-03 further tightened that definition: Overview's `Revenue today` is net
+revenue from paid orders whose `orders.order_created_at` falls within the
+merchant's current local calendar day. Applies to any snapshot or
+daily-aggregate read: filter on the date you intend to display.
 
 ## Persisted state vs transient view state
 

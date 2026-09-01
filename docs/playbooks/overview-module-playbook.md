@@ -57,7 +57,6 @@ Deferred separate issues:
 - `OV-DATA-02B` - snapshot aggregate-version selection.
 - `SLA-SEM-01` - canonical approaching-Fulfillment-SLA contract.
 - `CPT-MODEL-01` - Order Flow CPT/SLA conflation.
-- `OV-DATA-03` - Business Pulse financial metrics, especially `"Revenue today"` vs `"Collected today"`; not solved by OV-DATA-02.
 
 ### OV-UX-18 - Overview morning-brief refresh boundary (2026-09-01)
 
@@ -104,7 +103,67 @@ Automated evidence:
 Deferred separate issues:
 
 - `OV-UX-18B` - Refresh icon pending animation is too subtle / not reliably visible. This does not block OV-UX-18 because the primary localized refresh boundary is fixed.
-- `OV-DATA-03` - Business Pulse financial metrics, especially `"Revenue today"` vs `"Collected today"`; not solved by OV-UX-18.
+
+### OV-DATA-03 - Business Pulse financial semantics (2026-09-01)
+
+**Status:** implementation complete; automated verification PASS; localhost live browser verification PASS; production certification PENDING deployment.
+
+**Problem:** Business Pulse showed both `"Revenue today"` and `"Collected today"`. Audit proved the old `collectedRevenue` value came from the latest `orders_operational_control_snapshot.realized_revenue`, which is not today-scoped, not payment-date-scoped, not capture/settlement data, and effectively cumulative net revenue up to the snapshot cutoff. The row was semantically invalid and was removed rather than renamed or replaced.
+
+Final Business Pulse rows:
+
+- **Blocked**
+- **Revenue today**
+- **At risk**
+
+Canonical `Revenue today` contract:
+
+- Payment condition: `orders.payment_state = 'paid'`.
+- Business-date owner: `orders.order_created_at`.
+- Merchant timezone: `shops.timezone`.
+- Timezone fallback: `UTC`.
+- Revenue source: `order_revenue_units_net.net_revenue`.
+- Refund behavior: net of recorded `refund_execution_line_items` via the existing `order_revenue_units_net` view.
+- Yesterday: immediately preceding merchant-local calendar day.
+
+Implementation notes:
+
+- The daily revenue projection no longer buckets by `DATE(order_revenue_units.created_at)` / `DATE(runet.created_at)`.
+- `getOverviewPulse` no longer uses DB/server `CURRENT_DATE` as merchant truth; it resolves today/yesterday from the shop timezone and queries `revenue_projection_daily` by explicit dates.
+- `projectRevenueDaily()` refreshes projection-owned deterministic fields on conflict: `gross_revenue`, `order_count`, `at_risk_revenue`, and `evaluated_at`.
+- `evaluated_at` preserves deterministic event-anchor semantics via `EXCLUDED.evaluated_at`; `updated_at` remains operational metadata.
+- Existing `blockedRevenue`, `topBlockingType`, and operational `atRiskRevenue` semantics remain unchanged.
+- No broader operational snapshot overlap/double-counting model, Finances module semantics, or replacement fourth Business Pulse metric was changed.
+
+Regression contracts:
+
+- `OV-REV-01` - Revenue today includes paid orders only.
+- `OV-REV-02` - Revenue-day attribution belongs to `orders.order_created_at`, not the revenue-unit row timestamp.
+- `OV-REV-03` - Day bucketing uses `shops.timezone` / merchant-local calendar date.
+- `OV-REV-04` - Revenue today remains net of recorded refunds.
+- `OV-REV-05` - Daily projection recomputation refreshes existing aggregate values.
+- `OV-REV-06` - Overview today/yesterday comparison uses merchant-local current and immediately preceding calendar dates.
+- `OV-REV-07` - Overview Business Pulse contains no `"Collected today"` row.
+- `OV-REV-08` - Existing `blockedRevenue`, `topBlockingType`, and operational `atRiskRevenue` semantics remain unchanged.
+
+Verification evidence:
+
+- RED-first frontend evidence: `OV-REV-07` failed because `"Collected today"` still rendered.
+- RED-first backend evidence: unpaid revenue counted; revenue-unit timestamp controlled day bucket; recomputation left existing daily rows stale. Refund-net path already passed.
+- Targeted frontend: `1 suite / 1 test PASS`.
+- Backend integration: `1 suite / 5 tests PASS`.
+- Existing relevant Overview tests: `OverviewFT2Page.refresh-boundary.test.tsx PASS`; `OverviewModuleFT2.header.test.tsx PASS`.
+- Disposable integration DB cleanup: `TEST_DB_DROPPED` confirmed.
+- Overview module build: `PASS`; generated module semantics verified.
+- `git diff --check`: `PASS`.
+- Localhost live browser: Business Pulse renders **Blocked**, **Revenue today**, **At risk**; `"Collected today"` absent; layout has no broken spacing, blank fourth-row artifact, or clipping.
+
+Deferred separate issues:
+
+- Broader operational snapshot overlap/double-counting around `realizedRevenue + pendingRevenue + atRiskRevenue`.
+- `OV-UX-18B` - refresh icon animation remains subtle/deferred.
+- General Finances module semantics.
+- Any new fourth Business Pulse metric.
 
 ---
 
@@ -281,7 +340,7 @@ Do NOT use the value the fatal log suggests (it points to the pre-gap id, which 
 
 ## 7. 2026-06-20 update — Pulse rail + signal dedup + pipeline fixes
 
-The Overview right rail is **no longer Today's Flow** — it is now a cross-domain **Business Pulse** (revenue today, collected, at-risk, blocked). The operational/SLA signal duplication, the inflated SLA count, two missing tables (`historical_sales`, `product_costs`), and a dead `projectRevenueDaily` were all fixed. Full detail + the dev pitfalls (stale `dist`, FT2 reset on rebuild, safe-seed membership gap, versioned-snapshot count multiplication, uninvoked projections) are documented in:
+The Overview right rail is **no longer Today's Flow** — it is now a cross-domain **Business Pulse** (revenue today, at-risk, blocked). `Collected today` was removed by OV-DATA-03 because its source was not today-scoped collection data. The operational/SLA signal duplication, the inflated SLA count, two missing tables (`historical_sales`, `product_costs`), and a dead `projectRevenueDaily` were all fixed. Full detail + the dev pitfalls (stale `dist`, FT2 reset on rebuild, safe-seed membership gap, versioned-snapshot count multiplication, uninvoked projections) are documented in:
 
 **`docs/playbooks/overview_pulse_and_signal_dedup_2026_06_20.md`**
 

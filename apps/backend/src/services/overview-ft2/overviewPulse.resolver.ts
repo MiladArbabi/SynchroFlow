@@ -9,7 +9,7 @@
 //
 // Sources (both per-shop, tenant-scoped):
 //   - revenue_projection_daily          → today's gross revenue + yesterday delta
-//   - orders_operational_control_snapshot → realized / at-risk / blocked revenue
+//   - orders_operational_control_snapshot → at-risk / blocked revenue
 //
 // No customers/analytics dependency (customers module deprecated).
 // Caller MUST set app.current_tenant before invoking.
@@ -32,8 +32,6 @@ export interface OverviewPulse {
    * compare two non-consecutive days that merely happen to be adjacent rows.
    */
   revenueDeltaVsYesterday: number;
-  /** Revenue already collected/realized today (opctl). */
-  collectedRevenue: number | null;
   /** Revenue exposed but not yet lost (opctl). */
   atRiskRevenue: number | null;
   /** Revenue currently blocked from shipping (opctl). */
@@ -42,13 +40,61 @@ export interface OverviewPulse {
   topBlockingType: string | null;
 }
 
-export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
+type RevenueDateWindow = {
+  today: string;
+  yesterday: string;
+};
+
+function formatShopLocalDate(timezone: string | null, now: Date): string {
+  const zone = timezone ?? 'UTC';
+
+  const format = (timeZone: string) =>
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(now);
+
+  let parts: Intl.DateTimeFormatPart[];
+  try {
+    parts = format(zone);
+  } catch {
+    console.warn('[overviewPulse] unknown timezone, falling back to UTC', { timezone });
+    parts = format('UTC');
+  }
+
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+export function resolveShopRevenueDateWindow(
+  timezone: string | null,
+  now: Date = new Date()
+): RevenueDateWindow {
+  const today = formatShopLocalDate(timezone, now);
+  const yesterdayDate = new Date(`${today}T00:00:00.000Z`);
+  yesterdayDate.setUTCDate(yesterdayDate.getUTCDate() - 1);
+
+  return {
+    today,
+    yesterday: yesterdayDate.toISOString().slice(0, 10),
+  };
+}
+
+export async function getOverviewPulse(shopId: number, now: Date = new Date()): Promise<OverviewPulse> {
   return db.transaction(async (trx) => {
     // Both revenue_projection_daily and orders_operational_control_snapshot
     // have strict RLS policies requiring app.current_tenant. Without SET LOCAL
     // both queries silently return zero rows even with an explicit shop_id filter.
     // This function owns its queries and therefore owns its own tenant context.
     await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+    const shopRow = await trx('shops')
+      .where({ id: shopId })
+      .first('timezone');
+    const { today, yesterday } = resolveShopRevenueDateWindow(shopRow?.timezone ?? null, now);
 
     // OV-122: query the two specific calendar dates rather than the two most
     // recent rows. Missing row = no sales that day = 0, not "unknown".
@@ -61,17 +107,17 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
      */
     const revenueRows = await trx('revenue_projection_daily')
       .where({ shop_id: shopId })
-      .whereRaw(`revenue_date IN (CURRENT_DATE, CURRENT_DATE - INTERVAL '1 day')`)
+      .whereIn('revenue_date', [today, yesterday])
       .select(
-        trx.raw(`(revenue_date = CURRENT_DATE) as is_today`),
+        trx.raw('revenue_date::text as revenue_date'),
         'gross_revenue'
       );
 
   const revenueToday = Number(
-    revenueRows.find((r: { is_today: boolean }) => r.is_today)?.gross_revenue ?? 0
+    revenueRows.find((r: { revenue_date: string }) => r.revenue_date === today)?.gross_revenue ?? 0
   );
   const revenueYesterday = Number(
-    revenueRows.find((r: { is_today: boolean }) => !r.is_today)?.gross_revenue ?? 0
+    revenueRows.find((r: { revenue_date: string }) => r.revenue_date === yesterday)?.gross_revenue ?? 0
   );
   const revenueDeltaVsYesterday = revenueToday - revenueYesterday;
 
@@ -80,7 +126,6 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
       .where({ shop_id: shopId })
       .orderBy('snapshot_date', 'desc')
       .first(
-        'realized_revenue',
         'at_risk_revenue',
         'blocked_revenue',
         'top_blocking_type'
@@ -89,8 +134,6 @@ export async function getOverviewPulse(shopId: number): Promise<OverviewPulse> {
   return {
     revenueToday,
     revenueDeltaVsYesterday,
-    collectedRevenue:
-      opctl?.realized_revenue != null ? Number(opctl.realized_revenue) : null,
     atRiskRevenue:
       opctl?.at_risk_revenue != null ? Number(opctl.at_risk_revenue) : null,
     blockedRevenue:

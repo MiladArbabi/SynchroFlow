@@ -13,6 +13,8 @@
 
 Overview's right column previously rendered **Today's Flow** (Ready/Picking/Blocked/Breached) — identical to the Orders module's rail. That rail is order-domain operational state and belongs to Orders. It has been replaced on Overview by a cross-domain **Business Pulse**.
 
+**Supersession note, 2026-09-01 / OV-DATA-03:** the original four-row pulse contract below is no longer current. Business Pulse now renders three rows: **Revenue today**, **At risk**, and **Blocked**. `"Collected today"` was removed because `orders_operational_control_snapshot.realized_revenue` is not today-scoped collection data. `Revenue today` now means paid-order net revenue bucketed by `orders.order_created_at` in `shops.timezone` with UTC fallback. See `overview-module-playbook.md` §OV-DATA-03 for the canonical current contract and verification evidence.
+
 **Design principle — the two rails are NOT the same altitude:**
 
 - **Orders → Today's Flow** counts work-in-progress *queues* (orders being picked/blocked). Operational throughput.

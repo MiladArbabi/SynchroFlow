@@ -46,8 +46,6 @@ export interface OverviewModuleFT2DataProps {
     revenueToday: number | null;
     /** Delta vs yesterday's gross revenue. */
     revenueDeltaVsYesterday: number | null;
-    /** Revenue collected/realized today. */
-    collectedRevenue: number | null;
     /** Revenue exposed but not yet lost. */
     atRiskRevenue: number | null;
     /** Revenue blocked from shipping. */
@@ -358,7 +356,6 @@ function buildBusinessPulseRows(
 
   return [
     { id: 'revenue-today', label: 'Revenue today', value: fmt(pulse.revenueToday), subtext: deltaLabel, subtextTone: deltaTone },
-    { id: 'collected-today', label: 'Collected today', value: fmt(pulse.collectedRevenue), tone: 'good' },
     { id: 'at-risk', label: 'At risk', value: fmt(pulse.atRiskRevenue), tone: (pulse.atRiskRevenue ?? 0) > 0 ? 'warning' : 'neutral' },
     { id: 'blocked', label: 'Blocked', value: fmt(pulse.blockedRevenue), tone: (pulse.blockedRevenue ?? 0) > 0 ? 'critical' : 'neutral', subtext: blockLabel ? `mostly ${blockLabel}` : undefined },
   ];
