@@ -30,6 +30,7 @@ export interface SyncCounts {
   orders: number;
   variants: number;
   customers: number;
+  products?: number;
 }
 
 export interface SyncProgress {
@@ -39,9 +40,17 @@ export interface SyncProgress {
 }
 
 export interface SyncStatusResponse {
+  integrationId?: number;
   status: string;
   counts: SyncCounts;
   progress?: SyncProgress; // optional → backward safe
+  lastSyncedAt?: string | null;
+  lastError?: string | null;
+  recentProducts?: Array<{
+    title: string;
+    status: string | null;
+    updated_at: string;
+  }>;
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -55,6 +64,7 @@ export function useSyncStatus() {
   });
 
   const [progress, setProgress] = useState<SyncProgress | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const abortRef = useRef(false);
 
@@ -74,6 +84,7 @@ export function useSyncStatus() {
         // instrumentation: always track last known backend truth
         setStatus(data.status);
         if (data.counts) setCounts(data.counts);
+        setLastError(data.lastError ?? null);
 
         // instrumentation: capture backend progress if available
         if (data.progress) setProgress(data.progress);
@@ -101,5 +112,6 @@ export function useSyncStatus() {
     status,
     counts,
     progress, // expose backend progress
-    };
+    lastError,
+  };
 }

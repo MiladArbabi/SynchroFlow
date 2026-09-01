@@ -2781,3 +2781,161 @@ production Barcodes surface produces centred, tightly-spaced thermal captions.
 RECERTIFICATION PENDING.** Not final CLOSED. Other Shopify App Review risks
 remain tracked separately; the overall App Review project is not closed by this
 section.
+
+<!-- BEGIN SHOP-REVIEW-SYNC-ANIMATION-THEME-07 -->
+
+## SHOP-REVIEW-SYNC-ANIMATION-THEME-07 — post-OAuth first-activation experience
+
+**Status:** certified locally 2026-09-01.
+
+### Reviewer-facing contract
+
+The post-OAuth screen is adaptive onboarding buffered by real Shopify sync progress, not a decorative loading screen.
+
+Three independent clocks are preserved:
+
+1. **real sync** — backend authority;
+2. **workflow story** — frontend seven-scene film;
+3. **experience buffer** — minimum first-run dwell and bounded post-sync resolve.
+
+The story never controls lifecycle.
+
+Final workflow story:
+
+1. PLAN — create the PO;
+2. RECEIVE — receive against the PO;
+3. BARCODE — give products a LaSyncro barcode;
+4. PUT AWAY — place barcoded products in the correct bin;
+5. PICK — release orders and pick to pack;
+6. PACK — verify, pack, and create shipping labels;
+7. SHIP — move packed orders to shipping, load, and dispatch.
+
+Canonical timing:
+
+- `MIN_FIRST_RUN_DWELL_MS = 9000`;
+- `MAX_POST_SYNC_RESOLVE_MS = 1800`;
+- `COMPLETION_TRANSITION_MS = 900`;
+- `VERY_LONG_THRESHOLD_MS = 45000`.
+
+### Progress contract
+
+The visible progress bar is a monotonic experience projection.
+
+Targets are approximately:
+
+`8 → 30 → 60 → 82 → 88 → 91 → 93 → 95`
+
+across initial state and Scenes 1–7.
+
+It remains at or below 95% until completion eligibility.
+
+A fast backend sync therefore cannot make the first post-OAuth frame misleadingly display 100%.
+
+Once real sync is complete and first-run eligibility is satisfied, progress may smoothly resolve to 100%.
+
+Display progress does not write backend state and is not lifecycle authority.
+
+### Completion contract
+
+The old centered blocking **Sync complete** overlay and full-screen dimming were removed.
+
+Completion now uses a small lower-right non-blocking chip:
+
+- `Sync complete`
+- `Enter workspace`
+
+The workflow film stays visible.
+
+Clicking **Enter workspace** accelerates only the remaining presentation resolve and enters the same canonical completion path. It cannot fabricate sync completion or lifecycle state.
+
+Without a click, the experience still resolves automatically within the existing post-sync timing contract.
+
+### Long sync, failure, and accessibility
+
+- Long sync proceeds through Scene 7 then ambient state.
+- Scene 1 must never restart during one activation run.
+- Failure interrupts immediately and never exposes a misleading completion CTA.
+- Reduced-motion mode preserves state/timing authority and uses settled/stepped presentation.
+- `1024×820` reviewer viewport remains scroll-free.
+
+### Automated certification
+
+Final local regression evidence:
+
+- focused activation Jest: **70/70 PASS**;
+- canonical M1–M34 user-state matrix: **34/34 PASS**;
+- matrix includes fast sync, normal sync, long/very-long sync, failure, reduced motion, visibility pause/resume, completion during multiple scenes, ambient/no-restart, resolve ceiling, completion-transition duration, `1024×820`, and reviewer-shaped first-run E2E;
+- touched activation files: zero TypeScript errors under both checked frontend configurations.
+
+### Real Shopify OAuth certification — 2026-09-01
+
+Development store:
+
+`development-store-15820042357.myshopify.com`
+
+The live certification deliberately used the existing guarded reconnect OAuth path rather than fabricating Shopify callbacks.
+
+Preparation:
+
+1. reset the local development DB with `npm run dev:setup`;
+2. safe seed created shop 1 + `owner@test.com` without a membership;
+3. add only an owner membership and one encrypted placeholder `shopify_app_installations` row for the target development-store domain;
+4. assert `user_lifecycle_snapshot = 0`;
+5. assert `ft0_state = 0`.
+
+Do **not** use `DEV_SEED_MODE=full_identity` or `DEV_SEED_MODE=full_data` for this first-activation certification: both seed FT2 lifecycle state and therefore invalidate the first-run condition.
+
+OAuth initiation:
+
+- authenticate the local dev owner;
+- call:
+
+`GET /api/v1/integrations/oauth/initiate?platform=shopify&shop=development-store-15820042357.myshopify.com`
+
+- require the returned Shopify authorization URL to target the exact development-store domain;
+- require:
+
+`redirect_uri=http://localhost:3000/api/v1/integrations/oauth/callback/shopify`
+
+- open the returned authorization URL in an already authenticated Shopify browser session;
+- Shopify performs the real approval/authorization-code flow;
+- do not fabricate HMAC, callback code, provider token, or sync completion.
+
+Observed real-provider result:
+
+- Shopify approval screen rendered successfully;
+- callback returned to local LaSyncro;
+- first-activation experience ran automatically;
+- real sync completed;
+- progress no longer started at 100%;
+- progress increased through the story;
+- completion used the non-blocking lower-right chip;
+- normal application/aha flow followed.
+
+Post-provider DB proof:
+
+- target Shopify shop GID persisted;
+- 10 canonical scopes persisted;
+- `read_locations` present;
+- `write_inventory` present;
+- `integrations.sync_status = COMPLETED`;
+- lifecycle advanced to FT2;
+- `remaining_oauth_state_count = 0`;
+- FT0 completion state persisted as expected.
+
+Persistence / replay proof:
+
+- hard refresh of `/overview` stayed in the normal application;
+- first activation did not replay;
+- fresh local/incognito entry resolved to the normal FT2 application;
+- first activation did not replay.
+
+### Certification boundary
+
+This proof covers:
+
+**real Shopify reconnect OAuth → authorization-code exchange → real scopes → real sync → first activation → lifecycle completion → persistence/re-entry**
+
+It does **not** substitute for a separate genuine signed App-Store fresh-install test of the `/shopify/install` HMAC/timestamp entry point.
+
+<!-- END SHOP-REVIEW-SYNC-ANIMATION-THEME-07 -->

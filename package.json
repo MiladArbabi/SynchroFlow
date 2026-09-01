@@ -43,6 +43,7 @@
     "test:integration": "node scripts/with-test-db.js -- npx --no-install jest --selectProjects backend-integration --runInBand --forceExit",
     "test:e2e": "npx playwright test --config=playwright.config.ts",
     "test:e2e:ui": "npx playwright test --config=playwright.config.ts --ui",
+    "test:activation-matrix": "node scripts/activation-user-state-matrix.mjs",
     "storybook": "npm run storybook -w ui"
   },
   "keywords": [],

@@ -32,6 +32,7 @@ import CheckInboxPage from 'pages/authentication/CheckInboxPage';
 import VerifyEmailPage from 'pages/authentication/VerifyEmailPage';
 import ResetPasswordPage from 'pages/authentication/ResetPasswordPage';
 import WmsDisplayPage from 'pages/display/WmsDisplayPage';
+import { shouldEnableActivationPreviewRoute } from 'activation/activationPreviewFixtures';
 
 // OV-36: intentionally NOT constructed here. A module-scope client is a
 // process-lifetime singleton — logout unmounts its provider (:122) but the
@@ -42,6 +43,11 @@ function RuntimeRoutesSubscriber() {
   useRuntimeRoutes();
   return null;
 }
+
+const activationPreviewRouteEnabled = shouldEnableActivationPreviewRoute(import.meta.env.DEV);
+const ActivationExperiencePreview = activationPreviewRouteEnabled
+  ? React.lazy(() => import('activation/ActivationExperiencePreview'))
+  : null;
 
 /* ─────────────────────────────
    Error Boundary
@@ -223,6 +229,16 @@ export default function App() {
           {/* Password reset — token from email link */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/wms/analytics/display" element={<WmsDisplayPage />} />
+          {activationPreviewRouteEnabled && ActivationExperiencePreview && (
+            <Route
+              path="/dev/activation-preview"
+              element={
+                <React.Suspense fallback={null}>
+                  <ActivationExperiencePreview />
+                </React.Suspense>
+              }
+            />
+          )}
         </Route>
 
         {/* ===== APP (AUTH REQUIRED) ===== */}

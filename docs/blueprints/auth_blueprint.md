@@ -439,8 +439,7 @@ AuthPageChrome.tsx
 |---|---|
 | #978 | Add "Open Gmail/email" shortcut on check-inbox screen — open |
 | #979 | Self-serve account deletion + Shopify store disconnection — open |
-| #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
-| #983 | SyncAnimationPage visual elevation to match Brief preview target design — open |
+| #983 | ✅ SyncAnimationPage visual elevation superseded and completed by SHOP-REVIEW-SYNC-ANIMATION-THEME-07 — certified 2026-09-01 |
 | AUTH-017 | ✅ Logged-in users redirected away from /login → returnTo or /overview |
 | Silent refresh | ✅ Axios interceptor silently refreshes expired access tokens — no forced logout during active workflows |
 | returnTo guard | ✅ ProtectedRoute saves intended destination before redirect; AuthLogin + hardLogout both honour it |
@@ -479,51 +478,150 @@ All transactional emails use `emailHtml(content)` in `email.service.ts`:
 4. Call fire-and-forget with `.catch()` for non-fatal emails
 5. Use `systemDb` if sending during pre-tenant operations
 
-## FT0 Sync Animation (SyncAnimationPage)
+## FT0 First-Activation Experience
 
 ### Location
 
-`apps/frontend/src/activation/SyncAnimationPage.tsx`
-`apps/frontend/src/activation/hooks/useSyncStepMachine.ts`
-`apps/frontend/src/activation/hooks/useSyncStatus.ts`
+Primary runtime:
 
-### Architecture
+- `apps/frontend/src/activation/SyncAnimationPage.tsx`
+- `apps/frontend/src/activation/SyncAnimationExperience.tsx`
+- `apps/frontend/src/activation/hooks/useSyncStatus.ts`
+- `apps/frontend/src/activation/hooks/useFirstRunSyncExperience.ts`
+- `apps/frontend/src/activation/hooks/useWorkflowStory.ts`
+- `apps/frontend/src/activation/hooks/useDisplayProgress.ts`
+- `apps/frontend/src/activation/components/SyncProgressPanel.tsx`
+- `apps/frontend/src/activation/components/SyncCompletionChip.tsx`
 
-- `useSyncStatus` — polls `/api/v1/integrations/sync-status` every 2s
-- `useSyncStepMachine` — imperative timer loop drives phase walking, isolated from React render cycle
-- Phase order: CONNECTING → IMPORTING_PRODUCTS → IMPORTING_ORDERS → PROCESSING → FINALIZING → DONE
+Development-only deterministic preview:
 
-### Timing (minimum per phase)
+- `apps/frontend/src/activation/ActivationExperiencePreview.tsx`
+- `apps/frontend/src/activation/activationPreviewFixtures.ts`
+- `/dev/activation-preview`
 
-| Phase | Duration |
-|---|---|
-| CONNECTING | 2500ms |
-| IMPORTING_PRODUCTS | 1800ms |
-| IMPORTING_ORDERS | 8000ms |
-| PROCESSING | 5000ms |
-| FINALIZING | 3000ms |
+### Authority model
 
-### Key decisions
+The post-OAuth experience deliberately has three independent clocks:
 
-- Timer loop uses refs not state — poll re-renders never cancel pending timers
-- `highestTargetIndex` tracks furthest backend phase seen — never regresses
-- Product count uses `progress.current` as proxy when DB variants table lags projections
-- Orders step shows pulse indicator — total count not known upfront
-- Progress bar driven by UI step index (20% per step) — not backend percentage
-- Right panel removed — skeletons without real data erode trust (#985 tracks real data reveal)
+1. **Real sync clock** — backend `/api/v1/integrations/sync-status`; authoritative for sync success/failure.
+2. **Story clock** — frontend seven-scene workflow film; explains how LaSyncro works while sync proceeds.
+3. **Experience buffer** — frontend minimum dwell / post-sync resolve timing; prevents a fast sync from flashing through onboarding.
 
-### Nav during FT0
+The story never drives lifecycle and displayed progress never drives lifecycle.
 
-- Only logo + "Sync in progress" pill visible
-- Trial banner, alerts bell, color mode toggles gated to `isFt2 = phase === 'FT2_READY'`
-- Gating in `TopnavbarContent.tsx` via `useShopLifecycle()`
-- Trial banner also gated in `AppLayout/index.tsx` via `isSidenavAllowed`
+`LifecycleProvider` remains authoritative for routing. `SyncAnimationPage` does not directly navigate around lifecycle state.
 
-### Pending
+`useSyncStatus` polls `/api/v1/integrations/sync-status` every 2 seconds.
 
-- #985 — populate right panel with real brief items on COMPLETED
+### Seven-scene workflow story
 
----
+| Scene | Label | Duration | Merchant-facing story |
+|---|---|---:|---|
+| 1 | PLAN | 3000ms | Create the PO. Know what stock is coming. |
+| 2 | RECEIVE | 3200ms | Receive against the PO. |
+| 3 | BARCODE | 3200ms | Give each product a LaSyncro barcode. Queue it for put away. |
+| 4 | PUT AWAY | 4200ms | Place each barcoded product in the correct bin. |
+| 5 | PICK | 4000ms | Release orders. Pick their items and move them to pack. |
+| 6 | PACK | 3400ms | Verify each order. Pack it and create the shipping label. |
+| 7 | SHIP | 3800ms | Move packed orders to the shipping dock. Load the truck and send them out. |
+
+Canonical story duration is approximately 24.8 seconds.
+
+The warehouse is one persistent spatial world across all seven scenes. Scene changes alter actors and operational state rather than replacing the warehouse.
+
+### First-run timing contract
+
+| Constant | Value | Purpose |
+|---|---:|---|
+| `MIN_FIRST_RUN_DWELL_MS` | 9000ms | Minimum first-run experience before completion may resolve |
+| `MAX_POST_SYNC_RESOLVE_MS` | 1800ms | Upper bound after real sync completes while waiting for a natural story settle point |
+| `COMPLETION_TRANSITION_MS` | 900ms | Completion handoff transition |
+| `VERY_LONG_THRESHOLD_MS` | 45000ms | Threshold for very-long-sync reassurance |
+
+Fast sync therefore does not immediately eject the merchant from the experience.
+
+Long sync proceeds through Scene 7 and then settles into ambient state. It must never restart Scene 1.
+
+Failure interrupts the story immediately.
+
+### Displayed progress
+
+The progress bar is an **experience projection**, not the raw backend percentage.
+
+Canonical targets:
+
+| State | Display target |
+|---|---:|
+| Initial | 8% |
+| Scene 1 | 30% |
+| Scene 2 | 60% |
+| Scene 3 | 82% |
+| Scene 4 | 88% |
+| Scene 5 | 91% |
+| Scene 6 | 93% |
+| Scene 7 | 95% |
+| Ambient | 95% |
+| Completion eligible | 100% |
+
+Rules:
+
+- displayed progress is monotonic;
+- it advances smoothly with the story;
+- it never exceeds 95% before completion eligibility;
+- backend `COMPLETED` alone does not make the UI jump immediately to 100%;
+- real sync completion remains required before 100% is allowed;
+- reduced-motion mode steps between targets rather than requiring continuous animation.
+
+### Sync-complete handoff
+
+The former centered blocking completion overlay was removed.
+
+When real sync is complete and the experience is eligible to resolve:
+
+- the progress projection may reach 100%;
+- a small non-blocking lower-right **Sync complete** chip appears;
+- the warehouse remains fully visible;
+- there is no backdrop or screen dimming;
+- **Enter workspace** is available as an optional CTA;
+- no click is required — normal automatic completion still proceeds;
+- clicking **Enter workspace** only accelerates the remaining presentation resolve;
+- the CTA does not fabricate sync completion, write lifecycle state, or bypass lifecycle routing.
+
+### Visual and motion rules
+
+- Orange is action/UI accent, not a movement-direction color.
+- Green is reserved for confirmed completion.
+- No Brand Pulse treatment.
+- No full-screen completion modal.
+- No visible developer diagnostics in the merchant experience.
+- Dark/light modes are intentional.
+- Reduced motion renders representative settled states without weakening lifecycle contracts.
+- Reviewer laptop target `1024×820` must remain scroll-free.
+
+### Navigation during activation
+
+During FT0 / first activation, navigation remains intentionally constrained.
+
+Lifecycle state controls when the application leaves the activation experience. Once backend lifecycle advances beyond FT0, `LifecycleProvider` exposes the next lifecycle/application surface.
+
+### Verification — 2026-09-01
+
+`SHOP-REVIEW-SYNC-ANIMATION-THEME-07` is locally certified:
+
+- focused activation Jest: **70/70 PASS**;
+- canonical user-state matrix M1–M34: **34/34 PASS**;
+- reviewer viewport `1024×820`: no horizontal or vertical overflow;
+- real Shopify authorization-code OAuth reconnect completed against `development-store-15820042357.myshopify.com`;
+- real Shopify sync completed;
+- all 10 canonical OAuth scopes persisted, including `read_locations` and `write_inventory`;
+- lifecycle advanced through first activation to FT2;
+- OAuth state rows were consumed;
+- hard refresh did not replay first activation;
+- fresh local/incognito re-entry did not replay first activation;
+- progress projection and non-blocking completion chip were visually approved in both deterministic preview and real provider flow.
+
+This real-provider certification proves the reconnect OAuth / token-exchange / real-sync path. It does not replace a separate signed App-Store fresh-install HMAC certification.
+
 
 ## Environment Variables Required
 

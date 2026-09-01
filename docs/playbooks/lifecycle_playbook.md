@@ -639,24 +639,70 @@ confirmed FT2 lifecycle"}` until Step 4 lands — that is `requireFt2`, not a bu
 > returned to the pool, and `inventory_movements` is append-only by trigger.
 > Budget one throwaway tenant per release test rather than planning to reset one.
 
-### Offline fixture vs. real Shopify OAuth — do not conflate (verified 2026-08-27)
+### Offline fixture vs. real Shopify OAuth — do not conflate (updated 2026-09-01)
 
-Everything in this §8 ladder proves category **A: an offline
-reviewer-shaped fixture** — deterministic lifecycle/recount/release
-behavior without a real Shopify store. It does **not** prove category
-**B: a real Shopify-provider OAuth/install smoke or certification test** —
-actual HMAC/redirect, `admin/oauth/access_token` token exchange, real
-scopes, real `shopify_app_installations` persistence from a genuine
-install. No automated test in this repository currently exercises B — a
-search for real token-exchange mocking (`axios`, `nock`, or the literal
-`admin/oauth/access_token` path) across `tests/` returns nothing; the
-existing install/OAuth-adjacent tests
-(`shopify-install-provisions-wms-settings.test.ts`,
-`fresh-install-release-path.test.ts`) both use this same offline
-`encrypt('offline-test-token-no-network-call')` pattern as Step 2 above.
-Do not present a passing offline-fixture run as evidence that real OAuth
-works.
+The lifecycle certification ladder has three materially different evidence levels.
 
+**A — deterministic offline reviewer fixture**
+
+This proves lifecycle, recount, release, failure, timing, and UI contracts without requiring a Shopify provider session.
+
+The activation M1–M34 matrix belongs here.
+
+It does **not** prove Shopify authorization-code exchange or real provider scopes.
+
+**B — real Shopify provider OAuth reconnect**
+
+Certified locally on 2026-09-01 against:
+
+`development-store-15820042357.myshopify.com`
+
+The local certification used a deliberately minimal reconnect bootstrap:
+
+- fresh local database;
+- one dev owner + active owner membership;
+- one placeholder `shopify_app_installations` identity solely to satisfy the guarded reconnect ownership check;
+- no `user_lifecycle_snapshot`;
+- no completed `ft0_state`;
+- authenticated `GET /api/v1/integrations/oauth/initiate`;
+- real Shopify authorization/approval screen;
+- real Shopify authorization-code callback;
+- real token exchange;
+- real initial sync;
+- real lifecycle progression.
+
+Pre-OAuth lifecycle state was therefore genuinely first-run shaped:
+
+`FT_MINUS_ONE`
+
+The provider flow then produced:
+
+- 10 persisted canonical scopes;
+- `read_locations = present`;
+- `write_inventory = present`;
+- `integrations.sync_status = COMPLETED`;
+- lifecycle progression to FT2;
+- `remaining_oauth_state_count = 0`;
+- no first-activation replay after hard refresh;
+- no first-activation replay on fresh local/incognito re-entry.
+
+This is a real Shopify-provider OAuth and sync certification. The placeholder installation is not treated as a real Shopify credential; successful OAuth replaces it through the normal application/provider path.
+
+**C — genuine signed Shopify fresh-install entry**
+
+This remains distinct from B.
+
+A genuine App-Store/reviewer fresh-install entry begins at:
+
+`GET /api/v1/integrations/shopify/install`
+
+and additionally proves Shopify's signed install HMAC/timestamp entry, tenant provisioning from the incoming Shopify domain, and the full fresh-install boundary.
+
+Do not claim B proves C.
+
+Likewise, do not present a passing offline-fixture run (A) as evidence for either B or C.
+
+The repository's automated tests still do not perform a live Shopify provider token exchange. Provider OAuth remains a live/manual certification boundary layered on top of deterministic automated regression coverage.
 ---
 
 ## 9. Frontend Lifecycle Routing
@@ -670,7 +716,30 @@ FT1           → /aha (AhaMomentPage)
 FT2           → main app (FT2 modules)
 ```
 
-The `SyncAnimationPage` polls `/api/v1/integrations/sync-status` every 2 seconds. It unmounts when `LifecycleProvider` detects phase > FT0 — it does **not** navigate itself.
+The activation surface polls `/api/v1/integrations/sync-status` every 2 seconds through `useSyncStatus`.
+
+Post-OAuth activation intentionally separates three clocks:
+
+1. backend real-sync authority;
+2. frontend seven-scene story timing;
+3. frontend first-run experience buffer.
+
+The frontend story and displayed progress never write or advance lifecycle state.
+
+Canonical first-run timing:
+
+- minimum dwell: `9000ms`;
+- post-sync resolve ceiling: `1800ms`;
+- completion transition: `900ms`;
+- very-long-sync threshold: `45000ms`.
+
+Display progress is a presentation projection that starts below completion, advances monotonically with story scenes, caps at 95% while completion is not eligible, and reaches 100% only after real sync plus the first-run eligibility contract.
+
+The completion UI is a non-blocking **Sync complete / Enter workspace** chip. The CTA only accelerates presentation timing; it does not bypass backend or lifecycle authority.
+
+`SyncAnimationPage` unmounts when `LifecycleProvider` detects the lifecycle has advanced beyond the activation phase. It does **not** independently route around lifecycle state.
+
+Long sync settles into ambient state after Scene 7 rather than restarting the story. Failure interrupts immediately. Reduced-motion mode preserves the same lifecycle and timing authority.
 
 `LifecycleProvider` stops polling `ft2/readiness` once FT2 is confirmed (terminal state).
 
