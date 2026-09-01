@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
+import { isApproachingFulfillmentSla } from '@lasyncro/shared/contracts/fulfillment-sla';
 
 /**
  * OPERATOR VOCABULARY TRANSLATION (B-04)
@@ -120,6 +121,8 @@ export type ConstrainedOrder = {
   decision_id: string | null;
   // SLA fields
   age_since_creation_seconds: number | null;
+  age_since_paid_seconds: number | null;
+  fulfillment_sla_hours: number | null;
   is_shipping_sla_breached: boolean | null;
   is_delivery_sla_breached: boolean | null;
   gross_margin: number | null;
@@ -155,8 +158,12 @@ export function getConstraintSeverity(constraintType: string): ConstraintSeverit
  * Used to sort and color orders in FulfillmentQueue.
  *
  * breached → red
- * warning  → amber (>75% of 48h threshold)
+ * warning  → amber inside the canonical approaching-Fulfillment-SLA window
  * ok       → green
+ *
+ * SLA-SEM-01:
+ * warning uses paid age + merchant fulfillment_sla_hours only.
+ * Creation-age Watch/Aging is a separate operational concept.
  */
 export type SlaProximity = 'breached' | 'warning' | 'ok';
 
@@ -164,8 +171,15 @@ export function getSlaProximity(order: ConstrainedOrder): SlaProximity {
   if (order.is_shipping_sla_breached || order.is_delivery_sla_breached) {
     return 'breached';
   }
-  const ageHours = (order.age_since_creation_seconds ?? 0) / 3600;
-  if (ageHours >= 36) return 'warning'; // 75% of 48h threshold
+  if (
+    isApproachingFulfillmentSla({
+      ageSincePaidSeconds: order.age_since_paid_seconds,
+      fulfillmentSlaHours: order.fulfillment_sla_hours,
+    })
+  ) {
+    return 'warning';
+  }
+
   return 'ok';
 }
 

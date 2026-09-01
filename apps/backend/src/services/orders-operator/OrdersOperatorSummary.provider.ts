@@ -35,9 +35,9 @@ export interface OrdersOperatorSummary {
   topBlockingType: string | null;
 
   /**
-   * Aging orders (named, actionable)
-   * --------------------------------
-   * Unfulfilled orders older than 48h — the ones the operator needs to act on today.
+   * Watch/Aging orders (named, actionable)
+   * ----------------------------------------
+   * Broader operational-attention population; not synonymous with approaching SLA.
    * Includes external order ID for direct lookup in the store.
    */
   agingOrders: Array<{

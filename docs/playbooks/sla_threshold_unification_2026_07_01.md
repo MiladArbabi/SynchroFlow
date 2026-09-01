@@ -47,3 +47,98 @@ Comment in `OrdersOperatorFacts.service.ts` already documented the intent ("orde
 ## 7. Tracked, not yet done
 
 GitHub issue [#1031](https://github.com/MiladArbabi/SynchroFlow/issues/1031) — merge "Fulfillment SLA" (Settings → General) and "Carrier Pickup Time" (Settings → Carriers) into one renamed "Fulfillment" tab; add both to the onboarding checklist as fundamentals (currently new shops silently default to 24h SLA / no CPT with no setup prompt).
+
+## 8. SLA-SEM-01 — canonical approaching-Fulfillment-SLA contract (2026-09-01)
+
+The remaining semantic gap was the warning state immediately before a
+Fulfillment SLA breach.
+
+### Canonical contract
+
+Fulfillment SLA breach remains:
+
+```text
+unfulfilled
+AND age_since_paid >= configured fulfillment_sla_hours
+```
+
+Approaching Fulfillment SLA is now:
+
+```text
+paid
+AND unfulfilled
+AND not already breached
+AND remaining SLA time <= MIN(4 hours, 25% of configured SLA)
+```
+
+Equivalent boundary:
+
+```text
+age_since_paid_seconds
+  >= SLA_SECONDS - MIN(4h, SLA_SECONDS * 0.25)
+
+AND age_since_paid_seconds < SLA_SECONDS
+```
+
+Examples:
+
+| Fulfillment SLA | Approaching window | Warning begins |
+|---|---:|---:|
+| 1h | 15m | 45m |
+| 8h | 2h | 6h |
+| 24h | 4h | 20h |
+| 48h | 4h | 44h |
+| 72h | 4h | 68h |
+| 720h | 4h | 716h |
+
+### Semantic separation
+
+- **Watch / Aging** is broader operational attention. It may use creation
+  age and/or paid age. A Watch order is not necessarily approaching SLA.
+- **Approaching Fulfillment SLA** is paid-age only and uses the canonical
+  `MIN(4h, 25% SLA)` warning window.
+- **Fulfillment SLA breached** is paid-age at or beyond the merchant's
+  configured SLA while still unfulfilled.
+- **CPT / Carrier Pickup Time** remains completely separate from this model.
+
+### Implementation
+
+- Canonical arithmetic lives in
+  `modules/shared/src/contracts/fulfillment-sla.ts`.
+- `orders_at_sla_risk` now counts distinct, latest-snapshot,
+  unfulfilled, non-breached orders inside the canonical paid-age window.
+- `imminentSlaBreachers` uses the same canonical population.
+- Constrained-order transport now supplies paid age and configured
+  Fulfillment SLA to the UI.
+- The constrained-order SLA state no longer uses a hardcoded 36h
+  creation-age warning.
+- Orders Watch copy no longer describes all aging orders as
+  "approaching SLA".
+- The stale creation-time 72h SLA countdown was removed.
+
+### Regression contracts
+
+- `SLA-APPROACH-01` — breach remains configured paid-age SLA.
+- `SLA-APPROACH-02` — approaching uses paid age only.
+- `SLA-APPROACH-03` — window is `MIN(4h, 25% SLA)`.
+- `SLA-APPROACH-04` — fulfilled orders never count.
+- `SLA-APPROACH-05` — already-breached orders never count.
+- `SLA-APPROACH-06` — only latest age-snapshot version counts.
+- `SLA-APPROACH-07` — SLA-risk metric counts distinct current orders.
+- `SLA-APPROACH-08` — creation-age Watch orders are not called approaching.
+- `SLA-APPROACH-09` — CPT is not coupled to Fulfillment SLA proximity.
+
+### Verification
+
+- Canonical SLA unit contract: `8/8 PASS`.
+- Frontend SLA semantics: `6/6 PASS`.
+- Backend SLA metric integration: `6/6 PASS`.
+- Consumer/API wiring integration: `2/2 PASS`.
+- Combined backend integration: `8/8 PASS`.
+- Jest ownership: `UNOWNED=0`, `MULTI_OWNED=0`.
+- Shared package build: PASS.
+- Order Nexus targeted typecheck: PASS.
+- Stale SLA semantic scan: zero matches.
+- CPT coupling scan: zero matches.
+- Disposable integration DB cleanup confirmed.
+- Localhost live browser verification: PASS.

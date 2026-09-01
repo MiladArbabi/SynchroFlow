@@ -584,7 +584,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
               : criticalOrders.length > 0
                 ? `${criticalOrders.length} SLA-breached · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
                 : watchOrders.length > 0
-                  ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging, approaching SLA`
+                  ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging · review soon`
                   : 'All orders on track — nothing needs immediate action'}
           </Typography>
         </Box>

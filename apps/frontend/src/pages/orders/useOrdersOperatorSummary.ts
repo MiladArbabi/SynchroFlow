@@ -31,7 +31,7 @@ export interface OrdersOperatorSummary {
   topBlockingType?: string | null;
 
   /**
-   * Unfulfilled orders older than 48h — named and actionable.
+   * Unfulfilled orders in the broader Watch/Aging population — named and actionable.
    * externalOrderId allows direct lookup in the operator's store.
    */
   agingOrders?: Array<{
@@ -44,10 +44,10 @@ export interface OrdersOperatorSummary {
     inPickBatch: boolean;
     pickBatchStatus: string | null;
     revenue: number;
-    /** Minutes until 72h SLA breach — negative means already breached */
+    /** Minutes until the merchant-configured Fulfillment SLA breach */
     timeToSlaBreachMinutes: number | null;
   }>;
-  /** Orders breaching 72h SLA within the next 8 hours */
+  /** Orders inside the canonical approaching-Fulfillment-SLA window */
   imminentSlaBreachers?: Array<{
     lasyncro_order_id: string;
     externalOrderId: string | null;

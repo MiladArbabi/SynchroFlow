@@ -54,8 +54,10 @@ Regression evidence:
 
 Deferred separate issues:
 
-- `SLA-SEM-01` - canonical approaching-Fulfillment-SLA contract.
-- `CPT-MODEL-01` - Order Flow CPT/SLA conflation.
+- `SLA-SEM-01` - **CLOSED 2026-09-01.** Approaching Fulfillment SLA is
+  paid-age only with warning window `MIN(4h, 25% of configured SLA)`;
+  Watch/Aging remains broader operational attention.
+- `CPT-MODEL-01` - Order Flow CPT/SLA conflation remains separate and deferred.
 
 ### OV-UX-18 - Overview morning-brief refresh boundary (2026-09-01)
 

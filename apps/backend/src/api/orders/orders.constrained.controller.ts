@@ -160,13 +160,24 @@ export const httpGetConstrainedOrders = async (
         .leftJoin(
           // Take only the latest aggregate_version per order
           trx('order_age_snapshot')
-            .select('lasyncro_order_id', 'age_since_creation_seconds', 'is_shipping_sla_breached', 'is_delivery_sla_breached')
+            .select(
+              'lasyncro_order_id',
+              'age_since_creation_seconds',
+              'age_since_paid_seconds',
+              'is_shipping_sla_breached',
+              'is_delivery_sla_breached'
+            )
             .distinctOn('lasyncro_order_id')
             .orderByRaw('lasyncro_order_id, aggregate_version DESC')
             .as('oas'),
           'oas.lasyncro_order_id', 'oc.lasyncro_order_id'
         )
         .leftJoin('order_margin_snapshot as oms', 'oms.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin(
+          'shop_operational_settings as sos',
+          'sos.shop_id',
+          'o.shop_id'
+        )
         .leftJoin(otherBlockerTypes, 'obt.lasyncro_order_id', 'oc.lasyncro_order_id')
         .where('o.shop_id', shopId)
         .select(
@@ -198,8 +209,10 @@ export const httpGetConstrainedOrders = async (
           'd.id as decision_id',
           // SLA fields
           'oas.age_since_creation_seconds',
+          'oas.age_since_paid_seconds',
           'oas.is_shipping_sla_breached',
           'oas.is_delivery_sla_breached',
+          'sos.fulfillment_sla_hours',
           // Margin fields (Growth-tier display only — never used for enforcement)
           'oms.gross_margin',
           'oms.margin_pct'
