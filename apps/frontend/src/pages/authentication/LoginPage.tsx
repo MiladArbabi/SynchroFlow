@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // apps/frontend/src/pages/authentication/LoginPage.tsx
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import React, { useEffect, useState } from 'react'; // <-- Import React
+import React from 'react';
 import { Theme } from '@mui/material/styles';
 
 import useMediaQuery from '@mui/material/useMediaQuery';
@@ -9,34 +9,24 @@ import Divider from '@mui/material/Divider';
 import Stack from '@mui/material/Stack';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
-import { CircularProgress } from '@mui/material';
 
-// Analytics 
+// Analytics
 import { usePostHog } from 'posthog-js/react';
-import { PostHog } from 'posthog-js';
 
 // project imports
-import AuthWrapper1 from './AuthWrapper1'; 
-import AuthCardWrapper from './AuthCardWrapper'; 
+import AuthWrapper1 from './AuthWrapper1';
+import AuthCardWrapper from './AuthCardWrapper';
 import { SystemStatusPill, SocialProofTicker } from './AuthPageChrome';
 import { AuthLogo } from './AuthLogo';
 import { useAuth } from 'contexts/AuthContext';
 import { AuthGridBackdrop } from './AuthGridBackdrop';
+// AUTH-LOGOUT-HANG-01: the JWT form is the only live login provider and /login
+// is a recovery-critical route. It is imported statically so logout → /login
+// never depends on a late lazy chunk (a superseded-deploy chunk 404 previously
+// stranded the form slot on a spinner until a manual reload).
+import AuthLogin from './jwt/AuthLogin';
 
 // import { APP_AUTH } from 'config';
-
-// A mapping of auth types to dynamic imports
-const authLoginImports = {
-  // firebase: () => import('./firebase/AuthLogin'), // Keep commented if not used
-  jwt: () => import('./jwt/AuthLogin'), // <-- FIX PATH if needed (should be correct now)
-  // aws: () => import('./aws/AuthLogin'),       // Keep commented if not used
-  // auth0: () => import('./auth0/AuthLogin'),     // Keep commented if not used
-  // supabase: () => import('./supabase/AuthLogin') // Keep commented if not used
-};
-
-interface AuthLoginProps {
-  posthog: PostHog;
-}
 
 // ================================|| AUTH3 - LOGIN ||================================ //
 
@@ -64,23 +54,10 @@ export default function Login() {
   }, [isLoggedIn, navigate]);
 
   const downMD = useMediaQuery((theme: Theme) => theme.breakpoints.down('md'));
-  const [AuthLoginComponent, setAuthLoginComponent] = useState<React.ComponentType<AuthLoginProps> | null>(null);
-  
+
   const [searchParams] = useSearchParams();
   const authParam = searchParams.get('auth') || '';
   const posthog = usePostHog();
-
-  useEffect(() => {
-    const selectedAuth = authParam || 'jwt'
-
-    const authLoginImportsTyped: Record<string, () => Promise<any>> = authLoginImports as any;
-    const importAuthLoginComponent = authLoginImportsTyped[selectedAuth];
-    importAuthLoginComponent()
-      .then((module: any) => setAuthLoginComponent(() => module.default))
-      .catch((error: any) => {
-        console.error(error);
-      });
-  }, [authParam]);
 
   return (
     <AuthWrapper1>
@@ -126,11 +103,7 @@ export default function Login() {
                     </Typography>
                   </Stack>
                   <Box sx={{ width: 1 }}>
-                    {AuthLoginComponent ? (
-                      <AuthLoginComponent posthog={posthog} />
-                    ) : (
-                      <CircularProgress sx={{ color: 'var(--accent)' }} />
-                    )}
+                    <AuthLogin posthog={posthog} />
                   </Box>
                   <Divider sx={{ width: 1 }} />
                   <Stack sx={{ alignItems: 'center' }}>

@@ -107,7 +107,7 @@ Frontend
 │   ├── utils/authStore.ts               ← in-memory token store + localStorage fallback
 │   ├── utils/route-guard/AuthGuard.jsx  ← redirects unauthenticated to /login
 │   └── pages/authentication/
-│       ├── LoginPage.tsx                ← /login — dynamic import of jwt/AuthLogin
+│       ├── LoginPage.tsx                ← /login — static import of jwt/AuthLogin (AUTH-LOGOUT-HANG-01; see Pitfall #8)
 │       ├── RegisterPage.tsx             ← /register — dynamic import of jwt/AuthRegister
 │       ├── ForgotPasswordPage.tsx       ← /forgot-password
 │       ├── CheckInboxPage.tsx           ← /check-inbox — post-registration verification wait
@@ -431,6 +431,23 @@ AuthPageChrome.tsx
 **Problem:** Backend `res.redirect()` on verify-email doesn't work for axios calls in a SPA.  
 **Fix:** Return JSON `{ message: '...' }` — frontend handles navigation.
 
+### 8. Logout hang — LoginPage lazy-loaded its only auth form (AUTH-LOGOUT-HANG-01)
+
+**Problem:** `LoginPage.tsx` had copied pitfall #4's pattern — `import('./jwt/AuthLogin')` into `AuthLoginComponent` state, rendering `<CircularProgress>` while `null` and only `console.error`-ing on import rejection. Explicit in-app logout does a client-side `navigate('/login')` (no document reload), so the current module graph stays live. If that lazy chunk could not load — its hashed asset superseded by a deployment, or any transient module-load failure — `AuthLoginComponent` stayed `null` forever and `/login` was stranded on the spinner; only a manual browser reload (fresh document + current asset graph) recovered. Auth state and logout routing were both already correct.
+
+**Fix:** `LoginPage.tsx` statically imports the only live form — `import AuthLogin from './jwt/AuthLogin'` — and renders `<AuthLogin posthog={posthog} />` directly. Removed the LoginPage-only lazy machinery: `authLoginImports`, `AuthLoginComponent` state, the dynamic-import effect, and the `CircularProgress` loader branch. In the production build `AuthLogin` is now eagerly reachable with `LoginPage` — no separate lazy chunk is emitted or fetched.
+
+**Invariants this locks in:**
+
+- *Logout UX:* explicit in-app logout must reach a usable unauthenticated `/login` state **without a document reload**.
+- *Login recovery:* the only live login form must not sit behind a late lazy-module boundary that can strand the unauthenticated recovery route. Pitfall #4's lazy-import pattern is acceptable on `/register` (not a recovery route); it must not be used for the login form.
+
+**Not changed:** `AuthContext.logout()` state (`isLoggedIn=false`, `isLoading=false`, `user=null`, `accessToken=null`) and its token/user persistence clearing; the best-effort `POST /api/v1/auth/logout` → `AuthContext.logout()` → `navigate('/login')` wiring in both logout controls; Shopify/OAuth and lifecycle behavior. No global `vite:preloadError` handler and no automatic `window.location.reload()` were added — general stale-lazy-chunk recovery is a separate, unimplemented concern.
+
+**Regression:** `tests/unit/ui/auth/LoginPage.test.tsx` — the form is present on the first synchronous commit, no loader spinner occupies the form slot, and the AUTH-017 logged-in redirect still fires. RED against the pre-fix lazy architecture, GREEN after the static import.
+
+**Verification (2026-09-02):** focused LoginPage suite 3/3; `AuthContext` suite 4/4; `npm run test:config` UNOWNED=0 / MULTI_OWNED=0; `NODE_ENV=production` frontend Vite build PASS with no separate `AuthLogin` lazy chunk emitted; Milad UI certification PASS (post-logout `/login` form usable immediately, no manual reload, no spinner).
+
 ---
 
 ## Pending / Next Steps
@@ -457,6 +474,7 @@ AuthPageChrome.tsx
 | Floor-planning Vite race | ✅ Pre-build in dev-ui script + added to build:modules |
 | AhaMomentPage visual elevation (#984) | ✅ Floating status pill with timestamp, gated divider, accent left-border on first card, revenue impact banner, layout height fix |
 | Auth logo color scheme fix | ✅ AuthLogo component — logo-dark.png for dark, logo.png for light — applied across all 7 auth pages |
+| Logout hang (AUTH-LOGOUT-HANG-01) | ✅ Explicit in-app logout reaches a usable `/login` without a document reload — `LoginPage` statically imports its only auth form (no lazy boundary on the recovery route); see Pitfall #8. Regression: `tests/unit/ui/auth/LoginPage.test.tsx` |
 
 ## Email System
 
