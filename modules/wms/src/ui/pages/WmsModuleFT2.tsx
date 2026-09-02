@@ -196,6 +196,8 @@ export type WmsModuleFT2Props = {
   pendingReceiveSession?: { receiveJobId: string; poId: string; supplierName: string; lines: ReceiveJobLine[] } | null;
   /** Stow task ID from URL param — auto-enters stow session on mount. */
   pendingStowTaskId?: string | null;
+  /** Return job ID from URL param — auto-enters the existing return session on mount. */
+  pendingReturnJobId?: string | null;
   /** Called when operator claims a stow task — parent sets URL param for refresh recovery. */
   onStowSessionEnter?: (taskId: string) => void;
   /** Pick batch ID from URL param — auto-enters pick session on mount. */
@@ -865,6 +867,7 @@ function WmsModuleFT2Inner({
   gridLocations,
   pendingReceiveSession,
   pendingStowTaskId,
+  pendingReturnJobId,
   onStowSessionEnter,
   pendingPickBatchId,
   onPickSessionEnter,
@@ -1041,6 +1044,8 @@ function WmsModuleFT2Inner({
   const [activeSession, setActiveSession] = useState<ActiveSession>(
     pendingReceiveSession
       ? { type: 'receive', ...pendingReceiveSession }
+      : pendingReturnJobId
+      ? { type: 'return', returnJobId: pendingReturnJobId }
       : pendingStowTaskId
       ? { type: 'stow', taskId: pendingStowTaskId }
       : null
@@ -1056,6 +1061,12 @@ function WmsModuleFT2Inner({
       setActiveSession({ type: 'stow', taskId: pendingStowTaskId });
     }
   }, [pendingStowTaskId]);
+
+  useEffect(() => {
+    if (pendingReturnJobId) {
+      setActiveSession({ type: 'return', returnJobId: pendingReturnJobId });
+    }
+  }, [pendingReturnJobId]);
 
   useEffect(() => {
     if (recountLocked) {

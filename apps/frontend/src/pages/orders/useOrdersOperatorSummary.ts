@@ -40,6 +40,7 @@ export interface OrdersOperatorSummary {
     ageHours: number;
     isShippingSlaBreached: boolean;
     constraintType: string | null;
+    blockType: string | null;
     isPriorityFlagged: boolean;
     inPickBatch: boolean;
     pickBatchStatus: string | null;

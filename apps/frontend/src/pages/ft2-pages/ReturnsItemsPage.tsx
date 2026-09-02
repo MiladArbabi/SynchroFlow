@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { CheckCircle, Package, RotateCcw, Phone, DollarSign, Trash2, Clock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
@@ -318,8 +319,18 @@ function OrderCard({ group, onClick }: { group: ReturnDecisionGroup; onClick: ()
 export default function ReturnsItemsPage() {
   const { data, isLoading, isError } = useReturnItems();
   const groups = data?.data ?? [];
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const selectedGroup = groups.find(g => g.return_job_id === selectedJobId) ?? null;
+  const requestedReturnJobId = searchParams.get('returnJobId');
+
+  useEffect(() => {
+    if (!requestedReturnJobId || isLoading) return;
+    const match = groups.find(g => g.return_job_id === requestedReturnJobId);
+    if (match) {
+      setSelectedJobId(requestedReturnJobId);
+    }
+  }, [requestedReturnJobId, isLoading, groups]);
 
   // Close the modal automatically once its job drops out of the awaiting-
   // decision list (all lines decided → job no longer awaiting_decision).
@@ -378,7 +389,12 @@ export default function ReturnsItemsPage() {
 
       <EntityDetailModal
         entityId={selectedJobId}
-        onClose={() => setSelectedJobId(null)}
+        onClose={() => {
+          setSelectedJobId(null);
+          if (requestedReturnJobId) {
+            setSearchParams({}, { replace: true });
+          }
+        }}
         title={selectedGroup ? `Order ${selectedGroup.external_order_id ? `#${selectedGroup.external_order_id}` : ''}` : ''}
         subtitle={selectedGroup ? `${selectedGroup.lines.length} line${selectedGroup.lines.length !== 1 ? 's' : ''} · ${fmt(selectedGroup.total_refund_amount)} refunded` : undefined}
       >

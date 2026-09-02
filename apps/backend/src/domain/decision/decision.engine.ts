@@ -307,7 +307,8 @@ function mapToDecisionSignals(input: any): DecisionSignals {
     is_customer_blocked: input.is_customer_blocked,
     is_operational_blocked: input.is_operational_blocked,
     inventory_blocked_revenue: input.inventory_blocked_revenue,
-    is_already_fulfilled: input.is_already_fulfilled ?? false
+    is_already_fulfilled: input.is_already_fulfilled ?? false,
+    operational_block_type: input.operational_block_type
   };
 }
 
@@ -414,30 +415,45 @@ if (signals.is_customer_blocked) {
  * OPERATIONAL DECISION
  */
 if (signals.is_operational_blocked) {
-  const decision = buildDecision({
-    orderId,
-    shopId,
-    aggregateVersion,
-    signals,
-    action: {
+  const operationalBlockType = signals.operational_block_type;
+  let action: { type: string; payload: Record<string, unknown>; execution_mode: 'manual' } | null = null;
+
+  if (operationalBlockType === 'returned_undelivered') {
+    action = {
+      type: 'open_return_job',
+      payload: { block_type: 'returned_undelivered' },
+      execution_mode: 'manual'
+    };
+  } else if (operationalBlockType == null) {
+    action = {
       type: 'resolve_operational_block',
       payload: {},
       execution_mode: 'manual'
-    }
-  });
-  
-        if (!isReplay) {
-            console.info('[DECISION_CREATED]', {
-                orderId,
-                decisionId: decision.id,
-                type: decision.type,
-                action: decision.recommended_action.type,
-                priority: decision.priority,
-                source: 'operational_block',
-            });
-        }
+    };
+  }
 
-  decisions.push(decision);
+  if (action) {
+    const decision = buildDecision({
+      orderId,
+      shopId,
+      aggregateVersion,
+      signals,
+      action
+    });
+
+          if (!isReplay) {
+              console.info('[DECISION_CREATED]', {
+                  orderId,
+                  decisionId: decision.id,
+                  type: decision.type,
+                  action: decision.recommended_action.type,
+                  priority: decision.priority,
+                  source: 'operational_block',
+              });
+          }
+
+    decisions.push(decision);
+  }
 }
 
 /**

@@ -112,6 +112,7 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       ageHours: number;
       isShippingSlaBreached: boolean;
       constraintType: string | null;
+      blockType?: string | null;
       isPriorityFlagged: boolean;
       inPickBatch: boolean;
       pickBatchStatus: string | null;
@@ -132,6 +133,23 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
       manualReview: number;
     };
   } | null;
+
+  /**
+   * Active constrained orders — the existing /api/v1/orders/constrained
+   * payload (useConstrainedOrders). Only returned_undelivered rows are
+   * consumed here: "Package returned" is order_constraints truth and must
+   * surface in Critical even when order_age_snapshot / SLA-breach state is
+   * absent. Minimal shape — extend only as this module requires.
+   */
+  constrainedOrders?: Array<{
+    order_id: string;
+    external_order_id: string | null;
+    constraint_type: string;
+    block_type: string | null;
+    revenue?: number | string | null;
+    age_since_creation_seconds?: number | null;
+    is_shipping_sla_breached?: boolean | null;
+  }> | null;
 
   currency?: CurrencyContext;
 }
@@ -431,11 +449,50 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
 
   // Unconstrained orders already moving in a pick batch have no decision here.
   const allBreachedOrders = allAgingOrders.filter(o => o.isShippingSlaBreached);
-  const criticalOrders = allBreachedOrders.filter(
+  const breachedCriticalOrders = allBreachedOrders.filter(
     o =>
       stillNeedsDecision(o) &&
       (o.constraintType !== null || !o.inPickBatch)
   );
+
+  // ORD-RETPKG (2026-09): "Package returned" is canonical order_constraints
+  // truth. A carrier return has no shipping-SLA semantics of its own and is
+  // not guaranteed an order_age_snapshot row, so it must NOT depend on the
+  // SLA/aging population. Source of record: the existing constrained-orders
+  // payload (useConstrainedOrders → /api/v1/orders/constrained), threaded in
+  // as `constrainedOrders`. Normalize only the fields the Critical row /
+  // detail-open contract needs — no fabricated age / revenue / SLA.
+  const constrainedReturnedPackageOrders = (props.constrainedOrders ?? [])
+    .filter(o => o.constraint_type === 'operational' && o.block_type === 'returned_undelivered')
+    .map(o => ({
+      lasyncro_order_id: o.order_id,
+      externalOrderId: o.external_order_id ?? null,
+      ageHours: Math.max(0, Math.floor((o.age_since_creation_seconds ?? 0) / 3600)),
+      isShippingSlaBreached: Boolean(o.is_shipping_sla_breached),
+      constraintType: 'operational' as string | null,
+      blockType: 'returned_undelivered' as string | null,
+      isPriorityFlagged: false,
+      inPickBatch: false,
+      pickBatchStatus: null as string | null,
+      revenue: Number(o.revenue ?? 0) || 0,
+      timeToSlaBreachMinutes: null as number | null,
+    }));
+
+  // Merge — an aging-population row (real age / revenue / SLA) wins over the
+  // constrained-only stub for the same order; every order id appears once.
+  const criticalOrdersById = new Map<string, (typeof breachedCriticalOrders)[number]>();
+  for (const o of constrainedReturnedPackageOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
+  for (const o of breachedCriticalOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
+  const criticalOrders = [...criticalOrdersById.values()];
+
+  // Ids that belong to "Package returned" regardless of which merged row won —
+  // used to keep the SLA / operational groups from double-listing them.
+  const returnedPackageOrderIds = new Set<string>([
+    ...constrainedReturnedPackageOrders.map(o => o.lasyncro_order_id),
+    ...breachedCriticalOrders
+      .filter(o => o.constraintType === 'operational' && o.blockType === 'returned_undelivered')
+      .map(o => o.lasyncro_order_id),
+  ]);
 
   // UX-CRITICAL-GROUPS: the owner acts on issue classes, not a wall of
   // repeated order rows. Preserve every order underneath an expandable group.
@@ -451,19 +508,30 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       orders: criticalOrders.filter(o => o.constraintType === 'inventory'),
     },
     {
-      key: 'operational',
-      label: 'Operational issues',
-      orders: criticalOrders.filter(
-        o =>
-          o.constraintType !== null &&
-          o.constraintType !== 'customer' &&
-          o.constraintType !== 'inventory'
-      ),
-    },
+    key: 'operational',
+    label: 'Operational issues',
+    orders: criticalOrders.filter(
+      o =>
+        o.constraintType !== null &&
+        o.constraintType !== 'customer' &&
+        o.constraintType !== 'inventory' &&
+        o.blockType !== 'returned_undelivered' &&
+        !returnedPackageOrderIds.has(o.lasyncro_order_id)
+    ),
+  },
+  {
+    key: 'returned_undelivered',
+    label: 'Package returned',
+    orders: criticalOrders.filter(
+      o => returnedPackageOrderIds.has(o.lasyncro_order_id)
+    ),
+  },
     {
       key: 'sla',
       label: 'Shipping SLA breached',
-      orders: criticalOrders.filter(o => o.constraintType === null),
+      orders: criticalOrders.filter(
+        o => o.constraintType === null && !returnedPackageOrderIds.has(o.lasyncro_order_id)
+      ),
     },
   ]
     .filter(group => group.orders.length > 0)
@@ -515,11 +583,11 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // "SLA breach · Xd past aging" on orders that were explicitly NOT
   // SLA-breached (isShippingSlaBreached: false). Now takes the real
   // breach flag so it can tell the two apart honestly.
-  const constraintLabel = (type: string | null, isBreached: boolean): string => {
+  const constraintLabel = (type: string | null, isBreached: boolean, blockType?: string | null): string => {
     switch (type) {
       case 'inventory': return 'Out of stock';
       case 'customer':  return 'Address issue';
-      case 'operational': return 'Pick exception';
+      case 'operational': return blockType === 'returned_undelivered' ? 'Package returned' : 'Pick exception';
       default: return isBreached ? 'SLA breach' : 'Aging';
     }
   };
@@ -1029,7 +1097,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                             </Typography>
                             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, minWidth: 0 }}>
                               <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)' }}>
-                                {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)}
+                                {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)}
                               </Typography>
                               <Typography
                                 sx={{
@@ -1102,7 +1170,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                         {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                       </Typography>
                       <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                        {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)} aging
+                        {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)} aging
                       </Typography>
                     </Box>
                     <Box
@@ -1128,7 +1196,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
                               {order.externalOrderId ? `#${order.externalOrderId}` : order.lasyncro_order_id.slice(0, 8).toUpperCase()}
                             </Typography>
                             <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }}>
-                              {constraintLabel(order.constraintType, order.isShippingSlaBreached)} · {fmtSlaAge(order.ageHours)} aging
+                              {constraintLabel(order.constraintType, order.isShippingSlaBreached, order.blockType)} · {fmtSlaAge(order.ageHours)} aging
                             </Typography>
                           </Box>
                           <Box

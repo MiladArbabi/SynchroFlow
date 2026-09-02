@@ -34,6 +34,8 @@ export type OrderDecision = {
   constraints: Array<{
     constraint_type: string;
     block_type: string | null;
+    target_id: string | null;
+    target_status: string | null;
     started_at: string | null;
   }>;
 };

@@ -40,9 +40,26 @@ export const httpGetOrderDecision = async (
     const result = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-    const constraints = await trx('order_constraints')
-        .where({ lasyncro_order_id: orderId, is_active: true })
-        .select('constraint_type', 'block_type', 'started_at');
+    const constraints = await trx('order_constraints as oc')
+        .leftJoin('return_jobs as rj', function () {
+          this.on('rj.return_job_id', '=', 'oc.target_id')
+            .andOn('rj.shop_id', '=', trx.raw('?', [shopId]));
+        })
+        .where({ 'oc.lasyncro_order_id': orderId, 'oc.is_active': true })
+        .select(
+          'oc.constraint_type',
+          'oc.block_type',
+          'oc.target_id',
+          trx.raw(`
+            CASE
+              WHEN oc.constraint_type = 'operational'
+               AND oc.block_type = 'returned_undelivered'
+              THEN rj.status
+              ELSE NULL
+            END AS target_status
+          `),
+          'oc.started_at'
+        );
 
       /**
        * FIX (2026-07-01, corrected 2026-07-02): order_constraints is the
@@ -68,6 +85,7 @@ export const httpGetOrderDecision = async (
         resolve_inventory_block: 'inventory',
         resolve_customer_block: 'customer',
         resolve_operational_block: 'operational',
+        open_return_job: 'operational',
       };
 
       const candidateDecisions = await trx('decisions')

@@ -48,6 +48,9 @@ export const resolveOperationalBlockHandler: ExecutionHandler = async (job, trx)
       constraint_type: 'operational',
       is_active: true,
     })
+    .where((builder: any) => {
+      builder.whereNull('block_type').orWhereNot('block_type', 'returned_undelivered');
+    })
     .update({
       is_active: false,
       resolved_at: dbx.fn.now(),

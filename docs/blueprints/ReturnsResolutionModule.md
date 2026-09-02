@@ -546,3 +546,170 @@ to a real `refund_executions` row, `return_reason` present on both tables.
 free-scan fold-in (§9) and line-level decision rework (this section) are
 web-only, per the explicit web-first priority set earlier this session.
 No other open items remain from this session's original register.
+
+---
+
+## 11. Session Log — 2026-09-02 (ORD-DECISION-01 — returned-package closed loop)
+
+`ORD-DECISION-01` closed the end-to-end handling gap for carrier-returned
+packages. Internal state remains `returned_undelivered`; merchant-facing
+language is deliberately simpler:
+
+- issue: **Package returned**
+- explanation: **The carrier returned this package before delivery.**
+- warehouse action: **Process return**
+- owner action: **Review return**
+
+The returned-package workflow now reuses the existing Returns/WMS surfaces
+instead of introducing another resolution system.
+
+### Creation and constraint identity
+
+Both supported undelivered-return creation paths
+(`createUndeliveredReturnJob()` and `createReturnJobFromCarrierEvent()`) create
+or preserve an active operational `returned_undelivered` order constraint whose
+`target_id` is the exact `return_job_id`.
+
+`order_constraints` remains projection-writer guarded. The Returns service uses
+the sanctioned transaction-local `synchroflow.projection = 'true'` mechanism
+when creating/resolving this constraint; no global bypass was introduced.
+
+The order decision API now returns the active constraint's `target_id` and an
+authoritative `target_status` read from `return_jobs.status`.
+
+### Decision/action semantics
+
+The neutral machine action for this subtype is `open_return_job`.
+
+`returned_undelivered` is explicitly excluded from the generic
+`resolve_operational_block` execution path. It cannot be dismissed using a
+generic **Mark as resolved** action, and unknown named operational subtypes are
+not silently collapsed onto that generic action.
+
+Routing is state-aware:
+
+- `pending` / `in_progress`
+  → **Process return**
+  → `/wms?returnJobId=<return_job_id>`
+  → the existing `ReturnSessionPage`
+- `awaiting_decision`
+  → **Review return**
+  → `/returns/items?returnJobId=<return_job_id>`
+  → the existing `ReturnsItemsPage` owner-decision modal
+- `complete`
+  → no returned-package CTA; an active `returned_undelivered` constraint
+  against a complete return job is an invariant violation.
+
+The returned-package CTA is derived from the active constraint plus its
+`target_id`/`target_status`; it no longer depends on `open_return_job` winning
+the single Decision Engine ranking. This matters because a returned package can
+legitimately coexist with inventory, SLA, or other operational constraints.
+Existing customer-constraint suppression remains unchanged.
+
+### Undelivered returns in owner decisions
+
+`listItemsAwaitingDecision()` now supports two explicit linkage paths which are
+normalized into the same `ReturnDecisionGroup` contract:
+
+1. `customer_return`
+   → existing `refund_executions` linkage;
+2. `undelivered_return`
+   → direct `refund_execution_line_items.return_job_id` linkage.
+
+An undelivered return therefore does **not** receive a synthetic/fake refund
+execution merely to appear in the owner-decision UI.
+
+Damaged/unsellable undelivered-return lines can move to
+`awaiting_decision`, appear in the existing Returned Items workflow, and use
+the same line-level owner decisions already defined by this module.
+
+A legitimate undelivered `reship` resolution clears the linked
+`returned_undelivered` constraint (`is_active = false`, `resolved_at` set) in
+addition to progressing the return lifecycle.
+
+### Orders Critical grouping
+
+The Orders Overview **Package returned** group is now sourced from active
+constrained-order truth:
+
+`constraint_type = 'operational'`
+and
+`block_type = 'returned_undelivered'`
+
+It is no longer derived only from the SLA-breached aging population. A package
+therefore does not need an unrelated `order_age_snapshot` or shipping-SLA
+breach to become visible.
+
+Shipping-SLA grouping remains sourced from the existing aging/SLA path.
+
+When the same order is both SLA-breached and package-returned, it is deduplicated
+and shown once under **Package returned** rather than duplicated across Critical
+groups.
+
+### Development verification fixtures
+
+`seed_returns_test_data.sql` remains wired into `dev:full-seed`, but the
+Process-return browser fixture no longer relies on the older positional
+candidate strategy described in §10.
+
+The browser verification fixture owns a deterministic non-terminal order:
+
+- external order: `900099`
+- marker: `FIXTURE:BROWSER-VERIFY:PROCESS_RETURN`
+- origin: `undelivered_return`
+- status: `pending`
+- active `returned_undelivered` constraint
+- no synthetic Decision Engine row
+
+Its order/return/fulfillment/constraint identifiers are deterministic
+seed-owned UUIDs. This removes dependence on randomized development order
+identity and projection timing.
+
+The Review-return fixture remains an `undelivered_return` job in
+`awaiting_decision` with a damaged processed line and marker
+`FIXTURE:BROWSER-VERIFY:REVIEW_RETURN`.
+
+### Regression and verification evidence
+
+Permanent regression coverage added/extended for this work includes:
+
+- returned-undelivered creation and linked constraint identity;
+- generic-resolution bypass prevention;
+- authoritative `target_id` / `target_status`;
+- legitimate lifecycle resolution and Critical disappearance;
+- unknown operational subtype safety;
+- `undelivered_return` owner-decision listing without a refund execution;
+- exact WMS and Returns deep-link routing;
+- returned-package CTA independence from Decision Engine election;
+- customer-constraint suppression;
+- complete-state CTA suppression;
+- constrained-only Package-returned grouping;
+- returned-package versus SLA deduplication/precedence;
+- live `OrdersFT2Page` constrained-order wiring.
+
+Targeted backend integration suite: **10/10 passed**.
+
+Targeted returned-package Orders grouping/wiring suites: **5/5 passed**.
+
+Targeted returned-package Order detail modal suite: **10/10 passed**.
+
+Touched backend, WMS, and Order Nexus TypeScript surfaces report zero target
+errors. The frontend project retains its known pre-existing TypeScript baseline
+outside these touched surfaces.
+
+Live-browser verification on the deterministic development fixtures confirmed:
+
+- Order `#900099`
+  → **Package returned**
+  → **Process return**
+  → exact existing WMS `ReturnSessionPage`;
+- Order `#900016`
+  → **Package returned**
+  → **Review return**
+  → exact existing Returned Items owner-decision modal.
+
+Lifecycle clearing after legitimate resolution is additionally protected by the
+backend integration contract; the browser verification above focused on the
+two user-facing routing branches.
+
+**ORD-DECISION-01: CLOSED.**

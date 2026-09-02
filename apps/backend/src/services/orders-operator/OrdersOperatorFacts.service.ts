@@ -55,6 +55,7 @@ export interface OrdersOperatorFacts {
       ageHours: number;
       isShippingSlaBreached: boolean;
       constraintType: string | null;
+      blockType: string | null;
       isPriorityFlagged: boolean;
       inPickBatch: boolean;
       pickBatchStatus: string | null;
@@ -205,6 +206,7 @@ export async function getOrdersOperatorFacts(
         .groupBy('lasyncro_order_id')
         .select('lasyncro_order_id')
         .min('constraint_type as constraint_type')
+        .min('block_type as block_type')
         .as('dominant_constraint'),
       'dominant_constraint.lasyncro_order_id',
       'o.lasyncro_order_id'
@@ -252,6 +254,7 @@ export async function getOrdersOperatorFacts(
         'oas.age_since_paid_seconds',
         'oas.is_shipping_sla_breached',
         'dominant_constraint.constraint_type',
+        'dominant_constraint.block_type',
         'pb.status as pick_batch_status',
         db.raw('COALESCE(ofs.is_priority_flagged, false) as is_priority_flagged'),
         db.raw('CASE WHEN pbo.lasyncro_order_id IS NULL THEN false ELSE true END as in_pick_batch'),
@@ -274,6 +277,7 @@ export async function getOrdersOperatorFacts(
       ageHours: Math.floor(Number(row.age_since_creation_seconds) / 3600),
       isShippingSlaBreached: Boolean(row.is_shipping_sla_breached),
       constraintType: row.constraint_type ?? null,
+      blockType: row.block_type ?? null,
       isPriorityFlagged: Boolean(row.is_priority_flagged),
       inPickBatch: Boolean(row.in_pick_batch),
       pickBatchStatus: row.pick_batch_status ?? null,

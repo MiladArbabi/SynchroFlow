@@ -190,17 +190,25 @@ function ConstraintAlertCard({
   const color = severity === 'critical' ? theme.palette.error.main : theme.palette.warning.main;
   const bg = severity === 'critical' ? 'rgba(226,75,74,0.08)' : 'rgba(239,159,39,0.08)';
   const Icon = severity === 'critical' ? AlertCircle : AlertTriangle;
+  const isReturnedUndelivered =
+    constraintType === 'operational' && blockType === 'returned_undelivered';
+  const title = isReturnedUndelivered
+    ? 'Package returned'
+    : getConstraintLabel(constraintType);
+  const body = isReturnedUndelivered
+    ? 'The carrier returned this package before delivery.'
+    : detail ?? blockType?.replace(/_/g, ' ');
 
   return (
     <Box sx={{ display: 'flex', gap: 1.25, bgcolor: bg, borderRadius: '10px', p: 1.25 }}>
       <Icon size={16} color={color} style={{ flexShrink: 0, marginTop: 1 }} />
       <Box sx={{ flex: 1, minWidth: 0 }}>
         <Typography sx={{ fontSize: 12.5, fontWeight: 500, color }}>
-          {getConstraintLabel(constraintType)}
+          {title}
         </Typography>
-        {(blockType || detail) && (
+        {body && (
           <Typography sx={{ fontSize: 11.5, color, mt: 0.5 }}>
-            {detail ?? blockType?.replace(/_/g, ' ')}
+            {body}
           </Typography>
         )}
       </Box>
@@ -612,6 +620,10 @@ export function OrderDetailModalBody({
     decision?.recommended_action?.type === 'proceed_fulfillment'
       ? undefined
       : decision?.recommended_action;
+  const executableRecommendedAction =
+    recommendedAction?.type === 'open_return_job'
+      ? undefined
+      : recommendedAction;
 
   const alternateActions = (decision?.actions ?? []).filter(
     (a) =>
@@ -627,6 +639,29 @@ export function OrderDetailModalBody({
   const hasActiveCustomerConstraint = constraints.some(
     (c) => c.constraint_type === 'customer' && c.block_type === 'incomplete_address'
   );
+  const returnedPackageConstraint = constraints.find(
+    (c) => c.constraint_type === 'operational' && c.block_type === 'returned_undelivered'
+  );
+  const returnJobId =
+    typeof returnedPackageConstraint?.target_id === 'string'
+      ? returnedPackageConstraint.target_id
+      : null;
+  const returnJobStatus = returnedPackageConstraint?.target_status ?? null;
+  const returnJobActionLabel =
+    returnJobId && (returnJobStatus === 'pending' || returnJobStatus === 'in_progress')
+      ? 'Process return'
+      : returnJobId && returnJobStatus === 'awaiting_decision'
+        ? 'Review return'
+        : null;
+  // RET-CTA-DECOUPLE: the returned-package CTA is gated on the active
+  // returned_undelivered constraint and an actionable target_status
+  // (returnJobActionLabel already encodes valid target_id + pending/
+  // in_progress/awaiting_decision). It must NOT also require the elected
+  // decision to be open_return_job — a co-active inventory/SLA blocker
+  // whose decision outranks open_return_job would otherwise silently hide
+  // the only route into the return job. Customer-constraint suppression
+  // and the elected-decision behaviour elsewhere in the modal are unchanged.
+  const hasReturnedPackageAction = Boolean(returnJobActionLabel);
   const hasAnyActiveConstraint = constraints.length > 0;
 
   // BL-16-UX-01: keep address correction focused without replacing the parent order modal.
@@ -645,6 +680,16 @@ export function OrderDetailModalBody({
     setShippingAddressDialogOpen(false);
     setAddressRecheckPending(false);
   }, [orderId]);
+
+  const handleOpenReturnJob = () => {
+    if (!returnJobId) return;
+    onClose?.();
+    if (returnJobStatus === 'awaiting_decision') {
+      navigate(`/returns/items?returnJobId=${encodeURIComponent(returnJobId)}`);
+      return;
+    }
+    navigate(`/wms?returnJobId=${encodeURIComponent(returnJobId)}`);
+  };
   /**
    * FOOTER LIFT (2026-07-02)
    * ------------------------
@@ -963,7 +1008,7 @@ export function OrderDetailModalBody({
         actions keep the original execute-button behavior, unchanged
         below.
       */}
-      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || recommendedAction) && (
+      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || hasReturnedPackageAction || executableRecommendedAction) && (
       <Box sx={{ mb: 3 }}>
         <Typography
           sx={{
@@ -1038,11 +1083,30 @@ export function OrderDetailModalBody({
         </Collapse>
 
         <Collapse
-          in={!hasActiveCustomerConstraint && Boolean(recommendedAction)}
+          in={!hasActiveCustomerConstraint && (hasReturnedPackageAction || Boolean(executableRecommendedAction))}
           timeout={180}
           unmountOnExit
         >
-          {recommendedAction && (
+          {hasReturnedPackageAction ? (
+            <Button
+              variant="contained"
+              fullWidth
+              onClick={handleOpenReturnJob}
+              sx={{
+                bgcolor: 'var(--accent)',
+                color: 'var(--accent-ink)',
+                borderRadius: '6px',
+                fontWeight: 600,
+                textTransform: 'none',
+                '&:hover': {
+                  bgcolor: 'var(--accent)',
+                  opacity: 0.88,
+                },
+              }}
+            >
+              {returnJobActionLabel}
+            </Button>
+          ) : executableRecommendedAction && (
             <>
               {isExecError ? (
                 <>
@@ -1066,7 +1130,7 @@ export function OrderDetailModalBody({
                       },
                     }}
                   >
-                    {getActionLabel(recommendedAction.type)}
+                    {getActionLabel(executableRecommendedAction.type)}
                   </Button>
                 </>
               ) : (
@@ -1078,7 +1142,7 @@ export function OrderDetailModalBody({
                   startIcon={
                     isPending
                       ? <CircularProgress size={16} color="inherit" />
-                      : recommendedAction.type === 'resolve_inventory_block'
+                      : executableRecommendedAction.type === 'resolve_inventory_block'
                         ? <ArrowRight size={16} />
                         : null
                   }
@@ -1094,7 +1158,7 @@ export function OrderDetailModalBody({
                     },
                   }}
                 >
-                  {isPending ? 'Processing…' : getActionLabel(recommendedAction.type)}
+                  {isPending ? 'Processing…' : getActionLabel(executableRecommendedAction.type)}
                 </Button>
               )}
 

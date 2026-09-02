@@ -694,6 +694,7 @@ export default function WmsOperationsPage() {
       gridLocations={gridData?.locations}
       pendingReceiveSession={pendingReceiveSession}
       pendingStowTaskId={searchParams.get('stowTaskId')}
+      pendingReturnJobId={searchParams.get('returnJobId')}
       onStowSessionEnter={(id) => setSearchParams({ stowTaskId: id }, { replace: true })}
       pendingPickBatchId={searchParams.get('batchId')}
       onPickSessionEnter={(id) => setSearchParams({ batchId: id }, { replace: true })}

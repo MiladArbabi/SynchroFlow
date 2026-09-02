@@ -36,6 +36,7 @@ import { OrdersModuleFT2 } from '@lasyncro/order-nexus';
 import { useOrdersFt2Snapshot } from '../orders/useOrdersFt2Snapshot';
 import { mapOrdersFt2Props } from '../orders/useOrdersFt2Adapter';
 import { useOrdersOperatorSummary } from '../orders/useOrdersOperatorSummary';
+import { useConstrainedOrders } from '../orders/useConstrainedOrders';
 import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useExchangeRates } from 'hooks/useExchangeRates';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -56,6 +57,11 @@ export default function OrdersFT2Page() {
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
   const snapshotQuery = useOrdersFt2Snapshot();
   const operatorSummaryQuery = useOrdersOperatorSummary();
+  // Existing constrained-orders payload — feeds OrdersModuleFT2's
+  // "Package returned" group, which is order_constraints truth and must not
+  // depend on the SLA/aging population. Same endpoint/hook the Blocked
+  // surface already uses; no new query.
+  const constrainedQuery = useConstrainedOrders({ limit: 50 });
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
   const bulkSetPriority = useBulkSetPriority();
@@ -95,6 +101,7 @@ export default function OrdersFT2Page() {
         {...headerProps}
         operationalControl={operationalControl}
         operatorSummary={operatorSummaryQuery.data ?? null}
+        constrainedOrders={constrainedQuery.data?.data ?? null}
         currency={{ displayCurrency, locale, rates }}
         onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}

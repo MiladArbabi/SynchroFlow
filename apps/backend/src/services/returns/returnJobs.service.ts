@@ -23,6 +23,7 @@
 //   - Audit log on every state transition
 
 import { Knex } from 'knex';
+import { randomUUID } from 'crypto';
 import db, { withTenant } from '@lasyncro/backend-core/db.js';
 import { writeAuditLog } from '../audit/operatorAudit.service.js';
 import { createStowTask } from '../wms/stow.service.js';
@@ -159,6 +160,63 @@ export interface CreateManualReturnLineInput {
   operatorId: number;
 }
 
+async function ensureReturnedUndeliveredConstraint(
+  trx: Knex | Knex.Transaction,
+  input: { lasyncroOrderId: string; returnJobId: string; now: Date }
+): Promise<void> {
+  await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+  const existing = await trx('order_constraints')
+    .where({
+      lasyncro_order_id: input.lasyncroOrderId,
+      constraint_type: 'operational',
+      block_type: 'returned_undelivered',
+      target_id: input.returnJobId,
+      is_active: true,
+    })
+    .first();
+
+  if (existing) return;
+
+  await trx('order_constraints').insert({
+    constraint_id: randomUUID(),
+    lasyncro_order_id: input.lasyncroOrderId,
+    constraint_type: 'operational',
+    block_type: 'returned_undelivered',
+    target_id: input.returnJobId,
+    started_at: input.now,
+    resolved_at: null,
+    is_active: true,
+    write_source: 'returnJobs.service:returned_undelivered',
+    created_at: input.now,
+  });
+}
+
+async function resolveReturnedUndeliveredConstraint(
+  trx: Knex | Knex.Transaction,
+  input: { lasyncroOrderId?: string; returnJobId: string; now: Date }
+): Promise<void> {
+  await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+
+  const query = trx('order_constraints')
+    .where({
+      constraint_type: 'operational',
+      block_type: 'returned_undelivered',
+      target_id: input.returnJobId,
+      is_active: true,
+    });
+
+  if (input.lasyncroOrderId) {
+    query.where({ lasyncro_order_id: input.lasyncroOrderId });
+  }
+
+  await query.update({
+    is_active: false,
+    resolved_at: input.now,
+    write_source: 'returnJobs.service:returned_undelivered',
+  });
+}
+
 // ─── Create: Customer Return ──────────────────────────────────────────────────
 
 export async function createCustomerReturnJob(
@@ -263,17 +321,11 @@ export async function createUndeliveredReturnJob(
 
     // Block the order — returned_undelivered constraint
     // Uses order_constraints table (constraint_type: operational, block_type: returned_undelivered)
-    await trx('order_constraints')
-      .insert({
-        shop_id: shopId,
-        lasyncro_order_id: lasyncroOrderId,
-        constraint_type: 'operational',
-        block_type: 'returned_undelivered',
-        target_id: returnJobId,
-        started_at: now,
-      })
-      .onConflict(['lasyncro_order_id', 'constraint_type', 'target_id'])
-      .ignore();
+    await ensureReturnedUndeliveredConstraint(trx, {
+      lasyncroOrderId,
+      returnJobId,
+      now,
+    });
 
     console.info('[UNDELIVERED_RETURN_JOB_CREATED]', { returnJobId, shopId, lasyncroOrderId, undeliveredReason });
 
@@ -338,17 +390,11 @@ export async function createReturnJobFromCarrierEvent(
       .returning('return_job_id');
     const returnJobId = job.return_job_id ?? job;
 
-    await qb('order_constraints')
-      .insert({
-        shop_id: shopId,
-        lasyncro_order_id: lasyncroOrderId,
-        constraint_type: 'operational',
-        block_type: 'returned_undelivered',
-        target_id: returnJobId,
-        started_at: now,
-      })
-      .onConflict(['lasyncro_order_id', 'constraint_type', 'target_id'])
-      .ignore();
+    await ensureReturnedUndeliveredConstraint(qb, {
+      lasyncroOrderId,
+      returnJobId,
+      now,
+    });
 
     console.info('[RETURN_JOB_CARRIER_EVENT_CREATED]', {
       returnJobId,
@@ -608,13 +654,11 @@ export async function setOwnerDecision(
 
     if (decision === 'reship') {
       // Unblock order — remove returned_undelivered constraint
-      await trx('order_constraints')
-        .where({
-          lasyncro_order_id: job.lasyncro_order_id,
-          block_type: 'returned_undelivered',
-          target_id: returnJobId,
-        })
-        .update({ resolved_at: now });
+      await resolveReturnedUndeliveredConstraint(trx, {
+        lasyncroOrderId: job.lasyncro_order_id,
+        returnJobId,
+        now,
+      });
 
       console.info('[RETURN_DECISION_RESHIP]', { returnJobId, orderId: job.lasyncro_order_id });
     }
@@ -760,9 +804,10 @@ export async function setLineOwnerDecision(
     if (decision === 'reship' && line.origin === 'undelivered_return') {
       // Only undelivered_return jobs carry the returned_undelivered order
       // constraint — a customer_return line has no such block to resolve.
-      await trx('order_constraints')
-        .where({ block_type: 'returned_undelivered', target_id: line.return_job_id })
-        .update({ resolved_at: now });
+      await resolveReturnedUndeliveredConstraint(trx, {
+        returnJobId: line.return_job_id,
+        now,
+      });
     }
 
     // ── JOB COMPLETION — only once every damaged/unsellable line is decided ──
@@ -900,7 +945,42 @@ export interface ReturnDecisionGroup {
 // lines and hiding ones already resolved on a still-open job.
 export async function listItemsAwaitingDecision(shopId: number): Promise<ReturnDecisionGroup[]> {
   return withTenant(shopId, async (trx) => {
-    const rows = await trx('return_jobs as rj')
+    /**
+     * TWO LEGITIMATE LINKAGE PATHS (RET-DECISION-LIST)
+     * ------------------------------------------------
+     * A. customer_return    — the line hangs off the job's refund execution
+     *                         (rj.lasyncro_refund_execution_id), which is
+     *                         also where total_refund_amount comes from.
+     * B. undelivered_return — the carrier sent the parcel back, so there is
+     *                         no refund execution at all: both
+     *                         createUndeliveredReturnJob and
+     *                         createReturnJobFromCarrierEvent write
+     *                         lasyncro_refund_execution_id = null. The
+     *                         line's own return_job_id is the only link
+     *                         back to the job, and nothing was refunded.
+     *
+     * Kept as two explicit branches rather than one OR-join: the join keys
+     * differ (refund execution vs return job) and so does the refund total,
+     * so a single ambiguous join would silently mix the two semantics.
+     * Both branches carry the same rj.shop_id filter inside the same
+     * withTenant transaction, and both normalize into ReturnDecisionGroup.
+     */
+    const lineColumns = [
+      'rj.return_job_id',
+      'rj.created_at',
+      'eoim.external_order_id',
+      'reli.lasyncro_refund_line_item_id as line_id',
+      'reli.quantity_received',
+      'reli.item_condition',
+      'reli.condition_notes',
+      'reli.owner_decision',
+      'reli.decision_notes',
+      'reli.decision_at',
+      'v.title as variant_title',
+      'v.sku',
+    ];
+
+    const customerReturnRows = await trx('return_jobs as rj')
       .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'rj.lasyncro_order_id')
       .join('refund_executions as re', 're.lasyncro_refund_execution_id', 'rj.lasyncro_refund_execution_id')
       .join('refund_execution_line_items as reli', 'reli.lasyncro_refund_execution_id', 're.lasyncro_refund_execution_id')
@@ -910,22 +990,24 @@ export async function listItemsAwaitingDecision(shopId: number): Promise<ReturnD
       .where('rj.status', 'awaiting_decision')
       .where('rj.origin', 'customer_return')
       .whereIn('reli.item_condition', ['damaged', 'unsellable'])
-      .select(
-        'rj.return_job_id',
-        'rj.created_at',
-        'eoim.external_order_id',
-        're.total_refund_amount',
-        'reli.lasyncro_refund_line_item_id as line_id',
-        'reli.quantity_received',
-        'reli.item_condition',
-        'reli.condition_notes',
-        'reli.owner_decision',
-        'reli.decision_notes',
-        'reli.decision_at',
-        'v.title as variant_title',
-        'v.sku',
-      )
-      .orderBy('rj.created_at', 'asc');
+      .select(...lineColumns, 're.total_refund_amount');
+
+    const undeliveredReturnRows = await trx('return_jobs as rj')
+      .join('external_order_identity_map as eoim', 'eoim.lasyncro_order_id', 'rj.lasyncro_order_id')
+      .join('refund_execution_line_items as reli', 'reli.return_job_id', 'rj.return_job_id')
+      .join('order_revenue_units as oru', 'oru.lasyncro_revenue_unit_id', 'reli.lasyncro_revenue_unit_id')
+      .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oru.lasyncro_variant_id')
+      .where('rj.shop_id', shopId)
+      .where('rj.status', 'awaiting_decision')
+      .where('rj.origin', 'undelivered_return')
+      .whereIn('reli.item_condition', ['damaged', 'unsellable'])
+      .select(...lineColumns, trx.raw('NULL::numeric AS total_refund_amount'));
+
+    // Single ordering over the merged set — one query per branch cannot
+    // preserve the previous cross-job created_at ordering on its own.
+    const rows = [...customerReturnRows, ...undeliveredReturnRows].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    );
 
     const groups = new Map<string, ReturnDecisionGroup>();
     for (const row of rows) {

@@ -63,6 +63,9 @@ export function getBlockerReason(order: ConstrainedOrder): string {
     return 'Not enough stock to fulfill';
   }
   if (order.constraint_type === 'operational') {
+    if (order.block_type === 'returned_undelivered') {
+      return 'Package returned';
+    }
     return 'Pick exception on the floor';
   }
   return 'Needs attention';
@@ -102,6 +105,8 @@ export type ConstrainedOrder = {
   external_order_id: string | null;
   constraint_type: string;
   block_type: string | null;
+  target_id?: string | null;
+  target_status?: string | null;
   /**
    * FLOW-MULTIBLOCK-01: other active constraint types on this order,
    * excluding constraint_type above. Backend COALESCEs to an empty
