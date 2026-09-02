@@ -17,17 +17,15 @@
  *   and Shopify execution pipeline — no duplication.
  */
 
-import db from '@lasyncro/backend-core/db.js';
 import { ExecutionHandler } from '../execution.registry.js';
 import { proceedFulfillmentHandler } from './proceed_fulfillment.handler.js';
 import {
   computeVariantPlanning,
   emitStockoutAlerts,
 } from '../../services/demand/demandIntelligence.service.js';
+import { evaluateInventoryConstraint } from '../../services/constraints/evaluators/inventoryConstraintEvaluator.js';
 
 export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) => {
-  const dbx = (trx ?? db) as typeof db;
-
   console.info('[RESOLVE_INVENTORY_BLOCK_START]', {
     decision_id: job.decision_id,
     entity_id: job.entity_id,
@@ -35,29 +33,55 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
   });
 
   /**
-   * STEP 1 — FETCH ORDER LINE ITEMS WITH INVENTORY TRUTH
-   * -----------------------------------------------------
-   * Join order_line_items → inventory_truth to get current
-   * available_quantity per variant on this order.
+   * STEP 1 — EVALUATE CANONICAL INVENTORY AVAILABILITY (ORD-DECISION-01)
+   * --------------------------------------------------------------------
+   * REUSES evaluateInventoryConstraint — the single canonical definition
+   * of "is this variant short?" — rather than restating it here.
+   *
+   * The previous local query was a second, drifted definition and was
+   * wrong on both axes this issue exists to fix:
+   *
+   * 1. AGGREGATION. It joined order_line_items → inventory_truth without
+   *    grouping, so a variant stocked across several locations produced
+   *    one row PER location, each carrying that location's own
+   *    available_quantity. A variant with 0 at the warehouse root and 7
+   *    in pick bin A-1 yielded a row of 0, which the shortage filter read
+   *    as a shortage while 7 pickable units sat on the shelf.
+   * 2. PICKABILITY. It counted every inventory_truth row regardless of
+   *    location, so quarantine/non-pickable stock could satisfy demand
+   *    that the picker can never actually fill.
+   *
+   * It also compared against oli.quantity — the ORIGINAL ordered quantity —
+   * so a 5-unit order already fulfilled 4 still demanded 5.
+   *
+   * The evaluator handles all three correctly (remaining unfulfilled
+   * demand, aggregate SUM over canonical pickable locations only) and is
+   * the same contract the constraint projection and the merchant-facing
+   * block state are derived from. Divergence here is precisely what
+   * produced an execute button that refused to proceed on a stocked order.
+   *
+   * RLS: the evaluator runs tenant-scoped queries and requires a real
+   * transaction whose caller has set app.current_tenant. The (trx ?? db)
+   * fallback below was already dead in practice — the previous STEP 1
+   * query threw TENANT_CONTEXT_MISSING on the pooled root connection
+   * before execution could reach the alerting guard (verified 2026-08-19).
+   * That guard is therefore hoisted here so absence still fails loudly,
+   * with the same message, before any evaluation is attempted.
    */
-  const lineItems = await dbx('order_line_items as oli')
-    .leftJoin('inventory_truth as it', (join) => {
-      join
-        .on('it.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-        .andOnVal('it.shop_id', job.shop_id);
-    })
-    .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
-    .where('oli.lasyncro_order_id', job.entity_id)
-    .select(
-      'oli.lasyncro_variant_id',
-      'oli.quantity',
-      'v.sku',
-      'v.title',
-      'v.unit_cost',
-      dbx.raw('COALESCE(it.available_quantity, 0) as available_quantity'),
+  if (!trx) {
+    throw new Error(
+      '[RESOLVE_INVENTORY_BLOCK] transaction required: alerting needs a ' +
+      'tenant-scoped transaction. Dispatcher must supply one.'
     );
+  }
 
-  if (lineItems.length === 0) {
+  const evaluations = await evaluateInventoryConstraint(
+    trx,
+    job.entity_id,
+    job.shop_id
+  );
+
+  if (evaluations.length === 0) {
     console.warn('[RESOLVE_INVENTORY_BLOCK_NO_LINE_ITEMS]', {
       decision_id: job.decision_id,
       entity_id: job.entity_id,
@@ -68,12 +92,10 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
   /**
    * STEP 2 — CLASSIFY VARIANTS
    * ---------------------------
-   * Sufficient = available_quantity >= quantity ordered.
-   * Any shortage blocks fulfillment.
+   * isActive === true IS the canonical shortage signal (available <
+   * remaining, pickable-only). No row-by-row recomputation here.
    */
-  const shortages = lineItems.filter(
-    (li: any) => Number(li.available_quantity) < Number(li.quantity)
-  );
+  const shortages = evaluations.filter((e) => e.isActive);
 
   const allStocked = shortages.length === 0;
 
@@ -87,7 +109,7 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
     console.info('[RESOLVE_INVENTORY_BLOCK_STOCK_AVAILABLE]', {
       decision_id: job.decision_id,
       entity_id: job.entity_id,
-      line_item_count: lineItems.length,
+      line_item_count: evaluations.length,
     });
 
     await proceedFulfillmentHandler(job, trx);
@@ -105,7 +127,7 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
     decision_id: job.decision_id,
     entity_id: job.entity_id,
     shortage_count: shortages.length,
-    variants: shortages.map((s: any) => s.lasyncro_variant_id),
+    variants: shortages.map((s) => s.targetId),
   });
 
   /**
@@ -123,26 +145,20 @@ export const resolveInventoryBlockHandler: ExecutionHandler = async (job, trx) =
    *
    * RLS: computeVariantPlanning runs RLS-protected queries and requires a
    * real transaction whose caller has set app.current_tenant. `trx` is
-   * therefore required here rather than falling back to `dbx`.
-   *
-   * The (trx ?? db) fallback above is already dead in practice: STEP 1's
-   * dbx query throws TENANT_CONTEXT_MISSING on the pooled root connection
-   * before execution ever reaches this point (verified 2026-08-19). A
-   * fallback branch here would be unreachable guard code of exactly the
-   * kind this issue exists to remove, so absence fails loudly instead.
+   * therefore required here rather than falling back to `dbx` — the guard
+   * that proves it now sits at STEP 1, since the evaluator needs the same
+   * tenant-scoped transaction and runs first.
    *
    * reconcile=false: the emitter's sweep resolves every active demand alert
    * absent from the supplied list. This caller holds only one order's
    * variants, so sweeping here would deactivate the rest of the shop's.
    */
-  if (!trx) {
-    throw new Error(
-      '[RESOLVE_INVENTORY_BLOCK] transaction required: alerting needs a ' +
-      'tenant-scoped transaction. Dispatcher must supply one.'
-    );
-  }
-
-  const shortedVariantIds = shortages.map((s: any) => s.lasyncro_variant_id);
+  // targetId is optional on ConstraintEvaluationResult; the inventory
+  // evaluator always populates it (one row per variant), so this narrows
+  // the type without discarding any real shortage.
+  const shortedVariantIds = shortages
+    .map((s) => s.targetId)
+    .filter((id): id is string => Boolean(id));
 
   const planned = await computeVariantPlanning(trx, job.shop_id, shortedVariantIds);
   const critical = planned.filter((v) => v.reorder_urgency === 'critical');

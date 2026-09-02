@@ -165,6 +165,68 @@ Blocks: MOQ accumulation system (`sourcing-recommendation-playbook.md §8`).
 | SUP-05 | P2 | Supplier scorecard fields all null on clean seed — no empty state or "complete your first receive to unlock ratings" messaging |
 | SUP-06 | P3 | No PO list filtering or search — will degrade at scale |
 | SUP-07 | P3 | Page title/signal line not using FT2 typography pattern (22px/500 title, 13px/ink-3 signal) |
+| SOURCING-UX-COGNITIVE-01 | P1 | Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order — see below |
+
+### SOURCING-UX-COGNITIVE-01 | OPEN | P1
+
+*Live-browser observation from ORD-DECISION-01 Slice 2 (2026-09-02).*
+
+Route: `/suppliers-portal/sourcing?variantId=<constraint.target_id>`,
+entered via "Source this item" on an Out of Stock order.
+
+**Routing is correct and is not the defect.** The link resolves to the
+right variant and loads the right Sourcing context. The problem is what
+the merchant meets on arrival.
+
+#### Problem
+
+- Difficult to interpret what belongs to the **blocked variant** versus
+  the **general sourcing page** — arriving with a specific shortage in
+  mind, the merchant cannot tell which parts of the screen are about
+  that shortage.
+- Immediate shortage resolution is visually mixed with broader
+  purchasing work; the urgent single-variant task and routine restocking
+  occupy the same visual plane.
+- Supplier ranking, quantity, **Add to queue**, **Create PO**, Sourcing
+  Pulse, onboarding/help cards, and unrelated products all compete for
+  attention simultaneously. Nothing sequences the decision.
+- The merchant cannot quickly determine what happened, what is missing,
+  what supply already exists, or what action is recommended.
+- The distinction between **Add to queue** and **Create PO** is
+  insufficiently clear in the context of resolving an active order
+  shortage — the merchant cannot tell which one actually unblocks the
+  order.
+
+#### Desired UX contract
+
+A merchant arriving from "Source this item" should immediately
+understand, in this order:
+
+1. blocked product / variant;
+2. current order shortage;
+3. available stock;
+4. confirmed inbound / existing commitments where known;
+5. true unsecured gap;
+6. supplier + MOQ implications;
+7. difference between queueing demand and creating a PO;
+8. recommended next action, with a plain-language reason.
+
+Items 4-6 depend on work already designed elsewhere and must not be
+re-specified here — see
+`docs/playbooks/sourcing-recommendation-playbook.md` §7.6 (how
+preference resolution changes the Sourcing page) and §8 (MOQ
+accumulation). This issue records the **information hierarchy and
+decision-clarity defect**, not a new recommendation engine.
+
+#### Scope
+
+**OPEN FOLLOW-UP ONLY.** The Sourcing screen is not to be redesigned or
+reimplemented as part of ORD-DECISION-01. Slice 2's routing contract is
+verified and closed; this is downstream UX work needing its own brief.
+
+Note: §5 Visual Audit above covers only the Open POs and Suppliers tabs
+— the Sourcing tab has never had an equivalent visual audit, which is
+plausibly why this went unrecorded until an order-side flow led into it.
 
 ---
 

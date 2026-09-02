@@ -278,3 +278,150 @@ fulfilled outside LaSyncro's own pick/pack pipeline — legitimate for
 Shopify-side-fulfilled/seed orders, not a data bug). Confirmed as two
 separate defects with two separate fixes, not one shared root cause —
 see that playbook's entry for the display-layer fix.
+
+---
+
+## 7. Session 6 (2026-09-02) — ORD-DECISION-01 Slice 2: inventory/oversell
+
+Shipped behaviour is described canonically in
+`docs/blueprints/Constraint_System_Blueprint.md` → *Constraint Types →
+Inventory*. This entry records the decisions, the limits, and the
+evidence.
+
+### 7a. What changed
+
+1. **One shortage definition.** `resolve_inventory_block.handler.ts` no
+   longer carries its own shortage query; it calls
+   `evaluateInventoryConstraint`. The removed query used original
+   ordered quantity, joined `inventory_truth` per-location without
+   grouping, and ignored pickability — so a variant with 0 at root and 7
+   in bin `A-1` read as short.
+2. **Stale-decision defence.** `POST /orders/:orderId/execute` now
+   elects a decision through the same action → required-active-constraint
+   map as the GET path
+   (`domain/decision/decisionConstraintRequirements.ts`, new file). The
+   map was previously local to
+   `orders.decision-by-order.controller.ts`, which is why the write path
+   could queue what the read path already refused.
+3. **Truthful inventory UX.** `OrderDetailModalBody` derives inventory
+   actions from **active constraints**, not from the elected decision
+   payload.
+
+### 7b. Legacy action retained — deliberately
+
+`resolve_inventory_block` was **NOT** replaced globally by a neutral
+`open_sourcing` action. Do not describe it as replaced.
+
+The workshop concept was ratified conditionally — "IF compatible with
+existing decision action typing/wiring without broad architecture
+change". Audit showed it is not. `resolve_inventory_block` is
+load-bearing in at least six places:
+
+- `bootstrap/workers.ts:158,160,187` — handler registration + action list
+- `api/orders/orders.constrained.controller.ts:152` — SQL `CASE`
+  mapping `'inventory' → 'resolve_inventory_block'`
+- `workers/reconciliation/reconciliation.handlers.ts:536` —
+  `activeActionTypes`
+- `api/orders/orders.decision-by-order.controller.ts` — staleness map
+- `tests/unit/ui/orders/OrderDetailModalBody.returned-undelivered.test.tsx`
+  (4 sites) — existing protected regression
+
+The handler is therefore **retained as a defensive path** for stored
+historical decisions, and behaves as follows:
+
+- canonical remaining demand genuinely covered → normal fulfillment may
+  proceed (delegates to `proceed_fulfillment`, full idempotency
+  pipeline);
+- still short → does **not** fulfill, does **not** manually clear the
+  constraint, does **not** invent sourcing side effects (the existing
+  SRC-18c critical-only alerting path is unchanged).
+
+The truthful-UX outcome is delivered instead by the UI deriving actions
+from active constraints, which is why this limitation does not block the
+slice.
+
+**Follow-up — INV-ACTION-ARCH-01 | OPEN**
+Decouple inventory workflow navigation from legacy
+`resolve_inventory_block` machine execution through a neutral workflow
+action such as `open_sourcing`. Requires coordinated worker /
+reconciliation / controller changes; out of scope for Slice 2.
+
+### 7c. Verification
+
+Targeted:
+
+| Suite | Result |
+|---|---|
+| `tests/integration/orders/inventory-decision-contract.test.ts` | 7/7 PASS |
+| `tests/unit/ui/orders/OrderDetailModalBody.inventory-sourcing.test.tsx` | 3/3 PASS |
+
+Regression:
+
+| Check | Result |
+|---|---|
+| returned-undelivered backend integration | 10/10 PASS |
+| returned-undelivered frontend | 10/10 PASS |
+| backend TSC | `TSC_ERROR_COUNT=0`, `TARGET_ERROR_COUNT=0` |
+| frontend TSC | `TARGET_ERROR_COUNT=0`; 19 pre-existing baseline errors in untouched files |
+| test ownership (`npm run test:config`) | `UNOWNED=0`, `MULTI_OWNED=0` |
+| disposable test DB | created → migrated → runtime-verified → dropped; no `synchroflow_test_*` orphans; dev DB untouched |
+
+Full backend-integration project: **11 failed suites / 23 passed**,
+**2 failed tests / 162 passed**. All failures are pre-existing baseline,
+unrelated to this slice:
+
+- 10 suites fail at load with
+  `Could not locate module api-src/middleware/auth.middleware`. That file
+  does not exist at `HEAD` —
+  `git cat-file -e HEAD:apps/backend/src/middleware/auth.middleware.ts`
+  returns *does not exist in 'HEAD'*.
+- `tests/integration/auth/register-creates-membership.test.ts`
+  ("creates a shop, an OWNER membership, and issues auth tokens";
+  expected users length 1, received 0) was **independently reproduced at
+  untouched `25841c83b6dcabbbd6edf3b75678fb84fc68f86b`** in a separate
+  clean worktree containing none of this slice.
+  **PROVEN PRE-EXISTING.**
+
+### 7d. Live browser evidence (2026-09-02)
+
+Runtime served from the Slice 2 worktree — verified by process CWD, not
+assumed:
+
+```text
+frontend  /private/tmp/synchroflow-ord-decision-push/apps/frontend
+backend   /private/tmp/synchroflow-ord-decision-push/apps/backend
+```
+
+Route used: `/orders/flow?constraint=inventory` → order `#800001`
+(`eea5bc08-d706-0ff9-62e9-cd08f9c05d4d`).
+
+Note: Orders Overview "Needs a decision" could **not** be used — see
+ORD-OVERVIEW-INVENTORY-01 in `docs/blueprints/OrdersModule.md`.
+`/orders/flow` reaches the same orders because it applies its SLA filter
+only when `?urgency=sla_breach` is present.
+
+Observed:
+
+- "Out of Stock" issue visible
+- "Source this item" visible
+- navigates to
+  `/suppliers-portal/sourcing?variantId=cb3592bc-1951-4c0b-aa39-306c5d6ef0dd`
+- correct Sourcing context loaded
+- constraint **remained blocked** after returning — navigation does not
+  resolve it
+- **no automatic PO or reorder request created**
+
+**Routing passed technically, but the downstream Sourcing UX exposed
+SOURCING-UX-COGNITIVE-01** (`docs/blueprints/SuppliersModule.md` §6):
+the merchant arrives at the correct variant, but the screen's cognitive
+load and weak decision hierarchy make it hard to tell what is blocked,
+what is already covered, and whether *Add to queue* or *Create PO*
+actually unblocks the order. Slice 2's routing contract is verified and
+closed; that is open follow-up work with its own brief.
+
+Multi-variant live browser check: **NOT AVAILABLE** — no deterministic
+multi-variant inventory-block fixture exists (see
+`docs/blueprints/OrdersModule.md`, ORD-FIXTURE-INVMULTI-01). This is a
+verification-fixture gap, **not** an untested product contract:
+INV-RED-08 (multiple blocked variants independently actionable) is
+permanently protected by the automated frontend test.

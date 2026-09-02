@@ -180,6 +180,103 @@ This is particularly important for split-location reservation because
 multi-location stock is a valid fulfillment source and must not create
 a false `oversell` constraint.
 
+#### Single shortage definition — ratified 2026-09-02 / ORD-DECISION-01 Slice 2
+
+There is exactly **one** definition of "is this variant short?" in the
+system: `evaluateInventoryConstraint`
+(`apps/backend/src/services/constraints/evaluators/inventoryConstraintEvaluator.ts`).
+
+Every consumer that needs a shortage verdict must call it. No caller may
+restate the comparison in its own query.
+
+The canonical contract is:
+
+- demand is **remaining unfulfilled demand**
+  (`SUM(quantity - fulfilled_quantity)`), never the original ordered
+  quantity;
+- supply is the **aggregate** `available_quantity` summed across
+  canonical **pickable** locations only;
+- **non-pickable stock cannot satisfy demand** — quarantine and other
+  non-pick zones are excluded by the canonical
+  `pickableLocationCondition` predicate;
+- `isActive = available < remaining`, evaluated **per variant**, and the
+  emitted constraint is variant-scoped via `target_id`.
+
+**Legacy handler now reuses the evaluator.**
+`resolve_inventory_block.handler.ts` previously carried its own shortage
+query. That second definition was wrong on all three axes and is
+removed:
+
+| Axis | Old local query | Canonical evaluator |
+|---|---|---|
+| Demand | `order_line_items.quantity` (original) | remaining unfulfilled demand |
+| Aggregation | one row **per inventory location**, ungrouped | `SUM` over pickable locations |
+| Pickability | every `inventory_truth` row counted | pickable locations only |
+
+Concretely, a variant holding 0 at the warehouse root and 7 in pick bin
+`A-1` produced a row of `0` under the old query, which the shortage
+filter read as a shortage while seven pickable units sat on the shelf.
+
+**Invariant:**
+
+> A second shortage definition is a defect, not an optimisation. If a
+> caller needs a shortage verdict it calls `evaluateInventoryConstraint`.
+
+#### Natural resolution — no manual dismissal
+
+An inventory constraint is **never** manually cleared.
+
+Resolution is a lifecycle outcome: when legitimate pickable stock
+becomes sufficient, the next evaluation pass computes `isActive = false`
+and `projectOrderConstraints` writes the resolution
+(`is_active = false`, `resolved_at` set). Nothing else may resolve it.
+
+In particular:
+
+- navigating the merchant to Sourcing does **not** clear the constraint;
+- returning from Sourcing does **not** clear the constraint;
+- no UI action writes `order_constraints` directly.
+
+The constraint clears when, and only when, the stock is really there.
+
+#### Action → required active constraint (stale-decision defence)
+
+`decisions` is enrichment; `order_constraints` is truth. A decision
+recommending `resolve_{type}_block` is **stale** the moment its required
+constraint type has no active rows for that order.
+
+Both the read path and the write path resolve this through one shared
+map,
+`apps/backend/src/domain/decision/decisionConstraintRequirements.ts`:
+
+| Action | Required active constraint |
+|---|---|
+| `resolve_inventory_block` | `inventory` |
+| `resolve_customer_block` | `customer` |
+| `resolve_operational_block` | `operational` |
+| `open_return_job` | `operational` |
+
+An action **absent** from this map has no prerequisite and is always
+executable. That default is deliberate — it is what keeps
+`proceed_fulfillment` and every other existing action unchanged.
+
+Consumers:
+
+- `GET /api/v1/orders/:orderId/decision` — elects the first non-stale
+  candidate in priority order (behaviour unchanged; the map moved out of
+  the controller);
+- `POST /api/v1/orders/:orderId/execute` — same election, so a stale
+  decision can no longer be queued. Previously this route took the
+  top-priority pending decision unconditionally, so an order whose block
+  had already cleared naturally could still be executed with `202` while
+  the read model correctly refused to surface it.
+
+**Invariant:**
+
+> Read validity and execute validity answer the same question from the
+> same map. Adding an action to that map makes it stale-checked on both
+> paths at once.
+
 ---
 
 ### Customer

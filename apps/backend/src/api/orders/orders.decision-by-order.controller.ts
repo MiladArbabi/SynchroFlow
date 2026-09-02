@@ -2,6 +2,7 @@
 
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
+import { isDecisionActionStillValid } from '../../domain/decision/decisionConstraintRequirements.js';
 
 /**
  * GET /api/v1/orders/:orderId/decision
@@ -80,14 +81,13 @@ export const httpGetOrderDecision = async (
        * Fixed to fetch ALL pending/in_progress decisions in priority
        * order, then return the FIRST one that isn't stale — not just
        * check-then-give-up on the top one.
+       *
+       * ORD-DECISION-01: the action → required-constraint map moved to
+       * domain/decision/decisionConstraintRequirements.ts so POST
+       * /execute enforces the identical staleness rule. It used to live
+       * here alone, which is why the write path could queue a decision
+       * this read path already refused to return.
        */
-      const CONSTRAINT_TYPE_BY_ACTION: Record<string, string> = {
-        resolve_inventory_block: 'inventory',
-        resolve_customer_block: 'customer',
-        resolve_operational_block: 'operational',
-        open_return_job: 'operational',
-      };
-
       const candidateDecisions = await trx('decisions')
         .where({ entity_id: orderId, shop_id: shopId })
         .whereIn('status', ['pending', 'in_progress'])
@@ -115,10 +115,14 @@ export const httpGetOrderDecision = async (
         return null;
       }
 
-      const decision = candidateDecisions.find((d) => {
-        const requiredType = CONSTRAINT_TYPE_BY_ACTION[d.recommended_action?.type];
-        return !requiredType || constraints.some((c) => c.constraint_type === requiredType);
-      });
+      const activeConstraintTypes = constraints.map((c) => c.constraint_type);
+
+      const decision = candidateDecisions.find((d) =>
+        isDecisionActionStillValid(
+          d.recommended_action?.type,
+          activeConstraintTypes
+        )
+      );
 
       if (!decision) {
         console.warn('[ORDER_DECISION_ALL_CANDIDATES_STALE]', {

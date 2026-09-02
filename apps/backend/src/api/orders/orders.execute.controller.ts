@@ -2,6 +2,7 @@
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { dispatchCommand } from '../../domain/command/command.bus.js';
+import { isDecisionActionStillValid } from '../../domain/decision/decisionConstraintRequirements.js';
 
 class DecisionNotFoundError extends Error {}
 class DecisionAlreadyExecutedError extends Error {}
@@ -53,13 +54,57 @@ export const httpExecuteOrderDecision = async (
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      const decision = await trx('decisions')
+      /**
+       * STALE-DECISION DEFENCE (ORD-DECISION-01)
+       * ----------------------------------------
+       * Constraints are truth; decisions are enrichment. A decision
+       * recommending resolve_{type}_block is stale once its required
+       * constraint type has no active rows — the block it exists to
+       * resolve is already gone.
+       *
+       * Previously this route took the top-priority pending decision and
+       * queued it unconditionally, so restocking an order (which clears
+       * the inventory constraint naturally, INV-RED-05) left a stale
+       * resolve_inventory_block decision that /execute would still
+       * accept with 202 — the read model already refused to surface it.
+       *
+       * Now both paths ask the same question through the same map
+       * (decisionConstraintRequirements.ts). Candidates are walked in
+       * priority order and the first non-stale one wins, mirroring the
+       * read path's all-candidates-stale behaviour rather than giving up
+       * on the top candidate alone. Actions with no constraint
+       * prerequisite are unaffected.
+       */
+      const activeConstraintTypes: string[] = (
+        await trx('order_constraints')
+          .where({ lasyncro_order_id: orderId, is_active: true })
+          .distinct('constraint_type')
+      ).map((row: { constraint_type: string }) => row.constraint_type);
+
+      const candidateDecisions = await trx('decisions')
         .where({ entity_id: orderId, shop_id: shopId })
         .whereIn('status', ['pending', 'in_progress'])
-        .orderBy('priority', 'desc')
-        .first();
+        .orderBy('priority', 'desc');
+
+      const decision = candidateDecisions.find((d) =>
+        isDecisionActionStillValid(
+          d.recommended_action?.type,
+          activeConstraintTypes
+        )
+      );
 
       if (!decision) {
+        if (candidateDecisions.length > 0) {
+          console.warn('[EXECUTE_ORDER_DECISION_ALL_CANDIDATES_STALE]', {
+            order_id: orderId,
+            shop_id: shopId,
+            candidate_count: candidateDecisions.length,
+            candidate_action_types: candidateDecisions.map(
+              (d) => d.recommended_action?.type
+            ),
+            active_constraint_types: activeConstraintTypes,
+          });
+        }
         throw new DecisionNotFoundError('No actionable decision found for this order');
       }
 

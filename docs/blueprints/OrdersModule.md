@@ -142,6 +142,83 @@ Order created
 | PROJ-01 | 🔴 P1 | Backend | `orderFulfillmentProjection.ts` hardcodes `incomingStatus = 'pending'` — projection can never advance orders to `fulfilled` through the event pipeline |
 | ORD-OUT-01 | 🟡 P2 | Outbound | Pulse stats computed from paginated rows — needs dedicated summary endpoint for accurate this-week counts |
 | ORD-OUT-02 | 🟡 P2 | Outbound | click on each order and pop up the orders details page |
+| ORD-OVERVIEW-INVENTORY-01 | 🔴 P1 | Overview | "Needs a decision" omits in-SLA inventory blocks — see below |
+| ORD-FIXTURE-INVMULTI-01 | 🟡 P2 | Verification | No deterministic multi-variant inventory-block browser fixture |
+| INV-ACTION-ARCH-01 | 🟡 P2 | Backend | Decouple Sourcing navigation from legacy `resolve_inventory_block` execution |
+
+### ORD-OVERVIEW-INVENTORY-01 | OPEN | 🔴 P1
+
+**Defect.** Orders Overview "Needs a decision" admits SLA-breached
+orders plus a `returned_undelivered` exception. Active inventory
+constraints that are still **within** SLA are therefore omitted, even
+though operational-control correctly counts them as constrained.
+
+**Root cause.** Grouping admission logic in
+`modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx`:
+
+- `:451` `allBreachedOrders = allAgingOrders.filter(o => o.isShippingSlaBreached)`
+- `:465-466` the constrained payload is filtered to
+  `constraint_type === 'operational' && block_type === 'returned_undelivered'`
+  before the merge
+- `:483-486` `criticalOrders` = those two populations only
+- `:506-509` the "Out of stock" group filters `criticalOrders`, so an
+  inventory order can only appear if it is **also** SLA-breached
+- `:537` an empty group is dropped, so nothing is rendered at all
+
+The ORD-RETPKG comment at `:458-464` states the correct principle —
+canonical `order_constraints` truth "must NOT depend on the SLA/aging
+population" — but implements it as a returned-package-only special case.
+An active oversell has the same property; the generalisation was never
+made.
+
+**Evidence (2026-09-02).** Three active `inventory`/`oversell`
+constraints existed (`#800001-800003`), each with a valid variant
+`target_id`, a pending `resolve_inventory_block` decision, and remaining
+demand. `orders_operational_control_snapshot` was fresh and correct
+(`constrained_orders = 5`, `queue_awaiting_inventory = 3`). A SQL mirror
+of `orders.constrained.controller.ts` returned all three rows. All three
+had `is_shipping_sla_breached = false` at age ~0.02 h, so none entered
+`criticalOrders`.
+
+Header vs card, both correct for their own read model:
+
+```text
+header  "5 constrained"     = snapshot.constrained_orders
+                            = 3 inventory + 2 returned_undelivered
+card    "9 orders / 2 issues" = criticalOrders
+                            = SLA-breached (8) ∪ returned_undelivered (2)
+```
+
+The two disagree by exactly the 3 inventory orders the card cannot
+represent.
+
+**Scope.** Pre-existing defect in the order-nexus module, independent of
+ORD-DECISION-01 Slice 2 — that slice changed `OrderDetailModalBody` and
+the backend decision/execute path, and could neither cause nor fix this.
+Not fixed in Slice 2. A fix requires an authorised module rebuild
+(`modules/order-nexus/dist/...`) plus its own tests.
+
+**Workaround for verification.** `/orders/flow?constraint=inventory`
+reaches the same orders — `OrderFlowPage` applies its SLA filter only
+when `?urgency=sla_breach` is present.
+
+### ORD-FIXTURE-INVMULTI-01 | OPEN | 🟡 P2
+
+No deterministic **multi-variant** inventory-block browser fixture
+exists in any seed mode. The existing REV-HARD-05 QA fixture
+(`apps/backend/seeds/dev_seed.ts`, `DEV_SEED_MODE=full_identity`) seeds
+three zero-stock orders with exactly **one** blocked variant each, so a
+live browser cannot demonstrate two independent "Source this item"
+actions on one order.
+
+This is a **verification-fixture gap, not an untested product
+contract** — INV-RED-08 is permanently protected by
+`tests/unit/ui/orders/OrderDetailModalBody.inventory-sourcing.test.tsx`.
+
+Related gate to be aware of: `npm run dev:full-reset` uses
+`DEV_SEED_MODE=full_data` and runs no SQL seeds, so it produces **no**
+inventory-blocked and **no** returned-package fixtures. Only
+`npm run dev:full-seed` (`full_identity` + SQL seeds + rebuild) does.
 
 ---
 

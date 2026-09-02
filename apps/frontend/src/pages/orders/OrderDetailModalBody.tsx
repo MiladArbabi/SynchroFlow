@@ -635,6 +635,35 @@ export function OrderDetailModalBody({
   const order = detailQuery.data;
 
   const hasActiveInventoryConstraint = constraints.some((c) => c.constraint_type === 'inventory');
+  /**
+   * INVENTORY SOURCING TARGETS (ORD-DECISION-01)
+   * --------------------------------------------
+   * Derived from ACTIVE CONSTRAINTS, never from the elected decision
+   * payload. Two reasons, both observed:
+   *
+   * 1. TRUTHFULNESS. An active oversell is not something the merchant can
+   *    "resolve" by pressing a button — the units do not exist. The old
+   *    CTA ran execute(orderId), which reached resolve_inventory_block and
+   *    either silently did nothing or emitted a reorder alert, while the
+   *    label promised "Go to sourcing" and no navigation occurred.
+   * 2. EXACTNESS. One order can block on several variants. The decision
+   *    row carries a single ranked recommendation, so routing from it
+   *    would send the merchant to an arbitrary first variant. Each active
+   *    inventory constraint carries its own target_id, so each blocked
+   *    variant stays independently actionable.
+   *
+   * Constraints without a usable target_id are skipped rather than routed
+   * to a broken Sourcing URL.
+   */
+  const inventorySourcingTargets = constraints
+    .filter(
+      (c) =>
+        c.constraint_type === 'inventory' &&
+        typeof c.target_id === 'string' &&
+        c.target_id.length > 0
+    )
+    .map((c) => c.target_id as string);
+  const hasInventorySourcingAction = inventorySourcingTargets.length > 0;
   // BL-16: constraints are canonical blocker truth; decision enrichment may be absent.
   const hasActiveCustomerConstraint = constraints.some(
     (c) => c.constraint_type === 'customer' && c.block_type === 'incomplete_address'
@@ -680,6 +709,13 @@ export function OrderDetailModalBody({
     setShippingAddressDialogOpen(false);
     setAddressRecheckPending(false);
   }, [orderId]);
+
+  const handleOpenSourcing = (variantId: string) => {
+    onClose?.();
+    navigate(
+      `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}`
+    );
+  };
 
   const handleOpenReturnJob = () => {
     if (!returnJobId) return;
@@ -1008,7 +1044,7 @@ export function OrderDetailModalBody({
         actions keep the original execute-button behavior, unchanged
         below.
       */}
-      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || hasReturnedPackageAction || executableRecommendedAction) && (
+      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || hasReturnedPackageAction || hasInventorySourcingAction || executableRecommendedAction) && (
       <Box sx={{ mb: 3 }}>
         <Typography
           sx={{
@@ -1083,7 +1119,7 @@ export function OrderDetailModalBody({
         </Collapse>
 
         <Collapse
-          in={!hasActiveCustomerConstraint && (hasReturnedPackageAction || Boolean(executableRecommendedAction))}
+          in={!hasActiveCustomerConstraint && (hasReturnedPackageAction || hasInventorySourcingAction || Boolean(executableRecommendedAction))}
           timeout={180}
           unmountOnExit
         >
@@ -1106,6 +1142,38 @@ export function OrderDetailModalBody({
             >
               {returnJobActionLabel}
             </Button>
+          ) : hasInventorySourcingAction ? (
+            /*
+             * ORD-DECISION-01: an active oversell routes to Sourcing and
+             * runs NO execute mutation. One button per blocked variant,
+             * each carrying its own constraint target_id — see
+             * inventorySourcingTargets above for why this is derived from
+             * constraints rather than the elected decision.
+             */
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+              {inventorySourcingTargets.map((variantId) => (
+                <Button
+                  key={variantId}
+                  variant="contained"
+                  fullWidth
+                  startIcon={<ArrowRight size={16} />}
+                  onClick={() => handleOpenSourcing(variantId)}
+                  sx={{
+                    bgcolor: 'var(--accent)',
+                    color: 'var(--accent-ink)',
+                    borderRadius: '6px',
+                    fontWeight: 600,
+                    textTransform: 'none',
+                    '&:hover': {
+                      bgcolor: 'var(--accent)',
+                      opacity: 0.88,
+                    },
+                  }}
+                >
+                  Source this item
+                </Button>
+              ))}
+            </Box>
           ) : executableRecommendedAction && (
             <>
               {isExecError ? (
