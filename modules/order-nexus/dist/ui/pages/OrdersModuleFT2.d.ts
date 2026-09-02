@@ -81,6 +81,7 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
             ageHours: number;
             isShippingSlaBreached: boolean;
             constraintType: string | null;
+            blockType?: string | null;
             isPriorityFlagged: boolean;
             inPickBatch: boolean;
             pickBatchStatus: string | null;
@@ -101,6 +102,22 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
             manualReview: number;
         };
     } | null;
+    /**
+     * Active constrained orders — the existing /api/v1/orders/constrained
+     * payload (useConstrainedOrders). Only returned_undelivered rows are
+     * consumed here: "Package returned" is order_constraints truth and must
+     * surface in Critical even when order_age_snapshot / SLA-breach state is
+     * absent. Minimal shape — extend only as this module requires.
+     */
+    constrainedOrders?: Array<{
+        order_id: string;
+        external_order_id: string | null;
+        constraint_type: string;
+        block_type: string | null;
+        revenue?: number | string | null;
+        age_since_creation_seconds?: number | null;
+        is_shipping_sla_breached?: boolean | null;
+    }> | null;
     currency?: CurrencyContext;
 }
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps): import("react").JSX.Element;

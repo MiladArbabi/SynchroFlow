@@ -455,40 +455,101 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
       (o.constraintType !== null || !o.inPickBatch)
   );
 
-  // ORD-RETPKG (2026-09): "Package returned" is canonical order_constraints
-  // truth. A carrier return has no shipping-SLA semantics of its own and is
-  // not guaranteed an order_age_snapshot row, so it must NOT depend on the
-  // SLA/aging population. Source of record: the existing constrained-orders
-  // payload (useConstrainedOrders → /api/v1/orders/constrained), threaded in
-  // as `constrainedOrders`. Normalize only the fields the Critical row /
-  // detail-open contract needs — no fabricated age / revenue / SLA.
-  const constrainedReturnedPackageOrders = (props.constrainedOrders ?? [])
-    .filter(o => o.constraint_type === 'operational' && o.block_type === 'returned_undelivered')
-    .map(o => ({
-      lasyncro_order_id: o.order_id,
-      externalOrderId: o.external_order_id ?? null,
-      ageHours: Math.max(0, Math.floor((o.age_since_creation_seconds ?? 0) / 3600)),
-      isShippingSlaBreached: Boolean(o.is_shipping_sla_breached),
-      constraintType: 'operational' as string | null,
-      blockType: 'returned_undelivered' as string | null,
-      isPriorityFlagged: false,
-      inPickBatch: false,
-      pickBatchStatus: null as string | null,
-      revenue: Number(o.revenue ?? 0) || 0,
-      timeToSlaBreachMinutes: null as number | null,
-    }));
+  /**
+   * ORD-OVERVIEW-INVENTORY-01 — CANONICAL CONSTRAINT ADMISSION
+   * ----------------------------------------------------------
+   * Generalised from the ORD-RETPKG (2026-09) returned-package path, which
+   * established the principle for one block type only: active
+   * order_constraints rows are canonical truth, carry no shipping-SLA
+   * semantics of their own, and are not guaranteed an order_age_snapshot
+   * row — so they must NOT depend on the SLA/aging population.
+   *
+   * That was implemented as a `returned_undelivered` special case, which
+   * left every other blocker admissible only by breaching SLA: a freshly
+   * out-of-stock or address-blocked order was counted in the header and
+   * absent from this card. Two dimensions, now kept separate:
+   *
+   *   WHY blocked  → canonical constraint  (admission)
+   *   HOW urgent   → SLA / age             (ranking, never admission)
+   *
+   * Source of record is unchanged: the existing constrained-orders payload
+   * (useConstrainedOrders → /api/v1/orders/constrained).
+   */
+  const isMerchantActionableConstraint = (
+    constraintType: string,
+    blockType: string | null
+  ): boolean => {
+    switch (constraintType) {
+      case 'inventory':
+        // allocation_pending has no ratified merchant-actionable semantics
+        // and is pending its own lifecycle audit — it must not silently
+        // become a decision. Every other inventory block is actionable.
+        return blockType !== 'allocation_pending';
+      case 'customer':
+      case 'operational':
+        return true;
+      default:
+        // An unrecognised constraint type is NOT assumed actionable. New
+        // types opt in here deliberately rather than appearing by default.
+        return false;
+    }
+  };
 
-  // Merge — an aging-population row (real age / revenue / SLA) wins over the
-  // constrained-only stub for the same order; every order id appears once.
+  // Real aging facts, keyed by order id, so a constrained row can be
+  // enriched with them where they exist. Nothing is fabricated: an order
+  // absent from the aging population simply has no such facts.
+  const agingFactsById = new Map(
+    allAgingOrders.map(o => [o.lasyncro_order_id, o] as const)
+  );
+
+  // Normalise only the fields the Critical row / detail-open contract needs.
+  const actionableConstrainedOrders = (props.constrainedOrders ?? [])
+    .filter(o => isMerchantActionableConstraint(o.constraint_type, o.block_type ?? null))
+    .map(o => {
+      const aging = agingFactsById.get(o.order_id);
+
+      return {
+        lasyncro_order_id: o.order_id,
+        externalOrderId: o.external_order_id ?? aging?.externalOrderId ?? null,
+        // Prefer the aging population's real age/SLA/batch facts when the
+        // order appears there too; otherwise use whatever the constrained
+        // row actually carries. Never invent a breach or a promised date.
+        ageHours:
+          aging?.ageHours ??
+          Math.max(0, Math.floor((o.age_since_creation_seconds ?? 0) / 3600)),
+        isShippingSlaBreached:
+          aging?.isShippingSlaBreached ?? Boolean(o.is_shipping_sla_breached),
+        // Canonical truth owns the classification, so the order lands under
+        // its real issue group rather than the aging row's stale view.
+        constraintType: o.constraint_type as string | null,
+        blockType: (o.block_type ?? null) as string | null,
+        isPriorityFlagged: aging?.isPriorityFlagged ?? false,
+        inPickBatch: aging?.inPickBatch ?? false,
+        pickBatchStatus: (aging?.pickBatchStatus ?? null) as string | null,
+        revenue: Number(o.revenue ?? aging?.revenue ?? 0) || 0,
+        timeToSlaBreachMinutes: (aging?.timeToSlaBreachMinutes ?? null) as number | null,
+      };
+    });
+
+  const actionableConstrainedIds = new Set(
+    actionableConstrainedOrders.map(o => o.lasyncro_order_id)
+  );
+
+  // Merge — canonical constraint ownership wins. An SLA-breached aging row is
+  // admitted only when no actionable constraint already owns that order, so
+  // every order id appears exactly once and lands under its blocker's group
+  // rather than being double-listed under Shipping SLA breached.
   const criticalOrdersById = new Map<string, (typeof breachedCriticalOrders)[number]>();
-  for (const o of constrainedReturnedPackageOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
   for (const o of breachedCriticalOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
+  for (const o of actionableConstrainedOrders) criticalOrdersById.set(o.lasyncro_order_id, o);
   const criticalOrders = [...criticalOrdersById.values()];
 
   // Ids that belong to "Package returned" regardless of which merged row won —
   // used to keep the SLA / operational groups from double-listing them.
   const returnedPackageOrderIds = new Set<string>([
-    ...constrainedReturnedPackageOrders.map(o => o.lasyncro_order_id),
+    ...actionableConstrainedOrders
+      .filter(o => o.constraintType === 'operational' && o.blockType === 'returned_undelivered')
+      .map(o => o.lasyncro_order_id),
     ...breachedCriticalOrders
       .filter(o => o.constraintType === 'operational' && o.blockType === 'returned_undelivered')
       .map(o => o.lasyncro_order_id),
@@ -559,8 +620,16 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   // 48h) before this array ever reaches the frontend, so every order here
   // already qualifies. Re-checking a hardcoded 24h client-side both duplicated
   // backend logic and used a different, disconnected number.
+  // ORD-OVERVIEW-INVENTORY-01: Watch is "aging, needs attention soon" — an
+  // order already owned by an actionable canonical constraint is not merely
+  // aging, it is blocked, and belongs in Critical under its issue group. It
+  // must not appear in both bands. This is a frontend ownership rule only;
+  // the backend aging population and WATCH_FLOOR are unchanged.
   const watchOrders = allAgingOrders.filter(
-    o => !o.isShippingSlaBreached && stillNeedsDecision(o)
+    o =>
+      !o.isShippingSlaBreached &&
+      stillNeedsDecision(o) &&
+      !actionableConstrainedIds.has(o.lasyncro_order_id)
   );
 
   const visibleWatchOrders    = watchOrders.slice(0, TRIAGE_PREVIEW_LIMIT);
@@ -641,8 +710,14 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
               // 8 orders sat in the Critical band below it, same page.
               // Reuse the same criticalOrders/watchOrders arrays the
               // bands already render from — single source, no new query.
+              // ORD-OVERVIEW-INVENTORY-01: this said "SLA-breached", which
+              // became false once canonical constraints are admitted without
+              // an SLA prerequisite — a freshly out-of-stock order is
+              // critical but not late. Critical is the accurate collective
+              // noun; SLA breach stays identifiable at group/order level via
+              // the "Shipping SLA breached" group.
               : criticalOrders.length > 0
-                ? `${criticalOrders.length} SLA-breached · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
+                ? `${criticalOrders.length} critical order${criticalOrders.length === 1 ? '' : 's'} · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
                 : watchOrders.length > 0
                   ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging · review soon`
                   : 'All orders on track — nothing needs immediate action'}

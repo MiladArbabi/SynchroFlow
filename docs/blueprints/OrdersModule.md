@@ -142,16 +142,116 @@ Order created
 | PROJ-01 | 🔴 P1 | Backend | `orderFulfillmentProjection.ts` hardcodes `incomingStatus = 'pending'` — projection can never advance orders to `fulfilled` through the event pipeline |
 | ORD-OUT-01 | 🟡 P2 | Outbound | Pulse stats computed from paginated rows — needs dedicated summary endpoint for accurate this-week counts |
 | ORD-OUT-02 | 🟡 P2 | Outbound | click on each order and pop up the orders details page |
-| ORD-OVERVIEW-INVENTORY-01 | 🔴 P1 | Overview | "Needs a decision" omits in-SLA inventory blocks — see below |
+| ORD-OVERVIEW-INVENTORY-01 | ✅ Implemented | Overview | "Needs a decision" omitted in-SLA canonical blocks — fixed, see below |
 | ORD-FIXTURE-INVMULTI-01 | 🟡 P2 | Verification | No deterministic multi-variant inventory-block browser fixture |
 | INV-ACTION-ARCH-01 | 🟡 P2 | Backend | Decouple Sourcing navigation from legacy `resolve_inventory_block` execution |
+| ORDER-NEXUS-DIST-STALE-01 | 🔴 P1 | Build | Committed order-nexus `dist` drifted from source — no gate prevents it |
+| TEST-ORDER-NEXUS-MODULEENTRY-01 | 🟡 P2 | Tests | `OrdersModuleFT2.test.tsx` cannot resolve `./ModuleEntry.js` |
+| ORD-RANK-CONSISTENCY-01 | 🟡 P2 | Backend | Three competing constraint-ranking definitions |
+| ORD-ALLOC-PENDING-01 | 🟡 P2 | Backend | `allocation_pending` lifecycle unaudited |
 
-### ORD-OVERVIEW-INVENTORY-01 | OPEN | 🔴 P1
+### ORD-OVERVIEW-INVENTORY-01 | IMPLEMENTED + AUTOMATED VERIFIED + LIVE VERIFIED | 🔴 P1
 
-**Defect.** Orders Overview "Needs a decision" admits SLA-breached
+*Not yet deployed. Commit/push/deploy follow this entry.*
+
+#### Ratified model — WHY vs HOW URGENT
+
+"Needs a decision" has two independent dimensions, and conflating them
+was the defect:
+
+```text
+WHY BLOCKED   = active merchant-actionable canonical constraint
+HOW URGENT    = SLA / age
+```
+
+**Invariant**
+
+> An active merchant-actionable canonical order constraint must be
+> eligible for Orders Overview "Needs a decision" independently of
+> shipping SLA breach, order age, the OrdersOperatorFacts
+> `WATCH_FLOOR`, and membership in `agingOrders`.
+>
+> SLA/age must NEVER be an admission prerequisite.
+
+SLA is urgency metadata, not a gate: an approaching or breached SLA
+raises an order's urgency because the objective is customer satisfaction
+— getting the order out of the door quickly — but a blocked order needs
+a decision from the moment it is blocked, not from the moment it is late.
+
+#### Critical model
+
+Critical contains exactly two populations:
+
+1. merchant-actionable canonical constraints, from constrained-order
+   truth (`/api/v1/orders/constrained`);
+2. unconstrained SLA-breached orders.
+
+When an order is **both** constrained and SLA-breached:
+
+- the canonical constraint owns the issue group;
+- SLA remains urgency metadata;
+- the order appears exactly once.
+
+Group mapping (unchanged by this fix — the generalised population made
+the existing mapping work without an inventory-specific special case):
+
+| Constraint | Group |
+|---|---|
+| `customer` | Address issues |
+| `inventory` | Out of stock |
+| `operational` + `returned_undelivered` | Package returned |
+| other actionable `operational` | Operational issues |
+| unconstrained SLA breach | Shipping SLA breached |
+
+Empty groups remain hidden.
+
+#### Actionability allow-list
+
+Explicit, in `isMerchantActionableConstraint()`. "Every active
+constraint row is actionable" is deliberately NOT the rule.
+
+| `constraint_type` | Actionable |
+|---|---|
+| `inventory` | yes, **except** `block_type = 'allocation_pending'` |
+| `customer` | yes |
+| `operational` | yes |
+| unknown / unrecognised | **no** — new types opt in deliberately |
+
+`allocation_pending` is excluded because its semantics are **unaudited**
+(ORD-ALLOC-PENDING-01), not because it has been ratified as permanently
+non-actionable. Nothing here should be read as a decision about it.
+
+#### Watch model
+
+Watch contains aging / approaching-SLA orders needing attention, but NOT
+orders already owned by an actionable canonical constraint — such an
+order is blocked, not merely aging, and belongs in Critical under its
+issue group. It must never appear in both bands.
+
+**`WATCH_FLOOR` was NOT the defect and was NOT modified.** The backend
+aging population in `OrdersOperatorFacts.service.ts` is untouched; the
+Watch narrowing is a frontend ownership rule only.
+
+#### Copy and counts
+
+- The Critical population is described as "critical order(s)", never
+  globally as "SLA-breached" — a freshly out-of-stock order is critical
+  but not late.
+- SLA-specific terminology stays on the "Shipping SLA breached"
+  group/order level, where it remains true.
+- Critical order count = unique visible Critical orders (Map keyed by
+  `lasyncro_order_id`).
+- Issue count = number of non-empty issue groups.
+- `operationalControl.constrained_orders` is **not** required to equal
+  the Critical count. They are different read models over different
+  populations, and forcing equality would be wrong.
+
+#### Original defect (retained for history)
+
+Orders Overview "Needs a decision" admitted SLA-breached
 orders plus a `returned_undelivered` exception. Active inventory
-constraints that are still **within** SLA are therefore omitted, even
-though operational-control correctly counts them as constrained.
+constraints that were still **within** SLA were therefore omitted, even
+though operational-control correctly counted them as constrained.
 
 **Root cause.** Grouping admission logic in
 `modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx`:
@@ -195,12 +295,74 @@ represent.
 **Scope.** Pre-existing defect in the order-nexus module, independent of
 ORD-DECISION-01 Slice 2 — that slice changed `OrderDetailModalBody` and
 the backend decision/execute path, and could neither cause nor fix this.
-Not fixed in Slice 2. A fix requires an authorised module rebuild
-(`modules/order-nexus/dist/...`) plus its own tests.
 
-**Workaround for verification.** `/orders/flow?constraint=inventory`
-reaches the same orders — `OrderFlowPage` applies its SLA filter only
-when `?urgency=sla_breach` is present.
+Also established during the audit and **not** inventory-only: `customer`
+and every non-return `operational` block type were excluded by the same
+mechanism, and a second, upstream gate exists — the backend
+`WATCH_FLOOR` (50% of the SLA window) keeps a fresh order out of
+`agingOrders` entirely, so a just-blocked order reached neither Critical
+nor Watch. Admission now bypasses both gates by reading canonical truth.
+
+#### Fix
+
+`modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx` only (+133/−81),
+plus the authorised module rebuild of its committed `dist`. No backend,
+config, seed, or test change.
+
+- the `returned_undelivered`-only constrained path was **generalised**
+  to all merchant-actionable canonical constraints — the ORD-RETPKG
+  principle applied as originally stated, not as a second special case;
+- merge ownership flipped: canonical constraint wins over the SLA/aging
+  row, via an explicit `Map` keyed by order id (no ordering reliance);
+- an order present in both populations is enriched with the aging row's
+  real facts (age, SLA, batch, priority, revenue) — nothing fabricated;
+- Watch excludes actionably-constrained orders;
+- the Critical signal line no longer says "SLA-breached".
+
+#### Verification
+
+Automated — permanent contracts OV-CONSTRAINT-01..13 in
+`tests/unit/ui/order-nexus/OrdersModuleFT2.constraint-admission.test.tsx`:
+
+| Result | Contracts |
+|---|---|
+| RED → GREEN | 01, 02, 03, 07, 08/09, 10, 12, 13 |
+| GREEN guards retained | 04, 05, 06, 11 |
+
+- constraint-admission: **10/10 PASS**
+- returned-undelivered: **4/4 PASS**
+- critical-order-inspection: **7/7 PASS**
+- test ownership: `UNOWNED=0`, `MULTI_OWNED=0`
+- frontend `TARGET_ERROR_COUNT=0`; 19 pre-existing global baseline
+  errors in untouched files, not repaired
+
+OV-CONSTRAINT-11 guards against over-generalisation (an unratified
+constraint type must not silently become a decision); OV-CONSTRAINT-13
+permanently protects deterministic Critical/Watch ownership.
+
+Live browser, against the **rebuilt** order-nexus dist, on `/orders`:
+
+- "Out of stock" visible with no SLA prerequisite
+- `#800001`, `#800002`, `#800003` all visible
+- Critical showed the additional inventory issue group
+- the inventory order's modal still exposed "Source this item"
+- exact Sourcing routing remained functional
+
+Returned-package regression on the rebuilt dist:
+
+| Order | Group | Action | Route |
+|---|---|---|---|
+| `#900016` | Package returned | Review return | `/returns/items?returnJobId=e578ed59-a467-49e2-9dc8-2175609db273` |
+| `#900099` | Package returned | Process return | `/wms?returnJobId=e07bd232-03b2-7173-3d00-7ffb46b041f1` |
+
+No constrained-order duplication across Critical/Watch was observed in
+the available browser fixture. That observation is fixture-limited, so
+the durable guarantee is OV-CONSTRAINT-13, not the browser pass.
+
+**Verification workaround no longer required.**
+`/orders/flow?constraint=inventory` remains a valid alternate route —
+`OrderFlowPage` applies its SLA filter only when `?urgency=sla_breach`
+is present — but Overview now surfaces these orders directly.
 
 ### ORD-FIXTURE-INVMULTI-01 | OPEN | 🟡 P2
 
@@ -219,6 +381,93 @@ Related gate to be aware of: `npm run dev:full-reset` uses
 `DEV_SEED_MODE=full_data` and runs no SQL seeds, so it produces **no**
 inventory-blocked and **no** returned-package fixtures. Only
 `npm run dev:full-seed` (`full_identity` + SQL seeds + rebuild) does.
+
+### ORDER-NEXUS-DIST-STALE-01 | OPEN | 🔴 P1
+
+**Problem.** The committed `modules/order-nexus` `dist` was stale
+relative to its source. No gate prevents that.
+
+**Evidence at `d4b3265` before the ORD-OVERVIEW-INVENTORY-01 rebuild:**
+
+```text
+source      modules/order-nexus/src/ui/pages/OrdersModuleFT2.tsx
+              "returned_undelivered"   → 7 occurrences
+committed   modules/order-nexus/dist/ui/pages/OrdersModuleFT2.js
+              "returned_undelivered"   → 0 occurrences
+
+source      "constrainedOrders?"       → 1 occurrence
+committed   dist/ui/pages/OrdersModuleFT2.d.ts
+              "constrainedOrders"      → 0 occurrences
+```
+
+The entire ORD-RETPKG returned-package constrained-admission path — and
+the `constrainedOrders` / `blockType` prop additions — had never been
+built into the committed output.
+
+**Runtime significance.** `apps/frontend/tsconfig.json:35` maps
+`@lasyncro/order-nexus` to `src/ui/index.ts`, but
+`apps/frontend/vite.config.ts` declares **no** alias for it, so the
+browser resolves through the package `exports` field to
+`dist/ui/index.js`. TypeScript and Jest therefore see source while the
+browser sees `dist`.
+
+A stale `dist` consequently allows:
+
+```text
+source truth  ≠  tests  ≠  browser/runtime behaviour
+```
+
+This is not theoretical: it explains why "Package returned" rendered in
+the browser while the constrained bypass was absent from `dist` — the
+returns group was reaching Critical through the SLA/aging path instead.
+It also means the ORD-OVERVIEW-INVENTORY-01 rebuild necessarily shipped
+the previously-unbuilt ORD-RETPKG work alongside its own change.
+
+**Desired follow-up.** Audit build/CI ownership so an order-nexus source
+change cannot merge or deploy with stale committed `dist` — whether by a
+CI freshness check, a build step, or removing committed `dist` in favour
+of a source alias. Not fixed here.
+
+### TEST-ORDER-NEXUS-MODULEENTRY-01 | OPEN | 🟡 P2
+
+`tests/unit/ui/order-nexus/OrdersModuleFT2.test.tsx` fails to run:
+
+```text
+Cannot find module './ModuleEntry.js' from 'modules/order-nexus/src/ui/index.ts'
+```
+
+Thrown at that test's own import of the module barrel.
+`ModuleEntry.tsx` **exists** both on disk and at `HEAD` — this is a Jest
+resolution gap for the `.js`-suffixed TypeScript ESM import, not a
+missing file. Suite-level failure contributing `Tests: 0 total`.
+
+Pre-existing baseline, proven independent of ORD-OVERVIEW-INVENTORY-01
+and deliberately excluded from that issue's green gate. Not fixed.
+
+### ORD-RANK-CONSISTENCY-01 | OPEN | 🟡 P2
+
+Three competing definitions of "which constraint dominates an order":
+
+- `OrdersOperatorFacts.service.ts:203-210` — `MIN(constraint_type)`,
+  i.e. **alphabetical** (`customer` < `inventory` < `operational`)
+- `orders.constrained.controller.ts:83-95` — explicit `CASE` ranking
+  (`operational` → `customer` → `inventory`)
+- `OrdersModuleFT2` — a third order implied by group sequence
+
+Latent divergence risk. Not the cause of ORD-OVERVIEW-INVENTORY-01 and
+not touched by it.
+
+### ORD-ALLOC-PENDING-01 | OPEN | 🟡 P2
+
+`allocation_pending` is listed as an inventory block type in
+`Constraint_System_Blueprint.md` but was not observed in live data, and
+its lifecycle — transient/system-resolved versus merchant-actionable —
+has never been audited.
+
+It is currently **excluded** from Overview actionability
+(ORD-OVERVIEW-INVENTORY-01) and guarded by OV-CONSTRAINT-11. That is a
+conservative default pending this audit, **not** a ratified decision
+that it is permanently non-actionable.
 
 ---
 

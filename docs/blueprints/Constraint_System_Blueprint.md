@@ -393,6 +393,45 @@ CASE
   ELSE 99
 END
 
+### Constraint vs SLA — admission vs urgency (ORD-OVERVIEW-INVENTORY-01, 2026-09-02)
+
+Two independent dimensions. Conflating them is a defect class, not a
+styling choice:
+
+```text
+WHY BLOCKED   = active merchant-actionable canonical constraint
+HOW URGENT    = SLA / age
+```
+
+**Invariant:**
+
+> An active merchant-actionable canonical constraint must be eligible for
+> a merchant decision surface independently of shipping-SLA breach, order
+> age, and any aging/watch population derived from an age floor.
+>
+> SLA/age must NEVER be an admission prerequisite.
+
+An approaching or breached SLA raises an order's **urgency** — the
+objective is customer satisfaction, getting the order out of the door
+quickly — but a blocked order needs a decision from the moment it is
+blocked, not from the moment it is late.
+
+Where an order is both constrained and SLA-breached, the canonical
+constraint owns the classification and SLA remains urgency metadata; the
+order is represented once.
+
+**Actionability is explicit, never "all active rows".** A constraint
+type must opt in to being merchant-actionable. An unrecognised type, or
+one whose lifecycle has not been audited (currently
+`inventory:allocation_pending`), is not automatically a merchant
+decision. Excluding such a type is a conservative default pending audit,
+not a ruling that it is permanently non-actionable.
+
+First consumer: Orders Overview "Needs a decision" — see
+`OrdersModule.md` § ORD-OVERVIEW-INVENTORY-01 for the surface-specific
+group mapping, Watch-band ownership rule, and permanent contracts
+OV-CONSTRAINT-01..13.
+
 ---
 
 ## Dispatcher Contract
