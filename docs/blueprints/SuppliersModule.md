@@ -165,13 +165,12 @@ Blocks: MOQ accumulation system (`sourcing-recommendation-playbook.md §8`).
 | SUP-05 | P2 | Supplier scorecard fields all null on clean seed — no empty state or "complete your first receive to unlock ratings" messaging |
 | SUP-06 | P3 | No PO list filtering or search — will degrade at scale |
 | SUP-07 | P3 | Page title/signal line not using FT2 typography pattern (22px/500 title, 13px/ink-3 signal) |
-| SOURCING-UX-COGNITIVE-01 | P1 | 🔄 IN PROGRESS — Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order. Slices 1A (targeted recovery foundation) and 1B (targeted recovery actions/state transitions) are closed / verified; Slice 2, the Unified Sourcing Worklist, remains future/open — see below |
+| SOURCING-UX-COGNITIVE-01 | P1 | ✅ CLOSED / VERIFIED 2026-09-03 — Sourcing screen had high cognitive load and weak decision hierarchy when entered from a blocked order. Slices 1A (targeted recovery foundation), 1B (targeted recovery actions/state transitions), 2 (Unified Sourcing Worklist) and 2B (worklist UX alignment + contextual row actions) are all closed / verified; there is no Slice 3 — see below |
 
-### SOURCING-UX-COGNITIVE-01 | IN PROGRESS | P1
+### SOURCING-UX-COGNITIVE-01 | CLOSED / VERIFIED 2026-09-03 | P1
 
-The umbrella issue is **IN PROGRESS**, not closed. Slices 1A and 1B are
-delivered and verified; Slice 2 remains future/open. There is no Slice 3. See
-**Delivery status** below.
+The umbrella issue is **CLOSED / VERIFIED**. Slices 1A, 1B and 2 are all
+delivered and verified. There is no Slice 3. See **Delivery status** below.
 
 #### Sourcing architecture — two levels
 
@@ -336,7 +335,9 @@ What it delivers:
   supplier candidates and existing supplier mechanics, in that order.
 - **Generic-content suppression** — in targeted mode, Never Ordered Before,
   Sourcing Pulse and the generic Supplier Preferences administration block are
-  suppressed. Generic mode (no `variantId`) preserves all three unchanged.
+  suppressed. At the time Slice 1A shipped, generic mode (no `variantId`)
+  preserved all three unchanged; Slice 2 subsequently replaced generic mode's
+  own default content with the Unified Sourcing Worklist — see below.
 - **Three mutually-exclusive target states** — `ok`, `not_found`, `error`.
 - **Read-only boundary** — opening targeted sourcing mutates nothing.
 
@@ -428,8 +429,10 @@ Live browser: **LB-SRC-01 through LB-SRC-12 PASS**, on order #800001
 showing Available 0 · Open demand 1 · Inbound 10 · Short now 1 ·
 Still to source 0, with the neutral image placeholder, the originating order
 800001, QA Test Supplier, and both Add to queue and Create PO still present.
-Generic mode at `/suppliers-portal/sourcing` was separately verified to preserve
-Supplier Preferences, Never Ordered Before and Sourcing Pulse.
+At the time of Slice 1A, generic mode at `/suppliers-portal/sourcing` was
+separately verified to preserve Supplier Preferences, Never Ordered Before and
+Sourcing Pulse. Slice 2 (below) subsequently replaced that default generic
+content with the Unified Sourcing Worklist.
 
 Production certification — commit `41060ca8d3292e70796186bb2dbdef61620642bf`,
 local HEAD equal to `origin/main`:
@@ -468,22 +471,113 @@ The workflow fields, dominant action states, assignment/PO continuity,
 live-browser certification and automated evidence are authoritative in
 `docs/playbooks/sourcing-recommendation-playbook.md` §13.12–13.18.
 
+**Slice 2 — Unified Sourcing Worklist (Level 1) — CLOSED / VERIFIED 2026-09-03.**
+
+`GET /api/v1/suppliers/sourcing-worklist` is a set-wise, tenant-scoped,
+read-only read model at canonical variant grain — it never loops the
+per-variant targeted resolver, and multi-location inventory / multi-supplier
+history both collapse to one row per variant. Five mutually-exclusive
+categories (`needs_supplier` · `needs_purchase` · `in_purchasing` ·
+`covered_inbound` · `plan_ahead`) are derived per request from the same
+supply-truth (§ above) and purchasing-workflow (Slice 1B) formulas, plus the
+existing `computeVariantPlanning` signal reused unchanged — never a second
+formula. `covered_inbound` is counted in the summary and selectable
+explicitly, but excluded from the default action list. Generic mode
+(`/suppliers-portal/sourcing`, no `variantId`) now renders this worklist —
+search, category counts, supplier-readiness/purchasing-stage/coverage
+filters, sort, and compact rows — each with one **Review** action, as shipped
+at Slice 2 (superseded for `needs_supplier` rows by Slice 2B below) — in place
+of the pre-Slice-2 always-visible Supplier Preferences / Never Ordered Before /
+Sourcing Pulse content (still present in source, no longer reachable from
+generic mode). Supplier Preferences moved to a secondary "Supplier settings"
+entry; supplier-grouped MOQ accumulation remains available as the one
+approved row-level exception. Review navigates to
+`/suppliers-portal/sourcing?variantId=<canonical>` and the same mounted
+component transitions into targeted Level 2 (unchanged, byte-for-byte, from
+Slice 1A/1B). Full data model, request contract, and automated evidence are
+authoritative in
+`docs/playbooks/sourcing-recommendation-playbook.md` §13.19–13.21.
+
+**Slice 2B — Worklist UX Alignment + Contextual Row Actions — CLOSED / VERIFIED 2026-09-03.**
+
+A live-browser UX review performed after Slice 2's automated verification
+found the worklist visually inconsistent with the modules-UX-playbook/Order
+Flow reference (raw MUI `color="primary"` category chips, unstyled CTAs, an
+MOQ panel that rendered even with nothing queued, an ad hoc Previous/Next-only
+pagination footer) and one real cognitive-load gap: `needs_supplier` rows
+forced a Review round trip through Level 2 to do something the worklist
+already had every fact needed to do directly. Slice 2B corrected both without
+widening what Level 1 is for:
+
+- the MOQ/reorder-queue panel is now absent entirely when
+  `reorderRequests.length === 0` (previously showed "0 suppliers pooling
+  MOQ"); non-empty supplier-grouped accumulation/conversion is unchanged;
+- category counts now precede search/filter/sort in DOM order, and category
+  chips, filters, sort, and pagination all use existing laSyncro tokens and
+  the canonical Tier 1 (filled accent)/Tier 2 (ghost pill) CTA doctrine —
+  pagination gained the canonical "X–Y of Z" + page-size (10/25/50/100) +
+  numbered-page structure;
+- `needs_supplier` rows now show **Assign supplier** (Tier 1, primary) next
+  to **Review** (Tier 2, secondary) — reusing the *same* `AssignSupplierDialog`
+  and `onCreatePreference` path targeted mode already uses, not a duplicate
+  implementation. A successful assignment **refetches the worklist from the
+  server** rather than mutating the row's category locally, so the row moves
+  to `needs_purchase`/`plan_ahead`/out of view based on server truth;
+- `in_purchasing` rows now show a contextual **Review draft PO** (when
+  `draft_po_qty > 0`) or **Review queue** (when only `pending_queue_qty > 0`,
+  draft winning when both are nonzero, matching Level 2's own precedence);
+  `covered_inbound` rows now show **View inbound** — both reuse Level 2's
+  existing `/suppliers-portal` navigation, no new route;
+- `needs_purchase` and `plan_ahead` deliberately still expose **Review**
+  only — Prepare PO stays Level 2-only, since it needs a ranked supplier
+  recommendation the worklist must never fetch;
+- `needs_supplier` reason copy now distinguishes reactive
+  ("N still to source · no supplier assigned") from planning-driven rows
+  ("Stockout projected in N days · no supplier assigned", or "Replenishment
+  due · no supplier assigned" when the day count is unknown) — a
+  planning-driven row no longer displays the confusing "0 still to source".
+
+Full row-action model, updated Level 1/Level 2 boundary, and automated
+evidence are authoritative in
+`docs/playbooks/sourcing-recommendation-playbook.md` §13.22–13.24. Live
+browser verification — **manual, performed by Milad** in both light and dark
+mode on `/suppliers-portal/sourcing` — confirmed the zero-MOQ suppression,
+control hierarchy, token/CTA treatment, the `needs_supplier` row's
+Assign-supplier + Review pair, the revised reason copy, and the pagination
+footer; see §13.24 for the full checklist. This is manual visual
+verification, not an automated browser/pixel test, and does not cover every
+category/pagination state or the assignment submit path end-to-end — those
+remain covered by the automated evidence above.
+
 #### Remaining work
 
 | Slice | Scope | Status |
 |---|---|---|
 | **1A** | Targeted recovery foundation (Level 2 understanding) | **CLOSED / VERIFIED / DEPLOYED 2026-09-03** |
 | **1B** | Targeted recovery **actions** / state transitions (Level 2) | **CLOSED / VERIFIED 2026-09-03** |
-| **2** | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | FUTURE / OPEN |
+| **2** | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | **CLOSED / VERIFIED 2026-09-03** |
+| **2B** | Worklist UX alignment + contextual row actions — post-live-UX correction to Slice 2 | **CLOSED / VERIFIED 2026-09-03** |
 
 There is **no Slice 3**. The former Slice 3 (a separate L1 Sourcing Overview
 screen) was removed when the architecture was reduced to two levels on
 2026-09-03; its portfolio-awareness purpose is absorbed into the Unified
-Sourcing Worklist.
+Sourcing Worklist. Every slice is now closed and the umbrella issue
+SOURCING-UX-COGNITIVE-01 is CLOSED / VERIFIED.
 
 Remaining cognitive-load follow-up (**not** a Slice 1A blocker, **not**
 resolved): the existing large "Your best supplier, ranked automatically"
 coachmark visually competes with purchasing truth in targeted mode.
+
+Remaining adjacent work, unaffected by Slice 2/2B (Level 1 only) and not
+closed or redefined by either: `SRC-INBOUND-CONTEXT-01` | P2 | OPEN —
+targeted **View inbound** still does not preserve variant context after
+navigation (Level 2; see `sourcing-recommendation-playbook.md` §13.16,
+§13.18). Slice 2B's `covered_inbound` worklist action reuses this same
+context-free navigation and does not claim to fix it. `BUILD-02` | P1 |
+**PARKED** — neither Slice 2 nor Slice 2B resolved this issue; both
+regenerated the suppliers-portal dist artifacts from source in this worktree,
+and runtime verification continues to require source/dist parity on every
+change.
 
 ---
 

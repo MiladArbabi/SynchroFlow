@@ -19,6 +19,7 @@ import {
 import {
   httpGetSourcingRecommendations,
   httpGetNeverOrderedVariants,
+  httpGetSourcingWorklist,
 } from './sourcingRecommendations.controller.js';
 import {
   httpListPreferences,
@@ -193,6 +194,17 @@ router.post(
   requireFt2,
   requireAction('receive-job:exception'),
   httpReportReceiveException
+);
+
+// UNIFIED SOURCING WORKLIST (SOURCING-UX-COGNITIVE-01 Slice 2) — registered
+// before /sourcing-recommendations/:variantId so the literal segment can
+// never be shadowed by that param route.
+router.get(
+  '/sourcing-worklist',
+  authenticateToken,
+  requireFt2,
+  requireAction('suppliers:read'),
+  httpGetSourcingWorklist
 );
 
 // SOURCING RECOMMENDATIONS (Thread C, sourcing-recommendation-playbook.md §6)

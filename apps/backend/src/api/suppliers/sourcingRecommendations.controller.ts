@@ -626,3 +626,395 @@ export async function httpGetNeverOrderedVariants(req: Request, res: Response) {
     return res.status(500).json({ error: 'Failed to fetch never-ordered variants' });
   }
 }
+
+/**
+ * UNIFIED SOURCING WORKLIST (SOURCING-UX-COGNITIVE-01 Slice 2)
+ * ==============================================================
+ * GET /sourcing-worklist — the portfolio-wide, set-wise replacement for the
+ * generic (no-variantId) Sourcing view. Distinct from, and does not replace,
+ * httpGetSourcingRecommendations above (the per-variant targeted endpoint).
+ *
+ * SET-WISE BY CONSTRUCTION: every fact below (open demand, availability,
+ * committed inbound, draft/queue workflow, supplier history/usability,
+ * preferences, the canonical Demand planning signal) is computed with ONE
+ * grouped query per fact across the WHOLE catalogue, then joined in memory by
+ * lasyncro_variant_id. There is no per-variant loop calling into the targeted
+ * resolver — that pattern is exactly what this endpoint exists to replace.
+ *
+ * CATEGORY PRECEDENCE (ratified, do not reorder):
+ *   unplanned > 0            -> needs_supplier | needs_purchase (by usable supplier)
+ *   else in_purchasing > 0   -> in_purchasing
+ *   else short_now>0 && still_to_source==0 && committed_inbound>0
+ *                             -> covered_inbound
+ *   else canonical Demand planning signal fires
+ *                             -> needs_supplier | plan_ahead (by usable supplier)
+ *   else                     -> excluded from the worklist entirely
+ *
+ * "usable supplier" mirrors httpGetSourcingRecommendations §6a Branch A: any
+ * ACTIVE supplier with purchase_order_line_items history for the variant,
+ * independent of supplier_product_preferences. "supplier history" is broader
+ * (any PO line at all, active supplier or not) — the two are exposed
+ * separately as has_usable_supplier / has_supplier_history so a variant can
+ * be in_purchasing (via a bare reorder_request) with zero PO history at all.
+ *
+ * Categories are a DERIVED read-model state, never persisted.
+ */
+
+const WORKLIST_CATEGORIES = [
+  'needs_supplier',
+  'needs_purchase',
+  'in_purchasing',
+  'covered_inbound',
+  'plan_ahead',
+] as const;
+type WorklistCategory = typeof WORKLIST_CATEGORIES[number];
+
+type WorklistItem = {
+  lasyncro_variant_id: string;
+  product_title: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  image_url: string | null;
+  category: WorklistCategory;
+  open_demand: number;
+  blocked_order_count: number;
+  oldest_open_order_at: string | null;
+  available: number;
+  committed_inbound: number;
+  short_now: number;
+  still_to_source: number;
+  pending_queue_qty: number;
+  draft_po_qty: number;
+  in_purchasing: number;
+  unplanned: number;
+  has_usable_supplier: boolean;
+  has_preference: boolean;
+  has_supplier_history: boolean;
+  planning_urgency: string | null;
+  days_of_stock_remaining: number | null;
+  suggested_reorder_qty: number | null;
+};
+
+const URGENCY_RANK: Record<string, number> = {
+  critical: 0,
+  warning: 1,
+  healthy: 2,
+  planning_data_required: 3,
+  no_velocity: 4,
+};
+
+function worklistSearchMatches(item: WorklistItem, q: string): boolean {
+  if (!q) return true;
+  const needle = q.toLowerCase();
+  return (
+    (item.product_title ?? '').toLowerCase().includes(needle) ||
+    (item.variant_title ?? '').toLowerCase().includes(needle) ||
+    (item.sku ?? '').toLowerCase().includes(needle)
+  );
+}
+
+function worklistFacetsMatch(
+  item: WorklistItem,
+  facets: { supplierReadiness?: string; purchasingStage?: string; coverage?: string }
+): boolean {
+  if (facets.supplierReadiness === 'ready' && !item.has_usable_supplier) return false;
+  if (facets.supplierReadiness === 'needs_supplier' && item.category !== 'needs_supplier') return false;
+  if (facets.supplierReadiness === 'no_history' && item.has_supplier_history) return false;
+
+  if (facets.purchasingStage === 'not_started' &&
+      !(item.pending_queue_qty === 0 && item.draft_po_qty === 0 && item.committed_inbound === 0)) return false;
+  if (facets.purchasingStage === 'queued' && !(item.pending_queue_qty > 0)) return false;
+  if (facets.purchasingStage === 'draft' && !(item.draft_po_qty > 0)) return false;
+  if (facets.purchasingStage === 'committed' && !(item.committed_inbound > 0)) return false;
+
+  if (facets.coverage === 'short' && !(item.still_to_source > 0)) return false;
+  if (facets.coverage === 'covered_inbound' &&
+      !(item.short_now > 0 && item.still_to_source === 0 && item.committed_inbound > 0)) return false;
+
+  return true;
+}
+
+function worklistSort(items: WorklistItem[], sort: string): WorklistItem[] {
+  const byIdAsc = (a: WorklistItem, b: WorklistItem) =>
+    a.lasyncro_variant_id < b.lasyncro_variant_id ? -1 : a.lasyncro_variant_id > b.lasyncro_variant_id ? 1 : 0;
+
+  const oldestFirst = (a: WorklistItem, b: WorklistItem) => {
+    if (a.oldest_open_order_at === b.oldest_open_order_at) return byIdAsc(a, b);
+    if (a.oldest_open_order_at === null) return 1;
+    if (b.oldest_open_order_at === null) return -1;
+    return a.oldest_open_order_at < b.oldest_open_order_at ? -1 : 1;
+  };
+
+  const largestStillToSourceFirst = (a: WorklistItem, b: WorklistItem) => {
+    if (a.still_to_source === b.still_to_source) return byIdAsc(a, b);
+    return b.still_to_source - a.still_to_source;
+  };
+
+  const soonestStockoutFirst = (a: WorklistItem, b: WorklistItem) => {
+    if (a.days_of_stock_remaining === b.days_of_stock_remaining) return byIdAsc(a, b);
+    if (a.days_of_stock_remaining === null) return 1;
+    if (b.days_of_stock_remaining === null) return -1;
+    return a.days_of_stock_remaining - b.days_of_stock_remaining;
+  };
+
+  const productAz = (a: WorklistItem, b: WorklistItem) => {
+    const at = (a.product_title ?? '').toLowerCase();
+    const bt = (b.product_title ?? '').toLowerCase();
+    if (at === bt) return byIdAsc(a, b);
+    return at < bt ? -1 : 1;
+  };
+
+  switch (sort) {
+    case 'oldest_demand':
+      return [...items].sort(oldestFirst);
+    case 'still_to_source':
+      return [...items].sort(largestStillToSourceFirst);
+    case 'stockout_soonest':
+      return [...items].sort(soonestStockoutFirst);
+    case 'product_az':
+      return [...items].sort(productAz);
+    case 'action_priority':
+    default: {
+      const reactive: WorklistCategory[] = ['needs_supplier', 'needs_purchase', 'in_purchasing', 'covered_inbound'];
+      return [...items].sort((a, b) => {
+        const rankA = WORKLIST_CATEGORIES.indexOf(a.category);
+        const rankB = WORKLIST_CATEGORIES.indexOf(b.category);
+        if (rankA !== rankB) return rankA - rankB;
+        if (reactive.includes(a.category)) return oldestFirst(a, b) || largestStillToSourceFirst(a, b);
+        // preventive (plan_ahead): urgency rank, then soonest stockout.
+        const uA = URGENCY_RANK[a.planning_urgency ?? ''] ?? 99;
+        const uB = URGENCY_RANK[b.planning_urgency ?? ''] ?? 99;
+        if (uA !== uB) return uA - uB;
+        return soonestStockoutFirst(a, b);
+      });
+    }
+  }
+}
+
+export async function httpGetSourcingWorklist(req: Request, res: Response) {
+  const shopId = req.user?.shopId;
+  if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const categoryParam = typeof req.query.category === 'string' ? req.query.category : undefined;
+  const supplierReadiness = typeof req.query.supplier_readiness === 'string' ? req.query.supplier_readiness : undefined;
+  const purchasingStage = typeof req.query.purchasing_stage === 'string' ? req.query.purchasing_stage : undefined;
+  const coverage = typeof req.query.coverage === 'string' ? req.query.coverage : undefined;
+  const sort = typeof req.query.sort === 'string' ? req.query.sort : 'action_priority';
+  const page = Math.max(1, parseInt(String(req.query.page ?? '1'), 10) || 1);
+  const pageSize = Math.min(200, Math.max(1, parseInt(String(req.query.page_size ?? '50'), 10) || 50));
+
+  try {
+    const items: WorklistItem[] = [];
+
+    await db.transaction(async (trx) => {
+      await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+
+      // ── CATALOGUE (set-wise, one query for the whole shop) ──────────────
+      const variantRows = await trx('variants as v')
+        .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
+        .where('v.shop_id', shopId)
+        .andWhere('v.status', 'active')
+        .andWhereNot('p.product_type', 'gift_card')
+        .select(
+          'v.lasyncro_variant_id',
+          'v.sku',
+          'v.title as variant_title',
+          'v.image_url',
+          'v.lasyncro_product_id',
+          'p.title as product_title',
+          'p.product_type'
+        );
+
+      // ── OPEN DEMAND per variant (only lines with outstanding quantity) ──
+      const demandRows = await trx('order_revenue_units as oru')
+        .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+        .where('o.shop_id', shopId)
+        .whereRaw('oru.quantity > oru.fulfilled_quantity')
+        .groupBy('oru.lasyncro_variant_id')
+        .select(
+          'oru.lasyncro_variant_id',
+          trx.raw('SUM(oru.quantity - oru.fulfilled_quantity)::integer as open_demand'),
+          trx.raw('COUNT(DISTINCT oru.lasyncro_order_id)::integer as blocked_order_count'),
+          trx.raw('MIN(o.order_created_at) as oldest_open_order_at')
+        );
+
+      // ── AVAILABLE per variant, aggregated across every location ─────────
+      const availRows = await trx('inventory_truth')
+        .where({ shop_id: shopId })
+        .groupBy('lasyncro_variant_id')
+        .select('lasyncro_variant_id', trx.raw('SUM(available_quantity)::integer as available'));
+
+      // ── COMMITTED INBOUND — same status domain as the targeted endpoint ──
+      const committedRows = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', shopId)
+        .whereIn('po.status', COMMITTED_INBOUND_PO_STATUSES as unknown as string[])
+        .groupBy('poli.lasyncro_variant_id')
+        .select(
+          'poli.lasyncro_variant_id',
+          trx.raw('SUM(GREATEST(poli.quantity_ordered - poli.quantity_received, 0))::integer as committed_inbound')
+        );
+
+      // ── DRAFT PO workflow qty ────────────────────────────────────────────
+      const draftRows = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', shopId)
+        .andWhere('po.status', 'draft')
+        .groupBy('poli.lasyncro_variant_id')
+        .select(
+          'poli.lasyncro_variant_id',
+          trx.raw('SUM(GREATEST(poli.quantity_ordered - poli.quantity_received, 0))::integer as draft_po_qty')
+        );
+
+      // ── PENDING QUEUE workflow qty ───────────────────────────────────────
+      const queueRows = await trx('reorder_requests')
+        .where({ shop_id: shopId, status: 'pending' })
+        .groupBy('lasyncro_variant_id')
+        .select('lasyncro_variant_id', trx.raw('SUM(qty_requested)::integer as pending_queue_qty'));
+
+      // ── SUPPLIER HISTORY / USABILITY (§6a Branch A) ──────────────────────
+      const historyRows = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', shopId)
+        .groupBy('poli.lasyncro_variant_id')
+        .select('poli.lasyncro_variant_id');
+
+      const usableRows = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .join('suppliers as s', 's.id', 'po.supplier_id')
+        .where('po.shop_id', shopId)
+        .andWhere('s.active', true)
+        .groupBy('poli.lasyncro_variant_id')
+        .select('poli.lasyncro_variant_id');
+
+      // ── PREFERENCES (set-wise; no saved preference required for usability) ──
+      const prefRows = await trx('supplier_product_preferences')
+        .where({ shop_id: shopId })
+        .select('scope_type', 'scope_id');
+
+      // ── CANONICAL DEMAND PLANNING SIGNAL — ONE call, whole catalogue ─────
+      const planningRows = await computeVariantPlanning(trx, shopId);
+
+      // ── build lookup maps (all set-wise; zero per-variant queries) ───────
+      const demandMap = new Map(demandRows.map((r: any) => [r.lasyncro_variant_id, r]));
+      const availMap = new Map(availRows.map((r: any) => [r.lasyncro_variant_id, Number(r.available)]));
+      const committedMap = new Map(committedRows.map((r: any) => [r.lasyncro_variant_id, Number(r.committed_inbound)]));
+      const draftMap = new Map(draftRows.map((r: any) => [r.lasyncro_variant_id, Number(r.draft_po_qty)]));
+      const queueMap = new Map(queueRows.map((r: any) => [r.lasyncro_variant_id, Number(r.pending_queue_qty)]));
+      const historySet = new Set(historyRows.map((r: any) => r.lasyncro_variant_id));
+      const usableSet = new Set(usableRows.map((r: any) => r.lasyncro_variant_id));
+      const planningMap = new Map(planningRows.map((r) => [r.lasyncro_variant_id, r]));
+
+      const prefVariantSet = new Set<string>();
+      const prefProductSet = new Set<string>();
+      const prefTypeSet = new Set<string>();
+      for (const p of prefRows as Array<{ scope_type: string; scope_id: string }>) {
+        if (p.scope_type === 'variant') prefVariantSet.add(p.scope_id);
+        else if (p.scope_type === 'product') prefProductSet.add(p.scope_id);
+        else if (p.scope_type === 'product_type') prefTypeSet.add(p.scope_id);
+      }
+
+      // ── combine at canonical VARIANT grain — one pass, no fan-out ────────
+      for (const v of variantRows as any[]) {
+        const vid = v.lasyncro_variant_id;
+        const demand = demandMap.get(vid);
+        const open_demand = demand ? Number(demand.open_demand) : 0;
+        const available = availMap.get(vid) ?? 0;
+        const committed_inbound = committedMap.get(vid) ?? 0;
+        const draft_po_qty = draftMap.get(vid) ?? 0;
+        const pending_queue_qty = queueMap.get(vid) ?? 0;
+        const in_purchasing = pending_queue_qty + draft_po_qty;
+        const short_now = Math.max(0, open_demand - available);
+        const still_to_source = Math.max(0, open_demand - available - committed_inbound);
+        const unplanned = Math.max(0, still_to_source - in_purchasing);
+        const has_supplier_history = historySet.has(vid);
+        const has_usable_supplier = usableSet.has(vid);
+        const has_preference =
+          prefVariantSet.has(vid) ||
+          prefProductSet.has(v.lasyncro_product_id) ||
+          (v.product_type ? prefTypeSet.has(v.product_type) : false);
+        const planning = planningMap.get(vid);
+        const reorderSignal = planning?.reorder_signal ?? false;
+
+        let category: WorklistCategory | null = null;
+        if (unplanned > 0) {
+          category = has_usable_supplier ? 'needs_purchase' : 'needs_supplier';
+        } else if (in_purchasing > 0) {
+          category = 'in_purchasing';
+        } else if (short_now > 0 && still_to_source === 0 && committed_inbound > 0) {
+          category = 'covered_inbound';
+        } else if (reorderSignal) {
+          category = has_usable_supplier ? 'plan_ahead' : 'needs_supplier';
+        }
+        if (!category) continue;
+
+        items.push({
+          lasyncro_variant_id: vid,
+          product_title: v.product_title ?? null,
+          variant_title: v.variant_title ?? null,
+          sku: v.sku ?? null,
+          image_url: v.image_url ?? null,
+          category,
+          open_demand,
+          blocked_order_count: demand ? Number(demand.blocked_order_count) : 0,
+          oldest_open_order_at: demand?.oldest_open_order_at
+            ? new Date(demand.oldest_open_order_at).toISOString()
+            : null,
+          available,
+          committed_inbound,
+          short_now,
+          still_to_source,
+          pending_queue_qty,
+          draft_po_qty,
+          in_purchasing,
+          unplanned,
+          has_usable_supplier,
+          has_preference,
+          has_supplier_history,
+          planning_urgency: planning?.reorder_urgency ?? null,
+          days_of_stock_remaining: planning?.days_of_stock_remaining ?? null,
+          suggested_reorder_qty: planning?.suggested_reorder_qty ?? null,
+        });
+      }
+    });
+
+    // ── search + facet filters define the "applicable filtered universe" ──
+    // that summary counts and total are drawn from. `category` is exempt —
+    // summary must show every category's count regardless of which one (if
+    // any) is currently selected.
+    const searched = items.filter((i) => worklistSearchMatches(i, q));
+    const faceted = searched.filter((i) =>
+      worklistFacetsMatch(i, { supplierReadiness, purchasingStage, coverage })
+    );
+
+    const summary = {
+      needs_supplier: faceted.filter((i) => i.category === 'needs_supplier').length,
+      needs_purchase: faceted.filter((i) => i.category === 'needs_purchase').length,
+      in_purchasing: faceted.filter((i) => i.category === 'in_purchasing').length,
+      covered_inbound: faceted.filter((i) => i.category === 'covered_inbound').length,
+      plan_ahead: faceted.filter((i) => i.category === 'plan_ahead').length,
+    };
+
+    // ── category selection: default view excludes covered_inbound ───────
+    let categoryFiltered: WorklistItem[];
+    if (categoryParam === 'all') {
+      categoryFiltered = faceted;
+    } else if (categoryParam && (WORKLIST_CATEGORIES as readonly string[]).includes(categoryParam)) {
+      categoryFiltered = faceted.filter((i) => i.category === categoryParam);
+    } else {
+      categoryFiltered = faceted.filter((i) => i.category !== 'covered_inbound');
+    }
+
+    const sorted = worklistSort(categoryFiltered, sort);
+
+    const total = sorted.length;
+    const start = (page - 1) * pageSize;
+    const pageItems = sorted.slice(start, start + pageSize);
+
+    return res.json({ summary, items: pageItems, page, page_size: pageSize, total });
+  } catch (err) {
+    console.error('[sourcing] httpGetSourcingWorklist failed', err);
+    return res.status(500).json({ error: 'Failed to fetch sourcing worklist' });
+  }
+}

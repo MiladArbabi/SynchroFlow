@@ -440,8 +440,10 @@ Foundation** has been implemented, verified and deployed
   still to source), **blocking/originating order context**, then **supplier
   candidates**.
 - Portfolio-only Sourcing content — Never Ordered Before, Sourcing Pulse, and
-  the generic Supplier Preferences administration block — is suppressed in
-  targeted mode and preserved unchanged in generic mode.
+  the generic Supplier Preferences administration block — was suppressed in
+  targeted mode and, at the time Slice 1A shipped, preserved unchanged in
+  generic mode. Slice 2 (below) subsequently replaced generic mode's own
+  default content.
 
 What is unchanged by Slice 1A, and remains as observed above: navigation still
 does not resolve the constraint, and no PO or reorder request is created
@@ -449,17 +451,18 @@ automatically. Slice 1A is a read/understanding surface; targeted recovery
 *actions* are Slice 1B.
 
 Current authoritative semantics live in `docs/blueprints/SuppliersModule.md` §6
-and in the Slice 1A section of
-`docs/playbooks/sourcing-recommendation-playbook.md`. This playbook records the
-historical decision-engine observation only.
+and in `docs/playbooks/sourcing-recommendation-playbook.md` §13. This playbook
+records the historical decision-engine observation only.
 
-The umbrella issue remains **IN PROGRESS** for Slice 1B (targeted recovery
-actions) and the **Unified Sourcing Worklist**. The Sourcing architecture was
-reduced to two levels on 2026-09-03 — a Unified Sourcing Worklist ("where do I
-need to act?") and the Product/Variant Sourcing Detail ("how do I resolve this
-exact SKU?") — so **no separate Sourcing Overview screen remains planned**.
-Orders → *Source this item* continues to bypass the worklist and open the detail
-level directly.
+**Update — 2026-09-03.** Slice 1B (targeted recovery actions) and Slice 2 (the
+Unified Sourcing Worklist) are now also **CLOSED / VERIFIED** — see
+`sourcing-recommendation-playbook.md` §13.10 and §13.19–13.21. The umbrella
+issue SOURCING-UX-COGNITIVE-01 is CLOSED / VERIFIED; there is no Slice 3. The
+Sourcing architecture was reduced to two levels on 2026-09-03 — a Unified
+Sourcing Worklist ("where do I need to act?") and the Product/Variant Sourcing
+Detail ("how do I resolve this exact SKU?") — so **no separate Sourcing
+Overview screen remains planned**. Orders → *Source this item* continues to
+bypass the worklist and open the detail level directly.
 
 Multi-variant live browser check: **NOT AVAILABLE** — no deterministic
 multi-variant inventory-block fixture exists (see

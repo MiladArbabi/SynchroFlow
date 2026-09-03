@@ -5,17 +5,28 @@ import { useSpotlight } from '../../hooks/useSpotlight';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { PURCHASING_SUB_TABS } from './purchasingSubTabs';
-import type { 
-  PurchaseOrderStatus, 
-  PoLineItem, 
-  CreateSupplierInput, 
-  CreatePoInput, 
+import type {
+  PurchaseOrderStatus,
+  PoLineItem,
+  CreateSupplierInput,
+  CreatePoInput,
   Supplier,
   SourcingResult,
   PreferenceRow,
   ReorderRequest,
   SupplierAccumulation,
+  SuppliersPortalPageProps,
 } from '@lasyncro/suppliers-portal';
+
+/**
+ * The suppliers-portal package barrel does not (yet) re-export
+ * SourcingWorklistParams/SourcingWorklistResult by name — deriving them from
+ * the already-exported SuppliersPortalPageProps avoids widening this file's
+ * authorized scope to modules/suppliers-portal/src/ui/index.ts.
+ */
+type FetchSourcingWorklist = SuppliersPortalPageProps['onFetchSourcingWorklist'];
+type SourcingWorklistParams = Parameters<FetchSourcingWorklist>[0];
+type SourcingWorklistResult = Awaited<ReturnType<FetchSourcingWorklist>>;
 import { useSuppliersPortal } from '../suppliers-portal/useSuppliersPortal';
 import { isAxiosError } from 'axios';
 import { axiosInstance } from 'api/axiosConfig';
@@ -153,6 +164,31 @@ export default function SuppliersPortalPage() {
     };
   }, [searchParams]);
 
+  // UNIFIED SOURCING WORKLIST (SOURCING-UX-COGNITIVE-01 Slice 2) — the
+  // generic (no-variantId) view's set-wise fetch. Distinct request from
+  // handleFetchSourcingRecommendations above: generic mode must never call
+  // that targeted, per-variant endpoint (SRC-WL-UI-14).
+  const handleFetchSourcingWorklist = useCallback(async (
+    params: SourcingWorklistParams
+  ): Promise<SourcingWorklistResult> => {
+    const { data } = await axiosInstance.get('/api/v1/suppliers/sourcing-worklist', {
+      params,
+    });
+    return {
+      summary: data.summary ?? {
+        needs_supplier: 0,
+        needs_purchase: 0,
+        in_purchasing: 0,
+        covered_inbound: 0,
+        plan_ahead: 0,
+      },
+      items: data.items ?? [],
+      page: Number(data.page ?? 1),
+      page_size: Number(data.page_size ?? 50),
+      total: Number(data.total ?? 0),
+    };
+  }, []);
+
   const handleFetchPreferences = useCallback(async (): Promise<PreferenceRow[]> => {
   const { data } = await axiosInstance.get('/api/v1/suppliers/preferences');
   return data.preferences ?? [];
@@ -260,6 +296,7 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     onCreateReceiveJob: handleCreateReceiveJob,
     onSearchVariants: handleSearchVariants,
     onFetchSourcingRecommendations: handleFetchSourcingRecommendations,
+    onFetchSourcingWorklist: handleFetchSourcingWorklist,
     onFetchPreferences: handleFetchPreferences,
     onCreatePreference: handleCreatePreference,
     onUpdatePreference: handleUpdatePreference,

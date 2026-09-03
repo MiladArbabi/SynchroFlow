@@ -589,7 +589,7 @@ function AssignSupplierDialog({ open, target, suppliers, onClose, onSubmit, }) {
  * Gate rejections render inline per supplier group (convertErrors) rather than
  * being swallowed by the old catch-free handler.
  */
-function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVariants, onFetchSourcingRecommendations, onFetchPreferences, onCreatePreference, onDeletePreference, onFetchReorderRequests, onCreateReorderRequest, onDeleteReorderRequest, onConvertReorderRequests, lastConvertedPoId, onDismissConvertedPo, spotlights, }) {
+function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVariants, onFetchSourcingRecommendations, onFetchSourcingWorklist, onFetchPreferences, onCreatePreference, onDeletePreference, onFetchReorderRequests, onCreateReorderRequest, onDeleteReorderRequest, onConvertReorderRequests, lastConvertedPoId, onDismissConvertedPo, spotlights, }) {
     const neverOrdered = data?.never_ordered ?? [];
     const neverOrderedCount = data?.never_ordered_count ?? 0;
     const suppliers = data?.suppliers ?? [];
@@ -610,6 +610,20 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
     const [prefillQty, setPrefillQty] = useState(0);
     const [planningContext, setPlanningContext] = useState(null);
     const [activeVariantId, setActiveVariantId] = useState(triggerVariantId);
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2 correction: activeVariantId previously
+     * only ever took its INITIAL value from triggerVariantId (useState's
+     * initializer runs once). The Unified Sourcing Worklist's Review action
+     * navigates within this same component instance
+     * (?variantId=<canonical>), which changes triggerVariantId on the next
+     * render but never re-synced activeVariantId — so Level 1 -> Level 2
+     * silently did nothing. Kept as a separate state (not derived directly
+     * from triggerVariantId) because nothing else in this component may ever
+     * need to diverge from the URL, but the effect keeps it authoritative.
+     */
+    useEffect(() => {
+        setActiveVariantId(triggerVariantId);
+    }, [triggerVariantId]);
     const [recommendations, setRecommendations] = useState([]);
     const [isLoadingRecs, setIsLoadingRecs] = useState(false);
     /** Slice 1A: the targeted payload for activeVariantId, or null. */
@@ -656,6 +670,60 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
     const [assignOpen, setAssignOpen] = useState(false);
     // §8: per-supplier queue button state — 'idle' | 'adding' | 'added'
     const [queueButtonState, setQueueButtonState] = useState({});
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST state.
+     * Generic (no-variantId) mode only. Declared unconditionally (Rules of
+     * Hooks) even though only read/used when !activeVariantId below.
+     */
+    const [worklist, setWorklist] = useState(null);
+    const [isLoadingWorklist, setIsLoadingWorklist] = useState(false);
+    const [worklistQuery, setWorklistQuery] = useState('');
+    const [worklistCategory, setWorklistCategory] = useState(undefined);
+    const [worklistSupplierReadiness, setWorklistSupplierReadiness] = useState(undefined);
+    const [worklistPurchasingStage, setWorklistPurchasingStage] = useState(undefined);
+    const [worklistCoverage, setWorklistCoverage] = useState(undefined);
+    const [worklistSort, setWorklistSort] = useState('action_priority');
+    const [worklistPage, setWorklistPage] = useState(1);
+    const [worklistPageSize, setWorklistPageSize] = useState(50);
+    /** Supplier settings is a secondary access point, collapsed by default. */
+    const [supplierSettingsOpen, setSupplierSettingsOpen] = useState(false);
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2B — bumped after a successful Level-1
+     * supplier assignment so the worklist is RE-FETCHED from the server rather
+     * than having its category locally mutated. The row's new category
+     * (needs_purchase / plan_ahead / excluded) is server-derived truth — see
+     * handleAssignSave below.
+     */
+    const [worklistRefreshKey, setWorklistRefreshKey] = useState(0);
+    useEffect(() => {
+        if (activeVariantId)
+            return;
+        setIsLoadingWorklist(true);
+        onFetchSourcingWorklist({
+            q: worklistQuery || undefined,
+            category: worklistCategory,
+            supplier_readiness: worklistSupplierReadiness,
+            purchasing_stage: worklistPurchasingStage,
+            coverage: worklistCoverage,
+            sort: worklistSort,
+            page: worklistPage,
+            page_size: worklistPageSize,
+        })
+            .then(setWorklist)
+            .finally(() => setIsLoadingWorklist(false));
+    }, [
+        activeVariantId,
+        onFetchSourcingWorklist,
+        worklistQuery,
+        worklistCategory,
+        worklistSupplierReadiness,
+        worklistPurchasingStage,
+        worklistCoverage,
+        worklistSort,
+        worklistPage,
+        worklistPageSize,
+        worklistRefreshKey,
+    ]);
     // §7.6: fetch preferences for default/no-variantId state
     useEffect(() => {
         setIsLoadingPrefs(true);
@@ -780,6 +848,24 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
         });
         setAssignOpen(true);
     };
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2B — assigning directly from a Level 1
+     * needs_supplier worklist row. Reuses the SAME AssignSupplierDialog and
+     * handleAssignSave/onCreatePreference path as targeted mode above;
+     * product_id/product_type are unknown at Level 1 (not part of the
+     * worklist response) so, exactly like handleTargetedAssignOpen, the
+     * dialog degrades to "this variant only" scope — no new backend field.
+     */
+    const handleWorklistAssignOpen = (item) => {
+        setAssignTarget({
+            lasyncro_variant_id: item.lasyncro_variant_id,
+            title: item.variant_title ?? item.product_title ?? 'this variant',
+            sku: item.sku,
+            product_id: null,
+            product_type: null,
+        });
+        setAssignOpen(true);
+    };
     const handleAssignSave = async (input) => {
         await onCreatePreference(input);
         const updated = await onFetchPreferences();
@@ -790,6 +876,12 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
         // resolved.
         if (activeVariantId)
             setTargetRefreshKey((n) => n + 1);
+        // SOURCING-UX-COGNITIVE-01 Slice 2B: assigning from a Level 1 worklist row
+        // (activeVariantId is null there) changes that row's server-derived
+        // category (needs_supplier -> needs_purchase/plan_ahead, or out of the
+        // current filter entirely) — refetch the worklist rather than guessing.
+        if (!activeVariantId)
+            setWorklistRefreshKey((n) => n + 1);
     };
     const handleDeletePreference = async (id) => {
         await onDeletePreference(id);
@@ -932,6 +1024,190 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
         product_type: preferences.filter(p => p.scope_type === 'product_type'),
     };
     const scopeLabels = { variant: 'Variant', product: 'Product', product_type: 'Product Type' };
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST.
+     * Generic (no-variantId) mode renders this instead of the Level-2 targeted
+     * decision card below. Targeted mode (activeVariantId truthy) is entirely
+     * unchanged — everything from here down in the function's remaining
+     * `return` is the same Slice 1A/1B JSX it always was.
+     */
+    if (!activeVariantId) {
+        const worklistCategoryCounts = [
+            { key: 'needs_supplier', label: 'Needs supplier' },
+            { key: 'needs_purchase', label: 'Needs purchase' },
+            { key: 'in_purchasing', label: 'In purchasing' },
+            { key: 'covered_inbound', label: 'Covered inbound' },
+            { key: 'plan_ahead', label: 'Plan ahead' },
+        ];
+        // modules-ux-playbook.md §2 — Tier 1 (commits/resolves) and Tier 2
+        // (navigates to a related surface) CTA treatments, applied via MUI
+        // Button `sx` per §7 ("Adding a new CTA").
+        const tier1Sx = {
+            bgcolor: 'var(--accent)',
+            color: 'var(--accent-ink)',
+            fontWeight: 600,
+            fontSize: 11,
+            textTransform: 'none',
+            borderRadius: '6px',
+            boxShadow: 'none',
+            '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88, boxShadow: 'none' },
+        };
+        const tier2Sx = {
+            color: 'var(--accent)',
+            border: '0.5px solid var(--accent)',
+            bgcolor: 'transparent',
+            fontWeight: 500,
+            fontSize: 11,
+            textTransform: 'none',
+            borderRadius: '6px',
+            boxShadow: 'none',
+            '&:hover': { bgcolor: 'transparent', opacity: 0.75, boxShadow: 'none' },
+        };
+        const selectStyle = {
+            padding: '6px 10px',
+            fontSize: 12,
+            fontFamily: 'inherit',
+            border: '1px solid var(--rule)',
+            borderRadius: '8px',
+            background: 'var(--surface)',
+            color: 'var(--ink)',
+        };
+        const goToLevel2 = (variantId) => sourcingNavigate(`/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}`);
+        // Existing Level-2 targetedAction destination for draft/queue/inbound
+        // review — no new purchasing route is invented here (SRC-WL-2B-10/11).
+        const goToPurchasingHub = () => sourcingNavigate('/suppliers-portal');
+        /**
+         * SOURCING-UX-COGNITIVE-01 Slice 2B row-action model (SRC-WL-2B-06/09/10/11/13).
+         * needs_supplier is the one category with two actions — Assign supplier
+         * (primary, resolves the row) plus Review (secondary, Level 2). Every
+         * other category keeps exactly one action. Prepare PO is deliberately
+         * absent everywhere here — it needs ranked supplier data the worklist
+         * must not fetch (SRC-WL-UI-14) and stays Level-2-only.
+         */
+        const rowActions = (item) => {
+            switch (item.category) {
+                case 'needs_supplier':
+                    return (_jsxs(_Fragment, { children: [_jsx(Button, { size: "small", variant: "contained", sx: tier1Sx, onClick: () => handleWorklistAssignOpen(item), children: "Assign supplier" }), _jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: () => goToLevel2(item.lasyncro_variant_id), children: "Review" })] }));
+                case 'in_purchasing':
+                    // Draft wins over queue — matches Level 2's targetedAction resolver
+                    // ("a draft is further along than a queue entry").
+                    if (item.draft_po_qty > 0) {
+                        return (_jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: goToPurchasingHub, children: "Review draft PO" }));
+                    }
+                    if (item.pending_queue_qty > 0) {
+                        return (_jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: goToPurchasingHub, children: "Review queue" }));
+                    }
+                    return (_jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: () => goToLevel2(item.lasyncro_variant_id), children: "Review" }));
+                case 'covered_inbound':
+                    return (_jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: goToPurchasingHub, children: "View inbound" }));
+                case 'needs_purchase':
+                case 'plan_ahead':
+                default:
+                    return (_jsx(Button, { size: "small", variant: "outlined", sx: tier2Sx, onClick: () => goToLevel2(item.lasyncro_variant_id), children: "Review" }));
+            }
+        };
+        /**
+         * SRC-WL-2B-12: needs_supplier reason copy branches on WHICH precedence
+         * branch produced the category (see sourcing-recommendation-playbook.md
+         * §13.19/§13.20). unplanned>0 -> reactive; unplanned===0 -> reached only
+         * via the planning branch (still_to_source and in_purchasing are both
+         * necessarily 0 there), so "0 still to source" is never shown.
+         */
+        const reasonFor = (item) => {
+            switch (item.category) {
+                case 'needs_supplier':
+                    if (item.unplanned > 0) {
+                        return `${item.still_to_source} still to source · no supplier assigned`;
+                    }
+                    return item.days_of_stock_remaining != null
+                        ? `Stockout projected in ${item.days_of_stock_remaining} days · no supplier assigned`
+                        : 'Replenishment due · no supplier assigned';
+                case 'needs_purchase':
+                    return `${item.still_to_source} still to source · ${item.blocked_order_count} orders waiting`;
+                case 'in_purchasing':
+                    return `${item.in_purchasing} in purchasing · ${item.still_to_source} still to source`;
+                case 'covered_inbound':
+                    return `${item.committed_inbound} inbound · customer shortage covered`;
+                case 'plan_ahead':
+                    return item.days_of_stock_remaining != null
+                        ? `Stockout projected in ${item.days_of_stock_remaining} days`
+                        : 'Stockout projected soon';
+                default:
+                    return '';
+            }
+        };
+        /**
+         * SRC-WL-UI-03 defensive invariant: when no explicit category filter is
+         * selected, covered_inbound rows must never render in the default
+         * immediate-action view — even if the server response includes one.
+         * Selecting category=covered_inbound explicitly still renders them.
+         * Summary counts are untouched (derived straight from worklist.summary).
+         */
+        const items = (worklist?.items ?? []).filter((item) => worklistCategory === 'covered_inbound' || item.category !== 'covered_inbound');
+        const summary = worklist?.summary ?? {
+            needs_supplier: 0, needs_purchase: 0, in_purchasing: 0, covered_inbound: 0, plan_ahead: 0,
+        };
+        const totalItems = worklist?.total ?? 0;
+        const effectivePageSize = worklist?.page_size ?? worklistPageSize;
+        const currentPage = worklist?.page ?? worklistPage;
+        const totalPages = Math.max(1, Math.ceil(totalItems / Math.max(1, effectivePageSize)));
+        const rangeStart = totalItems === 0 ? 0 : (currentPage - 1) * effectivePageSize + 1;
+        const rangeEnd = Math.min(currentPage * effectivePageSize, totalItems);
+        return (_jsxs(Box, { "data-testid": "sourcing-worklist", sx: { p: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }, children: [_jsx(Typography, { sx: { fontSize: 18, fontWeight: 600, color: 'var(--ink)' }, children: "Sourcing" }), _jsx(Button, { "data-testid": "supplier-settings-entry", size: "small", variant: "outlined", sx: tier2Sx, onClick: () => setSupplierSettingsOpen((v) => !v), children: "Supplier settings" })] }), supplierSettingsOpen && (_jsxs(Box, { "data-testid": "supplier-preferences-panel", sx: { mb: 2, p: 1.5, border: '1px solid var(--rule)', borderRadius: '10px' }, children: [_jsx(Typography, { sx: { fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }, children: "Supplier preferences" }), preferences.length === 0 && (_jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }, children: "None set" })), preferences.map((pref) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [scopeLabels[pref.scope_type], " \u00B7 ", pref.supplier_name] }), _jsx(IconButton, { size: "small", onClick: () => void onDeletePreference(pref.id), children: _jsx(Trash2, { size: 14 }) })] }, pref.id)))] })), _jsxs(Box, { "data-testid": "sourcing-worklist-category-counts", sx: { display: 'flex', gap: 0.75, mb: 1.5, flexWrap: 'wrap' }, children: [worklistCategoryCounts.map(({ key, label }) => {
+                            const active = worklistCategory === key;
+                            return (_jsxs(Box, { component: "button", type: "button", "data-testid": `sourcing-worklist-category-${key}`, onClick: () => { setWorklistPage(1); setWorklistCategory(key); }, sx: {
+                                    display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                                    px: 1.25, py: 0.5, fontSize: 10.5, fontWeight: 600, fontFamily: 'inherit',
+                                    border: '1px solid', borderRadius: '999px', cursor: 'pointer',
+                                    borderColor: active ? 'var(--accent)' : 'var(--rule)',
+                                    bgcolor: active ? 'var(--accent-ghost)' : 'var(--surface)',
+                                    color: active ? 'var(--accent)' : 'var(--ink)',
+                                }, children: [label, " \u00B7 ", summary[key]] }, key));
+                        }), worklistCategory && (_jsx(Box, { component: "button", type: "button", onClick: () => { setWorklistPage(1); setWorklistCategory(undefined); }, sx: {
+                                px: 1.25, py: 0.5, fontSize: 10.5, fontWeight: 500, fontFamily: 'inherit',
+                                border: '0.5px solid var(--rule)', borderRadius: '999px', cursor: 'pointer',
+                                bgcolor: 'transparent', color: 'var(--ink-3)',
+                            }, children: "Clear" }))] }), _jsx(Box, { sx: { mb: 1.5 }, children: _jsx(TextField, { size: "small", placeholder: "Search product, variant, or SKU", value: worklistQuery, onChange: (e) => { setWorklistPage(1); setWorklistQuery(e.target.value); }, sx: {
+                            minWidth: 240,
+                            '& .MuiOutlinedInput-root': {
+                                bgcolor: 'var(--surface)',
+                                fontSize: 12,
+                                '& fieldset': { borderColor: 'var(--rule)' },
+                                '&:hover fieldset': { borderColor: 'var(--accent-border)' },
+                                '&.Mui-focused fieldset': { borderColor: 'var(--accent)' },
+                            },
+                        }, slotProps: { htmlInput: { 'data-testid': 'sourcing-worklist-search' } } }) }), _jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1.5, mb: 1.5, alignItems: { md: 'center' } }, children: [_jsxs(Box, { "data-testid": "sourcing-worklist-filters", sx: { display: 'flex', gap: 1 }, children: [_jsxs("select", { "aria-label": "Supplier readiness", style: selectStyle, value: worklistSupplierReadiness ?? '', onChange: (e) => { setWorklistPage(1); setWorklistSupplierReadiness((e.target.value || undefined)); }, children: [_jsx("option", { value: "", children: "Any supplier readiness" }), _jsx("option", { value: "ready", children: "Ready" }), _jsx("option", { value: "needs_supplier", children: "Needs supplier" }), _jsx("option", { value: "no_history", children: "No history" })] }), _jsxs("select", { "aria-label": "Purchasing stage", style: selectStyle, value: worklistPurchasingStage ?? '', onChange: (e) => { setWorklistPage(1); setWorklistPurchasingStage((e.target.value || undefined)); }, children: [_jsx("option", { value: "", children: "Any purchasing stage" }), _jsx("option", { value: "not_started", children: "Not started" }), _jsx("option", { value: "queued", children: "Queued" }), _jsx("option", { value: "draft", children: "Draft" }), _jsx("option", { value: "committed", children: "Committed" })] }), _jsxs("select", { "aria-label": "Coverage", style: selectStyle, value: worklistCoverage ?? '', onChange: (e) => { setWorklistPage(1); setWorklistCoverage((e.target.value || undefined)); }, children: [_jsx("option", { value: "", children: "Any coverage" }), _jsx("option", { value: "short", children: "Short" }), _jsx("option", { value: "covered_inbound", children: "Covered inbound" })] })] }), _jsxs("select", { "data-testid": "sourcing-worklist-sort", "aria-label": "Sort", style: selectStyle, value: worklistSort, onChange: (e) => { setWorklistPage(1); setWorklistSort(e.target.value); }, children: [_jsx("option", { value: "action_priority", children: "Action priority" }), _jsx("option", { value: "oldest_demand", children: "Oldest demand" }), _jsx("option", { value: "still_to_source", children: "Still to source" }), _jsx("option", { value: "stockout_soonest", children: "Stockout soonest" }), _jsx("option", { value: "product_az", children: "Product A\u2013Z" })] })] }), isLoadingWorklist && !worklist && (_jsx(Typography, { sx: { fontSize: 12.5, color: 'var(--ink-3)' }, children: "Loading sourcing worklist\u2026" })), !isLoadingWorklist && worklist && items.length === 0 && (_jsxs(Box, { "data-testid": "sourcing-worklist-empty-state", sx: { p: 3, textAlign: 'center', border: '1px dashed var(--rule)', borderRadius: '10px' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "Nothing needs sourcing right now" }), _jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }, children: "Every SKU in this view is covered, in progress, or has no open demand." })] })), _jsx(Box, { children: items.map((item) => (_jsxs(Box, { "data-testid": `sourcing-worklist-row-${item.lasyncro_variant_id}`, sx: { display: 'flex', alignItems: 'center', gap: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)' }, children: [item.image_url ? (_jsx(Box, { component: "img", src: item.image_url, alt: item.variant_title ?? item.product_title ?? '', sx: { width: 36, height: 36, objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--rule)' } })) : (_jsx(Box, { "data-testid": "sourcing-worklist-image-placeholder", sx: { width: 36, height: 36, borderRadius: '6px', border: '1px solid var(--rule)', bgcolor: 'var(--surface-2)' } })), _jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: item.product_title }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'baseline', gap: 0.5 }, children: [_jsx(Typography, { component: "span", sx: { fontSize: 12, color: 'var(--ink-3)' }, children: item.variant_title }), _jsx(Typography, { component: "span", sx: { fontSize: 12, color: 'var(--ink-3)' }, children: "\u00B7" }), _jsx(Typography, { component: "span", sx: { fontSize: 12, color: 'var(--ink-3)' }, children: item.sku })] }), _jsx(Typography, { "data-testid": "sourcing-worklist-row-reason", sx: { fontSize: 12, color: 'var(--ink-3)', mt: 0.25 }, children: reasonFor(item) })] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0 }, children: rowActions(item) })] }, item.lasyncro_variant_id))) }), totalItems > 0 && (_jsxs(Box, { "data-testid": "sourcing-worklist-pagination", sx: {
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        px: 2, py: 1, mt: 1.5, bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: '10px',
+                        flexWrap: 'wrap', gap: 1,
+                    }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-3)' }, children: [rangeStart, "\u2013", rangeEnd, " of ", totalItems] }), _jsx(Box, { "data-testid": "sourcing-worklist-page-size", sx: { display: 'flex', gap: 0.5 }, children: [10, 25, 50, 100].map((n) => (_jsx(Box, { component: "button", type: "button", onClick: () => { setWorklistPageSize(n); setWorklistPage(1); }, sx: {
+                                            px: 1, py: 0.25, fontSize: 10, fontFamily: 'inherit',
+                                            border: '0.5px solid',
+                                            borderColor: n === effectivePageSize ? 'var(--accent)' : 'var(--rule)',
+                                            borderRadius: '4px',
+                                            bgcolor: n === effectivePageSize ? 'var(--accent-ghost)' : 'var(--surface)',
+                                            color: n === effectivePageSize ? 'var(--accent)' : 'var(--ink-3)',
+                                            cursor: 'pointer', fontWeight: n === effectivePageSize ? 600 : 400,
+                                        }, children: n }, n))) })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 0.5 }, children: [totalPages > 1 && (_jsx(Box, { component: "button", type: "button", disabled: currentPage <= 1, onClick: () => setWorklistPage((p) => Math.max(1, p - 1)), sx: {
+                                        px: 1.5, py: 0.5, borderRadius: '6px', fontFamily: 'inherit',
+                                        cursor: currentPage > 1 ? 'pointer' : 'not-allowed',
+                                        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12,
+                                        color: 'var(--ink-3)', opacity: currentPage > 1 ? 1 : 0.4,
+                                    }, children: "Previous" })), totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (_jsx(Box, { component: "button", type: "button", onClick: () => setWorklistPage(i + 1), sx: {
+                                        px: 1.5, py: 0.5, fontSize: 11, fontFamily: 'inherit',
+                                        border: '0.5px solid',
+                                        borderColor: i + 1 === currentPage ? 'var(--accent)' : 'var(--rule)',
+                                        borderRadius: '6px',
+                                        bgcolor: i + 1 === currentPage ? 'var(--accent)' : 'var(--surface)',
+                                        color: i + 1 === currentPage ? '#fff' : 'var(--ink-3)',
+                                        cursor: 'pointer', fontWeight: i + 1 === currentPage ? 600 : 400,
+                                    }, children: i + 1 }, i))), totalPages > 1 && (_jsx(Box, { component: "button", type: "button", disabled: currentPage >= totalPages, onClick: () => setWorklistPage((p) => Math.min(totalPages, p + 1)), sx: {
+                                        px: 1.5, py: 0.5, borderRadius: '6px', fontFamily: 'inherit',
+                                        cursor: currentPage < totalPages ? 'pointer' : 'not-allowed',
+                                        border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12,
+                                        color: 'var(--ink-3)', opacity: currentPage < totalPages ? 1 : 0.4,
+                                    }, children: "Next" }))] })] })), reorderRequests.length > 0 && (_jsxs(Box, { "data-testid": "moq-accumulator-entry", sx: { mt: 2, p: 1.5, border: '1px solid var(--rule)', borderRadius: '10px', bgcolor: 'var(--surface)' }, children: [_jsxs(Typography, { sx: { fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }, children: ["Reorder queue \u00B7 ", reorderRequests.length, " supplier", reorderRequests.length === 1 ? '' : 's', " pooling MOQ"] }), reorderRequests.map((group) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: [group.supplier_name, " \u00B7 ", group.total_qty, group.moq ? ` / ${group.moq}` : '', " pooled"] }), _jsx(Button, { size: "small", variant: "contained", sx: tier1Sx, disabled: convertingSupplierIds.has(group.supplier_id), onClick: () => handleConvertClick(group), children: "Convert to PO" }), convertErrors[group.supplier_id] && (_jsx(Typography, { sx: { fontSize: 11, color: 'error.main' }, children: convertErrors[group.supplier_id] }))] }, group.supplier_id)))] })), _jsx(AssignSupplierDialog, { open: assignOpen, target: assignTarget, suppliers: suppliers, onClose: () => setAssignOpen(false), onSubmit: handleAssignSave })] }));
+    }
     return (_jsxs(Box, { sx: { p: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { p: '18px 20px', borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 16, fontWeight: 500, color: 'var(--ink)' }, children: "Sourcing recommendations" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }, children: activeVariantId ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate' : 'Select a stockout alert to see ranked supplier options' })] }), targetFetchState === 'not_found' && (_jsxs(Box, { "data-testid": "sourcing-target-not-found", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "We couldn\u2019t find that product" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "The link may be out of date, or the product may have been removed." })] })), targetFetchState === 'error' && (_jsxs(Box, { "data-testid": "sourcing-target-load-error", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "Couldn\u2019t load sourcing details" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "Something went wrong on our side \u2014 the product and its suppliers are unaffected." })] })), activeVariantId && targetFetchState === 'ok' && targeted && (_jsx(_Fragment, { children: _jsxs(Box, { "data-testid": "sourcing-identity", sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, alignItems: 'stretch', borderBottom: '1px solid var(--rule)' }, children: [targeted.image_url && (
                                         /* SRC-ACT-UI-10: a 48px chip is an icon, not recognition.
                                            `contain`, never `cover` — a product cropped to a square

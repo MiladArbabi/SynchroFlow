@@ -230,6 +230,71 @@ export type SourcingResult = {
   } | null;
 };
 
+/**
+ * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST.
+ * The generic (no-variantId) portfolio view's set-wise read model. Distinct
+ * from SourcingResult above, which is the per-variant TARGETED payload.
+ */
+export type SourcingWorklistCategory =
+  | 'needs_supplier'
+  | 'needs_purchase'
+  | 'in_purchasing'
+  | 'covered_inbound'
+  | 'plan_ahead';
+
+export type SourcingWorklistParams = {
+  q?: string;
+  category?: SourcingWorklistCategory | 'all';
+  supplier_readiness?: 'ready' | 'needs_supplier' | 'no_history';
+  purchasing_stage?: 'not_started' | 'queued' | 'draft' | 'committed';
+  coverage?: 'short' | 'covered_inbound';
+  sort?: 'action_priority' | 'oldest_demand' | 'still_to_source' | 'stockout_soonest' | 'product_az';
+  page?: number;
+  page_size?: number;
+};
+
+export type SourcingWorklistItem = {
+  lasyncro_variant_id: string;
+  product_title: string | null;
+  variant_title: string | null;
+  sku: string | null;
+  image_url: string | null;
+  category: SourcingWorklistCategory;
+  open_demand: number;
+  blocked_order_count: number;
+  oldest_open_order_at: string | null;
+  available: number;
+  committed_inbound: number;
+  short_now: number;
+  still_to_source: number;
+  pending_queue_qty: number;
+  draft_po_qty: number;
+  in_purchasing: number;
+  unplanned: number;
+  has_usable_supplier: boolean;
+  has_preference: boolean;
+  has_supplier_history: boolean;
+  planning_urgency: string | null;
+  days_of_stock_remaining: number | null;
+  suggested_reorder_qty: number | null;
+};
+
+export type SourcingWorklistSummary = {
+  needs_supplier: number;
+  needs_purchase: number;
+  in_purchasing: number;
+  covered_inbound: number;
+  plan_ahead: number;
+};
+
+export type SourcingWorklistResult = {
+  summary: SourcingWorklistSummary;
+  items: SourcingWorklistItem[];
+  page: number;
+  page_size: number;
+  total: number;
+};
+
 export type PreferenceRow = {
   id: string;
   supplier_id: number;
@@ -300,6 +365,13 @@ export type SuppliersPortalPageProps = {
   // SRC-03: neededQty removed — the server derives it. Passing it in was the
   // old `?needed=` path, which no caller ever populated.
   onFetchSourcingRecommendations: (variantId: string) => Promise<SourcingResult>;
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2: set-wise fetch for the generic
+   * (no-variantId) Unified Sourcing Worklist. Never called from targeted
+   * mode, and onFetchSourcingRecommendations is never called from generic
+   * mode (SRC-WL-UI-14) — the two surfaces use disjoint fetches.
+   */
+  onFetchSourcingWorklist: (params: SourcingWorklistParams) => Promise<SourcingWorklistResult>;
   // §7.7 Preference CRUD
   onFetchPreferences: () => Promise<PreferenceRow[]>;
   onCreatePreference: (input: { supplier_id: number; scope_type: string; scope_id: string; priority?: number; note?: string }) => Promise<PreferenceRow>;
@@ -1840,6 +1912,7 @@ function PurchasingSourcingView({
   onCreateSupplier,
   onSearchVariants,
   onFetchSourcingRecommendations,
+  onFetchSourcingWorklist,
   onFetchPreferences,
   onCreatePreference,
   onDeletePreference,
@@ -1873,6 +1946,20 @@ function PurchasingSourcingView({
   const [planningContext, setPlanningContext] = useState<SourcingResult['planning_context']>(null);
 
   const [activeVariantId, setActiveVariantId] = useState<string | null>(triggerVariantId);
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2 correction: activeVariantId previously
+   * only ever took its INITIAL value from triggerVariantId (useState's
+   * initializer runs once). The Unified Sourcing Worklist's Review action
+   * navigates within this same component instance
+   * (?variantId=<canonical>), which changes triggerVariantId on the next
+   * render but never re-synced activeVariantId — so Level 1 -> Level 2
+   * silently did nothing. Kept as a separate state (not derived directly
+   * from triggerVariantId) because nothing else in this component may ever
+   * need to diverge from the URL, but the effect keeps it authoritative.
+   */
+  useEffect(() => {
+    setActiveVariantId(triggerVariantId);
+  }, [triggerVariantId]);
   const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
@@ -1925,6 +2012,63 @@ function PurchasingSourcingView({
   const [assignOpen, setAssignOpen] = useState(false);
   // §8: per-supplier queue button state — 'idle' | 'adding' | 'added'
   const [queueButtonState, setQueueButtonState] = useState<Record<number, 'idle' | 'adding' | 'added'>>({});
+
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST state.
+   * Generic (no-variantId) mode only. Declared unconditionally (Rules of
+   * Hooks) even though only read/used when !activeVariantId below.
+   */
+  const [worklist, setWorklist] = useState<SourcingWorklistResult | null>(null);
+  const [isLoadingWorklist, setIsLoadingWorklist] = useState(false);
+  const [worklistQuery, setWorklistQuery] = useState('');
+  const [worklistCategory, setWorklistCategory] = useState<SourcingWorklistCategory | undefined>(undefined);
+  const [worklistSupplierReadiness, setWorklistSupplierReadiness] =
+    useState<SourcingWorklistParams['supplier_readiness']>(undefined);
+  const [worklistPurchasingStage, setWorklistPurchasingStage] =
+    useState<SourcingWorklistParams['purchasing_stage']>(undefined);
+  const [worklistCoverage, setWorklistCoverage] = useState<SourcingWorklistParams['coverage']>(undefined);
+  const [worklistSort, setWorklistSort] = useState<SourcingWorklistParams['sort']>('action_priority');
+  const [worklistPage, setWorklistPage] = useState(1);
+  const [worklistPageSize, setWorklistPageSize] = useState(50);
+  /** Supplier settings is a secondary access point, collapsed by default. */
+  const [supplierSettingsOpen, setSupplierSettingsOpen] = useState(false);
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2B — bumped after a successful Level-1
+   * supplier assignment so the worklist is RE-FETCHED from the server rather
+   * than having its category locally mutated. The row's new category
+   * (needs_purchase / plan_ahead / excluded) is server-derived truth — see
+   * handleAssignSave below.
+   */
+  const [worklistRefreshKey, setWorklistRefreshKey] = useState(0);
+
+  useEffect(() => {
+    if (activeVariantId) return;
+    setIsLoadingWorklist(true);
+    onFetchSourcingWorklist({
+      q: worklistQuery || undefined,
+      category: worklistCategory,
+      supplier_readiness: worklistSupplierReadiness,
+      purchasing_stage: worklistPurchasingStage,
+      coverage: worklistCoverage,
+      sort: worklistSort,
+      page: worklistPage,
+      page_size: worklistPageSize,
+    })
+      .then(setWorklist)
+      .finally(() => setIsLoadingWorklist(false));
+  }, [
+    activeVariantId,
+    onFetchSourcingWorklist,
+    worklistQuery,
+    worklistCategory,
+    worklistSupplierReadiness,
+    worklistPurchasingStage,
+    worklistCoverage,
+    worklistSort,
+    worklistPage,
+    worklistPageSize,
+    worklistRefreshKey,
+  ]);
 
   // §7.6: fetch preferences for default/no-variantId state
   useEffect(() => {
@@ -2055,6 +2199,25 @@ function PurchasingSourcingView({
     setAssignOpen(true);
   };
 
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2B — assigning directly from a Level 1
+   * needs_supplier worklist row. Reuses the SAME AssignSupplierDialog and
+   * handleAssignSave/onCreatePreference path as targeted mode above;
+   * product_id/product_type are unknown at Level 1 (not part of the
+   * worklist response) so, exactly like handleTargetedAssignOpen, the
+   * dialog degrades to "this variant only" scope — no new backend field.
+   */
+  const handleWorklistAssignOpen = (item: SourcingWorklistItem) => {
+    setAssignTarget({
+      lasyncro_variant_id: item.lasyncro_variant_id,
+      title: item.variant_title ?? item.product_title ?? 'this variant',
+      sku: item.sku,
+      product_id: null,
+      product_type: null,
+    });
+    setAssignOpen(true);
+  };
+
   const handleAssignSave = async (input: { supplier_id: number; scope_type: string; scope_id: string; priority: number; note?: string }) => {
     await onCreatePreference(input);
     const updated = await onFetchPreferences();
@@ -2064,6 +2227,11 @@ function PurchasingSourcingView({
     // leave the merchant looking at the "no usable supplier" state they just
     // resolved.
     if (activeVariantId) setTargetRefreshKey((n) => n + 1);
+    // SOURCING-UX-COGNITIVE-01 Slice 2B: assigning from a Level 1 worklist row
+    // (activeVariantId is null there) changes that row's server-derived
+    // category (needs_supplier -> needs_purchase/plan_ahead, or out of the
+    // current filter entirely) — refetch the worklist rather than guessing.
+    if (!activeVariantId) setWorklistRefreshKey((n) => n + 1);
   };
 
   const handleDeletePreference = async (id: string) => {
@@ -2222,6 +2390,505 @@ function PurchasingSourcingView({
     product_type: preferences.filter(p => p.scope_type === 'product_type'),
   };
   const scopeLabels: Record<string, string> = { variant: 'Variant', product: 'Product', product_type: 'Product Type' };
+
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST.
+   * Generic (no-variantId) mode renders this instead of the Level-2 targeted
+   * decision card below. Targeted mode (activeVariantId truthy) is entirely
+   * unchanged — everything from here down in the function's remaining
+   * `return` is the same Slice 1A/1B JSX it always was.
+   */
+  if (!activeVariantId) {
+    const worklistCategoryCounts: Array<{ key: SourcingWorklistCategory; label: string }> = [
+      { key: 'needs_supplier', label: 'Needs supplier' },
+      { key: 'needs_purchase', label: 'Needs purchase' },
+      { key: 'in_purchasing',  label: 'In purchasing' },
+      { key: 'covered_inbound', label: 'Covered inbound' },
+      { key: 'plan_ahead',     label: 'Plan ahead' },
+    ];
+
+    // modules-ux-playbook.md §2 — Tier 1 (commits/resolves) and Tier 2
+    // (navigates to a related surface) CTA treatments, applied via MUI
+    // Button `sx` per §7 ("Adding a new CTA").
+    const tier1Sx = {
+      bgcolor: 'var(--accent)',
+      color: 'var(--accent-ink)',
+      fontWeight: 600,
+      fontSize: 11,
+      textTransform: 'none' as const,
+      borderRadius: '6px',
+      boxShadow: 'none',
+      '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88, boxShadow: 'none' },
+    };
+    const tier2Sx = {
+      color: 'var(--accent)',
+      border: '0.5px solid var(--accent)',
+      bgcolor: 'transparent',
+      fontWeight: 500,
+      fontSize: 11,
+      textTransform: 'none' as const,
+      borderRadius: '6px',
+      boxShadow: 'none',
+      '&:hover': { bgcolor: 'transparent', opacity: 0.75, boxShadow: 'none' },
+    };
+    const selectStyle: React.CSSProperties = {
+      padding: '6px 10px',
+      fontSize: 12,
+      fontFamily: 'inherit',
+      border: '1px solid var(--rule)',
+      borderRadius: '8px',
+      background: 'var(--surface)',
+      color: 'var(--ink)',
+    };
+
+    const goToLevel2 = (variantId: string) =>
+      sourcingNavigate(`/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}`);
+    // Existing Level-2 targetedAction destination for draft/queue/inbound
+    // review — no new purchasing route is invented here (SRC-WL-2B-10/11).
+    const goToPurchasingHub = () => sourcingNavigate('/suppliers-portal');
+
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2B row-action model (SRC-WL-2B-06/09/10/11/13).
+     * needs_supplier is the one category with two actions — Assign supplier
+     * (primary, resolves the row) plus Review (secondary, Level 2). Every
+     * other category keeps exactly one action. Prepare PO is deliberately
+     * absent everywhere here — it needs ranked supplier data the worklist
+     * must not fetch (SRC-WL-UI-14) and stays Level-2-only.
+     */
+    const rowActions = (item: SourcingWorklistItem) => {
+      switch (item.category) {
+        case 'needs_supplier':
+          return (
+            <>
+              <Button size="small" variant="contained" sx={tier1Sx} onClick={() => handleWorklistAssignOpen(item)}>
+                Assign supplier
+              </Button>
+              <Button size="small" variant="outlined" sx={tier2Sx} onClick={() => goToLevel2(item.lasyncro_variant_id)}>
+                Review
+              </Button>
+            </>
+          );
+        case 'in_purchasing':
+          // Draft wins over queue — matches Level 2's targetedAction resolver
+          // ("a draft is further along than a queue entry").
+          if (item.draft_po_qty > 0) {
+            return (
+              <Button size="small" variant="outlined" sx={tier2Sx} onClick={goToPurchasingHub}>
+                Review draft PO
+              </Button>
+            );
+          }
+          if (item.pending_queue_qty > 0) {
+            return (
+              <Button size="small" variant="outlined" sx={tier2Sx} onClick={goToPurchasingHub}>
+                Review queue
+              </Button>
+            );
+          }
+          return (
+            <Button size="small" variant="outlined" sx={tier2Sx} onClick={() => goToLevel2(item.lasyncro_variant_id)}>
+              Review
+            </Button>
+          );
+        case 'covered_inbound':
+          return (
+            <Button size="small" variant="outlined" sx={tier2Sx} onClick={goToPurchasingHub}>
+              View inbound
+            </Button>
+          );
+        case 'needs_purchase':
+        case 'plan_ahead':
+        default:
+          return (
+            <Button size="small" variant="outlined" sx={tier2Sx} onClick={() => goToLevel2(item.lasyncro_variant_id)}>
+              Review
+            </Button>
+          );
+      }
+    };
+
+    /**
+     * SRC-WL-2B-12: needs_supplier reason copy branches on WHICH precedence
+     * branch produced the category (see sourcing-recommendation-playbook.md
+     * §13.19/§13.20). unplanned>0 -> reactive; unplanned===0 -> reached only
+     * via the planning branch (still_to_source and in_purchasing are both
+     * necessarily 0 there), so "0 still to source" is never shown.
+     */
+    const reasonFor = (item: SourcingWorklistItem): string => {
+      switch (item.category) {
+        case 'needs_supplier':
+          if (item.unplanned > 0) {
+            return `${item.still_to_source} still to source · no supplier assigned`;
+          }
+          return item.days_of_stock_remaining != null
+            ? `Stockout projected in ${item.days_of_stock_remaining} days · no supplier assigned`
+            : 'Replenishment due · no supplier assigned';
+        case 'needs_purchase':
+          return `${item.still_to_source} still to source · ${item.blocked_order_count} orders waiting`;
+        case 'in_purchasing':
+          return `${item.in_purchasing} in purchasing · ${item.still_to_source} still to source`;
+        case 'covered_inbound':
+          return `${item.committed_inbound} inbound · customer shortage covered`;
+        case 'plan_ahead':
+          return item.days_of_stock_remaining != null
+            ? `Stockout projected in ${item.days_of_stock_remaining} days`
+            : 'Stockout projected soon';
+        default:
+          return '';
+      }
+    };
+
+    /**
+     * SRC-WL-UI-03 defensive invariant: when no explicit category filter is
+     * selected, covered_inbound rows must never render in the default
+     * immediate-action view — even if the server response includes one.
+     * Selecting category=covered_inbound explicitly still renders them.
+     * Summary counts are untouched (derived straight from worklist.summary).
+     */
+    const items = (worklist?.items ?? []).filter(
+      (item) => worklistCategory === 'covered_inbound' || item.category !== 'covered_inbound'
+    );
+    const summary = worklist?.summary ?? {
+      needs_supplier: 0, needs_purchase: 0, in_purchasing: 0, covered_inbound: 0, plan_ahead: 0,
+    };
+
+    const totalItems = worklist?.total ?? 0;
+    const effectivePageSize = worklist?.page_size ?? worklistPageSize;
+    const currentPage = worklist?.page ?? worklistPage;
+    const totalPages = Math.max(1, Math.ceil(totalItems / Math.max(1, effectivePageSize)));
+    const rangeStart = totalItems === 0 ? 0 : (currentPage - 1) * effectivePageSize + 1;
+    const rangeEnd = Math.min(currentPage * effectivePageSize, totalItems);
+
+    return (
+      <Box data-testid="sourcing-worklist" sx={{ p: 2 }}>
+        {/* 1. Title + secondary Supplier settings */}
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>Sourcing</Typography>
+          <Button
+            data-testid="supplier-settings-entry"
+            size="small"
+            variant="outlined"
+            sx={tier2Sx}
+            onClick={() => setSupplierSettingsOpen((v) => !v)}
+          >
+            Supplier settings
+          </Button>
+        </Box>
+
+        {/* Supplier settings — secondary access; preferences no longer dominate generic Sourcing. */}
+        {supplierSettingsOpen && (
+          <Box
+            data-testid="supplier-preferences-panel"
+            sx={{ mb: 2, p: 1.5, border: '1px solid var(--rule)', borderRadius: '10px' }}
+          >
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>Supplier preferences</Typography>
+            {preferences.length === 0 && (
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }}>None set</Typography>
+            )}
+            {preferences.map((pref) => (
+              <Box key={pref.id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                  {scopeLabels[pref.scope_type]} · {pref.supplier_name}
+                </Typography>
+                <IconButton size="small" onClick={() => void onDeletePreference(pref.id)}>
+                  <Trash2 size={14} />
+                </IconButton>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {/* 2. Category/count controls — precede search/filter controls (SRC-WL-2B-03). */}
+        <Box data-testid="sourcing-worklist-category-counts" sx={{ display: 'flex', gap: 0.75, mb: 1.5, flexWrap: 'wrap' }}>
+          {worklistCategoryCounts.map(({ key, label }) => {
+            const active = worklistCategory === key;
+            return (
+              <Box
+                key={key}
+                component="button"
+                type="button"
+                data-testid={`sourcing-worklist-category-${key}`}
+                onClick={() => { setWorklistPage(1); setWorklistCategory(key); }}
+                sx={{
+                  display: 'inline-flex', alignItems: 'center', gap: 0.5,
+                  px: 1.25, py: 0.5, fontSize: 10.5, fontWeight: 600, fontFamily: 'inherit',
+                  border: '1px solid', borderRadius: '999px', cursor: 'pointer',
+                  borderColor: active ? 'var(--accent)' : 'var(--rule)',
+                  bgcolor: active ? 'var(--accent-ghost)' : 'var(--surface)',
+                  color: active ? 'var(--accent)' : 'var(--ink)',
+                }}
+              >
+                {label} · {summary[key]}
+              </Box>
+            );
+          })}
+          {worklistCategory && (
+            <Box
+              component="button"
+              type="button"
+              onClick={() => { setWorklistPage(1); setWorklistCategory(undefined); }}
+              sx={{
+                px: 1.25, py: 0.5, fontSize: 10.5, fontWeight: 500, fontFamily: 'inherit',
+                border: '0.5px solid var(--rule)', borderRadius: '999px', cursor: 'pointer',
+                bgcolor: 'transparent', color: 'var(--ink-3)',
+              }}
+            >
+              Clear
+            </Box>
+          )}
+        </Box>
+
+        {/* 3. Search */}
+        <Box sx={{ mb: 1.5 }}>
+          <TextField
+            size="small"
+            placeholder="Search product, variant, or SKU"
+            value={worklistQuery}
+            onChange={(e) => { setWorklistPage(1); setWorklistQuery(e.target.value); }}
+            sx={{
+              minWidth: 240,
+              '& .MuiOutlinedInput-root': {
+                bgcolor: 'var(--surface)',
+                fontSize: 12,
+                '& fieldset': { borderColor: 'var(--rule)' },
+                '&:hover fieldset': { borderColor: 'var(--accent-border)' },
+                '&.Mui-focused fieldset': { borderColor: 'var(--accent)' },
+              },
+            }}
+            slotProps={{ htmlInput: { 'data-testid': 'sourcing-worklist-search' } }}
+          />
+        </Box>
+
+        {/* 4. Filters + sort */}
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1.5, mb: 1.5, alignItems: { md: 'center' } }}>
+          <Box data-testid="sourcing-worklist-filters" sx={{ display: 'flex', gap: 1 }}>
+            <select
+              aria-label="Supplier readiness"
+              style={selectStyle}
+              value={worklistSupplierReadiness ?? ''}
+              onChange={(e) => { setWorklistPage(1); setWorklistSupplierReadiness((e.target.value || undefined) as SourcingWorklistParams['supplier_readiness']); }}
+            >
+              <option value="">Any supplier readiness</option>
+              <option value="ready">Ready</option>
+              <option value="needs_supplier">Needs supplier</option>
+              <option value="no_history">No history</option>
+            </select>
+            <select
+              aria-label="Purchasing stage"
+              style={selectStyle}
+              value={worklistPurchasingStage ?? ''}
+              onChange={(e) => { setWorklistPage(1); setWorklistPurchasingStage((e.target.value || undefined) as SourcingWorklistParams['purchasing_stage']); }}
+            >
+              <option value="">Any purchasing stage</option>
+              <option value="not_started">Not started</option>
+              <option value="queued">Queued</option>
+              <option value="draft">Draft</option>
+              <option value="committed">Committed</option>
+            </select>
+            <select
+              aria-label="Coverage"
+              style={selectStyle}
+              value={worklistCoverage ?? ''}
+              onChange={(e) => { setWorklistPage(1); setWorklistCoverage((e.target.value || undefined) as SourcingWorklistParams['coverage']); }}
+            >
+              <option value="">Any coverage</option>
+              <option value="short">Short</option>
+              <option value="covered_inbound">Covered inbound</option>
+            </select>
+          </Box>
+          <select
+            data-testid="sourcing-worklist-sort"
+            aria-label="Sort"
+            style={selectStyle}
+            value={worklistSort}
+            onChange={(e) => { setWorklistPage(1); setWorklistSort(e.target.value as SourcingWorklistParams['sort']); }}
+          >
+            <option value="action_priority">Action priority</option>
+            <option value="oldest_demand">Oldest demand</option>
+            <option value="still_to_source">Still to source</option>
+            <option value="stockout_soonest">Stockout soonest</option>
+            <option value="product_az">Product A–Z</option>
+          </select>
+        </Box>
+
+        {isLoadingWorklist && !worklist && (
+          <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Loading sourcing worklist…</Typography>
+        )}
+
+        {!isLoadingWorklist && worklist && items.length === 0 && (
+          <Box data-testid="sourcing-worklist-empty-state" sx={{ p: 3, textAlign: 'center', border: '1px dashed var(--rule)', borderRadius: '10px' }}>
+            <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>Nothing needs sourcing right now</Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }}>
+              Every SKU in this view is covered, in progress, or has no open demand.
+            </Typography>
+          </Box>
+        )}
+
+        {/* 5. Worklist rows */}
+        <Box>
+          {items.map((item) => (
+            <Box
+              key={item.lasyncro_variant_id}
+              data-testid={`sourcing-worklist-row-${item.lasyncro_variant_id}`}
+              sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.25, borderBottom: '1px solid var(--rule)' }}
+            >
+              {item.image_url ? (
+                <Box component="img" src={item.image_url} alt={item.variant_title ?? item.product_title ?? ''} sx={{ width: 36, height: 36, objectFit: 'contain', borderRadius: '6px', border: '1px solid var(--rule)' }} />
+              ) : (
+                <Box data-testid="sourcing-worklist-image-placeholder" sx={{ width: 36, height: 36, borderRadius: '6px', border: '1px solid var(--rule)', bgcolor: 'var(--surface-2)' }} />
+              )}
+              <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)' }}>{item.product_title}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
+                  <Typography component="span" sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{item.variant_title}</Typography>
+                  <Typography component="span" sx={{ fontSize: 12, color: 'var(--ink-3)' }}>·</Typography>
+                  <Typography component="span" sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{item.sku}</Typography>
+                </Box>
+                <Typography data-testid="sourcing-worklist-row-reason" sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.25 }}>
+                  {reasonFor(item)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexShrink: 0 }}>
+                {rowActions(item)}
+              </Box>
+            </Box>
+          ))}
+        </Box>
+
+        {/* 6. Canonical pagination footer — modules-ux-playbook.md §6. */}
+        {totalItems > 0 && (
+          <Box
+            data-testid="sourcing-worklist-pagination"
+            sx={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              px: 2, py: 1, mt: 1.5, bgcolor: 'var(--bg)', border: '1px solid var(--rule)', borderRadius: '10px',
+              flexWrap: 'wrap', gap: 1,
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+              <Typography sx={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                {rangeStart}–{rangeEnd} of {totalItems}
+              </Typography>
+              <Box data-testid="sourcing-worklist-page-size" sx={{ display: 'flex', gap: 0.5 }}>
+                {[10, 25, 50, 100].map((n) => (
+                  <Box
+                    key={n}
+                    component="button"
+                    type="button"
+                    onClick={() => { setWorklistPageSize(n); setWorklistPage(1); }}
+                    sx={{
+                      px: 1, py: 0.25, fontSize: 10, fontFamily: 'inherit',
+                      border: '0.5px solid',
+                      borderColor: n === effectivePageSize ? 'var(--accent)' : 'var(--rule)',
+                      borderRadius: '4px',
+                      bgcolor: n === effectivePageSize ? 'var(--accent-ghost)' : 'var(--surface)',
+                      color: n === effectivePageSize ? 'var(--accent)' : 'var(--ink-3)',
+                      cursor: 'pointer', fontWeight: n === effectivePageSize ? 600 : 400,
+                    }}
+                  >
+                    {n}
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              {totalPages > 1 && (
+                <Box
+                  component="button"
+                  type="button"
+                  disabled={currentPage <= 1}
+                  onClick={() => setWorklistPage((p) => Math.max(1, p - 1))}
+                  sx={{
+                    px: 1.5, py: 0.5, borderRadius: '6px', fontFamily: 'inherit',
+                    cursor: currentPage > 1 ? 'pointer' : 'not-allowed',
+                    border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12,
+                    color: 'var(--ink-3)', opacity: currentPage > 1 ? 1 : 0.4,
+                  }}
+                >
+                  Previous
+                </Box>
+              )}
+              {totalPages > 1 && Array.from({ length: totalPages }, (_, i) => (
+                <Box
+                  key={i}
+                  component="button"
+                  type="button"
+                  onClick={() => setWorklistPage(i + 1)}
+                  sx={{
+                    px: 1.5, py: 0.5, fontSize: 11, fontFamily: 'inherit',
+                    border: '0.5px solid',
+                    borderColor: i + 1 === currentPage ? 'var(--accent)' : 'var(--rule)',
+                    borderRadius: '6px',
+                    bgcolor: i + 1 === currentPage ? 'var(--accent)' : 'var(--surface)',
+                    color: i + 1 === currentPage ? '#fff' : 'var(--ink-3)',
+                    cursor: 'pointer', fontWeight: i + 1 === currentPage ? 600 : 400,
+                  }}
+                >
+                  {i + 1}
+                </Box>
+              ))}
+              {totalPages > 1 && (
+                <Box
+                  component="button"
+                  type="button"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setWorklistPage((p) => Math.min(totalPages, p + 1))}
+                  sx={{
+                    px: 1.5, py: 0.5, borderRadius: '6px', fontFamily: 'inherit',
+                    cursor: currentPage < totalPages ? 'pointer' : 'not-allowed',
+                    border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)', fontSize: 12,
+                    color: 'var(--ink-3)', opacity: currentPage < totalPages ? 1 : 0.4,
+                  }}
+                >
+                  Next
+                </Box>
+              )}
+            </Box>
+          </Box>
+        )}
+
+        {/* 7. MOQ grouped purchasing — approved exception, grouped by supplier,
+            not per-SKU. Absent entirely when there is nothing queued (SRC-WL-2B-01). */}
+        {reorderRequests.length > 0 && (
+          <Box
+            data-testid="moq-accumulator-entry"
+            sx={{ mt: 2, p: 1.5, border: '1px solid var(--rule)', borderRadius: '10px', bgcolor: 'var(--surface)' }}
+          >
+            <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)' }}>
+              Reorder queue · {reorderRequests.length} supplier{reorderRequests.length === 1 ? '' : 's'} pooling MOQ
+            </Typography>
+            {reorderRequests.map((group) => (
+              <Box key={group.supplier_id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.75 }}>
+                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                  {group.supplier_name} · {group.total_qty}{group.moq ? ` / ${group.moq}` : ''} pooled
+                </Typography>
+                <Button
+                  size="small"
+                  variant="contained"
+                  sx={tier1Sx}
+                  disabled={convertingSupplierIds.has(group.supplier_id)}
+                  onClick={() => handleConvertClick(group)}
+                >
+                  Convert to PO
+                </Button>
+                {convertErrors[group.supplier_id] && (
+                  <Typography sx={{ fontSize: 11, color: 'error.main' }}>{convertErrors[group.supplier_id]}</Typography>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        <AssignSupplierDialog
+          open={assignOpen}
+          target={assignTarget}
+          suppliers={suppliers}
+          onClose={() => setAssignOpen(false)}
+          onSubmit={handleAssignSave}
+        />
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ p: 2 }}>

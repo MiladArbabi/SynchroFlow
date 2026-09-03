@@ -178,6 +178,61 @@ export type SourcingResult = {
         target_coverage_days: number | null;
     } | null;
 };
+/**
+ * SOURCING-UX-COGNITIVE-01 Slice 2 — UNIFIED SOURCING WORKLIST.
+ * The generic (no-variantId) portfolio view's set-wise read model. Distinct
+ * from SourcingResult above, which is the per-variant TARGETED payload.
+ */
+export type SourcingWorklistCategory = 'needs_supplier' | 'needs_purchase' | 'in_purchasing' | 'covered_inbound' | 'plan_ahead';
+export type SourcingWorklistParams = {
+    q?: string;
+    category?: SourcingWorklistCategory | 'all';
+    supplier_readiness?: 'ready' | 'needs_supplier' | 'no_history';
+    purchasing_stage?: 'not_started' | 'queued' | 'draft' | 'committed';
+    coverage?: 'short' | 'covered_inbound';
+    sort?: 'action_priority' | 'oldest_demand' | 'still_to_source' | 'stockout_soonest' | 'product_az';
+    page?: number;
+    page_size?: number;
+};
+export type SourcingWorklistItem = {
+    lasyncro_variant_id: string;
+    product_title: string | null;
+    variant_title: string | null;
+    sku: string | null;
+    image_url: string | null;
+    category: SourcingWorklistCategory;
+    open_demand: number;
+    blocked_order_count: number;
+    oldest_open_order_at: string | null;
+    available: number;
+    committed_inbound: number;
+    short_now: number;
+    still_to_source: number;
+    pending_queue_qty: number;
+    draft_po_qty: number;
+    in_purchasing: number;
+    unplanned: number;
+    has_usable_supplier: boolean;
+    has_preference: boolean;
+    has_supplier_history: boolean;
+    planning_urgency: string | null;
+    days_of_stock_remaining: number | null;
+    suggested_reorder_qty: number | null;
+};
+export type SourcingWorklistSummary = {
+    needs_supplier: number;
+    needs_purchase: number;
+    in_purchasing: number;
+    covered_inbound: number;
+    plan_ahead: number;
+};
+export type SourcingWorklistResult = {
+    summary: SourcingWorklistSummary;
+    items: SourcingWorklistItem[];
+    page: number;
+    page_size: number;
+    total: number;
+};
 export type PreferenceRow = {
     id: string;
     supplier_id: number;
@@ -251,6 +306,13 @@ export type SuppliersPortalPageProps = {
     onSearchVariants: (q: string) => Promise<VariantOption[]>;
     /** Sourcing (Thread C): ranked supplier recommendations for onevariant, fetched on demand. */
     onFetchSourcingRecommendations: (variantId: string) => Promise<SourcingResult>;
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 2: set-wise fetch for the generic
+     * (no-variantId) Unified Sourcing Worklist. Never called from targeted
+     * mode, and onFetchSourcingRecommendations is never called from generic
+     * mode (SRC-WL-UI-14) — the two surfaces use disjoint fetches.
+     */
+    onFetchSourcingWorklist: (params: SourcingWorklistParams) => Promise<SourcingWorklistResult>;
     onFetchPreferences: () => Promise<PreferenceRow[]>;
     onCreatePreference: (input: {
         supplier_id: number;
