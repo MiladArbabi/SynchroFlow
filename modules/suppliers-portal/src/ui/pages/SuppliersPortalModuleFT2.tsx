@@ -162,6 +162,33 @@ export type SourcingRecommendation = {
  */
 export type SourcingResult = {
   recommendations: SourcingRecommendation[];
+  /**
+   * SOURCING-UX-COGNITIVE-01 Slice 1A — TARGETED IDENTITY.
+   * The page could previously never name what it was sourcing: a merchant
+   * arriving from a blocked order saw ranked suppliers and a bare number.
+   * Nullable because a variant may legitimately carry no image or SKU.
+   */
+  image_url?: string | null;
+  product_title?: string | null;
+  variant_title?: string | null;
+  sku?: string | null;
+  /**
+   * Slice 1A — PURCHASING TRUTH. `short_now` ignores anything already
+   * bought; `still_to_source` is what actually remains to buy. Kept
+   * distinct so a merchant with stock inbound is not told to re-order it.
+   */
+  open_demand?: number;
+  available?: number;
+  committed_inbound?: number;
+  short_now?: number;
+  still_to_source?: number;
+  blocking_orders?: Array<{
+    order_id: string;
+    external_order_id: string | null;
+    units: number;
+  }>;
+  /** Echoed only when it is genuinely one of this variant's blocking orders. */
+  originating_order_id?: string | null;
   shortfall: number;
   shortfall_basis: { demand: number; available: number };
   /**
@@ -1822,6 +1849,24 @@ function PurchasingSourcingView({
   const [recommendations, setRecommendations] = useState<SourcingRecommendation[]>([]);
   const [isLoadingRecs, setIsLoadingRecs] = useState(false);
 
+  /** Slice 1A: the targeted payload for activeVariantId, or null. */
+  const [targeted, setTargeted] = useState<SourcingResult | null>(null);
+  /**
+   * Three targeted outcomes that must never render together:
+   *
+   *   'ok'        → a real result (which may legitimately have no suppliers)
+   *   'not_found' → 404; the deep link points at a variant this tenant
+   *                 does not own
+   *   'error'     → 5xx/network; we do not know, and must not guess
+   *
+   * Held as one value rather than parallel booleans precisely because they are
+   * mutually exclusive: a 404 previously set nothing while ALSO clearing
+   * recommendations, which satisfied the legacy "no supplier history" gate and
+   * told the merchant something false about their own catalogue.
+   */
+  const [targetFetchState, setTargetFetchState] =
+    useState<'ok' | 'not_found' | 'error'>('ok');
+
   const [preferences, setPreferences] = useState<PreferenceRow[]>([]);
   const [isLoadingPrefs, setIsLoadingPrefs] = useState(false);
 
@@ -1900,8 +1945,11 @@ function PurchasingSourcingView({
   useEffect(() => {
     if (!activeVariantId) return;
     setIsLoadingRecs(true);
+    setTargetFetchState('ok');
     onFetchSourcingRecommendations(activeVariantId)
       .then((result) => {
+        setTargetFetchState('ok');
+        setTargeted(result);
         setRecommendations(result.recommendations);
         setShortfall(result.shortfall);
         setShortfallBasis(result.shortfall_basis);
@@ -1914,6 +1962,17 @@ function PurchasingSourcingView({
         setPlanningContext(result.planning_context);
         setPrefillQty(result.queue_qty);
         setQueueQty(result.queue_qty);
+      })
+      .catch((err: unknown) => {
+        // Only a 404 means "this target does not exist". Any other failure is
+        // unknown territory: claiming "no supplier history" would tell the
+        // merchant something false about their own catalogue.
+        const status =
+          (err as { status?: number; response?: { status?: number } })?.status
+          ?? (err as { response?: { status?: number } })?.response?.status;
+        setTargeted(null);
+        setRecommendations([]);
+        setTargetFetchState(status === 404 ? 'not_found' : 'error');
       })
       .finally(() => setIsLoadingRecs(false));
   }, [activeVariantId, onFetchSourcingRecommendations]);
@@ -1966,7 +2025,121 @@ function PurchasingSourcingView({
             </Typography>
           </Box>
 
-          {/* §7.6 ISS-SR-06: no variantId → show preferences + never-ordered instead of empty state */}
+          {/* SRC-L3-15: the deep link points at something this tenant does not
+              own. Distinct from "no supplier history" — which is a statement
+              about a product that DOES exist. */}
+          {targetFetchState === 'not_found' && (
+            <Box data-testid="sourcing-target-not-found" sx={{ px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
+                We couldn’t find that product
+              </Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }}>
+                The link may be out of date, or the product may have been removed.
+              </Typography>
+            </Box>
+          )}
+
+          {/* SRC-L3-15A: we do not know what happened. Saying anything about
+              the merchant's catalogue here would be a guess. */}
+          {targetFetchState === 'error' && (
+            <Box data-testid="sourcing-target-load-error" sx={{ px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }}>
+                Couldn’t load sourcing details
+              </Typography>
+              <Typography sx={{ fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }}>
+                Something went wrong on our side — the product and its suppliers are unaffected.
+              </Typography>
+            </Box>
+          )}
+
+          {/* SRC-L3-02/04/10/11/14 — TARGETED RECOVERY HEADER.
+              Identity first (what am I looking at?), then purchasing truth
+              (how many do I actually need to buy?), and only then the ranked
+              suppliers below. Every number is the server's; none is
+              recomputed here. */}
+          {activeVariantId && targetFetchState === 'ok' && targeted && (
+            <>
+              <Box data-testid="sourcing-identity" sx={{ display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 2, borderBottom: '1px solid var(--rule)' }}>
+                {targeted.image_url ? (
+                  <Box
+                    component="img"
+                    src={targeted.image_url}
+                    alt={targeted.product_title ?? 'Product'}
+                    sx={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }}
+                  />
+                ) : (
+                  /* SRC-L3-03: an explicit placeholder, never an <img> with no
+                     source — a broken-image glyph reads as a bug, not as
+                     "this product has no photo". */
+                  <Box
+                    data-testid="sourcing-identity-placeholder"
+                    aria-hidden="true"
+                    sx={{ width: 48, height: 48, borderRadius: 1, flexShrink: 0, bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Package size={18} color="var(--ink-4)" />
+                  </Box>
+                )}
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>{targeted.product_title}</Typography>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--ink-2)' }}>{targeted.variant_title}</Typography>
+                  <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }}>{targeted.sku}</Typography>
+                </Box>
+              </Box>
+
+              <Box data-testid="sourcing-gap-summary" sx={{ px: 2.5, py: 2, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3, flexWrap: 'wrap' }}>
+                  {/* Still to source is the number the merchant acts on, so it
+                      is the one that carries the visual weight. */}
+                  <Box>
+                    <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
+                      Still to source
+                    </Typography>
+                    <Typography sx={{ fontSize: 26, fontWeight: 600, lineHeight: 1.1, color: 'var(--ink)' }}>
+                      {targeted.still_to_source}
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 2.5, flexWrap: 'wrap', pb: 0.5 }}>
+                    {([
+                      ['Open demand', targeted.open_demand],
+                      ['Available',   targeted.available],
+                      ['Inbound',     targeted.committed_inbound],
+                      ['Short now',   targeted.short_now],
+                    ] as const).map(([label, value]) => (
+                      <Box key={label}>
+                        <Typography sx={{ fontSize: 10.5, fontWeight: 500, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                          {label}
+                        </Typography>
+                        <Typography sx={{ fontSize: 14, fontWeight: 500, color: 'var(--ink-2)' }}>{value}</Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </Box>
+
+                {/* SRC-L3-10/11: who is waiting, and which order sent you here.
+                    Both are server-derived context — never inputs to the
+                    numbers above. */}
+                {targeted.blocking_orders && targeted.blocking_orders.length > 0 && (() => {
+                  const originating = targeted.originating_order_id
+                    ? targeted.blocking_orders.find(o => o.order_id === targeted.originating_order_id)
+                    : undefined;
+                  const count = targeted.blocking_orders.length;
+                  return (
+                    <Typography sx={{ fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)', mt: 1.25 }}>
+                      {count} {count === 1 ? 'order' : 'orders'} blocked
+                      {originating && (
+                        <> · you came from order {originating.external_order_id ?? originating.order_id}</>
+                      )}
+                    </Typography>
+                  );
+                })()}
+              </Box>
+            </>
+          )}
+
+          {/* §7.6 ISS-SR-06: no variantId → show preferences + never-ordered instead of empty state.
+              Slice 1A: preference ADMINISTRATION is portfolio housekeeping. It
+              competed with a single urgent recovery, so it stays where it
+              belongs — the untargeted view. Unchanged when no variantId. */}
           {!activeVariantId && (
             <Box sx={{ borderBottom: '1px solid var(--rule)' }}>
               <Box sx={{ px: 2.5, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -2021,7 +2194,9 @@ function PurchasingSourcingView({
             </Box>
           )}
 
-          {activeVariantId && !isLoadingRecs && recommendations.length === 0 && (
+          {/* SRC-L3-15: a statement about a product that EXISTS. Gated on a
+              successful fetch so a 404 or a 5xx can never borrow it. */}
+          {activeVariantId && targetFetchState === 'ok' && targeted && !isLoadingRecs && recommendations.length === 0 && (
             <Box sx={{ p: 4, textAlign: 'center' }}>
               <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }}>No supplier history for this product yet.</Typography>
             </Box>
@@ -2118,6 +2293,9 @@ function PurchasingSourcingView({
             </Box>
           )}
 
+          {/* SRC-L3-14: suppliers answer the question AFTER identity and
+              purchasing truth have framed it. */}
+          <Box data-testid="sourcing-supplier-candidates">
           {goodMatches.map((rec) => (
             <Box key={rec.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }}>
               <Box>
@@ -2174,6 +2352,7 @@ function PurchasingSourcingView({
               </Box>
             </Box>
           ))}
+          </Box>
 
 
           {/* §8 post-convert confirmation — state lives at page level to survive refetch */}
@@ -2335,8 +2514,14 @@ function PurchasingSourcingView({
                 </DialogActions>
               </Dialog>
 
-          {/* §6a Branch B: never-ordered group — always visible */}
-          {neverOrderedCount > 0 && (
+          {/*
+            §6a Branch B: never-ordered group.
+            SOURCING-UX-COGNITIVE-01 Slice 1A: hidden in targeted mode. It is
+            portfolio backlog about OTHER products, and it competed for
+            attention with an urgent single-variant recovery. Unchanged when
+            no variantId is supplied.
+          */}
+          {!activeVariantId && neverOrderedCount > 0 && (
             <Box sx={{ borderTop: '1px solid var(--rule)' }}>
               <Box sx={{ px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }}>
                 <Typography sx={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>
@@ -2379,7 +2564,12 @@ function PurchasingSourcingView({
           )}
         </Box>
 
-        {/* PULSE CARD — migrated to shared PulseCard, PULSE-01 */}
+        {/*
+          PULSE CARD — migrated to shared PulseCard, PULSE-01.
+          Slice 1A: suppressed in targeted mode — a portfolio summary beside
+          one urgent recovery task is competing noise. Unchanged otherwise.
+        */}
+        {!activeVariantId && (
         <Box sx={{ flex: { xs: '1 0 300px', lg: '0 0 300px' }, minWidth: 0 }}>
           <PulseCard
             title="Sourcing pulse"
@@ -2413,6 +2603,7 @@ function PurchasingSourcingView({
             ]}
           />
         </Box>
+        )}
       </Box>
 
       <CreatePoDialog

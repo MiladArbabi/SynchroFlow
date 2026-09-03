@@ -419,6 +419,40 @@ what is already covered, and whether *Add to queue* or *Create PO*
 actually unblocks the order. Slice 2's routing contract is verified and
 closed; that is open follow-up work with its own brief.
 
+#### Subsequent resolution — 2026-09-03
+
+The observation above is preserved exactly as recorded on 2026-09-02, including
+the `variantId`-only route seen at that time. It explains how the defect was
+discovered and is deliberately **not** rewritten to match current behaviour.
+
+Since then, **SOURCING-UX-COGNITIVE-01 Slice 1A — Targeted Recovery
+Foundation** has been implemented and verified:
+
+- The order-originated route now carries the canonical `variantId` **and** an
+  optional canonical `orderId`
+  (`/suppliers-portal/sourcing?variantId=<canonical_variant_id>&orderId=<canonical_order_id>`).
+  The `orderId` is context only — it names which order sent the merchant there
+  and takes no part in any calculation.
+- Targeted Sourcing now presents, in this order: product/variant **identity**,
+  **purchasing truth** (available, open demand, committed inbound, short now,
+  still to source), **blocking/originating order context**, then **supplier
+  candidates**.
+- Portfolio-only Sourcing content — Never Ordered Before, Sourcing Pulse, and
+  the generic Supplier Preferences administration block — is suppressed in
+  targeted mode and preserved unchanged in generic mode.
+
+What is unchanged by Slice 1A, and remains as observed above: navigation still
+does not resolve the constraint, and no PO or reorder request is created
+automatically. Slice 1A is a read/understanding surface; targeted recovery
+*actions* are Slice 1B.
+
+Current authoritative semantics live in `docs/blueprints/SuppliersModule.md` §6
+and in the Slice 1A section of
+`docs/playbooks/sourcing-recommendation-playbook.md`. This playbook records the
+historical decision-engine observation only.
+
+The umbrella issue remains **IN PROGRESS** for Slice 1B, L2 and L1.
+
 Multi-variant live browser check: **NOT AVAILABLE** — no deterministic
 multi-variant inventory-block fixture exists (see
 `docs/blueprints/OrdersModule.md`, ORD-FIXTURE-INVMULTI-01). This is a

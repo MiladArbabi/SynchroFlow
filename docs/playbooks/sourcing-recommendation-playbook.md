@@ -6,6 +6,8 @@
 
 **Final ownership boundary — locked 2026-08-19.** Demand identifies what needs replenishment and computes the suggested quantity. Its `Source →` handoff opens `/suppliers-portal/sourcing?variantId=X`. Sourcing owns supplier selection, MOQ accumulation/queueing, and PO creation. The former REPL-001 direct Demand → pre-filled PO handoff is retired.
 
+**Amended 2026-09-03 (SOURCING-UX-COGNITIVE-01 Slice 1A).** The generic targeted route above is unchanged. An *order-originated* recovery — a merchant arriving via "Source this item" on a blocked order — may additionally carry `&orderId=<canonical_order_id>`. **`orderId` is context only**: it names which order sent the merchant here and never participates in any calculation. See §13.
+
 A popup-based MOQ check was designed, then abandoned in favor of a **dedicated page** (same architectural shape as Order Flow — a surface that owns a whole class of decisions, fed by deep-links, with live recompute) once it became clear the real need is supplier *comparison and recommendation*, not just a quantity warning.
 
 ## 2. Confirmed Facts (ground truth, 2026-06-29)
@@ -952,6 +954,237 @@ Together they move the system toward suggesting more reordering. Correct where i
 genuinely arrives late, but on a catalogue where merchants leave ETAs distant or unset
 it may read as over-ordering. No evidence either way yet — `n=3` in production.
 
+
+## 13. SOURCING-UX-COGNITIVE-01 — Targeted Recovery Foundation
+
+*Slice 1A. Closed / verified 2026-09-03. The umbrella issue remains IN PROGRESS.*
+
+The Sourcing screen was designed as a portfolio surface. When a merchant arrived
+from a blocked order they met that portfolio surface unchanged: ranked
+suppliers, a bare shortfall number, and a page that could not name the product
+they had come to rescue. Slice 1A gives that arrival its own shape. It changes
+what the merchant *understands*, not what they can *do* — see §13.8.
+
+### 13.1 Two Sourcing modes
+
+| Mode | Entry | Surface |
+|---|---|---|
+| **Generic** | `/suppliers-portal/sourcing` — no `variantId` | Portfolio sourcing: Supplier Preferences administration, Never Ordered Before, Sourcing Pulse. Unchanged by Slice 1A. |
+| **Targeted** | `/suppliers-portal/sourcing?variantId=<canonical_variant_id>` | L3 recovery for one variant. |
+| **Targeted, order-originated** | `…?variantId=<canonical_variant_id>&orderId=<canonical_order_id>` | Same L3 recovery, plus the context of which order sent the merchant. |
+
+`variantId` is the canonical sourcing subject. `orderId` is the canonical
+internal `orders.lasyncro_order_id` — never an external Shopify id or a display
+order number, neither of which can be matched against canonical order state.
+
+Targeted entry bypasses L1 (Sourcing Overview) and L2 (Variant/SKU worklist):
+the merchant already knows which product is in trouble.
+
+### 13.2 Targeted response contract
+
+`GET /api/v1/suppliers/sourcing-recommendations/:variantId`
+
+Every pre-existing field is preserved — `variant_id`, `shortfall`,
+`shortfall_basis`, `suggested_reorder_qty`, `queue_qty`, `quantity_basis`,
+`planning_context`, `recommendations`, `has_preference`. Slice 1A is purely
+additive:
+
+| Field | Meaning |
+|---|---|
+| `image_url` | Variant image, or `null`. Never a fabricated fallback. |
+| `product_title` | Product title of the requested canonical variant. |
+| `variant_title` | Variant title. |
+| `sku` | Variant SKU, or `null`. |
+| `open_demand` | Aggregate outstanding demand for the variant. |
+| `available` | Summed available inventory truth. |
+| `committed_inbound` | Remaining units already bought — see §13.4. |
+| `short_now` | See §13.3. |
+| `still_to_source` | See §13.3. |
+| `blocking_orders` | Canonical orders waiting on this variant — see §13.5. |
+| `originating_order_id` | Echoed context — see §13.5. |
+
+Status semantics (§13.7 covers how the UI renders each):
+
+- **404** — unknown or non-tenant-owned target. A broken deep link is not the
+  same fact as a product nobody has ordered from yet, and must not be told to
+  the merchant as though it were.
+- **200 with `recommendations: []`** — a real variant with no supplier history.
+  Still a valid targeted result: identity and purchasing truth render normally.
+
+### 13.3 Purchasing truth
+
+```
+short_now       = max(0, open_demand - available)
+still_to_source = max(0, open_demand - available - committed_inbound)
+```
+
+**Short now** is the current customer-demand gap *before* counting anything
+already purchased. **Still to source** is what remains unsecured *after*
+committed inbound, and is the number the merchant actually acts on.
+
+They are deliberately distinct. Collapsing them tells a merchant who already has
+stock on the way to buy it a second time. Both are clamped at zero so an
+oversell (negative availability) or an over-receipt cannot produce a negative
+requirement.
+
+Every one of these numbers is computed server-side. The UI displays them; it
+never recomputes them.
+
+### 13.4 Committed inbound
+
+Units already bought from a supplier and not yet received.
+
+**Included** — remaining quantities from purchase orders in these five statuses:
+
+`ordered` · `confirmed` · `in_production` · `shipped` · `partially_received`
+
+**Excluded**, each for its own reason:
+
+- `draft` — not yet placed with anyone, so nothing is coming;
+- `received` — already landed, so it lives in inventory truth, not inbound;
+- `cancelled` — never arriving.
+
+For a partially received line:
+
+```
+remaining = max(quantity_ordered - quantity_received, 0)
+```
+
+Clamped so an over-receipt cannot subtract phantom units from the requirement.
+A line ordered 5 / received 3 contributes **2**, never 5.
+
+`reorder_requests` are **not** committed inbound. A pending request is buying
+intent pooled toward a supplier's MOQ (§8) — no supplier commitment, no ETA.
+
+This is the **merchant-facing** "what is already coming" set. It is
+intentionally *not* demandIntelligence's narrower, ETA-windowed "reliable future
+inbound", which answers a planning question. Two questions, two definitions,
+both canonical, kept apart deliberately. Do not merge them, and prefer the term
+**committed inbound** over "confirmed inbound", which implies the single
+`confirmed` PO status rather than the five-status set.
+
+The aggregate is computed in its own query, never joined onto demand or
+inventory: a variant with three open POs and two inventory rows would otherwise
+multiply through a many-to-many join and inflate both sides.
+
+### 13.5 Blocking and originating orders
+
+`blocking_orders` is derived server-side from canonical order state — orders for
+this variant with positive outstanding demand — and carries the canonical
+internal `order_id`, the external/display identifier where one exists, and the
+outstanding units. A fully fulfilled order for the same variant blocks nothing
+and does not appear.
+
+`originating_order_id` is echoed **only** when the supplied `orderId` is
+genuinely one of those server-derived blocking orders. An unrelated same-tenant
+`orderId` yields `null` and is not injected into `blocking_orders`.
+
+This matters beyond tidiness: without the allow-list, the parameter would let a
+caller have the server confirm arbitrary order ids — a read widening dressed up
+as UX context.
+
+`orderId` is read only after every derived number is already fixed. It must not
+affect `open_demand`, `available`, `committed_inbound`, `short_now`,
+`still_to_source`, or blocking-order derivation.
+
+### 13.6 Targeted information hierarchy
+
+In targeted mode the surface sequences the decision:
+
+1. **Identity** — image or stable placeholder, product title, variant title,
+   SKU. What am I looking at?
+2. **Purchasing truth** — still to source (visually dominant), with open demand,
+   available, inbound and short now supporting it. How many must I actually buy?
+3. **Blocking / originating context** — how many orders are waiting, and which
+   one sent me here.
+4. **Supplier candidates and existing supplier mechanics** — ranking, MOQ, Add
+   to queue, Create PO. All unchanged by Slice 1A.
+
+Portfolio-only content is **suppressed** while a target is active: Never Ordered
+Before, Sourcing Pulse, and the generic Supplier Preferences administration
+block. Each is backlog about *other* products and competed with a single urgent
+recovery. Suppression is scoped to targeted mode only — generic mode preserves
+all three exactly as before.
+
+Suppression stops at the portfolio boundary: supplier candidates for the target
+are never suppressed. They are the answer to the merchant's question.
+
+### 13.7 Target load states
+
+Exactly three mutually-exclusive states: `ok` · `not_found` · `error`.
+
+| Situation | Renders | Must NOT render |
+|---|---|---|
+| **404** | explicit not-found state | no-history state; generic load-error |
+| **200, valid target, zero recommendations** | targeted identity + purchasing truth, plus "No supplier history for this product yet." | not-found; load-error |
+| **non-404 fetch failure** | explicit load-error state | not-found; no-history state |
+
+Held as one value rather than parallel booleans precisely because they are
+mutually exclusive. The failure this prevents: a 404 that also cleared
+recommendations satisfied the legacy "no supplier history" gate, so a broken
+deep link told the merchant something false about their own catalogue.
+
+### 13.8 Read versus action boundary
+
+Opening targeted sourcing is a **read**. It must not create a PO, queue a
+reorder request, assign a supplier, alter inventory, receive stock, or resolve
+an order constraint.
+
+Slice 1A therefore does **not** resolve the blocked order and does not make
+inbound stock immediately fulfillable. It changes what the merchant understands
+on arrival. Targeted recovery *actions* and state transitions are Slice 1B.
+
+Supplier ranking and MOQ mechanics are untouched by this slice.
+
+### 13.9 Verification
+
+Automated (2026-09-03):
+
+| Gate | Result |
+|---|---|
+| Backend targeted integration | 15/15 PASS |
+| Frontend targeted Sourcing | 10/10 PASS |
+| Orders sourcing-entry regression | 3/3 PASS |
+| Backend TypeScript | 0 errors |
+| Frontend TypeScript | 0 target errors (19 unrelated baseline errors) |
+| suppliers-portal build | PASS |
+| Test ownership | UNOWNED=0, MULTI_OWNED=0 |
+| Disposable integration DB | created → migrated → runtime OK → dropped, ORPHAN_DB_COUNT=0 |
+
+Generated artifacts changed, exactly four:
+`modules/suppliers-portal/dist/ui/pages/SuppliersPortalModuleFT2.{d.ts,d.ts.map,js,js.map}`
+
+Live browser — **LB-SRC-01 through LB-SRC-12 PASS**. Journey: order **#800001**
+(canonical `eea5bc08-d706-0ff9-62e9-cd08f9c05d4d`) → "Source this item" →
+variant `cb3592bc-1951-4c0b-aa39-306c5d6ef0dd` (QA Products / QA Shirt /
+QA-SHIRT-S). Targeted values shown: Available 0 · Open demand 1 · Inbound 10 ·
+Short now 1 · Still to source 0 — a fixture where inbound fully covers the gap,
+which is exactly the case that makes the short-now/still-to-source distinction
+legible. Also observed: the neutral image placeholder (this variant has no
+image), the originating/blocking order 800001, QA Test Supplier, and both Add to
+queue and Create PO still present. Suppressed as specified: Never Ordered
+Before, Sourcing Pulse, generic Supplier Preferences administration. Generic
+mode at `/suppliers-portal/sourcing` was separately verified to preserve all
+three. Runtime module resolution was proven worktree-local rather than resolving
+to the main repository's package.
+
+### 13.10 Remaining SOURCING-UX-COGNITIVE-01 slices
+
+| Slice | Scope | Status |
+|---|---|---|
+| 1A | Targeted recovery foundation (L3 understanding) | **CLOSED / VERIFIED 2026-09-03** |
+| 1B | Targeted recovery actions and state transitions | OPEN |
+| 2 | L2 — Variant/SKU sourcing worklist | OPEN |
+| 3 | L1 — Sourcing overview | OPEN |
+
+The umbrella issue remains **IN PROGRESS**.
+
+Open cognitive-load follow-up, carried forward and **not resolved**: the
+existing large "Your best supplier, ranked automatically" coachmark visually
+competes with purchasing truth in targeted mode. It was not a Slice 1A blocker
+and was not addressed.
+
+---
 
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
 `onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),

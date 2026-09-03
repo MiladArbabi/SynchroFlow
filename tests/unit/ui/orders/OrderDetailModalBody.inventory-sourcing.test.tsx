@@ -128,6 +128,14 @@ function renderModal() {
   );
 }
 
+/**
+ * SRC-L3-11A (SOURCING-UX-COGNITIVE-01 Slice 1A)
+ * ----------------------------------------------
+ * Every inventory-sourcing CTA must carry BOTH the canonical variant and the
+ * canonical order the merchant came from. `order-1` is the internal
+ * orders.lasyncro_order_id already supplied to this component — never an
+ * external Shopify id or a display order number.
+ */
 describe('OrderDetailModalBody inventory sourcing contract — ORD-DECISION-01 Slice 2', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -153,7 +161,7 @@ describe('OrderDetailModalBody inventory sourcing contract — ORD-DECISION-01 S
 
     expect(mockExecute).not.toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith(
-      '/suppliers-portal/sourcing?variantId=variant-a'
+      '/suppliers-portal/sourcing?variantId=variant-a&orderId=order-1'
     );
   });
 
@@ -175,7 +183,7 @@ describe('OrderDetailModalBody inventory sourcing contract — ORD-DECISION-01 S
 
     expect(mockExecute).not.toHaveBeenCalled();
     expect(mockNavigate).toHaveBeenCalledWith(
-      '/suppliers-portal/sourcing?variantId=exact-blocked-variant'
+      '/suppliers-portal/sourcing?variantId=exact-blocked-variant&orderId=order-1'
     );
   });
 
@@ -200,12 +208,12 @@ describe('OrderDetailModalBody inventory sourcing contract — ORD-DECISION-01 S
 
     fireEvent.click(sourceButtons[0]);
     expect(mockNavigate).toHaveBeenLastCalledWith(
-      '/suppliers-portal/sourcing?variantId=variant-a'
+      '/suppliers-portal/sourcing?variantId=variant-a&orderId=order-1'
     );
 
     fireEvent.click(sourceButtons[1]);
     expect(mockNavigate).toHaveBeenLastCalledWith(
-      '/suppliers-portal/sourcing?variantId=variant-b'
+      '/suppliers-portal/sourcing?variantId=variant-b&orderId=order-1'
     );
 
     expect(mockExecute).not.toHaveBeenCalled();

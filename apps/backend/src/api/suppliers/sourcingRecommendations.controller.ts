@@ -49,6 +49,35 @@ import db from '@lasyncro/backend-core/db.js';
 import { computeVariantPlanning } from '../../services/demand/demandIntelligence.service.js';
 import type { DemandVelocity } from '../../services/demand/demandIntelligence.service.js';
 
+/**
+ * SRC-L3-07 — COMMITTED INBOUND STATUS DOMAIN
+ * -------------------------------------------
+ * Units already bought from a supplier and not yet received. Excluded:
+ *   draft     — not yet placed with anyone, so nothing is coming
+ *   received  — already landed, so it is in inventory_truth, not inbound
+ *   cancelled — never arriving
+ *
+ * This is the MERCHANT-FACING "what is already coming" set. It is
+ * intentionally NOT demandIntelligence's narrower, ETA-windowed "reliable
+ * future inbound", which answers a different (planning) question. Two
+ * questions, two definitions, both canonical — kept apart deliberately.
+ */
+const COMMITTED_INBOUND_PO_STATUSES = [
+  'ordered',
+  'confirmed',
+  'in_production',
+  'shipped',
+  'partially_received',
+] as const;
+
+/** SRC-L3-02: what the merchant is actually looking at. */
+type TargetedIdentity = {
+  image_url: string | null;
+  product_title: string | null;
+  variant_title: string | null;
+  sku: string | null;
+};
+
 export async function httpGetSourcingRecommendations(req: Request, res: Response) {
   const shopId = req.user?.shopId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
@@ -78,20 +107,61 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     let demandQty = 0;
     let availableQty = 0;
     const pooledBySupplier = new Map<number, number>();
+    // SRC-L3-02/07/10/15 — Slice 1A targeted additions. Assigned inside the
+    // transaction closure below; TS control-flow analysis cannot see those
+    // assignments from here, so the annotations are restated on the values.
+    let identity: TargetedIdentity | null = null as TargetedIdentity | null;
+    let notFound = false;
+    let committedInbound = 0;
+    let blockingOrders: Array<{
+      order_id: string;
+      external_order_id: string | null;
+      units: number;
+    }> = [];
 
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
-      // §7.8 Step 0: resolve product_id + product_type for scope fallback
+      // §7.8 Step 0: resolve product_id + product_type for scope fallback.
+      // SRC-L3-02: the same tenant-scoped row now also yields the identity
+      // block — the page could previously never name what it was sourcing.
       const variant = await trx('variants as v')
         .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
         .where('v.lasyncro_variant_id', variantId)
         .andWhere('v.shop_id', shopId)
-        .select('v.lasyncro_product_id as product_id', 'p.product_type')
+        .select(
+          'v.lasyncro_product_id as product_id',
+          'p.product_type',
+          'v.image_url',
+          'v.title as variant_title',
+          'v.sku',
+          'p.title as product_title'
+        )
         .first();
 
-      productId   = variant?.product_id   ?? null;
-      productType = variant?.product_type ?? null;
+      /**
+       * SRC-L3-15: an unknown or non-tenant variant is NOT the same thing as a
+       * real variant with no supplier history. Both used to return 200 with an
+       * empty recommendation list, so a broken deep link was indistinguishable
+       * from a product nobody has ordered yet. A missing target is now
+       * explicitly 404; a valid variant with zero candidates remains a valid
+       * targeted 200. Answered after the transaction closes so the early
+       * return does not abort it mid-flight.
+       */
+      if (!variant) {
+        notFound = true;
+        return;
+      }
+
+      productId   = variant.product_id   ?? null;
+      productType = variant.product_type ?? null;
+
+      identity = {
+        image_url:     variant.image_url     ?? null,
+        product_title: variant.product_title ?? null,
+        variant_title: variant.variant_title ?? null,
+        sku:           variant.sku           ?? null,
+      };
 
       // ── SRC-03: SHORTFALL RESOLVER ──────────────────────────────────────
       // Open demand = units ordered but not yet fulfilled. order_revenue_units
@@ -118,6 +188,66 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       demandQty    = Number(demandRow?.demand ?? 0);
       availableQty = Number(availRow?.available ?? 0);
       neededQty    = Math.max(0, demandQty - availableQty);
+
+      /**
+       * SRC-L3-07/08/09 — COMMITTED INBOUND
+       * -----------------------------------
+       * Without this the merchant sees "8 short" on a variant with 7 units
+       * already on the way and re-orders stock they have already paid for.
+       *
+       * Aggregated in its own query, never joined onto demand or inventory: a
+       * variant with 3 open POs and 2 inventory rows would otherwise multiply
+       * through a many-to-many join and inflate both sides.
+       *
+       * Remaining is clamped at zero so an over-receipt (received > ordered)
+       * cannot subtract phantom units from the requirement.
+       *
+       * reorder_requests are NOT consulted: a queued request is buying intent
+       * pooled for MOQ, with no supplier commitment and no ETA.
+       */
+      const inboundRow = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', shopId)
+        .andWhere('poli.lasyncro_variant_id', variantId)
+        .whereIn('po.status', COMMITTED_INBOUND_PO_STATUSES as unknown as string[])
+        .sum({
+          inbound: trx.raw(
+            'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
+          ),
+        })
+        .first();
+
+      committedInbound = Number(inboundRow?.inbound ?? 0);
+
+      /**
+       * SRC-L3-10/11B — BLOCKING ORDER CONTEXT
+       * --------------------------------------
+       * Derived server-side from canonical order/variant state, never from the
+       * query string. This is both the "who is waiting" context and the
+       * allow-list that validates an incoming originating orderId.
+       */
+      blockingOrders = (
+        await trx('order_revenue_units as oru')
+          .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
+          .leftJoin(
+            'external_order_identity_map as eim',
+            'eim.lasyncro_order_id',
+            'o.lasyncro_order_id'
+          )
+          .where('o.shop_id', shopId)
+          .andWhere('oru.lasyncro_variant_id', variantId)
+          .groupBy('o.lasyncro_order_id', 'eim.external_order_id')
+          .havingRaw('SUM(oru.quantity - oru.fulfilled_quantity) > 0')
+          .select(
+            'o.lasyncro_order_id as order_id',
+            'eim.external_order_id',
+            trx.raw('SUM(oru.quantity - oru.fulfilled_quantity)::integer as units')
+          )
+      ).map((r: { order_id: string; external_order_id: string | null; units: number }) => ({
+        order_id:          r.order_id,
+        external_order_id: r.external_order_id ?? null,
+        units:             Number(r.units),
+      }));
 
       // ── SRC-06: POOLED QUANTITY PER SUPPLIER ────────────────────────────
       // The accumulator exists so small per-variant requirements can pool
@@ -216,6 +346,12 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       }
     });
 
+    // SRC-L3-15: the target does not exist for this tenant. Answered after the
+    // transaction closes so the early return does not abort it mid-flight.
+    if (notFound) {
+      return res.status(404).json({ error: 'Variant not found' });
+    }
+
     // §7.8 Step 2: build preference lookup — keyed by supplier_id.
     // Most specific scope already sorted first by the ORDER BY above.
     const prefBySupplierId = new Map<number, { scope_type: string; priority: number; note: string | null }>();
@@ -312,8 +448,47 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
 
     const ranked = [...preferred, ...nonPreferred];
 
+    /**
+     * SRC-L3-11/11B — ORIGINATING ORDER IS CONTEXT, NOT A KEY
+     * -------------------------------------------------------
+     * Echoed back only when the supplied id is genuinely one of this variant's
+     * canonical blocking orders. An unrelated same-tenant id resolves to null,
+     * so the parameter cannot be used to have the server confirm arbitrary
+     * order ids — a read widening dressed up as UX context. Read here, AFTER
+     * every derived number is already fixed: it never affects the arithmetic.
+     */
+    const requestedOrderId =
+      typeof req.query.orderId === 'string' ? req.query.orderId : null;
+
+    const originatingOrderId =
+      requestedOrderId && blockingOrders.some(o => o.order_id === requestedOrderId)
+        ? requestedOrderId
+        : null;
+
     return res.json({
       variant_id:   variantId,
+
+      // ── SLICE 1A: TARGETED IDENTITY ──────────────────────────────────
+      // What the merchant is actually looking at. Purely additive.
+      image_url:     identity?.image_url     ?? null,
+      product_title: identity?.product_title ?? null,
+      variant_title: identity?.variant_title ?? null,
+      sku:           identity?.sku           ?? null,
+
+      // ── SLICE 1A: PURCHASING TRUTH ───────────────────────────────────
+      // short_now       — the gap ignoring anything already bought
+      // still_to_source — what actually remains to buy
+      // Both clamped at zero; kept distinct so a merchant with stock inbound
+      // is not told to re-order it.
+      open_demand:       demandQty,
+      available:         availableQty,
+      committed_inbound: committedInbound,
+      short_now:         Math.max(0, demandQty - availableQty),
+      still_to_source:   Math.max(0, demandQty - availableQty - committedInbound),
+
+      blocking_orders:      blockingOrders,
+      originating_order_id: originatingOrderId,
+
       // SRC-03: derived shortfall + its basis. The UI prefills the queue
       // quantity from this and shows the basis, so the operator can see WHY
       // the number is what it is and override it when they know better

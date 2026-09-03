@@ -114,6 +114,33 @@ export type SourcingRecommendation = {
  */
 export type SourcingResult = {
     recommendations: SourcingRecommendation[];
+    /**
+     * SOURCING-UX-COGNITIVE-01 Slice 1A — TARGETED IDENTITY.
+     * The page could previously never name what it was sourcing: a merchant
+     * arriving from a blocked order saw ranked suppliers and a bare number.
+     * Nullable because a variant may legitimately carry no image or SKU.
+     */
+    image_url?: string | null;
+    product_title?: string | null;
+    variant_title?: string | null;
+    sku?: string | null;
+    /**
+     * Slice 1A — PURCHASING TRUTH. `short_now` ignores anything already
+     * bought; `still_to_source` is what actually remains to buy. Kept
+     * distinct so a merchant with stock inbound is not told to re-order it.
+     */
+    open_demand?: number;
+    available?: number;
+    committed_inbound?: number;
+    short_now?: number;
+    still_to_source?: number;
+    blocking_orders?: Array<{
+        order_id: string;
+        external_order_id: string | null;
+        units: number;
+    }>;
+    /** Echoed only when it is genuinely one of this variant's blocking orders. */
+    originating_order_id?: string | null;
     shortfall: number;
     shortfall_basis: {
         demand: number;

@@ -108,8 +108,19 @@ export default function SuppliersPortalPage() {
   const handleFetchSourcingRecommendations = useCallback(async (
     variantId: string
   ): Promise<SourcingResult> => {
+    /**
+     * SRC-L3-11A/11B Slice 1A: forward the originating order as context when
+     * the merchant arrived from a blocked order. The server validates it
+     * against that variant's canonical blocking orders and ignores anything
+     * unrelated, so this is a hint, never a key.
+     */
+    const originatingOrderId = searchParams.get('orderId');
+    const query = originatingOrderId
+      ? `?orderId=${encodeURIComponent(originatingOrderId)}`
+      : '';
+
     const { data } = await axiosInstance.get(
-      `/api/v1/suppliers/sourcing-recommendations/${variantId}`
+      `/api/v1/suppliers/sourcing-recommendations/${variantId}${query}`
     );
     return {
       recommendations:  data.recommendations ?? [],
@@ -120,8 +131,21 @@ export default function SuppliersPortalPage() {
       quantity_basis:        data.quantity_basis ?? 'reactive',
       suggested_reorder_qty: data.suggested_reorder_qty ?? null,
       planning_context:      data.planning_context ?? null,
+      // Slice 1A targeted block — identity plus the purchasing numbers.
+      // Passed through explicitly, matching this adapter's existing style.
+      image_url:            data.image_url ?? null,
+      product_title:        data.product_title ?? null,
+      variant_title:        data.variant_title ?? null,
+      sku:                  data.sku ?? null,
+      open_demand:          Number(data.open_demand ?? 0),
+      available:            Number(data.available ?? 0),
+      committed_inbound:    Number(data.committed_inbound ?? 0),
+      short_now:            Number(data.short_now ?? 0),
+      still_to_source:      Number(data.still_to_source ?? 0),
+      blocking_orders:      data.blocking_orders ?? [],
+      originating_order_id: data.originating_order_id ?? null,
     };
-  }, []);
+  }, [searchParams]);
 
   const handleFetchPreferences = useCallback(async (): Promise<PreferenceRow[]> => {
   const { data } = await axiosInstance.get('/api/v1/suppliers/preferences');

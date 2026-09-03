@@ -712,8 +712,19 @@ export function OrderDetailModalBody({
 
   const handleOpenSourcing = (variantId: string) => {
     onClose?.();
+    /**
+     * SRC-L3-11A (SOURCING-UX-COGNITIVE-01 Slice 1A): carry the originating
+     * order as CONTEXT so Sourcing can say which order sent the merchant there.
+     *
+     * `orderId` is the canonical orders.lasyncro_order_id — the same key the
+     * decision and constrained read models use. Deliberately nothing else:
+     * shortage, value, inbound and constraint id are all mutable facts the
+     * server re-derives, and a display number or Shopify id could not be
+     * matched against canonical order state anyway.
+     */
     navigate(
-      `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}`
+      `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}` +
+        `&orderId=${encodeURIComponent(orderId)}`
     );
   };
 
