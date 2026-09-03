@@ -426,7 +426,9 @@ the `variantId`-only route seen at that time. It explains how the defect was
 discovered and is deliberately **not** rewritten to match current behaviour.
 
 Since then, **SOURCING-UX-COGNITIVE-01 Slice 1A — Targeted Recovery
-Foundation** has been implemented and verified:
+Foundation** has been implemented, verified and deployed
+(**CLOSED / VERIFIED / DEPLOYED**, commit
+`41060ca8d3292e70796186bb2dbdef61620642bf`):
 
 - The order-originated route now carries the canonical `variantId` **and** an
   optional canonical `orderId`
@@ -451,7 +453,13 @@ and in the Slice 1A section of
 `docs/playbooks/sourcing-recommendation-playbook.md`. This playbook records the
 historical decision-engine observation only.
 
-The umbrella issue remains **IN PROGRESS** for Slice 1B, L2 and L1.
+The umbrella issue remains **IN PROGRESS** for Slice 1B (targeted recovery
+actions) and the **Unified Sourcing Worklist**. The Sourcing architecture was
+reduced to two levels on 2026-09-03 — a Unified Sourcing Worklist ("where do I
+need to act?") and the Product/Variant Sourcing Detail ("how do I resolve this
+exact SKU?") — so **no separate Sourcing Overview screen remains planned**.
+Orders → *Source this item* continues to bypass the worklist and open the detail
+level directly.
 
 Multi-variant live browser check: **NOT AVAILABLE** — no deterministic
 multi-variant inventory-block fixture exists (see

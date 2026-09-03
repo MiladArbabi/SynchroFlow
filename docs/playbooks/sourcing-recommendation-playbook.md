@@ -957,7 +957,7 @@ it may read as over-ordering. No evidence either way yet — `n=3` in production
 
 ## 13. SOURCING-UX-COGNITIVE-01 — Targeted Recovery Foundation
 
-*Slice 1A. Closed / verified 2026-09-03. The umbrella issue remains IN PROGRESS.*
+*Slice 1A. CLOSED / VERIFIED / DEPLOYED 2026-09-03. The umbrella issue remains IN PROGRESS.*
 
 The Sourcing screen was designed as a portfolio surface. When a merchant arrived
 from a blocked order they met that portfolio surface unchanged: ranked
@@ -970,15 +970,16 @@ what the merchant *understands*, not what they can *do* — see §13.8.
 | Mode | Entry | Surface |
 |---|---|---|
 | **Generic** | `/suppliers-portal/sourcing` — no `variantId` | Portfolio sourcing: Supplier Preferences administration, Never Ordered Before, Sourcing Pulse. Unchanged by Slice 1A. |
-| **Targeted** | `/suppliers-portal/sourcing?variantId=<canonical_variant_id>` | L3 recovery for one variant. |
-| **Targeted, order-originated** | `…?variantId=<canonical_variant_id>&orderId=<canonical_order_id>` | Same L3 recovery, plus the context of which order sent the merchant. |
+| **Targeted** | `/suppliers-portal/sourcing?variantId=<canonical_variant_id>` | Level 2 detail — recovery for one variant. |
+| **Targeted, order-originated** | `…?variantId=<canonical_variant_id>&orderId=<canonical_order_id>` | Same Level 2 detail, plus the context of which order sent the merchant. |
 
 `variantId` is the canonical sourcing subject. `orderId` is the canonical
 internal `orders.lasyncro_order_id` — never an external Shopify id or a display
 order number, neither of which can be matched against canonical order state.
 
-Targeted entry bypasses L1 (Sourcing Overview) and L2 (Variant/SKU worklist):
-the merchant already knows which product is in trouble.
+Targeted entry bypasses the Level 1 Unified Sourcing Worklist: the merchant
+already knows which product is in trouble. See §13.11 for the ratified two-level
+architecture that replaced the earlier three-level model.
 
 ### 13.2 Targeted response contract
 
@@ -1168,14 +1169,26 @@ mode at `/suppliers-portal/sourcing` was separately verified to preserve all
 three. Runtime module resolution was proven worktree-local rather than resolving
 to the main repository's package.
 
+**Production certification.** Commit
+`41060ca8d3292e70796186bb2dbdef61620642bf`, local HEAD equal to `origin/main`:
+`https://app.lasyncro.com/health` → HTTP 200 and `https://app.lasyncro.com/` →
+HTTP 200; CI — UI modules SUCCESS; CI / RLS Security Boundary SUCCESS; Fly
+Deploy SUCCESS. The Fly workflow included successful privileged migrations,
+privileged credential rejection on the runtime role, and runtime deployment.
+Worktree clean after certification. Slice 1A is therefore **CLOSED / VERIFIED /
+DEPLOYED**.
+
 ### 13.10 Remaining SOURCING-UX-COGNITIVE-01 slices
 
 | Slice | Scope | Status |
 |---|---|---|
-| 1A | Targeted recovery foundation (L3 understanding) | **CLOSED / VERIFIED 2026-09-03** |
-| 1B | Targeted recovery actions and state transitions | OPEN |
-| 2 | L2 — Variant/SKU sourcing worklist | OPEN |
-| 3 | L1 — Sourcing overview | OPEN |
+| 1A | Targeted recovery foundation (Level 2 understanding) | **CLOSED / VERIFIED / DEPLOYED 2026-09-03** |
+| 1B | Targeted recovery actions and state transitions (Level 2) | OPEN |
+| 2 | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | OPEN |
+
+There is **no Slice 3**. The earlier roadmap's separate "L1 Sourcing overview"
+slice was removed on 2026-09-03 when the architecture was reduced to two levels
+— see §13.11.
 
 The umbrella issue remains **IN PROGRESS**.
 
@@ -1183,6 +1196,89 @@ Open cognitive-load follow-up, carried forward and **not resolved**: the
 existing large "Your best supplier, ranked automatically" coachmark visually
 competes with purchasing truth in targeted mode. It was not a Slice 1A blocker
 and was not addressed.
+
+### 13.11 Sourcing architecture — two levels
+
+*Ratified 2026-09-03. Supersedes the three-level model (L1 Sourcing Overview /
+L2 Variant-SKU Worklist / L3 Detail) recorded earlier in this section. The
+former L1 and L2 are **merged**; there is **no separate Sourcing Overview
+screen**.*
+
+| Level | Surface | Answers |
+|---|---|---|
+| **Level 1** | Unified Sourcing Worklist | *Where do I need to act?* |
+| **Level 2** | Product / Variant Sourcing Detail | *How do I resolve this exact SKU?* |
+
+**Level 1 — Unified Sourcing Worklist.** Portfolio awareness, prioritization,
+categorization, filtering, sorting, search, and the actionable variant/SKU list,
+all on one surface. What the former L1 and L2 were each meant to provide is
+delivered here. Portfolio-level information is expressed *through the working
+list itself* — summary and filter controls, categories, counts, sorting,
+status-based grouping — not on a separate screen the merchant must pass through
+first.
+
+**Level 2 — Product / Variant Sourcing Detail.** The complete sourcing decision
+for one canonical variant/SKU. Slice 1A implemented the foundation of this level
+(§13.1–13.8); Slice 1B will add its actions.
+
+**Order-originated recovery.** Orders → *Source this item* → Product/Variant
+Sourcing Detail, **bypassing the Unified Sourcing Worklist**. The Slice 1A route
+semantics are unchanged: `variantId` is the sourcing subject, `orderId` is
+optional context only (§13.1, §13.5).
+
+#### Lean-screen principle
+
+When portfolio summary and operational work concern the same underlying objects,
+prefer:
+
+> summary → **filter / sort / categorize the working surface**
+
+over:
+
+> summary → **navigate to another overview or worklist screen**
+
+The goal is less navigation, less duplicated information, lower cognitive load,
+and less onboarding effort. "One screen" does **not** mean "show every field at
+once" — the worklist stays lean and uses progressive disclosure.
+
+#### Cross-module UX consistency
+
+The Unified Sourcing Worklist should reuse laSyncro's established operational
+list conventions, in particular the interaction grammar already used in Order
+Flow:
+
+> categorize → filter → scan → select → act
+
+Reuse where it fits: category/group headings with counts, compact operational
+rows, search and filter controls near the list, urgency or priority shown
+in-row, consistent action placement, collapsible categories. The requirement is
+**shared interaction grammar, not an identical screen structure** — Sourcing is
+not required to copy Order Flow's three-column layout.
+
+#### Worklist / Detail boundary
+
+The worklist tells the merchant **where** to act; the detail level tells them
+**how**. The worklist stays compact. Candidate row-level information: product /
+variant / SKU identity, a small image, the primary attention reason, still to
+source, available and inbound, blocked-order count, supplier readiness,
+purchasing state, and one contextual action such as *Review →*.
+
+Supplier ranking, MOQ detail, supplier alternatives, PO mechanics and other
+decision-heavy content belong at the Detail level. Exact visual implementation
+beyond this is not yet ratified and is deliberately not specified here.
+
+#### Status model
+
+Four orthogonal internal dimensions are preserved — **attention**, **supplier
+readiness**, **purchasing stage**, **coverage**. They must **not** be collapsed
+into a single flattened canonical status field.
+
+Merchant-facing categories are *derived* from those dimensions. Examples
+discussed: Needs action · Ready to order · Needs supplier · Covered by inbound ·
+Queued. These are worklist and categorization concepts, **not** a newly
+persisted status enum.
+
+Nothing in §13.11 changes the Slice 1A purchasing semantics in §13.3–13.5.
 
 ---
 

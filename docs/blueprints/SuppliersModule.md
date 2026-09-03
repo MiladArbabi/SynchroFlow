@@ -165,25 +165,85 @@ Blocks: MOQ accumulation system (`sourcing-recommendation-playbook.md §8`).
 | SUP-05 | P2 | Supplier scorecard fields all null on clean seed — no empty state or "complete your first receive to unlock ratings" messaging |
 | SUP-06 | P3 | No PO list filtering or search — will degrade at scale |
 | SUP-07 | P3 | Page title/signal line not using FT2 typography pattern (22px/500 title, 13px/ink-3 signal) |
-| SOURCING-UX-COGNITIVE-01 | P1 | 🔄 IN PROGRESS — Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order. Slice 1A (targeted recovery foundation) closed 2026-09-03; Slices 1B / 2 / 3 remain — see below |
+| SOURCING-UX-COGNITIVE-01 | P1 | 🔄 IN PROGRESS — Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order. Slice 1A (targeted recovery foundation) closed / verified / deployed 2026-09-03; Slice 1B and the Unified Sourcing Worklist remain — see below |
 
 ### SOURCING-UX-COGNITIVE-01 | IN PROGRESS | P1
 
 The umbrella issue is **IN PROGRESS**, not closed. Slice 1A is delivered and
 verified; Slices 1B, 2 and 3 remain outstanding. See **Delivery status** below.
 
-#### Three-level sourcing architecture
+#### Sourcing architecture — two levels
 
-The issue is scoped against a three-level surface, unchanged by Slice 1A:
+*Ratified 2026-09-03, superseding the earlier three-level model (L1 Sourcing
+Overview / L2 Variant-SKU Worklist / L3 Detail). The former L1 and L2 are
+merged; **there is no separate Sourcing Overview screen**.*
 
 | Level | Surface | Answers |
 |---|---|---|
-| **L1** | Sourcing Overview | portfolio health and priorities |
-| **L2** | Variant/SKU Sourcing Worklist | which products need action, and why |
-| **L3** | Product/Variant Sourcing Detail | the complete sourcing decision for one variant |
+| **Level 1** | Unified Sourcing Worklist | *Where do I need to act?* — portfolio awareness, prioritization, categorization, filtering, sorting, search, and the actionable variant/SKU list, all on one surface |
+| **Level 2** | Product / Variant Sourcing Detail | *How do I resolve this exact SKU?* — the complete sourcing decision for one canonical variant |
 
-An order-originated targeted recovery **bypasses L1 and L2 and enters L3
-directly** — the merchant already knows which product is in trouble.
+Portfolio-level information is expressed **through the working list itself** —
+summary and filter controls, categories, counts, sorting, status-based grouping
+— rather than on a screen the merchant must first pass through.
+
+An order-originated targeted recovery **bypasses the Unified Sourcing Worklist
+and enters the Detail level directly** — the merchant already knows which
+product is in trouble. Slice 1A built the foundation of that Detail level.
+
+#### Lean-screen principle
+
+When portfolio summary and operational work concern the same underlying objects,
+prefer:
+
+> summary → **filter / sort / categorize the working surface**
+
+over:
+
+> summary → **navigate to another overview or worklist screen**
+
+The goal is less navigation, less duplicated information, lower cognitive load,
+and less onboarding effort.
+
+"One screen" does **not** mean "show every field at once". The worklist stays
+lean and uses progressive disclosure; decision-heavy content belongs at the
+Detail level.
+
+#### Cross-module UX consistency
+
+The Unified Sourcing Worklist should reuse laSyncro's established operational
+list conventions, in particular the interaction grammar already used in Order
+Flow:
+
+> categorize → filter → scan → select → act
+
+Familiar concepts to reuse where they fit: category/group headings with counts,
+compact operational rows, search and filter controls near the list, urgency or
+priority shown in-row, consistent action placement, and collapsible categories.
+
+This is a requirement for **shared interaction grammar, not an identical screen
+structure** — Sourcing is not required to copy Order Flow's three-column layout.
+
+#### Worklist / Detail boundary
+
+The worklist stays compact. Candidate row-level information: product / variant /
+SKU identity, a small image, the primary attention reason, still to source,
+available and inbound, blocked-order count, supplier readiness, purchasing
+state, and one contextual action such as *Review →*.
+
+Supplier ranking, MOQ detail, supplier alternatives, PO mechanics and other
+decision-heavy content belong at the Detail level.
+
+#### Status model
+
+Four orthogonal internal dimensions are preserved — **attention**, **supplier
+readiness**, **purchasing stage**, **coverage**. They must **not** be flattened
+into a single canonical status field.
+
+Merchant-facing categories are *derived* from those dimensions. Examples
+discussed: Needs action · Ready to order · Needs supplier · Covered by inbound ·
+Queued. These are worklist and categorization concepts, **not** a newly
+persisted status enum.
 
 #### Original observation (historical — 2026-09-02)
 
@@ -255,9 +315,9 @@ plausibly why this went unrecorded until an order-side flow led into it.
 
 #### Delivery status
 
-**Slice 1A — Targeted Recovery Foundation — CLOSED / VERIFIED 2026-09-03.**
+**Slice 1A — Targeted Recovery Foundation — CLOSED / VERIFIED / DEPLOYED 2026-09-03.**
 
-Slice 1A delivers L3 *understanding* only. It is a read surface: it does not
+Slice 1A delivers Level 2 (Detail) *understanding* only. It is a read surface: it does not
 resolve the blocked order, create a purchase order, queue a reorder request,
 assign a supplier, alter inventory, receive stock, or resolve an order
 constraint. Supplier ranking and MOQ mechanics are unchanged.
@@ -370,13 +430,32 @@ Still to source 0, with the neutral image placeholder, the originating order
 Generic mode at `/suppliers-portal/sourcing` was separately verified to preserve
 Supplier Preferences, Never Ordered Before and Sourcing Pulse.
 
+Production certification — commit `41060ca8d3292e70796186bb2dbdef61620642bf`,
+local HEAD equal to `origin/main`:
+
+| Check | Result |
+|---|---|
+| `https://app.lasyncro.com/health` | HTTP 200 |
+| `https://app.lasyncro.com/` | HTTP 200 |
+| CI — UI modules | SUCCESS |
+| CI / RLS Security Boundary | SUCCESS |
+| Fly Deploy | SUCCESS |
+
+The Fly workflow included successful privileged migrations, privileged
+credential rejection on the runtime role, and runtime deployment. The worktree
+was clean after certification.
+
 #### Remaining work
 
 | Slice | Scope | Status |
 |---|---|---|
-| **1B** | Targeted recovery **actions** / state transitions | OPEN |
-| **2** | L2 — Variant/SKU sourcing worklist | OPEN |
-| **3** | L1 — Sourcing overview | OPEN |
+| **1B** | Targeted recovery **actions** / state transitions (Level 2) | OPEN |
+| **2** | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | OPEN |
+
+There is **no Slice 3**. The former Slice 3 (a separate L1 Sourcing Overview
+screen) was removed when the architecture was reduced to two levels on
+2026-09-03; its portfolio-awareness purpose is absorbed into the Unified
+Sourcing Worklist.
 
 Remaining cognitive-load follow-up (**not** a Slice 1A blocker, **not**
 resolved): the existing large "Your best supplier, ranked automatically"
