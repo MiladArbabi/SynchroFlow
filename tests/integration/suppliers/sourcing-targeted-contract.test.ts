@@ -93,6 +93,38 @@ const EXPECTED_STILL_TO_SOURCE = Math.max(
 const TARGET_IMAGE_URL = 'https://cdn.test.invalid/targeted-shirt.png';
 const PENDING_REORDER_QTY = 50;
 
+/**
+ * SLICE 1B — PURCHASING WORKFLOW FACTS
+ * ------------------------------------
+ * `in_purchasing` is the quantity already represented by pending reorder intent
+ * and/or draft PO work for this canonical variant. `unplanned` is what is left
+ * after that. Both are WORKFLOW facts, not supply truth: neither may alter
+ * committed_inbound, and neither may reduce still_to_source.
+ *
+ * On the primary target fixture the workflow intent is deliberately larger than
+ * the need (50 queued + 100 draft against 1 still to source), which exercises
+ * the clamp. The partially-planned variant exercises the positive case.
+ */
+const DRAFT_PO_QTY = EXCLUDED_INBOUND_LINES.find(l => l.status === 'draft')!.ordered; // 100
+const EXPECTED_IN_PURCHASING = PENDING_REORDER_QTY + DRAFT_PO_QTY;                    // 150
+
+const PARTIAL_OPEN_DEMAND = 10;
+const PARTIAL_QUEUE_QTY = 3;
+const EXPECTED_PARTIAL_UNPLANNED = Math.max(
+  0,
+  PARTIAL_OPEN_DEMAND - PARTIAL_QUEUE_QTY
+); // 7
+
+/** A large intent on a DIFFERENT variant, used as the scoping probe. */
+const UNRELATED_QUEUE_QTY = 999;
+
+/**
+ * SRC-ACT-BE-05 cross-tenant probe. Deliberately larger than anything the
+ * target tenant holds, so leakage could not be mistaken for a rounding slip.
+ */
+const FOREIGN_QUEUE_QTY = 7777;
+const FOREIGN_DRAFT_QTY = 8888;
+
 type Fixture = {
   shopId: number;
   userId: number;
@@ -106,6 +138,17 @@ type Fixture = {
   targetSku: string;
   /** A same-tenant variant with NO image and NO supplier history. */
   bareVariantId: string;
+  /**
+   * Slice 1B: a variant whose purchasing workflow only PARTLY covers the need.
+   * demand 10, available 0, no committed inbound, 3 units of pending queue
+   * intent → still_to_source 10, in_purchasing 3, unplanned 7.
+   */
+  partiallyPlannedVariantId: string;
+  /** Same tenant, different variant, carrying its own unrelated queue intent. */
+  unrelatedWorkflowVariantId: string;
+  /** A SECOND tenant, carrying deliberately large workflow quantities. */
+  foreignShopId: number;
+  foreignVariantId: string;
   /** Orders that genuinely block the targeted variant. */
   blockingOrderOneId: string;
   blockingOrderOneExternalId: string;
@@ -172,6 +215,8 @@ async function createFixture(): Promise<Fixture> {
   const targetSku = `SRC-TGT-${unique}`;
   const bareVariantId = crypto.randomUUID();
   const unrelatedVariantId = crypto.randomUUID();
+  const partiallyPlannedVariantId = crypto.randomUUID();
+  const unrelatedWorkflowVariantId = crypto.randomUUID();
 
   const warehouseId = crypto.randomUUID();
   const rootCode = `WH-${shopId}-ROOT`;
@@ -242,6 +287,24 @@ async function createFixture(): Promise<Fixture> {
         shop_id: shopId,
         sku: `SRC-OTHER-${unique}`,
         title: 'Unrelated Variant',
+        unit_cost: '5.00',
+        status: 'active',
+      },
+      {
+        lasyncro_variant_id: partiallyPlannedVariantId,
+        lasyncro_product_id: productId,
+        shop_id: shopId,
+        sku: `SRC-PARTIAL-${unique}`,
+        title: 'Partially Planned Variant',
+        unit_cost: '5.00',
+        status: 'active',
+      },
+      {
+        lasyncro_variant_id: unrelatedWorkflowVariantId,
+        lasyncro_product_id: productId,
+        shop_id: shopId,
+        sku: `SRC-WFOTHER-${unique}`,
+        title: 'Unrelated Workflow Variant',
         unit_cost: '5.00',
         status: 'active',
       },
@@ -341,6 +404,14 @@ async function createFixture(): Promise<Fixture> {
       quantity: 5,
       fulfilled: 0,
     });
+
+    // Slice 1B: open demand for the partially-planned variant. No inventory and
+    // no committed inbound, so still_to_source is the full 10.
+    await seedOrder(trx, crypto.randomUUID(), externalId('005'), {
+      variantId: partiallyPlannedVariantId,
+      quantity: PARTIAL_OPEN_DEMAND,
+      fulfilled: 0,
+    });
   });
 
   const supplierId = await withTenant(shopId, async (trx) => {
@@ -384,6 +455,103 @@ async function createFixture(): Promise<Fixture> {
       source: 'manual',
       status: 'pending',
     });
+
+    // Slice 1B: partial workflow coverage for its own variant …
+    await trx('reorder_requests').insert({
+      shop_id: shopId,
+      lasyncro_variant_id: partiallyPlannedVariantId,
+      supplier_id: supplierId,
+      qty_requested: PARTIAL_QUEUE_QTY,
+      source: 'manual',
+      status: 'pending',
+    });
+
+    // … and a large unrelated intent on a DIFFERENT variant, which must never
+    // leak into another variant's purchasing-workflow numbers (SRC-ACT-BE-05
+    // scoping, asserted through the ratified numeric facts).
+    await trx('reorder_requests').insert({
+      shop_id: shopId,
+      lasyncro_variant_id: unrelatedWorkflowVariantId,
+      supplier_id: supplierId,
+      qty_requested: UNRELATED_QUEUE_QTY,
+      source: 'manual',
+      status: 'pending',
+    });
+  });
+
+  /**
+   * SRC-ACT-BE-05 — A SECOND TENANT.
+   *
+   * Built with the same canonical bootstrap as the primary tenant
+   * (createTenantShop → setTenantContext → withTenant), so every row below is
+   * written under its OWN tenant context. Nothing here bypasses RLS; the point
+   * is precisely that the target tenant's response must never see it.
+   */
+  const foreignUnique = crypto.randomBytes(6).toString('hex');
+
+  const foreignShopId = await systemTransaction(async (trx) => {
+    const id = await createTenantShop(trx, `sourcing-foreign-${foreignUnique}`);
+    await setTenantContext(trx, id);
+    return id;
+  });
+
+  const foreignProductId = crypto.randomUUID();
+  const foreignVariantId = crypto.randomUUID();
+
+  await withTenant(foreignShopId, async (trx) => {
+    await trx('products').insert({
+      lasyncro_product_id: foreignProductId,
+      shop_id: foreignShopId,
+      title: 'Foreign Tenant Product',
+      status: 'active',
+      product_type: 'physical',
+    });
+
+    await trx('variants').insert({
+      lasyncro_variant_id: foreignVariantId,
+      lasyncro_product_id: foreignProductId,
+      shop_id: foreignShopId,
+      sku: `SRC-FOREIGN-${foreignUnique}`,
+      title: 'Foreign Tenant Variant',
+      unit_cost: '5.00',
+      status: 'active',
+    });
+
+    const [foreignSupplier] = await trx('suppliers')
+      .insert({
+        shop_id: foreignShopId,
+        name: 'Foreign Tenant Supplier',
+        active: true,
+      })
+      .returning('id');
+
+    const foreignSupplierId = Number(foreignSupplier.id ?? foreignSupplier);
+
+    await trx('reorder_requests').insert({
+      shop_id: foreignShopId,
+      lasyncro_variant_id: foreignVariantId,
+      supplier_id: foreignSupplierId,
+      qty_requested: FOREIGN_QUEUE_QTY,
+      source: 'manual',
+      status: 'pending',
+    });
+
+    const [foreignPo] = await trx('purchase_orders')
+      .insert({
+        shop_id: foreignShopId,
+        supplier_id: foreignSupplierId,
+        status: 'draft',
+      })
+      .returning('id');
+
+    await trx('purchase_order_line_items').insert({
+      po_id: foreignPo.id ?? foreignPo,
+      shop_id: foreignShopId,
+      lasyncro_variant_id: foreignVariantId,
+      description: 'Foreign tenant draft line',
+      quantity_ordered: FOREIGN_DRAFT_QTY,
+      quantity_received: 0,
+    });
   });
 
   return {
@@ -391,12 +559,16 @@ async function createFixture(): Promise<Fixture> {
     userId,
     token: issueTestToken({ userId, shopId, tier: 'core' }),
     supplierId,
+    foreignShopId,
+    foreignVariantId,
     productId,
     productTitle,
     targetVariantId,
     targetVariantTitle,
     targetSku,
     bareVariantId,
+    partiallyPlannedVariantId,
+    unrelatedWorkflowVariantId,
     blockingOrderOneId,
     blockingOrderOneExternalId,
     blockingOrderTwoId,
@@ -706,5 +878,161 @@ describe('SOURCING-UX-COGNITIVE-01 Slice 1A — targeted sourcing contract', () 
     const after = await purchasingStateSnapshot(fixture.shopId);
 
     expect(after).toEqual(before);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // SLICE 1B — TARGETED RECOVERY ACTIONS
+  //
+  // The merchant can already see how many units remain unsecured. They cannot
+  // see whether they have ALREADY started buying them. Queue intent and draft
+  // PO work are purchasing-workflow facts: they must be visible so the page
+  // can stop offering to start work that is already underway, and they must
+  // never be mistaken for supply.
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('SRC-ACT-BE-01: pending reorder quantity is purchasing intent, not supply', async () => {
+    const response = await getSourcing(fixture, fixture.targetVariantId);
+
+    expect(response.status).toBe(200);
+
+    // The pending queue quantity is represented as workflow intent …
+    expect(response.body.in_purchasing).toBeGreaterThanOrEqual(PENDING_REORDER_QTY);
+
+    // … and changes nothing about supply truth.
+    expect(response.body.committed_inbound).toBe(EXPECTED_COMMITTED_INBOUND);
+    expect(response.body.still_to_source).toBe(EXPECTED_STILL_TO_SOURCE);
+  });
+
+  it('SRC-ACT-BE-02: draft PO remaining quantity is purchasing intent, not supply', async () => {
+    const draftLine = EXCLUDED_INBOUND_LINES.find(l => l.status === 'draft')!;
+
+    expect(remaining(draftLine)).toBe(DRAFT_PO_QTY);
+
+    const response = await getSourcing(fixture, fixture.targetVariantId);
+
+    expect(response.status).toBe(200);
+
+    // Draft work counts toward what is already being planned …
+    expect(response.body.in_purchasing).toBe(EXPECTED_IN_PURCHASING);
+
+    // … while a draft remains excluded from committed inbound (nothing is
+    // actually coming), and cannot reduce the canonical unsecured gap.
+    expect(response.body.committed_inbound).toBe(EXPECTED_COMMITTED_INBOUND);
+    expect(response.body.still_to_source).toBe(EXPECTED_STILL_TO_SOURCE);
+  });
+
+  it('SRC-ACT-BE-03: committed inbound is not double-classified as purchasing intent', async () => {
+    const response = await getSourcing(fixture, fixture.targetVariantId);
+
+    expect(response.status).toBe(200);
+
+    // The five committed statuses keep contributing to committed_inbound …
+    expect(response.body.committed_inbound).toBe(EXPECTED_COMMITTED_INBOUND);
+
+    // … and those same rows are NOT also counted as purchasing intent. If they
+    // were, in_purchasing would carry the extra EXPECTED_COMMITTED_INBOUND.
+    expect(response.body.in_purchasing).toBe(EXPECTED_IN_PURCHASING);
+    expect(response.body.in_purchasing).not.toBe(
+      EXPECTED_IN_PURCHASING + EXPECTED_COMMITTED_INBOUND
+    );
+  });
+
+  it('SRC-ACT-BE-04A: unplanned is what remains after partial workflow coverage', async () => {
+    const response = await getSourcing(fixture, fixture.partiallyPlannedVariantId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.still_to_source).toBe(PARTIAL_OPEN_DEMAND);
+    expect(response.body.in_purchasing).toBe(PARTIAL_QUEUE_QTY);
+    expect(response.body.unplanned).toBe(EXPECTED_PARTIAL_UNPLANNED);
+    expect(response.body.unplanned).toBe(
+      Math.max(0, response.body.still_to_source - response.body.in_purchasing)
+    );
+  });
+
+  it('SRC-ACT-BE-04B: unplanned clamps at zero when intent exceeds the gap', async () => {
+    const response = await getSourcing(fixture, fixture.targetVariantId);
+
+    expect(response.status).toBe(200);
+    expect(response.body.in_purchasing).toBeGreaterThan(response.body.still_to_source);
+    expect(response.body.unplanned).toBe(0);
+    expect(response.body.unplanned).toBe(
+      Math.max(0, response.body.still_to_source - response.body.in_purchasing)
+    );
+  });
+
+  it('SRC-ACT-BE-05: workflow quantities are scoped to this tenant and this variant', async () => {
+    // Prove the noise actually exists before asserting it stays out: a large
+    // same-tenant intent on another variant, and a second tenant carrying
+    // larger quantities still. A test that passes because the distracting rows
+    // were never written proves nothing.
+    const sameTenantOtherVariant = await withTenant(fixture.shopId, async (trx) => {
+      const row = await trx('reorder_requests')
+        .where({
+          shop_id: fixture.shopId,
+          lasyncro_variant_id: fixture.unrelatedWorkflowVariantId,
+          status: 'pending',
+        })
+        .sum({ qty: 'qty_requested' })
+        .first();
+      return Number(row?.qty ?? 0);
+    });
+
+    const foreignTenant = await withTenant(fixture.foreignShopId, async (trx) => {
+      const queueRow = await trx('reorder_requests')
+        .where({
+          shop_id: fixture.foreignShopId,
+          lasyncro_variant_id: fixture.foreignVariantId,
+          status: 'pending',
+        })
+        .sum({ qty: 'qty_requested' })
+        .first();
+
+      const draftRow = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', fixture.foreignShopId)
+        .andWhere('poli.lasyncro_variant_id', fixture.foreignVariantId)
+        .andWhere('po.status', 'draft')
+        .sum({
+          qty: trx.raw(
+            'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
+          ),
+        })
+        .first();
+
+      return {
+        queue: Number(queueRow?.qty ?? 0),
+        draft: Number(draftRow?.qty ?? 0),
+      };
+    });
+
+    expect(sameTenantOtherVariant).toBe(UNRELATED_QUEUE_QTY);
+    expect(foreignTenant.queue).toBe(FOREIGN_QUEUE_QTY);
+    expect(foreignTenant.draft).toBe(FOREIGN_DRAFT_QTY);
+
+    const response = await getSourcing(fixture, fixture.targetVariantId);
+
+    expect(response.status).toBe(200);
+
+    // Only this tenant's, this variant's quantities.
+    expect(response.body.pending_queue_qty).toBe(PENDING_REORDER_QTY);
+    expect(response.body.draft_po_qty).toBe(DRAFT_PO_QTY);
+    expect(response.body.in_purchasing).toBe(
+      response.body.pending_queue_qty + response.body.draft_po_qty
+    );
+    expect(response.body.unplanned).toBe(
+      Math.max(0, response.body.still_to_source - response.body.in_purchasing)
+    );
+
+    // None of the surrounding noise leaked in. Each of these quantities alone
+    // is larger than anything the target legitimately holds.
+    for (const leaked of [
+      UNRELATED_QUEUE_QTY,
+      FOREIGN_QUEUE_QTY,
+      FOREIGN_DRAFT_QTY,
+    ]) {
+      expect(response.body.pending_queue_qty).toBeLessThan(leaked);
+      expect(response.body.draft_po_qty).toBeLessThan(leaked);
+      expect(response.body.in_purchasing).toBeLessThan(leaked);
+    }
   });
 });

@@ -141,6 +141,19 @@ export type SourcingResult = {
     }>;
     /** Echoed only when it is genuinely one of this variant's blocking orders. */
     originating_order_id?: string | null;
+    /**
+     * Slice 1B — PURCHASING WORKFLOW. What the merchant has already STARTED
+     * buying, as distinct from what is already coming. Queue intent and draft PO
+     * work never reduce `still_to_source`; they exist so the surface can stop
+     * offering to start the same purchase a second time.
+     *
+     *   in_purchasing = pending_queue_qty + draft_po_qty
+     *   unplanned     = max(0, still_to_source - in_purchasing)
+     */
+    pending_queue_qty?: number;
+    draft_po_qty?: number;
+    in_purchasing?: number;
+    unplanned?: number;
     shortfall: number;
     shortfall_basis: {
         demand: number;

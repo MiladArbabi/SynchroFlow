@@ -1178,13 +1178,13 @@ privileged credential rejection on the runtime role, and runtime deployment.
 Worktree clean after certification. Slice 1A is therefore **CLOSED / VERIFIED /
 DEPLOYED**.
 
-### 13.10 Remaining SOURCING-UX-COGNITIVE-01 slices
+### 13.10 SOURCING-UX-COGNITIVE-01 delivery status
 
 | Slice | Scope | Status |
 |---|---|---|
 | 1A | Targeted recovery foundation (Level 2 understanding) | **CLOSED / VERIFIED / DEPLOYED 2026-09-03** |
-| 1B | Targeted recovery actions and state transitions (Level 2) | OPEN |
-| 2 | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | OPEN |
+| 1B | Targeted recovery actions and state transitions (Level 2) | **CLOSED / VERIFIED 2026-09-03** |
+| 2 | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | FUTURE / OPEN |
 
 There is **no Slice 3**. The earlier roadmap's separate "L1 Sourcing overview"
 slice was removed on 2026-09-03 when the architecture was reduced to two levels
@@ -1209,6 +1209,10 @@ screen**.*
 | **Level 1** | Unified Sourcing Worklist | *Where do I need to act?* |
 | **Level 2** | Product / Variant Sourcing Detail | *How do I resolve this exact SKU?* |
 
+> The unified worklist tells me where to act.
+>
+> The detail tells me how to act.
+
 **Level 1 — Unified Sourcing Worklist.** Portfolio awareness, prioritization,
 categorization, filtering, sorting, search, and the actionable variant/SKU list,
 all on one surface. What the former L1 and L2 were each meant to provide is
@@ -1219,7 +1223,8 @@ first.
 
 **Level 2 — Product / Variant Sourcing Detail.** The complete sourcing decision
 for one canonical variant/SKU. Slice 1A implemented the foundation of this level
-(§13.1–13.8); Slice 1B will add its actions.
+(§13.1–13.8); Slice 1B added its targeted actions and state transitions
+(§13.12–13.17).
 
 **Order-originated recovery.** Orders → *Source this item* → Product/Variant
 Sourcing Detail, **bypassing the Unified Sourcing Worklist**. The Slice 1A route
@@ -1279,6 +1284,139 @@ Queued. These are worklist and categorization concepts, **not** a newly
 persisted status enum.
 
 Nothing in §13.11 changes the Slice 1A purchasing semantics in §13.3–13.5.
+
+### 13.12 Slice 1B workflow model
+
+*Targeted recovery actions and state transitions. CLOSED / VERIFIED 2026-09-03.*
+
+The purchasing lifecycle keeps intent, prepared work, committed supply and
+fulfillment capacity distinct:
+
+- a **reorder request** is intent;
+- a **draft PO** is prepared purchasing work;
+- `ordered`, `confirmed`, `in_production`, `shipped` and
+  `partially_received` POs are **committed inbound**;
+- **pickable inventory** is fulfillment capacity.
+
+Slice 1B adds four workflow fields for the current tenant and canonical variant:
+
+```
+pending_queue_qty = pending reorder quantity
+draft_po_qty      = remaining quantity on draft PO lines
+in_purchasing     = pending_queue_qty + draft_po_qty
+unplanned         = max(0, still_to_source - in_purchasing)
+```
+
+Queue and draft quantities describe purchasing workflow; they are **not
+committed inbound**. These fields do not redefine the Slice 1A supply truth in
+§13.3–13.4.
+
+### 13.13 Dominant action state model
+
+Targeted Detail exposes **one dominant next action for the SKU's current
+state**:
+
+| State | Condition | Action |
+|---|---|---|
+| **Covered by inbound** | `still_to_source = 0` and committed inbound exists | **View inbound**; no new purchase action |
+| **Draft coverage** | Draft purchasing work covers the remaining need | **Review draft PO** |
+| **Queue coverage** | Pending queue covers the remaining need | **Review queue** |
+| **Needs supplier** | No usable supplier | **Assign supplier** |
+| **Below MOQ** | Purchasing is still required and supplier MOQ favours accumulation | **Add to queue** primary; **Order now instead** secondary |
+| **Ready to purchase** | MOQ is satisfied or there is no MOQ | **Prepare PO** primary; **Add to queue** secondary |
+
+Creating a draft PO, sending a PO, or receiving stock does not automatically
+clear a blocked order. Fulfillment becomes possible only when enough inventory
+becomes pickable.
+
+### 13.14 Targeted assignment and PO continuity
+
+Targeted supplier assignment stays on the same targeted URL and in the same
+context. It preserves `variantId` and the originating `orderId`, then refetches
+the same targeted recommendation; it does not navigate to Supplier Settings.
+
+The targeted **Prepare PO** handoff preserves the exact selected supplier,
+canonical variant linkage, an identity-bearing product description, and an
+editable targeted purchase quantity. The edited quantity passes through to the
+PO dialog. The operation creates a **draft PO** and does not automatically
+transition it to `ordered`.
+
+### 13.15 Targeted media and decision composition
+
+The desktop Detail composition is **MEDIA + DECISION**.
+
+When the canonical Shopify-synced variant has `image_url`, the Detail renders
+prominent, contained product media using the same Shopify-synced image data
+already used elsewhere in laSyncro. The image aids SKU recognition and is not
+unnecessarily cropped. When `image_url` is absent, there is no large blank
+media panel: a compact product placeholder renders and the decision region
+expands into the available space.
+
+Targeted Sourcing must reuse the merchant's Shopify-synced catalog image data.
+It must never substitute a synthetic or generated image, an unrelated SKU
+image, a stock or decorative image, or an independent Sourcing-specific image
+source. No new product-featured-image fallback is established here.
+
+The decision region answers three questions in order:
+
+1. **What is this?** Product, variant and SKU.
+2. **What is the purchasing truth?** Still to source, open demand, available,
+   committed inbound, short now, and blocking/originating order context.
+3. **What should I do next?** The dominant state-driven action.
+
+For a new purchasing state, quantity belongs with the Next Action area. For
+continuation or non-purchasing states — View inbound, Review draft, Review
+queue, Assign supplier — no editable purchasing quantity is shown.
+
+### 13.16 Slice 1B live-browser evidence
+
+| Check | Result |
+|---|---|
+| LB-SRC-1B-10 | **PASS functionally.** View inbound reaches the existing Open POs surface. |
+| LB-SRC-1B-11 | **AUTOMATED contract PASS.** Live visual certification was N/A because the local QA catalog contains no Shopify-synced image-bearing fixture. This is not a blocker: image rendering has automated protection, laSyncro already syncs Shopify variant images and uses them in existing product-selection/PO workflows, and unrelated visual evidence was deliberately not fabricated. |
+| LB-SRC-1B-12 | **PASS.** The no-image target uses the compact fallback. |
+| LB-SRC-1B-13 | **PASS.** Desktop truth/action composition uses width meaningfully. |
+| LB-SRC-1B-14 | **PASS.** Covered-by-inbound exposes no purchasing quantity. |
+| LB-SRC-1B-15 | **PASS.** Live purchasing fixture showed still to source 5, open demand 15, available 0, inbound 10 and unplanned 5. Quantity began at 5; the merchant edited it to 9; the Prepare PO dialog preserved QA Test Supplier, `QA Products · QA Shirt · QA-SHIRT-S`, and quantity 9. |
+
+The LB-SRC-1B-15 temporary QA mutation was fully restored: order quantity
+`15 → 1`, fulfilled quantity remained `0`, and the variant image
+remained/restored `NULL`.
+
+**Follow-up — SRC-INBOUND-CONTEXT-01 | P2 UX | OPEN.** View inbound currently
+loses variant-specific context after navigation. Future behaviour should
+preserve variant context; identify, highlight or filter all contributing open
+POs; and auto-expand only when a single relevant PO is unambiguous. This was
+not implemented in Slice 1B.
+
+### 13.17 Slice 1B automated evidence
+
+| Gate | Result |
+|---|---|
+| Slice 1B backend targeted integration | 21/21 PASS |
+| Slice 1B frontend action/media | 19/19 PASS |
+| Slice 1A targeted regression | 10/10 PASS |
+| Orders → Sourcing entry | 3/3 PASS |
+| Backend TypeScript | 0 target errors |
+| Frontend TypeScript | 19 pre-existing baseline errors; 0 target-related errors |
+| Jest ownership | backend-legacy 133; backend-integration 35; contract 10; frontend 129; UNOWNED=0; MULTI_OWNED=0 |
+| Disposable integration DB | ORPHAN_DB_COUNT=0 |
+| Generated suppliers-portal runtime contract | PASS |
+
+The repository-wide frontend TypeScript check is not clean; the 19 errors are
+the recorded pre-existing baseline.
+
+### 13.18 Preserved open and parked work
+
+Slice 2, the Unified Sourcing Worklist, remains future/open. There is no Slice
+3. The following adjacent issues retain their existing states and are not
+closed or redefined by Slice 1B:
+
+- `BUILD-02` | P1 | PARKED — internal module source/dist integrity;
+- `TEST-ORDER-NEXUS-MODULEENTRY-01` | P2 | OPEN;
+- `INV-ACTION-ARCH-01` | P2 | OPEN;
+- `ORD-FIXTURE-INVMULTI-01` | P2 | OPEN;
+- `SRC-INBOUND-CONTEXT-01` | P2 | OPEN.
 
 ---
 

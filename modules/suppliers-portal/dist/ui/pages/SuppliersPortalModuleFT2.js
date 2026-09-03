@@ -21,6 +21,12 @@ const OPEN_STATUSES = [
 const NEW_SUPPLIER_SENTINEL = '__new__';
 function CreatePoDialog({ open, suppliers, onClose, onCreateSupplier, onCreatePo, onSearchVariants, prefilledLineItem, prefilledSupplierId, }) {
     const [supplierId, setSupplierId] = useState(prefilledSupplierId ? String(prefilledSupplierId) : '');
+    // The dialog stays mounted between openings, so the state initializer above
+    // runs once — before the merchant has picked a supplier. Follow the prop.
+    useEffect(() => {
+        if (prefilledSupplierId)
+            setSupplierId(String(prefilledSupplierId));
+    }, [prefilledSupplierId, open]);
     const [newSupplier, setNewSupplier] = useState({ name: '', contact_name: '', contact_email: '', contact_phone: '', moq: '', lead_time_days: '' });
     const [expectedDate, setExpectedDate] = useState('');
     const [notes, setNotes] = useState('');
@@ -28,15 +34,25 @@ function CreatePoDialog({ open, suppliers, onClose, onCreateSupplier, onCreatePo
         { key: 0, description: '', quantity_ordered: '', unit_cost_cents: '' },
     ]);
     // REPL-001: seed first line from a reorder deep-link (Demand → Order →). Qty stays editable (MOQ-aware-ready).
+    //
+    // SRC-ACT-UI-07: the gate was `prefilledLineItem.description` alone, so a
+    // targeted Sourcing hand-off that carried a canonical variant but no
+    // description seeded NOTHING — the merchant got a blank line and a quantity
+    // of 1 against a real requirement. Seed whenever either a description or a
+    // canonical variant is supplied, and carry the variant link through so the
+    // PO line stays attached to the product it is meant to replenish.
     useEffect(() => {
-        if (prefilledLineItem && prefilledLineItem.description) {
-            setLineItems([{
-                    key: 0,
-                    description: prefilledLineItem.description,
-                    quantity_ordered: prefilledLineItem.quantity_ordered ? String(prefilledLineItem.quantity_ordered) : '',
-                    unit_cost_cents: '',
-                }]);
-        }
+        if (!prefilledLineItem)
+            return;
+        if (!prefilledLineItem.description && !prefilledLineItem.lasyncro_variant_id)
+            return;
+        setLineItems([{
+                key: 0,
+                description: prefilledLineItem.description,
+                quantity_ordered: prefilledLineItem.quantity_ordered ? String(prefilledLineItem.quantity_ordered) : '',
+                unit_cost_cents: '',
+                lasyncro_variant_id: prefilledLineItem.lasyncro_variant_id ?? null,
+            }]);
     }, [prefilledLineItem]);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
@@ -612,6 +628,18 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
      * told the merchant something false about their own catalogue.
      */
     const [targetFetchState, setTargetFetchState] = useState('ok');
+    /**
+     * SRC-ACT-UI-05: bumping this re-reads the SAME target without touching the
+     * URL, so assigning a supplier does not cost the merchant their place —
+     * variantId and orderId both survive.
+     */
+    const [targetRefreshKey, setTargetRefreshKey] = useState(0);
+    /**
+     * "Review queue →" continues on THIS surface. The pending reorders area is
+     * already here; sending the merchant to a new route to look at something
+     * three sections down would be navigation for its own sake.
+     */
+    const pendingReordersRef = useRef(null);
     const [preferences, setPreferences] = useState([]);
     const [isLoadingPrefs, setIsLoadingPrefs] = useState(false);
     // §8 reorder accumulator state
@@ -700,8 +728,18 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
             // automatic.
             setQuantityBasis(result.quantity_basis);
             setPlanningContext(result.planning_context);
-            setPrefillQty(result.queue_qty);
-            setQueueQty(result.queue_qty);
+            /**
+             * SRC-ACT-UI-07/10: in targeted recovery the quantity that still needs
+             * a purchasing decision is `unplanned` — what remains after the units
+             * already queued or drafted. Prefilling the full requirement would ask
+             * the merchant to buy the same units twice. Falls back to the Slice 1A
+             * queue quantity when the server has not supplied the workflow facts.
+             * The field stays editable, and BOTH purchasing actions read the
+             * edited value, so a deliberate override is never silently discarded.
+             */
+            const targetedQty = result.unplanned ?? result.queue_qty;
+            setPrefillQty(targetedQty);
+            setQueueQty(targetedQty);
         })
             .catch((err) => {
             // Only a 404 means "this target does not exist". Any other failure is
@@ -714,7 +752,7 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
             setTargetFetchState(status === 404 ? 'not_found' : 'error');
         })
             .finally(() => setIsLoadingRecs(false));
-    }, [activeVariantId, onFetchSourcingRecommendations]);
+    }, [activeVariantId, onFetchSourcingRecommendations, targetRefreshKey]);
     const handleCreatePoFromRec = (variantId, supplierId) => {
         setPoVariantId(variantId);
         setPoSupplierId(supplierId);
@@ -724,10 +762,34 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
         setAssignTarget({ lasyncro_variant_id: v.lasyncro_variant_id, title: v.title, sku: v.sku, product_id: v.product_id, product_type: v.product_type });
         setAssignOpen(true);
     };
+    /**
+     * SRC-ACT-UI-04A/05: assigning from targeted recovery. The target is built
+     * from the canonical identity already on screen — `product_id` and
+     * `product_type` are genuinely unknown here, and variant scope is the
+     * default anyway, so their absence must not block the assignment.
+     */
+    const handleTargetedAssignOpen = () => {
+        if (!activeVariantId)
+            return;
+        setAssignTarget({
+            lasyncro_variant_id: activeVariantId,
+            title: targeted?.variant_title ?? targeted?.product_title ?? 'this variant',
+            sku: targeted?.sku ?? null,
+            product_id: null,
+            product_type: null,
+        });
+        setAssignOpen(true);
+    };
     const handleAssignSave = async (input) => {
         await onCreatePreference(input);
         const updated = await onFetchPreferences();
         setPreferences(updated);
+        // SRC-ACT-UI-05: the assignment changes what this variant's recommendations
+        // ARE, so re-read the target. Refreshing the preference list alone would
+        // leave the merchant looking at the "no usable supplier" state they just
+        // resolved.
+        if (activeVariantId)
+            setTargetRefreshKey((n) => n + 1);
     };
     const handleDeletePreference = async (id) => {
         await onDeletePreference(id);
@@ -738,41 +800,191 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
     // merchant toward an under-minimum order instead of toward pooling, which
     // is what the accumulator exists for. The gap is shown per row instead.
     const goodMatches = recommendations;
+    /**
+     * SRC-ACT-UI-01…08 — TARGETED ACTION RESOLVER
+     * -------------------------------------------
+     * The old surface offered "Add to queue" and "Create PO" on every supplier
+     * row, in every state, including states where starting a new purchase is
+     * exactly wrong: fully covered by inbound, or already queued, or already
+     * drafted. Two equally-weighted buttons per row is not a decision aid.
+     *
+     * One target, one dominant next action. Precedence is deliberate and reads
+     * top to bottom: nothing to buy → already bought → already being bought →
+     * cannot buy → how to buy.
+     *
+     * This resolver governs TARGETED mode only. Generic Sourcing keeps its
+     * existing row actions untouched.
+     */
+    const targetedAction = (() => {
+        if (!activeVariantId || targetFetchState !== 'ok' || !targeted)
+            return null;
+        const stillToSource = targeted.still_to_source ?? 0;
+        const committedInbound = targeted.committed_inbound ?? 0;
+        const unplanned = targeted.unplanned ?? stillToSource;
+        const queuedQty = targeted.pending_queue_qty ?? 0;
+        const draftQty = targeted.draft_po_qty ?? 0;
+        const topRec = goodMatches[0] ?? null;
+        // 1. Nothing left to buy, and stock is already on the way. Offering a new
+        //    purchase here asks the merchant to pay twice for the same units.
+        if (stillToSource === 0 && committedInbound > 0) {
+            return {
+                kind: 'inbound',
+                primary: { label: 'View inbound →', onClick: () => sourcingNavigate('/suppliers-portal') },
+                secondary: null,
+                // Inbound is not fulfillment capacity. The order stays blocked until
+                // the stock is actually pickable — arrival alone clears nothing.
+                note: `${committedInbound} units already on the way. This order stays blocked until enough stock becomes pickable.`,
+            };
+        }
+        // 2. Already being bought. A draft is further along than a queue entry, so
+        //    when both cover the need the draft is the one to continue.
+        if (stillToSource > 0 && unplanned === 0 && draftQty > 0) {
+            return {
+                kind: 'draft',
+                primary: { label: 'Review draft PO →', onClick: () => sourcingNavigate('/suppliers-portal') },
+                secondary: null,
+                note: `${draftQty} units are already on a draft purchase order. Nothing is on the way until it is sent.`,
+            };
+        }
+        if (stillToSource > 0 && unplanned === 0 && queuedQty > 0) {
+            return {
+                kind: 'queue',
+                primary: {
+                    label: 'Review queue →',
+                    onClick: () => pendingReordersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
+                },
+                secondary: null,
+                note: `${queuedQty} units are already queued for reorder.`,
+            };
+        }
+        // 3. There is work to do but nobody to buy from. Note this is about a
+        //    USABLE recommendation, not about a saved preference: demanding an
+        //    assignment from a merchant who already has a supplier they have
+        //    bought from would block purchasing on bookkeeping.
+        if (!topRec) {
+            return {
+                kind: 'needs_supplier',
+                primary: { label: 'Assign supplier', onClick: handleTargetedAssignOpen },
+                secondary: null,
+                note: 'No supplier is set up for this product yet.',
+            };
+        }
+        // 4. Buying is possible. MOQ decides which path leads: below a minimum,
+        //    pooling is the cheaper move and ordering early is the deliberate
+        //    exception — not the other way round.
+        const belowMoq = topRec.moq != null && topRec.units_to_moq > 0;
+        if (belowMoq) {
+            return {
+                kind: 'below_moq',
+                primary: {
+                    label: 'Add to queue →',
+                    onClick: () => void handleAddToQueue(activeVariantId, topRec.id),
+                },
+                secondary: {
+                    label: 'Order now instead',
+                    onClick: () => handleCreatePoFromRec(activeVariantId, topRec.id),
+                },
+                note: `${topRec.units_to_moq} more units reach ${topRec.name}'s ${topRec.moq} minimum.`,
+            };
+        }
+        return {
+            kind: 'ready',
+            primary: {
+                label: 'Prepare PO →',
+                onClick: () => handleCreatePoFromRec(activeVariantId, topRec.id),
+            },
+            secondary: {
+                label: 'Add to queue →',
+                onClick: () => void handleAddToQueue(activeVariantId, topRec.id),
+            },
+            note: `${topRec.name} · a draft purchase order. Nothing is ordered until you send it.`,
+        };
+    })();
+    /** True only in targeted mode, where the resolver owns purchasing actions. */
+    const isTargetedMode = Boolean(activeVariantId && targetFetchState === 'ok' && targeted);
+    /**
+     * SRC-ACT-UI-12/13: only these two states start NEW purchasing work. The
+     * continuation states — inbound, draft, queue — and the no-supplier state
+     * have no quantity to spend, so they render no quantity control.
+     */
+    const isNewPurchaseAction = targetedAction?.kind === 'below_moq' || targetedAction?.kind === 'ready';
+    /**
+     * SRC-ACT-UI-07 — what Prepare PO actually hands the dialog.
+     *
+     * This used to be an empty description and a hardcoded quantity of 1, and
+     * CreatePoDialog only seeded a line when the description was truthy — so a
+     * targeted hand-off seeded nothing at all: a blank line, and a single unit
+     * against a real requirement. Send the identity already on screen, the
+     * canonical variant, and the quantity the merchant is looking at.
+     */
+    const targetedPoLineItem = poVariantId
+        ? {
+            description: [targeted?.product_title, targeted?.variant_title, targeted?.sku]
+                .filter(Boolean)
+                .join(' · ') || 'Targeted sourcing line',
+            quantity_ordered: queueQty,
+            lasyncro_variant_id: poVariantId,
+        }
+        : undefined;
     const prefsByScope = {
         variant: preferences.filter(p => p.scope_type === 'variant'),
         product: preferences.filter(p => p.scope_type === 'product'),
         product_type: preferences.filter(p => p.scope_type === 'product_type'),
     };
     const scopeLabels = { variant: 'Variant', product: 'Product', product_type: 'Product Type' };
-    return (_jsxs(Box, { sx: { p: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { p: '18px 20px', borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 16, fontWeight: 500, color: 'var(--ink)' }, children: "Sourcing recommendations" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }, children: activeVariantId ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate' : 'Select a stockout alert to see ranked supplier options' })] }), targetFetchState === 'not_found' && (_jsxs(Box, { "data-testid": "sourcing-target-not-found", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "We couldn\u2019t find that product" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "The link may be out of date, or the product may have been removed." })] })), targetFetchState === 'error' && (_jsxs(Box, { "data-testid": "sourcing-target-load-error", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "Couldn\u2019t load sourcing details" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "Something went wrong on our side \u2014 the product and its suppliers are unaffected." })] })), activeVariantId && targetFetchState === 'ok' && targeted && (_jsxs(_Fragment, { children: [_jsxs(Box, { "data-testid": "sourcing-identity", sx: { display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 2, borderBottom: '1px solid var(--rule)' }, children: [targeted.image_url ? (_jsx(Box, { component: "img", src: targeted.image_url, alt: targeted.product_title ?? 'Product', sx: { width: 48, height: 48, objectFit: 'cover', borderRadius: 1, flexShrink: 0 } })) : (
-                                            /* SRC-L3-03: an explicit placeholder, never an <img> with no
-                                               source — a broken-image glyph reads as a bug, not as
-                                               "this product has no photo". */
-                                            _jsx(Box, { "data-testid": "sourcing-identity-placeholder", "aria-hidden": "true", sx: { width: 48, height: 48, borderRadius: 1, flexShrink: 0, bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }, children: _jsx(Package, { size: 18, color: "var(--ink-4)" }) })), _jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink)' }, children: targeted.product_title }), _jsx(Typography, { sx: { fontSize: 12.5, fontWeight: 300, color: 'var(--ink-2)' }, children: targeted.variant_title }), _jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: targeted.sku })] })] }), _jsxs(Box, { "data-testid": "sourcing-gap-summary", sx: { px: 2.5, py: 2, borderBottom: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-end', gap: 3, flexWrap: 'wrap' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: "Still to source" }), _jsx(Typography, { sx: { fontSize: 26, fontWeight: 600, lineHeight: 1.1, color: 'var(--ink)' }, children: targeted.still_to_source })] }), _jsx(Box, { sx: { display: 'flex', gap: 2.5, flexWrap: 'wrap', pb: 0.5 }, children: [
-                                                            ['Open demand', targeted.open_demand],
-                                                            ['Available', targeted.available],
-                                                            ['Inbound', targeted.committed_inbound],
-                                                            ['Short now', targeted.short_now],
-                                                        ].map(([label, value]) => (_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: label }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink-2)' }, children: value })] }, label))) })] }), targeted.blocking_orders && targeted.blocking_orders.length > 0 && (() => {
-                                                const originating = targeted.originating_order_id
-                                                    ? targeted.blocking_orders.find(o => o.order_id === targeted.originating_order_id)
-                                                    : undefined;
-                                                const count = targeted.blocking_orders.length;
-                                                return (_jsxs(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)', mt: 1.25 }, children: [count, " ", count === 1 ? 'order' : 'orders', " blocked", originating && (_jsxs(_Fragment, { children: [" \u00B7 you came from order ", originating.external_order_id ?? originating.order_id] }))] }));
-                                            })()] })] })), !activeVariantId && (_jsxs(Box, { sx: { borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { sx: { px: 2.5, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }, children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: "Supplier preferences" }), !isLoadingPrefs && preferences.length === 0 && (_jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "None set" }))] }), isLoadingPrefs && _jsx(Box, { sx: { px: 2.5, pb: 2 }, children: _jsx(ModuleLoadingSkeleton, { rows: 1, height: 16 }) }), !isLoadingPrefs && preferences.length > 0 && (_jsx(_Fragment, { children: ['variant', 'product', 'product_type'].map((scope) => {
+    return (_jsxs(Box, { sx: { p: 2 }, children: [_jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { p: '18px 20px', borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 16, fontWeight: 500, color: 'var(--ink)' }, children: "Sourcing recommendations" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.25 }, children: activeVariantId ? 'Ranked by supplier reliability — on-time rate, fill rate, defect rate' : 'Select a stockout alert to see ranked supplier options' })] }), targetFetchState === 'not_found' && (_jsxs(Box, { "data-testid": "sourcing-target-not-found", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "We couldn\u2019t find that product" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "The link may be out of date, or the product may have been removed." })] })), targetFetchState === 'error' && (_jsxs(Box, { "data-testid": "sourcing-target-load-error", sx: { px: 2.5, py: 2.5, borderBottom: '1px solid var(--rule)' }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: "Couldn\u2019t load sourcing details" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-3)', mt: 0.5 }, children: "Something went wrong on our side \u2014 the product and its suppliers are unaffected." })] })), activeVariantId && targetFetchState === 'ok' && targeted && (_jsx(_Fragment, { children: _jsxs(Box, { "data-testid": "sourcing-identity", sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, alignItems: 'stretch', borderBottom: '1px solid var(--rule)' }, children: [targeted.image_url && (
+                                        /* SRC-ACT-UI-10: a 48px chip is an icon, not recognition.
+                                           `contain`, never `cover` — a product cropped to a square
+                                           can read as a different product. Bounded height so a
+                                           low-resolution image is not stretched to absurdity. */
+                                        _jsx(Box, { "data-testid": "sourcing-product-media", sx: {
+                                                flex: { xs: '1 1 auto', lg: '0 0 32%' },
+                                                minWidth: 0,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                bgcolor: 'var(--bg-2)',
+                                                borderBottom: { xs: '1px solid var(--rule)', lg: 'none' },
+                                                borderRight: { xs: 'none', lg: '1px solid var(--rule)' },
+                                                p: 2,
+                                            }, children: _jsx(Box, { component: "img", src: targeted.image_url, alt: targeted.product_title ?? 'Product', sx: { maxWidth: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 1 } }) })), _jsxs(Box, { sx: { flex: '1 1 0', minWidth: 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, px: 2.5, py: 2 }, children: [!targeted.image_url && (
+                                                        /* SRC-L3-03: an explicit placeholder, never an <img> with
+                                                           no source — a broken-image glyph reads as a bug, not as
+                                                           "this product has no photo". */
+                                                        _jsx(Box, { "data-testid": "sourcing-identity-placeholder", "aria-hidden": "true", sx: { width: 48, height: 48, borderRadius: 1, flexShrink: 0, bgcolor: 'var(--bg-2)', border: '1px solid var(--rule)', display: 'flex', alignItems: 'center', justifyContent: 'center' }, children: _jsx(Package, { size: 18, color: "var(--ink-4)" }) })), _jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink)' }, children: targeted.product_title }), _jsx(Typography, { sx: { fontSize: 12.5, fontWeight: 300, color: 'var(--ink-2)' }, children: targeted.variant_title }), _jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: targeted.sku })] })] }), _jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, alignItems: 'stretch', borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { "data-testid": "sourcing-gap-summary", sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, px: 2.5, py: 2, bgcolor: 'var(--bg-2)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-end', gap: 3, flexWrap: 'wrap' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: "Still to source" }), _jsx(Typography, { sx: { fontSize: 26, fontWeight: 600, lineHeight: 1.1, color: 'var(--ink)' }, children: targeted.still_to_source })] }), _jsx(Box, { sx: { display: 'flex', gap: 2.5, flexWrap: 'wrap', pb: 0.5 }, children: [
+                                                                                ['Open demand', targeted.open_demand],
+                                                                                ['Available', targeted.available],
+                                                                                ['Inbound', targeted.committed_inbound],
+                                                                                ['Short now', targeted.short_now],
+                                                                            ].map(([label, value]) => (_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 10.5, fontWeight: 500, letterSpacing: '0.03em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: label }), _jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink-2)' }, children: value })] }, label))) })] }), targeted.blocking_orders && targeted.blocking_orders.length > 0 && (() => {
+                                                                    const originating = targeted.originating_order_id
+                                                                        ? targeted.blocking_orders.find(o => o.order_id === targeted.originating_order_id)
+                                                                        : undefined;
+                                                                    const count = targeted.blocking_orders.length;
+                                                                    return (_jsxs(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)', mt: 1.25 }, children: [count, " ", count === 1 ? 'order' : 'orders', " blocked", originating && (_jsxs(_Fragment, { children: [" \u00B7 you came from order ", originating.external_order_id ?? originating.order_id] }))] }));
+                                                                })()] }), targetedAction && (_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '0 0 40%' }, minWidth: 0, px: 2.5, py: 2, borderTop: { xs: '1px solid var(--rule)', lg: 'none' }, borderLeft: { xs: 'none', lg: '1px solid var(--rule)' } }, children: [isNewPurchaseAction && (_jsxs(Box, { sx: { mb: 1.75 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }, children: "Order quantity" }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }, children: quantityBasis === 'planning_data_required' ? (_jsxs(_Fragment, { children: ["No supplier lead time \u2014", ' ', _jsx(Box, { component: "span", onClick: () => sourcingNavigate('/suppliers-portal/suppliers'), sx: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', '&:hover': { opacity: 0.75 } }, children: "set one" }), ' ', "for a forecast"] })) : quantityBasis === 'no_signal'
+                                                                                ? 'No sales history · enter a quantity if you know the demand'
+                                                                                : quantityBasis === 'preventive'
+                                                                                    ? (planningContext?.target_coverage_days != null
+                                                                                        ? `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covers ${planningContext.target_coverage_days} days`
+                                                                                        : `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · forecast incl. lead time`)
+                                                                                    : shortfall > 0
+                                                                                        ? `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · ${shortfall} short`
+                                                                                        : `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covered` }), quantityBasis !== 'planning_data_required' && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mt: 0.75 }, children: [_jsx(Box, { component: "input", "data-testid": "sourcing-purchase-quantity", type: "number", min: 0, value: queueQty, onChange: (e) => {
+                                                                                        const next = parseInt(e.target.value, 10);
+                                                                                        setQueueQty(Number.isNaN(next) || next < 0 ? 0 : next);
+                                                                                    }, sx: { width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } } }), _jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "units" }), queueQty !== prefillQty && (_jsx(Box, { component: "button", onClick: () => setQueueQty(prefillQty), sx: { fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }, children: "Reset" }))] }))] })), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }, children: [_jsx(Box, { component: "button", "data-testid": "sourcing-primary-action", onClick: targetedAction.primary.onClick, sx: { display: 'inline-flex', alignItems: 'center', fontSize: 13, fontWeight: 600,
+                                                                                color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none',
+                                                                                borderRadius: '6px', px: 2, py: 1, cursor: 'pointer',
+                                                                                '&:hover': { opacity: 0.88 } }, children: targetedAction.primary.label }), targetedAction.secondary && (_jsx(Box, { component: "button", "data-testid": "sourcing-secondary-action", onClick: targetedAction.secondary.onClick, sx: { display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 400,
+                                                                                color: 'var(--ink-3)', bgcolor: 'transparent', border: 'none',
+                                                                                textDecoration: 'underline', px: 0.5, py: 1, cursor: 'pointer',
+                                                                                '&:hover': { color: 'var(--ink)' } }, children: targetedAction.secondary.label }))] }), targetedAction.note && (_jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 300, color: 'var(--ink-3)', mt: 1 }, children: targetedAction.note }))] }))] })] })] }) })), !activeVariantId && (_jsxs(Box, { sx: { borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { sx: { px: 2.5, py: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }, children: [_jsx(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: "Supplier preferences" }), !isLoadingPrefs && preferences.length === 0 && (_jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "None set" }))] }), isLoadingPrefs && _jsx(Box, { sx: { px: 2.5, pb: 2 }, children: _jsx(ModuleLoadingSkeleton, { rows: 1, height: 16 }) }), !isLoadingPrefs && preferences.length > 0 && (_jsx(_Fragment, { children: ['variant', 'product', 'product_type'].map((scope) => {
                                             const rows = prefsByScope[scope];
                                             if (!rows.length)
                                                 return null;
                                             return (_jsxs(Box, { children: [_jsx(Box, { sx: { px: 2.5, py: 0.75, bgcolor: 'var(--bg-2)' }, children: _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: scopeLabels[scope] }) }), rows.map((pref) => (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', gap: 1.5 }, children: [_jsxs(Box, { sx: { flex: 1, minWidth: 0 }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: pref.supplier_name }), _jsx(Chip, { label: pref.priority === 1 ? 'Primary' : 'Backup', size: "small", sx: { fontSize: 10, height: 18, bgcolor: pref.priority === 1 ? 'rgba(255,107,43,0.12)' : 'action.hover', color: pref.priority === 1 ? 'var(--accent)' : 'text.secondary' } })] }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace', mt: 0.25 }, children: pref.scope_id }), pref.note && _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-3)', mt: 0.25, fontStyle: 'italic' }, children: pref.note })] }), _jsx(IconButton, { size: "small", onClick: () => void handleDeletePreference(pref.id), sx: { color: 'text.disabled', '&:hover': { color: 'error.main' } }, children: _jsx(Trash2, { size: 14 }) })] }, pref.id)))] }, scope));
-                                        }) }))] })), activeVariantId && isLoadingRecs && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: "Loading recommendations\u2026" }) })), activeVariantId && targetFetchState === 'ok' && targeted && !isLoadingRecs && recommendations.length === 0 && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: "No supplier history for this product yet." }) })), activeVariantId && !isLoadingRecs && goodMatches.length > 0 && spotlights && !spotlights.alertTriggered.isDismissed && (_jsx(Box, { sx: { px: 2.5, pt: 1.5, borderTop: '1px solid var(--rule)' }, children: _jsx(SpotlightCoachMark, { title: "Your best supplier, ranked automatically", body: "Rankings are based on delivery speed, order accuracy, and quality from your real orders. Order now, or add to queue to combine with other products before sending.", isDismissed: spotlights.alertTriggered.isDismissed, onDismiss: spotlights.alertTriggered.dismiss, step: 2, totalSteps: 3 }) })), activeVariantId && !isLoadingRecs && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }, children: [_jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }, children: "Order quantity" }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.25 }, children: quantityBasis === 'planning_data_required' ? (_jsxs(_Fragment, { children: ["No supplier lead time \u2014", ' ', _jsx(Box, { component: "span", onClick: () => sourcingNavigate('/suppliers-portal/suppliers'), sx: { color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline', '&:hover': { opacity: 0.75 } }, children: "set one" }), ' ', "for a forecast"] })) : quantityBasis === 'no_signal' ? ('No sales history · enter a quantity if you know the demand') : quantityBasis === 'preventive' ? (
-                                                // The coverage span comes from the API, not from restating
-                                                // the backend's safety and purchasing-cycle constants here.
-                                                planningContext?.target_coverage_days != null
-                                                    ? `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covers ${planningContext.target_coverage_days} days`
-                                                    : `${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · forecast incl. lead time`) : shortfall > 0 ? (`${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · ${shortfall} short`) : (`${shortfallBasis?.demand ?? 0} ordered · ${shortfallBasis?.available ?? 0} in stock · covered`) })] }), quantityBasis !== 'planning_data_required' && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }, children: [_jsx(Box, { component: "input", type: "number", min: 0, value: queueQty, onChange: (e) => {
-                                                    const next = parseInt(e.target.value, 10);
-                                                    setQueueQty(Number.isNaN(next) || next < 0 ? 0 : next);
-                                                }, sx: { width: 72, fontSize: 13, textAlign: 'right', color: 'var(--ink)', bgcolor: 'var(--bg-1)', border: '0.5px solid var(--rule)', borderRadius: '6px', px: 1, py: 0.75, '&:focus': { outline: 'none', borderColor: 'var(--accent)' } } }), _jsx(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: "units" }), queueQty !== prefillQty && (_jsx(Box, { component: "button", onClick: () => setQueueQty(prefillQty), sx: { fontSize: 11, color: 'var(--accent)', bgcolor: 'transparent', border: 'none', cursor: 'pointer', px: 0.5, '&:hover': { opacity: 0.75 } }, children: "Reset" }))] }))] })), _jsx(Box, { "data-testid": "sourcing-supplier-candidates", children: goodMatches.map((rec) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: rec.name }), rec.is_preferred && (_jsx(Chip, { label: "\u2605 Preferred", size: "small", sx: { fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' } }))] }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: (() => {
+                                        }) }))] })), activeVariantId && isLoadingRecs && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, color: 'var(--ink-3)' }, children: "Loading recommendations\u2026" }) })), activeVariantId && targetFetchState === 'ok' && targeted && !isLoadingRecs && recommendations.length === 0 && (_jsx(Box, { sx: { p: 4, textAlign: 'center' }, children: _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: "No supplier history for this product yet." }) })), _jsx(Box, { "data-testid": "sourcing-supplier-candidates", children: goodMatches.map((rec) => (_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', px: 2.5, py: 1.75, borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1 }, children: [_jsx(Typography, { sx: { fontSize: 13.5, fontWeight: 500, color: 'var(--ink)' }, children: rec.name }), rec.is_preferred && (_jsx(Chip, { label: "\u2605 Preferred", size: "small", sx: { fontSize: 10, height: 18, bgcolor: 'var(--accent-ghost)', color: 'var(--accent)' } }))] }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: (() => {
                                                         const parts = [
                                                             rec.on_time_rate != null && `On-time ${rec.on_time_rate}%`,
                                                             rec.fill_rate != null && `Fill ${rec.fill_rate}%`,
@@ -786,7 +998,7 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
                                                                 `Meets their ${rec.moq} minimum`,
                                                         ].filter(Boolean);
                                                         return parts.length > 0 ? parts.join(' · ') : 'No order history yet';
-                                                    })() })] }), _jsxs(Box, { sx: { display: 'flex', gap: 1, flexShrink: 0 }, children: [(() => {
+                                                    })() })] }), !isTargetedMode && (_jsxs(Box, { sx: { display: 'flex', gap: 1, flexShrink: 0 }, children: [(() => {
                                                     const btnState = queueButtonState[rec.id] ?? 'idle';
                                                     const isAdding = btnState === 'adding';
                                                     const isAdded = btnState === 'added';
@@ -798,7 +1010,7 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
                                                             cursor: btnState === 'idle' ? 'pointer' : 'default',
                                                             transition: 'all 0.2s',
                                                             '&:hover': { opacity: btnState === 'idle' ? 0.75 : 1 } }, children: isAdding ? 'Adding…' : isAdded ? 'Added ✓' : 'Add to queue →' }));
-                                                })(), _jsx(Box, { component: "button", onClick: () => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id), sx: { display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }, children: "Create PO \u2192" })] })] }, rec.id))) }), lastConvertedPoId && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', bgcolor: 'var(--accent-ghost)' }, children: [_jsx(Typography, { sx: { fontSize: 12, color: 'var(--accent)', fontWeight: 500 }, children: "Draft PO created \u2014 check Open POs to review and send." }), _jsx(Box, { component: "button", onClick: () => onDismissConvertedPo?.(), sx: { display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Dismiss" })] })), reorderRequests.length > 0 && (_jsxs(Box, { sx: { borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }, children: [_jsxs(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: ["Pending reorders \u00B7 ", reorderRequests.length, " supplier", reorderRequests.length > 1 ? 's' : ''] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }, children: [
+                                                })(), _jsx(Box, { component: "button", onClick: () => activeVariantId && handleCreatePoFromRec(activeVariantId, rec.id), sx: { display: 'inline-flex', alignItems: 'center', fontSize: 12, fontWeight: 600, color: 'var(--accent-ink)', bgcolor: 'var(--accent)', border: 'none', borderRadius: '6px', px: 1.25, py: 0.75, cursor: 'pointer', '&:hover': { opacity: 0.88 } }, children: "Create PO \u2192" })] }))] }, rec.id))) }), lastConvertedPoId && (_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', px: 2.5, py: 1.5, borderTop: '1px solid var(--rule)', bgcolor: 'var(--accent-ghost)' }, children: [_jsx(Typography, { sx: { fontSize: 12, color: 'var(--accent)', fontWeight: 500 }, children: "Draft PO created \u2014 check Open POs to review and send." }), _jsx(Box, { component: "button", onClick: () => onDismissConvertedPo?.(), sx: { display: 'inline-flex', alignItems: 'center', fontSize: 11, fontWeight: 500, color: 'var(--accent)', bgcolor: 'transparent', border: '0.5px solid var(--accent)', borderRadius: '6px', px: 1, py: 0.5, cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Dismiss" })] })), reorderRequests.length > 0 && (_jsxs(Box, { ref: pendingReordersRef, sx: { borderTop: '1px solid var(--rule)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, px: 2.5, py: 1.5, bgcolor: 'var(--bg-2)' }, children: [_jsxs(Typography, { sx: { fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }, children: ["Pending reorders \u00B7 ", reorderRequests.length, " supplier", reorderRequests.length > 1 ? 's' : ''] }), _jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }, children: [
                                                     ['var(--good-ink)', 'Ready to send'],
                                                     ['var(--warning-ink)', 'Below minimum'],
                                                     ['var(--critical-ink)', 'Blocked'],
@@ -858,7 +1070,7 @@ function PurchasingSourcingView({ data, onCreatePo, onCreateSupplier, onSearchVa
                                     label: 'Queued for reorder',
                                     value: reorderRequests.reduce((sum, g) => sum + g.requests.length, 0),
                                 },
-                            ] }) }))] }), _jsx(CreatePoDialog, { open: createPoOpen, suppliers: suppliers, onClose: () => setCreatePoOpen(false), onCreateSupplier: onCreateSupplier, onCreatePo: onCreatePo, onSearchVariants: onSearchVariants, prefilledLineItem: poVariantId ? { description: '', quantity_ordered: 1, lasyncro_variant_id: poVariantId } : undefined, prefilledSupplierId: poSupplierId }), _jsx(AssignSupplierDialog, { open: assignOpen, target: assignTarget, suppliers: suppliers, onClose: () => setAssignOpen(false), onSubmit: handleAssignSave })] }));
+                            ] }) }))] }), _jsx(CreatePoDialog, { open: createPoOpen, suppliers: suppliers, onClose: () => setCreatePoOpen(false), onCreateSupplier: onCreateSupplier, onCreatePo: onCreatePo, onSearchVariants: onSearchVariants, prefilledLineItem: targetedPoLineItem, prefilledSupplierId: poSupplierId }), _jsx(AssignSupplierDialog, { open: assignOpen, target: assignTarget, suppliers: suppliers, onClose: () => setAssignOpen(false), onSubmit: handleAssignSave })] }));
 }
 function SuppliersPortalModuleFT2Inner(props) {
     if (props.view === 'suppliers')

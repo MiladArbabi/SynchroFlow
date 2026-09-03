@@ -113,6 +113,18 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
     let identity: TargetedIdentity | null = null as TargetedIdentity | null;
     let notFound = false;
     let committedInbound = 0;
+    /**
+     * SLICE 1B — PURCHASING WORKFLOW FACTS
+     * ------------------------------------
+     * What the merchant has ALREADY started buying, as opposed to what is
+     * already coming. Queue intent and draft PO work are workflow state: they
+     * are the reason to stop offering to start the same purchase twice. They
+     * are deliberately NOT supply — neither may enter committed_inbound, and
+     * neither may reduce still_to_source. A draft nobody has sent moves no
+     * stock, and a queued line is not even a draft yet.
+     */
+    let pendingQueueQty = 0;
+    let draftPoQty = 0;
     let blockingOrders: Array<{
       order_id: string;
       external_order_id: string | null;
@@ -218,6 +230,44 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
         .first();
 
       committedInbound = Number(inboundRow?.inbound ?? 0);
+
+      /**
+       * SRC-ACT-BE-01 — PENDING QUEUE INTENT.
+       * Scoped to shop AND canonical variant explicitly. RLS already isolates
+       * the tenant; the shop predicate is stated anyway so the query's grain is
+       * legible at the call site rather than inferred from session state.
+       */
+      const queueRow = await trx('reorder_requests')
+        .where({
+          shop_id: shopId,
+          lasyncro_variant_id: variantId,
+          status: 'pending',
+        })
+        .sum({ qty: 'qty_requested' })
+        .first();
+
+      pendingQueueQty = Number(queueRow?.qty ?? 0);
+
+      /**
+       * SRC-ACT-BE-02 — DRAFT PURCHASING WORK.
+       * The same GREATEST clamp as committed inbound, for the same reason: an
+       * over-receipt must not subtract phantom units. Draft is the one PO
+       * status that is prepared work rather than supply, which is exactly why
+       * it is excluded from COMMITTED_INBOUND_PO_STATUSES and counted here.
+       */
+      const draftRow = await trx('purchase_order_line_items as poli')
+        .join('purchase_orders as po', 'po.id', 'poli.po_id')
+        .where('po.shop_id', shopId)
+        .andWhere('poli.lasyncro_variant_id', variantId)
+        .andWhere('po.status', 'draft')
+        .sum({
+          qty: trx.raw(
+            'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
+          ),
+        })
+        .first();
+
+      draftPoQty = Number(draftRow?.qty ?? 0);
 
       /**
        * SRC-L3-10/11B — BLOCKING ORDER CONTEXT
@@ -488,6 +538,19 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
 
       blocking_orders:      blockingOrders,
       originating_order_id: originatingOrderId,
+
+      // ── SLICE 1B: PURCHASING WORKFLOW ────────────────────────────────
+      // in_purchasing — how much of the gap the merchant has already acted on
+      // unplanned     — how much still needs a purchasing decision
+      // Neither touches the supply numbers above.
+      pending_queue_qty: pendingQueueQty,
+      draft_po_qty:      draftPoQty,
+      in_purchasing:     pendingQueueQty + draftPoQty,
+      unplanned: Math.max(
+        0,
+        Math.max(0, demandQty - availableQty - committedInbound) -
+          (pendingQueueQty + draftPoQty)
+      ),
 
       // SRC-03: derived shortfall + its basis. The UI prefills the queue
       // quantity from this and shows the basis, so the operator can see WHY

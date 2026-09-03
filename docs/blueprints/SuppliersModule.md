@@ -165,12 +165,13 @@ Blocks: MOQ accumulation system (`sourcing-recommendation-playbook.md §8`).
 | SUP-05 | P2 | Supplier scorecard fields all null on clean seed — no empty state or "complete your first receive to unlock ratings" messaging |
 | SUP-06 | P3 | No PO list filtering or search — will degrade at scale |
 | SUP-07 | P3 | Page title/signal line not using FT2 typography pattern (22px/500 title, 13px/ink-3 signal) |
-| SOURCING-UX-COGNITIVE-01 | P1 | 🔄 IN PROGRESS — Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order. Slice 1A (targeted recovery foundation) closed / verified / deployed 2026-09-03; Slice 1B and the Unified Sourcing Worklist remain — see below |
+| SOURCING-UX-COGNITIVE-01 | P1 | 🔄 IN PROGRESS — Sourcing screen has high cognitive load and weak decision hierarchy when entered from a blocked order. Slices 1A (targeted recovery foundation) and 1B (targeted recovery actions/state transitions) are closed / verified; Slice 2, the Unified Sourcing Worklist, remains future/open — see below |
 
 ### SOURCING-UX-COGNITIVE-01 | IN PROGRESS | P1
 
-The umbrella issue is **IN PROGRESS**, not closed. Slice 1A is delivered and
-verified; Slices 1B, 2 and 3 remain outstanding. See **Delivery status** below.
+The umbrella issue is **IN PROGRESS**, not closed. Slices 1A and 1B are
+delivered and verified; Slice 2 remains future/open. There is no Slice 3. See
+**Delivery status** below.
 
 #### Sourcing architecture — two levels
 
@@ -445,12 +446,35 @@ The Fly workflow included successful privileged migrations, privileged
 credential rejection on the runtime role, and runtime deployment. The worktree
 was clean after certification.
 
+**Slice 1B — Targeted Recovery Actions and State Transitions — CLOSED / VERIFIED 2026-09-03.**
+
+Slice 1B completes the Level 2 targeted recovery action model. It preserves the
+Slice 1A supply truth while separating pending reorder intent and draft PO work
+from committed inbound, presents one dominant state-driven next action, keeps
+targeted supplier assignment in context, and carries the selected supplier,
+canonical variant identity and merchant-edited quantity into a draft PO. A
+draft, sent PO or receipt does not itself clear a blocked order; fulfillment
+requires enough pickable inventory.
+
+The targeted desktop composition is MEDIA + DECISION. It reuses the merchant's
+canonical Shopify-synced variant `image_url` when present and uses a compact
+placeholder when absent; no synthetic, stock, unrelated-SKU or independent
+Sourcing image source is introduced. The decision region identifies the SKU,
+states the purchasing truth, and presents the dominant next action. Purchasing
+quantity appears only for a new purchasing action, not for View inbound, Review
+draft, Review queue or Assign supplier.
+
+The workflow fields, dominant action states, assignment/PO continuity,
+live-browser certification and automated evidence are authoritative in
+`docs/playbooks/sourcing-recommendation-playbook.md` §13.12–13.18.
+
 #### Remaining work
 
 | Slice | Scope | Status |
 |---|---|---|
-| **1B** | Targeted recovery **actions** / state transitions (Level 2) | OPEN |
-| **2** | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | OPEN |
+| **1A** | Targeted recovery foundation (Level 2 understanding) | **CLOSED / VERIFIED / DEPLOYED 2026-09-03** |
+| **1B** | Targeted recovery **actions** / state transitions (Level 2) | **CLOSED / VERIFIED 2026-09-03** |
+| **2** | **Unified Sourcing Worklist** (Level 1) — portfolio awareness, categories, filters, sorting, search, actionable SKU/variant list, using laSyncro's familiar operational-list conventions | FUTURE / OPEN |
 
 There is **no Slice 3**. The former Slice 3 (a separate L1 Sourcing Overview
 screen) was removed when the architecture was reduced to two levels on

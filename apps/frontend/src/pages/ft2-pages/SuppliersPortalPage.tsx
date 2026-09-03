@@ -144,6 +144,12 @@ export default function SuppliersPortalPage() {
       still_to_source:      Number(data.still_to_source ?? 0),
       blocking_orders:      data.blocking_orders ?? [],
       originating_order_id: data.originating_order_id ?? null,
+      // Slice 1B purchasing-workflow facts. The server is the authority for
+      // all four; nothing here re-derives them from other endpoints.
+      pending_queue_qty:    Number(data.pending_queue_qty ?? 0),
+      draft_po_qty:         Number(data.draft_po_qty ?? 0),
+      in_purchasing:        Number(data.in_purchasing ?? 0),
+      unplanned:            Number(data.unplanned ?? 0),
     };
   }, [searchParams]);
 
