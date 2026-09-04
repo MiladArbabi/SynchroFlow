@@ -53,7 +53,7 @@ describe('frontend production build environment contract', () => {
     const dockerfile = fs.readFileSync(path.join(ROOT, 'Dockerfile'), 'utf8');
 
     expect(dockerfile).toMatch(
-      /RUN NODE_ENV=production npm --workspace \.\/apps\/frontend exec -- vite build/
+      /RUN [^\n]*NODE_ENV=production[^\n]*npm --workspace \.\/apps\/frontend exec -- vite build/
     );
   });
 

@@ -510,6 +510,7 @@ Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
 
 - AN-PH-01 targeted contracts: **29/29 passed**.
 - Production correction regression surface: **13 suites / 37 tests passed**.
+- CI follow-up: updated `frontend-production-build-env.test.ts` so the Docker invariant still requires `NODE_ENV=production` on the Vite build command while allowing approved build-time environment variables to precede it.
 - Production certification exposed a missing Fly build-time PostHog key: `app.lasyncro.com` had consent granted but `__LASYNCRO_POSTHOG_READY__ = false` and logged `Missing API key`.
 - Corrected by declaring Docker build args and supplying `VITE_PUBLIC_POSTHOG_KEY` plus `VITE_PUBLIC_POSTHOG_HOST` through `fly.toml [build.args]`; Vite embeds these values into the production SPA bundle.
 - Marketing production build: **passed** using Next webpack build path in the temporary worktree.
