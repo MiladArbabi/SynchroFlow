@@ -206,17 +206,46 @@ it('keeps root inventory releasable across zero-bin -> one-empty-bin transition'
     // ---- 5. create one empty pick bin ----------------------------------
     const emptyBinCode = 'PICK-EMPTY-01';
 
-    const createBin = await request(app)
-      .post('/api/v1/floor-planning/zones')
-      .set('Authorization', `Bearer ${token}`)
-      .send({
-        location_code: emptyBinCode,
-        type: 'bin',
-        parent_location_code: rootLocationCode,
-        zone_type: 'pick',
-      });
+    const [emptyBin] = await withTenant(shopId, async (trx) => {
+      const rootLocation = await trx('warehouse_locations')
+        .where({
+          shop_id: shopId,
+          location_code: rootLocationCode,
+          type: 'warehouse',
+        })
+        .select('warehouse_id')
+        .first();
 
-    expect(createBin.status).toBe(201);
+      if (!rootLocation?.warehouse_id) {
+        throw new Error(`Fresh-install warehouse root not found: ${rootLocationCode}`);
+      }
+
+      return trx('warehouse_locations')
+        .insert({
+          shop_id: shopId,
+          warehouse_id: rootLocation.warehouse_id,
+          location_code: emptyBinCode,
+          type: 'bin',
+          parent_location_code: rootLocationCode,
+          active: true,
+          zone_type: 'pick',
+        })
+        .returning([
+          'location_code',
+          'type',
+          'parent_location_code',
+          'active',
+          'zone_type',
+        ]);
+    });
+
+    expect(emptyBin).toMatchObject({
+      location_code: emptyBinCode,
+      type: 'bin',
+      parent_location_code: rootLocationCode,
+      active: true,
+      zone_type: 'pick',
+    });
 
     const emptyBinStock = await withTenant(shopId, (trx) =>
       trx('inventory_truth').where({

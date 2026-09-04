@@ -477,8 +477,39 @@ which builds preconfigured bins and does not represent a fresh install.
 | Fully stowed | Pick-bin stock is preferred; root remains valid if stock exists there |
 
 `tests/integration/fresh-install-release-path.test.ts` protects the critical
-zero-bin → one-empty-bin transition through the real release and floor-planning
-HTTP endpoints. Creating an empty bin must never make root inventory unavailable.
+zero-bin → one-empty-bin transition through the real batch-release endpoint.
+Creating an empty bin must never make root inventory unavailable. Floor Planning
+itself is not the subject of FRESH-INSTALL-04; the empty bin is fixture state.
+
+#### FRESH-INSTALL-COMMERCIAL-01 fixture correction (2026-09-04)
+
+P0-A2A correctly closed the Starter/Core Floor Planning leak by replacing the
+Starter route gate with the canonical Growth+ capability
+`warehouse.floor_planning`. That change exposed stale fixture construction in
+`tests/integration/fresh-install-release-path.test.ts`, which had used
+`POST /api/v1/floor-planning/zones` with a Starter-equivalent token merely to
+create the one-empty-bin state.
+
+The permanent regression invariant remains:
+
+```
+zero bins
+→ Starter batch release reserves from WH-{shopId}-ROOT
+→ one empty pick bin exists
+→ second Starter batch release still reserves from WH-{shopId}-ROOT
+```
+
+The empty-bin setup now resolves the existing warehouse root and inserts the
+tenant-scoped `warehouse_locations` fixture through `withTenant(...)`, without
+adding inventory to the bin. No Growth token was introduced. Commercial
+semantics remain unchanged: `warehouse.operations` is Starter+ and
+`warehouse.floor_planning` is Growth+.
+
+Verification: `fresh-install-release-path` is 1/1 suite GREEN and 1/1 test
+GREEN through the disposable integration harness, with the database created,
+migrated, runtime-verified, and dropped. FRESH-INSTALL-COMMERCIAL-01 is
+classified as **TEST FIXTURE DRIFT**, not a production regression; the local
+release blocker is resolved pending CI rerun.
 
 > ⚠️ **Step order is load-bearing.** The `integrations` row must exist BEFORE
 > the seeder runs. FT0 is edge-triggered and non-retrying (§5 rule 4): if
