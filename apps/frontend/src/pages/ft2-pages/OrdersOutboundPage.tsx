@@ -1154,7 +1154,6 @@ export default function OrdersOutboundPage() {
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
-        userTier={tier}
         reportIds={['orders-outbound']}
       />
       <EntityDetailModal

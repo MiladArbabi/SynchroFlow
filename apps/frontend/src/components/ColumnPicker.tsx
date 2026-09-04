@@ -2,9 +2,11 @@
 //
 // COLUMN PICKER — shared control for customizing export columns
 // (GH #1014 Sprint 3 / EXP-PICKER-17, EXP-PICKERUX-18). Renders inside
-// ExportRow and QuickReportCard. Entitlement-gated on
-// 'exports.column_selection' (Growth+) via usePlanEntitlement — never
-// gate inline with raw tier strings.
+// ExportRow and QuickReportCard. Entitlement-gated on the canonical
+// 'exports.column_selection' capability (@lasyncro/commercial-policy,
+// currently Growth+) via useCommercialAccess() — never gate inline with
+// raw tier strings, never a private tier map (COMMERCIAL-ACCESS-ARCH-01
+// P0-A3-1).
 //
 // Open/closed state is owned by the parent (open + onToggle props) so a
 // surface with multiple reports can keep only one picker expanded at a
@@ -18,7 +20,7 @@ import { useState } from 'react';
 import { Box, Typography, Checkbox, Collapse } from '@mui/material';
 import { SlidersHorizontal } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
-import { usePlanEntitlement } from '../hooks/usePlanEntitlement';
+import { useCommercialAccess } from '../runtime/commercialContext';
 
 interface ColumnMeta {
   key: string;
@@ -67,9 +69,9 @@ interface ColumnPickerProps {
 }
 
 export function ColumnPicker({ endpoint, open, onToggle, onSelectionChange }: ColumnPickerProps) {
-  const { can, mustUpgradeTo } = usePlanEntitlement();
-  const entitled = can('exports.column_selection');
-  const upgradeTarget = mustUpgradeTo('exports.column_selection');
+  const { decide } = useCommercialAccess();
+  const decision = decide('exports.column_selection');
+  const entitled = decision.allowed;
 
   const resource = resourceFromEndpoint(endpoint);
 
@@ -165,9 +167,10 @@ export function ColumnPicker({ endpoint, open, onToggle, onSelectionChange }: Co
               </Box>
             )}
           </Box>
-          {!entitled && upgradeTarget && (
+          {!entitled && (
             <Typography sx={{ fontSize: 11, fontWeight: 400, color: 'var(--ink-3)', mb: '6px' }}>
-              Available on {upgradeTarget}+
+              {/* Never fabricate a tier — only the decision's own requiredTier, or neutral guidance. */}
+              {decision.requiredTier ? `Available on ${decision.requiredTier}+` : 'Not included on your current plan'}
             </Typography>
           )}
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>

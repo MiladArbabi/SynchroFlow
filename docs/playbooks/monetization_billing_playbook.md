@@ -468,9 +468,12 @@ capabilities may require field- or operation-level checks inside
 controllers/services.
 
 Canonical feature checks should derive from backend tier configuration rather
-than duplicate hardcoded tier comparisons. For example,
-`exports.column_selection` is a Growth flag in `TIER_CONFIG`, and export
-controllers enforce custom column selection with `tierHasFlag()`.
+than duplicate hardcoded tier comparisons. For example, `exports.column_selection`
+is a Growth+ capability in `packages/commercial-policy` (feature
+`exports.column_selection`), and export controllers enforce custom column
+selection with `enforceCapability(req, res, 'exports.column_selection')`.
+*(Superseded 2026-09-04 by P0-A3-1 — see §32 "### P0-A3-1"; the earlier
+`tierHasFlag()` mechanism this example originally described is retired.)*
 
 **A frontend-only gate with no corresponding backend enforcement is not a
 security gate — it's a suggestion.** Every confirmed bug this session was a case of
@@ -1785,6 +1788,19 @@ Two enforcement mechanisms exist. They do not share a vocabulary.
 | Gates on | tier ordinal via `TIER_ORDER` | flag string |
 | Denial | `403 TIER_INSUFFICIENT` + `required`/`current` | `403 COLUMN_SELECTION_REQUIRES_GROWTH` |
 
+> **Historical audit snapshot (2026-08-26).** The right-hand `tierHasFlag` /
+> `COLUMN_SELECTION_REQUIRES_GROWTH` column above describes the mechanism as
+> it stood at audit time. **Superseded 2026-09-04 by P0-A3-1** (§32
+> "### P0-A3-1"): `exports.controller.ts`'s 4 custom-column call sites now
+> use `enforceCapability(req, res, 'exports.column_selection')` — the same
+> canonical `resolveCapabilityDecision` / `COMMERCIAL_ACCESS_DENIED` path
+> `requireCapability` uses — and no longer emit
+> `COLUMN_SELECTION_REQUIRES_GROWTH`. `tierHasFlag()` remains defined
+> (`tiers.ts:196`) for other legacy callers outside this slice's scope; it is
+> no longer used by the export column-selection decision. `ENT-COLSELECT-BYPASS-96`
+> below is likewise superseded — the mount-invariance property it recommended
+> closing now holds via the canonical mechanism instead.
+
 Entitlement truth is sound: `resolveTierForShop` -> signed JWT claim ->
 `resolveTier`. The weakness is **placement**, not the source of truth.
 Route-level gating is per-mount, so a second mount of the same handler is
@@ -1906,7 +1922,12 @@ The issue was carried as High on the belief that merchants were hitting
 silent entitlement denials in normal use. **They were not.** `ColumnPicker:179`
 disables the checkboxes for non-Growth merchants, so
 `COLUMN_SELECTION_REQUIRES_GROWTH` is not reachable through the UI.
-**Downgraded to Med** and rescoped as a drift backstop.
+**Downgraded to Med** and rescoped as a drift backstop. *(Historical audit
+snapshot, 2026-08-26 — superseded 2026-09-04 by P0-A3-1, §32
+"### P0-A3-1": `ColumnPicker` no longer consumes `usePlanEntitlement`, and
+`COLUMN_SELECTION_REQUIRES_GROWTH` is retired — the canonical
+`COMMERCIAL_ACCESS_DENIED` response now applies. The structural finding below
+remains valid independent of that mechanism change.)*
 
 The structural finding stands, and it is the reason the issue was worth doing:
 
@@ -2036,11 +2057,16 @@ union, `requireCapability` middleware + first backend route migration,
 `ENT-REVOCATION-RLS-01` fix — done (verified 2026-09-04; see "### P0-A2A").
 **P0-A2B** frontend surface/route conversion + sidenav↔tab↔route↔backend parity
 — **implemented + verified (2026-09-04); pending commit/push/deploy** (see
-"### P0-A2B"). **P0-A3** remaining backend families + bespoke-grant backend
-enforcement + the two deferred private frontend `TIER_ORDER` residuals
-(`usePlanEntitlement.ts`, `exportReports.ts`) + system-wide C14–C24 closure —
-OPEN. **P0-B** commercial-state integrity (`BILL-ENTITLEMENT-01` Fact B) —
-SEPARATE, OPEN.
+"### P0-A2B"). **P0-A3-1** export/report commercial-access convergence
+(`exportReports.ts` capability migration, `ExportDrawer` /
+`ShopSettingsReportsPage` / `ColumnPicker` canonical decision, backend
+`exports.routes.ts` + `exports.controller.ts` canonical enforcement) —
+**CLOSED / VERIFIED (2026-09-04); pending commit/push/deploy** (see
+"### P0-A3-1"). Remaining **P0-A3** scope — the other unmigrated backend
+route families, bespoke-grant backend enforcement, the sole remaining
+deferred private frontend `TIER_ORDER` residual (`usePlanEntitlement.ts`),
+and system-wide C14–C24 closure — OPEN. **P0-B** commercial-state integrity
+(`BILL-ENTITLEMENT-01` Fact B) — SEPARATE, OPEN.
 
 ### Why this exists
 
@@ -2639,14 +2665,18 @@ every nav item.
   `requiredTier` comparison now delegates to canonical `tierAtLeast()`
 - **legacy `requiredTier` / `feature` (`usePlanEntitlement`) support is kept
   intentionally** for callers not yet migrated — this is deferred P0-A3 scope,
-  not an oversight. The two private frontend `TIER_ORDER` copies that remain
-  anywhere in the frontend are confirmed to exist ONLY in the two files
-  P0-A3 already owns:
+  not an oversight. **At P0-A2B handoff (2026-09-04)** the two private
+  frontend `TIER_ORDER` copies that remained anywhere in the frontend were
+  confirmed to exist ONLY in the two files P0-A3 owned at that time:
 
   ```
   apps/frontend/src/hooks/usePlanEntitlement.ts
   apps/frontend/src/config/exportReports.ts
   ```
+
+  **Superseded 2026-09-04 by P0-A3-1** (§32 "### P0-A3-1"):
+  `exportReports.ts` was migrated and no longer owns a private `TIER_ORDER`.
+  `usePlanEntitlement.ts` is now the sole remaining frontend residual.
 
 #### 4. Direct routes
 
@@ -2782,8 +2812,9 @@ any of these six capabilities, on any of the three migrated surfaces.
   (FIRST-FAILURE-WINS) blocks any tier-too-low shop before an additive grant
   could matter. This is intrinsic to the current registry shape, not a gap
   P0-A2B introduced or left incomplete.
-- **P0-A3** still owns: the two deferred private `TIER_ORDER` copies
-  (`usePlanEntitlement.ts`, `exportReports.ts`), bespoke persisted-grant
+- **P0-A3** still owns (updated 2026-09-04 — export convergence closed by
+  P0-A3-1, see "### P0-A3-1"): the sole remaining deferred private
+  `TIER_ORDER` copy (`usePlanEntitlement.ts`), bespoke persisted-grant
   backend enforcement, the remaining unmigrated backend route families
   (`/recount*`, `/sender-addresses*`), and full system-wide C14–C24 coverage.
 
@@ -2794,6 +2825,184 @@ what this slice needed to deliver; every item in it is now **done** per this
 section. That list is left in place as the historical record of P0-A2B's
 scope-at-handoff; treat **this** "### P0-A2B" section as the current source
 of truth for what actually shipped.
+
+### P0-A3-1 — export/report commercial-access convergence (implemented + verified 2026-09-04; pending commit/push/deploy)
+
+**P0-A3-1 is a bounded first slice of P0-A3.** It converges the export/report
+download and custom-column-selection surfaces (frontend + backend) onto the
+same `@lasyncro/commercial-policy` engine P0-A1/A2A/A2B already shipped. It
+does **not** close all of P0-A3 — see "Still OPEN after P0-A3-1" below.
+
+#### Ratified policy
+
+| Surface | Capability | Minimum tier |
+|---|---|---|
+| Standard export/report download | `exports.core` | Core+ |
+| Advanced/custom column selection | `exports.column_selection` | Growth+ |
+
+No active report in the `QUICK_REPORTS` registry carries its own tier
+authority — every active entry is a standard `exports.core` export.
+
+#### 1. `exportReports.ts` (report registry)
+
+- private `TIER_ORDER` map — **removed**
+- `isTierSufficient()` — **removed**
+- per-report `tier` field — **removed**
+- every active `QuickReport` entry now carries `capabilityId: 'exports.core'`
+
+#### 2. `ExportDrawer` / `ShopSettingsReportsPage`
+
+Both consume the identical pattern:
+
+```ts
+const { decide } = useCommercialAccess();
+const decision = decide(report.capabilityId);
+const eligible = decision.allowed;
+```
+
+- `userTier`-based eligibility — **removed** (prop dropped from
+  `ExportDrawerProps`; `ShopSettingsReportsPage` no longer reads
+  `useEntitlements().tier`)
+- the canonical decision is fail-closed: `eligible` is `false` unless
+  `decision.allowed` is explicitly `true`
+- the required-tier badge renders `${decision.requiredTier}+` only when the
+  `AccessDecision` itself supplies `requiredTier` — never a fabricated
+  fallback; falls back to neutral `'Locked'` wording otherwise
+
+#### 3. `ColumnPicker`
+
+- `usePlanEntitlement()` — **removed**
+- decides `exports.column_selection` through the same
+  `useCommercialAccess()` adapter
+- no `?? 'growth'` (or equivalent) fabricated fallback
+
+#### 4. Backend routes — `exports.routes.ts`
+
+All 5 active export routes now chain:
+
+```
+authenticateToken → requireCapability('exports.core') → requireAction('exports:read') → handler
+```
+
+| Route |
+|---|
+| `GET /columns` |
+| `POST /orders` |
+| `POST /returns` |
+| `POST /finances` |
+| `POST /products` |
+
+`requireTier('core')` — **removed** from all 5. `requireAction('exports:read')`
+RBAC is unchanged and unweakened; commercial eligibility is checked first,
+role/action second (the same ordering §32 "### P0-A2A" §4 established for the
+first backend route migration).
+
+#### 5. Backend controller — `exports.controller.ts` (custom column selection)
+
+- the bespoke `tierHasFlag(tier, 'exports.column_selection')` decision —
+  **removed**
+- the legacy `COLUMN_SELECTION_REQUIRES_GROWTH` denial code — **removed**
+- all 4 custom-column call sites now use
+  `enforceCapability(req, res, 'exports.column_selection')` — the SAME
+  `resolveCapabilityDecision` / `sendCapabilityDenied` primitives
+  `requireCapability` uses (see next section); a denial now returns the
+  normalized `COMMERCIAL_ACCESS_DENIED` body, not a bespoke code
+
+**Retained, deliberately out of scope:** `resolvedTier` /
+`tierDataWindowSince()` (export data-window clamping, §17/§18) are a
+**separate, non-commercial-authority concern** — they bound how much
+historical data a tier's export can query, not whether the export/column
+capability is allowed at all. P0-A3-1 does not touch them.
+
+#### 6. Shared backend authority — `require-entitlement.middleware.ts`
+
+P0-A3-1 introduces no new shared primitive; it is the second consumer (after
+P0-A2A's route migration) of the ONE `resolveCapabilityDecision` /
+`sendCapabilityDenied` pair `requireCapability` already used:
+
+```
+requireCapability(capabilityId)   → resolveCapabilityDecision(req, capabilityId) → resolveTier(req) → req.user.tier
+enforceCapability(req, res, capabilityId) → resolveCapabilityDecision(req, capabilityId) → resolveTier(req) → req.user.tier
+```
+
+Both share: the same `CAPABILITY_REQUIREMENTS` / `evaluateAccess` evaluation,
+the same request/JWT tier resolution (no DB round-trip), the same normalized
+`COMMERCIAL_ACCESS_DENIED` response body, and the same `paywall_hit`
+analytics semantics. No DB tier fetch was added by this slice. Persisted
+bespoke backend grant loading (`shop_module_entitlements` consulted by
+`requireCapability`/`enforceCapability`) remains outside this slice — see
+§32 "### P0-A2A" "Bespoke-grant limitation" — that is later P0-A3 scope.
+
+#### New regression contracts
+
+- `tests/contract/export-commercial-access.contract.test.ts` — registry owns
+  `exports.core`; `ExportDrawer`/`ShopSettingsReportsPage` consume
+  `report.capabilityId` through the canonical adapter (not the literal
+  `exports.core` string — the registry, not the consumer, owns that
+  literal); `ColumnPicker` consumes `exports.column_selection`; backend
+  routes use `requireCapability('exports.core')`; the controller uses the
+  canonical `exports.column_selection` authority
+- `tests/unit/ui/commercial-access/export-commercial-access.test.tsx` —
+  behavioral proof the canonical decision wins over any legacy
+  tier-assumption a regression might reintroduce
+
+#### Maintenance corrections completed alongside P0-A3-1
+
+1. `commercial-access-policy.contract.test.ts` (B16/B17) — updated:
+   `exportReports.ts` moved from the P0-A3 residual set into the migrated
+   set (`MIGRATED_FRONTEND_TIER_RANK_OWNERS`, explicitly asserted to own no
+   private `TIER_ORDER`); `usePlanEntitlement.ts` is now asserted as the
+   EXACT sole remaining deferred P0-A3 residual.
+2. `commercial-backend-enforcement.contract.test.ts` (A2A-C18) — corrected
+   from a stale literal-textual requirement (`resolveTier(req)` had to
+   appear inside `requireCapability` itself) to protect the real delegation
+   invariant: `requireCapability` → `resolveCapabilityDecision(req, ...)` →
+   `resolveTier(req)`/`req.user.tier`, with no DB subscription-tier lookup
+   in either function's own source slice.
+
+#### P0-A3-1 verification evidence (durable)
+
+- combined targeted commercial contract set (`commercial-access-policy` +
+  `commercial-route-enforcement` + `commercial-backend-enforcement` +
+  `commercial-policy-engine` + `commercial-policy-ownership` +
+  `entitlementDenial` + `export-commercial-access`) — **277 / 277 GREEN**
+- targeted frontend commercial suite (`export-commercial-access` +
+  `commercial-context` + `commercial-gate` + `upgrade-prompt-decision`) —
+  **46 / 46 GREEN**
+- backend integration,
+  `tests/integration/entitlements/representative-route-commercial-gate.test.ts`
+  — **18 / 18 GREEN**, real Express app + disposable PostgreSQL, cleanup
+  proven
+- `apps/backend` `tsc --noEmit` — **19 baseline errors (pre-existing,
+  unrelated), 0 target-file errors**
+- static: `exports.core` executable route gates = 5;
+  `exports.column_selection` controller gates = 4; legacy export
+  commercial-authority references (`tierHasFlag`/`isTierSufficient`/
+  `COLUMN_SELECTION_REQUIRES_GROWTH` on the export surfaces) = 0
+- frontend private `TIER_ORDER`: `usePlanEntitlement.ts` only
+- disposable test-DB leftovers: 0
+- `git diff --check`: PASS
+- 23 ambient `modules/ui-ft2/dist/**/*.d.ts` files unchanged by this slice
+  (pre-existing worktree modification count held steady at 23 across every
+  verification pass; `git diff --stat` scoped to the directory: 23 files
+  changed, 23/23 insertions/deletions, matching the pre-existing state)
+- no migration, no persistent-DB mutation, no package/lockfile change
+
+#### Still OPEN after P0-A3-1 (remaining P0-A3 scope)
+
+- Overview Live Map, Returns, Inventory/Products, and the remaining WMS
+  commercial surfaces not yet migrated
+- active `usePlanEntitlement` consumers outside the export surfaces, and the
+  final private-`TIER_ORDER` cleanup (`usePlanEntitlement.ts` itself)
+- bespoke persisted-grant backend enforcement (see §32 "### P0-A2A"
+  "Bespoke-grant limitation")
+- the remaining unmigrated backend route families (`/recount*`,
+  `/sender-addresses*`)
+- paused/deprecated commercial-surface retirement, scoped separately
+- full system-wide C14–C24 coverage
+
+**P0-A3-1 is CLOSED / VERIFIED. The remainder of P0-A3 is NOT closed by this
+slice.**
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 

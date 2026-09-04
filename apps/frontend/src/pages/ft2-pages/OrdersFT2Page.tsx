@@ -114,7 +114,6 @@ export default function OrdersFT2Page() {
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
-        userTier={tier}
         reportIds={['orders-all']}
       />
      <EntityDetailModal

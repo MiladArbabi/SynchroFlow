@@ -11,7 +11,8 @@ import { Box, Typography, IconButton, CircularProgress } from '@mui/material';
 import { X, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { isEntitlementDenial } from 'api/entitlementDenial';
-import { QUICK_REPORTS, isTierSufficient, MIME, type QuickReport } from '../config/exportReports';
+import { QUICK_REPORTS, MIME, type QuickReport } from '../config/exportReports';
+import { useCommercialAccess } from '../runtime/commercialContext';
 import { FormatBadge } from './ExportFormatBadge';
 import { ColumnPicker, type ColumnPickerSelection } from './ColumnPicker';
 
@@ -20,20 +21,21 @@ const ALL_COLUMNS_SELECTED: ColumnPickerSelection = { columns: undefined, isEmpt
 interface ExportDrawerProps {
   open: boolean;
   onClose: () => void;
-  userTier: string;
   /** Restrict which canonical reports show here. Omit to show all. */
   reportIds?: string[];
 }
 
 function ExportRow({
-  report, userTier, pickerOpen, onTogglePicker,
+  report, pickerOpen, onTogglePicker,
 }: {
-  report: QuickReport; userTier: string; pickerOpen: boolean; onTogglePicker: () => void;
+  report: QuickReport; pickerOpen: boolean; onTogglePicker: () => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
-  const eligible = isTierSufficient(userTier, report.tier);
+  const { decide } = useCommercialAccess();
+  const decision = decide(report.capabilityId);
+  const eligible = decision.allowed;
   const downloadDisabled = !eligible || loading || columnSelection.isEmpty;
 
   const handleDownload = async () => {
@@ -87,7 +89,8 @@ function ExportRow({
               border: '0.5px solid var(--rule)', borderRadius: '4px',
             }}>
               <Lock size={8} />
-              {report.tier}+
+              {/* Never fabricate a tier — only the decision's own requiredTier, or neutral wording. */}
+              {decision.requiredTier ? `${decision.requiredTier}+` : 'Locked'}
             </Box>
           )}
         </Box>
@@ -125,7 +128,7 @@ function ExportRow({
   );
 }
 
-export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawerProps) {
+export function ExportDrawer({ open, onClose, reportIds }: ExportDrawerProps) {
   const reports = reportIds ? QUICK_REPORTS.filter(r => reportIds.includes(r.id)) : QUICK_REPORTS;
   // Only one picker open at a time across the drawer.
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
@@ -170,7 +173,6 @@ export function ExportDrawer({ open, onClose, userTier, reportIds }: ExportDrawe
             <ExportRow
               key={report.id}
               report={report}
-              userTier={userTier}
               pickerOpen={openPickerId === report.id}
               onTogglePicker={() => setOpenPickerId(prev => (prev === report.id ? null : report.id))}
             />

@@ -178,7 +178,7 @@ One-click pre-built templates:
 ```
 apps/backend/src/api/exports/
   exports.controller.ts     — handlers for each resource
-  exports.routes.ts         — route declarations + tier gating
+  exports.routes.ts         — route declarations + capability gating (requireCapability('exports.core'), P0-A3-1)
 ```
 
 ### Packages
@@ -206,7 +206,9 @@ duplicate summaries already available inside the product.
 ## 11. Rules for Future Engineers
 
 1. All export endpoints live under `/api/v1/exports/` — never scatter into module routes.
-2. Always gate with `requireTier('core')` minimum — Starter gets nothing.
+2. Always gate with `requireCapability('exports.core')` minimum (Core+) —
+   Starter gets nothing. *(Was `requireTier('core')` prior to
+   `COMMERCIAL-ACCESS-ARCH-01` P0-A3-1, 2026-09-04.)*
 3. Enforce `tierDataWindowSince()` for date range — never trust client-supplied dates blindly.
 4. Stream directly — never buffer entire dataset in memory.
 5. Content-Disposition header must always be `attachment` — never `inline`.
@@ -983,14 +985,20 @@ after — an export must never write an inventory correction.
 **Known, registered, not fixed here:** `EXP-DRAWER-PILL-100`
 (expanded picker overhangs the card in the ~400px drawer),
 `ENT-BACKEND-PARITY-98` established backend parity for export column
-selection. `exports.column_selection` is now a canonical Growth flag in
-`TIER_CONFIG`, and all four export controllers enforce `filters.columns`
-through `tierHasFlag(tier, 'exports.column_selection')`. The route itself
-remains Core+ because Core merchants may use standard exports without custom
-column selection.
+selection. *(As of `ENT-BACKEND-PARITY-98`: `exports.column_selection` was a
+Growth flag in `TIER_CONFIG`, enforced via `tierHasFlag()` — **superseded
+2026-09-04 by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-1**: `exports.column_selection`
+is now a canonical Growth+ capability in `packages/commercial-policy`, and
+all four export-controller custom-column call sites enforce `filters.columns`
+through `enforceCapability(req, res, 'exports.column_selection')` — see
+monetization_billing_playbook.md §32 "### P0-A3-1".)* The route itself
+remains Core+ (`requireCapability('exports.core')` as of P0-A3-1, previously
+`requireTier('core')`) because Core merchants may use standard exports
+without custom column selection.
 
-`ENT-COLSELECT-BYPASS-96` remains relevant for any remaining client/API path
-that can bypass the intended field-level entitlement contract.
+`ENT-COLSELECT-BYPASS-96` is superseded by the same P0-A3-1 conversion — the
+mount-invariant property it recommended closing now holds via
+`enforceCapability`, the same primitive `requireCapability` uses.
 
 **Withdrawn during this work:** the two open items the prior handover
 carried for Export are both already done. `orders-blocked` no longer
@@ -1090,10 +1098,12 @@ column list is still accurate.
 
 ### QuickReport has no module-availability field
 
-`QuickReport` (`exportReports.ts`) gates on `tier` only. There is no
-`moduleId`/`requiredModuleId` field, so a report for a disabled module cannot
-be filtered automatically — suppression is manual. Tracked as
-`EXP-MODULE-AVAILABILITY-140`.
+`QuickReport` (`exportReports.ts`) gates on `capabilityId` only (`tier` /
+`isTierSufficient()` were removed by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-1 —
+see monetization_billing_playbook.md §32 "### P0-A3-1"; the substance of this
+gap is unchanged by that migration). There is no `moduleId`/`requiredModuleId`
+field, so a report for a disabled module cannot be filtered automatically —
+suppression is manual. Tracked as `EXP-MODULE-AVAILABILITY-140`.
 
 ### Trap — module gating is not testable in DEV
 

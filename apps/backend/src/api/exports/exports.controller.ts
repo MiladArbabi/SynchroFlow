@@ -1,15 +1,21 @@
 // apps/backend/src/api/exports/exports.controller.ts
 //
-// EXPORT ENGINE (GH #1014 — Sprint 1)
-// -------------------------------------
+// EXPORT ENGINE (GH #1014 — Sprint 1; COMMERCIAL-ACCESS-ARCH-01 P0-A3-1)
+// -----------------------------------------------------------------
 // Sync-stream exports for Orders, Returns, and Finances.
 // (Morning Brief PDF removed 2026-08-19 - see playbook section 12.)
 //
-// Tier gating (enforced in routes, not here):
-//   Starter -> nothing | Core+ -> CSV (orders, returns, finances)
+// Commercial gating:
+//   Route-level (exports.routes.ts): requireCapability('exports.core').
+//   Field-level, HERE: explicit filters.columns additionally requires the
+//   narrower exports.column_selection capability, enforced via
+//   enforceCapability() — the SAME canonical decision primitive
+//   requireCapability uses (require-entitlement.middleware.ts). No local
+//   tier/feature policy owned by this file.
 //
-// Date window enforcement (see @lasyncro/backend-core/utils/tierDataWindow.js):
-//   Starter -> no access | Core -> 6 months | Growth+ -> unlimited
+// Date window enforcement (see @lasyncro/backend-core/utils/tierDataWindow.js)
+// is a SEPARATE concern from commercial access — Starter -> no access,
+// Core -> 6 months, Growth+ -> unlimited — and is unaffected by P0-A3-1.
 //
 // All exports stream directly — no buffering, no temp files.
 // Content-Disposition is always 'attachment' — never 'inline'.
@@ -30,8 +36,9 @@ import { Request, Response } from 'express';
 import type { Knex } from 'knex';
 import { format as csvFormat } from '@fast-csv/format';
 import { withTenant } from '@lasyncro/backend-core/db.js';
-import { Tier, TIERS, tierHasFlag } from '@lasyncro/backend-core/config/tiers.js';
+import { Tier, TIERS } from '@lasyncro/backend-core/config/tiers.js';
 import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
+import { enforceCapability } from '../../middleware/require-entitlement.middleware.js';
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function resolvedTier(req: Request): Tier {
@@ -260,8 +267,8 @@ export async function exportOrders(req: Request, res: Response) {
     // entitled to it — a different meaning from InvalidFilterError, so it
     // does not route through that hierarchy. Absent filters.columns must
     // behave exactly as before this feature existed, at every tier.
-    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
-      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+      return;
     }
 
     const columnDefs = resolveColumns('orders', columns);
@@ -364,8 +371,8 @@ export async function exportReturns(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
-      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+      return;
     }
 
     const columnDefs = resolveColumns('returns', columns);
@@ -434,8 +441,8 @@ export async function exportFinances(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { date_from, date_to, columns } = filters;
 
-    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
-      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+      return;
     }
 
     const columnDefs = resolveColumns('finances', columns);
@@ -499,8 +506,8 @@ export async function exportProducts(req: Request, res: Response) {
     const filters = req.body?.filters ?? {};
     const { status, columns } = filters;
 
-    if ('columns' in filters && !tierHasFlag(tier, 'exports.column_selection')) {
-      return res.status(403).json({ error: 'COLUMN_SELECTION_REQUIRES_GROWTH' });
+    if ('columns' in filters && !enforceCapability(req, res, 'exports.column_selection')) {
+      return;
     }
 
     const columnDefs = resolveColumns('products', columns);

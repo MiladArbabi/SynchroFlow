@@ -20,9 +20,9 @@ import { Box, Typography, CircularProgress } from '@mui/material';
 import { FileText, Download, Lock } from 'lucide-react';
 import { axiosInstance } from 'api/axiosConfig';
 import { isEntitlementDenial } from 'api/entitlementDenial';
-import { useEntitlements } from 'contexts/EntitlementsContext';
 import { SectionLabel, SettingsPageWrapper } from './ShopSettingsShared';
-import { QUICK_REPORTS, isTierSufficient, MIME, type ExportFormat, type QuickReport } from '../../config/exportReports';
+import { QUICK_REPORTS, MIME, type ExportFormat, type QuickReport } from '../../config/exportReports';
+import { useCommercialAccess } from '../../runtime/commercialContext';
 import { FormatBadge } from 'components/ExportFormatBadge';
 import { ColumnPicker, type ColumnPickerSelection } from 'components/ColumnPicker';
 
@@ -31,14 +31,16 @@ const ALL_COLUMNS_SELECTED: ColumnPickerSelection = { columns: undefined, isEmpt
 // ─── QUICK REPORT CARD ────────────────────────────────────────────────────────
 
 function QuickReportCard({
-  report, userTier, pickerOpen, onTogglePicker,
+  report, pickerOpen, onTogglePicker,
 }: {
-  report: QuickReport; userTier: string; pickerOpen: boolean; onTogglePicker: () => void;
+  report: QuickReport; pickerOpen: boolean; onTogglePicker: () => void;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [columnSelection, setColumnSelection] = useState<ColumnPickerSelection>(ALL_COLUMNS_SELECTED);
-  const eligible = isTierSufficient(userTier, report.tier);
+  const { decide } = useCommercialAccess();
+  const decision = decide(report.capabilityId);
+  const eligible = decision.allowed;
   const downloadDisabled = !eligible || loading || columnSelection.isEmpty;
 
   const handleDownload = async () => {
@@ -106,7 +108,8 @@ function QuickReportCard({
               border: '0.5px solid var(--rule)', borderRadius: '4px',
             }}>
               <Lock size={8} />
-              {report.tier}+
+              {/* Never fabricate a tier — only the decision's own requiredTier, or neutral wording. */}
+              {decision.requiredTier ? `${decision.requiredTier}+` : 'Locked'}
             </Box>
           )}
         </Box>
@@ -155,7 +158,6 @@ function QuickReportCard({
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function ShopSettingsReportsPage() {
-  const { tier } = useEntitlements();
   // Only one picker open at a time across the Quick Reports list.
   const [openPickerId, setOpenPickerId] = useState<string | null>(null);
 
@@ -172,7 +174,6 @@ export default function ShopSettingsReportsPage() {
             <QuickReportCard
               key={report.id}
               report={report}
-              userTier={tier}
               pickerOpen={openPickerId === report.id}
               onTogglePicker={() => setOpenPickerId(prev => (prev === report.id ? null : report.id))}
             />

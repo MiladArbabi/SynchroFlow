@@ -78,7 +78,6 @@ export default function ProductsFT2Page() {
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
-        userTier={tier}
         reportIds={['products']}
       />
     </>

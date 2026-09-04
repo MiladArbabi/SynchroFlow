@@ -352,8 +352,9 @@ describe('C13 — every referenced module/capability is emittable', () => {
 //   warehouse.operations · warehouse.analytics · warehouse.floor_planning ·
 //   warehouse.problem_center · purchasing.core · demand.forecasting
 //
-// P0-A3 boundary (B17): usePlanEntitlement.ts and config/exportReports.ts keep
-// their private TIER_ORDER — that global cleanup is P0-A3, NOT A2B. The A2B
+// P0-A3 boundary (B17): exportReports.ts was migrated in P0-A3-1 and no longer
+// owns a private TIER_ORDER. usePlanEntitlement.ts remains the sole deferred
+// P0-A3 residual — its own migration lands in a later P0-A3 slice. The A2B
 // contracts here are scoped to the MIGRATED surfaces only.
 
 const A2B_NAV_SRC = stripComments(read(NAV_BOOTSTRAP));
@@ -576,24 +577,28 @@ describe('B8 — migrated tabs decided by the shared evaluator, not local logic'
 // ===========================================================================
 describe('B16/B17 — tier-rank convergence is scoped to the migrated surfaces', () => {
   const localRank = /^\s*(?:export\s+)?const\s+TIER_ORDER\b/m;
-  const A2B_MIGRATED = [
+  // A2B nav/tab evaluators plus exportReports.ts, migrated in P0-A3-1.
+  const MIGRATED_FRONTEND_TIER_RANK_OWNERS = [
     'apps/frontend/src/navigation/resolveNavVisibility.ts',
     'apps/frontend/src/components/ModuleTabBar.tsx',
+    'apps/frontend/src/config/exportReports.ts',
   ];
   const P0A3_RESIDUAL = [
     'apps/frontend/src/hooks/usePlanEntitlement.ts',
-    'apps/frontend/src/config/exportReports.ts',
   ];
 
-  it('GREEN BOUNDARY: only the named A2B targets or P0-A3 residuals may own a frontend private tier rank', () => {
-    const permitted = new Set([...A2B_MIGRATED, ...P0A3_RESIDUAL]);
+  it('GREEN BOUNDARY: every migrated target (A2B + P0-A3-1 exportReports.ts) owns no private tier rank; only the named P0-A3 residual may', () => {
+    for (const f of MIGRATED_FRONTEND_TIER_RANK_OWNERS) {
+      expect(localRank.test(read(f))).toBe(false);
+    }
+    const permitted = new Set([...MIGRATED_FRONTEND_TIER_RANK_OWNERS, ...P0A3_RESIDUAL]);
     const unexpected = TIER_RANK_DUP_FILES
       .filter((f) => f.startsWith('apps/frontend/'))
       .filter((f) => localRank.test(read(f)) && !permitted.has(f));
     expect(unexpected).toEqual([]);
   });
 
-  it('GREEN BOUNDARY: usePlanEntitlement + exportReports are the exact deferred P0-A3 residuals', () => {
+  it('GREEN BOUNDARY: usePlanEntitlement.ts is the exact remaining deferred P0-A3 residual', () => {
     const residual = P0A3_RESIDUAL.filter((f) => localRank.test(read(f)));
     expect(residual).toEqual(P0A3_RESIDUAL);
   });

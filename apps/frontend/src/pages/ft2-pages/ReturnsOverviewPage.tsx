@@ -274,7 +274,6 @@ export default function ReturnsOverviewPage() {
       <ExportDrawer
         open={exportDrawerOpen}
         onClose={() => setExportDrawerOpen(false)}
-        userTier={tier}
         reportIds={['returns']}
       />
 

@@ -183,22 +183,53 @@ describe('A2A-C16 — commercial gate precedes RBAC', () => {
 // A2A-C18 — JWT tier boundary (documented + enforced-by-absence-of-DB-fetch)
 // ===========================================================================
 describe('A2A-C18 — requireCapability reads req.user.tier, no new DB tier fetch', () => {
-  /** The source slice from `requireCapability`'s declaration to end of its body. */
-  const capBody = (): string => {
-    const src = capMwSource();
-    const m = src.match(/(?:function|const)\s+requireCapability[\s\S]*/);
-    return m ? m[0] : '';
+  /**
+   * Explicit source slice for one top-level function: from its declaration
+   * to the start of the next top-level `function` declaration (or EOF).
+   * Deliberately narrower than a whole-file regex so a match can only come
+   * from THIS function's own body, not an unrelated function elsewhere in
+   * the file that happens to also call resolveTier(req).
+   */
+  const sliceFunction = (src: string, name: string): string => {
+    const declRe = new RegExp(`(?:export\\s+)?function\\s+${name}\\s*\\(`);
+    const m = declRe.exec(src);
+    if (!m) return '';
+    const start = m.index;
+    const rest = src.slice(start + m[0].length);
+    const next = /\n(?:export\s+)?function\s+\w+\s*\(/.exec(rest);
+    const end = next ? start + m[0].length + next.index : src.length;
+    return src.slice(start, end);
   };
 
-  it('EXPECTED RED: requireCapability resolves tier from the request (req.user.tier), not a DB call', () => {
-    const body = capBody();
-    expect(body.length).toBeGreaterThan(0); // RED today — no requireCapability
-    expect(/req\.user(\?\.)?\.tier|resolveTier\(req\)/.test(body)).toBe(true);
+  const requireCapabilityBody = (): string => sliceFunction(capMwSource(), 'requireCapability');
+  const resolveCapabilityDecisionBody = (): string => sliceFunction(capMwSource(), 'resolveCapabilityDecision');
+
+  it('EXPECTED RED: requireCapability delegates its tier decision to resolveCapabilityDecision(req, ...), or resolves req.user.tier/resolveTier(req) directly; whichever helper does the resolving does it from the request, not a DB call', () => {
+    const reqCapBody = requireCapabilityBody();
+    expect(reqCapBody.length).toBeGreaterThan(0); // RED today — no requireCapability
+
+    const delegatesToHelper = /resolveCapabilityDecision\(\s*req\s*,/.test(reqCapBody);
+    const resolvesDirectly = /req\.user(\?\.)?\.tier|resolveTier\(req\)/.test(reqCapBody);
+    expect(delegatesToHelper || resolvesDirectly).toBe(true);
+
+    // If requireCapability delegates, the delegate itself must resolve tier
+    // from the request boundary — the RED condition can't be satisfied by
+    // requireCapability merely calling a helper that fetches from a DB.
+    if (delegatesToHelper) {
+      const helperBody = resolveCapabilityDecisionBody();
+      expect(helperBody.length).toBeGreaterThan(0);
+      expect(/req\.user(\?\.)?\.tier|resolveTier\(req\)/.test(helperBody)).toBe(true);
+    }
   });
 
-  it('EXPECTED RED: requireCapability does not import resolveTierForShop / read shop_subscriptions', () => {
-    const body = capBody();
-    expect(body.length).toBeGreaterThan(0); // RED today
-    expect(/resolveTierForShop|shop_subscriptions/.test(body)).toBe(false);
+  it('EXPECTED RED: neither requireCapability nor resolveCapabilityDecision import resolveTierForShop / read shop_subscriptions', () => {
+    const reqCapBody = requireCapabilityBody();
+    expect(reqCapBody.length).toBeGreaterThan(0); // RED today
+    expect(/resolveTierForShop|shop_subscriptions/.test(reqCapBody)).toBe(false);
+
+    const helperBody = resolveCapabilityDecisionBody();
+    if (helperBody.length > 0) {
+      expect(/resolveTierForShop|shop_subscriptions/.test(helperBody)).toBe(false);
+    }
   });
 });

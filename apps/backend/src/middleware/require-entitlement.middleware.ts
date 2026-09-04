@@ -30,7 +30,7 @@ import {
   modulesForTier,
   flagsForTier,
 } from '@lasyncro/commercial-policy';
-import type { CapabilityId } from '@lasyncro/commercial-policy';
+import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
 import { captureEvent } from '../utils/analytics.js';
 
 /**
@@ -100,77 +100,130 @@ export function requireTier(minimumTier: Tier) {
 }
 
 /**
- * COMMERCIAL-ACCESS-ARCH-01 P0-A2A — capability-level commercial gate.
+ * COMMERCIAL-ACCESS-ARCH-01 P0-A2A — capability-level commercial decision.
  *
  * Resolves the acting request's tier from the JWT claim (`resolveTier(req)` —
  * no DB round-trip) and evaluates the canonical
  * `CAPABILITY_REQUIREMENTS[capabilityId]` from @lasyncro/commercial-policy
  * against a STANDARD context for that tier (`modulesForTier` / `flagsForTier`).
  *
- * TRANSITIONAL BOUNDARY (P0-A2A): standard-plan capabilities only. Persisted
- * `shop_module_entitlements` rows are deliberately NOT loaded here — every
- * A2A-migrated capability is a standard-plan capability. Bespoke row-based
- * backend capability grants land in P0-A3.
+ * TRANSITIONAL BOUNDARY (P0-A2A/A3-1): standard-plan capabilities only.
+ * Persisted `shop_module_entitlements` rows are deliberately NOT loaded here
+ * — every migrated capability so far is a standard-plan capability. Bespoke
+ * row-based backend capability grants land in P0-A3.
  *
  * JWT TIER BOUNDARY: the decision follows `req.user.tier` verbatim. No
  * subscription-table round-trip — this preserves the current <= access-token
  * lifetime staleness profile. Commercial-state freshness is P0-B.
  *
- * On denial: HTTP 403 with a normalized COMMERCIAL_ACCESS_DENIED body
- * `{ error, reason, capabilityId, currentTier, requiredTier?, requiredModule?,
- * requiredFeature? }`. Commercial reasons only (TIER_TOO_LOW /
- * MODULE_NOT_INCLUDED / FEATURE_NOT_INCLUDED). Role/permission denial stays
- * owned by requireAction and is never produced here.
+ * This is the ONE shared primitive both route-level `requireCapability` and
+ * field-level controller checks (e.g. exports' filters.columns ->
+ * exports.column_selection) build on — never re-evaluate
+ * CAPABILITY_REQUIREMENTS/evaluateAccess independently.
+ */
+function resolveCapabilityDecision(
+  req: Request,
+  capabilityId: CapabilityId,
+): { decision: AccessDecision; currentTier: Tier } {
+  const currentTier = resolveTier(req);
+  const decision = evaluateAccess(CAPABILITY_REQUIREMENTS[capabilityId], {
+    tier: currentTier,
+    modules: modulesForTier(currentTier),
+    flags: flagsForTier(currentTier),
+  });
+  return { decision, currentTier };
+}
+
+/**
+ * Shared denial path: the SAME normalized COMMERCIAL_ACCESS_DENIED body and
+ * the SAME paywall_hit analytics semantics for every commercial-capability
+ * denial, whether raised by route-level `requireCapability` or a field-level
+ * controller check. Sends the 403 response — callers must not write their
+ * own response after calling this.
+ */
+function sendCapabilityDenied(
+  req: Request,
+  res: Response,
+  capabilityId: CapabilityId,
+  decision: AccessDecision,
+  currentTier: Tier,
+): void {
+  // PH-03: paywall_hit — same monetization signal requireTier emits, keyed
+  // by capability. Fire-and-forget; never delay the 403.
+  const shopId = req.user?.shopId;
+  if (shopId) {
+    captureEvent({
+      shopId,
+      event: 'paywall_hit',
+      properties: {
+        capability_id: capabilityId,
+        reason: decision.reason,
+        required_tier: decision.requiredTier ?? null,
+        current_tier: currentTier,
+        path: req.path,
+        method: req.method,
+      },
+    });
+  }
+
+  const body: {
+    error: 'COMMERCIAL_ACCESS_DENIED';
+    reason: string;
+    capabilityId: string;
+    currentTier: Tier;
+    requiredTier?: string;
+    requiredModule?: string;
+    requiredFeature?: string;
+  } = {
+    error: 'COMMERCIAL_ACCESS_DENIED',
+    reason: decision.reason,
+    capabilityId,
+    currentTier,
+  };
+  if (decision.requiredTier) body.requiredTier = decision.requiredTier;
+  if (decision.requiredModule) body.requiredModule = decision.requiredModule;
+  if (decision.requiredFeature) body.requiredFeature = decision.requiredFeature;
+
+  res.status(403).json(body);
+}
+
+/**
+ * Route-level middleware: require a canonical capability. See
+ * resolveCapabilityDecision/sendCapabilityDenied above for the shared
+ * decision + denial-response primitives. Role/permission denial stays owned
+ * by requireAction and is never produced here.
  */
 export function requireCapability(capabilityId: CapabilityId) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const currentTier = resolveTier(req);
-    const decision = evaluateAccess(CAPABILITY_REQUIREMENTS[capabilityId], {
-      tier: currentTier,
-      modules: modulesForTier(currentTier),
-      flags: flagsForTier(currentTier),
-    });
+    const { decision, currentTier } = resolveCapabilityDecision(req, capabilityId);
 
     if (decision.allowed) {
       return next();
     }
 
-    // PH-03: paywall_hit — same monetization signal requireTier emits, keyed
-    // by capability. Fire-and-forget; never delay the 403.
-    const shopId = req.user?.shopId;
-    if (shopId) {
-      captureEvent({
-        shopId,
-        event: 'paywall_hit',
-        properties: {
-          capability_id: capabilityId,
-          reason: decision.reason,
-          required_tier: decision.requiredTier ?? null,
-          current_tier: currentTier,
-          path: req.path,
-          method: req.method,
-        },
-      });
-    }
-
-    const body: {
-      error: 'COMMERCIAL_ACCESS_DENIED';
-      reason: string;
-      capabilityId: string;
-      currentTier: Tier;
-      requiredTier?: string;
-      requiredModule?: string;
-      requiredFeature?: string;
-    } = {
-      error: 'COMMERCIAL_ACCESS_DENIED',
-      reason: decision.reason,
-      capabilityId,
-      currentTier,
-    };
-    if (decision.requiredTier) body.requiredTier = decision.requiredTier;
-    if (decision.requiredModule) body.requiredModule = decision.requiredModule;
-    if (decision.requiredFeature) body.requiredFeature = decision.requiredFeature;
-
-    return res.status(403).json(body);
+    return sendCapabilityDenied(req, res, capabilityId, decision, currentTier);
   };
+}
+
+/**
+ * Field-level capability enforcement for use INSIDE a controller (e.g. a
+ * request-body flag like exports' `filters.columns` that gates a narrower
+ * capability than the route's own gate). Consumes the SAME
+ * resolveCapabilityDecision/sendCapabilityDenied primitives requireCapability
+ * uses — no independent tier/module/feature evaluation.
+ *
+ * Returns true and does nothing further when allowed (caller proceeds).
+ * Returns false when denied — the 403 COMMERCIAL_ACCESS_DENIED response has
+ * already been sent; the caller must return immediately without writing its
+ * own response.
+ */
+export function enforceCapability(req: Request, res: Response, capabilityId: CapabilityId): boolean {
+  const { decision, currentTier } = resolveCapabilityDecision(req, capabilityId);
+
+  if (decision.allowed) {
+    return true;
+  }
+
+  sendCapabilityDenied(req, res, capabilityId, decision, currentTier);
+  return false;
 }

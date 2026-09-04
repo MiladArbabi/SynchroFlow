@@ -1,18 +1,20 @@
 // apps/backend/src/api/exports/exports.routes.ts
 //
-// EXPORT ROUTES (GH #1014 — Sprint 1)
-// -------------------------------------
-// All routes require authentication + minimum tier.
+// EXPORT ROUTES (GH #1014 — Sprint 1; COMMERCIAL-ACCESS-ARCH-01 P0-A3-1)
+// -------------------------------------------------------------------
+// All routes require authentication + the canonical exports.core capability.
 //
-// Tier gates (per playbook §4):
-//   Core+   → CSV exports (orders, returns, finances)
-//   Growth+ → PDF exports (brief)
+// Canonical gate: requireCapability('exports.core') — @lasyncro/commercial-policy
+// currently resolves this to Core+ (see packages/commercial-policy/src/capabilities.ts).
+// Advanced/custom column selection (filters.columns) is a SEPARATE, narrower
+// capability (exports.column_selection, currently Growth+) enforced inside
+// each handler via enforceCapability() — see exports.controller.ts.
 //
 // Mount point: /api/v1/exports  (see routes/index.ts)
 
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core';
-import { requireTier } from '../../middleware/require-entitlement.middleware.js';
+import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   exportOrders,
@@ -30,7 +32,7 @@ const router = Router();
 router.get(
   '/columns',
   authenticateToken,
-  requireTier('core'),
+  requireCapability('exports.core'),
   requireAction('exports:read'),
   exportColumns
 );
@@ -39,7 +41,7 @@ router.get(
 router.post(
   '/orders',
   authenticateToken,
-  requireTier('core'),
+  requireCapability('exports.core'),
   requireAction('exports:read'),
   exportOrders
 );
@@ -47,7 +49,7 @@ router.post(
 router.post(
   '/returns',
   authenticateToken,
-  requireTier('core'),
+  requireCapability('exports.core'),
   requireAction('exports:read'),
   exportReturns
 );
@@ -55,7 +57,7 @@ router.post(
 router.post(
   '/finances',
   authenticateToken,
-  requireTier('core'),
+  requireCapability('exports.core'),
   requireAction('exports:read'),
   exportFinances
 );
@@ -63,7 +65,7 @@ router.post(
 router.post(
   '/products',
   authenticateToken,
-  requireTier('core'),
+  requireCapability('exports.core'),
   requireAction('exports:read'),
   exportProducts
 );
