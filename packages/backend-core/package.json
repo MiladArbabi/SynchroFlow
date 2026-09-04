@@ -56,6 +56,7 @@
     "build": "rm -f tsconfig.tsbuildinfo && tsc --outDir dist --declaration"
   },
   "dependencies": {
+    "@lasyncro/commercial-policy": "0.1.0",
     "dotenv": "^16.6.1",
     "@shopify/shopify-api": "*"
   }

@@ -1,29 +1,88 @@
-// packages/commercial-policy/src/index.ts
-//
 // @lasyncro/commercial-policy — the single, pure, isomorphic commercial-access
 // spine shared by the frontend and the backend.
 //
-// SCOPE OF THIS FILE (P0-A0): package existence + toolchain wiring ONLY.
-// It exposes a harmless resolution sentinel so every consumer (Vite, frontend
-// tsc, frontend Jest, backend tsc, backend Jest, backend Node runtime, the
-// contract Jest project) can prove it resolves to ONE physical package.
+// P0-A1 implements the canonical policy engine:
+//   - tier model (Tier, TIERS, TIER_ORDER, tierAtLeast)
+//   - standard plan limits + pricing
+//   - ModuleId registry + classification + modulesForTier()
+//   - FeatureKey registry + flagsForTier()
+//   - AccessRequirement / AccessContext / AccessDecision + evaluateAccess()
+//   - canonical ACTIVE capability requirement registry + catalog
 //
-// The real commercial-policy surface — Tier, TIER_ORDER, ModuleId,
-// CapabilityId, AccessRequirement, AccessDecision, evaluateAccess(), and the
-// requirement registry — is implemented in P0-A1. Do NOT add any of that here.
+// backend-core consumes / re-exports this truth. commercial-policy must NEVER
+// import backend-core (or React / Express / Knex / a DB client / env). It stays
+// a zero-runtime-dependency leaf.
 //
-// HARD CONSTRAINTS (must hold for every future addition to this package):
-//   - pure TypeScript, zero runtime dependencies
-//   - no React, no Express, no Knex / DB clients
-//   - no browser globals, no Node-only APIs
-//   - no import.meta.env, no process.env-driven behavior
-//   - browser-safe AND Node-safe
+// P0-A2/A3 roll this into nav / tabs / routes / requireCapability. P0-A1 does
+// NOT change any runtime surface or entitlement resolution.
 
-/** Canonical package identity. Proves a single physical package resolves. */
+// --- wiring sentinels (kept for the package-wiring contract) ---
 export const COMMERCIAL_POLICY_PACKAGE = '@lasyncro/commercial-policy' as const;
-
-/**
- * Wiring sentinel — not policy. Present only so P0-A0 resolution proofs have a
- * value to assert. P0-A1 adds the real exports alongside (or replaces) this.
- */
 export const COMMERCIAL_POLICY_WIRING_OK = true as const;
+
+export {
+  TIERS,
+  TIER_ORDER,
+  tierAtLeast,
+  isValidTier,
+} from './tiers.js';
+export type { Tier } from './tiers.js';
+
+export {
+  PLAN_LIMITS,
+  PLAN_PRICING_CENTS,
+  standardLimits,
+} from './limits.js';
+export type { PlanLimits } from './limits.js';
+
+export {
+  MODULE_IDS,
+  MODULE_CLASSIFICATION,
+  LEGACY_MODULES_BY_TIER,
+  modulesForTier,
+  isModuleId,
+} from './modules.js';
+export type { ModuleId, ModuleClassification } from './modules.js';
+
+export {
+  FEATURE_MIN_TIER,
+  FEATURE_KEYS,
+  featureMinTier,
+  flagsForTier,
+  isFeatureKey,
+} from './features.js';
+export type { FeatureKey } from './features.js';
+
+export {
+  evaluateAccess,
+  standardContextForTier,
+} from './access.js';
+export type {
+  AccessRequirement,
+  AccessContext,
+  AccessDecision,
+  AccessReason,
+} from './access.js';
+
+export {
+  CAPABILITY_REQUIREMENTS,
+  CAPABILITY_IDS,
+  ACTIVE_CAPABILITY_IDS,
+  isCapabilityId,
+  requirementForCapability,
+} from './capabilities.js';
+export type { CapabilityId } from './capabilities.js';
+
+export {
+  CAPABILITY_CATALOG,
+  CATALOG,
+  LEGACY_CAPABILITIES,
+} from './catalog.js';
+export type { CapabilityStatus, CatalogEntry } from './catalog.js';
+
+// Frozen compatibility shape re-exported by @lasyncro/backend-core.
+export {
+  LEGACY_TIER_CONFIG,
+  LEGACY_FLAGS_BY_TIER,
+} from './legacy.js';
+export type { LegacyTierConfig } from './legacy.js';

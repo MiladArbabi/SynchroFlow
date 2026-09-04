@@ -1,186 +1,42 @@
 // packages/backend-core/src/config/tiers.ts
 //
-// Canonical Tier Constants (MON-01)
-// ----------------------------------
-// SINGLE SOURCE OF TRUTH for all subscription tiers.
+// Tier Constants — COMPATIBILITY LAYER (COMMERCIAL-ACCESS-ARCH-01 P0-A1)
+// --------------------------------------------------------------------
+// The canonical source of tier identity, rank, plan limits, modules, features
+// and access policy is now `@lasyncro/commercial-policy` (a pure, zero-runtime-
+// dependency, isomorphic package). backend-core no longer OWNS these values —
+// it re-exports them, plus a frozen `TIER_CONFIG` compatibility object for its
+// existing consumers (Stripe/Shopify webhooks, require-entitlement middleware,
+// seat/order caps, JWT tier claim, seeds).
 //
-// Referenced by:
-//   - Stripe webhook handlers (MON-02)
-//   - Entitlements engine / require-entitlement middleware (MON-03)
-//   - Seat limit enforcement (MON-04)
-//   - Order cap enforcement (MON-05)
-//   - JWT tier claim issuance (MON-03)
-//   - Frontend EntitlementsContext tier gating (MON-06)
+// Public API is unchanged: Tier, TIERS, TierConfig, TIER_CONFIG, getTierConfig,
+// tierHasFlag, isValidTier. Callers migrate to the commercial-policy engine
+// (evaluateAccess / CAPABILITY_REQUIREMENTS / modulesForTier) in P0-A2/A3.
 //
-// CHANGE POLICY:
-//   Any change to module lists must be reflected in:
-//     1. shop_module_entitlements seeding logic
-//     2. Frontend tier-gating components
-//     3. Stripe Price object IDs (if price changes)
-//   Never derive tier membership from entitlement rows — always
-//   derive entitlement rows FROM tier constants.
+// NOTE: `TIER_CONFIG.modules` is the FROZEN legacy seed shape. It intentionally
+// still omits `suppliers-portal`, which is Starter-standard in the canonical
+// `modulesForTier()` — kept divergent so `shop_module_entitlements` seeding is
+// byte-identical in P0-A1 (see COMMERCIAL-ACCESS-ARCH-01 §19). Do not "fix" it here.
 
-export const TIERS = ['starter', 'core', 'growth', 'scale'] as const;
+import {
+  LEGACY_TIER_CONFIG,
+  isValidTier as canonicalIsValidTier,
+} from '@lasyncro/commercial-policy';
+import type { Tier as CanonicalTier, LegacyTierConfig } from '@lasyncro/commercial-policy';
 
-export type Tier = (typeof TIERS)[number];
+export {
+  TIERS,
+  TIER_ORDER,
+  tierAtLeast,
+} from '@lasyncro/commercial-policy';
 
-export interface TierConfig {
-  /** Display price in USD cents/month. 0 = free. */
-  monthlyPriceCents: number;
-  /** Max non-owner seats. Owner is excluded. Infinity = unlimited. */
-  seatLimit: number;
-  /** Max orders ingested per calendar month. Infinity = unlimited. */
-  monthlyOrderCap: number;
-  /** Max orders shipped via WMS per billing period. Infinity = unlimited. Overage billed at $0.08/order. */
-  shippedOrderCap: number;
-  /** Max Specter sessions per billing period. Infinity = unlimited. Overage degrades to specter_sdk_free. */
-  specterSessionCap: number;
-  /**
-   * Module keys granted to this tier.
-   * Must match module_key values in shop_module_entitlements.
-   * Each tier is CUMULATIVE — includes all lower-tier modules.
-   */
-  modules: readonly string[];
-  /**
-   * Flag keys granted to this tier.
-   * Format: '<module_key>.<flag_name>'
-   */
-  flags: readonly string[];
-}
+export type Tier = CanonicalTier;
 
-// --- Cumulative module sets ---
-// Each tier's modules are derived by spreading the previous tier.
-// NEVER repeat module keys manually — add to the lowest tier that grants access.
-// This eliminates drift: a module added to STARTER_MODULES is automatically
-// available in all higher tiers.
+/** Historical shape kept for backward compatibility. */
+export type TierConfig = LegacyTierConfig;
 
-const STARTER_MODULES = [
-  'overview',           // Morning brief + operational pulse
-  'order-nexus',        // Orders list + detail
-  'fulfillment',        // Fulfillment queue
-  'alerts',             // Operational alerts
-  'shopify_integration',
-  'specter_sdk_free',
-  // PLG decision (2026-07-14): the full Receive→Stow→Pick→Pack→Ship
-  // pipeline is open on Starter, gated by the 50-shipment volume cap
-  // (shippedOrderCap) instead of a module wall — free users must be
-  // able to fully run the core loop before hitting any paywall.
-  'wms',                // WMS pick/pack/stow — receive, pick, pack, stow, LSU/LSO labels
-  'barcodes',           // LSU/LSO operational labels + warehouse location barcodes
-] as const;
-
-const CORE_MODULES = [
-  ...STARTER_MODULES,
-  'returns',
-  'products',
-  'problem-center',     // Product-side problem center — surfaces issues from WMS receive/pick/pack
-] as const;
-
-const GROWTH_MODULES = [
-  ...CORE_MODULES,
-  'customers',
-  'finances',           // Cash Flow
-  'demand',
-  'specter',            // Full Specter (supersedes specter_sdk_free)
-  // Fix (2026-07-14): Overview's live operations map (also Growth-tier,
-  // see product-structure.md §11) renders the zones/bins Floor Planning
-  // creates — Floor Planning was previously Scale-only, meaning Growth
-  // shops could see a live map with nothing to visualize. Both now live
-  // at the same tier so the feature has data to render.
-  'floor-planning',     // Warehouse floor plan builder + location barcode generation
-] as const;
-
-const SCALE_MODULES = [
-  ...GROWTH_MODULES,
-] as const;
-
-// --- Cumulative flag sets ---
-const STARTER_FLAGS = [] as const;
-const CORE_FLAGS = [...STARTER_FLAGS] as const;
-const GROWTH_FLAGS = [
-  ...CORE_FLAGS,
-  'orders.advanced_filters',
-  'customers.segmentation',
-  'exports.column_selection',
-  'specter.full_capture',
-  'returns.analysis',           // Returns correlation + supplier trend analysis
-  'problem-center.analytics',   // Cross-module problem intelligence + trend reporting
-] as const;
-
-const SCALE_FLAGS = [...GROWTH_FLAGS] as const;
-
-export const TIER_CONFIG: Record<Tier, TierConfig> = {
-  /**
-   * Starter (Free)
-   * - Owner only (0 non-owner seats)
-   * - 50 orders/month ingestion cap
-   * - 50 WMS-processed orders/month
-   * - Full core Receive→Stow→Pick→Pack→Ship workflow + barcodes
-   */
-  starter: {
-    monthlyPriceCents: 0,
-    // WHY: Starter is owner-only; seat enforcement counts non-owner memberships.
-    seatLimit: 0,
-    monthlyOrderCap: 50,
-    shippedOrderCap: 50,
-    specterSessionCap: 500,
-    modules: STARTER_MODULES,
-    flags: STARTER_FLAGS,
-  },
-
-  /**
-   * Core ($79/month)
-   * - 2 non-owner seats included + extra seats at $15/seat/mo
-   * - 2,000 orders ingested/mo — soft cap, degraded priority above limit
-   * - 500 WMS-processed orders/mo included — overage at $0.08/order when enabled
-   * - Adds Returns, Products, and Problem Center
-   */
-  core: {
-    monthlyPriceCents: 7900,
-    // WHY: Core commercially includes two non-owner seats; paid extras are additive.
-    seatLimit: 2,
-    monthlyOrderCap: 2000,
-    shippedOrderCap: 500,
-    specterSessionCap: 5000,
-    modules: CORE_MODULES,
-    flags: CORE_FLAGS,
-  },
-
-  /**
-   * Growth ($179/month)
-   * - 5 non-owner seats included + extra seats at $12/seat/mo
-   * - 10,000 orders ingested/mo
-   * - 2,500 WMS-processed orders/mo included — overage at $0.08/order when enabled
-   * - Adds intelligence: Cash Flow, Customer LTV, Demand, Specter, Floor Planning
-   * - 14-day free Growth trial on new-shop signup (MON-07)
-   * - Annual billing at 20% discount (MON-08)
-   */
-  growth: {
-    monthlyPriceCents: 17900,
-    seatLimit: 5,
-    monthlyOrderCap: 10000,
-    shippedOrderCap: 2500,
-    specterSessionCap: 25000,
-    modules: GROWTH_MODULES,
-    flags: GROWTH_FLAGS,
-  },
-
-  /**
-   * Scale ($349/month)
-   * - Unlimited seats
-   * - Unlimited orders ingested and WMS-processed
-   * - Same cumulative Growth module/flag set with unlimited capacity
-   */
-  scale: {
-    monthlyPriceCents: 34900,
-    seatLimit: Infinity,
-    monthlyOrderCap: Infinity,
-    shippedOrderCap: Infinity,
-    specterSessionCap: Infinity,
-    modules: SCALE_MODULES,
-    flags: SCALE_FLAGS,
-  },
-};
+/** Frozen compatibility object — sourced from @lasyncro/commercial-policy. */
+export const TIER_CONFIG: Record<Tier, TierConfig> = LEGACY_TIER_CONFIG;
 
 /**
  * Returns the TierConfig for a given tier.
@@ -198,9 +54,7 @@ export function tierHasFlag(tier: Tier, flag: string): boolean {
   return TIER_CONFIG[tier].flags.includes(flag);
 }
 
-/**
- * Returns true if the given string is a valid Tier.
- */
+/** Returns true if the given string is a valid Tier. */
 export function isValidTier(value: unknown): value is Tier {
-  return TIERS.includes(value as Tier);
+  return canonicalIsValidTier(value);
 }
