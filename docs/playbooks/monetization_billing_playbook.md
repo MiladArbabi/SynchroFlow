@@ -242,9 +242,11 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 > **Consolidation in progress — `COMMERCIAL-ACCESS-ARCH-01` (§32).** The canonical
 > owner of tier/module/feature/capability policy is now `@lasyncro/commercial-policy`
 > (`packages/commercial-policy/`); `backend-core` re-exports it (P0-A1, 2026-09-04).
-> The three frontend descriptions above — `usePlanEntitlement.ts` `PLAN_FEATURES`,
-> `PlanGate`, `resolveNavVisibility` — and `require-entitlement.middleware.ts` are
-> **not yet converted** to consume `evaluateAccess()`; that is P0-A2.
+> `require-entitlement.middleware.ts` **is** converted (P0-A2A, 2026-09-04): it
+> exports `requireCapability(capabilityId)` driven by `evaluateAccess()` and its
+> private `TIER_ORDER` map is gone. The three frontend descriptions above —
+> `usePlanEntitlement.ts` `PLAN_FEATURES`, `PlanGate`, `resolveNavVisibility` —
+> are **not yet converted**; that is P0-A2B.
 
 ---
 
@@ -449,15 +451,21 @@ also fixes the tab bar, or vice versa.
 > here is the problem statement for that umbrella: all three layers, the route
 > gate, and backend enforcement will consume one shared `evaluateAccess()` from
 > `@lasyncro/commercial-policy`. P0-A1 (2026-09-04) shipped that pure engine +
-> the 17-capability requirement registry; the surface conversion is P0-A2, so
-> the ALL-THREE-layers rule still applies until then.
+> the 17-capability requirement registry; P0-A2A (2026-09-04) converted **backend
+> enforcement** (`requireCapability` + first route migration). The three
+> **frontend** layers are still unconverted (P0-A2B), so the ALL-THREE-layers
+> rule still applies to them until then.
 
 ### 13.2 The real enforcement is the backend route, not the frontend
 
 The frontend layers above are UX — they hide/show/badge things. Security
-enforcement must remain backend-owned. Route-level access is commonly enforced
-through `requireTier()` / `requireAction()`, while narrower capabilities may
-require field- or operation-level checks inside controllers/services.
+enforcement must remain backend-owned. Route-level access is enforced through
+`requireCapability(capabilityId)` (the P0-A2A canonical gate — evaluates
+`CAPABILITY_REQUIREMENTS` via `evaluateAccess()`; used by the migrated
+suppliers / WMS / floor-planning / demand families) and `requireAction()`, with
+legacy `requireTier()` still present on the not-yet-migrated routes; narrower
+capabilities may require field- or operation-level checks inside
+controllers/services.
 
 Canonical feature checks should derive from backend tier configuration rather
 than duplicate hardcoded tier comparisons. For example,
@@ -472,7 +480,7 @@ exactly that.
 
 | Defect | File(s) | Impact | Status |
 |---|---|---|---|
-| Floor Planning routes had zero `requireTier` | `floor-planning.routes.ts` (11 routes) | Starter shops could read/write full warehouse layout, zones, barcodes | ✅ Fixed — `requireTier('scale')` added to all 11 |
+| Floor Planning routes had zero `requireTier` | `floor-planning.routes.ts` (11 routes) | Starter shops could read/write full warehouse layout, zones, barcodes | ✅ Fixed 2026-07-14 — `requireTier('scale')` added to all 11 *(later lowered to `requireTier('starter')` by FP-GATE1; **current state: `requireCapability('warehouse.floor_planning')` = Growth+, P0-A2A** — see §32 "### P0-A2A")* |
 | Products routes had zero `requireTier` (and `/` had zero `requireFt2` too) | `products.routes.ts` (`/`, `/operator-summary`) | Starter shops could pull real margin/warehouse intelligence data | ✅ Fixed — `requireTier('core')` added to both |
 | `ModuleTabBar.isLocked()` ignored `requiredTier` | `ModuleTabBar.tsx` | Floor Planning / Problem Center tabs unconditionally unlocked in-page regardless of plan, even though sidebar correctly blocked the same route | ✅ Fixed — now checks `requiredTier` against user's tier |
 | Problem Center tagged `requiredTier: 'scale'` on frontend vs backend `requireTier('core')` | `FloorPlanningPage.tsx`, `ProblemCenterPage.tsx`, `warehouseModuleTabs.ts` | Once tab-bar enforcement was restored, Core customers would have been wrongly blocked from a feature they already pay for | ✅ Fixed — corrected to `'core'` in all 3 sites |
@@ -727,8 +735,14 @@ also deriving the corresponding module and flag grants from canonical
 4. Stamping the rows with source `dev_seed:growth`.
 
 This mirrors production registration and Stripe subscription handlers.
-A tier row alone is not sufficient: `/entitlements/me` reads module and
-flag rows independently from the subscription tier.
+
+> **P0-A2A update (2026-09-04):** `EntitlementsService.getForUser` now derives a
+> **tier floor** — `modulesForTier(currentTier)` / `flagsForTier(currentTier)` —
+> and unions the persisted rows on top, so a shop with a valid tier row but zero
+> entitlement rows still resolves the full standard module/flag set. Persisted
+> rows remain additive; expired rows are still excluded temporally. Seeding is
+> unchanged and still valid (the seeded rows are simply additive over the floor).
+> See §32 "### P0-A2A".
 
 Knex executes `dist/seeds/dev_seed.js`, so the backend build must run
 after editing `seeds/dev_seed.ts` and before executing the seed.
@@ -774,6 +788,23 @@ it only prevents *future* leaks going through
 `integration.controller.ts`, `commercial-grant.service.ts`) still call
 `applyFromCommercialGrant` with no revocation step and remain an open
 gap for a future pass.
+
+> **`ENT-REVOCATION-RLS-01` — this revocation was RLS-blind (P0, closed by
+> P0-A2A, 2026-09-04).** `EntitlementRevocationService.revokeEntitlements` ran its
+> `UPDATE` in a **bare pooled `db.transaction`** with no tenant context. After
+> migration `0135` (2026-07-29) tightened the `shop_module_entitlements` write
+> policy to `USING / WITH CHECK (shop_id = current_setting('app.current_tenant',
+> true)::int)` under `FORCE ROW LEVEL SECURITY`, that `UPDATE` **silently matched
+> zero rows** whenever `app.current_tenant` was unset — every downgrade revocation
+> through this service (and `trial-expiry.service.ts`) became a no-op, so
+> Growth-only rows kept `valid_until = NULL` and `getForUser` kept unioning them.
+> The 2026-07-15 live verification above predates policy `0135`. **Fix:** the
+> write now runs through the canonical `withTenant(shopId, …)` helper
+> (`SET LOCAL app.current_tenant = shopId`). `FORCE RLS` stays on; no privileged
+> role; no RLS bypass; `UPDATE`-only temporal `valid_until` semantics and single
+> transaction atomicity preserved. Proven on real disposable Postgres
+> (`effective-tier-floor.test.ts` C5: Growth→Core downgrade through the real
+> revocation path excludes the revoked module). See §32 "### P0-A2A".
 
 ### Entitlement row deduplication (ISS-C26)
 
@@ -1998,9 +2029,14 @@ EXP-DRAWER-DUPLICATE-152   ExportDrawer:44-45 and ShopSettingsReportsPage:49-50
 ## 32. Canonical Commercial Policy — `COMMERCIAL-ACCESS-ARCH-01` / `COMMERCIAL-ACCESS-COVERAGE-01`
 
 Slice status: **P0-A0** package + wiring — done (verified 2026-09-04). **P0-A1**
-pure policy engine + canonical catalog — done (verified 2026-09-04). **P0-A2**
-surface/route/backend conversion + `EntitlementsService` effective-module union
-— OPEN. **P0-A3** system-wide C14–C24 closure — OPEN. **P0-B** commercial-state
+pure policy engine + canonical catalog — done (verified 2026-09-04). **P0-A2A**
+backend/runtime commercial convergence — `EntitlementsService` effective-entitlement
+union, `requireCapability` middleware + first backend route migration,
+`COMMERCIAL_ACCESS_DENIED` contract, canonical tier comparator, and the
+`ENT-REVOCATION-RLS-01` fix — done (verified 2026-09-04; see "### P0-A2A").
+**P0-A2B** frontend surface/route conversion + sidenav↔tab↔route↔backend parity
+— OPEN. **P0-A3** remaining backend families + bespoke-grant backend enforcement +
+system-wide C14–C24 closure — OPEN. **P0-B** commercial-state
 integrity (`BILL-ENTITLEMENT-01` Fact B) — SEPARATE, OPEN.
 
 ### Why this exists
@@ -2255,6 +2291,252 @@ tier matrix). The full system-wide closure of C14–C24 (complete surface covera
 no legacy policy, all-module cross-surface parity, route + backend coverage,
 denial semantics, the checked-in coverage snapshot) is **P0-A3** and is **not
 complete**.
+
+> **P0-A2A (2026-09-04) delivered the backend half of this list:**
+> `EntitlementsService.getForUser` effective union, `requireCapability(capabilityId)`
+> middleware + the first backend route migration, the `COMMERCIAL_ACCESS_DENIED`
+> response contract, and `requireTier`/`meetsTier` canonicalised onto
+> `tierAtLeast()` (the private backend `TIER_ORDER` map is gone). Everything else
+> in the list above — Sidenav / `ModuleTabBar` / `CommercialGate` / `navBootstrap`
+> `capabilityId` conversion, `wms-lite` runtime removal, the `import.meta.env.DEV`
+> bypass, the `?? 'growth'` fallback, the `warehouseModuleTabs.ts` Analytics
+> contradiction, sidenav↔tab↔route↔backend parity, `UpgradePrompt` reason
+> rendering — is **P0-A2B** and still RED. See "### P0-A2A" below.
+
+### P0-A2A — effective entitlements + backend capability enforcement (implemented + verified 2026-09-04)
+
+**P0-A2A is the backend / runtime commercial-convergence foundation.** It makes
+the *backend* consume the canonical engine and derive a tier floor; it does
+**not** touch any frontend surface. The visible production defect (Scale shop
+blocked in the sidebar while the route/API allow it) is **not fixed by P0-A2A** —
+that is P0-A2B.
+
+Delivered:
+
+1. Effective entitlement resolution in `EntitlementsService.getForUser`
+2. `requireCapability(capabilityId)` backend middleware
+3. `requireTier` / `meetsTier` re-based on the canonical comparator
+4. First backend route migration (suppliers · WMS base · WMS analytics · WMS
+   problem-center · floor-planning · demand)
+5. The normalized `COMMERCIAL_ACCESS_DENIED` denial response contract
+6. Fix of a newly discovered RLS defect in downgrade revocation
+   (`ENT-REVOCATION-RLS-01`)
+
+#### 1. Effective entitlement model
+
+`EntitlementsService.getForUser(userId)` no longer returns a rows-only snapshot.
+It now derives a **tier floor** from `@lasyncro/commercial-policy` and unions the
+persisted rows on top:
+
+```
+currentTier      = resolveTierForShop(shopId)   // canonical path; fails closed to 'starter'
+effectiveModules = modulesForTier(currentTier)  ∪  temporally-valid persisted module rows
+effectiveFlags   = flagsForTier(currentTier)    ∪  temporally-valid persisted flag rows
+```
+
+- **Zero persisted rows still yields the full tier floor** (previously it returned
+  `{ modules: [], flags: [] }`).
+- Valid persisted rows are **purely additive** over the floor.
+- **Expired rows are excluded** by the unchanged temporal query
+  (`valid_from <= now AND (valid_until IS NULL OR valid_until > now)`).
+- **No deny/exclusion row model**, no schema change, no migration, no backfill.
+  Downgrade continues to rely on the current tier plus temporal revocation
+  (see §4 below).
+- Persisted duplicate tier-derived rows may remain in the table temporarily and
+  are harmless (set-union). These persisted rows are **legacy / additive
+  entitlement rows — they are not all semantically bespoke commercial grants**;
+  true bespoke row-based backend enforcement is P0-A3 (see "bespoke-grant
+  limitation" below).
+- Snapshot shape `{ shopId, modules: string[], flags: string[] }` is unchanged.
+
+#### 2. `requireCapability(capabilityId)`
+
+New backend middleware in
+`apps/backend/src/middleware/require-entitlement.middleware.ts` (a dedicated
+`require-capability.middleware.ts` filename is an accepted alternative; the
+architecture, not the path, is contractual). It consumes **only** the shared
+engine — `CAPABILITY_REQUIREMENTS`, `evaluateAccess`, `modulesForTier`,
+`flagsForTier` (and `tierAtLeast`) from `@lasyncro/commercial-policy`; no local
+capability registry, no private `TIER_ORDER`.
+
+**Backend A2A AccessContext:**
+
+```
+tier    = resolveTier(req)          // == req.user.tier (JWT claim)
+modules = modulesForTier(tier)      // STANDARD tier grants only
+flags   = flagsForTier(tier)
+```
+
+**JWT tier freshness is unchanged from existing `requireTier` behaviour** — the
+decision follows the access-token `tier` claim, with no `shop_subscriptions` /
+DB round-trip in the middleware. Immediate post-upgrade / post-downgrade
+freshness is **P0-B**, not P0-A2A.
+
+#### Bespoke-grant limitation (P0-A2A is not the final backend architecture)
+
+`requireCapability` in P0-A2A **does not load per-shop persisted
+`shop_module_entitlements` rows.** This is safe for the migrated A2A route set
+because **every migrated capability is a standard-plan capability** — its policy
+is fully expressible from `modulesForTier(tier)` / `flagsForTier(tier)`. Full
+backend parity for bespoke (row-granted, non-standard) capabilities — the
+middleware consulting the effective persisted set — remains **P0-A3**. Do not
+present P0-A2A as the final backend entitlement architecture.
+
+#### 3. Canonical tier comparator
+
+The private `const TIER_ORDER` map in `require-entitlement.middleware.ts` is
+**removed**. `requireTier` and `meetsTier` keep their existing public behaviour
+(`requireTier` still returns `403 { error: 'TIER_INSUFFICIENT', required, current }`)
+but delegate the rank comparison to `tierAtLeast()` from
+`@lasyncro/commercial-policy`. Not every legacy `requireTier` route is migrated —
+only the named A2A set (see §4). The four **frontend** private tier-rank maps
+(`usePlanEntitlement.ts`, `resolveNavVisibility.ts`, `ModuleTabBar.tsx`,
+`exportReports.ts`) still exist — P0-A2B / P0-A3.
+
+#### 4. First backend route migration
+
+| Route family | Was | Now (`requireCapability`) | Canonical policy |
+|---|---|---|---|
+| suppliers / PO / sourcing (`suppliers.routes.ts`) | `authenticateToken → requireFt2 → requireAction` | `purchasing.core` | Starter+ (module `suppliers-portal`, no tier wall) |
+| WMS base ops (`wms.routes.ts`) | `requireTier('starter')` | `warehouse.operations` | Starter+ (module `wms`) |
+| WMS analytics (`wms.routes.ts` `/analytics*`) | `requireTier('growth')` | `warehouse.analytics` | Growth+ (module `wms` · feature `wms.analytics`) |
+| WMS problem center (`wms.routes.ts` `/problem-center/pick-exceptions`, `POST /problem-center`, `…/:taskId/replacement`) | `requireTier('core')` | `warehouse.problem_center` | Core+ (module `problem-center`) |
+| floor planning (`floor-planning.routes.ts`) | `requireTier('starter')` | `warehouse.floor_planning` | **Growth+** (module `floor-planning`) — see leak fix below |
+| demand (`demand.routes.ts`) | `requireTier('growth')` | `demand.forecasting` | Growth+ (module `demand` · feature `demand.forecasting`) |
+
+**Middleware ordering on every migrated chain:**
+`authenticateToken → requireFt2 → requireCapability → requireAction → handler`
+(commercial eligibility first, RBAC second; `requireAction` is never folded into
+commercial policy).
+
+**Not migrated in P0-A2A — deliberately left on `requireTier('core')`:**
+
+- `/api/v1/wms/recount*` — no `warehouse.recount` capability exists yet; folding
+  it into `warehouse.operations` would wrongly widen it.
+- `/api/v1/wms/sender-addresses*` — outside the A2A capability families.
+
+Both are **P0-A3** scope.
+
+#### Floor Planning policy leak — closed by P0-A2A
+
+This is an **intentional commercial behaviour correction**, not a refactor.
+
+| Tier | Before P0-A2A (`requireTier('starter')`) | After P0-A2A (`requireCapability('warehouse.floor_planning')`) |
+|---|---|---|
+| Starter | ALLOW | **DENY** |
+| Core | ALLOW | **DENY** |
+| Growth | ALLOW | ALLOW |
+| Scale | ALLOW | ALLOW |
+
+The backend floor-planning routes previously admitted every tier
+(`requireTier('starter')` after the FP-GATE1 change); the ratified canonical
+policy is **Growth+**. P0-A2A brings the backend gate into line with the ratified
+policy and closes the leak. (The field-level Growth guard already present in the
+floor-planning controller is now redundant but harmless.)
+
+#### 5. Denial response contract
+
+On a commercial denial `requireCapability` returns:
+
+```
+403
+{
+  error: 'COMMERCIAL_ACCESS_DENIED',
+  reason,                 // TIER_TOO_LOW | MODULE_NOT_INCLUDED | FEATURE_NOT_INCLUDED
+  capabilityId,
+  currentTier,
+  requiredTier?,          // present only when the AccessDecision carries it
+  requiredModule?,
+  requiredFeature?
+}
+```
+
+- **No fabricated Growth** — `reason` / `requiredTier` come straight from
+  `evaluateAccess`.
+- **RBAC stays separate.** `requireCapability` performs no role check and never
+  emits a role-denial reason; role/action denial remains `requireAction`'s
+  `ACTION_FORBIDDEN` (and the existing permission responses). A role/action
+  denial is **not** a billing-upgrade denial.
+
+#### 6. `ENT-REVOCATION-RLS-01` — downgrade revocation was RLS-blind (P0, closed by P0-A2A)
+
+**Root cause.** `EntitlementRevocationService.revokeEntitlements` executed its
+`UPDATE` inside a **bare pooled `db.transaction`** with no tenant context.
+`shop_module_entitlements` has `FORCE ROW LEVEL SECURITY`, and migration
+`0135` (2026-07-29) tightened the write policy to
+`USING / WITH CHECK (shop_id = current_setting('app.current_tenant', true)::int)`.
+With `app.current_tenant` unset the predicate is `NULL`, so a downgrade
+revocation `UPDATE` **silently matched zero rows** — the Growth-only rows kept
+`valid_until = NULL` and `getForUser` kept unioning them. (This regressed the
+2026-07-15 §18 fix once policy `0135` landed.)
+
+**Fix.** The write now runs through the canonical
+`withTenant(shopId, async (trx) => { … })` helper (`SET LOCAL
+app.current_tenant = shopId`) already used across the domain layer for
+RLS-scoped writes.
+
+**Invariants preserved:** `FORCE ROW LEVEL SECURITY` stays enabled; no privileged
+/ `BYPASSRLS` role; no RLS bypass; `UPDATE`-only temporal revocation via
+`valid_until`; a single atomic transaction. **This defect is CLOSED by P0-A2A.**
+
+#### P0-A2A verification evidence (durable)
+
+- `commercial-backend-enforcement.contract.test.ts` — **22 / 22 GREEN**
+- `require-capability.test.ts` (per-tier decision matrix, denial body, Scale
+  invariant, RBAC separation) — **34 / 34 GREEN**
+- `effective-tier-floor.test.ts` (real disposable Postgres: module floor · flag
+  floor · additive rows · expired-row exclusion · Growth→Core downgrade through
+  the real revocation path) — **5 / 5 GREEN**
+- representative real-route integration (`createApp()` + disposable Postgres;
+  one real endpoint per capability family + Scale invariant + real-route RBAC
+  separation) — **18 / 18 GREEN**
+- `commercial-route-enforcement.contract.test.ts` — **5 PASS / 3 deliberate
+  A2B RED** (frontend route/nav/page gates)
+- `entitlementMounts` + `entitlementDenial` contract — **3 / 3 GREEN**;
+  `entitlement-mounts` integration — **5 / 5 GREEN**
+- sourcing regression set (Worklist · Targeted-mode · Targeted-actions ·
+  Order-detail inventory-sourcing) — **61 / 61 GREEN**
+- `packages/backend-core` build **PASS**; `apps/backend` `tsc --noEmit`
+  **error count 0**, target errors **0**
+- Jest ownership `UNOWNED=0` / `MULTI_OWNED=0`
+- disposable-DB runtime role: `sf_app`, `rolsuper=false`, `rolbypassrls=false`;
+  `TEST_DB_CREATED/MIGRATED/RUNTIME_OK/DROPPED` markers emitted
+- no migration, no RLS-policy change, no `package`/config change, no frontend
+  change, no persistent DB mutation
+
+#### Still OPEN after P0-A2A
+
+**P0-A2B (the visible frontend/parity defect — still RED):**
+
+- frontend `commercialContext` adapter
+- Sidenav (`resolveNavVisibility` / `navBootstrap`) capability migration
+- `ModuleTabBar` capability migration; `navBootstrap` `capabilityId` conversion
+- `wms-lite` runtime nav removal (→ `wms`)
+- reusable frontend `CommercialGate` + direct-route parity
+- `UpgradePrompt` denial-`reason`-driven rendering
+- remove the fabricated `requiredTier ?? 'growth'` fallback
+- remove the `import.meta.env.DEV` module-gate bypass in `resolveNavVisibility`
+- fix the contradictory `warehouseModuleTabs.ts` Analytics entry
+  (`requiredTier: 'growth'` + `feature: 'wms.pick_batches'`)
+- full frontend ↔ backend surface parity
+- deliberate RED profile that remains: `commercial-route-enforcement` 3 frontend
+  RED · `commercial-access-policy` 14 frontend / multi-surface RED ·
+  `nav-surface-parity.test.tsx` pending A2B
+
+**P0-A3 carry-forward:**
+
+- the remaining backend route families
+- bespoke persisted-grant enforcement inside `requireCapability`
+- the `/recount*` commercial-capability decision
+- `/sender-addresses*` classification
+- the four remaining private frontend `TIER_ORDER` copies
+- full system-wide C14–C24 coverage / the checked-in coverage snapshot
+
+**P0-B carry-forward (unchanged, still separate):** `BILL-ENTITLEMENT-01`
+Fact B (reviewer expected Growth, production reported Scale) is **not** resolved
+by P0-A2A — provider SKU/price mapping, `shop_subscriptions` writer / plan
+transition integrity, webhook ordering / idempotency, current-state ↔ JWT
+freshness, and the commercial-state transition audit trail all remain P0-B.
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 

@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
   httpGetSuppliers,
@@ -59,6 +60,7 @@ router.get(
   '/variants/search',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   httpSearchVariants
 );
 
@@ -67,6 +69,7 @@ router.get(
   '/',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:read'),
   httpGetSuppliers
 );
@@ -75,6 +78,7 @@ router.post(
   '/',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:write'),
   httpCreateSupplier
 );
@@ -82,6 +86,7 @@ router.patch(
   '/:id',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:write'),
   httpUpdateSupplier
 );
@@ -89,6 +94,7 @@ router.delete(
   '/:id',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:write'),
   httpDeleteSupplier
 );
@@ -98,6 +104,7 @@ router.get(
   '/purchase-orders',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:read'),
   httpGetPurchaseOrders
 );
@@ -106,6 +113,7 @@ router.post(
   '/purchase-orders',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:write'),
   httpCreatePurchaseOrder
 );
@@ -114,6 +122,7 @@ router.get(
   '/purchase-orders/:poId/line-items',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:read'),
   httpGetPoLineItems
 );
@@ -122,6 +131,7 @@ router.patch(
   '/purchase-orders/:poId/status',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:status'),
   httpUpdatePoStatus
 );
@@ -130,6 +140,7 @@ router.patch(
   '/purchase-orders/:poId',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:write'),
   httpPatchPurchaseOrder
 );
@@ -138,6 +149,7 @@ router.post(
   '/purchase-orders/:poId/receive',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('po:receive'),
   httpReceiveShipment
 );
@@ -147,6 +159,7 @@ router.get(
   '/receive-jobs',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:read'),
   httpListReceiveJobs
 );
@@ -156,6 +169,7 @@ router.post(
   '/purchase-orders/:poId/receive-jobs',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:create'),
   httpCreateReceiveJob
 );
@@ -163,6 +177,7 @@ router.get(
   '/receive-jobs/:jobId',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:read'),
   httpGetReceiveJob
 );
@@ -170,6 +185,7 @@ router.post(
   '/receive-jobs/:jobId/claim',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:read'),
   httpClaimReceiveJob
 );
@@ -177,6 +193,7 @@ router.post(
   '/receive-jobs/:jobId/inspect',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:inspect'),
   httpInspectReceiveJobLine
 );
@@ -184,6 +201,7 @@ router.post(
   '/receive-jobs/:jobId/close',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:close'),
   httpCloseReceiveJob
 );
@@ -192,6 +210,7 @@ router.post(
   '/receive-jobs/:jobId/exception',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('receive-job:exception'),
   httpReportReceiveException
 );
@@ -203,6 +222,7 @@ router.get(
   '/sourcing-worklist',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:read'),
   httpGetSourcingWorklist
 );
@@ -212,6 +232,7 @@ router.get(
   '/sourcing-recommendations/never-ordered',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:read'),
   httpGetNeverOrderedVariants
 );
@@ -219,6 +240,7 @@ router.get(
   '/sourcing-recommendations/:variantId',
   authenticateToken,
   requireFt2,
+  requireCapability('purchasing.core'),
   requireAction('suppliers:read'),
   httpGetSourcingRecommendations
 );
@@ -226,22 +248,22 @@ router.get(
 // ── SUPPLIER-PRODUCT PREFERENCES (sourcing-recommendation-playbook.md §7) ──
 router.get(
   '/preferences',
-  authenticateToken, requireFt2, requireAction('suppliers:read'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:read'),
   httpListPreferences
 );
 router.post(
   '/preferences',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpCreatePreference
 );
 router.patch(
   '/preferences/:id',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpUpdatePreference
 );
 router.delete(
   '/preferences/:id',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpDeletePreference
 );
 
@@ -249,22 +271,22 @@ router.delete(
 // convert must be registered before :id to avoid route shadowing
 router.post(
   '/reorder-requests/convert',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpConvertReorderRequests
 );
 router.get(
   '/reorder-requests',
-  authenticateToken, requireFt2, requireAction('suppliers:read'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:read'),
   httpListReorderRequests
 );
 router.post(
   '/reorder-requests',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpCreateReorderRequest
 );
 router.delete(
   '/reorder-requests/:id',
-  authenticateToken, requireFt2, requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
   httpDeleteReorderRequest
 );
 

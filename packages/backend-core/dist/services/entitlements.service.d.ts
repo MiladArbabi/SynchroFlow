@@ -17,10 +17,17 @@ export interface CommercialGrantEvent {
 }
 export declare class EntitlementsService {
     /**
-     * Resolve entitlements for a given user ID.
-     *  - Look up user's shop_id
-     *  - Load all rows from shop_module_entitlements for that shop
-     *  - Return a normalized snapshot (unique modules + flags)
+     * Resolve the EFFECTIVE entitlements for a given user ID.
+     *
+     *   effective modules = modulesForTier(currentTier) ∪ temporally-valid persisted module rows
+     *   effective flags   = flagsForTier(currentTier)   ∪ temporally-valid persisted flag rows
+     *
+     * COMMERCIAL-ACCESS-ARCH-01 P0-A2A: the snapshot now derives a canonical
+     * tier floor from @lasyncro/commercial-policy. Zero persisted rows still
+     * returns the tier's standard grants; valid persisted rows remain purely
+     * additive; expired rows are excluded by the existing temporal query;
+     * downgrade continues to rely on the current tier plus temporal revocation.
+     * No deny/exclusion semantics, no schema change, no backfill.
      */
     static getForUser(userId: number): Promise<EntitlementsSnapshot | null>;
     /**

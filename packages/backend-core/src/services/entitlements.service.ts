@@ -54,7 +54,8 @@
  */
 
 import { withTenant } from '../db.js';
-import { requireShopIdForUser } from './shop-resolution.service.js';
+import { requireShopIdForUser, resolveTierForShop } from './shop-resolution.service.js';
+import { modulesForTier, flagsForTier, isValidTier } from '@lasyncro/commercial-policy';
 
 export interface EntitlementsSnapshot {
   shopId: number;
@@ -84,10 +85,17 @@ export interface CommercialGrantEvent {
 
 export class EntitlementsService {
   /**
-   * Resolve entitlements for a given user ID.
-   *  - Look up user's shop_id
-   *  - Load all rows from shop_module_entitlements for that shop
-   *  - Return a normalized snapshot (unique modules + flags)
+   * Resolve the EFFECTIVE entitlements for a given user ID.
+   *
+   *   effective modules = modulesForTier(currentTier) ∪ temporally-valid persisted module rows
+   *   effective flags   = flagsForTier(currentTier)   ∪ temporally-valid persisted flag rows
+   *
+   * COMMERCIAL-ACCESS-ARCH-01 P0-A2A: the snapshot now derives a canonical
+   * tier floor from @lasyncro/commercial-policy. Zero persisted rows still
+   * returns the tier's standard grants; valid persisted rows remain purely
+   * additive; expired rows are excluded by the existing temporal query;
+   * downgrade continues to rely on the current tier plus temporal revocation.
+   * No deny/exclusion semantics, no schema change, no backfill.
    */
   static async getForUser(userId: number): Promise<EntitlementsSnapshot | null> {
     // 1) Authoritative shop resolution
@@ -98,7 +106,11 @@ export class EntitlementsService {
       return null;
     }
 
-    // 2) Load all entitlements for this shop
+    // 2) Canonical current tier (shop_subscriptions; fails closed to 'starter').
+    const rawTier = await resolveTierForShop(shopId);
+    const currentTier = isValidTier(rawTier) ? rawTier : 'starter';
+
+    // 3) Load temporally-valid persisted entitlement rows for this shop.
     const rows = await withTenant(shopId, (trx) =>
       trx('shop_module_entitlements')
         .where({ shop_id: shopId })
@@ -109,19 +121,11 @@ export class EntitlementsService {
         .select('module_key', 'flag_key')
     );
 
-    if (!rows || rows.length === 0) {
-      return {
-        shopId,
-        modules: [],
-        flags: [],
-      };
-    }
+    // 4) Effective set = canonical tier floor ∪ valid persisted rows (non-null).
+    const moduleSet = new Set<string>(modulesForTier(currentTier));
+    const flagSet = new Set<string>(flagsForTier(currentTier));
 
-    // 3) Normalize into unique module list + unique flag list (non-null)
-    const moduleSet = new Set<string>();
-    const flagSet = new Set<string>();
-
-    for (const row of rows) {
+    for (const row of rows ?? []) {
       if (row.module_key) {
         moduleSet.add(row.module_key);
       }

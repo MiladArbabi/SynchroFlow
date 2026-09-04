@@ -530,7 +530,7 @@ The next contract layer is:
 | `returns-resolution` (whole nav item) | Returns & Resolution | `core` |
 | Warehouse list, selection, and rename | Existing warehouses available to the shop | Same tier as Warehouse access |
 | Additional warehouse creation and activation | Multi-warehouse capability | `scale` |
-| `floor-planning` (Warehouse child) | Floor Plan for the selected warehouse | `scale` |
+| `floor-planning` (Warehouse child) | Floor Plan for the selected warehouse | `growth` — canonical capability `warehouse.floor_planning`; backend enforced Growth+ since P0-A2A (see monetization_billing_playbook.md §32 "### P0-A2A") |
 | `demand` (Inventory child) | Demand & Reorder | `growth` |
 | `finances` (whole nav item) | Finances | `growth` |
 
