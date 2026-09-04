@@ -17,7 +17,7 @@ import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 import { useOrderPool } from '../wms/useOrderPool';
 import { useWmsLiveActivity } from '../wms/useWmsLiveActivity';
 import type { SyntheticStation, LiveBinActivity, WarehouseZone, LocationPulse } from '@lasyncro/shared/ui';
-import { sendEvent } from 'analytics/adapter';
+import { useUiEvents } from 'analytics/useUiEvents';
 import { useIdleAlerts } from '../../hooks/useIdleAlerts';
 import { useProblemCenter } from '../problem-center/useProblemCenter';
 
@@ -80,6 +80,7 @@ const LIVE_MAP_TEASER_OCCUPANCY = {
 };
 
 function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
+  const { emit } = useUiEvents();
   const [visible, setVisible] = useState(
     () => window.sessionStorage.getItem(LIVE_MAP_TEASER_DISMISS_KEY) !== '1'
   );
@@ -87,19 +88,19 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
   useEffect(() => {
     if (!visible) return;
 
-    sendEvent('upgrade_prompt.shown', {
+    emit('upgrade_prompt.shown', {
       requiredTier: 'growth',
       featureName: 'Overview live operations map',
       mode: 'teaser',
       surface: 'overview',
     });
-  }, [visible]);
+  }, [visible, emit]);
 
   if (!visible) return null;
 
   const dismiss = () => {
     window.sessionStorage.setItem(LIVE_MAP_TEASER_DISMISS_KEY, '1');
-    sendEvent('upgrade_prompt.dismissed', {
+    emit('upgrade_prompt.dismissed', {
       requiredTier: 'growth',
       featureName: 'Overview live operations map',
       surface: 'overview',
@@ -108,7 +109,7 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
   };
 
   const upgrade = () => {
-    sendEvent('upgrade_prompt.clicked', {
+    emit('upgrade_prompt.clicked', {
       requiredTier: 'growth',
       featureName: 'Overview live operations map',
       surface: 'overview',

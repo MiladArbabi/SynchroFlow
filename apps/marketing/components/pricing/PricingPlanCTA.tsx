@@ -1,6 +1,6 @@
 'use client'
 
-import { usePostHog } from 'posthog-js/react'
+import { captureMarketingEvent } from '../PostHogProvider'
 
 interface Props {
   plan: string
@@ -19,7 +19,6 @@ export default function PricingPlanCTA({
   shopifyAvailable = false,
   installUrl = null,
 }: Props) {
-  const ph = usePostHog()
   const waitingForLaunch = !shopifyAvailable || !installUrl
   const isScale = plan.toLowerCase() === 'scale'
 
@@ -37,7 +36,7 @@ export default function PricingPlanCTA({
       target={opensInstallUrl ? '_blank' : undefined}
       rel={opensInstallUrl ? 'noopener noreferrer' : undefined}
       onClick={() =>
-        ph?.capture('pricing_plan_cta_clicked', {
+        captureMarketingEvent('pricing_plan_cta_clicked', {
           plan: plan.toLowerCase(),
           cta_label: resolvedCta,
           billing_interval: billingInterval,

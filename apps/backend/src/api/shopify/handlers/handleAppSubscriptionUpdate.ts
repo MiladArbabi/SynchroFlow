@@ -26,7 +26,7 @@ export async function handleAppSubscriptionUpdate(
 
   captureEvent({
     shopId,
-    event: billingState.isEntitled ? 'subscription_activated' : 'subscription_canceled',
+    event: billingState.isEntitled ? 'subscription_activated' : 'subscription_cancelled',
     properties: {
       tier: billingState.tier,
       status: billingState.status,

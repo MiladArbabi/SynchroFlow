@@ -24,26 +24,59 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Organization","@id":"https://www.lasyncro.com/#organization","name":"LaSyncro","url":"https://www.lasyncro.com","logo":"https://www.lasyncro.com/logo-light.png","sameAs":[],"contactPoint":{"@type":"ContactPoint","email":"contact@lasyncro.com","contactType":"customer support"}}
 </script>
+<!-- PostHog -->
 <script>
   !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset is_identified get_distinct_id get_session_id get_session_data get_property".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
-  // Production public hosts only (AN-ENV-01).
-  const analyticsEnabled =
+
+  const ANALYTICS_CONSENT_COOKIE = 'lasyncro_analytics_consent';
+
+  const getAnalyticsConsent = () => {
+    const prefix = `${ANALYTICS_CONSENT_COOKIE}=`;
+    const value = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length);
+
+    return value === 'granted' || value === 'denied' ? value : null;
+  };
+
+  const productionAnalyticsHost =
     window.location.hostname === 'www.lasyncro.com' ||
     window.location.hostname === 'lasyncro.com';
 
-  window.__LASYNCRO_ANALYTICS_ENABLED__ = analyticsEnabled;
+  let posthogInitialized = false;
 
-  if (analyticsEnabled) {
+  function initializePostHog() {
+    if (!productionAnalyticsHost) return;
+    if (getAnalyticsConsent() !== 'granted') return;
+    if (posthogInitialized) return;
+
     posthog.init('phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM', {
-      api_host: 'https://t.lasyncro.com',
-      ui_host: 'https://app.posthog.com',
-      autocapture: true,
-      capture_pageview: true,
-      cookie_domain: '.lasyncro.com',
-      cross_subdomain_cookie: true,
-      persistence: 'localStorage+cookie'
+      api_host:'https://t.lasyncro.com',
+      ui_host:'https://app.posthog.com',
+      autocapture:true,
+      capture_pageview:true,
+      cookie_domain:'.lasyncro.com',
+      cross_subdomain_cookie:true,
+      persistence:'localStorage+cookie'
     });
-  } else {
+
+    posthogInitialized = true;
+  }
+
+  function syncAnalyticsConsent() {
+    window.__LASYNCRO_ANALYTICS_ENABLED__ =
+      productionAnalyticsHost &&
+      getAnalyticsConsent() === 'granted';
+
+    initializePostHog();
+  }
+
+  syncAnalyticsConsent();
+  window.addEventListener('lasyncro:analytics-consent', syncAnalyticsConsent);
+
+  if (!productionAnalyticsHost) {
     console.info('PostHog disabled outside production public hosts');
   }
 </script>
@@ -126,7 +159,7 @@
 
     const banner = document.createElement('div');
     banner.setAttribute('role', 'dialog');
-    banner.setAttribute('aria-label', 'Google Analytics consent');
+    banner.setAttribute('aria-label', 'Analytics consent');
     banner.style.cssText =
       'position:fixed;left:16px;right:16px;bottom:16px;z-index:99999;' +
       'max-width:720px;margin:0 auto;padding:16px;border-radius:12px;' +
@@ -136,7 +169,7 @@
     const copy = document.createElement('div');
     copy.style.marginBottom = '12px';
     copy.textContent =
-      'LaSyncro uses Google Analytics to understand website usage. ' +
+      'LaSyncro uses analytics tools to understand website usage. ' +
       'It is optional and is not loaded unless you allow it.';
 
     const actions = document.createElement('div');
@@ -144,11 +177,11 @@
 
     const allow = document.createElement('button');
     allow.type = 'button';
-    allow.textContent = 'Allow Google Analytics';
+    allow.textContent = 'Allow analytics';
 
     const decline = document.createElement('button');
     decline.type = 'button';
-    decline.textContent = 'Decline Google Analytics';
+    decline.textContent = 'Decline analytics';
 
     allow.addEventListener('click', () => {
       setConsent('granted');
@@ -1414,8 +1447,23 @@ em { font-style: italic; color: var(--accent); }
   const installLinks = Array.from(document.querySelectorAll('[data-launch-install]'));
   const scrollButtons = Array.from(document.querySelectorAll('[data-launch-scroll]'));
 
+  function captureHomepageEvent(event, properties = {}) {
+    if (!window.__LASYNCRO_ANALYTICS_ENABLED__) return;
+    if (typeof posthog === 'undefined' || typeof posthog.capture !== 'function') return;
+    posthog.capture(event, properties);
+  }
+
+
   function setInstallAvailable(url) {
-    forms.forEach((form) => { form.hidden = true; });
+    installLinks.forEach((link) => {
+    link.addEventListener('click', () => {
+      captureHomepageEvent('shopify_install_clicked', {
+        location: link.classList.contains('is-nav') ? 'nav' : 'body'
+      });
+    });
+  });
+
+  forms.forEach((form) => { form.hidden = true; });
     scrollButtons.forEach((button) => { button.hidden = true; });
     installLinks.forEach((link) => {
       link.hidden = false;
@@ -1433,6 +1481,9 @@ em { font-style: italic; color: var(--accent); }
 
   scrollButtons.forEach((button) => {
     button.addEventListener('click', () => {
+      captureHomepageEvent('launch_notify_clicked', {
+        location: button.classList.contains('is-nav') ? 'nav' : 'body'
+      });
       if (capture) capture.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
   });
@@ -1462,6 +1513,10 @@ em { font-style: italic; color: var(--accent); }
         });
 
         if (!response.ok) throw new Error('waitlist failed');
+
+      captureHomepageEvent('waitlist_signup', {
+        source: form.dataset.source || 'launch_home'
+      });
         form.hidden = true;
         if (status) status.textContent = "You're on the list. We'll email you when LaSyncro is available.";
       } catch {

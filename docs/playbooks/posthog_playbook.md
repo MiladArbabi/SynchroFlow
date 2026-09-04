@@ -129,18 +129,21 @@ Two naming conventions are in use. **Never mix them.**
 
 ## 5. Event Register
 
-### 5a. Landing page events (`packages/landing-page`) — vanilla JS, inline onclick
+### 5a. Public landing/checklist events (`packages/landing-page`) — consent-aware vanilla JS
 
-| Event | Props | Notes |
-|---|---|---|
-| `nav_login_clicked` | `location: 'header'` | Nav — Log in |
-| `nav_signup_clicked` | `location: 'header'` | Nav — Start free |
-| `hero_signup_clicked` | `location: 'hero'` | Hero CTA |
-| `section_signup_clicked` | `location: 'cta_section'` | Mid-page CTA section |
-| `section_login_clicked` | `location: 'cta_section'` | Mid-page login link |
-| `footer_signup_clicked` | `location: 'footer_cta'` | Footer CTA |
+| Event | Props | Surface | Notes |
+|---|---|---|---|
+| `launch_notify_clicked` | `location: nav|body` | Homepage | User opens the launch/waitlist path |
+| `waitlist_signup` | `source` | Homepage + checklist | Fires only after successful waitlist API confirmation |
+| `shopify_install_clicked` | `location: nav|body` | Homepage | Conditional Shopify install CTA |
+| `checklist_answer` | — | `/checklist` | Checklist interaction |
+| `checklist_complete` | — | `/checklist` | Checklist completion |
 
-### 5b. Marketing app events (`apps/marketing`) — via PostHog React hooks
+`waitlist_signup` is shared across homepage and checklist; `source` distinguishes the surface.
+
+Raw email is submitted only to the application waitlist endpoint. Email is not included in the PostHog event payload.
+
+### 5b. Marketing app events (`apps/marketing`) — via `captureMarketingEvent()` boundary
 
 | Event | Props | Component | Notes |
 |---|---|---|---|
@@ -151,6 +154,8 @@ Two naming conventions are in use. **Never mix them.**
 | `blog_article_completed` | `article_slug`, `scroll_depth_pct` | `BlogArticleTracker.tsx` | Fires at 80% scroll via IntersectionObserver |
 | `blog_cta_clicked` | `variant`, `cta_label`, `location` | `ArticleCTA.tsx` | Inline and full CTA variants |
 | `about_cta_clicked` | `cta_label` | `AboutCTAs.tsx` | get_early_access \| read_blog |
+
+Passive marketing trackers subscribe to analytics readiness. If a visitor grants analytics consent after the initial render, eligible page/article view tracking reruns after PostHog becomes ready.
 
 **Deferred:**
 - `pricing_toggle_changed` — annual/monthly toggle not yet built
@@ -182,6 +187,7 @@ Two naming conventions are in use. **Never mix them.**
 | `upgrade_prompt.shown` | `tier`, `feature` | |
 | `upgrade_prompt.dismissed` | — | |
 | `upgrade_prompt.clicked` | `tier`, `feature` | |
+| `upgrade_prompt.see_plans` | — | Explicit See plans action |
 
 #### Product adoption
 | Event | Props | Call site |
@@ -207,8 +213,8 @@ Two naming conventions are in use. **Never mix them.**
 | `trial_reminder_sent` | Reminder email dispatched |
 | `paywall_hit` | Entitlement middleware blocks feature |
 | `subscription_activated` | First paid subscription |
-| `subscription_upgraded` | Plan upgrade |
-| `subscription_cancelled` | Cancellation |
+| `subscription_upgraded` | Stripe update where `TIER_ORDER[new] > TIER_ORDER[previous]` |
+| `subscription_cancelled` | Canonical Shopify/Stripe cancellation event |
 | `payment_failed` | Stripe webhook |
 
 ---
@@ -233,38 +239,68 @@ Product code
 
 ## 7. Identity Model
 
-### Unit of revenue = shop, not user
+### Consent first
 
-```ts
-// identifyUser() — adapter.ts
-posthog.identify(userId.toString(), {
-  shop_id: shopId ?? null,
-  plan: meta?.plan ?? null,
-  trial_ends_at: meta?.trial_ends_at ?? null,
-  created_at: meta?.created_at ?? null,
-});
+PostHog is not initialized on browser surfaces until the shared analytics consent cookie is `granted`.
 
-// groupByShop() — adapter.ts
-posthog.group('shop', shopId.toString());
+Cookie:
+
+```text
+lasyncro_analytics_consent=granted|denied
+Domain=.lasyncro.com
 ```
 
-Called at three sites:
-- `AuthContext.tsx` — session hydration (JWT decode)
-- `AuthLogin.tsx` — after successful login
-- `AuthRegister.tsx` — after successful registration
+This allows one consent choice to apply across `www.lasyncro.com`, `lasyncro.com`, and `app.lasyncro.com`.
 
-`plan`, `trial_ends_at`, and `created_at` come from JWT claims (enriched on backend).
+### Anonymous → user → shop
 
-### Distinct ID flow
+After consent is granted:
+
+```text
+www.lasyncro.com
+  → PostHog initializes
+  → anonymous distinct_id created in shared .lasyncro.com persistence
+
+app.lasyncro.com
+  → same PostHog project + shared cross-subdomain persistence
+  → anonymous identity continues
+
+login / registration / session hydration
+  → identifyUser(user_id, shop_id, metadata)
+  → groupByShop(shop_id)
 ```
-www.lasyncro.com visit        → anon distinct_id set in .lasyncro.com cookie
-apps/marketing page visit     → same cookie → same distinct_id
-Click "Start free"            → app.lasyncro.com reads same cookie → same distinct_id
-auth.signup.success fires     → posthog.identify(user_id) → anon_id aliased to user_id
-All future events             → attributed to user_id
+
+`identifyUser()` and `groupByShop()` are called from:
+
+- `AuthContext.tsx` — session hydration
+- `AuthLogin.tsx` — successful login
+- `AuthRegister.tsx` — successful registration
+
+If authentication becomes available before PostHog is ready, the app adapter retains the pending user/shop identity and replays it after the `lasyncro:posthog-ready` event.
+
+### Logout
+
+`AuthContext.logout()` calls `resetAnalyticsIdentity()`.
+
+The reset:
+
+1. clears any pending identity/shop state immediately;
+2. calls `posthog.reset()` when PostHog is consented and ready.
+
+This prevents activity from a later anonymous or different-user session being attributed to the previous user.
+
+### Backend identity
+
+Backend events intentionally use:
+
+```text
+distinct_id = shop_<shopId>
+$groups.shop = <shopId>
 ```
 
----
+Backend events therefore join frontend behavior at the **shop group** level, not through the frontend user's person-level `distinct_id`.
+
+`PH-04` remains pending: the `shop` group type must be configured in PostHog for group-level analysis.
 
 ## 8. FT1 → FT2 Flow (Aha Moment)
 
@@ -374,43 +410,48 @@ ft2.activated
 
 ## 12. Dev Environment
 
-PostHog production isolation is enforced by `AN-ENV-01`.
+Production isolation remains enforced by `AN-ENV-01`.
 
-- `app.lasyncro.com` — frontend PostHog + GA4 allowed only in production mode.
-- `www.lasyncro.com` and `lasyncro.com` — marketing/landing PostHog allowed.
-- localhost, `127.0.0.1`, Vercel previews, staging, E2E and other hosts — production analytics disabled.
-- Backend PostHog requires all three: `NODE_ENV=production`, `ANALYTICS_PRODUCTION_ENABLED=true`, and `POSTHOG_API_KEY`.
-- Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
+Browser PostHog now has two gates:
 
-```js
-window.__FUNNEL_TRACE__  // inspect in browser console during dev
+1. the surface must be an approved production runtime/hostname;
+2. `lasyncro_analytics_consent` must equal `granted`.
+
+Production requirements:
+
+- `app.lasyncro.com` — production Vite runtime + exact production hostname + consent.
+- `www.lasyncro.com` / `lasyncro.com` — production marketing/landing host + consent.
+- `/checklist` — production public host + consent.
+- localhost, `127.0.0.1`, previews, staging, CI and E2E hosts — production PostHog disabled.
+- Backend PostHog — `NODE_ENV=production`, `ANALYTICS_PRODUCTION_ENABLED=true`, and `POSTHOG_API_KEY`.
+
+The app exposes PostHog readiness through:
+
+```text
+window.__LASYNCRO_POSTHOG_READY__
+lasyncro:posthog-ready
 ```
 
-Quick reference:
-```ts
-// Emit an event (correct way — app only)
-const { emit } = useUiEvents();
-emit('module.visited', { module: 'inventory' });
+Static public pages expose their enabled state through:
 
-// Verify PostHog is initialised
-window.posthog?.get_distinct_id()
-
-// Check cross-domain cookie is set
-document.cookie  // look for ph_ prefixed cookie with domain=.lasyncro.com
+```text
+window.__LASYNCRO_ANALYTICS_ENABLED__
 ```
 
----
+Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
 
 ## 13. Pitfalls
 
-1. **Different API hosts breaks session stitching** — all three surfaces must use `https://t.lasyncro.com`
-2. **Missing cross-domain options creates phantom users** — `cookie_domain` + `cross_subdomain_cookie` + `persistence` must be present on all three surfaces
-3. **Calling `posthog.capture()` directly in the app bypasses the adapter** — always use `useUiEvents().emit()`
-4. **`useEffect` dependency arrays must include `emit`** — TypeScript / ESLint will warn; always follow the suggestion
-5. **Marketing app components that call PostHog must be `'use client'`** — server components cannot use hooks
-6. **Never use `email` as a PostHog identify property without consent** — GDPR applies to EU merchants; use `user_id` and `shop_id` only unless explicit consent obtained
-
----
+1. **Different PostHog API hosts break identity continuity** — browser surfaces use `https://t.lasyncro.com`.
+2. **Missing cross-subdomain persistence creates fragmented anonymous identities** — keep `cookie_domain`, `cross_subdomain_cookie`, and `persistence` aligned.
+3. **Production hostname is not enough** — browser PostHog must also wait for analytics consent.
+4. **Do not call `posthog.capture()` directly from app product components** — use `useUiEvents().emit()`.
+5. **Marketing custom events use `captureMarketingEvent()`** — this is the central consent-aware marketing capture boundary.
+6. **Passive marketing view events must depend on analytics readiness** — otherwise a visitor granting consent after initial render can lose the view event.
+7. **Logout must reset PostHog identity** — otherwise a shared browser can retain the previous user's attribution.
+8. **Do not put raw email into behavior analytics events** — waitlist email belongs in the application API payload, not PostHog.
+9. **Frontend and backend do not share the same person `distinct_id`** — backend lifecycle events join frontend behavior through the `shop` group.
+10. **A Stripe subscription update is not automatically an upgrade** — emit `subscription_upgraded` only when canonical tier rank increases.
 
 ## 14. Completed Issues Log
 
@@ -429,6 +470,48 @@ document.cookie  // look for ph_ prefixed cookie with domain=.lasyncro.com
 | Jun 2026 | PH-05 listed as pending despite PH-02 being done | PH-05 closed — `PostHogPageView.tsx` confirmed mounted in router, covers the same requirement |
 | Jun 2026 | Section 5 note contradicting PH-01 ✅ status | Note was stale — PH-01 confirmed done via grep; Section 5 updated |
 | Jun 2026 | posthog-node backend events (PH-03) | `trial_started`, `trial_expired`, `trial_reminder_sent`, `paywall_hit`, `subscription_activated`, `subscription_upgraded`, `subscription_cancelled`, `payment_failed` — all live |
+| Sep 2026 | AN-PH-01 PostHog wiring + data-quality hardening | Unified consent gating; added app readiness/pending identity replay; reset identity on logout; removed checklist email from PostHog; removed RouteLogger production noise; enforced typed app event path; normalized subscription cancellation/upgrade semantics; added homepage conversions; fixed delayed-consent passive marketing tracking; added regression contracts |
+
+---
+
+## AN-PH-01 — PostHog Wiring & Data Quality Hardening
+
+**Completed:** September 4, 2026
+
+### Invariants
+
+1. Browser PostHog initializes only on approved production surfaces after analytics consent is granted.
+2. App product events use the typed `useUiEvents().emit()` path.
+3. Marketing custom events use the consent-aware `captureMarketingEvent()` boundary.
+4. Raw waitlist email is never included in PostHog event properties.
+5. Authenticated identity is replayed if authentication precedes PostHog readiness.
+6. Logout clears pending identity and resets PostHog.
+7. Backend lifecycle analytics remain shop-grouped.
+8. Subscription cancellation uses one canonical event name.
+9. `subscription_upgraded` means an actual upward tier transition.
+10. Homepage launch, waitlist and Shopify-install conversion intents are explicitly instrumented.
+
+### Regression contracts
+
+- `tests/contract/posthog-app-consent-timing.contract.test.ts`
+- `tests/contract/posthog-consent.contract.test.ts`
+- `tests/contract/posthog-homepage-conversions.contract.test.ts`
+- `tests/contract/posthog-identity-lifecycle.contract.test.ts`
+- `tests/contract/posthog-marketing-consent-timing.contract.test.ts`
+- `tests/contract/posthog-marketing-passive-consent.contract.test.ts`
+- `tests/contract/posthog-no-pii.contract.test.ts`
+- `tests/contract/posthog-route-noise.contract.test.ts`
+- `tests/contract/posthog-subscription-taxonomy.contract.test.ts`
+- `tests/contract/posthog-typed-events.contract.test.ts`
+- `tests/contract/analytics-consent-ux.contract.test.ts`
+
+### Verification
+
+- AN-PH-01 targeted contracts: **29/29 passed**.
+- Marketing production build: **passed** using Next webpack build path in the temporary worktree.
+- Frontend TypeScript: **21 errors current / 21 errors clean HEAD**, identical pre-existing baseline; zero analytics-scope errors.
+- Backend build: AN-PH-01 `TIER_ORDER` resolution verified; remaining **2 errors** reproduced identically on clean HEAD.
+- Full contract suite in temporary worktree: **310 passed / 3 environment failures**; the same 3 `frontend-production-build-env` failures reproduced on clean HEAD because Vite resolves through the external worktree `node_modules` symlink.
 
 ---
 

@@ -4,7 +4,7 @@
 import React, { createContext, useState, useContext, ReactNode, useCallback } from 'react';
 import { PublicUser } from 'api-types';
 import { getToken, setToken, clearToken, setOnTokenRefreshed } from 'utils/authStore';
-import { identifyUser, groupByShop } from '../analytics/adapter';
+import { identifyUser, groupByShop, resetAnalyticsIdentity } from '../analytics/adapter';
 
 // --- Define State Shape ---
 interface AuthState {
@@ -172,6 +172,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const logout = useCallback(() => {
+    resetAnalyticsIdentity();
     setAuthState({
       isLoggedIn: false,
       isLoading: false,

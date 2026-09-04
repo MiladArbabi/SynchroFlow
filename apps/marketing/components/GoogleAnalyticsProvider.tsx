@@ -125,7 +125,7 @@ function ConsentBanner() {
   return (
     <div
       role="dialog"
-      aria-label="Google Analytics consent"
+      aria-label="Analytics consent"
       style={{
         position: 'fixed',
         left: 16,
@@ -142,16 +142,16 @@ function ConsentBanner() {
       }}
     >
       <div style={{ marginBottom: 12, lineHeight: 1.5 }}>
-        LaSyncro uses Google Analytics to understand website usage. It is
+        LaSyncro uses analytics tools to understand website usage. It is
         optional and is not loaded unless you allow it.
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={() => choose('granted')}>
-          Allow Google Analytics
+          Allow analytics
         </button>
         <button type="button" onClick={() => choose('denied')}>
-          Decline Google Analytics
+          Decline analytics
         </button>
       </div>
     </div>

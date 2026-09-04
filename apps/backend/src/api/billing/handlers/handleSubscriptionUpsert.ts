@@ -22,7 +22,7 @@
 
 import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
-import { getTierConfig, isValidTier, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { getTierConfig, isValidTier, TIER_ORDER, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
@@ -202,20 +202,37 @@ export async function handleSubscriptionUpsert(
   console.log('[billing][subscription_upsert] complete', { shopId, tier, status,eventId: envelope.eventId });
 
   /**
-   * PH-03: subscription_activated or subscription_upgraded.
-   * Fires after Stripe confirms a paid subscription is live.
-   * 'created' = new paid subscription, 'updated' = tier change or renewal.
+   * PH-03 subscription lifecycle analytics.
+   * - created => activated
+   * - updated => upgraded only when the canonical tier rank increased
+   * Same-tier renewals and downgrades must not inflate upgrade metrics.
    */
   const stripeEventType = envelope.eventType;
-  captureEvent({
-    shopId,
-    event: stripeEventType === 'customer.subscription.created'
-      ? 'subscription_activated'
-      : 'subscription_upgraded',
-    properties: {
-      tier,
-      status,
-      billing_interval: billingInterval,
-    },
-  });
+
+  if (stripeEventType === 'customer.subscription.created') {
+    captureEvent({
+      shopId,
+      event: 'subscription_activated',
+      properties: {
+        tier,
+        status,
+        billing_interval: billingInterval,
+      },
+    });
+  } else if (
+    stripeEventType === 'customer.subscription.updated' &&
+    priorTier &&
+    TIER_ORDER[tier] > TIER_ORDER[priorTier]
+  ) {
+    captureEvent({
+      shopId,
+      event: 'subscription_upgraded',
+      properties: {
+        tier,
+        previous_tier: priorTier,
+        status,
+        billing_interval: billingInterval,
+      },
+    });
+  }
 }

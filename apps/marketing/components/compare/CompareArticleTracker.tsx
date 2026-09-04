@@ -1,14 +1,16 @@
 'use client'
 
-import { usePostHog } from 'posthog-js/react'
+import { captureMarketingEvent, useMarketingAnalyticsReady } from '../PostHogProvider'
 import { useEffect } from 'react'
 
 export default function CompareArticleTracker({ competitor }: { competitor: string }) {
-  const ph = usePostHog()
+
+  const analyticsReady = useMarketingAnalyticsReady()
 
   useEffect(() => {
-    ph?.capture('compare_page_viewed', { competitor })
-  }, [ph, competitor])
+    if (!analyticsReady) return
+    captureMarketingEvent('compare_page_viewed', { competitor })
+  }, [analyticsReady, competitor])
 
   return null
 }

@@ -42,16 +42,16 @@ export function AnalyticsConsentBanner() {
       }}
     >
       <div style={{ marginBottom: 12, lineHeight: 1.5 }}>
-        LaSyncro uses Google Analytics to understand product usage. It is optional
-        and is not loaded unless you allow it.
+        LaSyncro uses analytics tools to understand product usage and improve the service.
+        Analytics are optional and are not loaded unless you allow them.
       </div>
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         <button type="button" onClick={() => choose('granted')}>
-          Allow Google Analytics
+          Allow analytics
         </button>
         <button type="button" onClick={() => choose('denied')}>
-          Decline Google Analytics
+          Decline analytics
         </button>
       </div>
     </div>

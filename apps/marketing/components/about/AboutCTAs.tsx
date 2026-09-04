@@ -1,10 +1,9 @@
 'use client'
 
-import { usePostHog } from 'posthog-js/react'
+import { captureMarketingEvent } from '../PostHogProvider'
 import Link from 'next/link'
 
 export default function AboutCTAs() {
-  const ph = usePostHog()
 
   return (
     <div
@@ -18,7 +17,7 @@ export default function AboutCTAs() {
       <Link
         href="/blog"
         onClick={() =>
-          ph?.capture('about_cta_clicked', { cta_label: 'read_blog' })
+          captureMarketingEvent('about_cta_clicked', { cta_label: 'read_blog' })
         }
         style={{
           display: 'inline-flex',

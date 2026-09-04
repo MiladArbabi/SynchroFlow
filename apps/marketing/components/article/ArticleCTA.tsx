@@ -1,6 +1,6 @@
 'use client'
 
-import { usePostHog } from 'posthog-js/react'
+import { captureMarketingEvent } from '../PostHogProvider'
 
 interface ArticleCTAProps {
   variant?: 'inline' | 'full'
@@ -11,14 +11,13 @@ interface ArticleCTAProps {
 }
 
 export default function ArticleCTA({ variant = 'full', theme = 'legacy', text, href, label }: ArticleCTAProps) {
-  const ph = usePostHog()
   // Defaults keep legacy CTAs safe; article frontmatter can override destination and label per search intent.
   const targetHref = href ?? 'https://app.lasyncro.com'
   const targetLabel = label ?? 'Start free'
   const isDark = theme === 'dark'
 
   function handleClick() {
-    ph?.capture('blog_cta_clicked', {
+    captureMarketingEvent('blog_cta_clicked', {
       variant,
       cta_label: targetLabel,
       cta_href: targetHref,

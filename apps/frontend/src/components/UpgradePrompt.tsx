@@ -26,7 +26,7 @@ import {
   Stack, Typography, useTheme, alpha,
 } from '@mui/material';
 import { Lock, X, ArrowRight, Check } from 'lucide-react';
-import { sendEvent } from '../analytics/adapter';
+import { useUiEvents } from '../analytics/useUiEvents';
 import { useEntitlements } from '../contexts/EntitlementsContext';
 import {
   PEGGED_DISPLAY_PRICES,
@@ -100,17 +100,18 @@ function TeasedOverlay({
   requiredTier, featureName, featureBlurb, children,
 }: Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'featureBlurb' | 'children'>) {
   const theme = useTheme();
+  const { emit } = useUiEvents();
   const { billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
   const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
   const tierPrice = resolvePrice(requiredTier, currency);
 
   useEffect(() => {
-    sendEvent('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'teased' });
-  }, [requiredTier, featureName]);
+    emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'teased' });
+  }, [requiredTier, featureName, emit]);
 
   const handleUpgrade = () => {
-    sendEvent('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
     window.location.href = BILLING_URL;
   };
 
@@ -193,23 +194,24 @@ function LockedGate({
   requiredTier, featureName, featureBlurb,
 }: Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'featureBlurb'>) {
   const theme = useTheme();
+  const { emit } = useUiEvents();
   const { billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
   const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
   const tierPrice = resolvePrice(requiredTier, currency);
 
   useEffect(() => {
-    sendEvent('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'locked' });
-  }, [requiredTier, featureName]);
+    emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'locked' });
+  }, [requiredTier, featureName, emit]);
 
   const handleUpgrade = () => {
-    sendEvent('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
     window.location.href = BILLING_URL;
   };
 
   const handleSeePlans = (e: React.MouseEvent) => {
     e.preventDefault();
-    sendEvent('upgrade_prompt.see_plans', { requiredTier });
+    emit('upgrade_prompt.see_plans', { requiredTier });
     window.location.href = BILLING_URL;
   };
 
@@ -286,6 +288,7 @@ function UpgradeModal({
 }: Required<Pick<UpgradePromptProps, 'open'>> &
   Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'benefits' | 'onClose'>) {
   const theme = useTheme();
+  const { emit } = useUiEvents();
   const { tier: currentTier, billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
   const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
@@ -294,18 +297,18 @@ function UpgradeModal({
 
   useEffect(() => {
     if (open) {
-      sendEvent('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'modal' });
+      emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'modal' });
     }
-  }, [open, requiredTier, featureName]);
+  }, [open, requiredTier, featureName, emit]);
 
   const handleUpgrade = () => {
-    sendEvent('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
     onClose?.();
     window.location.href = BILLING_URL;
   };
 
   const handleDismiss = () => {
-    sendEvent('upgrade_prompt.dismissed', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.dismissed', { requiredTier, featureName: featureName ?? null });
     onClose?.();
   };
 

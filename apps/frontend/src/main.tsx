@@ -36,7 +36,6 @@ import 'react-resizable/css/styles.css';
 
 import { loadAllModules } from 'runtime/moduleLoader';
 import { bootstrapNavGroups } from 'runtime/navBootstrap';
-import { RouteLogger } from './debug/RouteLogger';
 
 // --- [POSTHOG INITIALIZATION - SINGLE SOURCE OF TRUTH] ---
 import posthog from 'posthog-js';
@@ -44,6 +43,7 @@ import { PostHogProvider } from 'posthog-js/react';
 import { PostHogPageView } from './analytics/PostHogPageView';
 import { shouldEnableFrontendAnalytics } from './analytics/environment';
 import { GoogleAnalyticsPageView } from './analytics/GoogleAnalyticsPageView';
+import { getAnalyticsConsent } from './analytics/googleAnalytics';
 import { AnalyticsConsentBanner } from './analytics/AnalyticsConsentBanner';
 
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
@@ -60,6 +60,13 @@ const ReactQueryDevtools = import.meta.env.DEV
       }))
     )
   : null;
+
+let posthogInitialized = false;
+(window as any).__LASYNCRO_POSTHOG_READY__ = false;
+
+function initializePostHog(): void {
+  if (getAnalyticsConsent() !== 'granted') return;
+  if (posthogInitialized) return;
 
 // HARD GUARD: production build + production app host only (AN-ENV-01)
 if (!analyticsEnabled) {
@@ -109,6 +116,10 @@ if (!analyticsEnabled) {
     } as unknown as object),
   });
 
+  posthogInitialized = true;
+  (window as any).__LASYNCRO_POSTHOG_READY__ = true;
+  window.dispatchEvent(new CustomEvent('lasyncro:posthog-ready'));
+
   // --- [DEBUG EXPOSURE - REMOVE IN PROD IF NEEDED] ---
   if (typeof window !== 'undefined') {
     (window as any).posthog = posthog;
@@ -119,6 +130,10 @@ if (!analyticsEnabled) {
     host: posthogHost
   });
 }
+}
+
+initializePostHog();
+window.addEventListener('lasyncro:analytics-consent', initializePostHog);
 
 const container = document.getElementById("root");
 
@@ -179,7 +194,6 @@ root.render(
               <PostHogPageView />
               <GoogleAnalyticsPageView />
               <AnalyticsConsentBanner />
-             <RouteLogger />
               {/* 6. IntlProvider (Localization) */}
               <IntlProvider
                 locale={defaultLocale}

@@ -10,10 +10,26 @@ import posthog from 'posthog-js'
 import { PostHogProvider as PHProvider } from 'posthog-js/react'
 import { usePostHog } from 'posthog-js/react'
 import { usePathname, useSearchParams } from 'next/navigation'
-import { Suspense, useEffect } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 
 const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY ?? ''
 const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://t.lasyncro.com'
+
+const CONSENT_COOKIE = 'lasyncro_analytics_consent'
+type Consent = 'granted' | 'denied' | null
+
+function getConsent(): Consent {
+  if (typeof document === 'undefined') return null
+
+  const prefix = `${CONSENT_COOKIE}=`
+  const value = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix))
+    ?.slice(prefix.length)
+
+  return value === 'granted' || value === 'denied' ? value : null
+}
 
 function shouldEnablePostHog() {
   if (typeof window === 'undefined') return false
@@ -38,7 +54,14 @@ function getPageviewContext(pathname: string) {
   return { section: 'marketing', page_type: 'static_page' }
 }
 
-if (shouldEnablePostHog()) {
+let posthogInitialized = false
+
+function initializePostHog() {
+  if (!shouldEnablePostHog()) return
+  if (getConsent() !== 'granted') return
+  if (!POSTHOG_KEY) return
+  if (posthogInitialized) return
+
   posthog.init(POSTHOG_KEY, {
     api_host: POSTHOG_HOST,
     ui_host: 'https://app.posthog.com',
@@ -50,16 +73,64 @@ if (shouldEnablePostHog()) {
     cross_subdomain_cookie: true,
     persistence: 'localStorage+cookie',
   } as Parameters<typeof posthog.init>[1])
+  posthogInitialized = true
+}
+
+export function captureMarketingEvent(
+  event: string,
+  properties: Record<string, unknown> = {}
+) {
+  if (!shouldEnablePostHog()) return
+  if (getConsent() !== 'granted') return
+
+  initializePostHog()
+  if (!posthogInitialized) return
+
+  posthog.capture(event, properties)
 }
 
 /** Fires one enriched $pageview event on every client-side route change. */
+export function useMarketingAnalyticsReady(): boolean {
+  const [analyticsReady, setAnalyticsReady] = useState(false)
+
+  useEffect(() => {
+    const sync = () => {
+      initializePostHog()
+      setAnalyticsReady(
+        shouldEnablePostHog() &&
+          getConsent() === 'granted' &&
+          posthogInitialized
+      )
+    }
+
+    sync()
+    window.addEventListener('lasyncro:analytics-consent', sync)
+
+    return () =>
+      window.removeEventListener('lasyncro:analytics-consent', sync)
+  }, [])
+
+  return analyticsReady
+}
+
 function PageViewTracker() {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const ph = usePostHog()
+  const [consent, setConsent] = useState<Consent>(getConsent())
+
+  useEffect(() => {
+    const onConsent = () => setConsent(getConsent())
+
+    window.addEventListener('lasyncro:analytics-consent', onConsent)
+    return () =>
+      window.removeEventListener('lasyncro:analytics-consent', onConsent)
+  }, [])
 
   useEffect(() => {
     if (!shouldEnablePostHog()) return
+    if (consent !== 'granted') return
+    initializePostHog()
     const url = searchParams.toString()
       ? `${window.origin}${pathname}?${searchParams.toString()}`
       : `${window.origin}${pathname}`
@@ -68,7 +139,7 @@ function PageViewTracker() {
       pathname,
       ...getPageviewContext(pathname),
     })
-  }, [pathname, searchParams, ph])
+  }, [pathname, searchParams, ph, consent])
 
   return null
 }

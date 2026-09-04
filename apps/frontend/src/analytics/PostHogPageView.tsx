@@ -1,5 +1,5 @@
 // apps/frontend/src/analytics/PostHogPageView.tsx
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import posthog from 'posthog-js';
 import { shouldEnableFrontendAnalytics } from './environment';
@@ -22,6 +22,17 @@ import { shouldEnableFrontendAnalytics } from './environment';
  */
 export function PostHogPageView(): null {
   const location = useLocation();
+  const [posthogReady, setPosthogReady] = useState(
+    () => (window as any).__LASYNCRO_POSTHOG_READY__ === true
+  );
+
+  useEffect(() => {
+    const onPostHogReady = () => setPosthogReady(true);
+
+    window.addEventListener('lasyncro:posthog-ready', onPostHogReady);
+    return () =>
+      window.removeEventListener('lasyncro:posthog-ready', onPostHogReady);
+  }, []);
 
   useEffect(() => {
     const analyticsEnabled = shouldEnableFrontendAnalytics({
@@ -30,6 +41,7 @@ export function PostHogPageView(): null {
     });
 
     if (!analyticsEnabled) return;
+    if (!posthogReady) return;
 
     if (posthog?.capture) {
       posthog.capture('$pageview', {
@@ -37,7 +49,7 @@ export function PostHogPageView(): null {
       });
       console.info('[analytics:pageview]', location.pathname);
     }
-  }, [location.pathname]);
+  }, [location.pathname, posthogReady]);
 
   return null;
 }

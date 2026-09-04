@@ -3,6 +3,7 @@
 
 import posthog from 'posthog-js';
 import { shouldEnableFrontendAnalytics } from './environment';
+import { getAnalyticsConsent } from './googleAnalytics';
 
 function isProductionAnalyticsRuntime(): boolean {
   return shouldEnableFrontendAnalytics({
@@ -49,35 +50,93 @@ if ((window as any).__ANALYTICS_ADAPTER_LOADED__) {
  *   - Revenue, churn, and funnel metrics are per-shop, not per-human.
  *   - Must be called alongside identifyUser() — never one without the other.
  */
+type IdentityMeta = {
+  plan?: string;
+  trial_ends_at?: string;
+  created_at?: string;
+};
+
+let pendingIdentity: {
+  userId: number;
+  shopId?: number;
+  meta?: IdentityMeta;
+} | null = null;
+
+let pendingShopId: number | null = null;
+
+function isPostHogReady(): boolean {
+  return (window as any).__LASYNCRO_POSTHOG_READY__ === true;
+}
+
+function canUsePostHog(): boolean {
+  if (!isProductionAnalyticsRuntime()) return false;
+  if (getAnalyticsConsent() !== 'granted') return false;
+  if (!isPostHogReady()) return false;
+  return true;
+}
+
+function flushPendingIdentity(): void {
+  if (!canUsePostHog()) return;
+
+  if (pendingIdentity && typeof posthog.identify === 'function') {
+    const { userId, shopId, meta } = pendingIdentity;
+
+    posthog.identify(userId.toString(), {
+      shop_id: shopId ?? null,
+      plan: meta?.plan ?? null,
+      trial_ends_at: meta?.trial_ends_at ?? null,
+      created_at: meta?.created_at ?? null,
+    });
+
+    console.info('[analytics:adapter:identify]', { userId, shopId, meta });
+    pendingIdentity = null;
+  }
+
+  if (pendingShopId !== null && typeof posthog.group === 'function') {
+    posthog.group('shop', pendingShopId.toString());
+    console.info('[analytics:adapter:group]', { shopId: pendingShopId });
+    pendingShopId = null;
+  }
+}
+
+window.addEventListener('lasyncro:posthog-ready', flushPendingIdentity);
+
 export function identifyUser(
   userId: number,
   shopId?: number,
-  meta?: { plan?: string; trial_ends_at?: string; created_at?: string }
+  meta?: IdentityMeta
 ): void {
   if (!isProductionAnalyticsRuntime()) return;
 
-  if (!posthog || typeof posthog.identify !== 'function') {
-    console.warn('[analytics:adapter] posthog.identify not ready');
-    return;
-  }
-  posthog.identify(userId.toString(), {
-    shop_id: shopId ?? null,
-    plan: meta?.plan ?? null,
-    trial_ends_at: meta?.trial_ends_at ?? null,
-    created_at: meta?.created_at ?? null,
-  });
-  console.info('[analytics:adapter:identify]', { userId, shopId, meta });
+  pendingIdentity = { userId, shopId, meta };
+  flushPendingIdentity();
 }
 
 export function groupByShop(shopId: number): void {
   if (!isProductionAnalyticsRuntime()) return;
 
-  if (!posthog || typeof posthog.group !== 'function') {
-    console.warn('[analytics:adapter] posthog.group not ready');
+  pendingShopId = shopId;
+  flushPendingIdentity();
+}
+
+export function resetAnalyticsIdentity(): void {
+  if (!isProductionAnalyticsRuntime()) return;
+
+  // Prevent a user who logged out before granting consent from being
+  // replayed later when PostHog becomes ready.
+  pendingIdentity = null;
+  pendingShopId = null;
+
+  if (getAnalyticsConsent() !== 'granted') return;
+  if (!isPostHogReady()) return;
+
+  if (!posthog || typeof posthog.reset !== 'function') {
+    console.warn('[analytics:adapter] posthog.reset not ready');
     return;
   }
-  posthog.group('shop', shopId.toString());
-  console.info('[analytics:adapter:group]', { shopId });
+
+  posthog.reset();
+  console.info('[analytics:adapter:reset]');
 }
 
 export function sendEvent(event: string, payload: Record<string, unknown>) {
@@ -96,6 +155,8 @@ if (import.meta.env.DEV) {
 }
 
 if (!isProductionAnalyticsRuntime()) return;
+if (getAnalyticsConsent() !== 'granted') return;
+if (!isPostHogReady()) return;
 
 // --- HARD PROVIDER GUARD ---
 if (!posthog || typeof posthog.capture !== 'function') {

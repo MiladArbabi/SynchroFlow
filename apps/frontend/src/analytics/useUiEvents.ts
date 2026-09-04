@@ -33,6 +33,7 @@ export type UiEventName =
   | 'upgrade_prompt.shown'
   | 'upgrade_prompt.dismissed'
   | 'upgrade_prompt.clicked'
+  | 'upgrade_prompt.see_plans'
   // Module adoption
   | 'module.visited'
   // Onboarding
