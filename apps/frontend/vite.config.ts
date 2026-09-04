@@ -50,6 +50,8 @@ export default defineConfig(({ command }) => {
       
       // --- OUR EXISTING ALIASES ---
       '@lasyncro/shared/ui': path.resolve(__dirname, '../../modules/shared/src/ui'),
+      // Shared commercial-policy package — one physical source of truth (COMMERCIAL-ACCESS-ARCH-01 P0-A0)
+      '@lasyncro/commercial-policy': path.resolve(__dirname, '../../packages/commercial-policy/src/index.ts'),
       'assets': path.resolve(__dirname, './src/assets'),
       'components': path.resolve(__dirname, './src/components'),
       'context': path.resolve(__dirname, './src/contexts/MaterialUI.tsx'),

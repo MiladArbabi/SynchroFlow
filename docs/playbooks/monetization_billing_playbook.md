@@ -235,6 +235,13 @@ Stripe Webhook → invoice.payment_succeeded → handleInvoicePaid
 
 **Rule:** Never gate inline with raw tier strings in components. Always add to `PLAN_FEATURES` and use `PlanGate`.
 
+> **Consolidation in progress — `COMMERCIAL-ACCESS-ARCH-01` (§32).** As of
+> 2026-09-04 the physical package `@lasyncro/commercial-policy`
+> (`packages/commercial-policy/`) exists as the single future home for the
+> backend and frontend descriptions above. P0-A0 wired the package only;
+> `require-entitlement.middleware.ts`, `usePlanEntitlement.ts`, `PlanGate`, and
+> `resolveNavVisibility` are unchanged until P0-A1/P0-A2.
+
 ---
 
 ## 8. Seat Limit Enforcement (MON-04)
@@ -434,6 +441,12 @@ separate places that do not share logic and can silently disagree:
 layers if it appears in more than one — do not assume fixing the sidebar
 also fixes the tab bar, or vice versa.
 
+> **Being retired by `COMMERCIAL-ACCESS-ARCH-01` (§32).** The three-layer split
+> here is the problem statement for that umbrella: all three layers, the route
+> gate, and backend enforcement will consume one shared `evaluateAccess()` from
+> `@lasyncro/commercial-policy`. P0-A0 (2026-09-04) landed the physical package;
+> the ALL-THREE-layers rule still applies until P0-A1 consolidates the logic.
+
 ### 13.2 The real enforcement is the backend route, not the frontend
 
 The frontend layers above are UX — they hide/show/badge things. Security
@@ -466,6 +479,10 @@ exactly that.
 `PLAN_FEATURES` in `usePlanEntitlement.ts` is maintained by hand and has no
 automated check against `packages/backend-core/src/config/tiers.ts`. Cross-checked
 2026-07-14:
+
+> The automated parity check this section calls for is `C13` / `C19` under
+> `COMMERCIAL-ACCESS-ARCH-01` (§32), delivered in P0-A1 once the canonical
+> registry moves into `@lasyncro/commercial-policy`.
 
 - `alerts.inbox: 'core'` — backend has `alerts` in `STARTER_MODULES` (free).
   Mismatch confirmed, but **dead code** — not referenced by any live `PlanGate`
@@ -1970,3 +1987,130 @@ EXP-DRAWER-DUPLICATE-152   ExportDrawer:44-45 and ShopSettingsReportsPage:49-50
                            duplicate the export body construction wholesale.
                            Same dual-maintenance shape as -118's dual mount.
 ```
+
+---
+
+## 32. Shared Commercial-Policy Package — `COMMERCIAL-ACCESS-ARCH-01` / `COMMERCIAL-ACCESS-COVERAGE-01` P0-A0 (package + toolchain wiring verified 2026-09-04)
+
+### Why this exists
+
+§13.1 records that tier gating runs in **three independent layers that do not
+share logic and can silently disagree** (sidebar nav, in-page `ModuleTabBar`,
+component `PlanGate`), and §13.4 records that `PLAN_FEATURES` (frontend) has
+**no automated parity check** against `TIER_CONFIG` (`packages/backend-core`).
+A production audit (`NAV-ENTITLEMENT-PARITY-01`) then found the same shop on
+the highest tier (Scale) blocked from **Warehouse / Purchasing / Sourcing** in
+the sidebar while `ModuleTabBar`, the direct route, and the backend API all
+allowed it — the divergence §13.1 warned about, shipped.
+
+`COMMERCIAL-ACCESS-ARCH-01` retires the three-layer split. All navigation
+surfaces, the frontend route gate, and backend enforcement will consume **one**
+pure `evaluateAccess()` from **one physical package**. **P0-A0 is only the
+package + toolchain wiring** — it changes no commercial behavior and fixes no
+gate. The production defect remains RED until P0-A1/P0-A2.
+
+### What P0-A0 delivered (verified facts)
+
+| Fact | Detail |
+|---|---|
+| Package dir | `packages/commercial-policy/` |
+| npm name / version | `@lasyncro/commercial-policy` @ `0.1.0` (`private: false`) |
+| Nature | pure / isomorphic — zero runtime deps; no React / Express / Knex / DB / browser globals / `import.meta.env` / `process.env` behaviour; browser-safe **and** Node-safe |
+| Current exports | wiring sentinel only (`COMMERCIAL_POLICY_PACKAGE`, `COMMERCIAL_POLICY_WIRING_OK`). **No** `Tier`, `TIER_ORDER`, `ModuleId`, `CapabilityId`, `AccessRequirement`, `AccessDecision`, `evaluateAccess`, requirement registry |
+| Built dist (committed, per `packages/*` convention) | `packages/commercial-policy/dist/index.js`, `dist/index.d.ts` — reproducible from `tsc -b tsconfig.build.json` |
+| Production build | root `package.json` `build:deps` now builds it (inserted after `packages/backend-core`) |
+| App dependency wiring | declared in **both** `apps/backend/package.json` and `apps/frontend/package.json` `dependencies` (`0.1.0`, same convention as `@lasyncro/backend-core`) |
+| Frontend source resolution | Vite alias + `apps/frontend/tsconfig.json` path + `jest.config.js` mapping (node + frontend projects) — all point at `packages/commercial-policy/src/index.ts` |
+| Backend compiled-runtime resolution | workspace dependency → package `exports` → built `dist/index.js` (proven with a compiled-`node` `import()`, not tsx / source aliasing) |
+| Dockerfile | **not modified** — its existing sequence `rm -rf modules/*/dist packages/*/dist` → `npm run build:deps` rebuilds the package; a full `build:deps` run confirmed the package survives that wipe-and-rebuild |
+| `apps/backend/tsconfig.json` | **not modified** — `node16` resolution + workspace symlink + built `dist` + `exports.types` is sufficient (same as `@lasyncro/shared`) |
+
+### Architectural decision (ratified)
+
+> There MUST be exactly **one physical** commercial-policy implementation.
+> Duplicated frontend/backend tier maps, or an equivalence test between two
+> copies, are **not** an acceptable substitute. Every future commercial-access
+> decision converges on `packages/commercial-policy/` — not on
+> `usePlanEntitlement.ts` `PLAN_FEATURES`, not on a private `TIER_ORDER` in
+> `resolveNavVisibility` / `ModuleTabBar` / `exportReports` /
+> `require-entitlement.middleware`, not on `backend-core` alone.
+
+A permanent wiring contract (`tests/contract/commercial-policy-package-wiring.contract.test.ts`,
+7/7 green) asserts the single-package invariant and that every alias/mapping/path
+resolves to the same source.
+
+### System-wide scope (not a Warehouse/Purchasing/Sourcing patch)
+
+Warehouse, Purchasing, and Sourcing are the currently-observed regression
+examples. The target architecture applies to the **entire** laSyncro commercial
+surface: every module and screen, every nav parent and child, every
+`ModuleTabBar` tab, every direct and nested route, every merchant-facing backend
+API, every module descriptor, every commercial limit, and all upgrade/locked UX.
+
+### Mandatory future coverage — carried forward, **not** implemented in P0-A0
+
+These are acceptance requirements for subsequent P0-A slices (P0-A1 policy +
+P0-A2 enforcement). None are done.
+
+| ID | Contract |
+|---|---|
+| C14 | COMPLETE SURFACE COVERAGE — every commercial surface maps to a `CapabilityId` |
+| C15 | NO LEGACY COMMERCIAL POLICY — no surface computes tier/module gating outside the shared package |
+| C16 | ALL-MODULE CROSS-SURFACE PARITY — sidenav == `ModuleTabBar` == route gate == backend, every module, every tier |
+| C17 | ROUTE COVERAGE — every commercial route subtree carries a `CommercialGate` bound to the registry |
+| C18 | BACKEND COVERAGE — every commercial API route carries `requireCapability` + `requireAction` |
+| C19 | MODULE-ID INTEGRITY — every referenced `ModuleId` is canonical and emittable by tier/grant policy |
+| C20 | CAPABILITY POLICY INTEGRITY — every `CapabilityId` resolves to exactly one non-contradictory requirement |
+| C21 | SCALE GLOBAL INVARIANT — Scale satisfies every non-bespoke capability across the whole surface |
+| C22 | FULL TIER MATRIX — starter/core/growth/scale × every capability → expected decision table |
+| C23 | DENIAL SEMANTICS — each denial reason renders its designated UI; no fabricated tier steps anywhere |
+| C24 | COMMERCIAL POLICY COVERAGE SNAPSHOT — a checked-in `{surface → capability → requirement}` inventory that CI diffs |
+
+### P0-A0 verification evidence (durable summary)
+
+- package `tsc -b` build PASS; dist reproducible from clean
+- wiring contract 7/7 PASS
+- frontend Vite resolution PASS (→ `packages/commercial-policy/src/index.ts`)
+- frontend TypeScript package resolution PASS
+- frontend Jest package resolution PASS
+- backend TypeScript package resolution PASS
+- backend compiled-`node` runtime resolution PASS (`exports` → `dist/index.js`)
+- contract-project Jest resolution PASS
+- full root `npm run build:deps` PASS end-to-end; deploy wipe-and-rebuild path proven
+- backend TSC error count = 0; commercial-policy target TSC errors = 0
+- frontend TSC = 19 pre-existing baseline errors, all in unrelated files, none attributable to this slice (Docker already skips frontend `tsc -b`)
+- Jest project ownership: `UNOWNED = 0`, `MULTI_OWNED = 0`
+- lockfile delta = the four `@lasyncro/commercial-policy` entries plus one incidental reconciliation of `modules/wms/package.json`'s already-declared `@lasyncro/shared` dep; no version upgrades, no `npm audit fix`
+
+### Remaining RED state after P0-A0 (expected)
+
+**25 deliberate commercial-access assertions remain RED** — 21 policy/route
+contracts (`tests/contract/commercial-access-policy.contract.test.ts`,
+`tests/contract/commercial-route-enforcement.contract.test.ts`) + 4 frontend
+parity contracts (`tests/unit/ui/commercial-access/nav-surface-parity.test.tsx`).
+They encode known P0-A1/P0-A2 gaps:
+
+- canonical `Tier` / `ModuleId` / `CapabilityId` policy; consolidation of the five private `TIER_ORDER` maps
+- invalid `wms-lite` nav module id → canonical `wms`
+- `suppliers-portal` as a real canonical, tier-emittable module (Purchasing = Starter+)
+- shared `evaluateAccess()` + shared requirement registry
+- removal of the `import.meta.env.DEV` module-gate bypass in `resolveNavVisibility`
+- removal of the fabricated `requiredTier ?? 'growth'` fallback in `SidenavContent` / `ModuleTabBar` / `UpgradePrompt`
+- frontend `CommercialGate` + route/backend parity; backend `requireCapability`
+- Warehouse Analytics contradictory tab config (`requiredTier: 'growth'` **and** `feature: 'wms.pick_batches'` which is a Starter feature)
+
+Three previously-RED **package-existence** proxy assertions correctly flipped
+GREEN when P0-A0 created the physical package — that is P0-A0's deliverable, not
+a fix to the production defect. **P0-A0 does not fix the entitlement defect.**
+
+Known commercial-policy decisions being carried into P0-A1 as **RATIFIED /
+FUTURE** (not yet implemented, do not treat as shipped):
+
+- **Purchasing (hub / Open POs / Suppliers / Sourcing) = Starter+**, canonical module `suppliers-portal`, no Growth tier wall.
+- **Warehouse:** `warehouse.operations` = Starter · `problem-center` = Core · `floor-planning` = Growth · `warehouse.analytics` = Growth (via a new `wms.analytics` flag, not `wms.pick_batches`).
+
+### Non-goals / open P0 work (not addressed by P0-A0 or the P0-A architecture)
+
+- **`BILL-ENTITLEMENT-01` Fact B** — the Shopify Reviewer shop was seeded/expected **Growth** but production `/entitlements/me` reports **Scale**; the DB `shop_subscriptions.tier` transition cause is unresolved. Belongs to Commercial State Integrity (P0-B).
+- Subscription transition integrity, provider SKU/price mapping, webhook idempotency/order, commercial-state audit trail, JWT commercial-state freshness (see §13.2 / §26 / SHB-14), billing reconciliation, and any `shop_subscriptions` writer — **all out of scope**.
+- **Sourcing production certification remains blocked** until the commercial-access P0 (A1 + A2) is resolved.

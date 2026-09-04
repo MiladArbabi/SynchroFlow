@@ -71,6 +71,8 @@ const NODE_MODULE_NAME_MAPPER = {
   // Shared modules alias (so imports like '@lasyncro/shared/...' resolve in tests)
   '^@lasyncro/shared/(.*)$': '<rootDir>/modules/shared/src/$1',
   '^@lasyncro/shared$': '<rootDir>/modules/shared/src',
+  // Shared commercial-policy package — one physical source of truth (COMMERCIAL-ACCESS-ARCH-01 P0-A0)
+  '^@lasyncro/commercial-policy$': '<rootDir>/packages/commercial-policy/src/index.ts',
   '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
   '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
   '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
@@ -199,6 +201,8 @@ module.exports = {
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
 
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
+        // Shared commercial-policy package — same physical source as the node projects (P0-A0)
+        '^@lasyncro/commercial-policy$': '<rootDir>/packages/commercial-policy/src/index.ts',
         '^@lasyncro/order-nexus$': '<rootDir>/modules/order-nexus/src/ui/index.ts',
         '^@lasyncro/specter$': '<rootDir>/modules/specter/src/ui/index.ts',
         '^@lasyncro/products$': '<rootDir>/modules/products/src/ui/index.ts',
