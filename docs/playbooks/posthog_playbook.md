@@ -419,7 +419,7 @@ Browser PostHog now has two gates:
 
 Production requirements:
 
-- `app.lasyncro.com` — production Vite runtime + exact production hostname + consent.
+- `app.lasyncro.com` — production Vite runtime + exact production hostname + consent; Fly must inject `VITE_PUBLIC_POSTHOG_KEY` and `VITE_PUBLIC_POSTHOG_HOST` at Docker build time.
 - `www.lasyncro.com` / `lasyncro.com` — production marketing/landing host + consent.
 - `/checklist` — production public host + consent.
 - localhost, `127.0.0.1`, previews, staging, CI and E2E hosts — production PostHog disabled.
@@ -496,6 +496,7 @@ Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
 - `tests/contract/posthog-app-consent-timing.contract.test.ts`
 - `tests/contract/posthog-consent.contract.test.ts`
 - `tests/contract/posthog-homepage-conversions.contract.test.ts`
+- `tests/contract/posthog-fly-build-env.contract.test.ts`
 - `tests/contract/posthog-identity-lifecycle.contract.test.ts`
 - `tests/contract/posthog-marketing-consent-timing.contract.test.ts`
 - `tests/contract/posthog-marketing-passive-consent.contract.test.ts`
@@ -508,6 +509,9 @@ Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
 ### Verification
 
 - AN-PH-01 targeted contracts: **29/29 passed**.
+- Production correction regression surface: **13 suites / 37 tests passed**.
+- Production certification exposed a missing Fly build-time PostHog key: `app.lasyncro.com` had consent granted but `__LASYNCRO_POSTHOG_READY__ = false` and logged `Missing API key`.
+- Corrected by declaring Docker build args and supplying `VITE_PUBLIC_POSTHOG_KEY` plus `VITE_PUBLIC_POSTHOG_HOST` through `fly.toml [build.args]`; Vite embeds these values into the production SPA bundle.
 - Marketing production build: **passed** using Next webpack build path in the temporary worktree.
 - Frontend TypeScript: **21 errors current / 21 errors clean HEAD**, identical pre-existing baseline; zero analytics-scope errors.
 - Backend build: AN-PH-01 `TIER_ORDER` resolution verified; remaining **2 errors** reproduced identically on clean HEAD.

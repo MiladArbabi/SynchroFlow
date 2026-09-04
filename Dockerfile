@@ -19,6 +19,10 @@ RUN mkdir -p /manifests && \
     cp package-lock.json /manifests/
 
 FROM base AS build
+
+ARG VITE_PUBLIC_POSTHOG_KEY
+ARG VITE_PUBLIC_POSTHOG_HOST
+
 ENV NODE_ENV=development
 
 RUN apt-get update -qq && \
@@ -53,7 +57,7 @@ RUN npm run build:deps
 # Build frontend bundle only.
 # We intentionally skip `tsc -b` here because existing frontend type errors
 # currently block Docker builds, but Vite can still produce the production SPA.
-RUN NODE_ENV=production npm --workspace ./apps/frontend exec -- vite build
+RUN VITE_PUBLIC_POSTHOG_KEY="${VITE_PUBLIC_POSTHOG_KEY}" VITE_PUBLIC_POSTHOG_HOST="${VITE_PUBLIC_POSTHOG_HOST}" NODE_ENV=production npm --workspace ./apps/frontend exec -- vite build
 
 # Build backend
 RUN SKIP_DEPS=1 npm --workspace ./apps/backend run build

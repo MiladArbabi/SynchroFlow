@@ -4,6 +4,10 @@ primary_region = 'arn'
 [build]
   dockerfile = "Dockerfile"
 
+[build.args]
+  VITE_PUBLIC_POSTHOG_KEY = "phc_kVdrQpoCzz5J7n9NzHW2gXHtwA6PC9gQJW294ajhpmrM"
+  VITE_PUBLIC_POSTHOG_HOST = "https://t.lasyncro.com"
+
 [env]
   PORT = '8080'
 
