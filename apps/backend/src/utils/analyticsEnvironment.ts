@@ -1,10 +1,5 @@
-export type AnalyticsEnvironment = Pick<
-  NodeJS.ProcessEnv,
-  'NODE_ENV' | 'ANALYTICS_PRODUCTION_ENABLED' | 'POSTHOG_API_KEY'
->;
-
 export function shouldEnableBackendAnalytics(
-  env: AnalyticsEnvironment
+  env: NodeJS.ProcessEnv
 ): boolean {
   return (
     env.NODE_ENV === 'production' &&
