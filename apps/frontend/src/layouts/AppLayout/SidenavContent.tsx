@@ -19,6 +19,7 @@ import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
 import { useModuleHealth } from '../../runtime/useModuleHealth';
 import { useAlerts } from '../../pages/alerts/useAlerts';
 import type { ResolvedNavItem, ResolvedNavGroup } from '../../runtime/resolveNavigation';
+import type { AccessDecision } from '@lasyncro/commercial-policy';
 import { Popper, Paper, ClickAwayListener, Divider } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { useAuth } from '../../contexts/AuthContext';
@@ -59,7 +60,18 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   // a Scale-gated item would incorrectly tell the user to upgrade to
   // Growth. Mirrors the tier-tracking pattern already used correctly in
   // ModuleTabBar.tsx.
-  const [upgradeTier, setUpgradeTier] = useState<'core' | 'growth' | 'scale'>('growth');
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: for capabilityId-migrated items the
+  // canonical AccessDecision is authoritative — no fabricated tier fallback.
+  // Legacy items (no decision) still fall back to the raw requiredTier string.
+  const [upgradeDecision, setUpgradeDecision] = useState<AccessDecision | null>(null);
+  const [upgradeLegacyTier, setUpgradeLegacyTier] = useState<string | undefined>();
+
+  const openDenial = (title: string, decision: AccessDecision | undefined, legacyTier: string | undefined) => {
+    setUpgradeFeature(title);
+    setUpgradeDecision(decision ?? null);
+    setUpgradeLegacyTier(decision ? undefined : legacyTier);
+    setUpgradeOpen(true);
+  };
 
   // ISS-269-B: the clicked element is the source of truth for both anchoring
   // and visibility. Popper must never open with a null/stale ref and fall back
@@ -182,7 +194,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     );
   };
 
-  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string; disabled: boolean }) => {
+  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string; decision?: AccessDecision; disabled: boolean }) => {
     // Children are leaf routes — exact match only. startsWith would cause/wms to match /wms/analytics.
     const isActive = pathname === child.path || pathname.startsWith(child.path + '?');
     const isLocked = child.disabled;
@@ -192,9 +204,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     // bypass the same tier restriction ModuleTabBar already enforces.
     const handleChildClick = () => {
       if (isLocked) {
-        setUpgradeFeature(child.title);
-        setUpgradeTier((child.requiredTier as 'core' | 'growth' | 'scale') ?? 'growth');
-        setUpgradeOpen(true);
+        openDenial(child.title, child.decision, child.requiredTier);
         return;
       }
       navigate(child.path);
@@ -220,7 +230,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         <Typography sx={{ fontSize: 12, fontWeight: isActive ? 500 : 400, color: 'inherit', lineHeight: 1.4 }}>
           {child.title}
         </Typography>
-        {child.requiredTier && (
+        {(child.requiredTier ?? child.decision?.requiredTier) && (
           <Box sx={{
             ml: 'auto', display: 'flex', alignItems: 'center', gap: '2px',
             bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)',
@@ -228,7 +238,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
           }}>
             <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
             <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
-              {child.requiredTier.charAt(0).toUpperCase() + child.requiredTier.slice(1)}
+              {(child.requiredTier ?? child.decision?.requiredTier)!.charAt(0).toUpperCase() + (child.requiredTier ?? child.decision?.requiredTier)!.slice(1)}
             </Typography>
           </Box>
         )}
@@ -246,9 +256,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     // Label/icon click → navigate only. Chevron click → toggle only.
     const handleClick = () => {
       if (isLocked) {
-        setUpgradeFeature(item.title);
-        setUpgradeTier((item.requiredTier as 'core' | 'growth' | 'scale') ?? 'growth');
-        setUpgradeOpen(true);
+        openDenial(item.title, item.decision, item.requiredTier);
         return;
       }
       navigate(item.path);
@@ -319,11 +327,11 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                 <ChevronDown size={14} strokeWidth={1.75} />
               </Box>
             )}
-            {isLocked && item.requiredTier && (
+            {isLocked && (item.requiredTier ?? item.decision?.requiredTier) && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px', bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', borderRadius: '4px', px: '5px', py: '1px', flexShrink: 0 }}>
                 <ArrowUp size={9} color="var(--accent)" strokeWidth={2.5} />
                 <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
-                  {item.requiredTier.charAt(0).toUpperCase() + item.requiredTier.slice(1)}
+                  {(item.requiredTier ?? item.decision?.requiredTier)!.charAt(0).toUpperCase() + (item.requiredTier ?? item.decision?.requiredTier)!.slice(1)}
                 </Typography>
               </Box>
             )}
@@ -604,22 +612,20 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
           <Typography sx={{ fontSize: 10, fontWeight: 600, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.08em', px: 1.5, pt: 0.5, pb: 0.75 }}>
             {popoverItem.title}
           </Typography>
-          <List disablePadding sx={{ px: 0.5 }}>
-            {popoverItem.children.map(child => (
-              <ListItemButton
-                key={child.id}
-                onClick={() => { navigate(child.path); setPopoverAnchor(null); }}
-                sx={{ borderRadius: '6px', px: 1.5, py: 0.75, color: 'var(--ink-3)', '&:hover': { bgcolor: 'var(--bg-2)', color: 'var(--ink)' } }}
-              >
-                <Typography sx={{ fontSize: 13, fontWeight: 400, color: 'inherit' }}>{child.title}</Typography>
-              </ListItemButton>
-            ))}
+          {/* SECURITY/UX FIX (B6 compact denial parity): a locked submodule must
+              never navigate directly — it must go through the SAME denial
+              handling (openDenial → UpgradePrompt) expanded mode already uses.
+              Reusing renderChild(child) guarantees the two modes can never
+              diverge again. */}
+          <List disablePadding sx={{ px: 0.5 }} onClick={() => setPopoverAnchor(null)}>
+            {popoverItem.children.map((child) => renderChild(child))}
           </List>
         </Box>
       )}
 
       <UpgradePrompt
-        requiredTier={upgradeTier}
+        requiredTier={upgradeLegacyTier}
+        decision={upgradeDecision ?? undefined}
         mode="modal"
         featureName={upgradeFeature}
         open={upgradeOpen}

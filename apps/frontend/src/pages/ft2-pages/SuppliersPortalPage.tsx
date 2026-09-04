@@ -4,6 +4,7 @@ import { Route, Routes, useSearchParams } from 'react-router-dom';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { CommercialGate } from '../../components/CommercialGate';
 import { PURCHASING_SUB_TABS } from './purchasingSubTabs';
 import type {
   PurchaseOrderStatus,
@@ -323,13 +324,15 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
   };
 
   return (
-    <>
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: purchasing.core (Starter+) gate — a
+    // direct URL into /suppliers-portal/* must not bypass this.
+    <CommercialGate capabilityId="purchasing.core">
       <ModuleTabBar tabs={PURCHASING_SUB_TABS} />
       <Routes>
         <Route path="/" element={<SuppliersPortalModuleFT2 view="pos" {...sharedProps} />} />
         <Route path="/suppliers" element={<SuppliersPortalModuleFT2 view="suppliers" {...sharedProps} />} />
         <Route path="/sourcing" element={<SuppliersPortalModuleFT2 view="sourcing" {...sharedProps} />} />
       </Routes>
-    </>
+    </CommercialGate>
   );
 }

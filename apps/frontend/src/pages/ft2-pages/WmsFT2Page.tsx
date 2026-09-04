@@ -14,22 +14,26 @@
 // remain at escaped paths (K — ISS-234). ModuleTabBar links there correctly.
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
-import PlanGate from '../../components/PlanGate';
+import { CommercialGate } from '../../components/CommercialGate';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
 
 const WmsOperationsPage = lazy(() => import('./WmsOperationsPage'));
 const WmsAnalyticsPage  = lazy(() => import('./WmsAnalyticsPage'));
 
+// COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.operations (Starter+) gates this
+// subtree. /wms/analytics carries its OWN independent warehouse.analytics
+// (Growth+) gate inside WmsAnalyticsPage — this outer gate must never imply
+// analytics access.
 export default function WmsFT2Page() {
   return (
-    <PlanGate feature="wms.pick_batches">
+    <CommercialGate capabilityId="warehouse.operations">
       <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
       <Routes>
         <Route path="/"          element={<Suspense fallback={null}><WmsOperationsPage /></Suspense>} />
         <Route path="/analytics" element={<Suspense fallback={null}><WmsAnalyticsPage /></Suspense>} />
         <Route path="*"          element={<Navigate to="/wms" replace />} />
       </Routes>
-    </PlanGate>
+    </CommercialGate>
   );
 }

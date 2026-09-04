@@ -24,8 +24,11 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowUp } from 'lucide-react';
 import { useAppTheme } from '../hooks/useAppTheme';
 import { usePlanEntitlement } from '../hooks/usePlanEntitlement';
+import { useCommercialAccess } from '../runtime/commercialContext';
 import { UpgradePrompt } from './UpgradePrompt';
 import type { PlanFeature } from '../hooks/usePlanEntitlement';
+import { tierAtLeast } from '@lasyncro/commercial-policy';
+import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
 
 export interface ModuleTab {
   id: string;
@@ -37,50 +40,63 @@ export interface ModuleTab {
   requiredTier?: 'core' | 'growth' | 'scale';
   /** PlanFeature key — if set, uses usePlanEntitlement to determine lock state */
   feature?: PlanFeature;
+  /**
+   * Canonical commercial capability (COMMERCIAL-ACCESS-ARCH-01 P0-A2B). When
+   * set, the decision comes from the shared commercial adapter
+   * (runtime/commercialContext) — requiredTier/feature are ignored. Legacy
+   * fields remain supported as transitional support for non-migrated tabs.
+   */
+  capabilityId?: CapabilityId;
 }
 
 interface ModuleTabBarProps {
   tabs: ModuleTab[];
 }
 
-// Mirrors resolveNavVisibility.ts — kept local so ModuleTabBar has no
-// dependency on the nav runtime. SECURITY FIX (audit ISS-P12/P25):
-// isLocked() previously only checked `feature`, silently ignoring
-// `requiredTier` — tabs using requiredTier alone (Floor Planning,
-// Problem Center) were unconditionally unlocked regardless of the
-// user's actual plan.
-const TIER_ORDER: Record<'starter' | 'core' | 'growth' | 'scale', number> = {
-  starter: 0,
-  core: 1,
-  growth: 2,
-  scale: 3,
-};
-
 export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   const pal = useAppTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const { can, tier } = usePlanEntitlement();
+  const { can, tier: legacyTier } = usePlanEntitlement();
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B-ADDITIVE-PARITY-01: capabilityId tabs
+  // are decided from the SAME shared, snapshot-aware commercial-access
+  // source Sidenav (useResolvedNavigation) and CommercialGate
+  // (useCommercialAccess) consume — tier floor UNION the shop's live
+  // entitlement snapshot (modules + flags), never a hand-rolled/empty one.
+  const { decide } = useCommercialAccess();
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
-  const [upgradeTier, setUpgradeTier] = useState<'core' | 'growth' | 'scale'>('growth');
+  const [upgradeDecision, setUpgradeDecision] = useState<AccessDecision | null>(null);
+  const [upgradeLegacyTier, setUpgradeLegacyTier] = useState<'core' | 'growth' | 'scale' | undefined>();
 
   const isActive = (tab: ModuleTab) => {
     // Exact match only — prevents /wms matching /wms/analytics
     return pathname === tab.path;
   };
 
+  // SECURITY FIX (audit ISS-P12/P25): isLocked() previously only checked
+  // `feature`, silently ignoring `requiredTier` — tabs using requiredTier
+  // alone (Floor Planning, Problem Center) were unconditionally unlocked
+  // regardless of the user's actual plan. capabilityId tabs now derive their
+  // decision from the shared commercial adapter (P0-A2B) instead.
+  const decisionFor = (tab: ModuleTab): AccessDecision | null =>
+    tab.capabilityId ? decide(tab.capabilityId) : null;
+
   const isLocked = (tab: ModuleTab) => {
-    if (tab.requiredTier && TIER_ORDER[tier] < TIER_ORDER[tab.requiredTier]) return true;
+    const decision = decisionFor(tab);
+    if (decision) return !decision.allowed;
+    if (tab.requiredTier && !tierAtLeast(legacyTier, tab.requiredTier)) return true;
     if (tab.feature) return !can(tab.feature);
     return false;
   };
 
   const handleClick = (tab: ModuleTab) => {
     if (isLocked(tab)) {
+      const decision = decisionFor(tab);
       setUpgradeFeature(tab.label);
-      setUpgradeTier(tab.requiredTier ?? 'growth');
+      setUpgradeDecision(decision);
+      setUpgradeLegacyTier(decision ? undefined : tab.requiredTier);
       setUpgradeOpen(true);
       return;
     }
@@ -172,7 +188,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
               )}
 
               {/* TIER UPGRADE BADGE */}
-              {locked && tab.requiredTier && (
+              {locked && (tab.requiredTier ?? decisionFor(tab)?.requiredTier) && (
                 <Box sx={{
                   display: 'flex', alignItems: 'center', gap: '2px',
                   bgcolor: 'var(--accent-ghost)',
@@ -182,7 +198,10 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
                 }}>
                   <ArrowUp size={8} color="var(--accent)" strokeWidth={2.5} />
                   <Typography sx={{ fontSize: 9, fontWeight: 700, color: 'var(--accent)', lineHeight: 1.6 }}>
-                    {tab.requiredTier.charAt(0).toUpperCase() + tab.requiredTier.slice(1)}
+                    {(() => {
+                      const label = (tab.requiredTier ?? decisionFor(tab)?.requiredTier)!;
+                      return label.charAt(0).toUpperCase() + label.slice(1);
+                    })()}
                   </Typography>
                 </Box>
               )}
@@ -192,7 +211,8 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
       </Box>
 
       <UpgradePrompt
-        requiredTier={upgradeTier}
+        requiredTier={upgradeLegacyTier}
+        decision={upgradeDecision ?? undefined}
         mode="modal"
         featureName={upgradeFeature}
         open={upgradeOpen}

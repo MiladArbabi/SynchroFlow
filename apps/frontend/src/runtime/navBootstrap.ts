@@ -71,12 +71,18 @@ export function bootstrapNavGroups() {
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },
       // parentId set explicitly: path (/demand) is not URL-nested under /inventory — see ISS-095/DEC-04
-      { id: 'demand',                 title: 'Demand',         path: '/demand',  requiredTier: 'growth', parentId: 'inventory' },
+      // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: migrated to capabilityId — decision comes
+      // from the shared commercial adapter, not a hand-rolled requiredTier.
+      { id: 'demand',                 title: 'Demand',         path: '/demand',  capabilityId: 'demand.forecasting', parentId: 'inventory' },
       { id: 'products-costs',         title: 'Costs',          path: '/inventory/costs'          },
       { id: 'data-quality',           title: 'Data Quality',   path: '/inventory/data-quality'  },    
     ],
   });
 
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: Warehouse and every child migrated to
+  // capabilityId — the shared commercial adapter is authoritative. `wms-lite`
+  // was never a valid canonical entitlement id; requiredModuleId/requiredTier
+  // are no longer set here.
   registerNavItem({
     id: 'warehouse',
     title: 'Warehouse',
@@ -84,13 +90,13 @@ export function bootstrapNavGroups() {
     group: 'workspace',
     order: 40,
     icon: Warehouse,
-    requiredModuleId: 'wms-lite',
+    capabilityId: 'warehouse.operations',
     children: [
-      { id: 'wms-operations',  title: 'Operations',     path: '/wms'      },
-      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',  requiredTier: 'growth', parentId: 'warehouse' },
-      { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics'   },
+      { id: 'wms-operations',  title: 'Operations',     path: '/wms',              capabilityId: 'warehouse.operations' },
+      { id: 'floor-planning',  title: 'Floor Planning', path: '/floor-planning',   capabilityId: 'warehouse.floor_planning', parentId: 'warehouse' },
+      { id: 'wms-analytics',   title: 'Analytics',      path: '/wms/analytics',    capabilityId: 'warehouse.analytics' },
       // DEC-01/DEC-03: relocated from returns-resolution — Problem Center is a warehouse-floor exception queue (pick/pack/stow/receive), not a customer-returns screen. parentId set explicitly since path (/problem-center) is not URL-nested under /wms.
-      { id: 'product-issues', title: 'Problem Center', path: '/problem-center', parentId: 'warehouse' },
+      { id: 'product-issues', title: 'Problem Center', path: '/problem-center',    capabilityId: 'warehouse.problem_center', parentId: 'warehouse' },
     ],
   });
 
@@ -112,6 +118,9 @@ export function bootstrapNavGroups() {
     ],
   });
 
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: Purchasing and every child migrated to
+  // capabilityId (purchasing.core, Starter+) — decision comes from the shared
+  // commercial adapter, never inherited from a parent.
   registerNavItem({
     id: 'purchasing',
     title: 'Purchasing',
@@ -119,11 +128,11 @@ export function bootstrapNavGroups() {
     group: 'workspace',
     order: 60,
     icon: Truck,
-    requiredModuleId: 'suppliers-portal',
+    capabilityId: 'purchasing.core',
     children: [
-      { id: 'open-pos',               title: 'Open POs',   path: '/suppliers-portal'                },
-      { id: 'suppliers',              title: 'Suppliers',        path: '/suppliers-portal/suppliers'},
-      { id: 'sourcing',               title: 'Sourcing',         path: '/suppliers-portal/sourcing'  },
+      { id: 'open-pos',               title: 'Open POs',   path: '/suppliers-portal',            capabilityId: 'purchasing.core' },
+      { id: 'suppliers',              title: 'Suppliers',        path: '/suppliers-portal/suppliers', capabilityId: 'purchasing.core' },
+      { id: 'sourcing',               title: 'Sourcing',         path: '/suppliers-portal/sourcing',  capabilityId: 'purchasing.core' },
     ],
   });
 

@@ -2,8 +2,12 @@
 import { getNavigation } from './registerNav';
 import { getRegisteredModules } from './registerModule';
 import { resolveNavVisibility } from '../navigation/resolveNavVisibility';
+import { buildCommercialContext } from './commercialContext';
 import type { UILifecyclePhase } from '../lifecycle/types';
 import type { ElementType } from 'react';
+import { isValidTier } from '@lasyncro/commercial-policy';
+import type { AccessDecision, Tier } from '@lasyncro/commercial-policy';
+import { decideCapability } from './commercialContext';
 
 export interface ResolvedNavItem {
   id: string;
@@ -12,8 +16,10 @@ export interface ResolvedNavItem {
   icon?: ElementType;
   disabled: boolean;
   requiredTier?: string;
+  /** Canonical AccessDecision for capabilityId-migrated items (P0-A2B) — authoritative when present. */
+  decision?: AccessDecision;
   /** Submodule children — tier gating resolved per child (ISS-069/082). */
-  children?: { id: string; title: string; path: string; requiredTier?: string; disabled: boolean }[];
+  children?: { id: string; title: string; path: string; requiredTier?: string; decision?: AccessDecision; disabled: boolean }[];
 }
 
 export interface ResolvedNavGroup {
@@ -67,6 +73,17 @@ export function resolveNavigation({
     );
   }
 
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: single AccessContext for every
+  // capabilityId-migrated nav item — never a per-item hand-rolled evaluation.
+  const resolvedTier: Tier = isValidTier(currentTier) ? currentTier : 'starter';
+  const commercialContext = buildCommercialContext({
+    tier: resolvedTier,
+    snapshot: {
+      modules: entitlements ? entitlements.modules : new Set<string>(),
+      flags: entitlements ? entitlements.flags : new Set<string>(),
+    },
+  });
+
   const rawGroups = getNavigation();
 
     const groups: ResolvedNavGroup[] = [];
@@ -95,11 +112,16 @@ export function resolveNavigation({
         if (userRole === 'operator' && item.id !== 'wms') continue;
 
             // 🔐 Entitlement + Tier Visibility Gate (MON-06)
+            const itemDecision = item.capabilityId
+              ? decideCapability(item.capabilityId, commercialContext)
+              : undefined;
             const visibility = resolveNavVisibility({
               requiredModuleId: item.requiredModuleId,
               modules: entitlements ? Array.from(entitlements.modules) : [],
               requiredTier: item.requiredTier,
               currentTier,
+              capabilityId: item.capabilityId,
+              context: item.capabilityId ? commercialContext : undefined,
             });
 
             if (visibility === 'hidden') continue;
@@ -111,13 +133,18 @@ export function resolveNavigation({
             // the same way the parent is resolved above.
             const resolvedChildren = (item.children ?? [])
               .map((child) => {
+                const childDecision = child.capabilityId
+                  ? decideCapability(child.capabilityId, commercialContext)
+                  : undefined;
                 const childVisibility = resolveNavVisibility({
                   requiredModuleId: item.requiredModuleId,
                   modules: entitlements ? Array.from(entitlements.modules) : [],
                   requiredTier: child.requiredTier,
                   currentTier,
+                  capabilityId: child.capabilityId,
+                  context: child.capabilityId ? commercialContext : undefined,
                 });
-                return { ...child, visibility: childVisibility };
+                return { ...child, visibility: childVisibility, decision: childDecision };
               })
               .filter((child) => child.visibility !== 'hidden')
               .map(({ visibility, ...child }) => ({
@@ -132,6 +159,7 @@ export function resolveNavigation({
             icon: item.icon,
             disabled: visibility === 'locked',
             requiredTier: item.requiredTier,
+            decision: itemDecision,
             children: resolvedChildren,
         });
     }

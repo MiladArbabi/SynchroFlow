@@ -21,6 +21,7 @@ import {
   useBatchPrintProductBarcodes
 } from '../floor-planning/useZoneManagement';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { CommercialGate } from '../../components/CommercialGate';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
 
 /**
@@ -87,7 +88,9 @@ export default function FloorPlanningPage() {
   };
 
   return (
-    <>
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.floor_planning (Growth+) gate
+    // — a direct URL into /floor-planning/* must not bypass this.
+    <CommercialGate capabilityId="warehouse.floor_planning">
       {/* Warehouse-level tab bar — mirrors WmsPage and WmsAnalyticsPage */}
       {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts.
           Previously a local duplicate (ISS-P21 follow-up, 2026-07-14) —
@@ -132,6 +135,6 @@ export default function FloorPlanningPage() {
         activeSubTab={activeSubTab}
         onSubTabChange={(subTab) => setSearchParams(prev => { prev.set('subTab', subTab); return prev; })}
       />
-    </>
+    </CommercialGate>
   );
 }

@@ -12,6 +12,7 @@ import { usePackDecisions, useResolvePackDecision } from '../problem-center/useP
 import { useAppTheme } from '../../hooks/useAppTheme';
 import { axiosInstance } from 'api/axiosConfig';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { CommercialGate } from '../../components/CommercialGate';
 import { WAREHOUSE_MODULE_TABS } from './warehouseModuleTabs';
 
 function relativeAge(dateStr: string): string {
@@ -202,7 +203,9 @@ export default function ProblemCenterPage() {
   }, []);
 
   return (
-    <>
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.problem_center (Core+) gate
+    // — a direct URL into /problem-center/* must not bypass this.
+    <CommercialGate capabilityId="warehouse.problem_center">
       {/* Warehouse-level tab bar — shared definition, see warehouseModuleTabs.ts. */}
       <ModuleTabBar tabs={WAREHOUSE_MODULE_TABS} />
       {/* PENDING DECISIONS — shown above exceptions table when packer is waiting */}
@@ -216,6 +219,6 @@ export default function ProblemCenterPage() {
         onResolve={handleResolve}
         onRefresh={refetch}
       />
-    </>
+    </CommercialGate>
   );
 }

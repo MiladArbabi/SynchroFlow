@@ -11,16 +11,24 @@
 // Tier gating (A-11):
 //   If a nav item requires a minimum tier and the user's tier is insufficient,
 //   the item is 'locked' (or 'hidden' if hideIfLocked is set).
-//   Tier hierarchy: starter < core < growth < scale
+//   Tier hierarchy: starter < core < growth < scale — sourced from the
+//   canonical @lasyncro/commercial-policy tierAtLeast(), never a private rank
+//   map (COMMERCIAL-ACCESS-ARCH-01 P0-A2B / C8).
+//
+// Environment-independent (B5/C9): no build-mode/DEV-flag branch anywhere in
+// this module — dev and production resolve the same decision from the same
+// inputs. Commercial module/capability checks are never bypassed locally.
+//
+// CapabilityId items (P0-A2B): when a nav item carries a canonical
+// CapabilityId, its allow/deny decision comes from the shared commercial
+// adapter (runtime/commercialContext), never from requiredModuleId/requiredTier.
+
+import { isValidTier, tierAtLeast } from '@lasyncro/commercial-policy';
+import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
+import { decideCapability } from '../runtime/commercialContext';
+import type { AccessContext } from '@lasyncro/commercial-policy';
 
 export type NavVisibility = 'hidden' | 'locked' | 'enabled' | 'promoted';
-
-const TIER_ORDER: Record<string, number> = {
-  starter: 0,
-  core: 1,
-  growth: 2,
-  scale: 3,
-};
 
 interface ResolveNavVisibilityArgs {
   requiredModuleId?: string;
@@ -31,6 +39,23 @@ interface ResolveNavVisibilityArgs {
   currentTier?: string;
   promoteIfLocked?: boolean;
   hideIfLocked?: boolean;
+  /**
+   * Canonical commercial capability (P0-A2B). When set, this item's decision
+   * comes from the shared commercial adapter — requiredModuleId/requiredTier
+   * are ignored. `context` must be supplied alongside it.
+   */
+  capabilityId?: CapabilityId;
+  context?: AccessContext;
+}
+
+function visibilityFromDecision(
+  decision: AccessDecision,
+  { promoteIfLocked, hideIfLocked }: Pick<ResolveNavVisibilityArgs, 'promoteIfLocked' | 'hideIfLocked'>,
+): NavVisibility {
+  if (decision.allowed) return 'enabled';
+  if (hideIfLocked) return 'hidden';
+  if (promoteIfLocked) return 'promoted';
+  return 'locked';
 }
 
 export function resolveNavVisibility({
@@ -40,20 +65,21 @@ export function resolveNavVisibility({
   currentTier = 'starter',
   promoteIfLocked,
   hideIfLocked,
+  capabilityId,
+  context,
 }: ResolveNavVisibilityArgs): NavVisibility {
-  // ISS-N1: DEV bypass previously skipped ALL gating (tier + module),
-  // including the tier badge logic itself — meaning upgrade badges
-  // (↑ Growth, ↑ Core) never rendered in local dev, making tier-gate
-  // regressions like ISS-G1 invisible to normal browsing. Tier gating
-  // now runs even in DEV; only the module-entitlement bypass remains,
-  // since local dev seed data may legitimately lack certain module
-  // grants unrelated to what's being tested.
+  // --- Canonical capability gate (P0-A2B migrated items) ---
+  if (capabilityId && context) {
+    const decision = decideCapability(capabilityId, context);
+    return visibilityFromDecision(decision, { promoteIfLocked, hideIfLocked });
+  }
+
   // --- Tier gate (checked first — tier supersedes module entitlement) ---
   if (requiredTier) {
-    const required = TIER_ORDER[requiredTier] ?? 0;
-    const current = TIER_ORDER[currentTier] ?? 0;
+    const required = isValidTier(requiredTier) ? requiredTier : 'starter';
+    const current = isValidTier(currentTier) ? currentTier : 'starter';
 
-    if (current < required) {
+    if (!tierAtLeast(current, required)) {
       if (hideIfLocked) return 'hidden';
       if (promoteIfLocked) return 'promoted';
       return 'locked';
@@ -61,7 +87,6 @@ export function resolveNavVisibility({
   }
 
   // --- Module entitlement gate ---
-  if (import.meta.env.DEV) return 'enabled';
   if (!requiredModuleId) return 'enabled';
   if (modules.includes(requiredModuleId)) return 'enabled';
   if (hideIfLocked) return 'hidden';

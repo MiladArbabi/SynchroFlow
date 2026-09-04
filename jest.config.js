@@ -200,6 +200,19 @@ module.exports = {
         '^runtime/(.*)$': '<rootDir>/apps/frontend/src/runtime/$1',
         '^runtime$': '<rootDir>/apps/frontend/src/runtime/index.ts',
 
+        /**
+         * ESM .js extension resolver (CRITICAL for Jest + TypeScript)
+         * -----------------------------------------------------------
+         * Same generic rule as NODE_MODULE_NAME_MAPPER above (contract /
+         * backend-legacy / backend-integration projects): TypeScript ESM
+         * source imports use .js extensions at compile time. Jest resolves
+         * from source (.ts) — strip .js so it finds the TS file. Without
+         * this the frontend project cannot require any package (e.g.
+         * @lasyncro/commercial-policy) whose own internal source imports
+         * use explicit .js extensions.
+         */
+        '^(\\.{1,2}/.*?)(?<!\\\\.c)\\.js$': '$1',
+
         '^@lasyncro/shared/ui$': '<rootDir>/modules/shared/src/ui',
         // Shared commercial-policy package — same physical source as the node projects (P0-A0)
         '^@lasyncro/commercial-policy$': '<rootDir>/packages/commercial-policy/src/index.ts',

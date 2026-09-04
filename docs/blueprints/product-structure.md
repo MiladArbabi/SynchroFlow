@@ -422,9 +422,14 @@ Data Trust promotion but **not yet used.**
 
 \* tier-gated — see §11.
 
+> **Superseded 2026-09-04 (P0-A2B, see monetization_billing_playbook.md §32):**
+> the `warehouse` row's `wms-lite` module gate below is corrected to canonical
+> `capabilityId: 'warehouse.operations'` (module `wms`). The table above is
+> left as the dated 2026-07-08 snapshot; it no longer reflects the live gate.
+
 **Confirmed alias/naming drift** (predates this audit, not newly introduced):
 
-- Nav id `warehouse` → path `/wms` → module id `wms-lite` → display "Warehouse." Four names, one concept.
+- Nav id `warehouse` → path `/wms` → module id `wms-lite` → display "Warehouse." Four names, one concept. *(Corrected 2026-09-04 by P0-A2B — canonical module id is `wms`, gate is `capabilityId: 'warehouse.operations'`; `wms-lite` no longer exists as a live reference.)*
 - `returns-resolution`'s children mix Returns (`/returns`) and Product Issues (`/problem-center`) under one parent, gated by *different* server-side module keys (`returns:*`, `wms:read`) — this is the misfiling §4/§5 already targets fixing (Problem Center → Warehouse). Confirmed in code comment referencing prior tracked issues **#38/#39** (already in this doc, §5 and §4 respectively — not new numbers, cross-referenced from live code).
 - Three routes escape their parent nesting, contradicting §4's routing convention: `floor-planning` child path = `/floor-planning` (not `/wms/floor-planning`); `data-quality`
 

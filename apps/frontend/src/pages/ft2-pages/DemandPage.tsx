@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useDemand } from '../products/useDemand';
 import { useEntitlements } from '../../contexts/EntitlementsContext';
 import { useExchangeRates } from '../../hooks/useExchangeRates';
-import { PlanGate } from '../../components/PlanGate';
+import { CommercialGate } from '../../components/CommercialGate';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 
@@ -20,8 +20,10 @@ export default function DemandPage() {
     searchParams.get('filter') === 'critical' ? 'critical' : undefined;
 
   return (
-    // TIER GATE: demand.forecasting requires 'growth' (see usePlanEntitlement PLAN_FEATURES)
-    <PlanGate feature="demand.forecasting">
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: migrated from PlanGate to the
+    // canonical demand.forecasting capability (Growth+) — same behaviour,
+    // decision now comes from the shared commercial adapter.
+    <CommercialGate capabilityId="demand.forecasting">
       <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
       <DemandModuleFT2
         data={data ?? null}
@@ -30,6 +32,6 @@ export default function DemandPage() {
         currency={{ displayCurrency, locale, rates}}
         reorderUrgencyFilter={reorderUrgencyFilter}
       />
-    </PlanGate>
+    </CommercialGate>
   );
 }

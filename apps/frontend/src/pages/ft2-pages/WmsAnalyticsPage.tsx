@@ -14,6 +14,7 @@ import {
   Popper, Paper, ClickAwayListener, Tooltip,
 } from '@mui/material';
 import { AlertTriangle, TrendingUp, Clock, ArrowRight, Cast, ExternalLink, Copy } from 'lucide-react';
+import { CommercialGate } from '../../components/CommercialGate';
 import {
   useWmsAnalytics,
   useLiveCapacity,
@@ -881,6 +882,10 @@ export default function WmsAnalyticsPage() {
   const loading    = analyticsQuery.isLoading;
 
   return (
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: warehouse.analytics (Growth+) gate,
+    // independent of the parent WmsFT2Page's Starter warehouse.operations
+    // gate — a direct nav to /wms/analytics must not bypass this.
+    <CommercialGate capabilityId="warehouse.analytics">
       <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
 
         {/* HEADER */}
@@ -924,5 +929,6 @@ export default function WmsAnalyticsPage() {
           </Box>
         </Box>
       </Box>
+    </CommercialGate>
   );
 }

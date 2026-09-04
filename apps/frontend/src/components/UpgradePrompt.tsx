@@ -19,6 +19,16 @@
 //   PlanGate     → teased | locked
 //   MembersPage  → modal (seat limit)
 //   OrderCapBanner (future) → modal (order cap)
+//
+// DECISION-DRIVEN PATH (COMMERCIAL-ACCESS-ARCH-01 P0-A2B):
+//   Migrated callers (Sidenav, ModuleTabBar, CommercialGate) pass a `decision`
+//   (AccessDecision) instead of a raw `requiredTier` string. When `decision`
+//   is present it is AUTHORITATIVE and the ONLY source of the required tier /
+//   denial reason — never a fabricated tier step:
+//     TIER_TOO_LOW                      -> upgrade CTA to the EXACT decision.requiredTier
+//     MODULE_NOT_INCLUDED / FEATURE_NOT_INCLUDED (no requiredTier) -> no tier step at all
+//     ROLE_FORBIDDEN                    -> no billing / upgrade CTA
+//   Legacy `requiredTier` prop stays supported for non-migrated P0-A3 callers.
 
 import React, { useEffect } from 'react';
 import {
@@ -33,6 +43,7 @@ import {
   formatDisplayPrice,
   type BillingCurrency,
 } from '../config/pricingDisplay';
+import type { AccessDecision } from '@lasyncro/commercial-policy';
 
 const TIER_LABELS: Record<string, string> = {
   starter: 'Starter',
@@ -41,10 +52,17 @@ const TIER_LABELS: Record<string, string> = {
   scale:   'Scale',
 };
 
+// Legacy default tier label for the pre-A2B no-requiredTier call shape
+// (non-migrated callers only — a `decision` never falls back to this).
+const FALLBACK_TIER_LABEL = 'Growth';
+
 const BILLING_URL = '/settings/billing';
 
 export interface UpgradePromptProps {
-  requiredTier: string;
+  /** Legacy caller shape — required for non-migrated P0-A3 callers. Ignored when `decision` is present. */
+  requiredTier?: string;
+  /** Canonical AccessDecision (P0-A2B). When present, authoritative — supersedes `requiredTier`. */
+  decision?: AccessDecision;
   /** 'overlay' is a backward-compat alias for 'teased'. */
   mode: 'teased' | 'locked' | 'modal' | 'overlay';
   featureName?: string;
@@ -61,11 +79,53 @@ export interface UpgradePromptProps {
 }
 
 // ─────────────────────────────────────────────
+// Decision resolution — the ONLY place tier/denial-kind is derived
+// ─────────────────────────────────────────────
+
+type DenialKind = 'TIER' | 'MODULE' | 'ROLE';
+
+interface ResolvedDenial {
+  kind: DenialKind;
+  /** Raw tier key, e.g. 'core' — present only for kind 'TIER'. */
+  requiredTierValue?: string;
+  /** Display label — present only for kind 'TIER'. */
+  tierLabel?: string;
+}
+
+function resolveDenial(props: Pick<UpgradePromptProps, 'decision' | 'requiredTier'>): ResolvedDenial {
+  const { decision, requiredTier } = props;
+
+  if (decision) {
+    if (decision.reason === 'ROLE_FORBIDDEN') {
+      return { kind: 'ROLE' };
+    }
+    if (decision.requiredTier) {
+      return {
+        kind: 'TIER',
+        requiredTierValue: decision.requiredTier,
+        tierLabel: TIER_LABELS[decision.requiredTier],
+      };
+    }
+    // MODULE_NOT_INCLUDED / FEATURE_NOT_INCLUDED carrying no tier step —
+    // never fabricate one.
+    return { kind: 'MODULE' };
+  }
+
+  // Legacy path (no decision) — preserves the pre-A2B default-to-Growth
+  // behaviour for non-migrated callers that omit requiredTier entirely.
+  return {
+    kind: 'TIER',
+    requiredTierValue: requiredTier,
+    tierLabel: (requiredTier ? TIER_LABELS[requiredTier] : undefined) ?? FALLBACK_TIER_LABEL,
+  };
+}
+
+// ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
 
-function resolvePrice(requiredTier: string, currency: BillingCurrency): string | null {
-  if (requiredTier in PEGGED_DISPLAY_PRICES) {
+function resolvePrice(requiredTier: string | undefined, currency: BillingCurrency): string | null {
+  if (requiredTier && requiredTier in PEGGED_DISPLAY_PRICES) {
     const monthly =
       PEGGED_DISPLAY_PRICES[requiredTier as keyof typeof PEGGED_DISPLAY_PRICES][currency].monthly;
     return formatDisplayPrice(monthly, currency);
@@ -97,21 +157,20 @@ function LockTile({ size = 46 }: { size?: number }) {
 // ─────────────────────────────────────────────
 
 function TeasedOverlay({
-  requiredTier, featureName, featureBlurb, children,
-}: Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'featureBlurb' | 'children'>) {
+  tierLabel, featureName, featureBlurb, children, requiredTierValue,
+}: { tierLabel: string; requiredTierValue?: string } & Pick<UpgradePromptProps, 'featureName' | 'featureBlurb' | 'children'>) {
   const theme = useTheme();
-  const { emit } = useUiEvents();
   const { billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
-  const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
-  const tierPrice = resolvePrice(requiredTier, currency);
+  const tierPrice = resolvePrice(requiredTierValue, currency);
+  const { emit } = useUiEvents();
 
   useEffect(() => {
-    emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'teased' });
-  }, [requiredTier, featureName, emit]);
+    emit('upgrade_prompt.shown', { requiredTier: requiredTierValue, featureName: featureName ?? null, mode: 'teased' });
+  }, [requiredTierValue, featureName, emit]);
 
   const handleUpgrade = () => {
-    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier: requiredTierValue, featureName: featureName ?? null });
     window.location.href = BILLING_URL;
   };
 
@@ -191,27 +250,26 @@ function TeasedOverlay({
 // ─────────────────────────────────────────────
 
 function LockedGate({
-  requiredTier, featureName, featureBlurb,
-}: Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'featureBlurb'>) {
+  tierLabel, requiredTierValue, featureName, featureBlurb,
+}: { tierLabel: string; requiredTierValue?: string } & Pick<UpgradePromptProps, 'featureName' | 'featureBlurb'>) {
   const theme = useTheme();
-  const { emit } = useUiEvents();
   const { billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
-  const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
-  const tierPrice = resolvePrice(requiredTier, currency);
+  const tierPrice = resolvePrice(requiredTierValue, currency);
+  const { emit } = useUiEvents();
 
   useEffect(() => {
-    emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'locked' });
-  }, [requiredTier, featureName, emit]);
+    emit('upgrade_prompt.shown', { requiredTier: tierLabel, featureName: featureName ?? null, mode: 'locked' });
+  }, [tierLabel, featureName, emit]);
 
   const handleUpgrade = () => {
-    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier: tierLabel, featureName: featureName ?? null });
     window.location.href = BILLING_URL;
   };
 
   const handleSeePlans = (e: React.MouseEvent) => {
     e.preventDefault();
-    emit('upgrade_prompt.see_plans', { requiredTier });
+    emit('upgrade_prompt.see_plans', { requiredTier: tierLabel });
     window.location.href = BILLING_URL;
   };
 
@@ -284,31 +342,31 @@ function LockedGate({
 // ─────────────────────────────────────────────
 
 function UpgradeModal({
-  requiredTier, featureName, benefits, open, onClose,
-}: Required<Pick<UpgradePromptProps, 'open'>> &
-  Pick<UpgradePromptProps, 'requiredTier' | 'featureName' | 'benefits' | 'onClose'>) {
+  tierLabel, requiredTierValue, featureName, benefits, open, onClose,
+}: { tierLabel: string; requiredTierValue?: string } &
+  Required<Pick<UpgradePromptProps, 'open'>> &
+  Pick<UpgradePromptProps, 'featureName' | 'benefits' | 'onClose'>) {
   const theme = useTheme();
-  const { emit } = useUiEvents();
   const { tier: currentTier, billingCurrency } = useEntitlements();
   const currency = (billingCurrency ?? 'USD') as BillingCurrency;
-  const tierLabel = TIER_LABELS[requiredTier] ?? 'Growth';
   const currentTierLabel = TIER_LABELS[currentTier ?? 'starter'] ?? 'Starter';
-  const tierPrice = resolvePrice(requiredTier, currency);
+  const tierPrice = resolvePrice(requiredTierValue, currency);
+  const { emit } = useUiEvents();
 
   useEffect(() => {
     if (open) {
-      emit('upgrade_prompt.shown', { requiredTier, featureName: featureName ?? null, mode: 'modal' });
+      emit('upgrade_prompt.shown', { requiredTier: requiredTierValue, featureName: featureName ?? null, mode: 'modal' });
     }
-  }, [open, requiredTier, featureName, emit]);
+  }, [open, requiredTierValue, featureName, emit]);
 
   const handleUpgrade = () => {
-    emit('upgrade_prompt.clicked', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.clicked', { requiredTier: requiredTierValue, featureName: featureName ?? null });
     onClose?.();
     window.location.href = BILLING_URL;
   };
 
   const handleDismiss = () => {
-    emit('upgrade_prompt.dismissed', { requiredTier, featureName: featureName ?? null });
+    emit('upgrade_prompt.dismissed', { requiredTier: requiredTierValue, featureName: featureName ?? null });
     onClose?.();
   };
 
@@ -436,11 +494,193 @@ function UpgradeModal({
 }
 
 // ─────────────────────────────────────────────
+// Module/feature denial (no tier step) — decision-driven only
+// ─────────────────────────────────────────────
+
+function ModuleDenialModal({
+  featureName, open, onClose,
+}: Required<Pick<UpgradePromptProps, 'open'>> & Pick<UpgradePromptProps, 'featureName' | 'onClose'>) {
+  const theme = useTheme();
+  const { emit } = useUiEvents();
+
+  useEffect(() => {
+    if (open) emit('upgrade_prompt.shown', { requiredTier: null, featureName: featureName ?? null, mode: 'modal' });
+  }, [open, featureName, emit]);
+
+  const handleSeePlans = () => {
+    emit('upgrade_prompt.clicked', { requiredTier: null, featureName: featureName ?? null });
+    onClose?.();
+    window.location.href = BILLING_URL;
+  };
+
+  const handleDismiss = () => {
+    emit('upgrade_prompt.dismissed', { requiredTier: null, featureName: featureName ?? null });
+    onClose?.();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={handleDismiss}
+      maxWidth={false}
+      PaperProps={{
+        sx: { width: 440, maxWidth: '100%', borderRadius: '14px', border: `1px solid ${theme.palette.divider}`, bgcolor: 'background.paper' },
+      }}
+    >
+      <DialogContent sx={{ p: '26px', position: 'relative' }}>
+        <IconButton
+          onClick={handleDismiss}
+          size="small"
+          aria-label="close"
+          sx={{ position: 'absolute', top: 18, right: 18, width: 28, height: 28, borderRadius: '7px', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
+        >
+          <X size={16} strokeWidth={1.8} />
+        </IconButton>
+
+        <LockTile size={42} />
+
+        <Typography sx={{
+          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontSize: 24, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
+          color: 'text.primary', mt: 1.75, mb: 0.875,
+        }}>
+          {featureName ? `${featureName} isn't on your plan` : "This isn't on your plan"}
+        </Typography>
+
+        <Typography sx={{ fontSize: 13.5, fontWeight: 300, lineHeight: 1.55, color: 'text.secondary', mb: 2.25 }}>
+          {featureName ?? 'This feature'} isn't included in your current plan. Contact billing to add it.
+        </Typography>
+
+        <Button
+          fullWidth
+          variant="contained"
+          onClick={handleSeePlans}
+          sx={{ height: 46, borderRadius: '8px', fontWeight: 600, fontSize: 14, bgcolor: 'primary.main', color: '#fff', '&:hover': { bgcolor: 'primary.light' } }}
+        >
+          See plan options
+        </Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Module/feature denial — inline (locked/teased), no tier step
+// ─────────────────────────────────────────────
+
+function ModuleDenialLocked({ featureName, featureBlurb }: Pick<UpgradePromptProps, 'featureName' | 'featureBlurb'>) {
+  const theme = useTheme();
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: 300, width: '100%',
+      border: `1px solid ${theme.palette.divider}`,
+      borderRadius: '14px',
+      background: theme.palette.background.default,
+      p: 5,
+    }}>
+      <Box sx={{ textAlign: 'center', maxWidth: 420 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2.25 }}>
+          <LockTile size={54} />
+        </Box>
+        <Typography sx={{
+          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
+          color: 'text.primary', mb: 1.25,
+        }}>
+          {featureName ? `${featureName} isn't on your plan` : "This isn't on your plan"}
+        </Typography>
+        <Typography sx={{ fontSize: 14.5, fontWeight: 300, lineHeight: 1.6, color: 'text.secondary' }}>
+          {featureBlurb ?? "This isn't included in your current plan. Contact billing to add it."}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+// ─────────────────────────────────────────────
+// Role/permission denial — no billing CTA at all
+// ─────────────────────────────────────────────
+
+function RoleForbiddenLocked() {
+  const theme = useTheme();
+  return (
+    <Box sx={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: 300, width: '100%',
+      border: `1px solid ${theme.palette.divider}`,
+      borderRadius: '14px',
+      background: theme.palette.background.default,
+      p: 5,
+    }}>
+      <Box sx={{ textAlign: 'center', maxWidth: 420 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2.25 }}>
+          <LockTile size={54} />
+        </Box>
+        <Typography sx={{
+          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontSize: 27, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
+          color: 'text.primary', mb: 1.25,
+        }}>
+          Restricted to your role
+        </Typography>
+        <Typography sx={{ fontSize: 14.5, fontWeight: 300, lineHeight: 1.6, color: 'text.secondary' }}>
+          You don't have permission to access this. Ask an owner or admin on your team for access.
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function RoleForbiddenModal({
+  open, onClose,
+}: Required<Pick<UpgradePromptProps, 'open'>> & Pick<UpgradePromptProps, 'onClose'>) {
+  const theme = useTheme();
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth={false}
+      PaperProps={{
+        sx: { width: 380, maxWidth: '100%', borderRadius: '14px', border: `1px solid ${theme.palette.divider}`, bgcolor: 'background.paper' },
+      }}
+    >
+      <DialogContent sx={{ p: '26px', position: 'relative' }}>
+        <IconButton
+          onClick={onClose}
+          size="small"
+          aria-label="close"
+          sx={{ position: 'absolute', top: 18, right: 18, width: 28, height: 28, borderRadius: '7px', color: 'text.secondary', '&:hover': { bgcolor: 'action.hover' } }}
+        >
+          <X size={16} strokeWidth={1.8} />
+        </IconButton>
+
+        <LockTile size={42} />
+
+        <Typography sx={{
+          fontFamily: "'Instrument Serif', Georgia, serif",
+          fontSize: 22, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
+          color: 'text.primary', mt: 1.75, mb: 0.875,
+        }}>
+          Restricted to your role
+        </Typography>
+
+        <Typography sx={{ fontSize: 13.5, fontWeight: 300, lineHeight: 1.55, color: 'text.secondary' }}>
+          You don't have permission to access this. Ask an owner or admin on your team for access.
+        </Typography>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────
 // Public API
 // ─────────────────────────────────────────────
 
 export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
   requiredTier,
+  decision,
   mode,
   featureName,
   featureBlurb,
@@ -450,11 +690,31 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
   onClose,
 }) => {
   const resolvedMode = mode === 'overlay' ? 'teased' : mode;
+  const denial = resolveDenial({ decision, requiredTier });
+
+  if (denial.kind === 'ROLE') {
+    if (resolvedMode === 'modal') {
+      return <RoleForbiddenModal open={open} onClose={onClose} />;
+    }
+    // teased/locked: inline denial, no billing CTA — a role denial is never buyable.
+    return <RoleForbiddenLocked />;
+  }
+
+  if (denial.kind === 'MODULE') {
+    if (resolvedMode === 'modal') {
+      return <ModuleDenialModal featureName={featureName} open={open} onClose={onClose} />;
+    }
+    // teased/locked without a tier step — inline denial, no fabricated tier.
+    return <ModuleDenialLocked featureName={featureName} featureBlurb={featureBlurb} />;
+  }
+
+  const tierLabel = denial.tierLabel!;
 
   if (resolvedMode === 'modal') {
     return (
       <UpgradeModal
-        requiredTier={requiredTier}
+        tierLabel={tierLabel}
+        requiredTierValue={denial.requiredTierValue}
         featureName={featureName}
         benefits={benefits}
         open={open}
@@ -466,7 +726,8 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
   if (resolvedMode === 'locked') {
     return (
       <LockedGate
-        requiredTier={requiredTier}
+        tierLabel={tierLabel}
+        requiredTierValue={denial.requiredTierValue}
         featureName={featureName}
         featureBlurb={featureBlurb}
       />
@@ -475,7 +736,8 @@ export const UpgradePrompt: React.FC<UpgradePromptProps> = ({
 
   return (
     <TeasedOverlay
-      requiredTier={requiredTier}
+      tierLabel={tierLabel}
+      requiredTierValue={denial.requiredTierValue}
       featureName={featureName}
       featureBlurb={featureBlurb}
     >

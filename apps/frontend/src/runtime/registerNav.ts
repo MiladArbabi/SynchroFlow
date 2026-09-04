@@ -1,6 +1,8 @@
 /* apps/frontend/src/runtime/registerNav.ts */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import type { CapabilityId } from '@lasyncro/commercial-policy';
+
 export interface NavItem {
   id: string;
   title: string;              // ← aligns with ModuleEntry descriptors
@@ -14,8 +16,16 @@ export interface NavItem {
   requiredFlagId?: string;
   /** Minimum subscription tier required to show this nav item (MON-06) */
   requiredTier?: string;
+  /**
+   * Canonical commercial capability (COMMERCIAL-ACCESS-ARCH-01 P0-A2B). When
+   * set, visibility/lock decisions for this item MUST come from the shared
+   * commercial adapter (runtime/commercialContext) — requiredModuleId /
+   * requiredTier are ignored for migrated items. Legacy fields remain
+   * supported for non-migrated nav items.
+   */
+  capabilityId?: CapabilityId;
   /** Submodule children — compact mode: hover popover right. Expanded mode: inline accordion. */
-  children?: { id: string; title: string; path: string; requiredTier?: string; parentId?: string }[];
+  children?: { id: string; title: string; path: string; requiredTier?: string; capabilityId?: CapabilityId; parentId?: string }[];
   meta?: Record<string, unknown>;
 }
 

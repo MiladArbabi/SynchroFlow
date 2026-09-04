@@ -2035,9 +2035,12 @@ union, `requireCapability` middleware + first backend route migration,
 `COMMERCIAL_ACCESS_DENIED` contract, canonical tier comparator, and the
 `ENT-REVOCATION-RLS-01` fix — done (verified 2026-09-04; see "### P0-A2A").
 **P0-A2B** frontend surface/route conversion + sidenav↔tab↔route↔backend parity
-— OPEN. **P0-A3** remaining backend families + bespoke-grant backend enforcement +
-system-wide C14–C24 closure — OPEN. **P0-B** commercial-state
-integrity (`BILL-ENTITLEMENT-01` Fact B) — SEPARATE, OPEN.
+— **implemented + verified (2026-09-04); pending commit/push/deploy** (see
+"### P0-A2B"). **P0-A3** remaining backend families + bespoke-grant backend
+enforcement + the two deferred private frontend `TIER_ORDER` residuals
+(`usePlanEntitlement.ts`, `exportReports.ts`) + system-wide C14–C24 closure —
+OPEN. **P0-B** commercial-state integrity (`BILL-ENTITLEMENT-01` Fact B) —
+SEPARATE, OPEN.
 
 ### Why this exists
 
@@ -2506,7 +2509,9 @@ RLS-scoped writes.
 
 #### Still OPEN after P0-A2A
 
-**P0-A2B (the visible frontend/parity defect — still RED):**
+**P0-A2B (the visible frontend/parity defect) — now IMPLEMENTED + VERIFIED,
+see "### P0-A2B" below. Left as-written for the historical scope-at-handoff
+record:**
 
 - frontend `commercialContext` adapter
 - Sidenav (`resolveNavVisibility` / `navBootstrap`) capability migration
@@ -2519,9 +2524,11 @@ RLS-scoped writes.
 - fix the contradictory `warehouseModuleTabs.ts` Analytics entry
   (`requiredTier: 'growth'` + `feature: 'wms.pick_batches'`)
 - full frontend ↔ backend surface parity
-- deliberate RED profile that remains: `commercial-route-enforcement` 3 frontend
-  RED · `commercial-access-policy` 14 frontend / multi-surface RED ·
-  `nav-surface-parity.test.tsx` pending A2B
+- deliberate RED profile that remained at P0-A2A handoff: `commercial-route-enforcement`
+  3 frontend RED · `commercial-access-policy` 14 frontend / multi-surface RED ·
+  `nav-surface-parity.test.tsx` pending A2B — **all closed by P0-A2B; see
+  "### P0-A2B" § "P0-A2B verification evidence" for the current 78/78 + 41/41
+  GREEN result**
 
 **P0-A3 carry-forward:**
 
@@ -2537,6 +2544,256 @@ Fact B (reviewer expected Growth, production reported Scale) is **not** resolved
 by P0-A2A — provider SKU/price mapping, `shop_subscriptions` writer / plan
 transition integrity, webhook ordering / idempotency, current-state ↔ JWT
 freshness, and the commercial-state transition audit trail all remain P0-B.
+
+### P0-A2B — frontend commercial-access convergence (implemented + verified 2026-09-04; pending commit/push/deploy)
+
+**P0-A2B is the frontend half of `COMMERCIAL-ACCESS-ARCH-01`.** It retires the
+three-layer split §13.1 warned about and P0-A2A already retired on the
+backend: Sidenav, `ModuleTabBar`, and the direct frontend route gate now
+converge on **one** shared adapter over the canonical
+`@lasyncro/commercial-policy` engine — the same engine P0-A1 shipped and
+P0-A2A wired into the backend. This closes the production defect the
+`NAV-ENTITLEMENT-PARITY-01` audit found (a Scale shop blocked in the sidebar
+while the tab/route/API all allowed it).
+
+**Status is IMPLEMENTED and VERIFIED. It is NOT yet DEPLOYED** — the changes
+exist in the worktree, uncommitted, pending Milad's review and
+commit/push/deploy through the normal path.
+
+#### 1. Shared frontend adapter
+
+New file: `apps/frontend/src/runtime/commercialContext.ts` — the single
+frontend entry point onto `evaluateAccess()`. No duplicated frontend
+tier/module/feature policy.
+
+```
+buildCommercialContext({ tier, snapshot }) =
+  {
+    tier,
+    modules: modulesForTier(tier) ∪ snapshot.modules,
+    flags:   flagsForTier(tier)   ∪ snapshot.flags,
+  }
+
+decideCapability(capabilityId, context) =
+  isCapabilityId(capabilityId)
+    ? evaluateAccess(CAPABILITY_REQUIREMENTS[capabilityId], context)
+    : { allowed: false, reason: 'MODULE_NOT_INCLUDED' }   // fail closed, never a Growth fallback
+
+useCommercialAccess() =
+  { context, isResolved, decide }   // sources tier + the shop's LIVE entitlement
+                                      // snapshot from EntitlementsContext
+```
+
+Every canonical decision flows through `@lasyncro/commercial-policy`'s
+`CAPABILITY_REQUIREMENTS` + `evaluateAccess` — mirrors the exact same
+`tier-floor ∪ persisted-rows` shape P0-A2A's `EntitlementsService` already
+uses on the backend (§32 "1. Effective entitlement model").
+
+#### 2. Sidenav / navigation
+
+`navBootstrap.ts` migrated to `capabilityId` for the Warehouse and
+Purchasing families and the Demand child:
+
+| Nav item | Canonical `capabilityId` |
+|---|---|
+| Warehouse parent + Operations | `warehouse.operations` |
+| Floor Planning | `warehouse.floor_planning` |
+| Warehouse Analytics | `warehouse.analytics` |
+| Problem Center | `warehouse.problem_center` |
+| Purchasing parent + Open POs + Suppliers + Sourcing | `purchasing.core` |
+| Demand | `demand.forecasting` |
+
+Also closed:
+
+- the invalid `wms-lite` `requiredModuleId` — **zero live runtime references**
+  remain across the frontend commercial surfaces (only historical/explanatory
+  comments mention the string)
+- the `import.meta.env.DEV` module-gate bypass in `resolveNavVisibility.ts`
+  — dev and production now resolve the identical decision from the identical
+  inputs
+- the fabricated `requiredTier ?? 'growth'` fallback in `SidenavContent.tsx`
+  / `ModuleTabBar.tsx` / `UpgradePrompt.tsx` — migrated denial paths now
+  render the *decision's own* `requiredTier` (or none, for
+  `MODULE_NOT_INCLUDED` / `ROLE_FORBIDDEN`), never a hardcoded tier
+- compact-mode Sidenav: a denied submodule no longer navigates directly on
+  click — it now shares the exact same `renderChild()` denial-handling path
+  expanded mode already used, closing a click-through the compact popover
+  previously had
+
+Migrated items no longer carry an independent `requiredModuleId` /
+`requiredTier` — their commercial decision is `capabilityId`-only.
+Non-migrated nav items (Returns, Inventory parent, unmigrated children) keep
+their legacy fields unchanged — this is a scoped migration, not a rewrite of
+every nav item.
+
+#### 3. `ModuleTabBar`
+
+- `ModuleTab` gained `capabilityId?: CapabilityId`
+- capabilityId tabs decide via `useCommercialAccess()` — the SAME hook
+  `CommercialGate` consumes — so `ModuleTabBar`'s AccessContext is tier floor
+  **∪ the shop's live entitlement snapshot**, not a hardcoded empty one
+- `capabilityId` takes precedence over `requiredTier` / `feature` in
+  `isLocked()` — the legacy fields are checked only when no `capabilityId` is
+  present on the tab
+- the private `TIER_ORDER` map is removed; the residual legacy
+  `requiredTier` comparison now delegates to canonical `tierAtLeast()`
+- **legacy `requiredTier` / `feature` (`usePlanEntitlement`) support is kept
+  intentionally** for callers not yet migrated — this is deferred P0-A3 scope,
+  not an oversight. The two private frontend `TIER_ORDER` copies that remain
+  anywhere in the frontend are confirmed to exist ONLY in the two files
+  P0-A3 already owns:
+
+  ```
+  apps/frontend/src/hooks/usePlanEntitlement.ts
+  apps/frontend/src/config/exportReports.ts
+  ```
+
+#### 4. Direct routes
+
+Every module route subtree now carries its own `CommercialGate`, bound to
+the same `capabilityId` the nav/tab surfaces use for that destination — a
+direct URL can no longer bypass commercial policy:
+
+| Route | `CommercialGate capabilityId` |
+|---|---|
+| `/wms/*` | `warehouse.operations` |
+| `/wms/analytics` | `warehouse.analytics` — its own **independent** Growth+ gate, nested inside the Starter+ `/wms/*` gate, not inherited from it |
+| `/suppliers-portal/*` | `purchasing.core` |
+| `/floor-planning/*` | `warehouse.floor_planning` |
+| `/problem-center/*` | `warehouse.problem_center` |
+| `/demand/*` | `demand.forecasting` (replaces the legacy `PlanGate feature="demand.forecasting"` — same Growth+ behaviour, canonical mechanism) |
+
+**Public, token-based `/wms/analytics/display` is unaffected** — it is a
+separate top-level route (`App.tsx`) rendering `WmsDisplayPage`, which never
+passes through `WmsAnalyticsPage`/`CommercialGate`. It stays outside
+authenticated commercial gating, as designed.
+
+`CommercialGate` (new: `apps/frontend/src/components/CommercialGate.tsx`) is
+the reusable mechanism: ALLOW renders children; DENY renders a
+decision-driven `UpgradePrompt` in their place; an unresolved entitlement
+snapshot renders nothing (never flashes protected content).
+
+#### 5. `UpgradePrompt` denial semantics
+
+`UpgradePrompt` gained an optional `decision?: AccessDecision` prop.
+When present it is **authoritative** — the sole source of the required tier /
+denial reason:
+
+| `AccessDecision.reason` | Rendering |
+|---|---|
+| `TIER_TOO_LOW` | upgrade CTA to the **exact** `decision.requiredTier` |
+| `MODULE_NOT_INCLUDED` | no fabricated tier step (no `decision.requiredTier` to show) |
+| `FEATURE_NOT_INCLUDED` | same as `MODULE_NOT_INCLUDED` — no fabricated tier unless the decision itself carries one |
+| `ROLE_FORBIDDEN` | no billing / upgrade CTA at all — a permission denial is never a billing prompt |
+
+The legacy `requiredTier` string prop remains supported for non-migrated
+P0-A3 callers (`PlanGate`, `MembersPage`, `WmsOperationsPage`) — untouched by
+this slice.
+
+#### 6. Warehouse Analytics correction
+
+`warehouseModuleTabs.ts`'s Analytics tab previously declared a contradictory
+pair — `requiredTier: 'growth'` **and** `feature: 'wms.pick_batches'`
+(`wms.pick_batches` is a *Starter* feature, so the `feature` check was a
+no-op that could never actually gate anything). It now declares only
+`capabilityId: 'warehouse.analytics'`, whose canonical requirement
+(`moduleId: 'wms'`, `minimumTier: 'growth'`, `feature: 'wms.analytics'`) is
+owned entirely by `packages/commercial-policy` — matching the backend gate
+P0-A2A already migrated (§32 "4. First backend route migration").
+
+#### 7. Jest infrastructure correction (verification-support only)
+
+The frontend Jest project's `moduleNameMapper` was missing the generic
+relative-`.js`-extension-stripping rule the `contract` / `backend-legacy` /
+`backend-integration` projects already had. `@lasyncro/commercial-policy`'s
+own source uses explicit `.js` extensions on its internal relative imports
+(standard TS-ESM style); without the mapper rule, Jest's frontend project
+could not resolve the package at all, crashing any test that imported it.
+The fix reuses the **exact same, already-established generic rule** —
+`'^(\.{1,2}/.*?)(?<!\.c)\.js$': '$1'` — copied verbatim into the frontend
+project's `moduleNameMapper`. This is a repository-wide Jest/TypeScript
+resolution pattern, **not** a commercial-policy-specific hack, and changes no
+test assertions or application behaviour.
+
+#### Verified product matrix
+
+| Capability | Starter | Core | Growth | Scale |
+|---|---|---|---|---|
+| `warehouse.operations` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `warehouse.analytics` | DENY (Growth) | DENY (Growth) | ALLOW | ALLOW |
+| `warehouse.floor_planning` | DENY (Growth) | DENY (Growth) | ALLOW | ALLOW |
+| `warehouse.problem_center` | DENY (Core) | ALLOW | ALLOW | ALLOW |
+| `purchasing.core` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `demand.forecasting` | DENY (Growth) | DENY (Growth) | ALLOW | ALLOW |
+
+**Invariant, explicitly proven:** Scale can never receive an upgrade path —
+no `TIER_TOO_LOW`, no `MODULE_NOT_INCLUDED`, no `FEATURE_NOT_INCLUDED` — for
+any of these six capabilities, on any of the three migrated surfaces.
+
+#### P0-A2B verification evidence (durable)
+
+- `commercial-access-policy.contract.test.ts` +
+  `commercial-route-enforcement.contract.test.ts` — **78 / 78 GREEN**
+  (0 deliberate RED remaining; the 24 P0-A1-era RED count referenced earlier
+  in this document is now fully closed by A2A + A2B)
+- targeted frontend commercial suite — **41 / 41 GREEN**:
+  `commercial-context.test.ts` 7/7 · `commercial-gate.test.tsx` 3/3 ·
+  `nav-surface-parity.test.tsx` 25/25 (includes the source-coupled contract
+  proving `ModuleTabBar.tsx` calls `useCommercialAccess()` and contains no
+  hardcoded empty entitlement snapshot — a permanent, self-checking
+  regression guard, not a one-time assertion) · `upgrade-prompt-decision.test.tsx`
+  6/6
+- full frontend Jest project — **79 suites PASS / 55 FAIL, 636 tests PASS /
+  75 FAIL (711 total)**. Zero failures trace to any P0-A2B-touched file
+  (verified by grepping every failing suite's require/stack trace for the
+  eighteen A2B source files — no match). All 55 failing suites were already
+  failing before P0-A2B for unrelated, pre-existing reasons; 9 of those
+  suites (including all three commercial-access suites) were newly fixed as
+  a side effect of the Jest `.js`-resolution correction, which also restored
+  several unrelated suites (order-nexus, products, specter) that shared the
+  identical pre-existing infra gap
+- `apps/frontend` `tsc --noEmit` — **19 baseline errors, 0 target errors**;
+  every baseline error confirmed pre-existing and unrelated to any A2B file
+  (MUI theme typing, `virtual:lasyncro-modules`, `Ft1ChecklistShell`
+  `UiEventName` typing, `CashFlowPage`, `SimpleBar` — none touch commercial
+  access)
+- Jest ownership: `backend-legacy=134 · backend-integration=38 · contract=18
+  · frontend=134`, `UNOWNED=0 · MULTI_OWNED=0`
+- no migration, no persistent-DB mutation, no package/lockfile change
+
+#### Coverage gaps / carried forward (not blockers)
+
+- **Compact-mode Sidenav denial parity** is protected structurally (both
+  modes share the one `renderChild()` code path) but has no dedicated
+  rendered/click (RTL) test yet — the contract-layer static check is GREEN,
+  a behavioral click-simulation test is not yet written.
+- **`FEATURE_NOT_INCLUDED`** shares `UpgradePrompt`'s module-denial rendering
+  path with `MODULE_NOT_INCLUDED` (same code, same behaviour) but has no
+  standalone test distinguishing the two reasons.
+- **Additive-entitlement cross-surface parity** is enforced at the
+  *architecture* level — `ModuleTabBar` is required to consume
+  `useCommercialAccess()` and forbidden from hardcoding an empty snapshot,
+  permanently guarded by the source-coupled test above — rather than proven
+  by a live three-surface decision-value test. The current
+  `CAPABILITY_REQUIREMENTS` registry cannot naturally produce a rendered
+  floor-deny/additive-grant-allow case for any of the six migrated
+  capabilities: every `moduleId`-only capability's module is already
+  standard at every tier, and `evaluateAccess`'s `minimumTier` check
+  (FIRST-FAILURE-WINS) blocks any tier-too-low shop before an additive grant
+  could matter. This is intrinsic to the current registry shape, not a gap
+  P0-A2B introduced or left incomplete.
+- **P0-A3** still owns: the two deferred private `TIER_ORDER` copies
+  (`usePlanEntitlement.ts`, `exportReports.ts`), bespoke persisted-grant
+  backend enforcement, the remaining unmigrated backend route families
+  (`/recount*`, `/sender-addresses*`), and full system-wide C14–C24 coverage.
+
+##### `### P0-A2A` "Still OPEN after P0-A2A" list — status update
+
+The P0-A2B bullet list under "#### Still OPEN after P0-A2A" above described
+what this slice needed to deliver; every item in it is now **done** per this
+section. That list is left in place as the historical record of P0-A2B's
+scope-at-handoff; treat **this** "### P0-A2B" section as the current source
+of truth for what actually shipped.
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 
