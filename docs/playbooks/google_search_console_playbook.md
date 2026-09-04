@@ -142,19 +142,32 @@ Production certification remains required after deployment.
 
 These findings remain deliberately unimplemented after Finding 1:
 
-### Finding 2 — Sitemap freshness
+### Finding 2 — Sitemap freshness — RESOLVED
 
-19 of 100 sitemap URLs currently receive deployment/build-time `lastmod` values rather than true content-change timestamps.
+Audit found 19 of 100 sitemap URLs receiving deployment/build-time `lastmod` values instead of true content-change timestamps.
 
-Affected classes include:
+Resolution:
 
-- `/blog`
-- `/compare`
-- `/help`
-- Help category pages
-- future industry pages
-- future feature pages
-- fallback cases using `Date.now()`
+- `/blog` freshness derives from the newest blog content date
+- `/compare` derives from the newest comparison content date
+- `/help` derives from the newest Help article date
+- Help category hubs derive from the newest article within that category
+- blog/compare/help articles use `lastReviewed`, then `date`
+- future industry/feature routes omit `lastModified` until trustworthy metadata exists
+- `Date.now()` and bare `new Date()` are forbidden as sitemap freshness fallbacks
+
+Regression contract:
+
+`tests/contract/sitemap-lastmod.contract.test.ts`
+
+Verification:
+
+- targeted contract: 4/4 PASS
+- marketing production build: PASS
+- volatile `lastModified` source check: NONE
+- `git diff --check`: PASS
+
+Production certification remains required after deployment.
 
 ### Finding 3 — Redirecting internal link
 
