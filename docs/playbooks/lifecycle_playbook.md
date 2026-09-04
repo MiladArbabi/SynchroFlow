@@ -511,6 +511,31 @@ migrated, runtime-verified, and dropped. FRESH-INSTALL-COMMERCIAL-01 is
 classified as **TEST FIXTURE DRIFT**, not a production regression; the local
 release blocker is resolved pending CI rerun.
 
+#### CI trigger ownership — CI-SEC-PATH-01 (2026-09-04)
+
+`CI / RLS Security Boundary` owns the FRESH-INSTALL-04 regression, but its path
+filters did not previously trigger when the test or its direct test
+infrastructure changed. CI-SEC-PATH-01 adds these paths to both `pull_request`
+and `push` without changing the existing trigger paths:
+
+- `tests/integration/fresh-install-release-path.test.ts`
+- `tests/unit/helpers/auth.ts`
+- `scripts/with-test-db.js`
+
+The workflow also supports explicit manual recertification through
+`workflow_dispatch`. Trigger scope remains intentionally narrow: do not replace
+these paths with `tests/**` or `tests/integration/**`.
+
+The certification invariant is that changes to the fresh-install regression,
+its auth fixture, disposable-DB harness, `apps/backend/**`,
+`packages/backend-core/**`, `scripts/check-conflict-usage.sh`, the workflow
+file, or `fly.toml` trigger `CI / RLS Security Boundary`. Static verification
+passed for YAML syntax, `workflow_dispatch`, both trigger sets, absence of broad
+test globs, authorized tracked scope, and staged count zero.
+
+CI-SEC-PATH-01 is classified as a **CI trigger coverage defect**. Runtime and
+product behavior are unchanged.
+
 > ⚠️ **Step order is load-bearing.** The `integrations` row must exist BEFORE
 > the seeder runs. FT0 is edge-triggered and non-retrying (§5 rule 4): if
 > `first_insight_delivered` is consumed while no integration row exists,

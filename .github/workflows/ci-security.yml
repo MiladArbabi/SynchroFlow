@@ -1,6 +1,7 @@
 name: CI / RLS Security Boundary
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [main]
     paths:
@@ -9,6 +10,9 @@ on:
       - 'scripts/check-conflict-usage.sh'
       - '.github/workflows/ci-security.yml'
       - 'fly.toml'
+      - 'tests/integration/fresh-install-release-path.test.ts'
+      - 'tests/unit/helpers/auth.ts'
+      - 'scripts/with-test-db.js'
   push:
     branches: [main]
     paths:
@@ -17,6 +21,9 @@ on:
       - 'scripts/check-conflict-usage.sh'
       - '.github/workflows/ci-security.yml'
       - 'fly.toml'
+      - 'tests/integration/fresh-install-release-path.test.ts'
+      - 'tests/unit/helpers/auth.ts'
+      - 'scripts/with-test-db.js'
 
 jobs:
   rls-security:
