@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import posthog from 'posthog-js';
+import { shouldEnableFrontendAnalytics } from './environment';
 
 /**
  * POSTHOG PAGEVIEW TRACKER (PH-02)
@@ -23,6 +24,13 @@ export function PostHogPageView(): null {
   const location = useLocation();
 
   useEffect(() => {
+    const analyticsEnabled = shouldEnableFrontendAnalytics({
+      hostname: window.location.hostname,
+      mode: import.meta.env.MODE,
+    });
+
+    if (!analyticsEnabled) return;
+
     if (posthog?.capture) {
       posthog.capture('$pageview', {
         $current_url: window.location.href,

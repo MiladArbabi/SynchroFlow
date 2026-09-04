@@ -17,16 +17,13 @@ const POSTHOG_HOST = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://t.lasyncro
 
 function shouldEnablePostHog() {
   if (typeof window === 'undefined') return false
+  if (process.env.NODE_ENV !== 'production') return false
+  if (!POSTHOG_KEY) return false
 
-  const { hostname, host } = window.location
+  const { hostname } = window.location
 
-  // Keep local/dev sessions out of production analytics.
-  // Pageviews are measured globally below, so never initialise PostHog again in route files.
-  return (
-    hostname !== 'localhost' &&
-    hostname !== '127.0.0.1' &&
-    !host.includes('localhost')
-  )
+  // Production public hosts only. Preview/staging/local hosts fail closed.
+  return hostname === 'www.lasyncro.com' || hostname === 'lasyncro.com'
 }
 
 function getPageviewContext(pathname: string) {

@@ -23,6 +23,7 @@
 //   - POSTHOG_API_KEY must be set in production — missing key = silent no-op
 
 import { PostHog } from 'posthog-node';
+import { shouldEnableBackendAnalytics } from './analyticsEnvironment.js';
 
 /**
  * PostHog Node client — singleton.
@@ -33,13 +34,18 @@ let _client: PostHog | null = null;
 function getClient(): PostHog | null {
   if (_client) return _client;
 
-  const apiKey = process.env.POSTHOG_API_KEY;
-  if (!apiKey) {
-    if (process.env.NODE_ENV === 'production') {
+  if (!shouldEnableBackendAnalytics(process.env)) {
+    if (
+      process.env.NODE_ENV === 'production' &&
+      process.env.ANALYTICS_PRODUCTION_ENABLED === 'true' &&
+      !process.env.POSTHOG_API_KEY
+    ) {
       console.warn('[analytics] POSTHOG_API_KEY not set — events will not be captured');
     }
     return null;
   }
+
+  const apiKey = process.env.POSTHOG_API_KEY!;
 
   _client = new PostHog(apiKey, {
     host: process.env.POSTHOG_HOST ?? 'https://t.lasyncro.com',

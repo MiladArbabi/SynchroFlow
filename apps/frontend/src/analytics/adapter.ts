@@ -2,6 +2,14 @@
 // apps/frontend/src/analytics/adapter.ts
 
 import posthog from 'posthog-js';
+import { shouldEnableFrontendAnalytics } from './environment';
+
+function isProductionAnalyticsRuntime(): boolean {
+  return shouldEnableFrontendAnalytics({
+    hostname: window.location.hostname,
+    mode: import.meta.env.MODE,
+  });
+}
 
 /**
  * ANALYTICS ADAPTER
@@ -46,6 +54,8 @@ export function identifyUser(
   shopId?: number,
   meta?: { plan?: string; trial_ends_at?: string; created_at?: string }
 ): void {
+  if (!isProductionAnalyticsRuntime()) return;
+
   if (!posthog || typeof posthog.identify !== 'function') {
     console.warn('[analytics:adapter] posthog.identify not ready');
     return;
@@ -60,6 +70,8 @@ export function identifyUser(
 }
 
 export function groupByShop(shopId: number): void {
+  if (!isProductionAnalyticsRuntime()) return;
+
   if (!posthog || typeof posthog.group !== 'function') {
     console.warn('[analytics:adapter] posthog.group not ready');
     return;
@@ -73,15 +85,7 @@ export function sendEvent(event: string, payload: Record<string, unknown>) {
   // --- HARD VISIBILITY ---
   console.info('[analytics:adapter:send]', event, payload);
 
-// --- HARD GUARD (SIMPLIFIED + CORRECT) ---
-if (!posthog || typeof posthog.capture !== 'function') {
-  console.warn('[analytics:adapter] posthog not ready', { event, payload });
-  return;
-}
-
- console.info('[analytics:adapter:capture]', event);
-
- // --- FUNNEL TRACE (DEV ONLY) ---
+// --- FUNNEL TRACE (DEV ONLY — local only, never emitted remotely) ---
 if (import.meta.env.DEV) {
   (window as any).__FUNNEL_TRACE__ = (window as any).__FUNNEL_TRACE__ || [];
   (window as any).__FUNNEL_TRACE__.push({
@@ -89,9 +93,17 @@ if (import.meta.env.DEV) {
     payload,
     ts: Date.now(),
   });
-
-  /* console.info('[FUNNEL_TRACE]', (window as any).__FUNNEL_TRACE__); */
 }
+
+if (!isProductionAnalyticsRuntime()) return;
+
+// --- HARD PROVIDER GUARD ---
+if (!posthog || typeof posthog.capture !== 'function') {
+  console.warn('[analytics:adapter] posthog not ready', { event, payload });
+  return;
+}
+
+console.info('[analytics:adapter:capture]', event);
 
   // --- ACTUAL EMISSION ---
   posthog.capture(event, {

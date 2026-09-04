@@ -42,9 +42,14 @@ import { RouteLogger } from './debug/RouteLogger';
 import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { PostHogPageView } from './analytics/PostHogPageView';
+import { shouldEnableFrontendAnalytics } from './analytics/environment';
 
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
 const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com';
+const analyticsEnabled = shouldEnableFrontendAnalytics({
+  hostname: window.location.hostname,
+  mode: import.meta.env.MODE,
+});
 
 const ReactQueryDevtools = import.meta.env.DEV
   ? lazy(() =>
@@ -54,8 +59,10 @@ const ReactQueryDevtools = import.meta.env.DEV
     )
   : null;
 
-// HARD GUARD: prevent silent failure
-if (!posthogKey) {
+// HARD GUARD: production build + production app host only (AN-ENV-01)
+if (!analyticsEnabled) {
+  console.info('[POSTHOG] Disabled outside production analytics runtime.');
+} else if (!posthogKey) {
   console.error('[POSTHOG] Missing API key. Analytics disabled.');
 } else {
   console.log('[ENV CHECK]', {

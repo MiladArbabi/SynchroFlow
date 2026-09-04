@@ -1,6 +1,6 @@
 # LaSyncro — PostHog Analytics Playbook
 
-**Last updated:** June 2026 (PostHog Sprint 1)
+**Last updated:** September 4, 2026 (AN-ENV-01)
 **Status:** Live on `www.lasyncro.com`, `app.lasyncro.com`, and `apps/marketing`
 **Owner:** Engineering / Growth
 **Location in repo:** `docs/playbooks/posthog_playbook.md`
@@ -374,7 +374,13 @@ ft2.activated
 
 ## 12. Dev Environment
 
-PostHog is **disabled on localhost** on the landing page and marketing app. In the app, PostHog initialises everywhere but `import.meta.env.DEV` enables `__FUNNEL_TRACE__`:
+PostHog production isolation is enforced by `AN-ENV-01`.
+
+- `app.lasyncro.com` — frontend PostHog + GA4 allowed only in production mode.
+- `www.lasyncro.com` and `lasyncro.com` — marketing/landing PostHog allowed.
+- localhost, `127.0.0.1`, Vercel previews, staging, E2E and other hosts — production analytics disabled.
+- Backend PostHog requires all three: `NODE_ENV=production`, `ANALYTICS_PRODUCTION_ENABLED=true`, and `POSTHOG_API_KEY`.
+- Development `__FUNNEL_TRACE__` remains local-only and is never emitted remotely.
 
 ```js
 window.__FUNNEL_TRACE__  // inspect in browser console during dev
@@ -423,3 +429,48 @@ document.cookie  // look for ph_ prefixed cookie with domain=.lasyncro.com
 | Jun 2026 | PH-05 listed as pending despite PH-02 being done | PH-05 closed — `PostHogPageView.tsx` confirmed mounted in router, covers the same requirement |
 | Jun 2026 | Section 5 note contradicting PH-01 ✅ status | Note was stale — PH-01 confirmed done via grep; Section 5 updated |
 | Jun 2026 | posthog-node backend events (PH-03) | `trial_started`, `trial_expired`, `trial_reminder_sent`, `paywall_hit`, `subscription_activated`, `subscription_upgraded`, `subscription_cancelled`, `payment_failed` — all live |
+
+---
+
+## AN-ENV-01 — Production Analytics Isolation
+
+**Completed:** September 4, 2026
+
+### Invariant
+
+Development, localhost, test, preview, staging and CI activity must never enter the production GA4 or PostHog datasets.
+
+### Enforcement
+
+| Surface | Production requirement |
+|---|---|
+| `apps/frontend` GA4 | hostname = `app.lasyncro.com` |
+| `apps/frontend` PostHog | Vite mode = `production` AND hostname = `app.lasyncro.com` |
+| `apps/marketing` PostHog | production runtime AND hostname = `www.lasyncro.com` or `lasyncro.com` |
+| `packages/landing-page` PostHog | hostname = `www.lasyncro.com` or `lasyncro.com` |
+| `/checklist` PostHog | hostname = `www.lasyncro.com` or `lasyncro.com` |
+| backend PostHog | `NODE_ENV=production` + `ANALYTICS_PRODUCTION_ENABLED=true` + API key |
+
+Backend production explicitly carries `ANALYTICS_PRODUCTION_ENABLED=true` in Fly secrets.
+
+### Permanent regression contract
+
+`tests/contract/analytics-production-isolation.contract.test.ts`
+
+Covers:
+
+1. production frontend allowed;
+2. localhost/dev rejected;
+3. preview hosts rejected;
+4. backend production gate;
+5. missing backend key rejected;
+6. GA4 host gating;
+7. public marketing host allowlist;
+8. checklist custom-event gating.
+
+Verification on September 4, 2026:
+
+- targeted contract: **5/5 PASS**
+- `git diff --check`: **PASS**
+- Fly machine: **1/1 health check passing**
+- production backend `/health`: `{"status":"ok"}`
