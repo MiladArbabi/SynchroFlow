@@ -7,6 +7,7 @@ import './globals.css'
 import Link from 'next/link'
 import Schema from '@/components/seo/Schema'
 import PostHogProvider from '@/components/PostHogProvider'
+import GoogleAnalyticsProvider from '@/components/GoogleAnalyticsProvider'
 import MarketingNav from '@/components/navigation/MarketingNav'
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -59,10 +60,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`${plusJakartaSans.variable}`}>
       <body style={{ margin: 0, minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <PostHogProvider>
+          <GoogleAnalyticsProvider>
           <Schema data={organizationSchema} />
           <MarketingNav />
           <main style={{ flex: 1, paddingTop: '60px' }}>{children}</main>
           <Footer />
+          </GoogleAnalyticsProvider>
         </PostHogProvider>
       </body>
     </html>

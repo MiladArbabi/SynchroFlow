@@ -5,29 +5,6 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>LaSyncro</title>
-    <!-- Google Analytics — production app host only (AN-ENV-01) -->
-    <script>
-      (() => {
-        const GA4_ID = 'G-1H3XLN9MN2';
-        const analyticsEnabled = window.location.hostname === 'app.lasyncro.com';
-
-        if (!analyticsEnabled) {
-          console.info('[GA4] Disabled outside production app host');
-          return;
-        }
-
-        window.dataLayer = window.dataLayer || [];
-        window.gtag = function gtag(){ window.dataLayer.push(arguments); };
-
-        const script = document.createElement('script');
-        script.async = true;
-        script.src = `https://www.googletagmanager.com/gtag/js?id=${GA4_ID}`;
-        document.head.appendChild(script);
-
-        window.gtag('js', new Date());
-        window.gtag('config', GA4_ID);
-      })();
-    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet" />

@@ -43,6 +43,8 @@ import posthog from 'posthog-js';
 import { PostHogProvider } from 'posthog-js/react';
 import { PostHogPageView } from './analytics/PostHogPageView';
 import { shouldEnableFrontendAnalytics } from './analytics/environment';
+import { GoogleAnalyticsPageView } from './analytics/GoogleAnalyticsPageView';
+import { AnalyticsConsentBanner } from './analytics/AnalyticsConsentBanner';
 
 const posthogKey = import.meta.env.VITE_PUBLIC_POSTHOG_KEY;
 const posthogHost = import.meta.env.VITE_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com';
@@ -175,6 +177,8 @@ root.render(
             <BrowserRouter>
               {/* PH-02: fires $pageview on every route change — must be inside BrowserRouter */}
               <PostHogPageView />
+              <GoogleAnalyticsPageView />
+              <AnalyticsConsentBanner />
              <RouteLogger />
               {/* 6. IntlProvider (Localization) */}
               <IntlProvider

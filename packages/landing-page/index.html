@@ -47,6 +47,136 @@
     console.info('PostHog disabled outside production public hosts');
   }
 </script>
+
+<!-- AN-GA-01: consent-aware Google Analytics -->
+<script>
+(() => {
+  const GA4_ID = 'G-1H3XLN9MN2';
+  const CONSENT_COOKIE = 'lasyncro_analytics_consent';
+
+  const productionHost =
+    window.location.hostname === 'www.lasyncro.com' ||
+    window.location.hostname === 'lasyncro.com';
+
+  if (!productionHost) return;
+
+  const getConsent = () => {
+    const prefix = `${CONSENT_COOKIE}=`;
+    const value = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith(prefix))
+      ?.slice(prefix.length);
+
+    return value === 'granted' || value === 'denied' ? value : null;
+  };
+
+  const gtag = function () {
+    window.dataLayer = window.dataLayer || [];
+    window.dataLayer.push(arguments);
+  };
+
+  const loadGA4 = () => {
+    if (getConsent() !== 'granted') return false;
+
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = window.gtag || gtag;
+
+    if (!document.querySelector(`script[data-lasyncro-ga4="${GA4_ID}"]`)) {
+      const script = document.createElement('script');
+      script.async = true;
+      script.dataset.lasyncroGa4 = GA4_ID;
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${GA4_ID}`;
+      document.head.appendChild(script);
+
+      window.gtag('js', new Date());
+      window.gtag('config', GA4_ID, {
+        send_page_view: false,
+        cookie_domain: 'lasyncro.com'
+      });
+    }
+
+    return true;
+  };
+
+  const trackPageView = () => {
+    if (!loadGA4()) return;
+
+    window.gtag('event', 'page_view', {
+      page_location: window.location.href,
+      page_path: `${window.location.pathname}${window.location.search}`,
+      page_title: document.title
+    });
+  };
+
+  const setConsent = (value) => {
+    document.cookie =
+      `${CONSENT_COOKIE}=${value}; ` +
+      'Max-Age=31536000; Path=/; Domain=.lasyncro.com; SameSite=Lax; Secure';
+
+    window.dispatchEvent(
+      new CustomEvent('lasyncro:analytics-consent', { detail: value })
+    );
+
+    if (value === 'granted') trackPageView();
+  };
+
+  const renderBanner = () => {
+    if (getConsent() !== null) return;
+
+    const banner = document.createElement('div');
+    banner.setAttribute('role', 'dialog');
+    banner.setAttribute('aria-label', 'Google Analytics consent');
+    banner.style.cssText =
+      'position:fixed;left:16px;right:16px;bottom:16px;z-index:99999;' +
+      'max-width:720px;margin:0 auto;padding:16px;border-radius:12px;' +
+      'background:#151D29;color:#F0EEE8;box-shadow:0 8px 28px rgba(0,0,0,.22);' +
+      'font:14px/1.5 system-ui,sans-serif';
+
+    const copy = document.createElement('div');
+    copy.style.marginBottom = '12px';
+    copy.textContent =
+      'LaSyncro uses Google Analytics to understand website usage. ' +
+      'It is optional and is not loaded unless you allow it.';
+
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap';
+
+    const allow = document.createElement('button');
+    allow.type = 'button';
+    allow.textContent = 'Allow Google Analytics';
+
+    const decline = document.createElement('button');
+    decline.type = 'button';
+    decline.textContent = 'Decline Google Analytics';
+
+    allow.addEventListener('click', () => {
+      setConsent('granted');
+      banner.remove();
+    });
+
+    decline.addEventListener('click', () => {
+      setConsent('denied');
+      banner.remove();
+    });
+
+    actions.append(allow, decline);
+    banner.append(copy, actions);
+    document.body.appendChild(banner);
+  };
+
+  if (getConsent() === 'granted') {
+    trackPageView();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', renderBanner, { once: true });
+  } else {
+    renderBanner();
+  }
+})();
+</script>
+
 <style>
 /* ── LaSyncro design tokens ── */
 /* Source of truth for colors + typography across landing page, app, emails, docs. */

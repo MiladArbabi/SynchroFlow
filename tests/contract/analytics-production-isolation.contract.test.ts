@@ -80,18 +80,17 @@ describe('AN-ENV-01 production analytics isolation', () => {
     ).toBe(false);
   });
 
-  test('GA4 is host-gated before the Google script is created', () => {
+  test('GA4 remains production-gated and is not loaded directly from app HTML', () => {
     const html = source('apps/frontend/index.html');
+    const ga = source('apps/frontend/src/analytics/googleAnalytics.ts');
 
-    expect(html).toContain(
-      "window.location.hostname === 'app.lasyncro.com'"
-    );
-    expect(html).toContain(
-      "document.createElement('script')"
-    );
-    expect(html).not.toContain(
-      '<script async src="https://www.googletagmanager.com/gtag/js'
-    );
+    expect(ga).toContain('shouldEnableFrontendAnalytics');
+    expect(ga).toContain("getAnalyticsConsent() !== 'granted'");
+    expect(ga).toContain("document.createElement('script')");
+    expect(ga).toContain('https://www.googletagmanager.com/gtag/js?id=${GA4_ID}');
+
+    expect(html).not.toContain('googletagmanager.com/gtag/js');
+    expect(html).not.toContain('G-1H3XLN9MN2');
   });
 
   test('public marketing surfaces use an explicit production-host allowlist', () => {
