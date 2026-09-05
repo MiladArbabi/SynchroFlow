@@ -17,6 +17,7 @@ export type CapabilityId =
   | 'demand.forecasting'
   | 'alerts.inbox'
   | 'alerts.rules'
+  | 'returns.intake'
   | 'returns.core'
   | 'returns.analysis'
   | 'warehouse.operations'
@@ -36,6 +37,11 @@ export const CAPABILITY_REQUIREMENTS: Readonly<Record<CapabilityId, AccessRequir
   'demand.forecasting':       { moduleId: 'demand', minimumTier: 'growth', feature: 'demand.forecasting' },
   'alerts.inbox':             { moduleId: 'alerts' },
   'alerts.rules':             { moduleId: 'alerts', minimumTier: 'growth', feature: 'alerts.rules' },
+  // P0-A3-3: physical return receiving is warehouse EXECUTION, so it belongs to
+  // the `wms` module Starter already holds — NOT to the Core+ `returns`
+  // management module. Starter can receive a returned item on the floor without
+  // gaining Returns Overview / Items / resolution.
+  'returns.intake':           { moduleId: 'wms', minimumTier: 'starter' },
   'returns.core':             { moduleId: 'returns', minimumTier: 'core' },
   'returns.analysis':         { moduleId: 'returns', minimumTier: 'growth', feature: 'returns.analysis' },
   'warehouse.operations':     { moduleId: 'wms' },

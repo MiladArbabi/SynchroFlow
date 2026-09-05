@@ -13,29 +13,16 @@
 // - No cross-module imports
 
 import { useMemo } from 'react';
-import { PlanGate } from '../../components/PlanGate';
+import { CommercialGate } from '../../components/CommercialGate';
+import { useCommercialAccess } from '../../runtime/commercialContext';
 import {
   Box, Typography, CircularProgress, Alert, useTheme,
 } from '@mui/material';
 import { alpha, Theme } from '@mui/material/styles';
 import { AlertTriangle, Package, TrendingDown } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
-import { axiosInstance } from 'api/axiosConfig';
-import type { CorrelationRow } from '../returns/useReturnsCorrelation';
-
-// ─── HOOK ─────────────────────────────────────────────
-
-function useReturnsCorrelation() {
-  return useQuery<{ data: CorrelationRow[] }>({
-    queryKey: ['returns', 'correlation'],
-    queryFn: async () => {
-      const { data } = await axiosInstance.get('/api/v1/modules/returns/correlation');
-      return data;
-    },
-    refetchInterval: 300_000,
-    placeholderData: (prev) => prev,
-  });
-}
+// P0-A3-3: the page-private duplicate of this hook is gone. It shadowed the
+// shared hook, so an `enabled` seam added there could never reach this page.
+import { useReturnsCorrelation } from '../returns/useReturnsCorrelation';
 
 // ─── HELPERS ──────────────────────────────────────────
 
@@ -67,7 +54,12 @@ interface SupplierScore {
 
 export default function ReturnsSuppliersPage() {
   const theme = useTheme();
-  const { data, isLoading, isError } = useReturnsCorrelation();
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A3-3: canonical decision, and premium data is
+  // never acquired before it is granted.
+  const { decide, isResolved } = useCommercialAccess();
+  const analysisDecision = decide('returns.analysis');
+  const hasAnalysisAccess = isResolved && analysisDecision.allowed;
+  const { data, isLoading, isError } = useReturnsCorrelation(hasAnalysisAccess);
   const rows = useMemo(() => data?.data ?? [], [data?.data]);
 
   // ── Supplier rollup ────────────────────────────────
@@ -108,7 +100,7 @@ export default function ReturnsSuppliersPage() {
   );
 
   return (
-    <PlanGate feature="returns.analysis" mode="teased">
+    <CommercialGate capabilityId="returns.analysis" mode="teased" featureName="Supplier Ratings">
     <Box sx={{ bgcolor: 'var(--bg)', minHeight: '100%', p: '24px 40px' }}>
 
       {/* Header */}
@@ -327,6 +319,6 @@ export default function ReturnsSuppliersPage() {
         </Box>
       )}
     </Box>
-    </PlanGate>
+    </CommercialGate>
   );
 }

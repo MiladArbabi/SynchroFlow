@@ -8,9 +8,14 @@
 
 import type { ModuleTab } from '../../components/ModuleTabBar';
 
+// COMMERCIAL-ACCESS-ARCH-01 P0-A3-3: every tab declares its canonical
+// capability. ModuleTabBar resolves these through the shared commercial
+// adapter, so a tab and its route reach the same AccessDecision.
 export const RETURNS_SUB_TABS: ModuleTab[] = [
-  { id: 'returns-overview',   label: 'Overview',   path: '/returns'       },
-  { id: 'returns-items',      label: 'Items',      path: '/returns/items'     },
+  { id: 'returns-overview',   label: 'Overview',   path: '/returns',
+    capabilityId: 'returns.core' },
+  { id: 'returns-items',      label: 'Items',      path: '/returns/items',
+    capabilityId: 'returns.core' },
   { id: 'returns-suppliers',  label: 'Supplier Ratings',  path: '/returns/suppliers',
-    requiredTier: 'growth' },
+    capabilityId: 'returns.analysis' },
 ];

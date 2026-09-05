@@ -14,8 +14,9 @@
 //           full-width since they're reference detail, not decisions)
 //
 // Data:
-//   useReturns()            → /api/v1/modules/returns (includes orphaned_jobs, RT2-03)
-//   useReturnsCorrelation() → /api/v1/modules/returns/correlation
+//   useReturns()                             → /api/v1/modules/returns (includes orphaned_jobs, RT2-03)
+//   useReturnsCorrelation(hasAnalysisAccess) → /api/v1/modules/returns/correlation
+//     P0-A3-3: acquired ONLY when the canonical returns.analysis decision allows.
 //
 // Theme: useReturnsTheme() — now token-based (RT2-AUD-27 fix), matches
 // the rest of FT2 rather than hardcoded hex.
@@ -25,9 +26,9 @@ import { useNavigate } from 'react-router-dom';
 import { RotateCcw, TrendingDown, Clock, CheckCircle } from 'lucide-react';
 import { useReturns, type ReturnsByVariant, type OrphanedReturnJob } from '../finances/useReturns';
 import { useReturnsCorrelation } from '../returns/useReturnsCorrelation';
-import { PlanGate } from '../../components/PlanGate';
+import { CommercialGate } from '../../components/CommercialGate';
+import { useCommercialAccess } from '../../runtime/commercialContext';
 import { ExportDrawer } from 'components/ExportDrawer';
-import { useEntitlements } from 'contexts/EntitlementsContext';
 import { useState } from 'react';
 
 // ─── Theme ───────────────────────────────────────────────────────────────────
@@ -199,10 +200,15 @@ function VariantRow({ row }: { row: ReturnsByVariant }) {
 export default function ReturnsOverviewPage() {
   const pal = useReturnsTheme();
   const navigate = useNavigate();
-  const { tier } = useEntitlements();
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A3-3: the one canonical AccessDecision for
+  // Returns supplier/batch analysis. Never reconstruct eligibility from a raw
+  // tier compare, and never fetch premium data before it is granted.
+  const { decide, isResolved } = useCommercialAccess();
+  const analysisDecision = decide('returns.analysis');
+  const hasAnalysisAccess = isResolved && analysisDecision.allowed;
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const { data, isLoading, isError } = useReturns();
-  const correlationQuery = useReturnsCorrelation();
+  const correlationQuery = useReturnsCorrelation(hasAnalysisAccess);
   const correlationRows = correlationQuery.data?.data ?? [];
   const hasCorrelation = correlationRows.length > 0;
 
@@ -451,7 +457,7 @@ export default function ReturnsOverviewPage() {
           )}
 
           {/* ZONE — SUPPLIER BATCH CORRELATION */}
-          <PlanGate feature="returns.analysis" mode="teased">
+          <CommercialGate capabilityId="returns.analysis" mode="teased" featureName="Returns Analysis">
           {hasCorrelation && (
             <Box sx={{ mt: 3 }}>
               <Typography sx={{ fontSize: 11, fontWeight: 700, color: pal.textSecond, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 1.5 }}>
@@ -518,7 +524,7 @@ export default function ReturnsOverviewPage() {
               </Box>
             </Box>
           )}
-          </PlanGate>
+          </CommercialGate>
         </>
       )}
     </Box>

@@ -107,14 +107,15 @@ export function bootstrapNavGroups() {
     group: 'workspace',
     order: 50,
     icon: RotateCcw,
-    requiredTier: 'core',
-    // No requiredModuleId: children enforce independently server-side
-    // under different module gates (returns:*, wms:read). See #38/#39.
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A3-3: Returns and every child migrated to
+    // capabilityId — the decision comes from the shared commercial adapter,
+    // never a raw tier compare and never inherited from a parent.
+    capabilityId: 'returns.core',
     children: [
       // product-issues moved to warehouse.children[] — DEC-01/DEC-03 (2026-07-08)
-      { id: 'returns',   title: 'Overview',   path: '/returns'        },
-      { id: 'return-items',   title: 'Items',   path: '/returns/items'        },
-      { id: 'supplier-ratings',   title: 'Supplier Ratings',   path: '/returns/suppliers', requiredTier: 'growth' },
+      { id: 'returns',   title: 'Overview',   path: '/returns',   capabilityId: 'returns.core' },
+      { id: 'return-items',   title: 'Items',   path: '/returns/items',   capabilityId: 'returns.core' },
+      { id: 'supplier-ratings',   title: 'Supplier Ratings',   path: '/returns/suppliers', capabilityId: 'returns.analysis' },
     ],
   });
 

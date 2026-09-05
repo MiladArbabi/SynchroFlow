@@ -9,6 +9,17 @@
 > resolve to the same downstream action: a physical item gets discarded,
 > written off, or re-enters stock. See §4 for the reasoning.
 
+> **Commercial access is NOT owned by this blueprint.** Since
+> `COMMERCIAL-ACCESS-ARCH-01` P0-A3-3 (2026-09-05), the canonical Returns
+> commercial model — the `returns.intake` (Starter+, module `wms`) /
+> `returns.core` (Core+) / `returns.analysis` (Growth+) capability ladder, the
+> standard-plan matrix, route classification, navigation and direct-route
+> authority — lives in
+> **`docs/playbooks/monetization_billing_playbook.md` §32 "### P0-A3-3"**.
+> That section is authoritative; the commercial notes in §2 and §5 below point
+> back to it. Everything else here (workflow, schema, resolution cascade,
+> session logs) remains this document's own.
+
 ---
 
 ## 1. Module Structure
@@ -36,17 +47,46 @@
 | Items | `/returns/items` | |
 | Supplier Ratings | `/returns/suppliers` | *(renamed from "Suppliers" June 2026 — this is a return-rate scorecard + suspect-batch detector correlating defects to supplier/batch, NOT a duplicate of Purchasing's supplier directory. Confirmed via code audit: sourced from `GET /api/v1/modules/returns/correlation`, distinct from Purchasing's `GET /api/v1/suppliers`.)* |
 
-**Backend** (`/api/v1/modules/returns/*`, confirmed via route audit):
-| Endpoint | Tier/action |
-|---|---|
-| `GET /` | `core`, `returns:read` |
-| `GET /correlation` | `growth`, `returns:read` |
-| `GET /jobs` | `core`, `returns:read` |
-| `POST /jobs` | `core`, `returns:job:create` |
-| `PATCH /jobs/:id/lines/:lineId` | `core`, `returns:job:process` |
-| `POST /jobs/:id/complete` | `core`, `returns:job:complete` |
-| `GET /items` | `core`, `returns:read` |
-| `PATCH /items/:id/decision` | `core`, `returns:decision:write` |
+**Backend** (`/api/v1/modules/returns/*`).
+
+> **Superseded 2026-09-05 by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-3.** This table
+> previously listed a raw tier (`core` / `growth`) per route. Those raw tiers are
+> gone: all **12** active Returns routes now resolve a **canonical capability**
+> through `requireCapability()`, and `requireTier` is no longer imported by
+> `returns.routes.ts` at all. Canonical commercial policy for Returns lives in
+> **`docs/playbooks/monetization_billing_playbook.md` §32 "### P0-A3-3"** — that
+> section, not this blueprint, is authoritative for the commercial model.
+
+| Endpoint | Capability (commercial axis) | Action (role/permission axis) |
+|---|---|---|
+| `GET /` | `returns.core` — Core+ | `returns:read` |
+| `GET /correlation` | `returns.analysis` — Growth+ | `returns:read` |
+| `GET /settings` | `returns.core` — Core+ | `returns:read` |
+| `PATCH /settings` | `returns.core` — Core+ | `returns:decision:write` |
+| `GET /items` | `returns.core` — Core+ | `returns:read` |
+| `PATCH /items/:id/decision` | `returns.core` — Core+ | `returns:decision:write` |
+| `GET /jobs` | `returns.intake` — Starter+ | `returns:read` |
+| `POST /jobs` | `returns.intake` — Starter+ | `returns:job:create` |
+| `GET /jobs/:id` | `returns.intake` — Starter+ | `returns:read` |
+| `POST /jobs/:id/lines` | `returns.intake` — Starter+ | `returns:job:process` |
+| `PATCH /jobs/:id/lines/:lineId` | `returns.intake` — Starter+ | `returns:job:process` |
+| `POST /jobs/:id/complete` | `returns.intake` — Starter+ | `returns:job:complete` |
+
+**The two columns are separate axes and neither replaces the other.**
+`requireCapability` answers *"is this tenant entitled to the capability"*;
+`requireAction` answers *"is this user permitted the action"*. Existing
+`requireAction` authorization is unchanged by P0-A3-3 and is ordered after the
+commercial gate:
+
+    authenticateToken → requireFt2 → requireCapability(...) → requireAction(...) → handler
+
+**Why the job routes are Starter+.** `returns.intake` is declared on module
+**`wms`**, not on `returns` — physical return receiving is warehouse *execution*,
+and Starter already holds `wms`. A Starter merchant can therefore physically
+receive and process a returned order through the warehouse flow **without**
+gaining the Returns management module (Overview / Items / resolution), which
+stays Core+ behind `returns.core`. Supplier/batch analytics stay Growth+ behind
+`returns.analysis`, and Scale inherits everything.
 
 **Known issues** *(migrated from `OrdersModule.md`, June 2026 — Returns left that module's ownership; updated 2026-07-04 audit/implementation pass)*:
 | ID | Priority | Description |
@@ -135,6 +175,52 @@ Physical → here. Data → Inventory's Data Quality tab. This is why Problem Ce
 ## 5. Gating architecture
 
 Parent nav item carries no `requiredModuleId` because its two children depend on genuinely different backend modules (`returns:*` actions vs. `wms:read`), and `NavItem.children[]` only supports `requiredTier`, not per-child module gating (confirmed limitation, `registerNav.ts`). Verified safe before applying: both children's backend routes independently enforce `authenticateToken → requireFt2 → requireTier → requireAction` regardless of nav visibility — the nav layer controls a sidenav link, not an access boundary.
+
+> **Superseded 2026-09-05 by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-3** (canonical
+> section: `monetization_billing_playbook.md` §32 "### P0-A3-3"). Three claims
+> above are now stale, and one architectural principle has changed.
+>
+> **1. Nav no longer uses raw `requiredTier`.** `NavItem` supports per-entry
+> `capabilityId`, so the Returns nav and sub-tabs each declare their own
+> canonical capability rather than inheriting a tier from the parent:
+>
+> | Surface | capabilityId |
+> |---|---|
+> | Returns parent (nav) | `returns.core` |
+> | Overview | `returns.core` |
+> | Items | `returns.core` |
+> | Supplier Ratings | `returns.analysis` |
+>
+> **2. The backend chain is now capability-based**, not tier-based:
+> `authenticateToken → requireFt2 → requireCapability(...) → requireAction(...)`.
+> See §2 for the per-route mapping.
+>
+> **3. "The nav layer controls a sidenav link, not an access boundary" is still
+> true — and is exactly why the nav is no longer the only frontend gate.**
+> `ReturnsFT2Page` now wraps the Returns management subtree in
+> `<CommercialGate capabilityId="returns.core">`, so `/returns`,
+> `/returns/items` and `/returns/suppliers` entered by **direct URL** resolve the
+> same AccessDecision as a nav/tab click. Before P0-A3-3 the page mounted
+> `ModuleTabBar` + `<Routes>` with no gate at all, so a direct URL bypassed the
+> commercial decision entirely and the child pages began acquiring protected data
+> on mount. `returns.intake` is deliberately **not** gated by that subtree — it
+> stays reachable through the WMS flow, which is what lets Starter receive
+> physical returns without the Returns management module.
+>
+> **Premium data acquisition is gated, not merely hidden.**
+> `useReturnsCorrelation(enabled = true)` gained an `enabled` seam; Returns
+> Overview and Supplier Ratings both pass
+> `isResolved && decide('returns.analysis').allowed`, so a denied or unresolved
+> tenant never fetches `GET /api/v1/modules/returns/correlation`. Premium data is
+> not fetched and then blurred. Core Returns content remains fully visible to
+> Core users under a `returns.analysis` denial.
+>
+> Returns-specific legacy commercial authority is retired: no
+> `PlanGate feature="returns.analysis"` on either Returns page, no raw
+> `requiredTier` in the Returns nav item or sub-tabs, no `requireTier` in
+> `returns.routes.ts`, and no page-private duplicate correlation hook in
+> `ReturnsSuppliersPage`. This retirement is **Returns-scoped only** — `PlanGate`
+> and `usePlanEntitlement` remain in legitimate use by other, unmigrated modules.
 
 ---
 

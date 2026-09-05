@@ -2067,7 +2067,15 @@ union, `requireCapability` middleware + first backend route migration,
 acquisition gating via `useFloorPlanning(enabled)`, backend
 `requireCapability('overview.live_map')` on `GET /api/v1/wms/live-activity`)
 — **CLOSED / VERIFIED / DEPLOYED on 2026-09-05 at
-`8e72888136011fc0298499b32664257f2bdf064e`** (see "### P0-A3-2"). Remaining **P0-A3** scope — the
+`8e72888136011fc0298499b32664257f2bdf064e`** (see "### P0-A3-2"). **P0-A3-3**
+Returns commercial-access convergence (canonical `returns.intake` /
+`returns.core` / `returns.analysis` ladder, all 12 `returns.routes.ts` routes on
+`requireCapability`, nav + sub-tab `capabilityId`, `CommercialGate` on the
+Returns route subtree, and `useReturnsCorrelation(enabled)` acquisition gating)
+— **IMPLEMENTATION + AUTOMATED VERIFY COMPLETE / PASS; COMMIT / PUSH / CI /
+DEPLOY / PRODUCTION CERTIFICATION PENDING**, at pre-commit anchor
+`58210ed4a064c1f4c393993ffea598175e1ebc00` (see "### P0-A3-3"). Remaining
+**P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
 (`usePlanEntitlement.ts`), and system-wide C14–C24 closure — **the P0-A3
@@ -2255,6 +2263,10 @@ core/growth/scale via `modulesForTier()`.
 
 **Active capability catalog — 17 capabilities, no open product decision:**
 
+> **Updated 2026-09-05 by P0-A3-3** (see "### P0-A3-3"): the registry now holds
+> **18** capabilities — `returns.intake` was added, listed in the table below.
+> The "17" above is the P0-A1-era count, left as the historical record.
+
 | CapabilityId | policy |
 |---|---|
 | overview.core | Starter+ · module `overview` |
@@ -2264,6 +2276,7 @@ core/growth/scale via `modulesForTier()`.
 | demand.forecasting | Growth+ · module `demand` · feature `demand.forecasting` |
 | alerts.inbox | Starter+ · module `alerts` |
 | alerts.rules | Growth+ · module `alerts` · feature `alerts.rules` |
+| returns.intake | Starter+ · module **`wms`** *(added by P0-A3-3 — intake is warehouse execution, deliberately NOT module `returns`)* |
 | returns.core | Core+ · module `returns` |
 | returns.analysis | Growth+ · module `returns` · feature `returns.analysis` |
 | warehouse.operations | Starter+ · module `wms` |
@@ -3003,6 +3016,11 @@ bespoke backend grant loading (`shop_module_entitlements` consulted by
   > `GET /api/v1/wms/live-activity`. Returns, Inventory/Products and every
   > other WMS commercial surface remain unmigrated and still belong to this
   > bullet.
+  >
+  > **Further superseded 2026-09-05 by P0-A3-3** (see "### P0-A3-3"):
+  > **Returns is migrated** — all 12 `returns.routes.ts` routes, nav, sub-tabs,
+  > the route subtree, and premium acquisition. Inventory/Products and the
+  > remaining WMS commercial surfaces still belong to this bullet.
 - active `usePlanEntitlement` consumers outside the export surfaces, and the
   final private-`TIER_ORDER` cleanup (`usePlanEntitlement.ts` itself)
 - bespoke persisted-grant backend enforcement (see §32 "### P0-A2A"
@@ -3215,6 +3233,237 @@ They are unchanged; this note certifies that it then shipped.
 DEPLOYED on 2026-09-05 at `8e72888136011fc0298499b32664257f2bdf064e`. The P0-A3
 umbrella remains OPEN — the remaining P0-A3 slices listed in the §32 status
 header and under "#### Still OPEN after P0-A3-1" are not closed by this slice.**
+
+### P0-A3-3 — Returns commercial-access convergence (implementation + automated verify COMPLETE / PASS; commit/push/CI/deploy PENDING)
+
+**P0-A3-3 is the third bounded slice of P0-A3.** It converges the Returns
+surface — capability registry, all 12 backend routes, navigation, sub-tabs, the
+route subtree, and premium data acquisition — onto the same
+`@lasyncro/commercial-policy` engine P0-A1/A2A/A2B/A3-1/A3-2 already shipped. It
+does **not** close P0-A3; the umbrella stays OPEN.
+
+#### Ratified capability ladder
+
+Returns is governed by **three** canonical capabilities, not one:
+
+| CapabilityId | policy | owns |
+|---|---|---|
+| `returns.intake` | Starter+ · module **`wms`** · `minimumTier: 'starter'` | physical return receiving/intake workflow |
+| `returns.core` | Core+ · module `returns` · `minimumTier: 'core'` | Returns control/resolution workflow — Overview, Items, settings, decisions |
+| `returns.analysis` | Growth+ · module `returns` · feature `returns.analysis` | supplier/batch return analytics |
+
+> **`returns.intake` deliberately belongs to the `wms` module, NOT to `returns`.**
+> This is the load-bearing decision of the slice, not an inconsistency. Physical
+> return receiving is warehouse **execution**, and Starter already holds `wms`.
+> Binding intake to the `returns` module would have been unsatisfiable at Starter
+> (`returns` is a Core+ grant — `modules.ts` `STANDARD_CORE`), and granting
+> `returns` at Starter would have leaked the whole Returns management module to a
+> tier that must not have it. Keeping intake on `wms` lets a Starter merchant
+> physically receive/process a returned order through warehouse operations while
+> the Returns management module stays Core+.
+
+#### Standard-plan matrix
+
+| | Starter | Core | Growth | Scale |
+|---|---|---|---|---|
+| `returns.intake` | ALLOW | ALLOW | ALLOW | ALLOW |
+| `returns.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `returns.analysis` | DENY | DENY | ALLOW | ALLOW |
+
+Product reading of that matrix:
+
+- **Starter** — physical return intake/processing through WMS. **No** Returns
+  management module or pages.
+- **Core** — intake, plus Returns Overview, Items, and the resolution/control
+  workflows.
+- **Growth** — everything in Core, plus supplier/correlation analytical Returns.
+- **Scale** — all Returns capabilities (inherits Growth).
+
+#### Commercial principle — no separate return-processing charge at launch
+
+Handling a return for an order the merchant has **already processed** does not
+introduce a normal second billable "processed order" charge. The launch
+monetization principle is unchanged: monetize operational volume and capability
+depth, with merchant-facing usage centred on order ingestion, order processing
+and seats. Returns activity may be metered internally for analytics/operations,
+but at launch it does **not** become a separate return-processing overage. No
+pricing amount and no new billing behaviour is introduced by this slice.
+
+#### 1. Backend route authority — `apps/backend/src/api/returns/returns.routes.ts`
+
+All **12** active Returns routes now use canonical `requireCapability()`. Raw
+`requireTier` authority is removed from this route file entirely — the import is
+gone.
+
+`returns.intake` — Starter+ (6 routes)
+
+    GET   /jobs
+    POST  /jobs
+    GET   /jobs/:id
+    POST  /jobs/:id/lines
+    PATCH /jobs/:id/lines/:lineId
+    POST  /jobs/:id/complete
+
+`returns.core` — Core+ (5 routes)
+
+    GET   /
+    GET   /settings
+    PATCH /settings
+    GET   /items
+    PATCH /items/:id/decision
+
+`returns.analysis` — Growth+ (1 route)
+
+    GET   /correlation
+
+**Commercial capability access and role/action authorization are separate axes,
+and capability checks do NOT replace `requireAction`.** Every route keeps its own
+`requireAction('returns:*')` exactly as before, ordered after the commercial gate:
+
+    authenticateToken → requireFt2 → requireCapability(...) → requireAction(...) → handler
+
+`requireCapability` answers "is this tenant entitled to the capability";
+`requireAction` answers "is this user permitted the action". Neither weakens the
+other; the controllers are unchanged.
+
+#### 2. Frontend surface authority
+
+Canonical navigation and sub-tab mapping — `navBootstrap.ts` and
+`returnsSubTabs.tsx` both declare `capabilityId`, with no raw `requiredTier`:
+
+| Surface | capabilityId |
+|---|---|
+| Returns parent (nav) | `returns.core` |
+| Overview | `returns.core` |
+| Items | `returns.core` |
+| Supplier Ratings | `returns.analysis` |
+
+**Direct-route authority.** `ReturnsFT2Page` wraps the Returns management subtree
+in `<CommercialGate capabilityId="returns.core">`, so `/returns`,
+`/returns/items` and `/returns/suppliers` entered by URL resolve the **same**
+AccessDecision as the nav/tab click. Nav presentation is not a security boundary:
+before this slice the page mounted `ModuleTabBar` + `<Routes>` with no gate at
+all, so a direct URL bypassed the commercial decision entirely and the child
+pages began acquiring protected data on mount. `returns.intake` is deliberately
+**not** gated here — it stays reachable through the WMS flow.
+
+**Legacy Returns commercial authority retired** (Returns surfaces only):
+
+- no `PlanGate feature="returns.analysis"` in `ReturnsOverviewPage`
+- no `PlanGate feature="returns.analysis"` in `ReturnsSuppliersPage`
+- no raw `requiredTier` in the Returns nav item or in `returnsSubTabs.tsx`
+- no `requireTier` in `returns.routes.ts`
+- no page-private duplicate correlation hook in `ReturnsSuppliersPage`
+
+> This is **Returns-specific retirement only.** `PlanGate` and
+> `usePlanEntitlement` remain in legitimate use by other, unmigrated modules
+> (8 frontend files still reference `PlanGate`). Do **not** read this as a claim
+> that the legacy commercial primitives are globally removed — later P0-A3 slices
+> own the rest.
+
+#### 3. Premium acquisition seam
+
+`useReturnsCorrelation()` → `useReturnsCorrelation(enabled = true)`, with
+`enabled` forwarded into the React Query configuration. The query key, endpoint
+(`/api/v1/modules/returns/correlation`), refetch interval, placeholder behaviour
+and response shape are unchanged, and any caller omitting the argument keeps its
+previous behaviour.
+
+`ReturnsOverviewPage` and `ReturnsSuppliersPage` both derive access from the
+canonical decision:
+
+```ts
+const { decide, isResolved } = useCommercialAccess();
+const analysisDecision = decide('returns.analysis');
+const hasAnalysisAccess = isResolved && analysisDecision.allowed;
+useReturnsCorrelation(hasAnalysisAccess);
+```
+
+Denied **or unresolved** analysis access does not acquire the premium
+correlation data at all; allowed canonical access enables acquisition. The
+canonical decision wins over legacy tier inference in both directions. Core
+Returns content stays visible to Core users — a `returns.analysis` denial never
+blanks the page a Core merchant paid for. **Premium data is not fetched and then
+blurred.**
+
+`ReturnsSuppliersPage` previously declared its own private copy of the
+correlation hook, which shadowed the shared one; that duplicate is deleted and
+the page now consumes the shared hook, so the `enabled` seam actually reaches it.
+
+#### P0-A3-3 verification evidence (durable)
+
+Focused suites:
+
+- `tests/contract/returns-commercial-access.contract.test.ts` — **90 / 90 GREEN**
+- `tests/unit/ui/commercial-access/returns-commercial-access.test.tsx` — **18 / 18 GREEN**
+- `tests/integration/entitlements/representative-route-commercial-gate.test.ts` — **35 / 35 GREEN**
+
+Integration database: disposable test DB created, runtime verification passed,
+DB dropped, with independent global cleanup proof **ORPHAN_COUNT=0**. The
+development database was not used or mutated by the integration run.
+
+Commercial regression:
+
+- contract regression — **334 / 334 GREEN**
+- frontend commercial regression — **70 / 70 GREEN**, across seven suites run in
+  isolated Jest processes: `nav-surface-parity` 25/25,
+  `export-commercial-access` 5/5, `overview-live-map-commercial-access` 6/6,
+  `commercial-context` 7/7, `commercial-gate` 3/3,
+  `upgrade-prompt-decision` 6/6, `returns-commercial-access` 18/18.
+
+> **Verification honesty note — read this before quoting the frontend number.** A
+> single *combined* Jest invocation of those seven suites produced **68 / 70**,
+> not 70/70. `commercial-gate.test.tsx` bound the real
+> `EntitlementsContext`-backed `useCommercialAccess` after cross-suite mock
+> contamination; the same file passes **3 / 3 standalone**. This was classified as
+> a **test-process isolation artifact, not a Returns product regression**. The
+> 70/70 figure is the SUM OF ISOLATED RUNS — no single command printed 70/70, and
+> claiming one did would be false.
+
+TypeScript:
+
+- backend — **0 errors**
+- frontend — **19 total pre-existing baseline, 0 target errors**
+- test project — **1 total pre-existing baseline**
+  (`tests/integration/auth/register-no-auth-side-effects.test.ts(39,4): TS1005`),
+  **0 target errors**
+
+Static / safety at certification:
+
+- the exact Returns capability mapping verified — intake 6 / core 5 / analysis 1
+- no raw `requireTier` remains in `returns.routes.ts`
+- the direct-route Returns `CommercialGate` verified present
+- the generated `commercial-policy` dist includes `returns.intake`
+- `git diff --check` PASS
+- staged paths **0**
+- changed tracked implementation/test/generated-artifact paths before DOC: **13**
+
+#### Generated package surface
+
+`packages/commercial-policy` is a **built** package whose committed `dist` is part
+of its package surface, so P0-A3-3 necessarily includes generated changes to
+`packages/commercial-policy/dist/capabilities.d.ts` and
+`packages/commercial-policy/dist/capabilities.js` alongside the `src` change.
+
+> *Local verification environment only — not a product fact, and not shipped
+> files:* the A3-3 worktree initially inherited `node_modules` resolution from
+> sibling worktrees, so TypeScript first consumed a **stale** commercial-policy
+> declaration through a sibling `backend-core` dependency. That was an
+> environment resolution artifact, **not** a production-source defect.
+> Verification was corrected locally with ignored worktree-only dependency
+> shadows so `backend-core` and `commercial-policy` resolved to the A3-3
+> worktree; after correct resolution, `BACKEND_TSC_ERROR_COUNT=0`.
+
+#### Status
+
+**P0-A3-3 Returns commercial-access convergence — IMPLEMENTATION + AUTOMATED
+VERIFY: COMPLETE / PASS. DOC: current phase. COMMIT / PUSH / CI / DEPLOY /
+PRODUCTION CERTIFICATION: PENDING — none of those phases has happened yet.** Code
+anchor `58210ed4a064c1f4c393993ffea598175e1ebc00` is the pre-commit A3-3 state.
+**The P0-A3 umbrella remains OPEN** — Inventory/Products, the remaining WMS
+commercial surfaces, `/recount*`, `/sender-addresses*`, bespoke persisted-grant
+backend enforcement, the `usePlanEntitlement.ts` `TIER_ORDER` residual, and
+system-wide C14–C24 closure are not closed by this slice.
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 

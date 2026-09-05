@@ -20,8 +20,14 @@ export type ReturnsCorrelationResponse = {
   data: CorrelationRow[];
 };
 
-export function useReturnsCorrelation() {
+/**
+ * COMMERCIAL-ACCESS-ARCH-01 P0-A3-3: `enabled` lets a commercially gated
+ * surface stop ACQUIRING premium correlation data, not merely stop rendering
+ * it. Defaults to true so any caller omitting the argument is unchanged.
+ */
+export function useReturnsCorrelation(enabled = true) {
   return useQuery<ReturnsCorrelationResponse>({
+    enabled,
     queryKey: ['returns', 'correlation'],
     queryFn: async () => {
       const { data } = await axiosInstance.get(

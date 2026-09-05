@@ -224,6 +224,98 @@ describe('demand.forecasting — GET /api/v1/modules/demand/', () => {
 });
 
 // ===========================================================================
+// P0-A3-3 — Returns commercial classes (RED)
+//
+// One representative REAL route per ratified Returns capability class:
+//   returns.intake   (Starter+)  GET /api/v1/modules/returns/jobs
+//   returns.core     (Core+)     GET /api/v1/modules/returns/items
+//   returns.analysis (Growth+)   GET /api/v1/modules/returns/correlation
+//
+// All three representatives are GETs, so the existing `get()` helper, the
+// single seeded FT2 shop and the JWT-tier pattern above are reused unchanged.
+//
+// ALLOW here means exactly what it means everywhere else in this file: the
+// request PASSED the commercial middleware. A downstream domain 200/400/404/500
+// is a handler outcome, never a commercial denial. No business fixture data is
+// fabricated to manufacture an HTTP 200.
+// ===========================================================================
+
+const RETURNS_INTAKE_ROUTE = '/api/v1/modules/returns/jobs';
+const RETURNS_CORE_ROUTE = '/api/v1/modules/returns/items';
+const RETURNS_ANALYSIS_ROUTE = '/api/v1/modules/returns/correlation';
+
+/**
+ * Returns-scoped ALLOW assertion.
+ *
+ * `commercialGatePassed()` alone is NOT sufficient here: Returns still denies
+ * through the LEGACY `requireTier` vocabulary (403 `TIER_INSUFFICIENT`, with no
+ * capabilityId/reason/currentTier), which that helper does not recognise as a
+ * denial. Using it by itself would report a vacuous PASS for a tenant that is
+ * in fact being turned away on tier grounds. This asserts the request was not
+ * turned away by EITHER commercial vocabulary.
+ *
+ * A downstream domain 200/400/404/500 remains a handler outcome, never a
+ * commercial denial — no business fixture is fabricated to force a 200.
+ */
+function expectNoTierDenial(res: request.Response) {
+  expect(commercialGatePassed(res)).toBe(true);
+  expect(res.body?.error).not.toBe('TIER_INSUFFICIENT');
+}
+
+describe('P0-A3-3 returns.intake (Starter+) — GET /api/v1/modules/returns/jobs', () => {
+  it.each<[Tier]>([['starter'], ['core'], ['growth'], ['scale']])(
+    'EXPECTED RED: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get(RETURNS_INTAKE_ROUTE, tier);
+      expectNoTierDenial(res);
+    },
+  );
+});
+
+describe('P0-A3-3 returns.core (Core+) — GET /api/v1/modules/returns/items', () => {
+  it('EXPECTED RED: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / returns.core', async () => {
+    const res = await get(RETURNS_CORE_ROUTE, 'starter');
+    expectCommercialDenied(res, 'returns.core', 'starter');
+  });
+
+  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
+    'EXPECTED RED: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get(RETURNS_CORE_ROUTE, tier);
+      expectNoTierDenial(res);
+    },
+  );
+});
+
+describe('P0-A3-3 returns.analysis (Growth+) — GET /api/v1/modules/returns/correlation', () => {
+  it.each<[Tier]>([['starter'], ['core']])(
+    'EXPECTED RED: %s => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / returns.analysis',
+    async (tier) => {
+      const res = await get(RETURNS_ANALYSIS_ROUTE, tier);
+      expectCommercialDenied(res, 'returns.analysis', tier);
+    },
+  );
+
+  it.each<[Tier]>([['growth'], ['scale']])(
+    'EXPECTED RED: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get(RETURNS_ANALYSIS_ROUTE, tier);
+      expectNoTierDenial(res);
+    },
+  );
+});
+
+describe('P0-A3-3 Returns RBAC separation — the commercial gate is not a role gate', () => {
+  it('EXPECTED RED: an operator @ Growth on /correlation is never denied COMMERCIALLY', async () => {
+    // Whether or not the operator holds returns:read, the denial must not be
+    // COMMERCIAL_ACCESS_DENIED — Growth holds returns.analysis. Commercial and
+    // role denial stay separate concerns.
+    const res = await get(RETURNS_ANALYSIS_ROUTE, 'growth', ['operator']);
+    expect(res.body?.error).not.toBe('COMMERCIAL_ACCESS_DENIED');
+  });
+});
+
+// ===========================================================================
 // Scale invariant — every migrated family clears the gate at Scale
 // ===========================================================================
 describe('Scale clears every migrated commercial gate', () => {
