@@ -11,6 +11,8 @@ import { IsometricCanvas } from '@lasyncro/shared/ui';
 import { mapOverviewFt2Props } from 'pages/overview/useOverviewFt2Adapter';
 import { useAuth } from 'contexts/AuthContext';
 import { useEntitlements } from 'contexts/EntitlementsContext';
+import { useCommercialAccess } from '../../runtime/commercialContext';
+import type { Tier } from '@lasyncro/commercial-policy';
 import { ProfileCompletionBanner } from '../overview/ProfileCompletionBanner';
 import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
 import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
@@ -79,29 +81,47 @@ const LIVE_MAP_TEASER_OCCUPANCY = {
   'B-3': { on_hand_quantity: 29 },
 };
 
-function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
+function LiveMapUpgradeTeaser({
+  onUpgrade,
+  requiredTier,
+}: {
+  onUpgrade: () => void;
+  /**
+   * COMMERCIAL-ACCESS-ARCH-01 P0-A3-2: the canonical overview.live_map
+   * AccessDecision's own requiredTier — never inferred locally. Absent when
+   * the decision itself carries no tier step (e.g. a module/feature denial),
+   * in which case the teaser falls back to neutral wording rather than
+   * inventing a tier.
+   */
+  requiredTier?: Tier;
+}) {
   const { emit } = useUiEvents();
   const [visible, setVisible] = useState(
     () => window.sessionStorage.getItem(LIVE_MAP_TEASER_DISMISS_KEY) !== '1'
   );
 
+  const tierLabel = requiredTier ? requiredTier[0].toUpperCase() + requiredTier.slice(1) : null;
+  const analyticsTier = requiredTier ? { requiredTier } : {};
+
   useEffect(() => {
     if (!visible) return;
 
     emit('upgrade_prompt.shown', {
-      requiredTier: 'growth',
+      ...analyticsTier,
       featureName: 'Overview live operations map',
       mode: 'teaser',
       surface: 'overview',
     });
-  }, [visible, emit]);
+    // analyticsTier is a fresh object each render — depend on requiredTier itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, emit, requiredTier]);
 
   if (!visible) return null;
 
   const dismiss = () => {
     window.sessionStorage.setItem(LIVE_MAP_TEASER_DISMISS_KEY, '1');
     emit('upgrade_prompt.dismissed', {
-      requiredTier: 'growth',
+      ...analyticsTier,
       featureName: 'Overview live operations map',
       surface: 'overview',
     });
@@ -110,7 +130,7 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
 
   const upgrade = () => {
     emit('upgrade_prompt.clicked', {
-      requiredTier: 'growth',
+      ...analyticsTier,
       featureName: 'Overview live operations map',
       surface: 'overview',
     });
@@ -174,7 +194,7 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
             mb: 0.5,
           }}
         >
-          Available on Growth
+          {tierLabel ? `Available on ${tierLabel}` : 'Available on a higher plan'}
         </Typography>
 
         <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--ink)', mb: 0.5 }}>
@@ -203,7 +223,7 @@ function LiveMapUpgradeTeaser({ onUpgrade }: { onUpgrade: () => void }) {
           '&:hover': { opacity: 0.88 },
         }}
       >
-        See Growth plan →
+        {tierLabel ? `See ${tierLabel} plan →` : 'Upgrade to unlock →'}
       </Box>
 
       <Box
@@ -239,15 +259,27 @@ export default function OverviewPageFT2() {
   const morningBrief = useMorningBriefSnapshot(!authLoading);
 
   const isOwnerOrAdmin = user?.role === 'owner' || user?.role === 'admin';
-  const { displayCurrency, tier, hasResolved: entitlementsResolved } = useEntitlements();
+  const { displayCurrency } = useEntitlements();
 
-  // Map data — all hooks unconditional (Rules of Hooks); data ignored when tier doesn't qualify.
-  // Occupancy deferred until zones are loaded (enabled guard) to avoid a redundant request
-  // on first paint. Per overview-live-map-playbook.md §3 and §4.
-  // OV-ENTRY-001: hasMapTier must be false until entitlements resolve.
-  // Prevents premature triage-layout flash while /api/v1/entitlements is in flight.
-  const hasMapTier = entitlementsResolved && (tier === 'scale' || tier === 'growth');
-  const floorPlanning = useFloorPlanning();
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A3-2: the one canonical AccessDecision for
+  // Overview Live Map. Never reconstruct eligibility from a raw tier compare.
+  // isResolved is the canonical commercial-resolution signal (backed by the
+  // entitlement snapshot inside the adapter) — read it here, not separately
+  // from EntitlementsContext, so one source governs the whole surface.
+  const { decide, isResolved } = useCommercialAccess();
+  const liveMapDecision = decide('overview.live_map');
+
+  // Map data — all hooks unconditional (Rules of Hooks); data ignored when the
+  // decision denies access. Occupancy deferred until zones are loaded (enabled
+  // guard) to avoid a redundant request on first paint. Per
+  // overview-live-map-playbook.md §3 and §4.
+  // OV-ENTRY-001: map access must be false until the commercial decision
+  // resolves. Prevents premature triage-layout flash while the entitlement
+  // snapshot is still in flight.
+  const hasMapAccess = isResolved && liveMapDecision.allowed;
+  // P0-A3-2: gated tenants must not ACQUIRE floor geometry either — the same
+  // decision that hides the map also stops the layout fetch.
+  const floorPlanning = useFloorPlanning(hasMapAccess);
   const zones = floorPlanning.data?.zones ?? [];
   // OV-34: a floor exists only when at least one zone carries geometry — not
   // when rows merely exist. Every shop is bootstrapped with WH-{shopId}-ROOT
@@ -259,8 +291,8 @@ export default function OverviewPageFT2() {
   const hasPlacedFloor = zones.some(
     (z: WarehouseZone) => z.position_x != null && z.position_y != null
   );
-  const occupancyQuery = useWarehouseGridOccupancy(hasMapTier && hasPlacedFloor);
-  const idleAlerts = useIdleAlerts(hasMapTier && hasPlacedFloor);
+  const occupancyQuery = useWarehouseGridOccupancy(hasMapAccess && hasPlacedFloor);
+  const idleAlerts = useIdleAlerts(hasMapAccess && hasPlacedFloor);
   // useOrderPool (GET /api/v1/wms/order-pool, 30s poll) feeds the inbound apron:
   // eligible_order_count → bar height, summary.blocked_count → red sub-bar.
   // Semantics: orders waiting to be released to the floor, not yet released.
@@ -270,7 +302,7 @@ export default function OverviewPageFT2() {
   // OV-41: unresolved physical problems stay attached to their recorded
   // problem_bin_location. Null means unknown — never invent a floor location.
   const problemCenter = useProblemCenter(
-    hasMapTier && hasPlacedFloor,
+    hasMapAccess && hasPlacedFloor,
     15_000
   );
   const problemTasks = problemCenter.data?.tasks ?? [];
@@ -290,18 +322,18 @@ export default function OverviewPageFT2() {
 
   // Live activity — picker positions from pick_scan_log, 15s poll.
   // Disabled for non-scale tenants — avoids unnecessary polling.
-  const liveActivityQuery = useWmsLiveActivity(hasMapTier);
+  const liveActivityQuery = useWmsLiveActivity(hasMapAccess);
   const activeBatches = liveActivityQuery.data?.activeBatches ?? [];
     // OV-152: unify visible warehouse warnings with the Overview headline.
   // Unknown prevents positive messaging while relevant queries are loading
   // or failed; disabled map-only sources do not block non-map tiers.
   // OV-34: gated on placed geometry, not row count — an unconfigured tenant
   // has no operational map and must not suppress non-map warning sources.
-  const operationalMapEnabled = hasMapTier && hasPlacedFloor;
+  const operationalMapEnabled = hasMapAccess && hasPlacedFloor;
 
   const operationalWarningsUnresolved =
-    !entitlementsResolved ||
-    (hasMapTier && (floorPlanning.isLoading || floorPlanning.isError)) ||
+    !isResolved ||
+    (hasMapAccess && (floorPlanning.isLoading || floorPlanning.isError)) ||
     (
       operationalMapEnabled &&
       (
@@ -445,7 +477,7 @@ export default function OverviewPageFT2() {
 
   // Zero-count stages are omitted by IsometricCanvas rather than drawn empty,
   // so the rail only ever shows stages holding work.
-  const allStations: SyntheticStation[] = hasMapTier ? [
+  const allStations: SyntheticStation[] = hasMapAccess ? [
     {
       id: 'blocked',
       label: 'Blocked',
@@ -516,7 +548,7 @@ export default function OverviewPageFT2() {
   };
 
   const locationPulseByCode: Record<string, LocationPulse> = {};
-  if (hasMapTier) {
+  if (hasMapAccess) {
     for (const z of zones) {
       if (z.type !== 'bin' || !z.location_code) continue;
       const code = z.location_code;
@@ -605,7 +637,7 @@ export default function OverviewPageFT2() {
   // even while floor data is loading. A stable loading placeholder occupies
   // the map slot until zones are known.
   let mapContent: React.ReactNode | undefined;
-  if (!hasMapTier) {
+  if (!hasMapAccess) {
     mapContent = undefined; // Core/Starter — triage layout (with upgrade teaser)
   } else if (floorPlanning.isLoading) {
     // Growth/Scale — shimmer skeleton holds the map slot.
@@ -888,8 +920,11 @@ export default function OverviewPageFT2() {
           currency={displayCurrency}
           mapContent={mapContent}
           upgradeTeaser={
-            isOwnerOrAdmin && !hasMapTier ? (
-              <LiveMapUpgradeTeaser onUpgrade={() => navigate('/settings/billing')} />
+            isOwnerOrAdmin && !hasMapAccess ? (
+              <LiveMapUpgradeTeaser
+                onUpgrade={() => navigate('/settings/billing')}
+                requiredTier={liveMapDecision.requiredTier}
+              />
             ) : undefined
           }
           onNavigate={(deepLink) => navigate(deepLink)}

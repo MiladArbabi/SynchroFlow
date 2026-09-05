@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** August 5, 2026 — OV-145 one-level bin geometry verified locally.
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · v3 parked.
+> **Last updated:** September 5, 2026 — `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2 commercial-access convergence (§3, §3.1, §6).
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · P0-A3-2 commercial convergence ✅ implemented + verified, **not yet deployed** · v3 parked.
 ---
 
 ## 1. Why this exists — the product thesis
@@ -56,6 +56,16 @@ The current Overview (triage-first signals + Business Pulse rail) solves the *de
 
 Resolved at `OverviewFT2Page` level. The page owns subscription and data-state resolution; `OverviewModuleFT2` remains layout-only and receives rendered `mapContent` and `upgradeTeaser` props.
 
+> **Commercial authority superseded 2026-09-05 by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2** (`monetization_billing_playbook.md` §32 "### P0-A3-2"). The three branches, the layout, and the `hasPlacedFloor` predicate below are all unchanged — **only the commercial half of each condition is.** Wherever a row reads "tier is `growth` or `scale`" or "tier is below `growth`", the live authority is now one canonical capability decision:
+>
+> ```ts
+> const { decide, isResolved } = useCommercialAccess();
+> const liveMapDecision = decide('overview.live_map');
+> const hasMapAccess = isResolved && liveMapDecision.allowed;
+> ```
+>
+> `overview.live_map` is declared once in `@lasyncro/commercial-policy` (`moduleId: overview`, `minimumTier: growth`). `OverviewFT2Page` no longer reconstructs eligibility from a raw tier string — `tier === 'scale' || tier === 'growth'` is gone — and `useEntitlements()` survives on this page only for the unrelated `displayCurrency`. Read the rows below as "the tenant holds `overview.live_map`" / "does not hold it". Scale inherits Growth: there is deliberately **no** Growth-vs-Scale distinction for this capability, and a persisted bespoke grant can allow the capability below Growth without any change here.
+
 | Branch | Condition | Overview renders |
 | --- | --- | --- |
 | **Live map** | tier is `growth` or `scale`, layout request succeeds, and `hasPlacedFloor` | Full `IsometricCanvas` with occupancy, apron stations, and live picker activity |
@@ -82,6 +92,14 @@ Locked behaviour:
 - Operators do not receive the billing upgrade prompt.
 
 The live Growth/Scale map currently receives layout zones from `useFloorPlanning()`, occupancy from `useWarehouseGridOccupancy()`, order-pool station data from `useOrderPool()`, and picker activity from `useWmsLiveActivity()`.
+
+> **P0-A3-2 (2026-09-05) — two corrections to the locked behaviour above.**
+>
+> **1. Denied tenants no longer FETCH premium data, they never merely hid it.** The bullet "No customer floor, occupancy, order-pool, or live-activity data is exposed through the preview" was a *rendering* guarantee. `useFloorPlanning()` was called unconditionally by the paragraph above, so a Starter/Core tenant still issued `GET /api/v1/floor-planning/layout` and received real floor geometry it was never shown. That is now an **acquisition** rule: `useFloorPlanning` accepts `enabled` (defaulting to `true`, so `FloorPlanningPage` is unaffected), and `OverviewFT2Page` passes the same `hasMapAccess` boolean into it. One canonical decision now gates `useFloorPlanning`, `useWarehouseGridOccupancy`, `useIdleAlerts`, `useProblemCenter` map enrichment, `useWmsLiveActivity`, the operational-map warning state, and the real-map-vs-teaser branch. **Rule for future work: any new premium map source must take the same boolean — hiding a rendered surface is not a commercial gate.**
+>
+> **2. The teaser's required tier is read from the decision, not assumed.** "The CTA reads 'See Growth plan →'" described a hardcoded `requiredTier: 'growth'`. The teaser now derives its copy and its `upgrade_prompt.*` analytics payload from `liveMapDecision.requiredTier`. When the decision carries no tier step (a module or feature denial rather than a tier one), the teaser falls back to neutral wording — "Available on a higher plan" / "Upgrade to unlock →" — rather than inventing a tier. Everything else in this section (session dismissal key, synthetic geometry, hidden SVG labels, owner/admin-only, the three analytics events) is unchanged.
+>
+> The teaser remains explicitly preview/upgrade UX built from static sample geometry. It is never blurred or degraded real merchant data.
 
 ---
 
@@ -166,6 +184,12 @@ Map badges must derive from the same `alerts` table rows that drive the bell cou
 ## 6. Live-activity endpoint — minimal v1 scope (WG-11)
 
 `GET /api/v1/wms/live-activity` — authenticated, `requireFt2`, `requireAction('wms:read')`.
+
+> **Updated 2026-09-05 by `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2 — backend parity.** The route's real chain is now
+>
+> `authenticateToken → requireFt2 → requireCapability('overview.live_map') → requireAction('wms:read') → httpGetLiveActivity`
+>
+> The commercial gate was previously **absent entirely** on this route: the frontend hid the map while the endpoint itself would still serve live floor activity to a Starter/Core caller holding `wms:read`. Commercial access and RBAC are two separate, both-required checks and stay in that order — `requireCapability` answers "is this tenant entitled to the capability", `requireAction('wms:read')` answers "is this user permitted the action". Neither weakens the other; the controller is unchanged. Denials return the `COMMERCIAL_ACCESS_DENIED` contract (§32 "### P0-A2A"). No other WMS route was migrated in that slice.
 
 No new writers. Derive from existing tables only.
 

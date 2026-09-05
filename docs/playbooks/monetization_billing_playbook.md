@@ -2062,10 +2062,16 @@ union, `requireCapability` middleware + first backend route migration,
 `ShopSettingsReportsPage` / `ColumnPicker` canonical decision, backend
 `exports.routes.ts` + `exports.controller.ts` canonical enforcement) —
 **CLOSED / VERIFIED (2026-09-04); pending commit/push/deploy** (see
-"### P0-A3-1"). Remaining **P0-A3** scope — the other unmigrated backend
-route families, bespoke-grant backend enforcement, the sole remaining
-deferred private frontend `TIER_ORDER` residual (`usePlanEntitlement.ts`),
-and system-wide C14–C24 closure — OPEN. **P0-B** commercial-state integrity
+"### P0-A3-1"). **P0-A3-2** Overview Live Map commercial-access convergence
+(`OverviewFT2Page` canonical `overview.live_map` decision, premium-data
+acquisition gating via `useFloorPlanning(enabled)`, backend
+`requireCapability('overview.live_map')` on `GET /api/v1/wms/live-activity`)
+— **IMPLEMENTED + VERIFIED (2026-09-05); NOT YET DEPLOYED — pending
+commit/push/deploy** (see "### P0-A3-2"). Remaining **P0-A3** scope — the
+other unmigrated backend route families, bespoke-grant backend enforcement,
+the sole remaining deferred private frontend `TIER_ORDER` residual
+(`usePlanEntitlement.ts`), and system-wide C14–C24 closure — **the P0-A3
+umbrella remains OPEN.** **P0-B** commercial-state integrity
 (`BILL-ENTITLEMENT-01` Fact B) — SEPARATE, OPEN.
 
 ### Why this exists
@@ -2992,6 +2998,11 @@ bespoke backend grant loading (`shop_module_entitlements` consulted by
 
 - Overview Live Map, Returns, Inventory/Products, and the remaining WMS
   commercial surfaces not yet migrated
+  > **Partially superseded 2026-09-05 by P0-A3-2** (see "### P0-A3-2"):
+  > **Overview Live Map is migrated** — frontend and the single backend route
+  > `GET /api/v1/wms/live-activity`. Returns, Inventory/Products and every
+  > other WMS commercial surface remain unmigrated and still belong to this
+  > bullet.
 - active `usePlanEntitlement` consumers outside the export surfaces, and the
   final private-`TIER_ORDER` cleanup (`usePlanEntitlement.ts` itself)
 - bespoke persisted-grant backend enforcement (see §32 "### P0-A2A"
@@ -3003,6 +3014,187 @@ bespoke backend grant loading (`shop_module_entitlements` consulted by
 
 **P0-A3-1 is CLOSED / VERIFIED. The remainder of P0-A3 is NOT closed by this
 slice.**
+
+### P0-A3-2 — Overview Live Map commercial-access convergence (implemented + verified 2026-09-05; NOT YET DEPLOYED — pending commit/push/deploy)
+
+**P0-A3-2 is the second bounded slice of P0-A3.** It converges the Overview
+Live Map surface — frontend authority *and* the one backend route that serves
+it — onto the same `@lasyncro/commercial-policy` engine P0-A1/A2A/A2B/A3-1
+already shipped. It does **not** close P0-A3; the umbrella stays OPEN.
+
+#### Ratified product state
+
+All tiers share the **same Overview information architecture**:
+
+    Pulse + Decisions to make
+    Live Map slot
+
+| Tier | Pulse + Decisions | Live Map slot | Premium data fetched |
+| --- | --- | --- | --- |
+| Starter / Core | full experience, unchanged | synthetic premium teaser | **none** — no floor geometry, no live activity |
+| Growth / Scale | full experience, unchanged | the real live operational map | real floor geometry + live activity |
+
+Locked rules:
+
+- The Live Map **slot** exists for every tier; only its contents differ. There
+  is no separate "Core layout" and "Growth layout".
+- The teaser is built from static sample geometry and is unmistakably
+  preview/upgrade UX. It is **never** blurred, degraded, or partially masked
+  real merchant data.
+- A denied tenant does not *fetch* premium data at all — hiding a rendered
+  surface is not a commercial gate.
+- **Scale inherits Growth.** There is deliberately no Growth-vs-Scale
+  distinction for this capability.
+
+#### Canonical policy
+
+    overview.live_map
+      moduleId:    overview
+      minimumTier: growth
+
+Declared once in `@lasyncro/commercial-policy`; frontend and backend both read
+it and nothing else.
+
+#### 1. `OverviewFT2Page.tsx` — frontend authority
+
+| | Before | After |
+| --- | --- | --- |
+| Commercial authority | private expression `entitlementsResolved && (tier === 'scale' \|\| tier === 'growth')` | `useCommercialAccess()` → `liveMapDecision = decide('overview.live_map')` |
+| Access boolean | `hasMapTier` (legacy name) | `hasMapAccess = isResolved && liveMapDecision.allowed` |
+| Resolution signal | `hasResolved` read separately from `EntitlementsContext` | `isResolved` from the adapter — the canonical signal, itself backed by `EntitlementsContext.hasResolved` internally |
+| Teaser required tier | hardcoded `requiredTier: 'growth'` | derived from `liveMapDecision.requiredTier`, neutral wording when absent |
+| Floor geometry | `useFloorPlanning()` fetched **regardless of entitlement** | `useFloorPlanning(hasMapAccess)` |
+
+The **same** canonical boolean now gates every live-map consumer:
+`useFloorPlanning`, `useWarehouseGridOccupancy`, `useIdleAlerts`,
+`useProblemCenter` map enrichment, `useWmsLiveActivity`, the operational-map
+warning state (`operationalMapEnabled` / `operationalWarningsUnresolved`), the
+synthetic apron stations, the Location Pulse payloads, and the real-map vs
+teaser render branch.
+
+No raw Growth/Scale eligibility is reconstructed anywhere on the page.
+`useEntitlements()` remains imported **only** for the unrelated
+`displayCurrency`. Because the decision (not a tier compare) is the authority,
+a persisted bespoke grant can allow the capability below Growth with no page
+change — subject to the backend bespoke-grant limitation in §32 "### P0-A2A".
+
+`OV-ENTRY-001` is preserved by the `isResolved &&` conjunct: access is false
+until the commercial snapshot resolves, so a Growth tenant never flashes the
+triage layout while entitlements are in flight.
+
+#### 2. `useFloorPlanning.ts` — acquisition seam
+
+`export function useFloorPlanning()` → `export function useFloorPlanning(enabled = true)`,
+with `enabled` forwarded into the React Query options and nothing else touched:
+query key `['floor-planning','layout']`, endpoint
+`/api/v1/floor-planning/layout`, 9s timeout, `staleTime` 60s, `retry: 1`,
+`retryDelay`, `placeholderData`, and the returned
+`{ data, isLoading, isError, refetch }` shape are all unchanged. The default
+`true` keeps every existing argument-less caller (`FloorPlanningPage`) on its
+previous behaviour; Overview is the only caller passing the gate.
+
+This is a **testability/commercial seam, not test-only behaviour** — production
+defaults are unchanged and no environment bypass was added.
+
+#### 3. `wms.routes.ts` — backend parity
+
+`GET /api/v1/wms/live-activity`:
+
+    Before:  authenticateToken → requireFt2 → requireAction('wms:read') → httpGetLiveActivity
+    After:   authenticateToken → requireFt2 → requireCapability('overview.live_map')
+                               → requireAction('wms:read') → httpGetLiveActivity
+
+The route previously had **no commercial gate at all** — the frontend hid the
+map while the endpoint would still serve live floor activity to any Starter or
+Core caller holding `wms:read`. Commercial entitlement and RBAC remain two
+separate, both-required checks in that order; `requireAction('wms:read')` is
+preserved verbatim and the controller is unchanged. Denials use the existing
+`COMMERCIAL_ACCESS_DENIED` contract (§32 "### P0-A2A" §5). **No other WMS route
+is migrated by this slice.**
+
+#### New regression contracts
+
+Added:
+
+- `tests/contract/overview-live-map-commercial-access.contract.test.ts`
+- `tests/unit/ui/commercial-access/overview-live-map-commercial-access.test.tsx`
+
+Extended:
+
+- `tests/integration/entitlements/representative-route-commercial-gate.test.ts`
+
+Permanent behaviour now protected:
+
+- the canonical decision **wins over a contradictory legacy tier** in both
+  directions (the frontend suite deliberately constructs tier↔decision
+  disagreement; it asserts authority, never a claim about what any tier should
+  actually be granted)
+- Starter/Core denial renders the teaser **and disables the real acquisitions**
+- Growth/Scale allowance renders the live map **and enables them**
+- Pulse + "Decisions to make" survive a commercial denial (continuity control)
+- teaser `requiredTier` derives from the `AccessDecision`
+- floor geometry and live activity read the **same** canonical gate — the
+  contract locates that gate by the call site it governs, not by variable name,
+  so the legacy `hasMapTier` identifier is no longer frozen into any assertion
+- backend `/live-activity` requires `overview.live_map`, and
+  `requireAction('wms:read')` is not weakened (green control)
+- Starter/Core receive a real-route commercial 403; Growth/Scale clear the gate
+
+#### RED evidence (durable)
+
+Initial slice RED: **13 intentional RED failures** converged to GREEN, with
+**4 initial GREEN controls** holding throughout.
+
+Correction-pass RED (the implementation-correction round that added the
+acquisition gate): contract **2 failed / 6 passed**, frontend **4 failed /
+2 passed**, against pre-correction production source. Those failures
+specifically exposed (a) unconditional floor-planning acquisition on a denied
+tenant and (b) redundant resolution authority read from `EntitlementsContext`
+rather than the canonical adapter. Both are closed above.
+
+#### P0-A3-2 verification evidence (durable)
+
+- commercial contract regression — **8 suites PASS, 285 / 285 GREEN**
+- frontend commercial regression — **6 suites PASS, 52 / 52 GREEN**
+- backend real-route integration,
+  `tests/integration/entitlements/representative-route-commercial-gate.test.ts`
+  — **1 suite PASS, 22 / 22 GREEN**, real Express app + disposable PostgreSQL
+- static authority checks — **PASS**
+- frontend `tsc --noEmit` — **19 pre-existing baseline errors, 0 A3-2
+  target-file errors**
+- disposable test-DB leftovers — **0**
+- `git diff --check` — **PASS**
+- no migration, no persistent-DB mutation, no package/lockfile change, no
+  generated `dist` regenerated
+
+Non-doc scope of the slice, exactly six paths:
+
+1. `apps/backend/src/api/wms/wms.routes.ts`
+2. `apps/frontend/src/pages/floor-planning/useFloorPlanning.ts`
+3. `apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx`
+4. `tests/contract/overview-live-map-commercial-access.contract.test.ts`
+5. `tests/integration/entitlements/representative-route-commercial-gate.test.ts`
+6. `tests/unit/ui/commercial-access/overview-live-map-commercial-access.test.tsx`
+
+#### Known pre-existing baseline — NOT an A3-2 regression
+
+`tests/unit/ui/overview/OverviewFT2Page.refresh-boundary.test.tsx` cannot
+resolve `analytics/useUiEvents`. This was reproduced against the pristine
+slice anchor `ae59ae90` and is **pre-existing**. It is not caused by P0-A3-2
+and was deliberately not repaired here.
+
+#### Deliberately not touched by P0-A3-2
+
+- the other WMS commercial routes
+- recount commercial architecture, `/sender-addresses*`
+- persisted bespoke-grant backend enforcement
+- Returns, Inventory/Products
+- paused/deprecated commercial surfaces
+- `BILL-ENTITLEMENT-01` Fact B, P0-B commercial-transition architecture,
+  P0-C broader coverage
+
+**P0-A3-2 is IMPLEMENTED and VERIFIED. It is NOT YET DEPLOYED — commit, push
+and deploy are still pending. The P0-A3 umbrella remains OPEN.**
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 

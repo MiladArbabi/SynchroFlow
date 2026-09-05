@@ -9,9 +9,14 @@ import { axiosInstance } from 'api/axiosConfig';
  * and product barcode assignments for the current shop.
  *
  * No polling — layout data changes infrequently. Refetch on demand via refetch().
+ *
+ * COMMERCIAL-ACCESS-ARCH-01 P0-A3-2: `enabled` lets a commercially gated
+ * surface stop ACQUIRING floor geometry, not merely stop rendering it. Defaults
+ * to true so existing ungated callers (FloorPlanningPage) are unchanged.
  */
-export function useFloorPlanning() {
+export function useFloorPlanning(enabled = true) {
   const { data, isLoading, isError, refetch } = useQuery({
+    enabled,
     // OV-01-TS: The stable key restores query typing and allows floor-planning
     // mutations to invalidate this layout through the shared prefix.
     queryKey: ['floor-planning', 'layout'],

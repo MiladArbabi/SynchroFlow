@@ -187,6 +187,28 @@ describe('warehouse.floor_planning — GET /api/v1/floor-planning/layout', () =>
 });
 
 // ===========================================================================
+// Overview Live Map  ->  overview.live_map  (Growth+; P0-A3-2 TEST STRATEGY /
+// RED — the route currently has NO commercial gate at all, so every DENY
+// case below fails against production code today)
+// ===========================================================================
+describe('overview.live_map — GET /api/v1/wms/live-activity', () => {
+  it('EXPECTED RED: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
+    const res = await get('/api/v1/wms/live-activity', 'starter');
+    expectCommercialDenied(res, 'overview.live_map', 'starter');
+  });
+
+  it('EXPECTED RED: Core => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW', async () => {
+    const res = await get('/api/v1/wms/live-activity', 'core');
+    expectCommercialDenied(res, 'overview.live_map', 'core');
+  });
+
+  it('GREEN CONTROL (vacuous today — no gate exists yet, so nothing denies it; must stay true once the gate lands): Growth clears the commercial gate', async () => {
+    const res = await get('/api/v1/wms/live-activity', 'growth');
+    expect(commercialGatePassed(res)).toBe(true);
+  });
+});
+
+// ===========================================================================
 // demand  ->  demand.forecasting  (Growth+)
 // ===========================================================================
 describe('demand.forecasting — GET /api/v1/modules/demand/', () => {
@@ -212,6 +234,7 @@ describe('Scale clears every migrated commercial gate', () => {
     ['/api/v1/wms/problem-center/pick-exceptions'],
     ['/api/v1/floor-planning/layout'],
     ['/api/v1/modules/demand/'],
+    ['/api/v1/wms/live-activity'],
   ])('ALLOW: %s at Scale is never a commercial denial', async (pathname) => {
     const res = await get(pathname, 'scale');
     expect(commercialGatePassed(res)).toBe(true);

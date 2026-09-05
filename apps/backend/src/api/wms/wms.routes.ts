@@ -893,7 +893,7 @@ router.post(
 
 router.get(
   '/live-activity',
-  authenticateToken, requireFt2, requireAction('wms:read'),
+  authenticateToken, requireFt2, requireCapability('overview.live_map'), requireAction('wms:read'),
   httpGetLiveActivity
 );
 
