@@ -197,17 +197,35 @@ Verification:
 
 Production certification remains required after deployment.
 
-### Finding 4 — Redundant canonical redirect hop
+### Finding 4 — Redundant canonical redirect hop — ACCEPTED
 
-`http://lasyncro.com/`
-
-currently resolves through:
+`http://lasyncro.com/` resolves through:
 
 `http://lasyncro.com/`
 → `https://lasyncro.com/`
 → `https://www.lasyncro.com/`
 
-The canonical destination is correct, but the first request takes two redirect hops.
+Live audit confirmed:
+
+- HTTP apex → HTTPS apex: `308`
+- HTTPS apex → canonical `www`: `308`
+- HTTP `www` → canonical HTTPS `www`: one `308`
+- canonical `https://www.lasyncro.com/`: `200`
+- both apex redirects are served by Vercel
+
+Repository inspection found no source-level apex-host redirect responsible for this chain.
+
+Disposition:
+
+- no application/source change
+- first hop is Vercel HTTP→HTTPS enforcement
+- second hop is apex→`www` canonicalization
+- adding repository redirect logic would not remove the edge-level HTTP→HTTPS hop
+- canonical destination is correct
+- accepted as low-impact infrastructure behavior
+
+Production evidence was captured directly during audit; no further production certification is required.
+
 
 ---
 
