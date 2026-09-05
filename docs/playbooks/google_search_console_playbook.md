@@ -169,17 +169,33 @@ Verification:
 
 Production certification remains required after deployment.
 
-### Finding 3 — Redirecting internal link
+### Finding 3 — Redirecting internal link — RESOLVED
 
-The landing-page footer links:
+The landing-page footer previously linked to:
 
 `/getting-started`
 
-Production returns:
+Production returned:
 
 `308 → /help/getting-started`
 
-Internal links should point directly to the canonical destination.
+Resolution:
+
+- footer now links directly to `/help/getting-started`
+- legacy `/getting-started` redirects remain in place for old/external URLs
+- no internal landing-page link points to the redirecting legacy path
+
+Regression contract:
+
+`tests/contract/getting-started-link.contract.test.ts`
+
+Verification:
+
+- targeted contract: 2/2 PASS
+- redirecting internal link scan: NONE
+- `git diff --check`: PASS
+
+Production certification remains required after deployment.
 
 ### Finding 4 — Redundant canonical redirect hop
 
