@@ -528,6 +528,20 @@ data, not by a test failure. Fixed:
   file's original design). `return_jobs`' own copies of these columns are
   now legacy/summary-only — mobile's job-list view still reads them, but
   nothing writes to them anymore.
+
+  > **⚠️ THIS IS THE `RETURNS-SCHEMA-DRIFT-01` DEFECT (2026-09-05).** Folding
+  > these four columns into `0008` was **not sufficient for production**.
+  > `0008` had already run in prod (batch 1, 2026-06-18), so Knex had it
+  > recorded as complete and never re-ran it — the amendment reached fresh
+  > installs and dev only. Production was left without `return_job_id`,
+  > `owner_decision`, `decision_notes`, `decision_by` or `decision_at` on
+  > `refund_execution_line_items`, while still carrying the legacy job-level
+  > fields on `return_jobs`. `listItemsAwaitingDecision()` selects three of
+  > those columns and joins the fourth, so the Returns items surface was
+  > **down in production, not degraded**. Repaired forward by
+  > `20260828120000_0165_repair_refund_execution_line_item_decision_columns`
+  > (§12). The line-level vs job-level semantics described above are
+  > unchanged and correct — only the delivery mechanism was wrong.
 - New `setLineOwnerDecision()` — cascade scoped to exactly the one line
   passed in. Job auto-completes only once every damaged/unsellable line on
   it has a decision, checked via a live count query after each line
@@ -574,6 +588,17 @@ data, not by a test failure. Fixed:
 above.** Per explicit preference — always fix base migrations, never leave
 patch files in active development — three additional patch migrations were
 folded back in while touching this schema:
+
+> **⚠️ SUPERSEDED AS A PRACTICE, 2026-09-05 — `RETURNS-SCHEMA-DRIFT-01`.**
+> "Always fix base migrations, never leave patch files" is safe ONLY for a
+> migration that has never shipped. The moment production has recorded a
+> migration as applied, Knex will never re-run it, and any later amendment to
+> that file silently diverges prod from canonical — which is exactly what
+> happened to `0008` here. The authoritative rule and the full incident record
+> live in `docs/playbooks/migration_drift_playbook.md` (§1, §5, and the
+> 2026-09-05 `RETURNS-SCHEMA-DRIFT-01` entry). The consolidation history below
+> is preserved as the record of what was done and why; it is **not** a pattern
+> to repeat against already-applied migrations.
 
 - `0122` (`return_jobs` carrier linkage: `source` column, FK to
   `parcel_tracking_events`) → `source` merged into 0008; the FK itself
@@ -799,3 +824,141 @@ backend integration contract; the browser verification above focused on the
 two user-facing routing branches.
 
 **ORD-DECISION-01: CLOSED.**
+
+---
+
+## 12. Session Log — 2026-09-05 (`RETURNS-SCHEMA-DRIFT-01` — production schema drift on `refund_execution_line_items`)
+
+**Canonical drift policy lives in `docs/playbooks/migration_drift_playbook.md`**
+(§1, §5, and the 2026-09-05 `RETURNS-SCHEMA-DRIFT-01` incident entry). This
+section records the Returns-specific facts only.
+
+### Root cause
+
+Historical migration `20260212162717_0008_refund_executions_sovereign` ran in
+production on 2026-06-18 (batch 1) and was **later amended in source** to add
+line-level decision columns (§10). Knex had already recorded `0008` as complete
+and therefore never re-applied it, so the post-run additions reached fresh
+installs and dev but never production.
+
+`0008` remains the canonical **historical baseline** and was NOT edited by this
+repair. Its own DRIFT WARNING is authoritative: amending an already-applied
+migration cannot reach production, and a forward migration is the only correct
+mechanism.
+
+### Confirmed production drift
+
+`refund_execution_line_items` was missing all five of:
+
+| Column | Canonical shape |
+|---|---|
+| `return_job_id` | `uuid`, nullable |
+| `owner_decision` | `return_owner_decision_type`, nullable |
+| `decision_notes` | `text`, nullable |
+| `decision_by` | `integer`, nullable |
+| `decision_at` | `timestamptz`, nullable |
+
+...together with the single-column index on `return_job_id` and the FK
+`refund_execution_line_items.return_job_id -> return_jobs.return_job_id
+ON DELETE CASCADE`. Production still carried the LEGACY job-level decision
+fields on `return_jobs`.
+
+**Impact:** `listItemsAwaitingDecision()` selects `reli.owner_decision`,
+`reli.decision_notes` and `reli.decision_at` and joins `reli.return_job_id`, so
+on the drifted shape the query cannot execute at all — the Returns items surface
+was **down in production, not degraded**.
+
+### Line-level vs legacy job-level decision semantics
+
+Unchanged by this repair, and the reason the backfill is deliberately narrow:
+
+- **Line-level** (`refund_execution_line_items.owner_decision` and siblings) —
+  one disposition per returned unit. This is where the web app writes, and what
+  `setLineOwnerDecision()` scopes its cascade to (§10).
+- **Job-level** (`return_jobs.owner_decision` and siblings) — a legacy per-job
+  summary, still read by mobile's job-list view, written by nothing current.
+
+They are different semantics, not two copies of one value. Copying job-level
+values down onto lines would fabricate a per-unit disposition no operator ever
+made — on **every** line of a multi-line job — which is precisely the bug
+line-level decisions were introduced to fix. The repair therefore **never**
+copies them; restored line-level columns start NULL unless already populated.
+
+### Forward repair — `0165`
+
+`apps/backend/migrations/20260828120000_0165_repair_refund_execution_line_item_decision_columns.ts`,
+carrying the stable marker `RETURNS-SCHEMA-DRIFT-01` (the regression suite
+locates it by that marker, never by number).
+
+- conditionally restores the five canonical columns (`ADD COLUMN IF NOT EXISTS`);
+- safe on fresh/current canonical databases — FK and index presence are decided
+  by inspecting `pg_constraint` / `pg_index` **structurally**, not by constraint
+  name, so a correct FK under a different name is never duplicated;
+- structurally ensures exactly one canonical FK
+  `refund_execution_line_items(return_job_id) -> return_jobs(return_job_id) ON DELETE CASCADE`,
+  and refuses to proceed if an *incompatible* FK occupies that relationship
+  rather than silently replacing an unknown production structure;
+- structurally ensures a usable single-column `return_job_id` index;
+- **deterministic backfill only**, through
+  `reli.lasyncro_refund_execution_id = rj.lasyncro_refund_execution_id`;
+- zero matches → stays NULL; an existing non-null `return_job_id` is preserved;
+- **ambiguity fails closed** — detected before any write, then throws and aborts
+  the transaction. No timestamp/order/revenue-unit heuristic, no `LIMIT 1`;
+- validates the resulting structure at the end of `up()` and throws rather than
+  leaving a half-repaired schema.
+
+**Ambiguity is presently unreachable, and the guard stays anyway.** Canonical
+schema carries `return_jobs_refund_execution_unique` (UNIQUE on
+`return_jobs.lasyncro_refund_execution_id`, `0008`), so one refund execution can
+never map to more than one return job. The fail-closed branch exists for the case
+where that invariant is ever weakened or itself drifts.
+
+**`down()` is intentionally non-destructive (a no-op).** These five columns, the
+index and the FK are canonical `0008` structures that `0165` only *restores* —
+they are not feature-owned temporary additions it introduced, so they are not its
+to remove. Dropping them on rollback would re-create this incident and destroy
+line-level decision data and backfilled links written after the repair. A faked
+destructive inverse would be actively dangerous, so none was written.
+
+### Verification evidence
+
+Permanent regression contract:
+`tests/integration/returns/returns-schema-drift-01.test.ts`
+
+- targeted: **11 / 11 PASS**
+- combined with `tests/integration/returns/returned-undelivered-contract.test.ts`:
+  **21 / 21 PASS** (neighbouring Returns suite unaffected)
+
+Contracts proven: production-shaped drift reproduction; repair restores all five
+columns with correct types and nullability; exactly one canonical CASCADE FK; one
+usable single-column index; deterministic backfill; unmatched row remains NULL;
+existing link preserved; job-level owner decision NOT copied to line level;
+canonical/fresh-schema rerun safe (no duplicate column/FK/index, data unchanged);
+non-destructive `down()`; and the original `listItemsAwaitingDecision` read path
+executing after repair — including the real exported service function, not only a
+hand-written query.
+
+Each scenario runs inside a rolled-back transaction against the disposable
+integration database, so the shared test DB is byte-identical afterwards.
+Disposable DB: created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`. The
+development database was never used or mutated.
+
+Backend TypeScript: PASS, after local ignored package-resolution shadows were
+aligned to the current worktree packages. Those shadows are
+**verification-environment only and are NOT shipped product changes**.
+
+### Lifecycle
+
+    RETURNS-SCHEMA-DRIFT-01
+    - AUDIT: CLOSED / PASS
+    - WORKSHOP: CLOSED / PASS
+    - TEST STRATEGY: CLOSED / PASS
+    - IMPLEMENTATION: CLOSED / PASS
+    - AUTOMATED VERIFY: CLOSED / PASS
+    - DOC: CLOSED / PASS
+    - COMMIT / PUSH / CI / DEPLOY / PRODUCTION CERTIFICATION: PENDING
+
+**Production is still running the drifted shape.** `0165` is implemented and
+locally verified; it has not been committed, deployed, or rehearsed against
+`prod_scratch` per the drift playbook §4. Do not read this section as a claim
+that the production schema is repaired.

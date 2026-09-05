@@ -2072,9 +2072,11 @@ Returns commercial-access convergence (canonical `returns.intake` /
 `returns.core` / `returns.analysis` ladder, all 12 `returns.routes.ts` routes on
 `requireCapability`, nav + sub-tab `capabilityId`, `CommercialGate` on the
 Returns route subtree, and `useReturnsCorrelation(enabled)` acquisition gating)
-— **IMPLEMENTATION + AUTOMATED VERIFY COMPLETE / PASS; COMMIT / PUSH / CI /
-DEPLOY / PRODUCTION CERTIFICATION PENDING**, at pre-commit anchor
-`58210ed4a064c1f4c393993ffea598175e1ebc00` (see "### P0-A3-3"). Remaining
+— **IMPLEMENTED + VERIFIED and DEPLOYED; PRODUCTION CERTIFICATION BLOCKED /
+PENDING on `RETURNS-SCHEMA-DRIFT-01`** — a separate pre-existing production
+schema drift on `refund_execution_line_items` whose forward repair (`0165`) is
+implemented and locally verified but not yet committed or deployed (see
+"### P0-A3-3"). Remaining
 **P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
@@ -3457,9 +3459,36 @@ of its package surface, so P0-A3-3 necessarily includes generated changes to
 #### Status
 
 **P0-A3-3 Returns commercial-access convergence — IMPLEMENTATION + AUTOMATED
-VERIFY: COMPLETE / PASS. DOC: current phase. COMMIT / PUSH / CI / DEPLOY /
-PRODUCTION CERTIFICATION: PENDING — none of those phases has happened yet.** Code
-anchor `58210ed4a064c1f4c393993ffea598175e1ebc00` is the pre-commit A3-3 state.
+VERIFY: COMPLETE / PASS. The commercial Returns implementation is now DEPLOYED.
+PRODUCTION CERTIFICATION: BLOCKED / PENDING.** The paragraph below was written at
+the pre-commit A3-3 state (anchor `58210ed4a064c1f4c393993ffea598175e1ebc00`) and
+is kept as the record of that moment.
+
+> **Updated 2026-09-05 — certification blocked by `RETURNS-SCHEMA-DRIFT-01`.**
+> The commercial convergence itself shipped, but production certification of the
+> Returns surface was blocked by a SEPARATE, pre-existing production schema drift
+> on `refund_execution_line_items` — five line-level decision columns missing in
+> prod because historical migration `0008` was amended after prod had already
+> applied it. `listItemsAwaitingDecision()` cannot execute against that shape, so
+> the Returns items surface is down in production regardless of commercial
+> access. This is a SCHEMA defect, not a commercial-access defect: it changes no
+> tier, capability, route classification or gating decision recorded in this
+> section.
+>
+> A forward repair migration
+> (`20260828120000_0165_repair_refund_execution_line_item_decision_columns`,
+> marker `RETURNS-SCHEMA-DRIFT-01`) is **implemented and locally verified** —
+> 11/11 targeted and 21/21 combined integration PASS, disposable DB
+> created → migrated → runtime OK → dropped with `ORPHAN_COUNT=0`. It has **not**
+> been committed, deployed, or rehearsed against `prod_scratch`, and **the
+> production schema is not repaired yet.**
+>
+> P0-A3-3 production certification remains **BLOCKED / PENDING** until `0165` is
+> committed, deployed, the production migration is confirmed applied, and the
+> authenticated Returns triad is re-run successfully against production.
+>
+> Full record: `docs/blueprints/ReturnsResolutionModule.md` §12 and
+> `docs/playbooks/migration_drift_playbook.md` (2026-09-05 entry).
 **The P0-A3 umbrella remains OPEN** — Inventory/Products, the remaining WMS
 commercial surfaces, `/recount*`, `/sender-addresses*`, bespoke persisted-grant
 backend enforcement, the `usePlanEntitlement.ts` `TIER_ORDER` residual, and

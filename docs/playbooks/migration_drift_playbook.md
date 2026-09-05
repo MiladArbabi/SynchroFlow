@@ -297,6 +297,99 @@ Verification completed before commit:
 
 Standing rule: when a migration modifies the behavior of an existing database function consumed by runtime code, audit the **runtime coupling**, not only migration ordering or schema independence. A migration can be technically reversible and independently applicable while still being unsafe to deploy without the matching runtime change.
 
+### 2026-09-05 — `RETURNS-SCHEMA-DRIFT-01`: `0008` amended after prod applied it (the §1 root cause, again)
+
+Textbook §1. `20260212162717_0008_refund_executions_sovereign` ran in production
+on 2026-06-18 (batch 1). It was later **amended in source** to add five
+line-level decision columns. Knex had already recorded `0008` as complete, so it
+never re-ran and those additions never reached production.
+
+Confirmed production drift on `refund_execution_line_items` — missing:
+
+| Column | Canonical type |
+|---|---|
+| `return_job_id` | `uuid`, nullable |
+| `owner_decision` | `return_owner_decision_type`, nullable |
+| `decision_notes` | `text`, nullable |
+| `decision_by` | `integer`, nullable |
+| `decision_at` | `timestamptz`, nullable |
+
+...plus the single-column index on `return_job_id` and the FK
+`refund_execution_line_items.return_job_id -> return_jobs.return_job_id ON DELETE CASCADE`.
+Production still had the LEGACY job-level decision fields on `return_jobs`.
+
+**Live impact, not theoretical.** `listItemsAwaitingDecision()`
+(`returnJobs.service.ts`) selects `reli.owner_decision` / `decision_notes` /
+`decision_at` and joins `reli.return_job_id`. On the drifted shape that query
+cannot execute at all — the Returns items surface is down, not degraded.
+
+**Note the causal link to a documented practice.** `ReturnsResolutionModule.md`
+recorded a deliberate preference — *"always fix base migrations, never leave
+patch files in active development"* — under which several patch migrations were
+folded back into `0008`. That practice is exactly what §1 forbids for any
+migration that has already run in production. This incident is its consequence.
+The preference is fine for a migration that has never shipped; it is unsafe the
+moment prod has recorded the file as applied.
+
+Forward fix: `20260828120000_0165_repair_refund_execution_line_item_decision_columns`,
+carrying the stable marker `RETURNS-SCHEMA-DRIFT-01`. `0008` was **not** edited —
+its own DRIFT WARNING remains authoritative.
+
+Against the §5 checklist:
+
+- **New file, new number** — `0165`, verified as the next unoccupied slot.
+- **Idempotent** — `ADD COLUMN IF NOT EXISTS`; FK and index presence are decided
+  by inspecting `pg_constraint` / `pg_index` **structurally**, not by constraint
+  name, so a correct FK created under a different name is never duplicated. Safe
+  no-op on a canonical/fresh database.
+- **Explains itself** — header states which migration drifted, when it ran, what
+  was added afterwards, why it never reached prod, and what repairs it.
+- **Matches confirmed target schema** — types taken from `0008`'s current `up()`.
+- **Backfill** — `return_job_id` is backfilled ONLY through the deterministic
+  relationship `reli.lasyncro_refund_execution_id = rj.lasyncro_refund_execution_id`.
+  Zero matches stay NULL; an existing non-null link is preserved; **ambiguity
+  fails closed by throwing before any write**. No timestamp/order heuristic, no
+  `LIMIT 1`. Legacy `return_jobs` owner-decision values are deliberately NOT
+  copied into the line-level columns — job-level is a per-job summary, line-level
+  is a per-unit disposition, and copying would fabricate dispositions no operator
+  ever made.
+- **Rehearse per §4 before touching real prod** — still required; see status below.
+
+`down()` is intentionally a **no-op**. These five columns, the index and the FK
+are canonical `0008` structures this migration only RESTORES; they are not
+feature-owned additions it introduced, so they are not its to remove. A
+destructive inverse would re-create this very incident on rollback and destroy
+line-level decision data written after the repair. A faked destructive inverse
+would be actively dangerous, so none was written.
+
+**Ambiguity is currently unreachable, and the guard stays anyway.** Canonical
+schema carries `return_jobs_refund_execution_unique` (UNIQUE on
+`return_jobs.lasyncro_refund_execution_id`, `0008`), so one refund execution can
+never map to more than one return job. The fail-closed branch guards the case
+where that invariant is ever weakened or itself drifts. The regression suite
+proves the constraint exists and that the database rejects a second job for the
+same refund execution, rather than dropping a canonical constraint to manufacture
+an impossible state.
+
+Permanent regression contract:
+`tests/integration/returns/returns-schema-drift-01.test.ts` — **11/11 PASS**
+targeted, **21/21 PASS** combined with
+`tests/integration/returns/returned-undelivered-contract.test.ts`. It locates the
+repair migration by marker (never by number), reproduces the production-shaped
+drift inside a rolled-back transaction, invokes the real compiled migration
+against it, and proves: all five columns restored with correct types/nullability;
+exactly one canonical CASCADE FK; one usable single-column index; deterministic
+backfill; unmatched stays NULL; existing link preserved; job-level decisions not
+copied; canonical/fresh rerun safe; non-destructive `down()`; and the original
+`listItemsAwaitingDecision` read path executing again. Disposable DB
+created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`.
+
+**Status: implementation and local verification COMPLETE / PASS. NOT yet
+committed, deployed, or rehearsed against `prod_scratch`. Production is still
+running the drifted shape.**
+
+---
+
 ## 8. Standing Workflow Reminder
 
 This playbook supplements, not replaces, the existing AUDIT → IMPLEMENT → DOCUMENT → COMMIT workflow. The addition is:
