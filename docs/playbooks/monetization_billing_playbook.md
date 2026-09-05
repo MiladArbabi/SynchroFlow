@@ -2066,8 +2066,8 @@ union, `requireCapability` middleware + first backend route migration,
 (`OverviewFT2Page` canonical `overview.live_map` decision, premium-data
 acquisition gating via `useFloorPlanning(enabled)`, backend
 `requireCapability('overview.live_map')` on `GET /api/v1/wms/live-activity`)
-— **IMPLEMENTED + VERIFIED (2026-09-05); NOT YET DEPLOYED — pending
-commit/push/deploy** (see "### P0-A3-2"). Remaining **P0-A3** scope — the
+— **CLOSED / VERIFIED / DEPLOYED on 2026-09-05 at
+`8e72888136011fc0298499b32664257f2bdf064e`** (see "### P0-A3-2"). Remaining **P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
 (`usePlanEntitlement.ts`), and system-wide C14–C24 closure — **the P0-A3
@@ -3015,7 +3015,7 @@ bespoke backend grant loading (`shop_module_entitlements` consulted by
 **P0-A3-1 is CLOSED / VERIFIED. The remainder of P0-A3 is NOT closed by this
 slice.**
 
-### P0-A3-2 — Overview Live Map commercial-access convergence (implemented + verified 2026-09-05; NOT YET DEPLOYED — pending commit/push/deploy)
+### P0-A3-2 — Overview Live Map commercial-access convergence (CLOSED / VERIFIED / DEPLOYED 2026-09-05 at `8e72888136011fc0298499b32664257f2bdf064e`)
 
 **P0-A3-2 is the second bounded slice of P0-A3.** It converges the Overview
 Live Map surface — frontend authority *and* the one backend route that serves
@@ -3193,8 +3193,28 @@ and was deliberately not repaired here.
 - `BILL-ENTITLEMENT-01` Fact B, P0-B commercial-transition architecture,
   P0-C broader coverage
 
-**P0-A3-2 is IMPLEMENTED and VERIFIED. It is NOT YET DEPLOYED — commit, push
-and deploy are still pending. The P0-A3 umbrella remains OPEN.**
+#### Deployment certification (2026-09-05)
+
+Production SHA: **`8e72888136011fc0298499b32664257f2bdf064e`**
+
+Independent deployment evidence confirmed for that exact SHA:
+
+| Check | Result |
+| --- | --- |
+| CI — UI modules | PASS |
+| CI / RLS Security Boundary | PASS |
+| Fly Deploy | PASS |
+| Vercel `lasyncro-web` | PASS |
+| Vercel marketing | PASS |
+
+The RED evidence and the pre-deployment verification evidence recorded above
+are the historical record of how this slice was proven **before** it shipped.
+They are unchanged; this note certifies that it then shipped.
+
+**P0-A3-2 Overview Live Map commercial-access convergence — CLOSED / VERIFIED /
+DEPLOYED on 2026-09-05 at `8e72888136011fc0298499b32664257f2bdf064e`. The P0-A3
+umbrella remains OPEN — the remaining P0-A3 slices listed in the §32 status
+header and under "#### Still OPEN after P0-A3-1" are not closed by this slice.**
 
 ### Non-goals / open P0 work (not addressed by P0-A0, P0-A1, or the P0-A architecture)
 

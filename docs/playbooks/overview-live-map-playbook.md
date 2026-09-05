@@ -3,8 +3,8 @@
 > **Scope:** The live-map redesign of the Overview module — concept, architecture, phasing, and every implementation decision locked in the July 2026 workshop.
 > **Supersedes:** The layout section of `overview-module-playbook.md` (§1 triage layout). The data pipeline, alert spine, and seeding runbook in that document remain unchanged and authoritative.
 > **Companion docs:** `docs/blueprints/WarehouseGrid.md`, `docs/blueprints/WarehouseModule.md`, `overview-module-playbook.md`
-> **Last updated:** September 5, 2026 — `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2 commercial-access convergence (§3, §3.1, §6).
-> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · P0-A3-2 commercial convergence ✅ implemented + verified, **not yet deployed** · v3 parked.
+> **Last updated:** September 5, 2026 — `COMMERCIAL-ACCESS-ARCH-01` P0-A3-2 commercial-access convergence (§3, §3.1, §6), deployed.
+> **Status:** v1-A ✅ · v1-B ✅ · v2 ✅ · v2.1 Core teaser ✅ · OV-135 ✅ local · OV-136 ✅ local · OV-145 ✅ local · OV-152 ✅ local · P0-A3-2 commercial convergence ✅ **CLOSED / VERIFIED / DEPLOYED** 2026-09-05 at `8e72888136011fc0298499b32664257f2bdf064e` · v3 parked.
 ---
 
 ## 1. Why this exists — the product thesis
