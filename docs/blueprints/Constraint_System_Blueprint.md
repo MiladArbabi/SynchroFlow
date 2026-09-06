@@ -101,7 +101,7 @@ NEVER:
 | constraint_id     | deterministic UUID (v5)                                |
 | lasyncro_order_id | order identifier                                       |
 | constraint_type   | `inventory`, `customer`, `operational`, ...            |
-| block_type        | specific reason (`oversell`, `awaiting_payment`, etc.) |
+| block_type        | specific reason (`oversell`, `incomplete_address`, `pick_item_missing`, etc.) |
 | is_active         | boolean                                                |
 | started_at        | when activated                                         |
 | resolved_at       | when resolved                                          |
@@ -288,6 +288,8 @@ Consumers:
 
 **Corrected 2026-06-25:** this section previously said "order/payment state" with example `awaiting_payment`. That's not achievable in this system — laSyncro only ever receives the Shopify `orders/paid` webhook; draft (pre-payment) orders are never visible here, so there is no payment-pending state to detect. The evaluator was also found to still read the forbidden legacy field `ofs.customer_block_type` (see "❌ Legacy Reads" below) — fixed in `customerConstraintEvaluator.ts` the same day. Address completeness is the correct, durable, derivable signal for this constraint type.
 
+**Updated 2026-09-06 (ORD-DECISION-01 Slice 4):** The dead `orderCustomerConstraintProjection.ts` — which still derived `awaiting_payment` from `orders.paid_at IS NULL` — was deleted together with its `projectionExecutionOrder.ts` and `projectionDependencies.ts` manifest entries. The live `customerConstraintEvaluator.ts` remains unchanged; `incomplete_address` is the only reachable customer block type.
+
 **Known limitation:** no `requires_shipping`/pickup-order concept exists anywhere in this codebase. A genuine Shopify local-pickup order (no shipping address by design) would currently be misflagged as `incomplete_address`. Not fixed — flagged honestly pending a real signal if/when pickup orders become relevant.
 
 ---
@@ -383,15 +385,25 @@ blockType = constraint?.block_type ?? null
 
 Priority is computed **dynamically**, not stored.
 
-Example:
+**Scope (clarified 2026-09-06):** This model describes reconciliation-intent
+scheduling priority in `reconciliation.intent.dispatcher.ts`. It does not
+define merchant-facing blocker or action precedence.
 
-sql
+Current reachable scheduling cases:
+
+```sql
 CASE
-  WHEN operational:sla_breach THEN 0
   WHEN inventory:oversell THEN 1
-  WHEN customer:awaiting_payment THEN 2
+  WHEN inventory:allocation_pending THEN 3
   ELSE 99
 END
+```
+
+**Legacy branch — cleanup debt (2026-09-06):**
+`reconciliation.intent.dispatcher.ts` still contains an
+`operational:sla_breach -> 0` branch. ORD-DECISION-01 Slice 3 established that
+`operational/sla_breach` is not a valid canonical constraint. That branch is
+legacy cleanup debt, not supported product semantics.
 
 ### Constraint vs SLA — admission vs urgency (ORD-OVERVIEW-INVENTORY-01, 2026-09-02)
 

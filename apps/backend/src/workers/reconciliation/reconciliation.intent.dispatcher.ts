@@ -306,7 +306,6 @@ export async function startReconciliationIntentDispatcher() {
               CASE
                 WHEN oc.constraint_type = 'operational' AND oc.block_type = 'sla_breach' THEN 0
                 WHEN oc.constraint_type = 'inventory' AND oc.block_type = 'oversell' THEN 1
-                WHEN oc.constraint_type = 'customer' AND oc.block_type = 'awaiting_payment' THEN 2
                 WHEN oc.constraint_type = 'inventory' AND oc.block_type = 'allocation_pending' THEN 3
                 ELSE 99
               END

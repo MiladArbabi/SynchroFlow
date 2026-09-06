@@ -1,0 +1,327 @@
+/**
+ * ORD-DECISION-01 / Slice 4 — CUSTOMER ADDRESS UI CONTRACT.
+ *
+ * Order Detail's customer/incomplete_address surface, protected at the
+ * component boundary:
+ *
+ *   ADDR-UI-01  constraints are truth, decisions are enrichment — the modal
+ *               renders the customer problem and routes to "Correct shipping
+ *               address" from the constraint alone, with decision === null.
+ *               The generic resolve_customer_block execute mutation is never
+ *               called, and "Flag for customer review" is never the operative
+ *               CTA (resolve_customer_block.handler.ts is a documented manual
+ *               no-op, so routing there would be a dead end).
+ *   ADDR-UI-02  the dialog submits trimmed required fields plus the orderId
+ *               through the real save action.
+ *   ADDR-UI-03  PATCH success does NOT optimistically claim resolution: while
+ *               the customer constraint is still present the UI shows the
+ *               recheck state instead of the CTA, and only server-confirmed
+ *               constraint truth (the constraint disappearing) clears it.
+ *   ADDR-UI-04  even when a real resolve_customer_block decision co-exists with
+ *               the active constraint, the UI still routes to the address
+ *               correction and never executes the decision.
+ *
+ * Harness mirrors tests/unit/ui/orders/OrderDetailModalBody.returned-undelivered.test.tsx.
+ * Queries are role/label based; no CSS, Collapse internals, private state, or
+ * backend wording is asserted. The mutation's onSuccess callback is captured
+ * from the mock and fired under explicit test control — no timers, no sleeps.
+ */
+import React from 'react';
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
+
+import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
+
+const mockNavigate = jest.fn();
+const mockExecute = jest.fn();
+const mockUseOrderDecision = jest.fn();
+const mockUpdateAddress = jest.fn();
+
+jest.mock('react-router-dom', () => {
+  const actual = jest.requireActual('react-router-dom');
+  return {
+    ...actual,
+    useNavigate: () => mockNavigate,
+  };
+});
+
+jest.mock('pages/orders/useOrderDecision', () => ({
+  useOrderDecision: (...args: unknown[]) => mockUseOrderDecision(...args),
+  useExecuteOrderDecision: () => ({
+    mutate: mockExecute,
+    isPending: false,
+    isSuccess: false,
+    isError: false,
+    error: null,
+  }),
+}));
+
+jest.mock('pages/orders/useOrderDetail', () => ({
+  useOrderDetail: () => ({
+    data: null,
+    isLoading: false,
+  }),
+}));
+
+jest.mock('pages/orders/usePickExceptionsForOrder', () => ({
+  usePickExceptionsForOrder: () => ({
+    data: { exceptions: [] },
+  }),
+  useResolvePickException: () => ({}),
+}));
+
+jest.mock('pages/problem-center/usePackDecisions', () => ({
+  useOrderPackDecisions: () => ({
+    data: { requests: [] },
+    isLoading: false,
+  }),
+}));
+
+jest.mock('pages/orders/useShippingAddress', () => ({
+  useUpdateShippingAddress: () => ({
+    mutate: mockUpdateAddress,
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
+}));
+
+jest.mock('hooks/useCurrency', () => ({
+  useCurrency: () => ({
+    format: (value: number | null | undefined) =>
+      value == null ? '—' : `$${Number(value).toLocaleString('en-US')}`,
+  }),
+}));
+
+type Constraint = {
+  constraint_type: string;
+  block_type: string | null;
+  target_id: string | null;
+  target_status: string | null;
+  started_at: string;
+};
+
+const CUSTOMER_CONSTRAINT: Constraint = {
+  constraint_type: 'customer',
+  block_type: 'incomplete_address',
+  target_id: null,
+  target_status: null,
+  started_at: '2026-09-01T12:00:00.000Z',
+};
+
+/** A real resolve_customer_block decision, as the Decision Engine emits it. */
+const CUSTOMER_DECISION = {
+  id: 'decision-1',
+  type: 'customer',
+  entity_id: 'order-1',
+  status: 'pending',
+  priority: 50,
+  reason: 'Derived from resolve_customer_block',
+  recommended_action: {
+    type: 'resolve_customer_block',
+    payload: {},
+    execution_mode: 'manual',
+  },
+  actions: [],
+  lifecycle: null,
+  created_at: '2026-09-01T12:00:00.000Z',
+  updated_at: '2026-09-01T12:00:00.000Z',
+};
+
+function setDecisionResponse(body: {
+  decision: unknown;
+  constraints: Constraint[];
+}) {
+  mockUseOrderDecision.mockReturnValue({
+    data: body,
+    isLoading: false,
+    isError: false,
+    error: null,
+  });
+}
+
+function renderModal() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <OrderDetailModalBody
+          orderId="order-1"
+          onTitleReady={jest.fn()}
+          onSubtitleReady={jest.fn()}
+          onNavigateToOrder={jest.fn()}
+          onFooterReady={jest.fn()}
+          onClose={jest.fn()}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+const correctAddressButton = () =>
+  screen.queryByRole('button', { name: 'Correct shipping address' });
+
+/** Opens the dialog and fills every required field. */
+function openDialogAndFill(values: {
+  address1: string;
+  city: string;
+  zip: string;
+  countryCode: string;
+}) {
+  fireEvent.click(screen.getByRole('button', { name: 'Correct shipping address' }));
+
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(screen.getByLabelText(/Address line 1/), { target: { value: values.address1 } });
+  fireEvent.change(screen.getByLabelText(/^City/), { target: { value: values.city } });
+  fireEvent.change(screen.getByLabelText(/ZIP \/ Postal code/), { target: { value: values.zip } });
+  fireEvent.change(screen.getByLabelText(/Country code/), { target: { value: values.countryCode } });
+  return dialog;
+}
+
+describe('OrderDetailModalBody customer/incomplete_address surface', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('ADDR-UI-01 renders the address correction from constraint truth when decision enrichment is absent', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+
+    renderModal();
+
+    // The customer problem is surfaced from the constraint alone.
+    expect(screen.getByText('Address Issue')).toBeInTheDocument();
+
+    // …and routes to the real in-app resolution path.
+    const cta = correctAddressButton();
+    expect(cta).toBeInTheDocument();
+
+    // The generic manual-no-op action is never offered as the operative CTA.
+    expect(
+      screen.queryByRole('button', { name: 'Flag for customer review' })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(cta!);
+
+    // Clicking opens the focused shipping-address dialog…
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Correct shipping address' })
+    ).toBeInTheDocument();
+
+    // …and never fires the generic decision execution mutation.
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('ADDR-UI-02 submits the orderId and trimmed required fields through the dialog save action', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+
+    renderModal();
+
+    // Deliberately padded input — trimming is the contract, not cosmetics.
+    openDialogAndFill({
+      address1: '  221B Baker Street  ',
+      city: '  London  ',
+      zip: '  NW1 6XE  ',
+      countryCode: '  gb  ',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        address1: '221B Baker Street',
+        city: 'London',
+        zip: 'NW1 6XE',
+        countryCode: 'GB',
+      })
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('ADDR-UI-03 shows recheck on PATCH success and only clears on server-confirmed constraint truth', async () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+
+    const { rerender } = renderModal();
+
+    openDialogAndFill({
+      address1: '221B Baker Street',
+      city: 'London',
+      zip: 'NW1 6XE',
+      countryCode: 'GB',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    // Capture the mutation's onSuccess and fire it under test control.
+    const onSuccess = mockUpdateAddress.mock.calls[0][1]?.onSuccess;
+    expect(typeof onSuccess).toBe('function');
+    act(() => {
+      onSuccess({ message: 'Shipping address updated' }, mockUpdateAddress.mock.calls[0][0], undefined);
+    });
+
+    // Constraint is STILL present — the UI must not claim resolution.
+    expect(screen.getByText('Address updated — rechecking order…')).toBeInTheDocument();
+    await waitFor(() => expect(correctAddressButton()).not.toBeInTheDocument());
+    expect(mockExecute).not.toHaveBeenCalled();
+
+    // Server confirms resolution: the customer constraint is gone.
+    setDecisionResponse({ decision: null, constraints: [] });
+    rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <OrderDetailModalBody
+            orderId="order-1"
+            onTitleReady={jest.fn()}
+            onSubtitleReady={jest.fn()}
+            onNavigateToOrder={jest.fn()}
+            onFooterReady={jest.fn()}
+            onClose={jest.fn()}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText('Address updated — rechecking order…')).not.toBeInTheDocument()
+    );
+    expect(correctAddressButton()).not.toBeInTheDocument();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('ADDR-UI-04 still routes to the address correction when a real resolve_customer_block decision co-exists', () => {
+    setDecisionResponse({
+      decision: CUSTOMER_DECISION,
+      constraints: [CUSTOMER_CONSTRAINT],
+    });
+
+    renderModal();
+
+    const cta = correctAddressButton();
+    expect(cta).toBeInTheDocument();
+
+    // The decision's own label must never become the operative CTA — its
+    // backend handler is a documented manual no-op.
+    expect(
+      screen.queryByRole('button', { name: 'Flag for customer review' })
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(cta!);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});

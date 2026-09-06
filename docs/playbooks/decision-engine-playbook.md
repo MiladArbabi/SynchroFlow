@@ -604,3 +604,117 @@ The fixture was then restored append-only at aggregate version `12` with
 
 **ORD-DECISION-01 Slice 3 — Fulfillment SLA: IMPLEMENTED / AUTOMATED VERIFIED /
 LIVE VERIFIED.**
+
+---
+
+## 9. Session 8 (2026-09-06) — ORD-DECISION-01 Slice 4: Address & Customer
+
+### Product contract
+
+- laSyncro operationally ingests **paid** Shopify orders.
+- `awaiting_payment` is **not** a valid customer blocker.
+- The canonical customer blocker is `customer/incomplete_address`.
+- Required address fields: `address1`, `city`, `zip`, `country_code`.
+- Constraints are truth; decisions are enrichment.
+
+### Merchant action
+
+- Blocker label: **Address Issue**
+- Problem sentence: **Shipping address incomplete**
+- CTA: **Correct shipping address**
+- The generic `resolve_customer_block` execution handler is a documented manual
+  no-op and is deliberately bypassed by the real address-correction UX. Routing
+  an operator to it would be a dead end, so it is never the operative CTA.
+
+### Resolution path
+
+`PATCH /api/v1/orders/:orderId/shipping-address`
+
+- persists the complete address;
+- advances `aggregate_version` exactly once;
+- writes an `order_reconciliation_intents` row;
+- writes an `address_corrected` `order_fulfillment_history` entry;
+- emits `orders/shipping_address_corrected`;
+- the real projection path re-evaluates constraints;
+- `customer/incomplete_address` resolves **only** after server-confirmed
+  projection — never optimistically;
+- the UI shows "Address updated — rechecking order…" while waiting and does not
+  optimistically clear the blocker.
+
+### Implementation cleanup
+
+- deleted `apps/backend/src/projections/orderCustomerConstraintProjection.ts`;
+- removed its `projectionExecutionOrder.ts` entry;
+- removed its `projectionDependencies.ts` entry;
+- removed the `customer/awaiting_payment` reconciliation priority case;
+- the live `customerConstraintEvaluator.ts` remains **unchanged**;
+- no shipping-address flow or Decision Engine generation behaviour changed.
+
+### Permanent regression
+
+Backend — `tests/integration/orders/address-customer-decision-contract.test.ts`
+ADDR-DEC-01..05 — **5/5 PASS**.
+
+Frontend — `tests/unit/ui/orders/OrderDetailModalBody.customer-address.test.tsx`
+ADDR-UI-01..04 — **4/4 PASS**.
+
+Verification:
+
+- backend integration 5/5 PASS on the correct integration worktree;
+- frontend 4/4 PASS;
+- `UNOWNED=0` / `MULTI_OWNED=0`;
+- test TSC `TARGET_ERROR_COUNT=0`;
+- backend TSC `TSC_ERROR_COUNT=3 / TARGET_ERROR_COUNT=0`;
+- all three backend errors were unrelated pre-existing baseline:
+  `handleSubscriptionUpsert.ts` has the existing missing `TIER_ORDER` export,
+  and `require-entitlement.middleware.ts` has two existing
+  `@lasyncro/commercial-policy` module-resolution errors;
+- disposable DB cleanup PASS (`TEST_DB_DROPPED` each run, zero
+  `synchroflow_test_*` orphans, development `PGDATABASE` intact);
+- dead-path grep leaves only explanatory `awaiting_payment` text in
+  `customerConstraintEvaluator.ts`.
+
+### Live verification
+
+Recorded from the lead's live browser/DB session; not re-executed by the
+implementation agent.
+
+Fixture:
+
+- external order `940051788700087657`
+- canonical order `6e8d8e9a-f3ce-3847-e90f-a7fe79243e8b`
+
+Before correction:
+
+- `paid=true`
+- `aggregate_version=2`
+- exactly one active blocker: `customer/incomplete_address`
+- browser showed **Address Issue → Correct shipping address**
+
+Correction submitted: London / NW1 6XE / GB. Browser showed
+"Address updated — rechecking order…".
+
+After server confirmation:
+
+- `aggregate_version=3`
+- `customer/incomplete_address` `is_active=false`
+- `resolved_at` populated
+- exactly one `orders/shipping_address_corrected` event, `id=94`
+- browser showed **In pool / No open issues**
+- Address Issue count 3 → 2
+- Order Pool count 7 → 8
+- the fixture appeared in the normal Order Pool
+
+Separate multi-blocker fixture: external order `940041788699857417` carried both
+`customer/incomplete_address` and `inventory/oversell`. It was **not** resolved
+live — it is retained only as supporting evidence for coexisting-blocker
+behaviour. ADDR-DEC-04 provides the permanent automated contract for that case.
+
+### Known limitation
+
+No `requires_shipping`/`delivery_method` truth exists anywhere in the codebase.
+A genuine Shopify local-pickup order — which legitimately has no shipping
+address — would currently be misclassified as `incomplete_address`. Unchanged by
+this slice and flagged honestly pending a real signal.
+
+**ORD-DECISION-01 Slice 4 — Address & Customer: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**
