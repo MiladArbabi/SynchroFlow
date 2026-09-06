@@ -718,3 +718,129 @@ address — would currently be misclassified as `incomplete_address`. Unchanged 
 this slice and flagged honestly pending a real signal.
 
 **ORD-DECISION-01 Slice 4 — Address & Customer: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**
+
+---
+
+## 10. Forward Work — Decision Treatment & Automation
+
+### ORD-DECISION-AUTO-01 — Decision Treatment & Automation Framework | OPEN
+
+**Approved 2026-09-06.**
+
+Decision Engine coverage is not complete merely because a constraint can be
+detected and surfaced with a CTA.
+
+Every Decision Engine pair must also define its **resolution treatment and
+automation policy**:
+
+```text
+Constraint
+→ Evidence
+→ Possible treatments
+→ Risk
+→ Automation level
+→ Human/customer confirmation
+→ Execution
+→ Verification
+→ Audit trail
+```
+
+Treatment levels:
+
+1. **Inform** — explain the problem and required action.
+2. **Assist** — gather relevant evidence and recommend a resolution.
+3. **Confirm & execute** — laSyncro prepares the resolution; an operator,
+   merchant, or customer explicitly approves it.
+4. **Auto-resolve** — only for deterministic, low-risk actions whose result can
+   be verified and fully audited.
+
+**Core rule:** automation level is decided per treatment, not per constraint.
+
+A single constraint may have several possible treatments with different safety
+requirements. laSyncro must automate evidence gathering aggressively while
+automating consequential state changes conservatively.
+
+No Decision Engine treatment may infer or invent merchant/customer intent where
+the evidence is insufficient.
+
+### Existing pairs to revisit
+
+The following completed Decision Engine pairs remain closed for their current
+contracts, but require a dedicated Automation & Treatment workshop under
+ORD-DECISION-AUTO-01:
+
+- `inventory/oversell`
+- Fulfillment SLA urgency/prioritization treatment
+- `customer/incomplete_address`
+
+Revisiting these pairs does **not** reopen their completed slices unless the
+workshop produces an approved implementation change.
+
+### Address/customer automation direction
+
+For `customer/incomplete_address`:
+
+- the current order remains the authoritative starting point;
+- deterministic normalization that does not change destination intent may be
+  eligible for automatic treatment;
+- Shopify customer/default-address data may be used as a **candidate** source,
+  but differing destination data requires confirmation;
+- previous fulfilled-order addresses may provide investigation context only and
+  must never independently justify replacing the current order destination;
+- conflicting addresses require confirmation;
+- when no trustworthy resolution exists, customer confirmation is preferred
+  over warehouse-operator detective work;
+- manual editing remains the safe fallback.
+
+Target progression:
+
+```text
+Detect
+→ explain missing/conflicting fields
+→ gather connected evidence
+→ classify confidence and risk
+→ recommend safest treatment
+→ confirm when required
+→ execute
+→ re-project canonical constraint truth
+→ verify resolution
+→ record provenance and audit trail
+```
+
+### Roadmap rule going forward
+
+From the next Decision Engine pair onward, the WORKSHOP phase must explicitly
+cover:
+
+- evidence sources;
+- treatment options;
+- risk of each treatment;
+- automation level;
+- confirmation authority;
+- execution mechanism;
+- verification contract;
+- audit/provenance requirements;
+- manual fallback.
+
+`ORD-DECISION-AUTO-01` is a cross-cutting roadmap requirement. It is not a
+reason to pause baseline Decision Engine coverage or reopen already-closed
+slices by default.
+
+### Existing related open follow-up
+
+`INV-ACTION-ARCH-01` remains independently OPEN:
+
+> Decouple inventory workflow navigation from legacy
+> `resolve_inventory_block` machine execution through a neutral workflow action
+> such as `open_sourcing`.
+
+Its implementation scope remains unchanged.
+
+### Next Decision Engine pair
+
+**NOT YET DOCUMENTED.**
+
+As of 2026-09-06, this playbook establishes completed coverage through
+ORD-DECISION-01 Slice 4 and does not establish the next canonical pair.
+The next pair must therefore be selected from verified Decision Engine /
+constraint coverage rather than inferred here.
