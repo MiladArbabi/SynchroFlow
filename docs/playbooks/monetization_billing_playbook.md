@@ -2075,9 +2075,10 @@ Returns route subtree, and `useReturnsCorrelation(enabled)` acquisition gating)
 — **IMPLEMENTED + VERIFIED and DEPLOYED; PRODUCTION CERTIFICATION BLOCKED /
 PENDING on `RETURNS-SCHEMA-DRIFT-01`** — a separate pre-existing production
 schema drift on `refund_execution_line_items` whose forward repair (`0165`) is
-implemented and verified; `0165` has since shipped, but a SECOND drift on the
-same table (`RETURNS-SCHEMA-DRIFT-02`, repair `0166`) is verified locally and not
-yet deployed, so certification stays blocked (see "### P0-A3-3"). Remaining
+both since shipped and PRODUCTION-CERTIFIED (`0165`, and `0166` for
+`RETURNS-SCHEMA-DRIFT-02` at commit `ecaef445`). The schema/capability Returns
+slice is production-certified; only cosmetic visual-polish closure
+(`RETURNS-OVERVIEW-UI-01`) remains, pending deployment (see "### P0-A3-3"). Remaining
 **P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
@@ -3499,23 +3500,39 @@ is kept as the record of that moment.
 >
 > Its forward repair
 > (`20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns`,
-> marker `RETURNS-SCHEMA-DRIFT-02`) is **implemented and verified locally** — the
-> combined targeted Returns suite is 3 suites / 31 tests / 0 failures, disposable
-> DB created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`. It has **not**
-> been committed, pushed, deployed, or rehearsed against `prod_scratch`, and
-> **the production schema is not repaired for those four properties yet.**
+> marker `RETURNS-SCHEMA-DRIFT-02`) was implemented and verified — the combined
+> targeted Returns suite is 3 suites / 31 tests / 0 failures, disposable DB
+> created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`.
 >
 > Neither drift changes any tier, capability, route classification or gating
 > decision recorded in this section — both are SCHEMA defects, not
 > commercial-access defects.
 >
-> P0-A3-3 production certification remains **BLOCKED / PENDING** until `0166` is
-> committed, deployed and confirmed applied in production, and the authenticated
-> Returns triad is re-run successfully against production. The reviewer-seed /
-> visual Returns pass must be retried only AFTER that, since the seed cannot load
-> until `source` exists in production.
+> **PRODUCTION CERTIFIED 2026-09-06 — this blocker is CLEARED.** `0166` shipped
+> in commit `ecaef445eced63b4044ac23bc455765332ad0661` and applied in production
+> (`knex_migrations` id **165**, batch **40**, migration_time
+> **2026-09-06 10:48:13.527+00**). The production shape is certified canonical on
+> all four properties, with 5 indexes, 3 FKs, RLS enabled + forced and the tenant
+> policy (cmd ALL) all preserved. The reviewer seed then succeeded and persisted
+> (`seed_refunds` = 9, seeded lines = 9, 2 browser-verification fixtures;
+> `RETURNS_PROD_REVIEWER_SEED=PASS`), and the authenticated Returns triad —
+> Overview, Items, Supplier Ratings — was visually certified against it with no
+> NaN, undefined or broken layout.
 >
-> Full record: `docs/blueprints/ReturnsResolutionModule.md` §12 and §13, and
+> `RETURNS-SCHEMA-DRIFT-02` — PRODUCTION BACKEND CERTIFICATION **CLOSED / PASS**,
+> REVIEWER SEED **CLOSED / PASS**, RETURNS VISUAL FUNCTIONAL CERTIFICATION
+> **CLOSED / PASS**. `RETURNS-SCHEMA-DRIFT-01`'s backend certification remains
+> valid and its visual blocker is **CLEARED**.
+>
+> **P0-A3-3 — the schema/capability Returns slice is PRODUCTION-CERTIFIED.** The
+> commercial-access convergence and the schema it depends on are both live and
+> certified in production. What remains is not schema or capability work: final
+> visual-polish closure waits only on deployment and production re-check of
+> **`RETURNS-OVERVIEW-UI-01`**, a cosmetic stray literal `...` in the Returns
+> Pulse card whose one-line fix is implemented and locally verified but **still
+> local and uncommitted**. See `ReturnsResolutionModule.md` §14.
+>
+> Full record: `docs/blueprints/ReturnsResolutionModule.md` §12, §13 and §14, and
 > `docs/playbooks/migration_drift_playbook.md` (2026-09-05 and 2026-09-06 entries).
 **The P0-A3 umbrella remains OPEN** — Inventory/Products, the remaining WMS
 commercial surfaces, `/recount*`, `/sender-addresses*`, bespoke persisted-grant

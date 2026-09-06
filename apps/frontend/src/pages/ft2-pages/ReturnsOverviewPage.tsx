@@ -405,7 +405,6 @@ export default function ReturnsOverviewPage() {
               <Typography sx={{ fontSize: 12, color: pal.textSecond, mb: 1}}>
                 recovered — {summary.recovery_jobs_complete} of {summary.recovery_jobs_total} return jobs resolved
               </Typography>
-...
               <PulseStat label="Margin lost"      value={fmt(summary.total_margin_leakage)} />
               <PulseStat label="Total refunds"    value={String(summary.total_refunds)} />
               <PulseStat label="Revenue refunded" value={fmt(summary.total_revenue_refunded)} />

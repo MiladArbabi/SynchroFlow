@@ -496,9 +496,48 @@ Corollary, and a real hazard worth repeating: **never quote another issue's
 marker verbatim in migration source.** Doing so makes that file look like the
 other issue's repair and breaks its locator. Refer to sibling repairs by number.
 
-**Status: implementation and automated verification COMPLETE / PASS. `0166` is
-NOT yet committed, pushed, deployed, or rehearsed against `prod_scratch`.
-Production is still running the drifted shape for these four properties.**
+**Status at the time of writing: implementation and automated verification
+COMPLETE / PASS, not yet committed or deployed.**
+
+> **PRODUCTION CERTIFIED 2026-09-06 — supersedes the paragraph above.**
+> `0166` shipped in commit `ecaef445eced63b4044ac23bc455765332ad0661` and applied
+> cleanly in production as
+> `20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns.js`
+> — `knex_migrations` id **165**, batch **40**, migration_time
+> **2026-09-06 10:48:13.527+00**. Pre-seed row count was **0**, as audited.
+>
+> Production shape certified canonical after apply:
+>
+> | Column | Certified in production |
+> |---|---|
+> | `created_at` | `timestamptz`, NOT NULL, DEFAULT `now()` |
+> | `lasyncro_refund_execution_id` | `uuid`, nullable |
+> | `refunded_amount` | `numeric(14,2)`, nullable |
+> | `source` | `varchar(50)`, NOT NULL, DEFAULT `'refund_webhook'` |
+>
+> Preservation certified in production — the repair took nothing with it:
+> **5 indexes** present, **3 foreign keys** present, RLS enabled **true**,
+> FORCE RLS **true**, and `refund_execution_line_items_tenant_isolation_policy`
+> present with cmd **ALL**.
+>
+> **Reviewer seed then succeeded and PERSISTED**, which is the direct
+> counterpart to the aborted-and-rolled-back attempt that originally revealed
+> this drift: `seed_refunds` = **9**, seeded `refund_execution_line_items` = **9**,
+> browser-verification fixtures = **2**
+> (`FIXTURE:BROWSER-VERIFY:PROCESS_RETURN` — status `pending`;
+> `FIXTURE:BROWSER-VERIFY:REVIEW_RETURN` — status `awaiting_decision`).
+> Final marker: `RETURNS_PROD_REVIEWER_SEED=PASS`.
+>
+> `RETURNS-SCHEMA-DRIFT-02` — **PRODUCTION BACKEND CERTIFICATION: CLOSED / PASS ·
+> REVIEWER SEED: CLOSED / PASS · RETURNS VISUAL FUNCTIONAL CERTIFICATION:
+> CLOSED / PASS.** `RETURNS-SCHEMA-DRIFT-01`'s backend certification remains
+> valid, and its visual blocker — missing reviewer data — is now **CLEARED**.
+>
+> Both drifts on `refund_execution_line_items` are closed. The only Returns item
+> still open is a cosmetic one found during the visual pass
+> (`RETURNS-OVERVIEW-UI-01`, a stray literal `...` text node), which is a
+> rendering defect, not schema drift, and is recorded in
+> `docs/blueprints/ReturnsResolutionModule.md` §14 rather than here.
 
 ---
 

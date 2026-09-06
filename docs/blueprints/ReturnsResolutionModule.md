@@ -1099,3 +1099,145 @@ that it is.
 **Sequencing note.** -01's reviewer-seed / visual Returns certification must be
 retried only AFTER `0166` is deployed and the production schema is certified —
 `seed_returns_test_data.sql` cannot load until `source` exists in production.
+
+### PRODUCTION CERTIFICATION — 2026-09-06 (supersedes the two paragraphs above)
+
+`0166` shipped in commit `ecaef445eced63b4044ac23bc455765332ad0661` and applied in
+production as
+`20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns.js` —
+`knex_migrations` id **165**, batch **40**, migration_time
+**2026-09-06 10:48:13.527+00**. Pre-seed row count **0**, exactly as audited.
+
+Production shape certified canonical:
+
+| Column | Certified in production |
+|---|---|
+| `created_at` | `timestamptz`, NOT NULL, DEFAULT `now()` |
+| `lasyncro_refund_execution_id` | `uuid`, nullable |
+| `refunded_amount` | `numeric(14,2)`, nullable |
+| `source` | `varchar(50)`, NOT NULL, DEFAULT `'refund_webhook'` |
+
+Preservation certified: **5 indexes**, **3 foreign keys**, RLS enabled **true**,
+FORCE RLS **true**, `refund_execution_line_items_tenant_isolation_policy` present
+with cmd **ALL**. The repair changed only the four properties it owns.
+
+**Reviewer seed succeeded and PERSISTED** — the direct counterpart to the aborted
+attempt that first revealed this drift: `seed_refunds` = **9**, seeded
+`refund_execution_line_items` = **9**, browser-verification fixtures = **2**
+(`FIXTURE:BROWSER-VERIFY:PROCESS_RETURN` — `pending`;
+`FIXTURE:BROWSER-VERIFY:REVIEW_RETURN` — `awaiting_decision`). Final marker:
+`RETURNS_PROD_REVIEWER_SEED=PASS`.
+
+**Visual production certification** across the Returns triad, against that seeded
+data:
+
+- **Returns Overview** — Needs attention, Returns Pulse, product leakage and the
+  supplier section all populated; no NaN, no undefined, no broken layout.
+- **Returns Items** — 3 orders / 4 lines pending; single-line and multi-line
+  scenarios render; damaged and unsellable lines stay independently visible;
+  condition notes render; the $0-refunded scan-intake/undelivered case renders;
+  no modal or layout corruption.
+- **Supplier Ratings** — 2 suppliers represented; scorecard populated; coherent
+  received/returned counts; return rates populated; an unlinked supplier degrades
+  to "—"; batch-level return rates populated; no NaN, undefined, or broken table
+  state.
+
+Updated lifecycle:
+
+    RETURNS-SCHEMA-DRIFT-02
+    - PRODUCTION BACKEND CERTIFICATION: CLOSED / PASS
+    - REVIEWER SEED: CLOSED / PASS
+    - RETURNS VISUAL FUNCTIONAL CERTIFICATION: CLOSED / PASS
+
+`RETURNS-SCHEMA-DRIFT-01`'s backend certification remains valid, and its **visual
+blocker — missing reviewer data — is CLEARED** by the seed above. Both
+`refund_execution_line_items` drifts are now closed in production.
+
+One **cosmetic** defect was found during that visual pass and is tracked
+separately as `RETURNS-OVERVIEW-UI-01` (§14). It is a rendering defect, not
+schema drift, and it does not reopen either drift issue.
+
+---
+
+## 14. Session Log — 2026-09-06 (`RETURNS-OVERVIEW-UI-01` — stray literal `...` in Returns Pulse)
+
+**Cosmetic rendering defect, not schema drift.** Found during the
+`RETURNS-SCHEMA-DRIFT-02` production visual pass (§13), which is the only reason
+it is adjacent to that work. It touches no migration, no schema, no API, and no
+commercial-access decision.
+
+### Symptom
+
+An accidental literal `...` rendered inside the Returns Pulse card, between
+
+    "recovered — X of Y return jobs resolved"
+
+and
+
+    "Margin lost".
+
+### Audit
+
+Traced to an exact source location in
+`apps/frontend/src/pages/ft2-pages/ReturnsOverviewPage.tsx`: a literal text node
+sitting at the Returns Pulse JSX boundary. It was verified NOT to be any of:
+
+- API data
+- a loading state
+- fallback text
+- formatting output
+
+It was simply a stray character sequence in JSX, which React faithfully rendered.
+
+### Fix
+
+Remove exactly that literal `...` line. One source file, one deletion.
+
+### Verification
+
+- before screenshot visibly showed `...`
+- after (local) screenshot visibly removed it
+- source guard: `ELLIPSIS_GUARD=PASS`
+- `git diff --check`: PASS
+- scope: exactly 1 source file / 1 deletion
+
+**Automated-verification exception — read before quoting any build result.** The
+full frontend build was **NOT** proven green, and must not be claimed as such.
+Attempted frontend verification hit unrelated baseline/environment blockers:
+
+1. `npm run build -w apps/frontend` stopped inside `packages/backend-core`
+   because the isolated worktree's reused `node_modules` installation lacked the
+   `@lasyncro/commercial-policy` workspace link.
+2. A direct frontend TypeScript check reported **21 pre-existing unrelated
+   errors** — `virtual:lasyncro-modules`, MUI Palette typings, lifecycle emit
+   signatures, CashFlow, SuppliersPortal, theme overrides, Finances, and others.
+3. A direct Vite build could not resolve `@vitejs/plugin-react` from the reused
+   main-checkout `node_modules` installation.
+
+**None of these reference `ReturnsOverviewPage.tsx`.** They are environment and
+pre-existing baseline conditions, and they must not be misrepresented as
+regressions introduced by this fix — nor as having been resolved by it. They
+remain open and unaddressed here.
+
+### Test strategy
+
+**No permanent automated regression test was added.** A stray literal text node
+in JSX is incidental presentation, not a consequential product contract, and
+freezing exact Returns Pulse copy or DOM shape to catch it would violate the
+test-value rules this repository already follows. Verification is instead: the
+source guard, a bounded visual verification, and a production visual re-check
+after deployment.
+
+### Lifecycle
+
+    RETURNS-OVERVIEW-UI-01
+    - AUDIT: CLOSED / PASS
+    - IMPLEMENTATION: CLOSED / PASS
+    - LOCAL VISUAL VERIFY: CLOSED / PASS
+    - SOURCE GUARD: PASS
+    - DOC: CURRENT
+    - COMMIT / PUSH / DEPLOY / PRODUCTION RE-CHECK: PENDING
+
+**The one-line fix is still LOCAL and UNCOMMITTED. `RETURNS-OVERVIEW-UI-01` is
+NOT deployed.** Production still renders the stray `...` until this ships and the
+visual re-check is completed.
