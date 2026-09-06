@@ -844,3 +844,132 @@ As of 2026-09-06, this playbook establishes completed coverage through
 ORD-DECISION-01 Slice 4 and does not establish the next canonical pair.
 The next pair must therefore be selected from verified Decision Engine /
 constraint coverage rather than inferred here.
+
+
+---
+
+## 11. ORD-DECISION-AUTO-01 — Approved Treatment Workshops
+
+The three treatment workshops below were **approved on 2026-09-06**. This
+section records ratified product contract only. Nothing here is implemented.
+
+### 11.1 inventory / oversell
+
+Ratified principles:
+
+- Oversell is an operational failure event laSyncro should increasingly
+  **prevent**, not something an operator manually marks resolved.
+- laSyncro should automatically assemble evidence: shortage quantity;
+  available / reserved / committed stock; other locations; inbound POs;
+  supplier context; affected orders; SLA/priority context; and inventory-data
+  conflicts where available.
+- Legitimate treatment families:
+  - hold for confirmed inbound;
+  - source additional stock;
+  - transfer stock;
+  - merchant-confirmed reallocation;
+  - investigate inventory discrepancy;
+  - merchant-confirmed customer/order outcome changes.
+- Sourcing is **one treatment**, not a synonym for oversell resolution.
+- `INV-ACTION-ARCH-01` remains the first architectural follow-up: replace the
+  misleading generic `resolve_inventory_block` workflow navigation with neutral
+  treatment/workflow semantics such as `open_sourcing`.
+- Analysis and evidence gathering **may** be automatic.
+- Purchasing, transferring, reallocating customer inventory, substitutions,
+  cancellations and other consequential actions **require confirmation**
+  initially.
+- Creating a PO, transfer or sourcing request does **not** clear oversell.
+- Canonical inventory truth determines when the shortage condition disappears.
+- Never count inbound stock as available before receiving.
+- Never silently steal allocation from another order.
+- Never silently change fulfillment location or customer commitment.
+
+**Outcome concept.** Distinguish three separate measures:
+
+- oversell events detected;
+- oversell risks prevented;
+- attributable value protected.
+
+Only claim prevention or value when evidence proves a laSyncro intervention
+prevented the operational failure.
+
+### 11.2 Fulfillment SLA
+
+Ratified principles:
+
+- SLA remains **urgency/prioritisation only**, never a blocker.
+- SLA may influence **priority**, never **permission**.
+- Existing SLA-breached priority labeling is already a valid Decision Engine
+  treatment.
+- laSyncro cannot automate physical pick/pack/ship without hardware/robotics.
+- Useful automation is **coordination**: SLA calculation, priority ordering,
+  queue orchestration, stalled-work detection, notifications/escalation.
+- Never auto-release because of SLA.
+- Never bypass blockers, quality controls, fulfillment controls or customer
+  commitments.
+- Future pre-breach prediction is useful only when supported by trustworthy
+  timing data.
+- Do not create architecture merely to make SLA appear more automated.
+
+**Outcome concept.** Measure SLA performance, prioritisation, and
+evidence-backed prevented breaches. Do not invent monetary savings.
+
+### 11.3 customer / incomplete_address
+
+Ratified principles:
+
+- Current order data is authoritative.
+- Historical fulfilled-order addresses are **context only** and must NEVER
+  independently justify changing the current destination.
+- Deterministic normalisation that preserves destination intent may eventually
+  be automated.
+- Shopify customer / default-address data is **candidate evidence only**.
+- Data supplied from another source normally requires confirmation.
+- Materially conflicting addresses require operator or customer confirmation.
+- No AI or system component may **invent** a missing destination.
+- Preferred future fallback when evidence is insufficient: **customer
+  self-service confirmation**, rather than warehouse-operator detective work.
+- Manual editing remains available but should cease being the primary treatment.
+- Correction submission does not itself resolve the constraint.
+- Server-confirmed canonical constraint truth remains authoritative.
+- Every correction requires provenance / audit evidence.
+
+**Outcome concept.** Measure: address issues detected; resolved without manual
+re-entry; customer-confirmation completion; time to resolution.
+
+### 11.4 Cross-pair target model
+
+Ratified conceptually:
+
+Constraint → Decision → Treatment → Action → Verification → Outcome
+
+Definitions:
+
+- **Constraint** — canonical operational truth.
+- **Decision** — what should happen next, based on truth + evidence + context.
+- **Treatment** — the meaningful resolution / intervention path.
+- **Action** — a concrete executable step within a treatment.
+- **Verification** — canonical proof that the expected state actually changed.
+- **Outcome** — measured operational result attributable to the treatment.
+
+Shared rules:
+
+- Automation level belongs to the **treatment/action**, not the constraint.
+- Automate investigation and evidence gathering more aggressively than
+  consequential execution.
+- Action completion is **never** equivalent to problem resolution.
+
+No DB or schema architecture is created by this section. This is the target
+**conceptual** model, pending implementation design.
+
+### 11.5 Approved implementation priority
+
+Approved ordering:
+
+1. `INV-ACTION-ARCH-01` / inventory treatment architecture
+2. Address assisted resolution
+3. Inventory evidence + ranked treatment options
+4. SLA enhancements only where evidence supports them
+5. Outcome/value layer, after reliable attributable treatment events exist
+
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / IMPLEMENTATION NOT STARTED.**

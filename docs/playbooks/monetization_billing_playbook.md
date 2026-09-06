@@ -588,6 +588,86 @@ at the old and new tier boundaries, the same discipline used throughout
 
 ---
 
+### 14.5 Decision Engine treatment & automation positioning — approved 2026-09-06
+
+**PRODUCT POSITIONING ONLY — NOT YET IMPLEMENTED AS COMMERCIAL ENTITLEMENTS.**
+
+Current commercial-policy remains authoritative. This decision changed **no**
+runtime gate: no capability key, no route gate, no frontend gate, no billing
+entitlement, and no tier membership was added or moved. The table below is
+planned positioning, not shipped behaviour.
+
+#### Ratified commercial principles
+
+1. **Correctness and safety are universal and must never be paywalled.** In
+   every tier, without exception:
+   - canonical constraint detection;
+   - truthful blocker state;
+   - safe manual resolution;
+   - server-confirmed resolution;
+   - SLA priority correctness;
+   - no invented addresses;
+   - no unsafe auto-release;
+   - no silent customer or inventory intent changes.
+
+2. **Monetize increasing operational assistance, intelligence and automation —
+   never correctness.**
+
+#### Planned positioning
+
+| Tier | Decision Engine positioning |
+| --- | --- |
+| Starter | Detect + explain + safe action |
+| Core | Evidence gathering + assisted resolution + confirm-and-execute workflows |
+| Growth | Ranked treatments + proactive prevention + orchestration + configurable automation + advanced outcome reporting |
+| Scale | Same cumulative Growth Decision Engine capability with unlimited commercial capacity; no Scale-exclusive Decision Engine feature wall |
+
+#### Clarifying examples
+
+**Starter**
+
+- canonical blockers;
+- SLA priority;
+- reason / problem explanation;
+- safe manual treatment paths.
+
+**Core**
+
+- connected evidence gathering;
+- suggested treatments;
+- assisted resolution;
+- prepared confirm-and-execute workflows.
+
+**Growth**
+
+- ranked treatment recommendations;
+- proactive risk/prevention where evidence supports it;
+- orchestration and escalation;
+- merchant-configurable automation policies;
+- advanced attributable outcome/value reporting.
+
+**Scale**
+
+- the same Growth treatment/intelligence capability;
+- unlimited capacity according to the canonical Scale commercial model;
+- do **not** invent Scale-only Decision Engine modules merely to differentiate
+  the tier.
+
+#### Maturity framing
+
+- **Starter** — "What is going wrong?"
+- **Core** — "Help me fix it."
+- **Growth** — "Stop making me manage this manually."
+- **Scale** — "Run this across my operation without limits."
+
+#### Implementation rule
+
+Future implementation must use `@lasyncro/commercial-policy` and follow §14.4.
+This documentation does not itself create a capability key, route gate,
+frontend gate, billing entitlement, or any runtime behaviour.
+
+---
+
 ## 15. Stripe Webhook Trust Boundary and Tenant Scope (verified 2026-07-15)
 
 Stripe subscription activation follows one verified path:
