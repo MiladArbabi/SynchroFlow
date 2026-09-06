@@ -25,9 +25,9 @@ export type CapabilityId =
   | 'warehouse.floor_planning'
   | 'warehouse.problem_center'
   | 'purchasing.core'
+  | 'purchasing.sourcing'
   | 'exports.core'
-  | 'exports.column_selection'
-  | 'specter.full_capture';
+  | 'exports.column_selection';
 
 export const CAPABILITY_REQUIREMENTS: Readonly<Record<CapabilityId, AccessRequirement>> = Object.freeze({
   'overview.core':            { moduleId: 'overview' },
@@ -48,10 +48,16 @@ export const CAPABILITY_REQUIREMENTS: Readonly<Record<CapabilityId, AccessRequir
   'warehouse.analytics':      { moduleId: 'wms', minimumTier: 'growth', feature: 'wms.analytics' },
   'warehouse.floor_planning': { moduleId: 'floor-planning', minimumTier: 'growth' },
   'warehouse.problem_center': { moduleId: 'problem-center', minimumTier: 'core' },
-  'purchasing.core':          { moduleId: 'suppliers-portal' },
+  // COMMERCIAL-REMODEL-ALIGN-01: Purchasing is Core+, and ADVANCED SOURCING
+  // (recommendations, worklist, supplier-product preference intelligence,
+  // reorder/MOQ accumulation intelligence) is the Growth+ half of the split.
+  'purchasing.core':          { moduleId: 'suppliers-portal', minimumTier: 'core' },
+  'purchasing.sourcing':      { moduleId: 'suppliers-portal', minimumTier: 'growth' },
   'exports.core':             { minimumTier: 'core' },
   'exports.column_selection':  { minimumTier: 'growth', feature: 'exports.column_selection' },
-  'specter.full_capture':     { moduleId: 'specter', minimumTier: 'growth', feature: 'specter.full_capture' },
+  // specter.full_capture RETIRED by COMMERCIAL-REMODEL-ALIGN-01 — Specter is a
+  // DEPRECATED product area (catalog.ts) and a deprecated area must not carry an
+  // active paid capability. Its implementation is deliberately not deleted.
 });
 
 export const CAPABILITY_IDS: readonly CapabilityId[] = Object.freeze(

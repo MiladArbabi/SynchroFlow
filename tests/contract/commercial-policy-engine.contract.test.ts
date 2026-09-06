@@ -55,10 +55,16 @@ const ACTIVE_CAPABILITY_POLICY: Record<string, CapPolicy> = {
   'warehouse.analytics':         { moduleId: 'wms',             minTier: 'growth', feature: 'wms.analytics' },
   'warehouse.floor_planning':    { moduleId: 'floor-planning',  minTier: 'growth' },
   'warehouse.problem_center':    { moduleId: 'problem-center',  minTier: 'core' },
-  'purchasing.core':             { moduleId: 'suppliers-portal' },
+  // COMMERCIAL-REMODEL-ALIGN-01: Purchasing is Core+, ADVANCED SOURCING is Growth+.
+  'purchasing.core':             { moduleId: 'suppliers-portal', minTier: 'core' },
+  'purchasing.sourcing':         { moduleId: 'suppliers-portal', minTier: 'growth' },
   'exports.core':                {                             minTier: 'core' },
   'exports.column_selection':    {                             minTier: 'growth', feature: 'exports.column_selection' },
-  'specter.full_capture':        { moduleId: 'specter',         minTier: 'growth', feature: 'specter.full_capture' },
+  // specter.full_capture REMOVED from the ACTIVE matrix by
+  // COMMERCIAL-REMODEL-ALIGN-01 — Specter is a DEPRECATED area. Its lifecycle is
+  // asserted through the catalog (A1-C10) instead, which is where a non-active
+  // surface belongs. Deliberately NOT left here: an entry in an ACTIVE matrix
+  // is a claim that the capability is sold.
 };
 const ACTIVE_CAPABILITY_IDS = Object.keys(ACTIVE_CAPABILITY_POLICY);
 
@@ -72,7 +78,7 @@ const REQUIRED_CANONICAL_FEATURES: Record<string, Tier> = {
   'alerts.rules':              'growth',
   'returns.analysis':          'growth',
   'exports.column_selection':  'growth',
-  'specter.full_capture':      'growth',
+  // specter.full_capture retired with the Specter area (COMMERCIAL-REMODEL-ALIGN-01).
 };
 
 // ---------------------------------------------------------------------------
@@ -91,9 +97,28 @@ function flagsForTier(t: Tier): Set<string> {
 function standardContext(tier: Tier) {
   return { tier, modules: modulesForTier(tier), flags: flagsForTier(tier) };
 }
-function decide(reqName: string, ctx: unknown): { allowed?: boolean; reason?: string } {
+/**
+ * VACUOUS-ALLOW SAFETY (COMMERCIAL-REMODEL-ALIGN-01).
+ *
+ * `evaluateAccess(undefined, ctx)` returns ALLOWED by design — "a nullish
+ * requirement means no gate". So handing an ABSENT capability to it makes every
+ * ALLOW row pass for a capability that does not exist, and silently flips DENY
+ * rows to allowed. This helper therefore fails LOUDLY on a missing requirement
+ * rather than evaluating it.
+ */
+function requirementOrFail(reqName: string): unknown {
   const req = (CP as any).CAPABILITY_REQUIREMENTS?.[reqName];
-  const d = (CP as any).evaluateAccess?.(req, ctx);
+  if (req === undefined || req === null) {
+    throw new Error(
+      `[A1] capability '${reqName}' has no CAPABILITY_REQUIREMENTS entry — refusing to ` +
+        `evaluate it, because evaluateAccess(undefined, ctx) returns ALLOWED and would make ` +
+        `this assertion vacuous.`,
+    );
+  }
+  return req;
+}
+function decide(reqName: string, ctx: unknown): { allowed?: boolean; reason?: string } {
+  const d = (CP as any).evaluateAccess?.(requirementOrFail(reqName), ctx);
   return d ?? {};
 }
 
@@ -177,8 +202,19 @@ describe('A1-C5 — canonical ModuleId registry', () => {
     expect(ids).not.toContain('wms-lite');
   });
 
-  it('EXPECTED RED: `suppliers-portal` is a Starter standard module (inherited by all higher tiers)', () => {
-    for (const t of ALL_TIERS) {
+  // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01.
+  //
+  // This previously asserted `suppliers-portal` was a STARTER standard module
+  // inherited by every tier. The ratified commercial remodel moves Purchasing
+  // behind Core: Starter has no Purchasing at all, purchasing.core is Core+ and
+  // purchasing.sourcing is Growth+. The old assertion is therefore obsolete
+  // product truth, not a regression guard, and is rewritten rather than left to
+  // contradict the new matrix in commercial-remodel-align.contract.test.ts.
+  //
+  // LEGACY_MODULES_BY_TIER stays frozen and is deliberately NOT asserted here.
+  it('EXPECTED RED: `suppliers-portal` is a CORE+ standard module, absent from Starter', () => {
+    expect(modulesForTier('starter').has('suppliers-portal')).toBe(false);
+    for (const t of ['core', 'growth', 'scale'] as const) {
       expect(modulesForTier(t).has('suppliers-portal')).toBe(true);
     }
   });
@@ -320,7 +356,10 @@ describe('A1-C10 — disabled / legacy surfaces are not active paid capabilities
       catalog?.['finances.core'] ?? catalog?.['finances.cashflow'] ?? catalog?.['cashflow.revenue_buckets'];
     expect(entry).toBeDefined();
     const status = entry?.status ?? entry?.classification;
-    expect(['disabled', 'legacy']).toContain(status);
+    // COMMERCIAL-REMODEL-ALIGN-01 split the old single `legacy` bucket: Finances
+    // is PAUSED (may return), distinct from DEPRECATED. 'legacy'/'disabled' are
+    // still accepted so the compatibility alias does not break this contract.
+    expect(['paused', 'disabled', 'legacy']).toContain(status);
   });
 
   it('EXPECTED RED: internal / grant-only module ids are classified, not silently dropped', () => {

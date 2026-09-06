@@ -2196,7 +2196,7 @@ They encode known P0-A1/P0-A2 gaps:
 
 - canonical `Tier` / `ModuleId` / `CapabilityId` policy; consolidation of the five private `TIER_ORDER` maps
 - invalid `wms-lite` nav module id → canonical `wms`
-- `suppliers-portal` as a real canonical, tier-emittable module (Purchasing = Starter+)
+- `suppliers-portal` as a real canonical, tier-emittable module (Purchasing = Starter+ *at P0-A1; **superseded 2026-09-06** — Purchasing is now Core+, see §33*)
 - shared `evaluateAccess()` + shared requirement registry
 - removal of the `import.meta.env.DEV` module-gate bypass in `resolveNavVisibility`
 - removal of the fabricated `requiredTier ?? 'growth'` fallback in `SidenavContent` / `ModuleTabBar` / `UpgradePrompt`
@@ -2261,9 +2261,20 @@ core/growth/scale via `modulesForTier()`.
 > **still omits it**. Kept divergent so seeding/runtime behaviour is byte-identical
 > until P0-A2 wires the effective-module resolver. This is **not** final architecture.
 
+> **SUPERSEDED 2026-09-06 by `COMMERCIAL-REMODEL-ALIGN-01` (§33).**
+> `suppliers-portal` is now a **Core+** canonical standard module — Starter has no
+> Purchasing surface at all. The paragraph above is the P0-A1-era record, kept for
+> history. `LEGACY_MODULES_BY_TIER` deliberately remains frozen compatibility data
+> and was NOT changed.
+
 **Feature registry.** Six canonical `FeatureKey`s, all Growth: `wms.analytics`,
 `demand.forecasting`, `alerts.rules`, `returns.analysis`,
-`exports.column_selection`, `specter.full_capture`. **Warehouse Analytics uses
+`exports.column_selection`, `specter.full_capture`.
+
+> **Updated 2026-09-06 by `COMMERCIAL-REMODEL-ALIGN-01` (§33):** now **five** —
+> `specter.full_capture` was removed from canonical active feature truth because
+> Specter is DEPRECATED. The legacy compatibility flag list in `legacy.ts` still
+> carries it. **Warehouse Analytics uses
 `wms.analytics`, never `wms.pick_batches`.** The legacy 27-entry frontend
 `PLAN_FEATURES` map is **not** copied and remains runtime debt for P0-A2/A3.
 
@@ -2272,6 +2283,10 @@ core/growth/scale via `modulesForTier()`.
 > **Updated 2026-09-05 by P0-A3-3** (see "### P0-A3-3"): the registry now holds
 > **18** capabilities — `returns.intake` was added, listed in the table below.
 > The "17" above is the P0-A1-era count, left as the historical record.
+>
+> **Updated 2026-09-06 by `COMMERCIAL-REMODEL-ALIGN-01`** (§33): the registry holds
+> **18** capabilities — `purchasing.sourcing` was added and `specter.full_capture`
+> was retired. `purchasing.core` moved from Starter+ to Core+.
 
 | CapabilityId | policy |
 |---|---|
@@ -2289,16 +2304,27 @@ core/growth/scale via `modulesForTier()`.
 | warehouse.analytics | Growth+ · module `wms` · feature `wms.analytics` |
 | warehouse.floor_planning | Growth+ · module `floor-planning` |
 | warehouse.problem_center | Core+ · module `problem-center` |
-| purchasing.core | Starter+ · module `suppliers-portal` (no tier wall) |
+| purchasing.core | **Core+** · module `suppliers-portal` *(was Starter+; changed by COMMERCIAL-REMODEL-ALIGN-01)* |
+| purchasing.sourcing | **Growth+** · module `suppliers-portal` *(ADVANCED SOURCING — added by COMMERCIAL-REMODEL-ALIGN-01)* |
 | exports.core | Core+ (tier-only, no module) |
 | exports.column_selection | Growth+ · feature `exports.column_selection` |
-| specter.full_capture | Growth+ · module `specter` · feature `specter.full_capture` |
+| ~~specter.full_capture~~ | **RETIRED** by COMMERCIAL-REMODEL-ALIGN-01 — Specter is DEPRECATED and carries no active capability |
 
 **Legacy / disabled** (in `CAPABILITY_CATALOG`, **not** in
 `CAPABILITY_REQUIREMENTS`, never evaluated as a live gate): `finances.core`,
 `finances.cashflow`, `cashflow.revenue_buckets` — status `legacy`;
 `customers.ltv` — status `disabled`. Legacy compatibility code and (commented-out)
 routes are **not** removed by P0-A1.
+
+> **SUPERSEDED 2026-09-06 by `COMMERCIAL-REMODEL-ALIGN-01` (§33).** The single
+> `legacy` bucket is split, because "withdrawn" and "gone for good" are different
+> facts: `CapabilityStatus` is now
+> `active | paused | deprecated | legacy | disabled` (`legacy` retained as a
+> compatibility alias). Finances entries are **paused** — withdrawn from sale but
+> **may return in a future release**. `customers.ltv`/`customers.segmentation` and
+> `specter.full_capture` are **deprecated** — not expected to return. Physical code
+> for all three is deliberately NOT deleted; cleanup is a separate,
+> regression-protected future program.
 
 **Access decision model.** `AccessRequirement { moduleId?, minimumTier?, feature?,
 action? }` · `AccessContext { tier, modules, flags, roles?, allowedActions? }` ·
@@ -3552,3 +3578,157 @@ system-wide C14–C24 closure are not closed by this slice.
 - **`BILL-ENTITLEMENT-01` Fact B** — the Shopify Reviewer shop was seeded/expected **Growth** but production `/entitlements/me` reports **Scale**; the DB `shop_subscriptions.tier` transition cause is unresolved. P0-A1 answers *"given a commercial state, what access should it produce?"* — it does **not** answer *"why did production acquire the wrong commercial state?"*. Belongs to Commercial State Integrity (**P0-B**).
 - Provider SKU/price mapping, subscription transition ordering/idempotency, any `shop_subscriptions` writer, webhook idempotency/order, commercial-state audit trail, billing reconciliation, and JWT / current-state freshness (see §13.2 / §26 / SHB-14) — **all P0-B, out of scope**.
 - **Sourcing production certification remains blocked** until the commercial-access P0 (A1 + A2) is resolved.
+
+---
+
+## 33. Commercial Remodel Alignment — `COMMERCIAL-REMODEL-ALIGN-01` (ratified + implemented 2026-09-06)
+
+**This section is the CURRENT canonical commercial truth.** Where §32 and earlier
+sections disagree, they are the historical record and this supersedes them. §32's
+architecture — one policy package, capability-based access, `evaluateAccess()` —
+is unchanged; what changed is *what is sold at which tier*, and the lifecycle
+vocabulary for surfaces that are no longer sold.
+
+Tier order is unchanged: `starter < core < growth < scale`.
+
+### 33.1 Ratified tier matrix
+
+**STARTER**
+- Overview · Orders · Alerts inbox · Shopify integration + internal plumbing
+- `warehouse.operations`, return intake, barcode/internal WMS plumbing
+- the **full Receive → Stow → Pick → Pack → Ship** WMS execution loop
+- **NO Purchasing**
+- **0** included non-owner seats
+- **50** fulfilled / WMS-completed orders included — **hard stop** after the allowance
+- **60-day** order history
+
+**CORE adds**
+- Inventory / Products · Returns management · Problem Center
+- Purchasing core: Purchase Orders, Suppliers, basic supplier workflows
+- standard exports
+- **2** included non-owner seats; purchased extra seats are **additive**
+- **500** fulfilled orders included; **configurable overage**
+- **180-day** history
+
+**GROWTH adds**
+- Demand Forecasting · Warehouse Analytics · Floor Planning
+- Returns supplier analysis · Alert Rules · advanced/custom export columns
+- **Advanced Sourcing**
+- **5** included non-owner seats; purchased extra seats are **additive**
+- **2500** fulfilled orders included; **configurable overage**
+- **unlimited** history
+
+**SCALE**
+- inherits every **ACTIVE** Growth capability — no Scale-only module wall
+- unlimited seats · unlimited fulfilled orders · unlimited history
+- **no overage** (nothing finite left to exceed)
+
+### 33.2 Product lifecycle — paused is not deprecated
+
+| Area | Status | Meaning |
+|---|---|---|
+| Finances | **PAUSED** | withdrawn from sale, **may return in a future release** |
+| Customers | **DEPRECATED** | not expected to return |
+| Specter | **DEPRECATED** | not expected to return |
+
+The distinction is load-bearing: it decides whether cleanup should ever be
+scheduled. **Finances must never be described as permanently deprecated.**
+
+`CapabilityStatus` is now `active | paused | deprecated | legacy | disabled`
+(`legacy` kept as a compatibility alias). Paused and deprecated entries carry **no
+`AccessRequirement`**, are absent from `ACTIVE_CAPABILITY_IDS`, and are **not
+standard tier grants at any tier**. Physical code for all three areas is
+deliberately retained — deletion is a separate, regression-protected future
+program, not part of this slice.
+
+### 33.3 Purchasing
+
+- `suppliers-portal` is a **Core+** canonical standard module (moved from Starter)
+- `purchasing.core` = **Core+** — Purchase Orders, Suppliers, basic supplier workflows
+- `purchasing.sourcing` = **Growth+** — **Advanced Sourcing**: sourcing
+  recommendations, sourcing worklist, supplier-product preference intelligence,
+  and reorder/MOQ accumulation intelligence
+
+> Purchasing **runtime/frontend route enforcement is NOT implemented by this
+> slice.** Canonical policy truth is green; wiring the suppliers routes/controllers,
+> purchasing tabs/routes, `navBootstrap` and direct-URL gates to it is a dedicated
+> follow-up coverage slice.
+
+### 33.4 Order meter — two different numbers
+
+- `ingested_orders` is **internal telemetry ONLY**. Shopify ingestion must **never**
+  be commercially blocked: dropping order truth at a plan limit creates an
+  unrecoverable operational-history gap while the webhook still reports success.
+- **fulfilled / WMS-completed orders** are the merchant-facing commercial
+  allowance and the enforcement meter: Starter hard stop, Core/Growth configurable
+  overage, Scale unlimited.
+
+Never describe `ingested_orders` as the merchant-facing hard cap.
+
+### 33.5 Seats
+
+`0 / 2 / 5 / Infinity` are **INCLUDED non-owner seats**, not hard maximums.
+Effective capacity on a finite paid tier = **included seats + purchased extra
+seats**; Scale is unlimited. No Starter extra-seat SKU or price is invented here.
+
+### 33.6 What the implementation changed
+
+- `finances`, `customers`, `specter` removed from standard tier grants at **every** tier
+- Specter removed from active capability and active feature truth
+  (`specter.full_capture` retired; `features.ts` now holds five canonical keys)
+- catalog lifecycle vocabulary extended with `paused` and `deprecated`
+- `suppliers-portal` moved Starter → Core
+- `purchasing.core` now Core+; `purchasing.sourcing` added at Growth+
+- `grantFt2FreeBaselineForShop` reduced to **`order-nexus` only**. It previously
+  granted `products` (a Core+ paid surface), `customers` (deprecated) and
+  `finances` (paused); because `getForUser` unions persisted grants **additively**,
+  that dormant function could resurrect paid or withdrawn surfaces regardless of
+  tier. The function is retained, idempotent and additive as before.
+- **`LEGACY_MODULES_BY_TIER` deliberately remains frozen compatibility data** and
+  was not touched.
+
+### 33.7 Verification evidence
+
+- remodel contract suite — **38 / 38 PASS**
+- `commercial-policy-engine` — **144 / 144 PASS**
+- `commercial-access-policy` — **53 / 53 PASS**
+- the three named suites together — **234 / 234 PASS**
+- relevant regression run **before** environment correction — **554 / 557**, where
+  the only 3 failures were frontend build-environment dependency resolution, not
+  commercial-model defects
+- an isolated `npm ci` corrected workspace resolution; `frontend-production-build-env`
+  then passed **4 / 4**
+- `commercial-policy` TSC **0** · backend TSC **0**
+- `git diff --check` PASS
+- all **20** intended REDs became GREEN; all **11** superseded pre-remodel
+  assertions corrected (fixtures rewritten, never weakened)
+- generated `packages/commercial-policy/dist` rebuilt **only** through the
+  package's declared build script
+
+One correction worth carrying forward: the engine suite's matrix helper passed a
+possibly-absent requirement straight into `evaluateAccess()`, and
+`evaluateAccess(undefined, ctx)` returns **ALLOWED** by design. Retiring a
+capability therefore made its DENY rows silently pass. A fail-loud
+`requirementOrFail()` guard now sits in front of every dynamic capability lookup.
+**Any future capability retirement must keep that guard**, or the matrix goes
+vacuous instead of red.
+
+### 33.8 Known follow-ups and coverage gaps
+
+- **C6** — included seats + `extra_seats` has no dedicated DB/Stripe regression
+  contract; the canonical included values are covered, the additive purchased-seat
+  behaviour is not
+- Advanced Sourcing is protected as **one** capability, not per sub-feature
+- 60 / 180 / unlimited **history windows** have no canonical commercial-policy field
+- Purchasing runtime / frontend / direct-URL enforcement — future slice (§33.3)
+- **`BILL-ENTITLEMENT-01` Fact B remains P0-B Commercial State Integrity.** This
+  slice changed no subscription-transition causality and does not explain why
+  reviewer production became Scale.
+- Node 20.19.5 vs required 20.20.0+, and dependency audit findings, are separate
+  environment/dependency debt — deliberately out of scope here.
+
+### 33.9 Explicitly NOT done
+
+No Purchasing runtime/API/frontend gating · no Customers, Specter or Finances
+physical deletion · no Decision/Command commercial capability · no pricing change ·
+no seat-billing change · no history-window architecture · no migrations.

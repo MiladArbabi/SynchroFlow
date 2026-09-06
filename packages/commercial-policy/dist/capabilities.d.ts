@@ -1,5 +1,5 @@
 import type { AccessRequirement } from './access.js';
-export type CapabilityId = 'overview.core' | 'overview.live_map' | 'orders.core' | 'inventory.core' | 'demand.forecasting' | 'alerts.inbox' | 'alerts.rules' | 'returns.intake' | 'returns.core' | 'returns.analysis' | 'warehouse.operations' | 'warehouse.analytics' | 'warehouse.floor_planning' | 'warehouse.problem_center' | 'purchasing.core' | 'exports.core' | 'exports.column_selection' | 'specter.full_capture';
+export type CapabilityId = 'overview.core' | 'overview.live_map' | 'orders.core' | 'inventory.core' | 'demand.forecasting' | 'alerts.inbox' | 'alerts.rules' | 'returns.intake' | 'returns.core' | 'returns.analysis' | 'warehouse.operations' | 'warehouse.analytics' | 'warehouse.floor_planning' | 'warehouse.problem_center' | 'purchasing.core' | 'purchasing.sourcing' | 'exports.core' | 'exports.column_selection';
 export declare const CAPABILITY_REQUIREMENTS: Readonly<Record<CapabilityId, AccessRequirement>>;
 export declare const CAPABILITY_IDS: readonly CapabilityId[];
 /** Alias — every canonical CapabilityId is currently active. */

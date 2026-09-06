@@ -52,15 +52,31 @@ export function isModuleId(value) {
 // ---------------------------------------------------------------------------
 // Canonical standard module sets (cumulative). suppliers-portal is Starter+.
 // ---------------------------------------------------------------------------
+// COMMERCIAL-REMODEL-ALIGN-01 (2026-09-06) — canonical forward truth.
+//
+// Starter buys the execution loop: overview, orders, alerts, Shopify/internal
+// plumbing, and the full Receive -> Stow -> Pick -> Pack -> Ship WMS path.
+// Purchasing is NOT part of it — `suppliers-portal` moved to CORE.
 const STANDARD_STARTER = [
     'overview', 'order-nexus', 'fulfillment', 'alerts',
     'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes',
-    'suppliers-portal',
 ];
-const STANDARD_CORE = [...STANDARD_STARTER, 'returns', 'products', 'problem-center'];
+// Core adds the management surfaces plus Purchasing (purchasing.core is Core+).
+const STANDARD_CORE = [
+    ...STANDARD_STARTER, 'returns', 'products', 'problem-center', 'suppliers-portal',
+];
+// Growth adds the intelligence modules only.
+//
+// `customers`, `finances` and `specter` are deliberately ABSENT: Finances is
+// PAUSED and Customers/Specter are DEPRECATED (see catalog.ts). A paused or
+// deprecated area must never be sold as a standard grant at any tier, even
+// implicitly through a tier module set. Their implementation is intentionally
+// left in place — cleanup is a separate future program.
 const STANDARD_GROWTH = [
-    ...STANDARD_CORE, 'customers', 'finances', 'demand', 'specter', 'floor-planning',
+    ...STANDARD_CORE, 'demand', 'floor-planning',
 ];
+// Scale is "everything Growth has, without limits" — never a distinct module
+// set, and never an arbitrary Scale-only module wall.
 const STANDARD_SCALE = [...STANDARD_GROWTH];
 const STANDARD_MODULES_BY_TIER = Object.freeze({
     starter: STANDARD_STARTER,

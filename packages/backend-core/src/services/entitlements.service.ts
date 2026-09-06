@@ -212,10 +212,19 @@ export class EntitlementsService {
       flag_key: string | null;
       source: string;
     }> = [
+      // COMMERCIAL-REMODEL-ALIGN-01 (2026-09-06) — FT2-FREE BASELINE SAFETY.
+      //
+      // getForUser unions valid persisted grants ADDITIVELY, so anything written
+      // here becomes real access regardless of the shop's tier. This list was
+      // granting three surfaces it had no business granting:
+      //
+      //   customers — DEPRECATED product area (catalog.ts)
+      //   finances  — PAUSED product area (catalog.ts)
+      //   products  — a CORE+ paid surface, not a free baseline one
+      //
+      // A "free baseline" must only ever contain surfaces a Starter/free shop is
+      // genuinely entitled to. Only order-nexus qualifies.
       { shop_id: shopId, module_key: 'order-nexus', flag_key: null, source: 'ft2_free_baseline' },
-      { shop_id: shopId, module_key: 'products', flag_key: null, source: 'ft2_free_baseline' },
-      { shop_id: shopId, module_key: 'customers', flag_key: null, source: 'ft2_free_baseline' },
-      { shop_id: shopId, module_key: 'finances', flag_key: null, source: 'ft2_free_baseline' },
     ];
 
     await withTenant(shopId, (trx) =>

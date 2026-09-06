@@ -194,10 +194,15 @@ describe('C4 — canonical module config', () => {
     expect(CP.CAPABILITY_REQUIREMENTS['warehouse.operations'].moduleId).toBe('wms');
   });
 
-  it('GREEN CONTROL: canonical effective entitlements emit `suppliers-portal` at every tier', () => {
+  it('GREEN CONTROL: canonical effective entitlements emit `suppliers-portal` at CORE and above', () => {
     // TIER_CONFIG is the frozen persisted-row seed shape. Runtime availability
     // comes from modulesForTier(currentTier) union additive persisted rows.
-    for (const tier of TIERS) {
+    //
+    // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01: this previously
+    // asserted every tier. Purchasing is now Core+ — Starter has no Purchasing
+    // surface at all — so Starter must NOT emit suppliers-portal.
+    expect(CP.modulesForTier('starter').has('suppliers-portal')).toBe(false);
+    for (const tier of ['core', 'growth', 'scale'] as const) {
       expect(CP.modulesForTier(tier).has('suppliers-portal')).toBe(true);
     }
   });
@@ -268,14 +273,22 @@ describe('C9 — environment-independent access decision', () => {
 // ===========================================================================
 // C10 — PURCHASING STARTER+ POLICY (semantic; full behavior in parity file)
 // ===========================================================================
-describe('C10 — Purchasing Starter+ policy', () => {
-  it('EXPECTED RED: canonical policy declares purchasing with no minimum tier', () => {
-    // P0-A1: CAPABILITY_REQUIREMENTS['purchasing.core'] => moduleId 'suppliers-portal',
-    // minimumTier undefined (Starter+).
+describe('C10 — Purchasing Core+/Growth+ policy', () => {
+  // SUPERSEDED 2026-09-06 by COMMERCIAL-REMODEL-ALIGN-01. Purchasing was
+  // Starter+ under P0-A1; the ratified remodel makes purchasing.core Core+ and
+  // introduces purchasing.sourcing (ADVANCED SOURCING) at Growth+.
+  it('EXPECTED RED: canonical policy declares purchasing.core at minimum tier core', () => {
     const req = CP.CAPABILITY_REQUIREMENTS?.['purchasing.core'];
     expect(req).toBeDefined();
     expect(req?.moduleId).toBe('suppliers-portal');
-    expect(req?.minimumTier).toBeUndefined();
+    expect(req?.minimumTier).toBe('core');
+  });
+
+  it('EXPECTED RED: canonical policy declares purchasing.sourcing at minimum tier growth', () => {
+    const req = (CP.CAPABILITY_REQUIREMENTS as Record<string, { moduleId?: string; minimumTier?: string } | undefined>)?.['purchasing.sourcing'];
+    expect(req).toBeDefined();
+    expect(req?.moduleId).toBe('suppliers-portal');
+    expect(req?.minimumTier).toBe('growth');
   });
 
   it('EXPECTED RED: a bespoke/revoked module grant denies as MODULE_NOT_INCLUDED, not a tier', () => {

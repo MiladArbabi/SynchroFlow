@@ -16,7 +16,9 @@ export const FEATURE_MIN_TIER = Object.freeze({
   'alerts.rules':             'growth',
   'returns.analysis':         'growth',
   'exports.column_selection': 'growth',
-  'specter.full_capture':     'growth',
+  // 'specter.full_capture' REMOVED by COMMERCIAL-REMODEL-ALIGN-01 — Specter is a
+  // DEPRECATED area, so it is no longer canonical active feature truth. The
+  // legacy compatibility flag list in legacy.ts deliberately still carries it.
 } as const satisfies Record<string, Tier>);
 
 export type FeatureKey = keyof typeof FEATURE_MIN_TIER;

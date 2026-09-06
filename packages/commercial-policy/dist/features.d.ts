@@ -6,7 +6,6 @@ export declare const FEATURE_MIN_TIER: Readonly<{
     readonly 'alerts.rules': "growth";
     readonly 'returns.analysis': "growth";
     readonly 'exports.column_selection': "growth";
-    readonly 'specter.full_capture': "growth";
 }>;
 export type FeatureKey = keyof typeof FEATURE_MIN_TIER;
 export declare const FEATURE_KEYS: readonly FeatureKey[];

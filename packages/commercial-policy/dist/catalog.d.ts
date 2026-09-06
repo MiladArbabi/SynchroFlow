@@ -1,5 +1,5 @@
 import type { AccessRequirement } from './access.js';
-export type CapabilityStatus = 'active' | 'legacy' | 'disabled';
+export type CapabilityStatus = 'active' | 'paused' | 'deprecated' | 'legacy' | 'disabled';
 export interface CatalogEntry {
     status: CapabilityStatus;
     requirement?: AccessRequirement;
