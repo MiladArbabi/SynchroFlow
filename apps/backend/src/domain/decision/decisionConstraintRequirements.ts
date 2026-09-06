@@ -27,11 +27,39 @@
  * every other existing action behaving exactly as before.
  */
 export const CONSTRAINT_TYPE_BY_ACTION: Record<string, string> = {
+  // INV-ACTION-ARCH-01: the current inventory action is the workflow action.
+  open_sourcing: 'inventory',
+  // Legacy — no longer emitted for new decisions, but previously persisted
+  // resolve_inventory_block rows must keep being stale-checked identically.
   resolve_inventory_block: 'inventory',
   resolve_customer_block: 'customer',
   resolve_operational_block: 'operational',
   open_return_job: 'operational',
 };
+
+/**
+ * WORKFLOW ACTIONS — NAVIGATION, NOT EXECUTION (INV-ACTION-ARCH-01)
+ * -----------------------------------------------------------------
+ * These actions describe where the operator should go, not work a machine can
+ * perform. They have no execution handler, are never registered in the
+ * execution registry, and must never enter decision_execution_queue.
+ *
+ * POST /execute treats them exactly as it treats a stale decision: not an
+ * actionable candidate. It therefore reuses that route's existing
+ * "No actionable decision found for this order" 400 convention rather than
+ * introducing a new status code.
+ */
+export const WORKFLOW_ACTION_TYPES: ReadonlySet<string> = new Set([
+  'open_sourcing',
+]);
+
+/** False for workflow/navigation actions, true for everything executable. */
+export function isExecutableDecisionAction(
+  actionType: string | undefined
+): boolean {
+  if (!actionType) return true;
+  return !WORKFLOW_ACTION_TYPES.has(actionType);
+}
 
 /**
  * True when the action's required constraint type is still active for

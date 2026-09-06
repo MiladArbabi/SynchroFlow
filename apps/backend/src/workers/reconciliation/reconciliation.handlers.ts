@@ -533,7 +533,8 @@ export async function reconcileOrderFulfillment(
      * block), not a field that doesn't exist on riskSnapshot.
      */
     const activeActionTypes = new Set<string>();
-    if (isInventoryBlocked) activeActionTypes.add('resolve_inventory_block');
+    // INV-ACTION-ARCH-01: open_sourcing is the current inventory action type.
+    if (isInventoryBlocked) activeActionTypes.add('open_sourcing');
     if (isCustomerBlocked) activeActionTypes.add('resolve_customer_block');
     if (isOperationalBlocked) activeActionTypes.add('resolve_operational_block');
 

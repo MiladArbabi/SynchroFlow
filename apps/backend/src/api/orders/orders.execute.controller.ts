@@ -2,7 +2,10 @@
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { dispatchCommand } from '../../domain/command/command.bus.js';
-import { isDecisionActionStillValid } from '../../domain/decision/decisionConstraintRequirements.js';
+import {
+  isDecisionActionStillValid,
+  isExecutableDecisionAction,
+} from '../../domain/decision/decisionConstraintRequirements.js';
 
 class DecisionNotFoundError extends Error {}
 class DecisionAlreadyExecutedError extends Error {}
@@ -86,16 +89,40 @@ export const httpExecuteOrderDecision = async (
         .whereIn('status', ['pending', 'in_progress'])
         .orderBy('priority', 'desc');
 
-      const decision = candidateDecisions.find((d) =>
-        isDecisionActionStillValid(
-          d.recommended_action?.type,
-          activeConstraintTypes
-        )
+      /**
+       * CANDIDATE ELECTION — TWO INDEPENDENT REJECTION REASONS
+       * ------------------------------------------------------
+       * A candidate must clear both checks, and they answer different
+       * questions:
+       *
+       * 1. EXECUTABILITY (INV-ACTION-ARCH-01). Workflow-only actions such as
+       *    `open_sourcing` are navigation, not work a machine can perform.
+       *    They have no execution handler and are never registered in the
+       *    execution registry, so isExecutableDecisionAction() excludes them
+       *    from executable candidate selection entirely.
+       *
+       * 2. STALENESS. Independently of the above, isDecisionActionStillValid()
+       *    rejects a decision whose required constraint type has no active
+       *    rows for this order — the block it exists to resolve is already
+       *    gone.
+       *
+       * If every candidate is either non-executable or stale, no decision is
+       * elected and the route falls through to its existing
+       * "No actionable decision found for this order" 400 path. No
+       * decision_execution_queue row is created in that case.
+       */
+      const decision = candidateDecisions.find(
+        (d) =>
+          isExecutableDecisionAction(d.recommended_action?.type) &&
+          isDecisionActionStillValid(
+            d.recommended_action?.type,
+            activeConstraintTypes
+          )
       );
 
       if (!decision) {
         if (candidateDecisions.length > 0) {
-          console.warn('[EXECUTE_ORDER_DECISION_ALL_CANDIDATES_STALE]', {
+          console.warn('[EXECUTE_ORDER_DECISION_NO_ACTIONABLE_CANDIDATE]', {
             order_id: orderId,
             shop_id: shopId,
             candidate_count: candidateDecisions.length,

@@ -251,13 +251,41 @@ map,
 
 | Action | Required active constraint |
 |---|---|
-| `resolve_inventory_block` | `inventory` |
+| `open_sourcing` | `inventory` |
 | `resolve_customer_block` | `customer` |
 | `resolve_operational_block` | `operational` |
 | `open_return_job` | `operational` |
 
-An action **absent** from this map has no prerequisite and is always
-executable. That default is deliberate — it is what keeps
+**Legacy compatibility (INV-ACTION-ARCH-01, 2026-09-06):**
+
+`resolve_inventory_block` → `inventory`
+
+LEGACY COMPATIBILITY ONLY — no longer emitted for new inventory decisions;
+its handler remains registered temporarily so persisted legacy work can
+drain. Its mapping is retained so previously persisted decisions stay
+stale-checked exactly as before.
+
+#### Required-constraint vs executability — two separate questions
+
+`CONSTRAINT_TYPE_BY_ACTION` answers only **whether an action requires an
+active constraint to still be meaningful**. It does not say whether the
+action can be executed. Executability is a separate question, answered by
+`WORKFLOW_ACTION_TYPES` / `isExecutableDecisionAction()` in the same
+module.
+
+Workflow-only actions describe **where the operator should go**, not work a
+machine can perform. `open_sourcing` is the current example: it requires
+active inventory truth (so it is stale-checked like any other inventory
+action) but is **intentionally non-executable** — it has no execution
+handler and is never registered in the execution registry.
+
+`POST /api/v1/orders/:orderId/execute` must never queue a workflow-only
+action. It skips them exactly as it skips stale decisions, so they can never
+reach `decision_execution_queue`, and the route answers through its existing
+no-actionable-decision error path rather than inventing a new one.
+
+An action that is in neither structure has no constraint prerequisite and is
+executable — that default is deliberate, and it is what keeps
 `proceed_fulfillment` and every other existing action unchanged.
 
 Consumers:
@@ -276,6 +304,13 @@ Consumers:
 > Read validity and execute validity answer the same question from the
 > same map. Adding an action to that map makes it stale-checked on both
 > paths at once.
+
+**Natural-resolution invariant (unchanged):**
+
+> Navigating to Sourcing does not clear oversell. Creating a PO, transfer or
+> sourcing request does not clear it either. Canonical inventory truth is the
+> only resolution authority — the constraint clears when, and only when, the
+> stock is really there.
 
 ---
 

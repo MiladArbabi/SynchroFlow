@@ -149,7 +149,7 @@ export const httpGetConstrainedOrders = async (
             this.on(trx.raw('"d"."entity_id"::uuid = "oc"."lasyncro_order_id"'))
               .andOn(trx.raw(`
                 "d"."recommended_action"->>'type' = CASE "oc"."constraint_type"
-                  WHEN 'inventory' THEN 'resolve_inventory_block'
+                  WHEN 'inventory' THEN 'open_sourcing'
                   WHEN 'customer' THEN 'resolve_customer_block'
                   WHEN 'operational' THEN 'resolve_operational_block'
                   ELSE NULL

@@ -972,4 +972,57 @@ Approved ordering:
 4. SLA enhancements only where evidence supports them
 5. Outcome/value layer, after reliable attributable treatment events exist
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / IMPLEMENTATION NOT STARTED.**
+Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6. Items 2–5
+remain not started.
+
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority item 1 (INV-ACTION-ARCH-01) IMPLEMENTED, items 2–5 NOT STARTED.**
+
+
+### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED — 2026-09-06.**
+
+#### What changed
+
+- New `inventory`/`oversell` decisions emit `open_sourcing`.
+- `open_sourcing` is a **workflow/navigation action**, not a machine execution.
+- It is mapped to the active `inventory` constraint for staleness / read-model
+  correctness.
+- It is explicitly classified **non-executable** and cannot enter
+  `decision_execution_queue`.
+- `POST /api/v1/orders/:orderId/execute` skips workflow-only actions and uses
+  the existing no-actionable-decision error path — no new status code was
+  introduced.
+- Order Detail continues to derive Sourcing navigation from the active
+  inventory constraint's `target_id`, **not** from the elected Decision
+  payload.
+- Multiple blocked variants remain independently actionable.
+- Navigating to Sourcing does **not** clear oversell.
+- Canonical inventory truth remains the only resolution authority.
+
+#### Legacy compatibility
+
+- `resolve_inventory_block` is no longer emitted for NEW inventory decisions.
+- Its handler, registry entry and constraint mapping remain **temporarily** for
+  backward compatibility with previously persisted decisions and jobs.
+- No migration was required: a dev audit found zero persisted
+  `resolve_inventory_block` decisions and zero queue rows tied to them.
+
+#### Automated evidence
+
+- inventory decision integration: **12/12 passed**
+- frontend targeted suites: **19/19 passed**
+- test ownership: `UNOWNED=0`, `MULTI_OWNED=0`
+- backend TSC: 0 total / 0 target
+- frontend TSC: 19 baseline / 0 target
+- test TSC: 1 baseline / 0 target
+
+#### Live browser evidence
+
+- order `#800002` showed **Out of Stock / oversell**;
+- CTA rendered as **Source this item**;
+- navigation opened Sourcing for **QA Hoodie / QA-HOODIE-M**;
+- source context preserved order `800002`;
+- no generic **Take action** and no legacy **Go to sourcing** execution CTA;
+- returning to Order Flow left the order blocked, because inventory truth had
+  not changed.

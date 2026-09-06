@@ -358,8 +358,23 @@ if (!isReplay) {
         shopId,
         aggregateVersion,
         signals,
+        /**
+         * INV-ACTION-ARCH-01 (2026-09-06)
+         * -------------------------------
+         * An active oversell is not something a machine handler can resolve —
+         * the units do not exist. `resolve_inventory_block` promised execution
+         * it could never deliver, so NEW inventory decisions now recommend
+         * `open_sourcing`: a WORKFLOW/navigation action with no execution
+         * handler, deliberately never registered in the execution registry and
+         * never enqueued by POST /execute.
+         *
+         * `resolve_inventory_block` is no longer emitted, but stays recognised
+         * for legacy compatibility (decisionConstraintRequirements.ts, its
+         * handler and its registration) so previously persisted decisions and
+         * already-queued jobs can still drain.
+         */
         action: {
-            type: 'resolve_inventory_block',
+            type: 'open_sourcing',
             payload: {
             blocked_revenue: signals.inventory_blocked_revenue
             },

@@ -58,9 +58,15 @@ import { useUpdateShippingAddress } from './useShippingAddress';
 import type { OrderShipping } from './useOrderDetail';
 import { useCurrency } from '../../hooks/useCurrency';
 
+/**
+ * INV-ACTION-ARCH-01 (2026-09-06): `resolve_inventory_block: 'Go to sourcing'`
+ * was removed. It labelled a generic execute(orderId) CTA as navigation while
+ * actually invoking a machine handler that cannot resolve a real stockout.
+ * Inventory routing is constraint-driven (inventorySourcingTargets below), and
+ * `open_sourcing` is a workflow action that must never reach this map.
+ */
 const ACTION_LABELS: Record<string, string> = {
   resolve_operational_block: 'Mark as resolved',
-  resolve_inventory_block: 'Go to sourcing',
   resolve_customer_block: 'Flag for customer review',
 };
 
@@ -620,8 +626,16 @@ export function OrderDetailModalBody({
     decision?.recommended_action?.type === 'proceed_fulfillment'
       ? undefined
       : decision?.recommended_action;
+  /**
+   * INV-ACTION-ARCH-01: `open_sourcing` is workflow navigation with no
+   * execution handler — the backend refuses to enqueue it. It must therefore
+   * never reach the generic execute(orderId) CTA, even when no usable
+   * inventory sourcing target exists (constraint with a null target_id).
+   * Inventory routing comes from active constraints, never from this action.
+   */
   const executableRecommendedAction =
-    recommendedAction?.type === 'open_return_job'
+    recommendedAction?.type === 'open_return_job' ||
+    recommendedAction?.type === 'open_sourcing'
       ? undefined
       : recommendedAction;
 
@@ -1221,9 +1235,7 @@ export function OrderDetailModalBody({
                   startIcon={
                     isPending
                       ? <CircularProgress size={16} color="inherit" />
-                      : executableRecommendedAction.type === 'resolve_inventory_block'
-                        ? <ArrowRight size={16} />
-                        : null
+                      : null
                   }
                   sx={{
                     bgcolor: 'var(--accent)',

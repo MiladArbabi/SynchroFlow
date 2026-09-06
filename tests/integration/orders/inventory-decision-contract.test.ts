@@ -7,6 +7,11 @@ import { DecisionRepository } from 'api-src/domain/decision/decision.repository'
 import { resolveInventoryBlockHandler } from 'api-src/execution/handlers/resolve_inventory_block.handler';
 import * as proceedFulfillmentModule from 'api-src/execution/handlers/proceed_fulfillment.handler';
 import { evaluateInventoryConstraint } from 'api-src/services/constraints/evaluators/inventoryConstraintEvaluator';
+import {
+  CONSTRAINT_TYPE_BY_ACTION,
+  isDecisionActionStillValid,
+} from 'api-src/domain/decision/decisionConstraintRequirements';
+import { reconcileOrderFulfillment } from 'api-src/workers/reconciliation/reconciliation.handlers';
 import { projectOrderConstraints } from 'api-src/projections/orderConstraintProjection';
 
 import {
@@ -272,6 +277,27 @@ function inventoryRiskSnapshot() {
     is_already_fulfilled: false,
     operational_block_type: null,
   };
+}
+
+/**
+ * decision.id is generated unhyphenated in memory but stored as a canonical
+ * hyphenated uuid. Identity is what matters here, not the formatting.
+ */
+const sameDecisionId = (a: string, b: string) =>
+  a.replace(/-/g, '') === b.replace(/-/g, '');
+
+/**
+ * Materialises the REAL active inventory constraint through the canonical
+ * chain (evaluateInventoryConstraint -> projectOrderConstraints), using the
+ * same transaction-local projection writer guard INV-RED-05 uses. The fixture
+ * seeder only writes stock/demand rows; it never projects constraints.
+ */
+async function materialiseInventoryConstraint(shopId: number, orderId: string) {
+  await withTenant(shopId, async (trx) => {
+    const evaluations = await evaluateInventoryConstraint(trx, orderId, shopId);
+    await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+    await projectOrderConstraints(trx, orderId, shopId, 1, now, evaluations);
+  });
 }
 
 async function persistInventoryDecision(shopId: number, orderId: string) {
@@ -550,5 +576,170 @@ describe('inventory decision contract — ORD-DECISION-01 Slice 2', () => {
 
     expect(res.status).not.toBe(202);
     expect(queued).toBeUndefined();
+  });
+
+  /**
+   * INV-ACTION-ARCH-01 — inventory decisions are WORKFLOW navigation, not
+   * machine execution. `open_sourcing` replaces `resolve_inventory_block` for
+   * NEW decisions; the legacy action stays recognised so previously persisted
+   * decisions and queued jobs can still drain.
+   */
+  it('INV-ACTION-01 emits open_sourcing for a new active inventory block', async () => {
+    const [decision] = generateDecisions({
+      orderId: crypto.randomUUID(),
+      shopId: 1,
+      aggregateVersion: 1,
+      riskSnapshot: inventoryRiskSnapshot(),
+    });
+
+    expect(decision).toBeTruthy();
+    expect(decision.recommended_action.type).toBe('open_sourcing');
+    expect(decision.recommended_action.type).not.toBe('resolve_inventory_block');
+    // Workflow navigation is still an operator-confirmed step, not automation.
+    expect(decision.recommended_action.execution_mode).toBe('manual');
+  });
+
+  it('INV-ACTION-02 refuses to execute an open_sourcing decision and queues nothing', async () => {
+    const { shopId, token } = await createShop();
+    // Genuinely blocked: demand 2, zero pickable stock — the inventory
+    // constraint is ACTIVE, so this is NOT the stale case INV-RED-03 covers.
+    const { orderId } = await seedInventoryFixture(shopId, {
+      quantity: 2,
+      pickableAvailable: 0,
+      rootAvailable: 0,
+    });
+
+    await materialiseInventoryConstraint(shopId, orderId);
+
+    const activeInventoryConstraint = await withTenant(shopId, (trx) =>
+      trx('order_constraints')
+        .where({
+          lasyncro_order_id: orderId,
+          constraint_type: 'inventory',
+          is_active: true,
+        })
+        .first()
+    );
+    expect(activeInventoryConstraint).toBeTruthy();
+
+    const decision = await persistInventoryDecision(shopId, orderId);
+    expect(decision.recommended_action.type).toBe('open_sourcing');
+
+    const res = await request(app)
+      .post(`/api/v1/orders/${orderId}/execute`)
+      .set('Authorization', `Bearer ${token}`);
+
+    // The controller's existing non-executable convention (see
+    // orders.execute.controller.ts): DecisionNotFoundError -> 400 with
+    // 'No actionable decision found for this order'. A workflow action is not
+    // an executable decision, so it must reuse that exact convention rather
+    // than introduce a new status code.
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('No actionable decision found for this order');
+
+    const queued = await withTenant(shopId, (trx) =>
+      trx('decision_execution_queue').where({ decision_id: decision.id }).first()
+    );
+    expect(queued).toBeUndefined();
+
+    const anyQueueRow = await withTenant(shopId, (trx) =>
+      trx('decision_execution_queue').where({ shop_id: shopId }).first()
+    );
+    expect(anyQueueRow).toBeUndefined();
+  });
+
+  it('INV-ACTION-03 maps open_sourcing to inventory and keeps legacy resolve_inventory_block', () => {
+    expect(CONSTRAINT_TYPE_BY_ACTION.open_sourcing).toBe('inventory');
+    // Legacy compatibility — persisted decisions must stay stale-checked.
+    expect(CONSTRAINT_TYPE_BY_ACTION.resolve_inventory_block).toBe('inventory');
+
+    expect(isDecisionActionStillValid('open_sourcing', ['inventory'])).toBe(true);
+    expect(isDecisionActionStillValid('open_sourcing', ['customer'])).toBe(false);
+    expect(isDecisionActionStillValid('resolve_inventory_block', ['inventory'])).toBe(true);
+    expect(isDecisionActionStillValid('resolve_inventory_block', [])).toBe(false);
+  });
+
+  it('INV-ACTION-04 treats a pending open_sourcing decision as the current inventory action', async () => {
+    const { shopId } = await createShop();
+    const { orderId } = await seedInventoryFixture(shopId, {
+      quantity: 2,
+      pickableAvailable: 0,
+      rootAvailable: 0,
+    });
+
+    await materialiseInventoryConstraint(shopId, orderId);
+
+    /**
+     * reconcileOrderFulfillment anchors replay on the order's latest domain
+     * event ([EVENT_ANCHOR_INVARIANT], reconciliation.handlers.ts). The stock
+     * fixture seeds the identity mapping but no event, so supply the one the
+     * anchor lookup requires — mechanical prerequisite only, no business
+     * semantics changed.
+     */
+    const externalOrderId = await withTenant(shopId, async (trx) => {
+      const identity = await trx('external_order_identity_map')
+        .where({ lasyncro_order_id: orderId })
+        .first('external_order_id');
+      expect(identity?.external_order_id).toBeTruthy();
+      await trx('domain_events').insert({
+        shop_id: shopId,
+        event_type: 'orders/create',
+        event_payload: { id: identity.external_order_id },
+        event_time: now,
+        event_version: 1,
+        external_event_id: `inv-action-04:${crypto.randomUUID()}`,
+      });
+      return identity.external_order_id as string;
+    });
+    expect(externalOrderId).toBeTruthy();
+
+    const decision = await persistInventoryDecision(shopId, orderId);
+    expect(decision.recommended_action.type).toBe('open_sourcing');
+
+    const before = await withTenant(shopId, (trx) =>
+      trx('decisions').where({ entity_id: orderId }).select('id')
+    );
+    expect(before).toHaveLength(1);
+
+    // A later aggregate_version over the SAME unresolved inventory state must
+    // recognise the pending open_sourcing decision as already covering it.
+    await reconcileOrderFulfillment(orderId, 2, undefined, now, shopId);
+
+    const after = await withTenant(shopId, (trx) =>
+      trx('decisions').where({ entity_id: orderId }).select('id', 'recommended_action')
+    );
+    expect(after).toHaveLength(1);
+    expect(sameDecisionId(after[0].id, decision.id)).toBe(true);
+  });
+
+  it('INV-ACTION-05 associates an active inventory constraint with an open_sourcing decision', async () => {
+    const { shopId, token } = await createShop();
+    const { orderId } = await seedInventoryFixture(shopId, {
+      quantity: 2,
+      pickableAvailable: 0,
+      rootAvailable: 0,
+    });
+
+    await materialiseInventoryConstraint(shopId, orderId);
+
+    const decision = await persistInventoryDecision(shopId, orderId);
+    expect(decision.recommended_action.type).toBe('open_sourcing');
+
+    const res = await request(app)
+      .get('/api/v1/orders/constrained')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+
+    // GET /orders/constrained returns { data: rows, pagination }.
+    const row = (res.body.data ?? []).find(
+      (o: { order_id?: string }) => o.order_id === orderId
+    );
+    expect(row).toBeTruthy();
+    expect(row.constraint_type).toBe('inventory');
+    // The SQL join only attaches a decision whose action matches the active
+    // constraint type — so a decision surfacing here proves the mapping.
+    expect(sameDecisionId(row.decision_id, decision.id)).toBe(true);
+    expect(row.recommended_action?.type).toBe('open_sourcing');
   });
 });
