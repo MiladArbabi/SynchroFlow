@@ -1235,9 +1235,37 @@ after deployment.
     - IMPLEMENTATION: CLOSED / PASS
     - LOCAL VISUAL VERIFY: CLOSED / PASS
     - SOURCE GUARD: PASS
-    - DOC: CURRENT
-    - COMMIT / PUSH / DEPLOY / PRODUCTION RE-CHECK: PENDING
+    - DOC: FINAL
+    - COMMIT: CLOSED / PASS
+    - PUSH: CLOSED / PASS
+    - DEPLOY: CLOSED / PASS
+    - PRODUCTION RE-CHECK: CLOSED / PASS
+    - LOCALHOST PARITY RE-CHECK: CLOSED / PASS
 
-**The one-line fix is still LOCAL and UNCOMMITTED. `RETURNS-OVERVIEW-UI-01` is
-NOT deployed.** Production still renders the stray `...` until this ships and the
-visual re-check is completed.
+### Shipped and production re-checked — 2026-09-06
+
+Commit **`15ba7a1168f4bcac0789a3e5e3f17f68260df77f`** —
+*fix(returns): remove pulse placeholder*.
+
+Deployment: **lasyncro-web SUCCESS**, **Fly Deploy #1385 SUCCESS**.
+
+Production re-check at <https://app.lasyncro.com/returns>:
+
+- Returns Pulse no longer renders the literal `...`
+- the surrounding recovery summary and PulseStat rows remain intact
+- no visible regression introduced
+
+**Localhost parity re-check — the discrepancy was NOT stale browser state.** After
+deployment, `localhost:5173` still showed the `...`, which initially looked like
+browser caching. It was not. An audit proved the dev server was being served from
+a *different checkout* — `synchroflow-sourcing-ux-1a` — which still contained the
+literal, while `origin/main` did not. Starting the frontend from the fixed
+worktree, with a worktree-local dependency installation,
+`http://localhost:5173/returns` also rendered without the `...`.
+
+**Root cause of the localhost discrepancy: a STALE DEV-SERVER CHECKOUT** — not
+browser cache, and not a source regression. Worth remembering: when local and
+production disagree after a deploy, confirm *which checkout* the dev server is
+actually serving before assuming caching.
+
+`RETURNS-OVERVIEW-UI-01` is **CLOSED / PASS and live in production.**

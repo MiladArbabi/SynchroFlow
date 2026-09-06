@@ -2077,8 +2077,10 @@ PENDING on `RETURNS-SCHEMA-DRIFT-01`** — a separate pre-existing production
 schema drift on `refund_execution_line_items` whose forward repair (`0165`) is
 both since shipped and PRODUCTION-CERTIFIED (`0165`, and `0166` for
 `RETURNS-SCHEMA-DRIFT-02` at commit `ecaef445`). The schema/capability Returns
-slice is production-certified; only cosmetic visual-polish closure
-(`RETURNS-OVERVIEW-UI-01`) remains, pending deployment (see "### P0-A3-3"). Remaining
+slice is production-certified, and the final cosmetic visual-polish closure
+(`RETURNS-OVERVIEW-UI-01`) shipped at commit `15ba7a11` and was production
+re-checked — P0-A3-3 Returns is now fully CLOSED / PRODUCTION-CERTIFIED
+(see "### P0-A3-3"). Remaining
 **P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
@@ -3524,13 +3526,19 @@ is kept as the record of that moment.
 > **CLOSED / PASS**. `RETURNS-SCHEMA-DRIFT-01`'s backend certification remains
 > valid and its visual blocker is **CLEARED**.
 >
-> **P0-A3-3 — the schema/capability Returns slice is PRODUCTION-CERTIFIED.** The
+> **P0-A3-3 — the Returns slice is FULLY CLOSED / PRODUCTION-CERTIFIED.** The
 > commercial-access convergence and the schema it depends on are both live and
-> certified in production. What remains is not schema or capability work: final
-> visual-polish closure waits only on deployment and production re-check of
-> **`RETURNS-OVERVIEW-UI-01`**, a cosmetic stray literal `...` in the Returns
-> Pulse card whose one-line fix is implemented and locally verified but **still
-> local and uncommitted**. See `ReturnsResolutionModule.md` §14.
+> certified in production.
+>
+> The last outstanding item, **`RETURNS-OVERVIEW-UI-01`** — a cosmetic stray
+> literal `...` in the Returns Pulse card — **shipped 2026-09-06** at commit
+> `15ba7a1168f4bcac0789a3e5e3f17f68260df77f` (*fix(returns): remove pulse
+> placeholder*), deployed via lasyncro-web SUCCESS and Fly Deploy #1385 SUCCESS,
+> and was production re-checked at <https://app.lasyncro.com/returns>: the
+> literal is gone, the surrounding recovery summary and PulseStat rows are
+> intact, and no regression was introduced. See `ReturnsResolutionModule.md` §14.
+>
+> Nothing in the Returns schema/capability slice remains pending.
 >
 > Full record: `docs/blueprints/ReturnsResolutionModule.md` §12, §13 and §14, and
 > `docs/playbooks/migration_drift_playbook.md` (2026-09-05 and 2026-09-06 entries).

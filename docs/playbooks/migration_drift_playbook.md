@@ -533,11 +533,12 @@ COMPLETE / PASS, not yet committed or deployed.**
 > CLOSED / PASS.** `RETURNS-SCHEMA-DRIFT-01`'s backend certification remains
 > valid, and its visual blocker — missing reviewer data — is now **CLEARED**.
 >
-> Both drifts on `refund_execution_line_items` are closed. The only Returns item
-> still open is a cosmetic one found during the visual pass
-> (`RETURNS-OVERVIEW-UI-01`, a stray literal `...` text node), which is a
-> rendering defect, not schema drift, and is recorded in
-> `docs/blueprints/ReturnsResolutionModule.md` §14 rather than here.
+> Both drifts on `refund_execution_line_items` are closed. One cosmetic item was
+> found during the visual pass (`RETURNS-OVERVIEW-UI-01`, a stray literal `...`
+> text node) — a rendering defect, not schema drift, recorded in
+> `docs/blueprints/ReturnsResolutionModule.md` §14 rather than here. It has since
+> shipped (commit `15ba7a11`) and been production re-checked, so **no Returns
+> item remains open** from this incident.
 
 ---
 
