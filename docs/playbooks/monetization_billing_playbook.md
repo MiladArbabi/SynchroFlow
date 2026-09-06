@@ -3812,3 +3812,137 @@ vacuous instead of red.
 No Purchasing runtime/API/frontend gating · no Customers, Specter or Finances
 physical deletion · no Decision/Command commercial capability · no pricing change ·
 no seat-billing change · no history-window architecture · no migrations.
+
+---
+
+## 34. Inventory / Products Commercial Access — `P0-A3-4` (ratified + implemented 2026-09-06)
+
+The Inventory/Products slice of P0-A3. Canonical policy needed no change — the
+capability was already correct — so this is a **wiring** slice: it moves every
+Inventory surface off raw module/tier gates and private controller checks onto the
+one shared AccessDecision.
+
+### 34.1 Canonical capability and tier behaviour
+
+    inventory.core = moduleId 'products' + minimumTier 'core'
+
+| Tier | Inventory |
+|---|---|
+| Starter | **DENY** |
+| Core | ALLOW |
+| Growth | ALLOW |
+| Scale | ALLOW |
+
+**An additive module grant does not bypass the tier wall.** A Starter shop holding
+a bespoke/persisted `products` module row is still denied `inventory.core`, with
+reason `TIER_TOO_LOW` — because the requirement carries `minimumTier: 'core'` and
+tier is evaluated before module membership. This is precisely what the previous
+raw `requiredModuleId: 'products'` nav gate got wrong: a module row satisfied it.
+
+### 34.2 Merchant UI — one gate for the whole subtree
+
+`/inventory`, `/inventory/catalog`, `/inventory/costs` and
+`/inventory/data-quality` all resolve through a single
+`<CommercialGate capabilityId="inventory.core">` on the Inventory subtree page.
+`LifecycleRouteHost` mounts that component at `/inventory/*`, so a **direct URL**
+resolves the same AccessDecision as a nav or tab click. Nav presentation is not a
+security boundary.
+
+### 34.3 Navigation — ownership, not duplication
+
+- the Inventory **parent** owns `capabilityId: 'inventory.core'`
+- the standard children — Intelligence, Catalog, Costs, Data Quality — declare no
+  capability of their own and **inherit** the parent boundary
+- **Demand** stays independently `demand.forecasting`: it is not URL-nested under
+  `/inventory` and is Growth-only, so it must not inherit a Core boundary
+- raw `requiredModuleId: 'products'` is **no longer commercial authority** for Inventory
+
+Inheritance is a real mechanism, not an assumption: `resolveNavVisibility` only
+decides `if (capabilityId && context)`, and `ModuleTabBar` computes
+`tab.capabilityId ? decide(tab.capabilityId) : null`. A child carrying no
+capability therefore contributes no gate of its own. Re-declaring
+`inventory.core` on every child would be duplication that drifts the moment the
+parent's capability changes.
+
+### 34.4 Products APIs
+
+`requireCapability('inventory.core')` now gates:
+
+    GET   /ft2
+    GET   /operator-summary
+    GET   /catalog
+    GET   /variants/costs
+    PATCH /variants/:variantId/cost
+    POST  /variants/costs/bulk
+
+**Legacy alias parity.** Both `/api/v1/products/...` and
+`/api/v1/modules/products/...` remain mounted, and both now resolve the **same**
+canonical commercial policy — otherwise a caller could simply pick the cheaper
+door. Alias removal is future cleanup, not this slice.
+
+### 34.5 WMS readiness exception
+
+`GET /wms-readiness` belongs to **`warehouse.operations`**, not `inventory.core`,
+and is now positively gated on it (it previously carried no commercial gate at
+all). Starter WMS access remains valid.
+
+> **Not a contradiction, and not to be "fixed":** `/inventory/data-quality` is an
+> Inventory UI route behind `inventory.core` (Core+), while the WMS-readiness API
+> it consumes is `warehouse.operations` (Starter+). A Core+ shop holds both, so
+> the pairing is consistent by design. Aligning them would break the Starter WMS
+> exception.
+
+### 34.6 Inventory recount
+
+The recount route family is commercially owned by `inventory.core`. **13 recount
+routes** were migrated from a raw `requireTier('core')` gate to
+`requireCapability('inventory.core')`:
+
+    POST/GET /recount-tasks · GET /recount-tasks/preview
+    GET  /recount-tasks/:taskId/lines · GET/POST /recount-tasks/:taskId/findings
+    POST /recount-tasks/:taskId/claim · /reassign · /close · /commit
+    POST /recount-tasks/:taskId/lines/:lineId/count · /skip · /review
+
+**Commercial capability and RBAC are separate, both-required axes.** Every
+`requireAction('wms:recount:*')` check is unchanged, as is `requireFt2`.
+`requireCapability` answers *"is this tenant entitled"*; `requireAction` answers
+*"is this user permitted"*. Four unrelated `requireTier('core')` gates in the same
+file — one `wms:read`, three `wms:batch:release` — were deliberately left alone.
+
+### 34.7 Controller cleanup
+
+`products.operator.controller.ts` no longer makes a private commercial decision.
+Its `meetsTier`-based check and non-canonical `TIER_INSUFFICIENT` body are retired;
+canonical route middleware is authoritative and denial is the shared
+`COMMERCIAL_ACCESS_DENIED` contract. The controller still resolves `tier`, but
+**only** as business logic for the history window — never as an access decision.
+
+### 34.8 Stale frontend links
+
+`missing_cogs` alert actions now route to **`/inventory/costs`** (label "Costs")
+instead of the retired `/products`, consistently in both `TopnavbarContent.tsx`
+and `AlertsPage.tsx`.
+
+### 34.9 Verification evidence
+
+- new contract `tests/contract/commercial-inventory-products-access.contract.test.ts`
+  — **41 / 41 PASS**
+- existing runtime contract `tests/integration/entitlement-mounts.test.ts`
+  — **5 / 5 PASS**: Starter both aliases → 403, malformed-query Starter alias →
+  403, Core both aliases → 200. Preserved unweakened; the denial now originates
+  from the canonical middleware rather than the retired controller check.
+- targeted frontend parity `tests/unit/ui/commercial-access/nav-surface-parity.test.tsx`
+  — **5 / 5 targeted PASS** (20 unrelated tests skipped for bounded execution)
+- backend TSC **0 errors**
+- frontend TSC **19 errors, TARGET_ERROR_COUNT = 0** — pre-existing baseline,
+  count unchanged by this slice; the clean anchor reproduces the same 19
+- `git diff --check` PASS · legacy Inventory guards clean
+- integration DB created → migrated → dropped, no orphan test DB
+
+### 34.10 Carry-forward
+
+- **Purchasing runtime/frontend parity remains separate deferred work** — the
+  `nav-surface-parity` C5 failures belong to that slice, not this one, and were
+  deliberately not addressed here.
+- Legacy `/api/v1/products/...` aliases remain mounted; removal is future cleanup.
+- No canonical policy matrix change, no migration, no DB schema change.

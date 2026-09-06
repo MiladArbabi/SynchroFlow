@@ -8,7 +8,6 @@ import {
 } from '@lasyncro/backend-core/utils/ft2Period.js';
 import { isValidTier } from '@lasyncro/backend-core/config/tiers.js';
 import { tierDataWindowSince } from '@lasyncro/backend-core/utils/tierDataWindow.js';
-import { meetsTier } from '../../middleware/require-entitlement.middleware.js';
 
 /**
  * GET /api/v1/modules/products/operator-summary
@@ -35,16 +34,16 @@ export async function getProductsOperatorSummaryHandler(
       return;
     }
 
+    // P0-A3-4: the commercial gate moved OUT of this controller and onto the
+    // route, as requireCapability('inventory.core'). The private tier check that
+    // lived here bypassed the shared capability engine and answered a
+    // non-canonical denial body; denial is now the canonical
+    // COMMERCIAL_ACCESS_DENIED contract emitted by the shared middleware.
+    //
+    // `tier` is still resolved below, but ONLY as business logic for the history
+    // window — never as an access decision.
     const rawTier = req.user?.tier;
     const tier = isValidTier(rawTier) ? rawTier : 'starter';
-    if (!meetsTier(req, 'core')) {
-      res.status(403).json({
-        error: 'TIER_INSUFFICIENT',
-        required: 'core',
-        current: tier,
-      });
-      return;
-    }
 
     const preset = req.query.preset as FT2DateRangePreset | undefined;
     const period = preset

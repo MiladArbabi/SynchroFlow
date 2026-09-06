@@ -769,11 +769,15 @@ router.delete(
 );
 
 // Inventory recount is Core inventory correctness, not an advanced analytics feature.
+// P0-A3-4: the commercial half is the canonical `inventory.core` capability
+// (module `products` + Core+), replacing the legacy raw tier gate.
+// requireFt2 and the per-route requireAction RBAC are unchanged — commercial
+// entitlement and role permission remain two separate, both-required axes.
 router.post(
   '/recount-tasks',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:create'),
   httpCreateRecountTask
 );
@@ -782,7 +786,7 @@ router.get(
   '/recount-tasks',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:read'),
   httpListRecountTasks
 );
@@ -791,7 +795,7 @@ router.get(
   '/recount-tasks/preview',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:read'),
   httpPreviewSuggestedBins
 );
@@ -800,7 +804,7 @@ router.get(
   '/recount-tasks/:taskId/lines',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:read'),
   httpGetRecountLines
 );
@@ -809,7 +813,7 @@ router.get(
   '/recount-tasks/:taskId/findings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:read'),
   httpListRecountFindings
 );
@@ -818,7 +822,7 @@ router.post(
   '/recount-tasks/:taskId/findings',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:count'),
   httpCreateRecountFinding
 );
@@ -827,7 +831,7 @@ router.post(
   '/recount-tasks/:taskId/claim',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:claim'),
   httpClaimRecountTask
 );
@@ -841,7 +845,7 @@ router.post(
   '/recount-tasks/:taskId/reassign',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:reassign'),
   httpReassignRecountTask
 );
@@ -850,7 +854,7 @@ router.post(
   '/recount-tasks/:taskId/lines/:lineId/count',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:count'),
   httpRecordRecountLine
 );
@@ -859,7 +863,7 @@ router.post(
   '/recount-tasks/:taskId/lines/:lineId/skip',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:count'),
   httpSkipRecountLine
 );
@@ -868,7 +872,7 @@ router.post(
   '/recount-tasks/:taskId/close',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:count'),
   httpCloseRecountTask
 );
@@ -877,7 +881,7 @@ router.post(
   '/recount-tasks/:taskId/lines/:lineId/review',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:review'),
   httpReviewRecountLine
 );
@@ -886,7 +890,7 @@ router.post(
   '/recount-tasks/:taskId/commit',
   authenticateToken,
   requireFt2,
-  requireTier('core'),
+  requireCapability('inventory.core'),
   requireAction('wms:recount:commit'),
   httpCommitRecountTask
 );

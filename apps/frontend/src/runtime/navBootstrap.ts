@@ -66,7 +66,18 @@ export function bootstrapNavGroups() {
     group: 'workspace',
     order: 30,
     icon: Box,
-    requiredModuleId: 'products',
+    // P0-A3-4: Inventory's commercial boundary is the canonical `inventory.core`
+    // capability (module `products` + Core+), replacing a raw requiredModuleId.
+    // That raw module gate was satisfiable by an ADDITIVE persisted `products`
+    // grant, which would have unlocked Inventory for a Starter shop; the
+    // capability keeps the tier wall.
+    //
+    // Standard children (Intelligence / Catalog / Costs / Data Quality) declare
+    // NO capability of their own and INHERIT this boundary — resolveNavVisibility
+    // only decides `if (capabilityId && context)`. Demand is the deliberate
+    // exception: it is not URL-nested under /inventory and is Growth-only, so it
+    // keeps demand.forecasting.
+    capabilityId: 'inventory.core',
     children: [
       { id: 'products-intelligence',  title: 'Intelligence',   path: '/inventory'                },
       { id: 'products-catalog',       title: 'Catalog',        path: '/inventory/catalog'        },

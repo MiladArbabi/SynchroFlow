@@ -102,7 +102,7 @@ const ALERT_ROUTE_MAP: Record<string, { route: string; label: string }> = {
   revenue_at_risk:         { route: '/overview',      label: 'Overview' },
   operational:             { route: '/orders',         label: 'Orders' },
   sla_breach:              { route: '/orders',         label: 'Orders' },
-  missing_cogs:            { route: '/products',       label: 'Products' },
+  missing_cogs:            { route: '/inventory/costs', label: 'Costs' },
 };
 
 const SNOOZE_OPTIONS = [

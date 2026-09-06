@@ -4,6 +4,7 @@ import { getProductsFt2 } from './products.ft2.controller.js';
 import { getProductsOperatorSummaryHandler } from './products.operator.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
+import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
 import { httpPatchVariantCost, httpGetVariantCosts, httpBulkUpdateVariantCosts } from './products.cost.controller.js';
 import { getProductsWmsReadinessHandler } from './products.wms-readiness.controller.js';
 import { getProductsCatalogHandler } from './products.catalog.controller.js';
@@ -14,28 +15,46 @@ const router = Router();
  * FT2 system observability snapshot.
  * Final path: GET /api/v1/modules/products/ft2
  */
-router.get('/ft2', authenticateToken, requireFt2, getProductsFt2);
+router.get('/ft2', authenticateToken, requireFt2, requireCapability('inventory.core'), getProductsFt2);
 
 /**
  * Operator summary — purpose-built actionable surface.
  * No FTEP constraints. Direct operator facts.
  * Final path: GET /api/v1/modules/products/operator-summary
  */
-router.get('/operator-summary', authenticateToken, getProductsOperatorSummaryHandler);
+router.get(
+  '/operator-summary',
+  authenticateToken,
+  requireCapability('inventory.core'),
+  getProductsOperatorSummaryHandler
+);
 
 /**
  * WMS Readiness — warehouse operability signals.
  * All tiers — pickability is a core WMS-Lite feature.
  * Final path: GET /api/v1/modules/products/wms-readiness
  */
-router.get('/wms-readiness', authenticateToken, getProductsWmsReadinessHandler);
+// P0-A3-4 WMS EXCEPTION: readiness is warehouse EXECUTION, not Inventory
+// intelligence. It resolves `warehouse.operations` (Starter+), NOT
+// `inventory.core` (Core+), so a Starter shop with canonical WMS access keeps it.
+router.get(
+  '/wms-readiness',
+  authenticateToken,
+  requireCapability('warehouse.operations'),
+  getProductsWmsReadinessHandler
+);
 
 /**
  * Catalog list — per-variant list with image_url, titles, sku, stock.
  * Used by ProductsCatalogPage image grid.
  * Final path: GET /api/v1/modules/products/catalog
  */
-router.get('/catalog', authenticateToken, getProductsCatalogHandler);
+router.get(
+  '/catalog',
+  authenticateToken,
+  requireCapability('inventory.core'),
+  getProductsCatalogHandler
+);
 
 /**
  * Variant cost entry — updates unit_cost and backfills unfulfilled order revenue units.
@@ -46,6 +65,7 @@ router.patch(
   '/variants/:variantId/cost',
   authenticateToken,
   requireFt2,
+  requireCapability('inventory.core'),
   httpPatchVariantCost
 );
 
@@ -58,6 +78,7 @@ router.get(
   '/variants/costs',
   authenticateToken,
   requireFt2,
+  requireCapability('inventory.core'),
   httpGetVariantCosts
 );
 
@@ -69,6 +90,7 @@ router.post(
   '/variants/costs/bulk',
   authenticateToken,
   requireFt2,
+  requireCapability('inventory.core'),
   httpBulkUpdateVariantCosts
 );
 

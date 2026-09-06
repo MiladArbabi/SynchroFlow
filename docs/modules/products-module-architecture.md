@@ -39,7 +39,15 @@ The Products module is the catalog intelligence and warehouse operability surfac
 **Module ID:** `products`  
 **Nav group:** `catalog` (order: 10)  
 **Base route:** `/products`  
-**Entitlement:** `requiredModuleId: 'products'` — no tier gate on the module itself; individual signals may be growth-gated
+**Entitlement:** canonical capability **`inventory.core`** = module `products` +
+`minimumTier: 'core'` — Starter DENY, Core/Growth/Scale ALLOW. Individual signals
+may still be growth-gated on top of that.
+
+> **SUPERSEDED 2026-09-06 by `P0-A3-4`.** This previously read
+> *"`requiredModuleId: 'products'` — no tier gate on the module itself"*. That raw
+> module gate was satisfiable by an additive persisted `products` grant, which
+> would unlock Inventory for a Starter shop; `inventory.core` keeps the tier wall
+> (`TIER_TOO_LOW`). Canonical record: `monetization_billing_playbook.md` §34.
 
 ---
 

@@ -322,6 +322,17 @@ Verified on 2026-08-23:
 
 ## Counting is a Core+ capability — RECOUNT-TIER-CONFLICT-97, 2026-08-23
 
+> **Mechanism superseded 2026-09-06 by `P0-A3-4`; the PRODUCT decision below is
+> unchanged.** Counting is still Core+ — that reasoning stands and is not
+> re-litigated. What changed is HOW it is enforced: all **13** recount routes moved
+> from a raw `requireTier('core')` gate to the canonical capability
+> **`inventory.core`** (module `products` + Core+). Read every
+> "`requireTier('core')` boundary" below as "the `inventory.core` capability".
+>
+> `requireFt2` and every `requireAction('wms:recount:*')` RBAC check are unchanged
+> — commercial entitlement and role permission remain separate, both-required axes.
+> Canonical record: `monetization_billing_playbook.md` §34.
+
 `POST /recount-tasks` and `GET /recount-tasks` are gated
 `requireTier('core')`, one tier above every other WMS route in
 `wms.routes.ts` (all `starter`) and above all five `wms.*` keys in the

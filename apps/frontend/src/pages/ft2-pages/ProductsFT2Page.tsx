@@ -15,6 +15,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
+import { CommercialGate } from '../../components/CommercialGate';
 import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
 import type { FT2DateRange } from '@lasyncro/ui-ft2';
 import { useProductsFt2Snapshot } from '../products/useProductsFt2Snapshot';
@@ -44,8 +45,16 @@ export default function ProductsFT2Page() {
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
 
+  // P0-A3-4: the Inventory management subtree is owned by `inventory.core`.
+  // LifecycleRouteHost mounts this component at `/inventory/*`, so ONE gate here
+  // covers /inventory, /inventory/catalog, /inventory/costs and
+  // /inventory/data-quality — a direct URL resolves the same AccessDecision as a
+  // nav/tab click. Nav presentation is not a security boundary.
+  //
+  // Demand is unaffected: it is not routed through this subtree and keeps its own
+  // demand.forecasting decision.
   return (
-    <>
+    <CommercialGate capabilityId="inventory.core" featureName="Inventory">
       <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
 
       <Routes>
@@ -80,6 +89,6 @@ export default function ProductsFT2Page() {
         onClose={() => setExportDrawerOpen(false)}
         reportIds={['products']}
       />
-    </>
+    </CommercialGate>
   );
 }
