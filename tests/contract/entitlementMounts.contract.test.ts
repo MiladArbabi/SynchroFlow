@@ -10,7 +10,17 @@ type RouteRegistration = {
 
 const ROUTES_ROOT = path.join(process.cwd(), 'apps/backend/src/api');
 const ROUTER_CALL = /router\.(get|post|patch|put|delete)\s*\(/g;
-const ENTITLEMENT_MARKERS = ['requireTier', 'requireAction', 'tierHasFlag'];
+// P0-A3-4: `requireCapability` is the CANONICAL commercial marker — the shared
+// capability gate that replaced raw tier checks. Without it here the parser read
+// a correctly-gated canonical chain as [], i.e. "no entitlement middleware at
+// all", which is the opposite of the truth. `requireTier`/`tierHasFlag` remain
+// recognised while legacy gates still exist elsewhere.
+const ENTITLEMENT_MARKERS = [
+  'requireCapability',
+  'requireTier',
+  'requireAction',
+  'tierHasFlag',
+];
 
 function listRouteFiles(dir: string): string[] {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -172,19 +182,39 @@ describe('CONTRACT-ENT-MOUNT-02 entitlement mount consistency', () => {
 
     console.log('CONTRACT-ENT-MOUNT-02_DUPLICATES', JSON.stringify(duplicateSet, null, 2));
 
+    // ------------------------------------------------------------------
+    // Products operator-summary is mounted behind BOTH aliases. What matters
+    // is (a) both owner files still mount it and (b) each does so behind the
+    // canonical commercial capability — never WHERE in the file that happens.
+    //
+    // The previous version pinned `line: 28` / `line: 24`. Those numbers are
+    // not contractual: any comment or import edit above the route moved them,
+    // so the assertion failed on legitimate source changes while proving
+    // nothing about commercial policy. Ownership + chain content are the real
+    // invariant, and they are asserted directly below.
+    // ------------------------------------------------------------------
     const productsSummaryEntries = byHandler.get('getProductsOperatorSummaryHandler') ?? [];
-    expect(productsSummaryEntries).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          file: 'apps/backend/src/api/products/products.routes.ts',
-          line: 28,
-        }),
-        expect.objectContaining({
-          file: 'apps/backend/src/api/products/products.ft2.routes.ts',
-          line: 24,
-        }),
-      ])
+
+    expect(productsSummaryEntries.map((entry) => entry.file).sort()).toEqual([
+      'apps/backend/src/api/products/products.ft2.routes.ts',
+      'apps/backend/src/api/products/products.routes.ts',
+    ]);
+
+    console.log(
+      'CONTRACT-ENT-MOUNT-02_PRODUCTS_SUMMARY',
+      JSON.stringify(productsSummaryEntries, null, 2)
     );
+
+    // Every mount of this handler must carry the canonical Inventory capability.
+    // Asserted per entry so a failure names the offending file.
+    for (const entry of productsSummaryEntries) {
+      expect({
+        file: entry.file,
+        hasInventoryCore: entry.middlewareChain.some((middleware) =>
+          /requireCapability\(\s*'inventory\.core'\s*\)/.test(middleware)
+        ),
+      }).toEqual({ file: entry.file, hasInventoryCore: true });
+    }
 
     const violations = duplicateSet.filter(({ entries }) => {
       const uniqueChains = new Set(entries.map((entry) => JSON.stringify(entry.middlewareChain)));
