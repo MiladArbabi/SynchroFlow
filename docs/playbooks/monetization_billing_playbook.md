@@ -2075,8 +2075,9 @@ Returns route subtree, and `useReturnsCorrelation(enabled)` acquisition gating)
 — **IMPLEMENTED + VERIFIED and DEPLOYED; PRODUCTION CERTIFICATION BLOCKED /
 PENDING on `RETURNS-SCHEMA-DRIFT-01`** — a separate pre-existing production
 schema drift on `refund_execution_line_items` whose forward repair (`0165`) is
-implemented and locally verified but not yet committed or deployed (see
-"### P0-A3-3"). Remaining
+implemented and verified; `0165` has since shipped, but a SECOND drift on the
+same table (`RETURNS-SCHEMA-DRIFT-02`, repair `0166`) is verified locally and not
+yet deployed, so certification stays blocked (see "### P0-A3-3"). Remaining
 **P0-A3** scope — the
 other unmigrated backend route families, bespoke-grant backend enforcement,
 the sole remaining deferred private frontend `TIER_ORDER` residual
@@ -3477,18 +3478,45 @@ is kept as the record of that moment.
 >
 > A forward repair migration
 > (`20260828120000_0165_repair_refund_execution_line_item_decision_columns`,
-> marker `RETURNS-SCHEMA-DRIFT-01`) is **implemented and locally verified** —
-> 11/11 targeted and 21/21 combined integration PASS, disposable DB
-> created → migrated → runtime OK → dropped with `ORPHAN_COUNT=0`. It has **not**
-> been committed, deployed, or rehearsed against `prod_scratch`, and **the
-> production schema is not repaired yet.**
+> marker `RETURNS-SCHEMA-DRIFT-01`) was implemented and verified — 11/11 targeted
+> and 21/21 combined integration PASS, disposable DB
+> created → migrated → runtime OK → dropped with `ORPHAN_COUNT=0`.
 >
-> P0-A3-3 production certification remains **BLOCKED / PENDING** until `0165` is
-> committed, deployed, the production migration is confirmed applied, and the
-> authenticated Returns triad is re-run successfully against production.
+> **Updated 2026-09-06.** `0165` has since shipped: its backend production repair
+> and certification stand, and the five decision columns are present in
+> production. Certification is nonetheless still **BLOCKED / PENDING**, now on a
+> SECOND drift on the same table.
 >
-> Full record: `docs/blueprints/ReturnsResolutionModule.md` §12 and
-> `docs/playbooks/migration_drift_playbook.md` (2026-09-05 entry).
+> **`RETURNS-SCHEMA-DRIFT-02`** — same `0008`-amended-after-prod root cause,
+> different columns: production had `lasyncro_refund_execution_id` and
+> `refunded_amount` as NOT NULL (canonical: nullable), `created_at` nullable with
+> no default (canonical: NOT NULL DEFAULT now()), and `source` **absent**
+> (canonical: `varchar(50) NOT NULL DEFAULT 'refund_webhook'`). This is the
+> scan-intake shape, so `createManualReturnLine()` cannot insert at all against
+> it. It surfaced when `seed_returns_test_data.sql` failed on the missing `source`
+> column; that seed transaction aborted and its `COMMIT` resolved to `ROLLBACK`,
+> so **no seed data persisted and production was not mutated**.
+>
+> Its forward repair
+> (`20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns`,
+> marker `RETURNS-SCHEMA-DRIFT-02`) is **implemented and verified locally** — the
+> combined targeted Returns suite is 3 suites / 31 tests / 0 failures, disposable
+> DB created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`. It has **not**
+> been committed, pushed, deployed, or rehearsed against `prod_scratch`, and
+> **the production schema is not repaired for those four properties yet.**
+>
+> Neither drift changes any tier, capability, route classification or gating
+> decision recorded in this section — both are SCHEMA defects, not
+> commercial-access defects.
+>
+> P0-A3-3 production certification remains **BLOCKED / PENDING** until `0166` is
+> committed, deployed and confirmed applied in production, and the authenticated
+> Returns triad is re-run successfully against production. The reviewer-seed /
+> visual Returns pass must be retried only AFTER that, since the seed cannot load
+> until `source` exists in production.
+>
+> Full record: `docs/blueprints/ReturnsResolutionModule.md` §12 and §13, and
+> `docs/playbooks/migration_drift_playbook.md` (2026-09-05 and 2026-09-06 entries).
 **The P0-A3 umbrella remains OPEN** — Inventory/Products, the remaining WMS
 commercial surfaces, `/recount*`, `/sender-addresses*`, bespoke persisted-grant
 backend enforcement, the `usePlanEntitlement.ts` `TIER_ORDER` residual, and

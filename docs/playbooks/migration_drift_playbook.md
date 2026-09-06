@@ -384,9 +384,121 @@ copied; canonical/fresh rerun safe; non-destructive `down()`; and the original
 `listItemsAwaitingDecision` read path executing again. Disposable DB
 created → migrated → runtime OK → dropped, `ORPHAN_COUNT=0`.
 
-**Status: implementation and local verification COMPLETE / PASS. NOT yet
-committed, deployed, or rehearsed against `prod_scratch`. Production is still
-running the drifted shape.**
+**Status at the time of writing: implementation and local verification
+COMPLETE / PASS, not yet committed or deployed.**
+
+> **Updated 2026-09-06.** `0165` has since shipped: its backend production repair
+> and certification stand. The five decision columns are present in production.
+> Its remaining *visual* Returns certification is still outstanding — it needs
+> reviewer seed data, which cannot be loaded until `RETURNS-SCHEMA-DRIFT-02`
+> (below) is deployed and the production schema is certified. Do not re-read the
+> paragraph above as a current statement.
+
+---
+
+### 2026-09-06 — `RETURNS-SCHEMA-DRIFT-02`: the same `0008` amendment, a second surface
+
+Same file, same root cause, a **different** set of columns from the -01 incident.
+`20260212162717_0008_refund_executions_sovereign` was amended after production
+had already applied it, so production retained an OLDER
+`refund_execution_line_items` shape while canonical `0008` had moved on to the
+scan-intake/runtime semantics.
+
+Confirmed production drift, before repair:
+
+| Column | Production | Canonical `0008` |
+|---|---|---|
+| `lasyncro_refund_execution_id` | `uuid NOT NULL` | `uuid NULL` |
+| `refunded_amount` | `numeric(14,2) NOT NULL` | `numeric(14,2) NULL` |
+| `created_at` | `timestamptz NULL`, no default | `timestamptz NOT NULL DEFAULT now()` |
+| `source` | **absent** | `varchar(50) NOT NULL DEFAULT 'refund_webhook'` |
+
+**Explicitly NOT part of -02** — all verified already correct in production and
+untouched by the repair: the PK; the execution-id, revenue-unit and
+`return_job_id` indexes; the execution/revenue-unit unique constraint; all three
+FKs; RLS enabled **and** forced; `refund_execution_line_items_tenant_isolation_policy`;
+and the five decision columns (`return_job_id`, `owner_decision`,
+`decision_notes`, `decision_by`, `decision_at`) already repaired by
+`RETURNS-SCHEMA-DRIFT-01` / `0165`.
+
+**Production data-risk audit before repair:** `refund_execution_line_items` row
+count **0**; `refunded_amount` precision/scale **14/2**; RLS enabled **true**;
+FORCE RLS **true**; tenant policy **present**. The zero row count is what made
+production's NOT NULL tightening possible in the first place, and it is why the
+missing `source` column can be added with a default at all.
+
+**How it was found.** `seed_returns_test_data.sql`, being loaded to produce
+reviewer seed data, failed on the missing `source` column. The seed transaction
+aborted and the final `COMMIT` resolved to `ROLLBACK`. **No production seed data
+persisted, and the failed seed mutated nothing** — it was a read of reality, not
+a write to it.
+
+Forward fix:
+`20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns`,
+marker `RETURNS-SCHEMA-DRIFT-02`. Neither `0008` nor `0165` was edited.
+
+`0166` behaviour, against the §5 checklist:
+
+- **validates live column types BEFORE any ALTER** — `uuid`, `numeric(14,2)`,
+  `timestamptz`. An incompatible type fails closed rather than coercing or
+  recreating a production column;
+- `DROP NOT NULL` on `lasyncro_refund_execution_id` and `refunded_amount`
+  (no-op when already nullable, so safe on fresh installs);
+- `created_at` — counts NULLs first and **fails closed** if any exist rather than
+  inventing timestamps for historical rows, then `SET DEFAULT now()` and
+  `SET NOT NULL`;
+- `source` — absent + zero rows ⇒ add `varchar(50) NOT NULL DEFAULT 'refund_webhook'`;
+  absent + existing rows ⇒ **fail closed**, because a defaulted NOT NULL add would
+  fabricate `'refund_webhook'` provenance for lines that may have been
+  scan-intake; already present ⇒ validate `varchar(50)` compatibility, then
+  converge default and nullability only, never replacing an incompatible
+  definition;
+- **preserves** every index, constraint, FK, RLS setting and policy — nothing is
+  dropped or recreated;
+- validates the final canonical shape and throws rather than leaving a
+  half-repaired schema;
+- **idempotent** — exact drifted shape repairs, canonical/fresh DB is a no-op,
+  `up()` twice is safe.
+
+`down()` is intentionally a **no-op**. These nullability settings, defaults and
+the `source` column are canonical `0008` structures `0166` only RESTORED, not
+structures it introduced. Reverting them would deliberately reintroduce a
+known-invalid production schema — breaking `createManualReturnLine()` again and
+dropping the provenance column.
+
+Permanent regression contract:
+`tests/integration/returns/returns-schema-drift-02.test.ts`, proving exact
+production drift → canonical repair, scan-intake runtime insert semantics
+(NULL execution id and amount accepted; `source` defaults to `'refund_webhook'`;
+`created_at` non-null), canonical fresh-DB no-op, `up()` idempotency,
+preservation of indexes/constraints/FKs/RLS/policy compared by *definition*
+rather than generated name, and non-destructive `down()`.
+
+Combined targeted Returns suite — **3 suites passed, 31 tests passed, 0 failed**
+(`returns-schema-drift-01`, `returns-schema-drift-02`,
+`returned-undelivered-contract`). Disposable DB
+CREATED → MIGRATING → MIGRATED → RUNTIME_OK → DROPPED, `ORPHAN_COUNT=0`.
+`git diff --check` PASS.
+
+#### Standing rule learned here — a stable issue marker is a SINGLE-OWNER identifier
+
+Both drift regression suites locate their repair migration by scanning migration
+sources for their issue marker. They originally also required the repair to sort
+*after every migration not carrying that marker* — which silently assumed the
+repair was the newest file in the repo. `0166` disproved it: the moment a newer
+unrelated migration landed, the `-01` suite found zero repairs and collapsed.
+
+Both suites now select **purely on marker presence** and assert that exactly one
+migration owns the marker; timestamps are deterministic display order only, never
+eligibility.
+
+Corollary, and a real hazard worth repeating: **never quote another issue's
+marker verbatim in migration source.** Doing so makes that file look like the
+other issue's repair and breaks its locator. Refer to sibling repairs by number.
+
+**Status: implementation and automated verification COMPLETE / PASS. `0166` is
+NOT yet committed, pushed, deployed, or rehearsed against `prod_scratch`.
+Production is still running the drifted shape for these four properties.**
 
 ---
 

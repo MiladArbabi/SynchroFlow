@@ -66,8 +66,21 @@ const now = new Date('2026-09-01T12:00:00.000Z');
 
 // ---------------------------------------------------------------------------
 // Repair-migration locator — stable marker, NOT a hard-coded number.
-// "Later than current history" is self-maintaining: the repair must sort after
-// every migration that does NOT carry the marker. Nothing here says 0165.
+//
+// A stable issue marker is a SINGLE-OWNER identifier: exactly one migration
+// carries it, and that migration is this issue's repair. The locator therefore
+// selects purely on marker presence, and the contract below asserts uniqueness.
+//
+// Ordering is deliberately NOT part of eligibility. An earlier version required
+// the repair to sort after every migration lacking the marker, which silently
+// assumed the repair was the newest file in the repo — so the moment ANY newer
+// unrelated migration landed, this locator found zero and the whole suite
+// collapsed. Migration 0166 exposed that. Timestamps are used for deterministic
+// ordering only.
+//
+// Corollary, and a real hazard: never quote ANOTHER issue's marker verbatim in
+// migration source. Doing so makes that file look like the other issue's repair
+// and breaks its locator. Refer to sibling repairs by number.
 // ---------------------------------------------------------------------------
 interface MigrationFile {
   file: string;
@@ -75,20 +88,15 @@ interface MigrationFile {
 }
 
 function findRepairMigrations(): MigrationFile[] {
-  const all: MigrationFile[] = fs
+  return fs
     .readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.ts'))
+    .filter((f) =>
+      fs.readFileSync(path.join(MIGRATIONS_DIR, f), 'utf8').includes(ISSUE_MARKER),
+    )
     .map((file) => ({ file, timestamp: file.split('_')[0] }))
+    // Deterministic order only — ordering is NEVER eligibility.
     .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-
-  const marked = all.filter((m) =>
-    fs.readFileSync(path.join(MIGRATIONS_DIR, m.file), 'utf8').includes(ISSUE_MARKER),
-  );
-  const latestUnmarked = all
-    .filter((m) => !marked.some((k) => k.file === m.file))
-    .reduce((max, m) => (m.timestamp > max ? m.timestamp : max), '');
-
-  return marked.filter((m) => m.timestamp > latestUnmarked);
 }
 
 const REPAIR_MIGRATIONS = findRepairMigrations();

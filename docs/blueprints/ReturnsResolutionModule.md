@@ -962,3 +962,140 @@ aligned to the current worktree packages. Those shadows are
 locally verified; it has not been committed, deployed, or rehearsed against
 `prod_scratch` per the drift playbook §4. Do not read this section as a claim
 that the production schema is repaired.
+
+> **Superseded 2026-09-06.** `0165` has since shipped — its backend production
+> repair and certification stand, and the five decision columns are present in
+> production. The paragraph above is retained as the record of this slice at DOC
+> time; it is no longer current.
+>
+> One item remains open for -01: its **visual** Returns certification still needs
+> reviewer seed data, and that seed cannot load until `RETURNS-SCHEMA-DRIFT-02`
+> (§13) is deployed and the production schema is certified. -01's backend repair
+> is NOT waiting on anything; only the visual pass is.
+
+---
+
+## 13. Session Log — 2026-09-06 (`RETURNS-SCHEMA-DRIFT-02` — scan-intake shape drift on `refund_execution_line_items`)
+
+**Canonical drift policy lives in `docs/playbooks/migration_drift_playbook.md`**
+(§1, §5, and the 2026-09-06 `RETURNS-SCHEMA-DRIFT-02` incident entry). This
+section records the Returns-specific facts only.
+
+### Distinct from RETURNS-SCHEMA-DRIFT-01
+
+Same table, same root cause, **different columns**. -01 (§12, migration `0165`)
+restored the five missing line-level *decision* columns. -02 is the *scan-intake*
+shape: nullability, defaults, and one absent provenance column. The two do not
+overlap, and -02 does not revisit anything -01 repaired.
+
+### Root cause
+
+`20260212162717_0008_refund_executions_sovereign` was amended after production
+had already applied it. Knex had it recorded as complete and never re-ran it, so
+production retained an older `refund_execution_line_items` shape while canonical
+`0008` had moved on to the scan-intake/runtime semantics. `0008` and `0165` were
+both left untouched — amending an already-applied migration cannot reach
+production.
+
+### Confirmed production drift, before repair
+
+| Column | Production | Canonical `0008` |
+|---|---|---|
+| `lasyncro_refund_execution_id` | `uuid NOT NULL` | `uuid NULL` |
+| `refunded_amount` | `numeric(14,2) NOT NULL` | `numeric(14,2) NULL` |
+| `created_at` | `timestamptz NULL`, no default | `timestamptz NOT NULL DEFAULT now()` |
+| `source` | **absent** | `varchar(50) NOT NULL DEFAULT 'refund_webhook'` |
+
+**Impact:** this is the scan-intake shape. `createManualReturnLine()` writes a
+line for a return job that has no refund yet — `lasyncro_refund_execution_id` and
+`refunded_amount` are NULL *by design*, and `source` distinguishes
+`'scan_intake_manual'` from `'refund_webhook'`. On the production shape that
+insert cannot succeed at all.
+
+### Already correct, and deliberately untouched
+
+The PK; the execution-id, revenue-unit and `return_job_id` indexes; the
+execution/revenue-unit unique constraint; all three FKs; RLS enabled **and**
+forced; `refund_execution_line_items_tenant_isolation_policy`; and the five
+decision columns already repaired by -01 / `0165`. The repair drops or recreates
+none of them.
+
+### Production data-risk audit
+
+`refund_execution_line_items` row count **0** · `refunded_amount` precision/scale
+**14/2** · RLS enabled **true** · FORCE RLS **true** · tenant policy **present**.
+The zero row count is both what allowed production's NOT NULL tightening in the
+first place and what makes adding `source` with a default safe.
+
+### How it surfaced
+
+`seed_returns_test_data.sql`, being loaded to produce reviewer seed data, failed
+on the missing `source` column. The seed transaction aborted and the final
+`COMMIT` resolved to `ROLLBACK`. **No production seed data persisted and the
+failed seed changed nothing in production** — it revealed the drift, it did not
+cause or mutate it.
+
+### Forward repair — `0166`
+
+`apps/backend/migrations/20260906120000_0166_repair_refund_execution_line_item_scan_intake_columns.ts`,
+marker `RETURNS-SCHEMA-DRIFT-02`.
+
+- validates live column types **before** any `ALTER` (`uuid`, `numeric(14,2)`,
+  `timestamptz`) and fails closed rather than coercing or recreating a column;
+- `DROP NOT NULL` on `lasyncro_refund_execution_id` and `refunded_amount`;
+- `created_at` — fails closed if any existing row is NULL (timestamps are never
+  invented), then `SET DEFAULT now()` and `SET NOT NULL`;
+- `source` — absent + zero rows ⇒ add `varchar(50) NOT NULL DEFAULT 'refund_webhook'`;
+  absent + existing rows ⇒ **fail closed**, rather than fabricating
+  `'refund_webhook'` provenance for lines that may have been scan-intake;
+  already present ⇒ validate `varchar(50)` compatibility, then converge default
+  and nullability only;
+- preserves all unrelated indexes, constraints, FKs, RLS state and policies;
+- validates the final canonical shape; idempotent (drifted → repaired,
+  canonical → no-op, `up()` twice safe);
+- `down()` intentionally **non-destructive / no-op** — these are canonical `0008`
+  structures `0166` only restored, and reverting them would reintroduce a
+  known-invalid production schema.
+
+### Regression contract
+
+`tests/integration/returns/returns-schema-drift-02.test.ts` permanently proves:
+exact production drift → canonical repair; scan-intake runtime insert semantics
+(NULL execution id and amount accepted, `source` resolving to `'refund_webhook'`,
+`created_at` non-null); canonical fresh-DB no-op; `up()` idempotency;
+preservation of indexes/constraints/FKs/RLS/policy; and non-destructive `down()`.
+
+**Locator correction applied to BOTH drift suites.** They now locate their repair
+migration solely by unique stable issue marker. The previous "repair must be
+newer than every unmarked migration" heuristic was removed because any later
+legitimate migration invalidated older repair tests — `0166` demonstrated this
+against the -01 suite. Ordering is now deterministic display only, never
+eligibility.
+
+### Verification
+
+Combined targeted Returns suite — **3 suites passed, 31 tests passed, 0 failed**
+(`returns-schema-drift-01`, `returns-schema-drift-02`,
+`returned-undelivered-contract`). Disposable DB
+CREATED → MIGRATING → MIGRATED → RUNTIME_OK → DROPPED, `ORPHAN_COUNT=0`. The
+development database was never used or mutated. `git diff --check` PASS.
+
+### Lifecycle
+
+    RETURNS-SCHEMA-DRIFT-02
+    - AUDIT: CLOSED / PASS
+    - WORKSHOP: CLOSED / PASS
+    - TEST STRATEGY: CLOSED / PASS
+    - RED: CLOSED / PROVEN
+    - IMPLEMENTATION: CLOSED / PASS
+    - AUTOMATED VERIFY: CLOSED / PASS
+    - DOC: CURRENT
+    - COMMIT / PUSH / CI / DEPLOY / PRODUCTION CERTIFICATION: PENDING
+
+**`0166` is not committed, pushed or deployed, and the production schema is NOT
+repaired for these four properties yet.** Do not read this section as a claim
+that it is.
+
+**Sequencing note.** -01's reviewer-seed / visual Returns certification must be
+retried only AFTER `0166` is deployed and the production schema is certified —
+`seed_returns_test_data.sql` cannot load until `source` exists in production.
