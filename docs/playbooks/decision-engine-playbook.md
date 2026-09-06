@@ -470,3 +470,137 @@ multi-variant inventory-block fixture exists (see
 verification-fixture gap, **not** an untested product contract:
 INV-RED-08 (multiple blocked variants independently actionable) is
 permanently protected by the automated frontend test.
+
+---
+
+## 8. Session 7 (2026-09-05) — ORD-DECISION-01 Slice 3: Fulfillment SLA
+
+**Product contract:** Fulfillment SLA is an urgency/prioritization signal, not
+an operational blocker and not an independently resolvable Decision Engine
+condition.
+
+The canonical breach truth remains
+`order_age_snapshot.is_shipping_sla_breached`, derived from paid age against
+the merchant-configured `fulfillment_sla_hours`, and only while the order is
+unfulfilled.
+
+### What must NOT happen
+
+`operational/sla_breach` constraints must not be created or resurrected.
+
+An SLA breach alone must never:
+
+- create an `order_constraints` blocker;
+- generate a synthetic `Resolve SLA` action;
+- auto-release an order;
+- create a pick batch;
+- advance fulfillment state;
+- override a real inventory, customer, or Returns blocker.
+
+If another real blocker is active, that blocker continues to own the merchant
+action. Verified live with order `#900016`: the order was SLA-breached and had
+`operational:returned_undelivered`; Order Flow kept it in Blocked Orders,
+displayed `Package returned`, and retained the Returns-owned `Review return`
+action.
+
+### Order Pool contract
+
+An otherwise releasable SLA-breached order remains in the normal Order Pool.
+
+Release remains explicitly merchant-controlled through the existing batch
+release flow. SLA changes urgency/order only; it does not cause release.
+
+Server-side Order Pool and release selection preserve:
+
+```text
+is_priority_flagged DESC
+→ is_shipping_sla_breached DESC
+→ order_created_at ASC
+```
+
+Live verification proved that selecting one SLA-breached order and clicking
+`Release 1 order` created exactly one batch, removed only that selected order
+from the pool, and left the remaining SLA-breached orders unreleased.
+
+### Frontend ordering correction
+
+Live UI verification exposed a separate wiring defect: `OrderFlowPage` took
+the correctly ranked backend rows and re-sorted them only by the operator's
+selected table field, allowing Age/Value/Lines/Units sorting to destroy the
+server's Priority/SLA ordering.
+
+The frontend now preserves:
+
+```text
+Priority
+→ SLA breached
+→ operator-selected sort field/direction
+```
+
+Operator sorting therefore applies only within the same Priority/SLA tier.
+
+The extracted pure comparator lives in:
+
+```text
+apps/frontend/src/pages/ft2-pages/orderPoolSorting.ts
+```
+
+and is consumed by `OrderFlowPage.tsx`.
+
+### Permanent regression protection
+
+Backend integration:
+
+```text
+tests/integration/wms/sla-decision-contract.test.ts
+```
+
+protects:
+
+- `SLA-DEC-01` — SLA breach creates no `operational/sla_breach` constraint;
+- `SLA-DEC-02` — SLA-breached releasable orders receive release priority;
+- `SLA-DEC-03` — SLA alone causes zero automatic release side effects;
+- `SLA-DEC-04` — real blockers remain authoritative when SLA is also breached;
+- `SLA-DEC-05` — fulfilled orders leave the active Fulfillment-SLA population.
+
+Frontend unit protection:
+
+```text
+tests/unit/frontend/orderPoolSorting.test.ts
+```
+
+protects:
+
+- `SLA-DEC-02-UI-A` — SLA-only remains ahead of calm orders regardless of
+  operator sort direction;
+- `SLA-DEC-02-UI-B` — Priority outranks SLA-only;
+- `SLA-DEC-02-UI-C` — operator sorting still works within an urgency tier.
+
+Automated verification: backend SLA contract suite `5/5` passed; frontend
+ordering suite `3/3` passed; Jest ownership remained `UNOWNED=0`,
+`MULTI_OWNED=0`; touched-surface TypeScript error count was zero.
+
+### Live verification boundary
+
+Browser verification covered:
+
+- SLA-only orders remain in the normal Order Pool;
+- SLA alone does not appear as a blocker;
+- manual release creates the batch only after explicit merchant action;
+- Returns remains authoritative when SLA and `returned_undelivered` coexist;
+- frontend Priority → SLA → operator-sort ordering is preserved visually.
+
+For the decisive ordering browser check, order `#900017` was temporarily
+given an append-only higher-version age snapshot with
+`is_shipping_sla_breached=false`. On the real development runtime
+(`localhost:5173`), the browser showed `#900017` without an SLA badge and kept
+it below all SLA-breached orders under Age-ascending sorting, even though
+`#900017` was the oldest order. This discriminates the corrected comparator
+from the former frontend behavior, which allowed operator sorting to override
+SLA priority.
+
+The fixture was then restored append-only at aggregate version `12` with
+`is_shipping_sla_breached=true`; no snapshot row was updated or deleted.
+
+**ORD-DECISION-01 Slice 3 — Fulfillment SLA: IMPLEMENTED / AUTOMATED VERIFIED /
+LIVE VERIFIED.**

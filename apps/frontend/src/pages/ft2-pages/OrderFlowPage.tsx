@@ -69,6 +69,7 @@ import {
   type SkippedReleaseOrder,
   NewlyBlockedOrder,
 } from '../wms/useOrderPool';
+import { comparePoolOrders, type PoolSortField } from './orderPoolSorting';
 import { useCancelBatch, usePickBatches } from '../wms/usePickBatches';
 import { useWmsOperators } from '../wms/useWmsOperators';
 import { useLiveCapacity } from '../wms/useWmsAnalytics';
@@ -217,7 +218,6 @@ export default function OrderFlowPage() {
    * exposed as filter toggles instead (statusFilter below), consistent
    * with how they already render as inline badges, not sortable data.
    */
-  type PoolSortField = 'age' | 'value' | 'lines' | 'units';
   const [sortField, setSortField] = useState<PoolSortField>('age');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [statusFilter, setStatusFilter] = useState<Set<'priority' | 'sla_breached'>>(new Set());
@@ -290,27 +290,13 @@ export default function OrderFlowPage() {
     [poolOrders, cptFilter, poolBucket, urgencyFilter, statusFilter, poolSearch],
   );
 
-  const sortedPool = useMemo(() => {
-    const sorted = [...filteredPool].sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case 'age':
-          cmp = new Date(a.order_created_at).getTime() - new Date(b.order_created_at).getTime();
-          break;
-        case 'value':
-          cmp = Number(a.total_price) - Number(b.total_price);
-          break;
-        case 'lines':
-          cmp = a.line_item_count - b.line_item_count;
-          break;
-        case 'units':
-          cmp = a.unit_count - b.unit_count;
-          break;
-      }
-      return sortDir === 'asc' ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredPool, sortField, sortDir]);
+  // The operator's Age/Value/Lines/Units choice is a tiebreaker INSIDE a
+  // Priority/SLA tier, never a replacement for the backend's urgency
+  // ranking — see orderPoolSorting.ts.
+  const sortedPool = useMemo(
+    () => [...filteredPool].sort(comparePoolOrders(sortField, sortDir)),
+    [filteredPool, sortField, sortDir],
+  );
 
   // OF-03: pagination — was fully unbounded (visiblePool.map with no
   // slice), fine at today's low order volume but breaks at real scale.
