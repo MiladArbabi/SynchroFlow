@@ -4270,3 +4270,75 @@ commit, push, CI, and deploy.
 
 Final browser certification of the revised modal and direct-route locked state
 remains pending after commit/deploy.
+
+### COMM-TEASER-BENEFITS-02 — standardized Growth teaser benefits — 2026-09-07
+
+**Problem**
+
+The shared frontend commercial-presentation registry existed, but only
+`purchasing.sourcing` had feature-specific benefit copy. Other Growth-gated
+module teasers therefore fell back to generic upgrade messaging, and direct
+`CommercialGate` routes did not consume the shared presentation registry.
+
+**Scope**
+
+Standardized the five module-level Growth teaser capabilities:
+
+- `demand.forecasting` → **Demand**
+- `warehouse.floor_planning` → **Floor Planning**
+- `warehouse.analytics` → **Warehouse Analytics**
+- `returns.analysis` → **Supplier Ratings**
+- `purchasing.sourcing` → **Sourcing**
+
+`overview.live_map`, `exports.column_selection`, and legacy `alerts.rules`
+remain outside this slice because they use different in-page/component or
+legacy gating surfaces.
+
+**Implementation**
+
+- Expanded `apps/frontend/src/commercial/capabilityPresentation.ts` with the
+  approved feature-specific benefits for Demand, Floor Planning, Warehouse
+  Analytics, and Supplier Ratings.
+- Preserved the existing Sourcing definition unchanged.
+- `CommercialGate` now resolves presentation metadata from the same frontend
+  registry used by Sidenav and ModuleTabBar.
+- Explicit contextual names remain authoritative:
+  - matching explicit feature name → registry benefits may be inherited;
+  - differing explicit feature name → explicit context is preserved and
+    registry benefits are not inherited.
+- This prevents `returns.analysis` Supplier Ratings benefits from leaking into
+  the separate `Returns Analysis` context.
+- Canonical `AccessDecision`, tier policy, billing, pricing, entitlements,
+  navigation structure, backend, DB, and UpgradePrompt visual design were not
+  changed.
+
+**Regression contracts**
+
+- exact canonical presentation definitions for all five capabilities;
+- approved benefit strings have one production owner:
+  `apps/frontend/src/commercial/capabilityPresentation.ts`;
+- denied Demand direct gate inherits registry name + benefits while preserving
+  the canonical `AccessDecision`;
+- explicit Supplier Ratings inherits registry benefits;
+- explicit Returns Analysis does not inherit Supplier Ratings benefits;
+- Sidenav Warehouse Analytics receives its approved rich presentation;
+- a capability without presentation metadata (`warehouse.problem_center`)
+  still falls back to its generic title with no stale benefits after another
+  rich teaser was opened;
+- existing Sourcing Sidenav / ModuleTab / direct-gate contracts remain intact.
+
+**Evidence**
+
+- RED before implementation: 2 targeted suites, 4 failed / 4 passed.
+- First GREEN: 2 targeted suites, 8 / 8 tests passed.
+- Broader regression initially exposed one stale pre-change Warehouse Analytics
+  assertion; production behavior was correct and the regression contract was
+  updated to the newly approved presentation while preserving a separate
+  generic-fallback test.
+- Final targeted commercial regression:
+  **5 suites passed, 16 / 16 tests passed**.
+- Frontend TypeScript baseline:
+  **19 existing errors total, 0 errors in touched target files/tests**.
+- `git diff --check`: pass.
+- No migration, DB fixture, worker, API, provider, or generated-artifact changes.
+- Live browser certification remains required after deployment.

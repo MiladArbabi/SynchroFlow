@@ -23,6 +23,7 @@
 import React from 'react';
 import { useCommercialAccess } from 'runtime/commercialContext';
 import { UpgradePrompt } from './UpgradePrompt';
+import { getCapabilityPresentation } from '../commercial/capabilityPresentation';
 import type { CapabilityId } from '@lasyncro/commercial-policy';
 
 export interface CommercialGateProps {
@@ -55,11 +56,18 @@ export const CommercialGate: React.FC<CommercialGateProps> = ({
     return <>{children}</>;
   }
 
+  const presentation = getCapabilityPresentation(capabilityId);
+  const resolvedFeatureName = featureName ?? presentation?.featureName;
+  const resolvedBenefits = featureName === undefined || featureName === presentation?.featureName
+    ? presentation?.benefits
+    : undefined;
+
   return (
     <UpgradePrompt
       decision={decision}
       mode={mode}
-      featureName={featureName}
+      featureName={resolvedFeatureName}
+      benefits={resolvedBenefits}
       featureBlurb={featureBlurb}
       open
     >

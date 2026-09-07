@@ -16,6 +16,10 @@ const mockDecide = (capabilityId: CapabilityId) => evaluateAccess(
 );
 const mockSourcingDecision = mockDecide('purchasing.sourcing');
 const mockAnalyticsDecision = mockDecide('warehouse.analytics');
+const mockProblemCenterDecision = evaluateAccess(
+  CAPABILITY_REQUIREMENTS['warehouse.problem_center'],
+  { tier: 'starter', modules: new Set(modulesForTier('starter')), flags: new Set(flagsForTier('starter')) },
+);
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -76,6 +80,10 @@ beforeEach(() => {
         id: 'analytics', title: 'Warehouse analytics', path: '/wms/analytics',
         capabilityId: 'warehouse.analytics', disabled: true,
         decision: mockAnalyticsDecision,
+      }, {
+        id: 'problem-center', title: 'Problem Center', path: '/problem-center',
+        capabilityId: 'warehouse.problem_center', disabled: !mockProblemCenterDecision.allowed,
+        decision: mockProblemCenterDecision,
       }],
     }],
   }];
@@ -111,15 +119,34 @@ it('locked Sourcing Sidenav matches the tab presentation and preserves the canon
   expect(sidenavPrompt.benefits).toEqual(tabPrompt.benefits);
 });
 
-it('a capability without presentation metadata retains its generic prompt after Sourcing', () => {
+it('Warehouse Analytics uses its approved rich presentation after Sourcing without changing the canonical decision', () => {
   renderSidenav();
   fireEvent.click(screen.getByText('Sourcing'));
   fireEvent.click(screen.getByText('Warehouse analytics'));
   const prompt = latestPrompt();
 
-  expect(prompt.featureName).toBe('Warehouse analytics');
-  expect(prompt.benefits).toBeUndefined();
+  expect(prompt.featureName).toBe('Warehouse Analytics');
+  expect(prompt.benefits).toEqual([
+    'Track operator pace and accuracy across pick and pack',
+    'Monitor pipeline velocity, throughput, and aging work in progress',
+    'Identify exception-heavy operators and SKUs',
+    'Understand warehouse cost and capacity signals',
+  ]);
   expect(prompt.decision).toBe(mockAnalyticsDecision);
+  expect(prompt.requiredTier).toBeUndefined();
+  expect(mockNavigate).not.toHaveBeenCalled();
+});
+
+it('Problem Center without presentation metadata retains its generic prompt after Sourcing', () => {
+  expect(mockProblemCenterDecision.allowed).toBe(false);
+  renderSidenav();
+  fireEvent.click(screen.getByText('Sourcing'));
+  fireEvent.click(screen.getByText('Problem Center'));
+  const prompt = latestPrompt();
+
+  expect(prompt.featureName).toBe('Problem Center');
+  expect(prompt.benefits).toBeUndefined();
+  expect(prompt.decision).toBe(mockProblemCenterDecision);
   expect(prompt.requiredTier).toBeUndefined();
   expect(mockNavigate).not.toHaveBeenCalled();
 });

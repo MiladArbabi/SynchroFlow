@@ -20,12 +20,20 @@
 
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import { CAPABILITY_REQUIREMENTS, evaluateAccess, modulesForTier, flagsForTier } from '@lasyncro/commercial-policy';
+import type { AccessDecision } from '@lasyncro/commercial-policy';
+import type { UpgradePromptProps } from 'components/UpgradePrompt';
+
+const mockPromptProps = jest.fn();
 
 jest.mock('hooks/useAppTheme', () => ({ useAppTheme: () => ({}) }));
 // Neutralise the modal branch — not under test here.
 jest.mock('components/UpgradePrompt', () => ({
   __esModule: true,
-  UpgradePrompt: () => <div data-testid="upgrade-prompt" />,
+  UpgradePrompt: (props: UpgradePromptProps) => {
+    mockPromptProps(props);
+    return <div data-testid="upgrade-prompt" />;
+  },
   default: () => <div data-testid="upgrade-prompt" />,
 }));
 
@@ -34,6 +42,7 @@ jest.mock('components/UpgradePrompt', () => ({
 // Registered BEFORE the component probe below so it is in effect for
 // CommercialGate's own require() of its decision source.
 let mockAllowed = true;
+let mockDecision: AccessDecision | undefined;
 for (const rel of [
   'commercial/commercialContext',
   'commercial/commercialAccess',
@@ -45,7 +54,7 @@ for (const rel of [
     jest.mock(rel, () => ({
       __esModule: true,
       useCommercialAccess: () => ({
-        decide: () => ({ allowed: mockAllowed, reason: mockAllowed ? 'ALLOWED' : 'TIER_TOO_LOW', requiredTier: 'growth' }),
+        decide: () => mockDecision ?? ({ allowed: mockAllowed, reason: mockAllowed ? 'ALLOWED' : 'TIER_TOO_LOW', requiredTier: 'growth' }),
         isResolved: true,
       }),
       buildCommercialContext: () => ({ tier: 'starter', modules: new Set<string>(), flags: new Set<string>() }),
@@ -104,5 +113,82 @@ describe('B9 — CommercialGate route gate', () => {
     );
     expect(screen.queryByTestId('protected')).toBeNull();
     expect(screen.queryByTestId('upgrade-prompt')).not.toBeNull();
+  });
+});
+
+describe('COMM-TEASER-BENEFITS-02 — CommercialGate presentation inheritance', () => {
+  beforeEach(() => {
+    mockPromptProps.mockClear();
+    mockDecision = undefined;
+  });
+
+  afterEach(() => {
+    mockDecision = undefined;
+  });
+
+  it('denied Demand inherits the registry name and benefits and forwards the canonical AccessDecision', () => {
+    READY();
+    mockDecision = evaluateAccess(CAPABILITY_REQUIREMENTS['demand.forecasting'], {
+      tier: 'core', modules: new Set(modulesForTier('core')), flags: new Set(flagsForTier('core')),
+    });
+    expect(mockDecision.allowed).toBe(false);
+    render(
+      <CommercialGate capabilityId="demand.forecasting">
+        <div data-testid="protected">ok</div>
+      </CommercialGate>,
+    );
+    const props: UpgradePromptProps = mockPromptProps.mock.calls[mockPromptProps.mock.calls.length - 1][0];
+    expect(props.decision).toBe(mockDecision);
+    expect(screen.queryByTestId('protected')).toBeNull();
+    expect({ featureName: props.featureName, benefits: props.benefits }).toEqual({
+      featureName: 'Demand',
+      benefits: [
+        'Identify SKUs at critical stockout risk',
+        'Prioritize reorders using recent sales velocity and days of stock',
+        'See suggested reorder quantities for urgent products',
+        'Move from demand signals directly into purchasing and warehouse context',
+      ],
+    });
+  });
+
+  it('denied returns.analysis with explicit Supplier Ratings inherits the registry benefits', () => {
+    READY();
+    mockDecision = evaluateAccess(CAPABILITY_REQUIREMENTS['returns.analysis'], {
+      tier: 'core', modules: new Set(modulesForTier('core')), flags: new Set(flagsForTier('core')),
+    });
+    expect(mockDecision.allowed).toBe(false);
+    render(
+      <CommercialGate capabilityId="returns.analysis" featureName="Supplier Ratings">
+        <div data-testid="protected">ok</div>
+      </CommercialGate>,
+    );
+    const props: UpgradePromptProps = mockPromptProps.mock.calls[mockPromptProps.mock.calls.length - 1][0];
+    expect(props.decision).toBe(mockDecision);
+    expect(screen.queryByTestId('protected')).toBeNull();
+    expect(props.featureName).toBe('Supplier Ratings');
+    expect(props.benefits).toEqual([
+      'Compare suppliers by return rate across received stock',
+      'Spot suspect batches with unusually high return rates',
+      'See returned vs received units and affected SKUs',
+      'Identify suppliers that may need a credit or quality review',
+    ]);
+  });
+
+  it('denied returns.analysis with explicit Returns Analysis preserves that name without Supplier Ratings benefits', () => {
+    READY();
+    mockDecision = evaluateAccess(CAPABILITY_REQUIREMENTS['returns.analysis'], {
+      tier: 'core', modules: new Set(modulesForTier('core')), flags: new Set(flagsForTier('core')),
+    });
+    expect(mockDecision.allowed).toBe(false);
+    render(
+      <CommercialGate capabilityId="returns.analysis" featureName="Returns Analysis">
+        <div data-testid="protected">ok</div>
+      </CommercialGate>,
+    );
+    const props: UpgradePromptProps = mockPromptProps.mock.calls[mockPromptProps.mock.calls.length - 1][0];
+    expect(props.decision).toBe(mockDecision);
+    expect(screen.queryByTestId('protected')).toBeNull();
+    expect(props.featureName).toBe('Returns Analysis');
+    expect(props.benefits).toBeUndefined();
   });
 });
