@@ -210,8 +210,10 @@ async function ingestPaidOrder(input: {
   shopId: number;
   shippingAddress: Record<string, unknown> | null;
   withRealWmsLine?: boolean;
+  /** Raw Shopify customer id; ingestion hashes it to customer_hashed_id. */
+  customerId?: string;
 }): Promise<{ orderId: string; externalOrderId: string }> {
-  const { shopId, shippingAddress, withRealWmsLine = true } = input;
+  const { shopId, shippingAddress, withRealWmsLine = true, customerId } = input;
   const externalOrderId = `${shopId}${Date.now()}${Math.floor(Math.random() * 1e4)}`;
 
   const lineItems = withRealWmsLine
@@ -235,6 +237,7 @@ async function ingestPaidOrder(input: {
     displayFulfillmentStatus: 'UNFULFILLED',
     shipping_address: shippingAddress,
     line_items: lineItems,
+    ...(customerId ? { customer: { id: customerId } } : {}),
   });
   await projectEvent(shopId, createId);
 
@@ -595,6 +598,463 @@ describe('ADDR-DEC-04 — a coexisting blocker survives the customer correction'
 });
 
 // ── ADDR-DEC-05 ────────────────────────────────────────────────────────────
+
+
+// ── ADDR-ASSIST-01..06 — Address Assist v1 (RED: feature not implemented) ───
+//
+// Approved Order Detail response contract:
+//
+//   addressAssist: {
+//     source: "historical_fulfilled_orders",
+//     candidate: { address1, address2, city, zip, province, countryCode },
+//     usageCount,
+//     lastUsedAt
+//   } | null
+//
+// Evidence must come from the SAME customer's own complete, fulfilled,
+// same-tenant historical orders. The blocked order itself is never evidence.
+
+/** Ingestion's own identity derivation: sha256(`${shopId}:${customerId}`). */
+function customerHash(shopId: number, customerId: string): string {
+  return crypto.createHash('sha256').update(`${shopId}:${customerId}`).digest('hex');
+}
+
+const COMPLETE_HISTORICAL_ADDRESS = {
+  name: 'Jane Doe',
+  address1: '221B Baker Street',
+  address2: 'Flat 2',
+  city: 'London',
+  zip: 'NW1 6XE',
+  provinceCode: 'Greater London',
+  country_code: 'GB',
+};
+
+/**
+ * Marks a genuinely persisted order fulfilled through the projection-guarded
+ * table — order_fulfillment_status is single-writer enforced (migration 0076),
+ * the same guard the ADDR-DEC-05 fixture above uses.
+ */
+async function markFulfilled(shopId: number, orderId: string, fulfilledAt: Date) {
+  await withTenant(shopId, async (trx) => {
+    await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
+    const updated = await trx('order_fulfillment_status')
+      .where({ lasyncro_order_id: orderId })
+      .update({ status: 'fulfilled', fulfilled_at: fulfilledAt });
+    expect(updated).toBeGreaterThanOrEqual(1);
+  });
+}
+
+/** Forces a customer identity onto an order (cross-tenant isolation fixture). */
+async function forceCustomerHash(shopId: number, orderId: string, hash: string) {
+  await withTenant(shopId, (trx) =>
+    trx('orders').where({ lasyncro_order_id: orderId }).update({ customer_hashed_id: hash })
+  );
+}
+
+/** Seeds one complete, fulfilled historical order for a customer. */
+async function seedHistoricalFulfilled(input: {
+  shopId: number;
+  customerId?: string;
+  forcedHash?: string;
+  address: Record<string, unknown>;
+  fulfilledAt: Date;
+}): Promise<string> {
+  const { shopId, customerId, forcedHash, address, fulfilledAt } = input;
+  const { orderId } = await ingestPaidOrder({
+    shopId,
+    shippingAddress: address,
+    customerId,
+  });
+  if (forcedHash) await forceCustomerHash(shopId, orderId, forcedHash);
+  await markFulfilled(shopId, orderId, fulfilledAt);
+  return orderId;
+}
+
+const getOrderDetail = (token: string, orderId: string) =>
+  request(app).get(`/api/v1/orders/${orderId}`).set('Authorization', `Bearer ${token}`);
+
+/** The blocked order every assist scenario is anchored on. */
+async function seedBlockedOrderForCustomer(shopId: number, customerId: string) {
+  const { orderId } = await ingestPaidOrder({
+    shopId,
+    shippingAddress: INCOMPLETE_ADDRESS,
+    customerId,
+  });
+  const active = activeOf(await constraintsFor(shopId, orderId));
+  expect(active).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ constraint_type: 'customer', block_type: 'incomplete_address' }),
+    ])
+  );
+  return orderId;
+}
+
+describe('ADDR-ASSIST-01 — historical fulfilled address is offered as evidence', () => {
+  it('returns the same customer’s complete fulfilled historical address, and null without an active blocker', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist01');
+    const customerId = '7001';
+
+    const historicalId = await seedHistoricalFulfilled({
+      shopId,
+      customerId,
+      address: COMPLETE_HISTORICAL_ADDRESS,
+      fulfilledAt: new Date('2026-08-01T10:00:00.000Z'),
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+
+    expect(res.body.addressAssist).toEqual(
+      expect.objectContaining({
+        source: 'historical_fulfilled_orders',
+        usageCount: 1,
+        lastUsedAt: expect.any(String),
+        candidate: expect.objectContaining({
+          address1: '221B Baker Street',
+          address2: 'Flat 2',
+          city: 'London',
+          zip: 'NW1 6XE',
+          province: 'Greater London',
+          countryCode: 'GB',
+        }),
+      })
+    );
+
+    // The blocked order itself is never evidence.
+    expect(res.body.addressAssist.candidate.address1).not.toBe(INCOMPLETE_ADDRESS.address1);
+
+    // An otherwise eligible order with NO active customer/incomplete_address
+    // constraint gets no assist at all.
+    const healthyRes = await getOrderDetail(token, historicalId);
+    expect(healthyRes.status).toBe(200);
+    expect(healthyRes.body.addressAssist).toBeNull();
+  }, 240_000);
+});
+
+describe('ADDR-ASSIST-02 — evidence is customer- and tenant-isolated', () => {
+  it('excludes another customer in the same tenant and an identical hash in another tenant', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist02');
+    const customerId = '7002';
+
+    // Same tenant, DIFFERENT customer — must never be borrowed.
+    await seedHistoricalFulfilled({
+      shopId,
+      customerId: '9999',
+      address: { ...COMPLETE_HISTORICAL_ADDRESS, address1: '1 Other Person Way' },
+      fulfilledAt: new Date('2026-08-20T10:00:00.000Z'),
+    });
+
+    // Another tenant, SAME customer_hashed_id forced — real RLS must exclude it.
+    const foreign = await provisionFt2Shop('assist02-foreign');
+    await seedHistoricalFulfilled({
+      shopId: foreign.shopId,
+      forcedHash: customerHash(shopId, customerId),
+      address: { ...COMPLETE_HISTORICAL_ADDRESS, address1: '2 Foreign Tenant Road' },
+      fulfilledAt: new Date('2026-08-25T10:00:00.000Z'),
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+
+    // No eligible same-customer, same-tenant evidence exists.
+    expect(res.body.addressAssist).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain('1 Other Person Way');
+    expect(JSON.stringify(res.body)).not.toContain('2 Foreign Tenant Road');
+  }, 300_000);
+});
+
+describe('ADDR-ASSIST-03 — unfulfilled history is not evidence', () => {
+  it('excludes a complete but never-fulfilled historical order', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist03');
+    const customerId = '7003';
+
+    // Complete address, same customer, but deliberately NOT fulfilled.
+    await ingestPaidOrder({
+      shopId,
+      shippingAddress: { ...COMPLETE_HISTORICAL_ADDRESS, address1: '3 Never Shipped Lane' },
+      customerId,
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+    expect(res.body.addressAssist).toBeNull();
+    expect(JSON.stringify(res.body)).not.toContain('3 Never Shipped Lane');
+  }, 240_000);
+});
+
+describe('ADDR-ASSIST-04 — incomplete history is not evidence', () => {
+  it.each([
+    ['address1', { address1: null }],
+    ['city', { city: null }],
+    ['zip', { zip: null }],
+    ['countryCode', { country_code: null }],
+  ])('excludes a fulfilled historical order missing %s', async (_field, override) => {
+    const { shopId, token } = await provisionFt2Shop(`assist04-${_field.toLowerCase()}`);
+    const customerId = '7004';
+
+    await seedHistoricalFulfilled({
+      shopId,
+      customerId,
+      address: { ...COMPLETE_HISTORICAL_ADDRESS, ...override },
+      fulfilledAt: new Date('2026-08-05T10:00:00.000Z'),
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+    expect(res.body.addressAssist).toBeNull();
+  }, 240_000);
+});
+
+describe('ADDR-ASSIST-05 — ranking and provenance are deterministic', () => {
+  it('ranks by usageCount, then most recent fulfilled_at, and normalises for grouping only', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist05');
+    const customerId = '7005';
+
+    // WINNING GROUP — three eligible orders that normalise to one address:
+    // surrounding whitespace, collapsed internal whitespace, mixed case, and
+    // null-vs-empty optional fields are all equivalent for grouping.
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-01T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '10 Repeat Street', address2: null,
+        city: 'Manchester', zip: 'M1 2AB', province: null, country_code: 'GB',
+      },
+    });
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-02T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '  10   repeat   street  ', address2: '',
+        city: ' MANCHESTER ', zip: ' m1 2ab ', province: '', country_code: 'gb',
+      },
+    });
+    // Most recently fulfilled member of the winning group — the returned
+    // candidate must come from THIS row, trimmed, with countryCode uppercased.
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-09T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: ' 10 Repeat Street ', address2: null,
+        city: 'Manchester ', zip: 'M1 2AB', province: null, country_code: 'gb',
+      },
+    });
+
+    // LOSING GROUP — more recent, but used only twice.
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-20T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '99 Recent Road', address2: null,
+        city: 'Leeds', zip: 'LS1 4AB', province: null, country_code: 'GB',
+      },
+    });
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-21T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '99 Recent Road', address2: null,
+        city: 'Leeds', zip: 'LS1 4AB', province: null, country_code: 'GB',
+      },
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+
+    const assist = res.body.addressAssist;
+    expect(assist).toBeTruthy();
+    expect(assist.source).toBe('historical_fulfilled_orders');
+
+    // Highest usageCount wins outright, even though the loser is more recent.
+    expect(assist.usageCount).toBe(3);
+    expect(assist.candidate.address1).toBe('10 Repeat Street');
+    expect(assist.candidate.city).toBe('Manchester');
+    expect(assist.candidate.zip).toBe('M1 2AB');
+    // Returned strings are trimmed; countryCode is uppercased.
+    expect(assist.candidate.countryCode).toBe('GB');
+    // lastUsedAt is the maximum fulfilled_at within the winning group.
+    expect(new Date(assist.lastUsedAt).toISOString()).toBe('2026-08-09T10:00:00.000Z');
+  }, 300_000);
+});
+
+describe('ADDR-ASSIST-05b — recency breaks a usageCount tie', () => {
+  it('ranks the more recently fulfilled group first when usageCount is equal, and takes provenance from its newest row', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist05b');
+    const customerId = '7015';
+
+    // GROUP A — twice used, most recent fulfilment 2026-08-15.
+    // The two members normalise to one address (whitespace/case only), so the
+    // display values must come from the NEWEST member below.
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-03T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '  12   winner   way  ', address2: null,
+        city: ' sheffield ', zip: ' s1 2cd ', province: null, country_code: 'gb',
+      },
+    });
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-15T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '12 Winner Way', address2: null,
+        city: 'Sheffield', zip: 'S1 2CD', province: null, country_code: 'GB',
+      },
+    });
+
+    // GROUP B — also twice used, but its most recent fulfilment is older.
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-04T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '13 Older Way', address2: null,
+        city: 'Sheffield', zip: 'S1 3EF', province: null, country_code: 'GB',
+      },
+    });
+    await seedHistoricalFulfilled({
+      shopId, customerId, fulfilledAt: new Date('2026-08-10T10:00:00.000Z'),
+      address: {
+        ...COMPLETE_HISTORICAL_ADDRESS,
+        address1: '13 Older Way', address2: null,
+        city: 'Sheffield', zip: 'S1 3EF', province: null, country_code: 'GB',
+      },
+    });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+
+    const assist = res.body.addressAssist;
+    expect(assist).toBeTruthy();
+    expect(assist.source).toBe('historical_fulfilled_orders');
+
+    // The tie is real: both groups were used exactly twice.
+    expect(assist.usageCount).toBe(2);
+
+    // Recency decides, and provenance is the newest row of the winning group.
+    expect(assist.candidate.address1).toBe('12 Winner Way');
+    expect(assist.candidate.city).toBe('Sheffield');
+    expect(assist.candidate.zip).toBe('S1 2CD');
+    expect(assist.candidate.countryCode).toBe('GB');
+    expect(new Date(assist.lastUsedAt).toISOString()).toBe('2026-08-15T10:00:00.000Z');
+
+    // The older group is not offered.
+    expect(assist.candidate.address1).not.toBe('13 Older Way');
+    expect(assist.candidate.zip).not.toBe('S1 3EF');
+  }, 300_000);
+});
+
+describe('ADDR-ASSIST-05c — normalized fingerprint is the final tie-break', () => {
+  it('ranks the lexicographically smaller normalized fingerprint first when usageCount and fulfilled_at are both equal', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist05c');
+    const customerId = '7016';
+
+    // Every eligible row shares this exact fulfilment instant, so usageCount and
+    // recency are both tied and only the normalized fingerprint can decide.
+    const sharedFulfilledAt = new Date('2026-08-18T10:00:00.000Z');
+
+    // GROUP A — normalizes to ["1 alpha avenue","","bristol","bs1 1aa","","gb"].
+    const alphaAddress = {
+      ...COMPLETE_HISTORICAL_ADDRESS,
+      address1: '1 Alpha Avenue', address2: null,
+      city: 'Bristol', zip: 'BS1 1AA', province: null, country_code: 'GB',
+    };
+    // GROUP B — identical except address1, which sorts strictly after 'alpha'.
+    const zuluAddress = {
+      ...COMPLETE_HISTORICAL_ADDRESS,
+      address1: '1 Zulu Avenue', address2: null,
+      city: 'Bristol', zip: 'BS1 1AA', province: null, country_code: 'GB',
+    };
+
+    // Seeded loser-first so insertion order cannot be mistaken for the reason
+    // the winner is chosen.
+    await seedHistoricalFulfilled({ shopId, customerId, address: zuluAddress, fulfilledAt: sharedFulfilledAt });
+    await seedHistoricalFulfilled({ shopId, customerId, address: alphaAddress, fulfilledAt: sharedFulfilledAt });
+    await seedHistoricalFulfilled({ shopId, customerId, address: zuluAddress, fulfilledAt: sharedFulfilledAt });
+    await seedHistoricalFulfilled({ shopId, customerId, address: alphaAddress, fulfilledAt: sharedFulfilledAt });
+
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+
+    const assist = res.body.addressAssist;
+    expect(assist).toBeTruthy();
+    expect(assist.source).toBe('historical_fulfilled_orders');
+
+    // Both prior criteria really are tied.
+    expect(assist.usageCount).toBe(2);
+    expect(new Date(assist.lastUsedAt).toISOString()).toBe(sharedFulfilledAt.toISOString());
+
+    // The lexicographically smaller normalized fingerprint wins.
+    expect(assist.candidate.address1).toBe('1 Alpha Avenue');
+    expect(assist.candidate.city).toBe('Bristol');
+    expect(assist.candidate.zip).toBe('BS1 1AA');
+    expect(assist.candidate.countryCode).toBe('GB');
+    expect(assist.candidate.address1).not.toBe('1 Zulu Avenue');
+  }, 300_000);
+});
+
+describe('ADDR-ASSIST-06 — evidence retrieval is strictly read-only', () => {
+  it('changes no order version, constraint, event or shipping field', async () => {
+    const { shopId, token } = await provisionFt2Shop('assist06');
+    const customerId = '7006';
+
+    await seedHistoricalFulfilled({
+      shopId,
+      customerId,
+      address: COMPLETE_HISTORICAL_ADDRESS,
+      fulfilledAt: new Date('2026-08-11T10:00:00.000Z'),
+    });
+    const blockedId = await seedBlockedOrderForCustomer(shopId, customerId);
+
+    const snapshot = async () => ({
+      version: await aggregateVersion(shopId, blockedId),
+      eventWatermark: await maxEventId(shopId),
+      eventCount: Number(
+        (await withTenant(shopId, (trx) =>
+          trx('domain_events').where({ shop_id: shopId }).count<{ count: string }>('* as count').first()
+        ))?.count ?? 0
+      ),
+      constraints: JSON.stringify(await constraintsFor(shopId, blockedId)),
+      shipping: JSON.stringify(
+        await withTenant(shopId, (trx) =>
+          trx('orders')
+            .where({ lasyncro_order_id: blockedId })
+            .first(
+              'shipping_address1', 'shipping_address2', 'shipping_city',
+              'shipping_zip', 'shipping_province', 'shipping_country_code'
+            )
+        )
+      ),
+    });
+
+    const before = await snapshot();
+
+    const res = await getOrderDetail(token, blockedId);
+    expect(res.status).toBe(200);
+    expect(res.body.addressAssist).toBeTruthy();
+
+    const after = await snapshot();
+
+    expect(after.version).toBe(before.version);
+    expect(after.eventWatermark).toBe(before.eventWatermark);
+    expect(after.eventCount).toBe(before.eventCount);
+    expect(after.constraints).toBe(before.constraints);
+    expect(after.shipping).toBe(before.shipping);
+  }, 240_000);
+});
 
 describe('ADDR-DEC-05 — awaiting_payment is unreachable for paid orders', () => {
   it('writes no customer/awaiting_payment row for any order in this suite, and the live evaluator never returns one', async () => {

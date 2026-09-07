@@ -63,11 +63,10 @@ jest.mock('pages/orders/useOrderDecision', () => ({
   }),
 }));
 
+const mockUseOrderDetail = jest.fn();
+
 jest.mock('pages/orders/useOrderDetail', () => ({
-  useOrderDetail: () => ({
-    data: null,
-    isLoading: false,
-  }),
+  useOrderDetail: (...args: unknown[]) => mockUseOrderDetail(...args),
 }));
 
 jest.mock('pages/orders/usePickExceptionsForOrder', () => ({
@@ -194,6 +193,8 @@ function openDialogAndFill(values: {
 describe('OrderDetailModalBody customer/incomplete_address surface', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Existing ADDR-UI-* contracts assume no order-detail payload.
+    mockUseOrderDetail.mockReturnValue({ data: null, isLoading: false });
   });
 
   it('ADDR-UI-01 renders the address correction from constraint truth when decision enrichment is absent', () => {
@@ -322,6 +323,168 @@ describe('OrderDetailModalBody customer/incomplete_address surface', () => {
     fireEvent.click(cta!);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});
+
+
+// ── ADDR-ASSIST-07..09 — Address Assist UI (RED: feature not implemented) ────
+//
+// Order Detail will expose addressAssist alongside the existing customer
+// blocker. The assist is EVIDENCE the merchant reviews — it pre-fills the
+// existing dialog and nothing more. It never writes on its own, and it never
+// routes through the generic decision execution mutation.
+
+const ADDRESS_ASSIST = {
+  source: 'historical_fulfilled_orders',
+  candidate: {
+    address1: '221B Baker Street',
+    address2: 'Flat 2',
+    city: 'London',
+    zip: 'NW1 6XE',
+    province: 'Greater London',
+    countryCode: 'GB',
+  },
+  usageCount: 3,
+  lastUsedAt: '2026-08-09T10:00:00.000Z',
+};
+
+/** Current-order shipping: recipient identity present, destination missing. */
+const CURRENT_SHIPPING = {
+  name: 'Jane Doe',
+  address1: null,
+  address2: null,
+  city: null,
+  zip: null,
+  phone: '+44 7700 900123',
+  province: null,
+  countryCode: null,
+};
+
+function setOrderDetail(addressAssist: unknown) {
+  mockUseOrderDetail.mockReturnValue({
+    data: {
+      id: 'order-1',
+      externalOrderId: '1001',
+      total: 100,
+      subtotal: 90,
+      tax: 10,
+      currency: 'GBP',
+      paymentState: 'paid',
+      createdAt: '2026-09-01T12:00:00.000Z',
+      lineItems: [],
+      fulfillment: null,
+      warehouseStatus: null,
+      timeline: [],
+      tracking: null,
+      shipping: CURRENT_SHIPPING,
+      addressAssist,
+    },
+    isLoading: false,
+  });
+}
+
+const useThisAddressButton = () =>
+  screen.queryByRole('button', { name: /Use this address/i });
+
+describe('ADDR-ASSIST — Address Assist v1 in the existing correction dialog', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('ADDR-ASSIST-07 offers the previously used address with provenance inside the existing dialog', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    setOrderDetail(ADDRESS_ASSIST);
+
+    renderModal();
+
+    // The existing CTA stays operative — assist does not replace it.
+    const cta = correctAddressButton();
+    expect(cta).toBeInTheDocument();
+    fireEvent.click(cta!);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    // Evidence, provenance and the apply affordance.
+    expect(screen.getByText(/Previously used address/i)).toBeInTheDocument();
+    expect(screen.getByText(/3/)).toBeInTheDocument();           // usage count
+    expect(screen.getByText(/last used/i)).toBeInTheDocument();  // recency provenance
+    expect(useThisAddressButton()).toBeInTheDocument();
+
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('ADDR-ASSIST-08 pre-fills the existing form only, and Save remains the sole write', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    setOrderDetail(ADDRESS_ASSIST);
+
+    renderModal();
+    fireEvent.click(correctAddressButton()!);
+    fireEvent.click(useThisAddressButton()!);
+
+    // Pre-fill only — no write of any kind yet.
+    expect(mockUpdateAddress).not.toHaveBeenCalled();
+    expect(mockExecute).not.toHaveBeenCalled();
+
+    expect(screen.getByLabelText(/Address line 1/)).toHaveValue('221B Baker Street');
+    expect(screen.getByLabelText(/Address line 2/)).toHaveValue('Flat 2');
+    expect(screen.getByLabelText(/^City/)).toHaveValue('London');
+    expect(screen.getByLabelText(/ZIP \/ Postal code/)).toHaveValue('NW1 6XE');
+    expect(screen.getByLabelText(/State \/ Province/)).toHaveValue('Greater London');
+    expect(screen.getByLabelText(/Country code/)).toHaveValue('GB');
+
+    // Current-order recipient identity is preserved, never overwritten by evidence.
+    expect(screen.getByLabelText(/Recipient name/)).toHaveValue('Jane Doe');
+    expect(screen.getByLabelText(/Phone/)).toHaveValue('+44 7700 900123');
+
+    // The merchant reviews and edits before committing.
+    fireEvent.change(screen.getByLabelText(/Address line 2/), { target: { value: 'Flat 5' } });
+    expect(mockUpdateAddress).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        address1: '221B Baker Street',
+        address2: 'Flat 5', // the reviewed/edited value, not the raw evidence
+        city: 'London',
+        zip: 'NW1 6XE',
+        countryCode: 'GB',
+      })
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('ADDR-ASSIST-09 leaves manual correction untouched when there is no assist', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    setOrderDetail(null);
+
+    renderModal();
+    fireEvent.click(correctAddressButton()!);
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    expect(screen.queryByText(/Previously used address/i)).not.toBeInTheDocument();
+    expect(useThisAddressButton()).not.toBeInTheDocument();
+
+    // Manual completion still works, and PATCH is still the only write path.
+    fireEvent.change(screen.getByLabelText(/Address line 1/), { target: { value: '1 Manual Way' } });
+    fireEvent.change(screen.getByLabelText(/^City/), { target: { value: 'Bristol' } });
+    fireEvent.change(screen.getByLabelText(/ZIP \/ Postal code/), { target: { value: 'BS1 1AA' } });
+    fireEvent.change(screen.getByLabelText(/Country code/), { target: { value: 'GB' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        address1: '1 Manual Way',
+        city: 'Bristol',
+        zip: 'BS1 1AA',
+        countryCode: 'GB',
+      })
+    );
     expect(mockExecute).not.toHaveBeenCalled();
   });
 });

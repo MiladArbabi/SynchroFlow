@@ -49,6 +49,20 @@ export interface OrderShipping {
   countryCode: string | null;
 }
 
+export interface OrderAddressAssist {
+  source: 'historical_fulfilled_orders';
+  candidate: {
+    address1: string;
+    address2: string | null;
+    city: string;
+    zip: string;
+    province: string | null;
+    countryCode: string;
+  };
+  usageCount: number;
+  lastUsedAt: string;
+}
+
 export interface OrderDetail {
   id: string;
   externalOrderId: string | null;
@@ -85,6 +99,7 @@ export interface OrderDetail {
    * identity — display it as such, don't imply it's an account name.
    */
   shipping: OrderShipping;
+  addressAssist: OrderAddressAssist | null;
 }
 
 export function useOrderDetail(orderId: string | null) {

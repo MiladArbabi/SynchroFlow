@@ -325,6 +325,19 @@ Consumers:
 
 **Updated 2026-09-06 (ORD-DECISION-01 Slice 4):** The dead `orderCustomerConstraintProjection.ts` — which still derived `awaiting_payment` from `orders.paid_at IS NULL` — was deleted together with its `projectionExecutionOrder.ts` and `projectionDependencies.ts` manifest entries. The live `customerConstraintEvaluator.ts` remains unchanged; `incomplete_address` is the only reachable customer block type.
 
+**Updated 2026-09-07 (ADDR-ASSIST-01):** An active
+`customer/incomplete_address` constraint may now expose read-only historical
+address evidence through Order Detail. Eligible evidence must come from a
+different, fulfilled order in the same tenant with the same
+`customer_hashed_id`, a non-null fulfillment timestamp, and complete
+`address1`, `city`, `zip` and `country_code`. Historical addresses never
+clear the constraint and are never written automatically. **Use this address**
+only pre-fills the existing correction form; the merchant must review and
+submit through the existing shipping-address PATCH. The constraint clears only
+after canonical address truth is persisted and the normal projection /
+reevaluation path resolves it. No Shopify customer/default-address lookup is
+part of this contract.
+
 **Known limitation:** no `requires_shipping`/pickup-order concept exists anywhere in this codebase. A genuine Shopify local-pickup order (no shipping address by design) would currently be misflagged as `incomplete_address`. Not fixed — flagged honestly pending a real signal if/when pickup orders become relevant.
 
 ---

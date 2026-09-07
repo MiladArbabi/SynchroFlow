@@ -972,10 +972,11 @@ Approved ordering:
 4. SLA enhancements only where evidence supports them
 5. Outcome/value layer, after reliable attributable treatment events exist
 
-Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6. Items 2–5
-remain not started.
+Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6.
+Priority item 2 (`ADDR-ASSIST-01`) is **COMPLETED through automated verification** — see §11.7.
+Items 3–5 remain not started.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority item 1 (INV-ACTION-ARCH-01) IMPLEMENTED, items 2–5 NOT STARTED.**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–2 IMPLEMENTED, items 3–5 NOT STARTED.**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1026,3 +1027,71 @@ remain not started.
 - no generic **Take action** and no legacy **Go to sourcing** execution CTA;
 - returning to Order Flow left the order blocked, because inventory truth had
   not changed.
+
+### 11.7 ADDR-ASSIST-01 — Address assisted resolution
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED — 2026-09-07.**
+
+#### What changed
+
+- Order Detail now exposes `addressAssist` for an active
+  `customer/incomplete_address` constraint when trustworthy historical
+  evidence exists.
+- Evidence is limited to complete, fulfilled historical orders for the same
+  tenant and the same persisted `customer_hashed_id`.
+- The current order, other customers, other tenants, unfulfilled history and
+  incomplete historical addresses are excluded.
+- Equivalent historical destinations are grouped deterministically; ranking is
+  by usage count, then most recent fulfilled use, then normalized fingerprint.
+- Historical address data is **evidence only**, never destination authority.
+- The existing **Correct shipping address** dialog shows the strongest
+  **Previously used address** candidate with usage and recency provenance.
+- **Use this address** only pre-fills destination fields in local form state.
+  It does not save, execute a Decision, emit an event or clear a constraint.
+- Current-order recipient name and phone remain unchanged when evidence is
+  applied.
+- The merchant can review and edit the pre-filled address before saving.
+- The existing shipping-address PATCH remains the **only write path**.
+- Canonical constraint reevaluation remains the **only resolution authority**.
+- No Shopify customer/default-address API, `customers` table lookup,
+  `CustomerResolutionService`, migration, Decision Engine schema change or
+  new route/controller was introduced.
+
+#### Automated evidence
+
+- address/customer backend integration: **16/16 passed**
+- address/customer frontend unit: **7/7 passed**
+- test ownership: `UNOWNED=0`, `MULTI_OWNED=0`
+- backend TSC: **0 total / 0 target**
+- frontend TSC: **486 total observed / 2 pre-existing target-file errors / 0 new target errors**
+- test TSC: **1 pre-existing baseline / 0 target**
+- `git diff --check`: clean
+- production scope: exactly
+  `orders.service.ts`, `useOrderDetail.ts`,
+  `OrderDetailModalBody.tsx`
+- regression scope: exactly the existing address backend integration and
+  frontend unit contract files
+- the historical-address test fixture was corrected from `province` to
+  Shopify GraphQL's real `provinceCode` ingestion shape; this did not weaken
+  the behavior contract.
+
+#### Live browser evidence
+
+- target blocked order: `721b4dcd-f4ac-ca85-3562-c19a3276e589`
+  (`Slice 4 Address Only`);
+- Order Detail showed **Address Issue → Correct shipping address**;
+- correction dialog showed **Previously used address** with
+  `1500 Market St`, `Philadelphia`, `19103`, `PA`, `US`;
+- provenance showed one fulfilled historical use, last used 2026-06-15;
+- **Use this address** was corrected during live verification to the canonical
+  Tier-2 ghost-pill CTA required by the Modules UX Playbook;
+- clicking **Use this address** pre-filled the form only; the dialog remained
+  open and **Save address** remained the separate Tier-1 commit action;
+- pre-filled fields remained editable before save;
+- no automatic write, Decision execution or constraint resolution occurred;
+- live verification used `http://127.0.0.1:5173` because `localhost:5173`
+  resolved to an unrelated IPv6 Vite server from another worktree;
+- the temporary browser fixture changed only the blocked order's
+  `customer_hashed_id` and was restored to `NULL` after verification.
+
+**ADDR-ASSIST-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**

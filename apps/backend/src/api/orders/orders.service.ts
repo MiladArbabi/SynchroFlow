@@ -119,6 +119,85 @@ export const getOrderDetailsById = async (
 
     if (!order) return null;
 
+    // Historical evidence only: no destination or constraint is changed by this GET.
+    type AddressAssist = {
+      source: 'historical_fulfilled_orders';
+      candidate: {
+        address1: string;
+        address2: string | null;
+        city: string;
+        zip: string;
+        province: string | null;
+        countryCode: string;
+      };
+      usageCount: number;
+      lastUsedAt: Date;
+    };
+    let addressAssist: AddressAssist | null = null;
+    const addressConstraint = order.customer_hashed_id == null ? null : await trx('order_constraints')
+      .where({
+        lasyncro_order_id: lasyncroOrderId,
+        constraint_type: 'customer',
+        block_type: 'incomplete_address',
+        is_active: true,
+      })
+      .first('constraint_id');
+
+    if (addressConstraint) {
+      const historicalOrders = await trx('orders as o')
+        .join('order_fulfillment_status as f', 'f.lasyncro_order_id', 'o.lasyncro_order_id')
+        .where({
+          'o.shop_id': shopId,
+          'o.customer_hashed_id': order.customer_hashed_id,
+          'f.status': 'fulfilled',
+        })
+        .whereNot('o.lasyncro_order_id', lasyncroOrderId)
+        .whereNotNull('f.fulfilled_at')
+        .select(
+          'o.shipping_address1', 'o.shipping_address2', 'o.shipping_city',
+          'o.shipping_zip', 'o.shipping_province', 'o.shipping_country_code',
+          'f.fulfilled_at',
+        )
+        .orderBy('f.fulfilled_at', 'desc')
+        .orderBy('o.lasyncro_order_id', 'asc');
+
+      const groups = new Map<string, AddressAssist>();
+      const normalize = (value: string | null) => (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+      for (const historical of historicalOrders) {
+        const candidate = {
+          address1: historical.shipping_address1?.trim() ?? '',
+          address2: historical.shipping_address2?.trim() || null,
+          city: historical.shipping_city?.trim() ?? '',
+          zip: historical.shipping_zip?.trim() ?? '',
+          province: historical.shipping_province?.trim() || null,
+          countryCode: historical.shipping_country_code?.trim().toUpperCase() ?? '',
+        };
+        if (!candidate.address1 || !candidate.city || !candidate.zip || !candidate.countryCode) continue;
+
+        const fingerprint = JSON.stringify([
+          candidate.address1, candidate.address2, candidate.city,
+          candidate.zip, candidate.province, candidate.countryCode,
+        ].map(normalize));
+        const group = groups.get(fingerprint);
+        if (group) {
+          group.usageCount += 1;
+        } else {
+          // Rows are newest first, so the first member supplies display values.
+          groups.set(fingerprint, {
+            source: 'historical_fulfilled_orders',
+            candidate,
+            usageCount: 1,
+            lastUsedAt: historical.fulfilled_at,
+          });
+        }
+      }
+      addressAssist = [...groups.entries()].sort(([aKey, a], [bKey, b]) =>
+        b.usageCount - a.usageCount ||
+        new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime() ||
+        (aKey < bKey ? -1 : aKey > bKey ? 1 : 0)
+      )[0]?.[1] ?? null;
+    }
+
     // Line items joined to variants for image_url
     const lineItems = await trx('order_line_items as oli')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
@@ -253,6 +332,7 @@ export const getOrderDetailsById = async (
       warehouseStatus: warehouseStatus?.status ?? null,
       timeline,
       tracking: shipmentTracking ?? null,
+      addressAssist,
       /**
        * SHIPPING IDENTITY (VO-01, 2026-07-01)
        * --------------------------------------

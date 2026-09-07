@@ -55,7 +55,7 @@ import {
 import { usePickExceptionsForOrder, useResolvePickException } from './usePickExceptionsForOrder';
 import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { useUpdateShippingAddress } from './useShippingAddress';
-import type { OrderShipping } from './useOrderDetail';
+import type { OrderShipping, OrderAddressAssist } from './useOrderDetail';
 import { useCurrency } from '../../hooks/useCurrency';
 
 /**
@@ -293,12 +293,14 @@ function ShippingAddressDialog({
   onSaved,
   orderId,
   currentShipping,
+  addressAssist,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   orderId: string;
   currentShipping: OrderShipping | undefined;
+  addressAssist: OrderAddressAssist | null | undefined;
 }) {
   const [name, setName] = useState(currentShipping?.name ?? '');
   const [address1, setAddress1] = useState(currentShipping?.address1 ?? '');
@@ -388,6 +390,61 @@ function ShippingAddressDialog({
         >
           Complete the required shipping fields so this order can be re-checked automatically.
         </Typography>
+
+        {addressAssist && (
+          <Box sx={{ mb: 2, p: 2, bgcolor: 'var(--bg-3)', border: '1px solid var(--rule)', borderRadius: '6px' }}>
+            <Typography sx={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', mb: 0.75 }}>
+              Previously used address
+            </Typography>
+            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'pre-line' }}>
+              {[
+                addressAssist.candidate.address1,
+                addressAssist.candidate.address2,
+                `${addressAssist.candidate.city} ${addressAssist.candidate.zip}`,
+                addressAssist.candidate.province,
+                addressAssist.candidate.countryCode,
+              ].filter(Boolean).join('\n')}
+            </Typography>
+            <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 1 }}>
+              Used on {addressAssist.usageCount} fulfilled {addressAssist.usageCount === 1 ? 'order' : 'orders'} · Last used{' '}
+              {new Date(addressAssist.lastUsedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </Typography>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={updateAddress.isPending}
+              sx={{
+                mt: 1,
+                px: 1.25,
+                py: 0.5,
+                minWidth: 0,
+                fontSize: 11,
+                fontWeight: 600,
+                textTransform: 'none',
+                color: 'var(--accent)',
+                bgcolor: 'transparent',
+                border: '0.5px solid var(--accent)',
+                borderRadius: '6px',
+                '&:hover': {
+                  bgcolor: 'transparent',
+                  border: '0.5px solid var(--accent)',
+                  opacity: 0.75,
+                },
+              }}
+              onClick={() => {
+                const { candidate } = addressAssist;
+                setAddress1(candidate.address1);
+                setAddress2(candidate.address2 ?? '');
+                setCity(candidate.city);
+                setZip(candidate.zip);
+                setProvince(candidate.province ?? '');
+                setCountryCode(candidate.countryCode);
+              }}
+            >
+              Use this address
+            </Button>
+          </Box>
+        )}
 
         {updateAddress.isError && (
           <Alert severity="error" sx={{ mb: 1.5 }}>
@@ -1293,6 +1350,7 @@ export function OrderDetailModalBody({
           }}
           orderId={orderId}
           currentShipping={order?.shipping}
+          addressAssist={order?.addressAssist}
         />
       </Box>
     )}
