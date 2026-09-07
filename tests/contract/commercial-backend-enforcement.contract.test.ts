@@ -233,3 +233,133 @@ describe('A2A-C18 — requireCapability reads req.user.tier, no new DB tier fetc
     }
   });
 });
+
+// ###########################################################################
+// P0-A3-5 — PURCHASING / SOURCING BACKEND ROUTE OWNERSHIP
+// ###########################################################################
+// Ratified split (COMMERCIAL-REMODEL-ALIGN-01 / P0-A3-5):
+//
+//   purchasing.core     (Core+)    BASIC purchasing — variant search for PO
+//                                  creation, supplier CRUD, purchase-order
+//                                  CRUD/status/receive, receive-job workflows.
+//   purchasing.sourcing (Growth+)  ADVANCED SOURCING — worklist,
+//                                  recommendations, never-ordered,
+//                                  supplier-product preferences, reorder/MOQ
+//                                  accumulator.
+//
+// Both families live in the SAME router file, so the ownership boundary is a
+// per-route contract, not a per-file one. requireFt2 (lifecycle) and
+// requireAction (RBAC) are separate concerns and are deliberately NOT asserted
+// as commercial authority here — A2A-C16 above already owns the ordering
+// contract.
+
+/**
+ * Parse every `router.<verb>('<path>', ...middleware..., handler)` registration
+ * out of the suppliers router source, capturing the capability id each one
+ * declares. Reads the REAL route file — no mirrored route table.
+ */
+function parseSuppliersRoutes(): Array<{ method: string; routePath: string; capability: string | null }> {
+  const src = read(SUPPLIERS_ROUTES);
+  const re = /router\.(get|post|patch|put|delete)\(\s*'([^']+)'([\s\S]*?)\n\);/g;
+  const out: Array<{ method: string; routePath: string; capability: string | null }> = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(src)) !== null) {
+    const cap = /requireCapability\(\s*['"]([^'"]+)['"]\s*\)/.exec(m[3]);
+    out.push({ method: m[1].toUpperCase(), routePath: m[2], capability: cap ? cap[1] : null });
+  }
+  return out;
+}
+
+/** The 11 ratified ADVANCED SOURCING routes, as `METHOD path`. */
+const ADVANCED_SOURCING_ROUTES = [
+  'GET /sourcing-worklist',
+  'GET /sourcing-recommendations/never-ordered',
+  'GET /sourcing-recommendations/:variantId',
+  'GET /preferences',
+  'POST /preferences',
+  'PATCH /preferences/:id',
+  'DELETE /preferences/:id',
+  'POST /reorder-requests/convert',
+  'GET /reorder-requests',
+  'POST /reorder-requests',
+  'DELETE /reorder-requests/:id',
+] as const;
+
+/** Representative BASIC purchasing routes owned by purchasing.core. */
+const BASIC_PURCHASING_ROUTES = [
+  'GET /variants/search',
+  'GET /',
+  'POST /',
+  'PATCH /:id',
+  'DELETE /:id',
+  'GET /purchase-orders',
+  'POST /purchase-orders',
+  'GET /purchase-orders/:poId/line-items',
+  'PATCH /purchase-orders/:poId/status',
+  'PATCH /purchase-orders/:poId',
+  'POST /purchase-orders/:poId/receive',
+  'GET /receive-jobs',
+  'POST /purchase-orders/:poId/receive-jobs',
+  'GET /receive-jobs/:jobId',
+  'POST /receive-jobs/:jobId/claim',
+  'POST /receive-jobs/:jobId/inspect',
+  'POST /receive-jobs/:jobId/close',
+  'POST /receive-jobs/:jobId/exception',
+] as const;
+
+describe('PUR-C5 — BASIC purchasing routes are owned by purchasing.core', () => {
+  it('GREEN CONTROL: the suppliers router parses into the full registered route set', () => {
+    const routes = parseSuppliersRoutes();
+    expect(routes.length).toBe(BASIC_PURCHASING_ROUTES.length + ADVANCED_SOURCING_ROUTES.length);
+  });
+
+  it('GREEN CONTROL: every BASIC purchasing route declares requireCapability(purchasing.core)', () => {
+    const byKey = new Map(parseSuppliersRoutes().map((r) => [`${r.method} ${r.routePath}`, r.capability]));
+    const wrong = BASIC_PURCHASING_ROUTES
+      .map((key) => [key, byKey.get(key)] as const)
+      .filter(([, cap]) => cap !== 'purchasing.core');
+    expect(wrong).toEqual([]);
+  });
+
+  it('GREEN CONTROL: no BASIC purchasing route is moved onto purchasing.sourcing', () => {
+    const byKey = new Map(parseSuppliersRoutes().map((r) => [`${r.method} ${r.routePath}`, r.capability]));
+    const leaked = BASIC_PURCHASING_ROUTES.filter((key) => byKey.get(key) === 'purchasing.sourcing');
+    expect(leaked).toEqual([]);
+  });
+});
+
+describe('PUR-C6 — ADVANCED SOURCING routes are owned by purchasing.sourcing', () => {
+  it('GREEN CONTROL: exactly the 11 ratified advanced sourcing routes are registered', () => {
+    const registered = new Set(parseSuppliersRoutes().map((r) => `${r.method} ${r.routePath}`));
+    const missing = ADVANCED_SOURCING_ROUTES.filter((key) => !registered.has(key));
+    expect(missing).toEqual([]);
+    expect(ADVANCED_SOURCING_ROUTES.length).toBe(11);
+  });
+
+  it.each(ADVANCED_SOURCING_ROUTES)(
+    'EXPECTED RED: %s declares requireCapability(purchasing.sourcing)',
+    (key) => {
+      const byKey = new Map(parseSuppliersRoutes().map((r) => [`${r.method} ${r.routePath}`, r.capability]));
+      expect({ key, capability: byKey.get(key) }).toEqual({ key, capability: 'purchasing.sourcing' });
+    },
+  );
+
+  it('EXPECTED RED: the router declares purchasing.sourcing exactly 11 times', () => {
+    const count = (read(SUPPLIERS_ROUTES).match(/requireCapability\(\s*['"]purchasing\.sourcing['"]\s*\)/g) || []).length;
+    expect(count).toBe(11);
+  });
+
+  it('GREEN CONTROL: requireFt2 and requireAction remain on every advanced sourcing route (separate lifecycle / RBAC concerns)', () => {
+    const src = read(SUPPLIERS_ROUTES);
+    const re = /router\.(get|post|patch|put|delete)\(\s*'([^']+)'([\s\S]*?)\n\);/g;
+    const advanced = new Set<string>(ADVANCED_SOURCING_ROUTES);
+    const missing: string[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) {
+      const key = `${m[1].toUpperCase()} ${m[2]}`;
+      if (!advanced.has(key)) continue;
+      if (!/requireFt2/.test(m[3]) || !/requireAction\(/.test(m[3])) missing.push(key);
+    }
+    expect(missing).toEqual([]);
+  });
+});

@@ -225,6 +225,46 @@ describe('CRA-C4 — purchasing.core (Core+) and purchasing.sourcing (Growth+)',
       });
     }
   }
+
+  // -------------------------------------------------------------------------
+  // P0-A3-5 / PUR-C1 — an ADDITIVE module grant is not a tier upgrade.
+  //
+  // `suppliers-portal` is the module BOTH purchasing capabilities require, and
+  // it is grantable additively (persisted shop_module_entitlements union with
+  // the tier floor). Holding the module must never unlock either capability
+  // below its ratified minimum tier: evaluateAccess is FIRST-FAILURE-WINS and
+  // checks minimumTier before moduleId, so the denial must stay TIER_TOO_LOW.
+  // -------------------------------------------------------------------------
+  /** Context for `tier` with suppliers-portal additively granted on top of the floor. */
+  function tierFloorPlusSuppliersPortal(tier: Tier): CP.AccessContext {
+    const base = CP.standardContextForTier(tier);
+    return { ...base, modules: new Set([...base.modules, 'suppliers-portal']) };
+  }
+
+  it('GREEN CONTROL: an additive suppliers-portal grant does not unlock purchasing.core below Core', () => {
+    const d = CP.evaluateAccess(requirementOrFail('purchasing.core'), tierFloorPlusSuppliersPortal('starter'));
+    expect({ allowed: d.allowed, reason: d.reason, requiredTier: d.requiredTier })
+      .toEqual({ allowed: false, reason: 'TIER_TOO_LOW', requiredTier: 'core' });
+  });
+
+  it.each<[Tier]>([['starter'], ['core']])(
+    'GREEN CONTROL: an additive suppliers-portal grant does not unlock purchasing.sourcing at %s',
+    (tier) => {
+      const d = CP.evaluateAccess(requirementOrFail('purchasing.sourcing'), tierFloorPlusSuppliersPortal(tier));
+      expect({ allowed: d.allowed, reason: d.reason, requiredTier: d.requiredTier })
+        .toEqual({ allowed: false, reason: 'TIER_TOO_LOW', requiredTier: 'growth' });
+    },
+  );
+
+  it('GREEN CONTROL: the additive grant is genuinely present (the DENY above is a tier wall, not a missing module)', () => {
+    for (const tier of TIERS) {
+      expect({ tier, has: tierFloorPlusSuppliersPortal(tier).modules.has('suppliers-portal') })
+        .toEqual({ tier, has: true });
+    }
+    // ...and the Starter FLOOR genuinely lacks it — Purchasing left Starter.
+    expect(modules('starter').has('suppliers-portal')).toBe(false);
+    expect(modules('core').has('suppliers-portal')).toBe(true);
+  });
 });
 
 // ===========================================================================

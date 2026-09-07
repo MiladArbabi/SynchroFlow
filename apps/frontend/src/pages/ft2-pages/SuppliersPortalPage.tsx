@@ -1,6 +1,7 @@
 // apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Route, Routes, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useSpotlight } from '../../hooks/useSpotlight';
 import { SuppliersPortalModuleFT2 } from '@lasyncro/suppliers-portal';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
@@ -112,8 +113,9 @@ export default function SuppliersPortalPage() {
   }, []);
 
   // SOURCING (Thread C, sourcing-recommendation-playbook.md §6) — fetched
-  // on demand per variant, not all up front (never_ordered list is the
-  // only thing fetched eagerly, via useSuppliersPortal).
+  // on demand per variant, not all up front. P0-A3-5: the never_ordered list
+  // is no longer fetched page-wide either; it belongs to SourcingRoute below,
+  // behind the purchasing.sourcing gate.
   // SRC-03: the `needed` param is gone — nothing ever set it, so the server
   // derives the shortfall from open demand minus availability and returns it
   // alongside the ranked candidates.
@@ -284,7 +286,11 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
   }, []);
 
   const sharedProps = {
-    data,
+    // P0-A3-5: `never_ordered` is Growth-only ADVANCED SOURCING intelligence and
+    // is deliberately EMPTY on the shared Core props — SourcingRoute supplies
+    // the real list once purchasing.sourcing has been allowed. The keys stay
+    // present because SuppliersPortalData (module public surface) requires them.
+    data: { ...data, never_ordered: [], never_ordered_count: 0 },
     isLoading,
     isError,
     onRefresh: refetch,
@@ -324,15 +330,72 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
   };
 
   return (
-    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: purchasing.core (Starter+) gate — a
-    // direct URL into /suppliers-portal/* must not bypass this.
+    // COMMERCIAL-ACCESS-ARCH-01 P0-A2B / P0-A3-5: the outer purchasing.core
+    // (Core+) gate owns the Purchasing module — a direct URL into
+    // /suppliers-portal/* must not bypass it. Open POs and Suppliers inherit it.
+    //
+    // /sourcing carries its OWN purchasing.sourcing (Growth+) gate: inheriting a
+    // Core+ decision is not evidence for a Growth+ surface, so a Core merchant
+    // typing /suppliers-portal/sourcing directly clears the outer gate and must
+    // still be stopped here. The gate wraps the route ELEMENT, so a denied
+    // merchant never mounts SourcingRoute and therefore never issues its
+    // Growth-only request.
     <CommercialGate capabilityId="purchasing.core">
       <ModuleTabBar tabs={PURCHASING_SUB_TABS} />
       <Routes>
         <Route path="/" element={<SuppliersPortalModuleFT2 view="pos" {...sharedProps} />} />
         <Route path="/suppliers" element={<SuppliersPortalModuleFT2 view="suppliers" {...sharedProps} />} />
-        <Route path="/sourcing" element={<SuppliersPortalModuleFT2 view="sourcing" {...sharedProps} />} />
+        <Route
+          path="/sourcing"
+          element={
+            <CommercialGate capabilityId="purchasing.sourcing">
+              <SourcingRoute {...sharedProps} />
+            </CommercialGate>
+          }
+        />
       </Routes>
     </CommercialGate>
+  );
+}
+
+/**
+ * SOURCING ROUTE — owner of the Growth-only never-ordered list.
+ * ------------------------------------------------------------
+ * P0-A3-5. This used to be fetched by useSuppliersPortal(), the SHARED hook
+ * called above the routes, which meant a Core merchant opening Open POs or
+ * Suppliers issued a purchasing.sourcing request they hold no entitlement for.
+ *
+ * It now lives here, inside the purchasing.sourcing CommercialGate, so the
+ * request is made only when the Sourcing surface is both commercially allowed
+ * AND actually rendered. Endpoint, response mapping and the loading/error/
+ * refresh composition are unchanged — only the ownership boundary moved.
+ */
+function SourcingRoute(props: Omit<SuppliersPortalPageProps, 'view'>) {
+  const neverOrdered = useQuery({
+    queryKey: ['suppliers-portal', 'never-ordered'],
+    queryFn: () =>
+      axiosInstance
+        .get('/api/v1/suppliers/sourcing-recommendations/never-ordered')
+        .then((r) => r.data),
+  });
+
+  return (
+    <SuppliersPortalModuleFT2
+      {...props}
+      view="sourcing"
+      data={{
+        ...props.data,
+        purchase_orders: props.data?.purchase_orders ?? [],
+        suppliers: props.data?.suppliers ?? [],
+        never_ordered: neverOrdered.data?.variants ?? [],
+        never_ordered_count: neverOrdered.data?.count ?? 0,
+      }}
+      isLoading={props.isLoading || neverOrdered.isLoading}
+      isError={props.isError || neverOrdered.isError}
+      onRefresh={() => {
+        props.onRefresh();
+        void neverOrdered.refetch();
+      }}
+    />
   );
 }

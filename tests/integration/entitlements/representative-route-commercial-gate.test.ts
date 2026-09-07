@@ -116,12 +116,76 @@ function expectCommercialDenied(
 }
 
 // ===========================================================================
-// suppliers  ->  purchasing.core  (Starter+; no tier DENY case exists)
+// P0-A3-5 — PURCHASING / SOURCING RUNTIME COMMERCIAL MATRIX
+//
+// SUPERSEDES the stale "purchasing.core is Starter+; no tier DENY case exists"
+// contract this block used to carry. Ratified split
+// (COMMERCIAL-REMODEL-ALIGN-01):
+//
+//   purchasing.core     Core+    representative: GET /api/v1/suppliers/
+//   purchasing.sourcing Growth+  representative: GET /api/v1/suppliers/sourcing-worklist
+//
+// ALLOW keeps the meaning it has everywhere in this file: the request PASSED
+// the commercial middleware. A downstream domain 200/400/404/500 is a handler
+// outcome, never a commercial denial — no business fixture is fabricated to
+// force a 200.
 // ===========================================================================
-describe('purchasing.core — GET /api/v1/suppliers/', () => {
-  it('ALLOW: Starter clears the commercial gate', async () => {
-    const res = await get('/api/v1/suppliers/', 'starter');
-    expect(commercialGatePassed(res)).toBe(true);
+const PURCHASING_CORE_ROUTE = '/api/v1/suppliers/';
+const PURCHASING_SOURCING_ROUTE = '/api/v1/suppliers/sourcing-worklist';
+
+describe('P0-A3-5 purchasing.core (Core+) — GET /api/v1/suppliers/', () => {
+  it('DENY: Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / purchasing.core', async () => {
+    const res = await get(PURCHASING_CORE_ROUTE, 'starter');
+    expectCommercialDenied(res, 'purchasing.core', 'starter');
+  });
+
+  it.each<[Tier]>([['core'], ['growth'], ['scale']])(
+    'ALLOW: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get(PURCHASING_CORE_ROUTE, tier);
+      expect(commercialGatePassed(res)).toBe(true);
+    },
+  );
+});
+
+describe('P0-A3-5 purchasing.sourcing (Growth+) — GET /api/v1/suppliers/sourcing-worklist', () => {
+  it.each<[Tier]>([['starter'], ['core']])(
+    'EXPECTED RED: %s => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW / purchasing.sourcing',
+    async (tier) => {
+      // Starter is denied today, but on purchasing.core — the capabilityId in
+      // the body is contractual, so the Starter case is RED on identity even
+      // while the HTTP status matches. Core is RED outright: the route still
+      // carries requireCapability('purchasing.core'), which Core satisfies.
+      const res = await get(PURCHASING_SOURCING_ROUTE, tier);
+      expectCommercialDenied(res, 'purchasing.sourcing', tier);
+    },
+  );
+
+  it.each<[Tier]>([['growth'], ['scale']])(
+    'ALLOW: %s clears the commercial gate',
+    async (tier) => {
+      const res = await get(PURCHASING_SOURCING_ROUTE, tier);
+      expect(commercialGatePassed(res)).toBe(true);
+    },
+  );
+});
+
+// ---------------------------------------------------------------------------
+// PUR-C9 — RBAC stays independently authoritative on a sourcing route.
+// ---------------------------------------------------------------------------
+describe('P0-A3-5 sourcing RBAC separation — commercial and role denial stay distinct', () => {
+  it('an eligible Growth user is never denied COMMERCIALLY on the sourcing route', async () => {
+    const res = await get(PURCHASING_SOURCING_ROUTE, 'growth', ['operator']);
+    expect(res.body?.error).not.toBe('COMMERCIAL_ACCESS_DENIED');
+  });
+
+  it('a role denial on the sourcing route is ACTION_FORBIDDEN, never COMMERCIAL_ACCESS_DENIED', async () => {
+    // The sourcing worklist requires suppliers:read, which an operator does not
+    // hold. Commercial eligibility (Growth) is satisfied, so the only remaining
+    // denial vocabulary must be requireAction's.
+    const res = await get(PURCHASING_SOURCING_ROUTE, 'growth', ['operator']);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('ACTION_FORBIDDEN');
   });
 });
 
@@ -321,6 +385,7 @@ describe('P0-A3-3 Returns RBAC separation — the commercial gate is not a role 
 describe('Scale clears every migrated commercial gate', () => {
   it.each([
     ['/api/v1/suppliers/'],
+    ['/api/v1/suppliers/sourcing-worklist'],
     ['/api/v1/wms/batches'],
     ['/api/v1/wms/analytics'],
     ['/api/v1/wms/problem-center/pick-exceptions'],

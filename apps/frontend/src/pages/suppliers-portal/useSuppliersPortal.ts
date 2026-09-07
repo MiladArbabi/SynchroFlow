@@ -3,10 +3,24 @@ import { useQuery } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
 /**
- * SUPPLIERS PORTAL HOOK
- * ----------------------
+ * SUPPLIERS PORTAL HOOK — CORE PURCHASING DATA ONLY
+ * --------------------------------------------------
  * Fetches purchase orders and suppliers in parallel for the current shop.
  * No polling — data changes on explicit user action. Refetch on demand.
+ *
+ * COMMERCIAL SCOPE (COMMERCIAL-REMODEL-ALIGN-01 / P0-A3-5)
+ * --------------------------------------------------------
+ * This hook is the SHARED data source for the whole Purchasing page — it is
+ * called once, above the routes that render Open POs, Suppliers AND Sourcing.
+ * Everything it fetches is therefore fetched for a merchant sitting on Open POs
+ * or Suppliers, who may hold only purchasing.core (Core+).
+ *
+ * ADVANCED SOURCING is purchasing.sourcing (Growth+): the worklist,
+ * recommendations, never-ordered, supplier-product preferences and the
+ * reorder/MOQ accumulator. None of it may be requested from here — a Core
+ * merchant would be issuing Growth-only requests just by opening Purchasing.
+ * The never-ordered query that used to live here now belongs to the Sourcing
+ * route, behind its own purchasing.sourcing CommercialGate.
  */
 export function useSuppliersPortal() {
   const pos = useQuery({
@@ -19,28 +33,16 @@ export function useSuppliersPortal() {
     queryFn: () =>
       axiosInstance.get('/api/v1/suppliers').then((r) => r.data),
   });
-  // SOURCING (Thread C, sourcing-recommendation-playbook.md §6) — the
-  // never-ordered list, fetched once for the whole page. Per-variant
-  // recommendations are fetched on demand inside the Sourcing view
-  // itself (one request per expanded item, not all up front).
-  const neverOrdered = useQuery({
-    queryKey: ['suppliers-portal', 'never-ordered'],
-    queryFn: () =>
-      axiosInstance.get('/api/v1/suppliers/sourcing-recommendations/never-ordered').then((r) => r.data),
-  });
   return {
     data: {
       purchase_orders: pos.data?.purchase_orders ?? [],
       suppliers: suppliers.data?.suppliers ?? [],
-      never_ordered: neverOrdered.data?.variants ?? [],
-      never_ordered_count: neverOrdered.data?.count ?? 0,
     },
-    isLoading: pos.isLoading || suppliers.isLoading || neverOrdered.isLoading,
-    isError: pos.isError || suppliers.isError || neverOrdered.isError,
+    isLoading: pos.isLoading || suppliers.isLoading,
+    isError: pos.isError || suppliers.isError,
     refetch: () => {
       void pos.refetch();
       void suppliers.refetch();
-      void neverOrdered.refetch();
     },
   };
 }

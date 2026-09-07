@@ -52,7 +52,11 @@ const MATRIX: Record<string, Partial<Record<Tier, { status: number; reason?: str
   'warehouse.analytics':      { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   'warehouse.floor_planning': { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   'warehouse.problem_center': { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
-  'purchasing.core':          { starter: { status: 200 }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
+  // P0-A3-5 (COMMERCIAL-REMODEL-ALIGN-01): the stale Starter+ Purchasing row is
+  // retired. Ratified split — purchasing.core is Core+, purchasing.sourcing is
+  // the Growth+ ADVANCED SOURCING half.
+  'purchasing.core':          { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 200 }, growth: { status: 200 }, scale: { status: 200 } },
+  'purchasing.sourcing':      { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
   'demand.forecasting':       { starter: { status: 403, reason: 'TIER_TOO_LOW' }, core: { status: 403, reason: 'TIER_TOO_LOW' }, growth: { status: 200 }, scale: { status: 200 } },
 };
 
@@ -106,9 +110,20 @@ describe('A2A-C17 — Scale never downgrades', () => {
 // A2A-C16 — RBAC stays separate (requireCapability does no role check)
 // ===========================================================================
 describe('A2A-C16 — commercial gate is not RBAC', () => {
-  it('EXPECTED RED: purchasing.core passes for an operator role (commercial only; role is requireAction\'s job)', async () => {
+  it('purchasing.core passes for an operator role (commercial only; role is requireAction\'s job)', async () => {
     READY();
-    const r = await hit('purchasing.core', { tier: 'starter', roles: ['operator'] });
+    // P0-A3-5: the tier here must be one that is COMMERCIALLY eligible, so the
+    // 200 proves the role was ignored rather than accidentally proving a tier
+    // pass. Starter is no longer eligible for purchasing.core (Core+), so the
+    // stale Starter input is retired; the assertion semantics are unchanged.
+    const r = await hit('purchasing.core', { tier: 'core', roles: ['operator'] });
+    expect(r.status).toBe(200);
+    expect(r.body.ok).toBe(true);
+  });
+
+  it('purchasing.sourcing passes for an operator role at Growth (commercial only)', async () => {
+    READY();
+    const r = await hit('purchasing.sourcing', { tier: 'growth', roles: ['operator'] });
     expect(r.status).toBe(200);
     expect(r.body.ok).toBe(true);
   });

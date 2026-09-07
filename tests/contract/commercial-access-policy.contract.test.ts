@@ -14,7 +14,8 @@
 //   - Module sets are cumulative: STARTER ⊆ CORE ⊆ GROWTH ⊆ SCALE
 //   - Scale standard limits resolve as unlimited
 //   - One canonical module registry; nav must only reference emittable ids
-//   - Purchasing = Starter+, canonical module `suppliers-portal`
+//   - Purchasing = Core+ (purchasing.core) / Growth+ (purchasing.sourcing),
+//     canonical module `suppliers-portal` (P0-A3-5 retired the Starter+ claim)
 //   - Warehouse: operations=Starter, problem-center=Core,
 //     floor-planning=Growth, warehouse.analytics=Growth
 //   - No `import.meta.env.DEV` bypass inside the access decision
@@ -402,7 +403,9 @@ describe('B2 — Sidenav capability ids', () => {
       purchasing: 'purchasing.core',
       'open-pos': 'purchasing.core',
       suppliers: 'purchasing.core',
-      sourcing: 'purchasing.core',
+      // P0-A3-5: Sourcing is the Growth+ ADVANCED SOURCING surface, not
+      // purchasing.core. Stale purchasing.core row retired here.
+      sourcing: 'purchasing.sourcing',
       demand: 'demand.forecasting',
     };
     const missing = Object.entries(want)
@@ -419,7 +422,7 @@ describe('B2 — Sidenav capability ids', () => {
   it('GREEN CONTROL: each of the ratified CapabilityIds exists in the shared registry', () => {
     for (const cap of [
       'warehouse.operations', 'warehouse.analytics', 'warehouse.floor_planning',
-      'warehouse.problem_center', 'purchasing.core', 'demand.forecasting',
+      'warehouse.problem_center', 'purchasing.core', 'purchasing.sourcing', 'demand.forecasting',
     ]) {
       expect((CP as any).CAPABILITY_REQUIREMENTS[cap]).toBeDefined();
     }
@@ -457,11 +460,23 @@ describe('B3 — wms-lite removed from the frontend commercial surfaces', () => 
 // B4 — no parent commercial inheritance (each commercial child is explicit)
 // ===========================================================================
 describe('B4 — commercial children are explicit, never inherited from a parent', () => {
-  it('EXPECTED RED: purchasing children (open-pos/suppliers/sourcing) each declare capabilityId', () => {
-    const missing = ['open-pos', 'suppliers', 'sourcing'].filter(
-      (id) => !new RegExp(`id:\\s*'${id}'[\\s\\S]{0,240}?capabilityId:\\s*'purchasing\\.core'`).test(A2B_NAV_SRC),
+  it('purchasing children (open-pos/suppliers/sourcing) each declare their OWN ratified capabilityId', () => {
+    // P0-A3-5: the homogeneous purchasing.core expectation is retired. The
+    // Purchasing children are NOT one commercial class — COMMERCIAL-REMODEL-
+    // ALIGN-01 split them, and B4's invariant is precisely that each child
+    // states its own decision rather than inheriting one. An explicit
+    // id -> capability map is therefore the correct shape here, matching the
+    // warehouse-children case below.
+    const want: Record<string, string> = {
+      'open-pos': 'purchasing.core',
+      suppliers: 'purchasing.core',
+      sourcing: 'purchasing.sourcing',
+    };
+    const missing = Object.entries(want).filter(
+      ([id, cap]) =>
+        !new RegExp(`id:\\s*'${id}'[\\s\\S]{0,240}?capabilityId:\\s*'${cap.replace(/\./g, '\\.')}'`).test(A2B_NAV_SRC),
     );
-    expect(missing).toEqual([]);
+    expect(missing.map((m) => m[0])).toEqual([]);
   });
 
   it('EXPECTED RED: warehouse children (operations/floor-planning/analytics/problem center) each declare capabilityId', () => {
@@ -547,7 +562,8 @@ describe('B7 — ModuleTabBar capability support', () => {
       [WAREHOUSE_TABS, 'product-issues', 'warehouse.problem_center'],
       [PURCHASING_TABS_F, 'purchasing-pos', 'purchasing.core'],
       [PURCHASING_TABS_F, 'purchasing-suppliers', 'purchasing.core'],
-      [PURCHASING_TABS_F, 'purchasing-sourcing', 'purchasing.core'],
+      // P0-A3-5: the Sourcing tab is Growth+ ADVANCED SOURCING.
+      [PURCHASING_TABS_F, 'purchasing-sourcing', 'purchasing.sourcing'],
       [INVENTORY_TABS_F, 'demand', 'demand.forecasting'],
     ];
     const missing = want.filter(([file, id, cap]) => {

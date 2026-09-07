@@ -2564,6 +2564,13 @@ only the named A2A set (see §4). The four **frontend** private tier-rank maps
 | floor planning (`floor-planning.routes.ts`) | `requireTier('starter')` | `warehouse.floor_planning` | **Growth+** (module `floor-planning`) — see leak fix below |
 | demand (`demand.routes.ts`) | `requireTier('growth')` | `demand.forecasting` | Growth+ (module `demand` · feature `demand.forecasting`) |
 
+> **Purchasing supersession note — 2026-09-07:** §32 is historical implementation
+> evidence. Any Purchasing statement in this section that describes
+> `suppliers-portal` as Starter+, assigns Sourcing to `purchasing.core`, gives
+> `/suppliers-portal/*` only one Core gate, or shows Starter allowed on
+> `purchasing.core` is superseded by the canonical remodel in §33 and the
+> completed runtime wiring in §35 (`P0-A3-5`).
+
 **Middleware ordering on every migrated chain:**
 `authenticateToken → requireFt2 → requireCapability → requireAction → handler`
 (commercial eligibility first, RBAC second; `requireAction` is never folded into
@@ -3729,10 +3736,10 @@ program, not part of this slice.
   recommendations, sourcing worklist, supplier-product preference intelligence,
   and reorder/MOQ accumulation intelligence
 
-> Purchasing **runtime/frontend route enforcement is NOT implemented by this
-> slice.** Canonical policy truth is green; wiring the suppliers routes/controllers,
-> purchasing tabs/routes, `navBootstrap` and direct-URL gates to it is a dedicated
-> follow-up coverage slice.
+> **Superseded 2026-09-07 by `P0-A3-5` (§35).** `COMMERCIAL-REMODEL-ALIGN-01`
+> established the canonical Purchasing policy; the dedicated follow-up has now
+> implemented backend route enforcement, navigation/tab parity, direct-URL gating,
+> and Core-vs-Growth frontend data isolation.
 
 ### 33.4 Order meter — two different numbers
 
@@ -3800,7 +3807,7 @@ vacuous instead of red.
   behaviour is not
 - Advanced Sourcing is protected as **one** capability, not per sub-feature
 - 60 / 180 / unlimited **history windows** have no canonical commercial-policy field
-- Purchasing runtime / frontend / direct-URL enforcement — future slice (§33.3)
+- Purchasing runtime / frontend / direct-URL enforcement — **CLOSED by `P0-A3-5` (§35)**
 - **`BILL-ENTITLEMENT-01` Fact B remains P0-B Commercial State Integrity.** This
   slice changed no subscription-transition causality and does not explain why
   reviewer production became Scale.
@@ -3809,9 +3816,11 @@ vacuous instead of red.
 
 ### 33.9 Explicitly NOT done
 
-No Purchasing runtime/API/frontend gating · no Customers, Specter or Finances
-physical deletion · no Decision/Command commercial capability · no pricing change ·
-no seat-billing change · no history-window architecture · no migrations.
+Purchasing runtime/API/frontend gating was not part of `COMMERCIAL-REMODEL-ALIGN-01`
+itself and was subsequently **CLOSED by `P0-A3-5` (§35)** · no Customers, Specter
+or Finances physical deletion · no Decision/Command commercial capability · no
+pricing change · no seat-billing change · no history-window architecture · no
+migrations.
 
 ---
 
@@ -3941,8 +3950,159 @@ and `AlertsPage.tsx`.
 
 ### 34.10 Carry-forward
 
-- **Purchasing runtime/frontend parity remains separate deferred work** — the
-  `nav-surface-parity` C5 failures belong to that slice, not this one, and were
-  deliberately not addressed here.
+- **Superseded 2026-09-07 by `P0-A3-5` (§35): Purchasing runtime/frontend
+  parity is now closed.** The deferred Purchasing failures carried by this
+  section were consumed by that dedicated slice.
 - Legacy `/api/v1/products/...` aliases remain mounted; removal is future cleanup.
 - No canonical policy matrix change, no migration, no DB schema change.
+
+---
+
+## 35. Purchasing / Sourcing Commercial Access — `P0-A3-5` (ratified + implemented 2026-09-07)
+
+This slice closes the runtime/frontend coverage gap deliberately left by
+`COMMERCIAL-REMODEL-ALIGN-01`. The canonical policy did not change; every
+Purchasing surface now consumes that policy consistently.
+
+### 35.1 Canonical commercial split
+
+| Capability | Starter | Core | Growth | Scale |
+|---|---|---|---|---|
+| `purchasing.core` | DENY | ALLOW | ALLOW | ALLOW |
+| `purchasing.sourcing` | DENY | DENY | ALLOW | ALLOW |
+
+Both capabilities belong to module `suppliers-portal`, but their tier floors differ:
+
+- `purchasing.core` = **Core+** — Purchase Orders, Suppliers and basic Purchasing workflows
+- `purchasing.sourcing` = **Growth+** — sourcing worklist, sourcing recommendations,
+  supplier-product preferences and reorder/MOQ accumulation intelligence
+
+An additive `suppliers-portal` module grant does not bypass either minimum-tier wall.
+
+### 35.2 Backend route ownership
+
+`apps/backend/src/api/suppliers/suppliers.routes.ts` now has **29**
+commercially gated routes:
+
+- **18 basic Purchasing routes** remain `purchasing.core`
+- **11 advanced Sourcing routes** use `purchasing.sourcing`
+
+The 11 advanced routes are:
+
+    GET    /sourcing-worklist
+    GET    /sourcing-recommendations/never-ordered
+    GET    /sourcing-recommendations/:variantId
+    GET    /preferences
+    POST   /preferences
+    PATCH  /preferences/:id
+    DELETE /preferences/:id
+    POST   /reorder-requests/convert
+    GET    /reorder-requests
+    POST   /reorder-requests
+    DELETE /reorder-requests/:id
+
+`requireFt2`, `requireAction`, handlers and middleware ordering remain unchanged.
+Commercial eligibility and RBAC remain separate decisions.
+
+### 35.3 Navigation and tabs
+
+The Purchasing parent, Open POs and Suppliers resolve through `purchasing.core`.
+
+Sourcing independently resolves through `purchasing.sourcing` in both
+`navBootstrap.ts` and `purchasingSubTabs.ts`.
+
+Therefore:
+
+- Starter sees no Purchasing surface
+- Core sees Open POs and Suppliers but not Sourcing
+- Growth and Scale see basic Purchasing plus Advanced Sourcing
+
+No raw `requiredTier` or `requiredModuleId` is commercial authority for these
+migrated Purchasing surfaces.
+
+### 35.4 Direct-route protection
+
+`/suppliers-portal/*` keeps its outer:
+
+    CommercialGate capabilityId="purchasing.core"
+
+`/suppliers-portal/sourcing` additionally has:
+
+    CommercialGate capabilityId="purchasing.sourcing"
+
+The Growth gate wraps the Sourcing route element before it mounts. Core direct
+navigation therefore follows the canonical denial path and cannot mount or fetch
+the protected Sourcing surface.
+
+### 35.5 Core-shell data isolation
+
+The shared `useSuppliersPortal` hook now fetches only Core-owned data:
+
+- Purchase Orders
+- Suppliers
+
+The eager `/sourcing-recommendations/never-ordered` request was removed from the
+shared hook entirely.
+
+A Sourcing-only route component owns that query and mounts only behind
+`purchasing.sourcing`. Endpoint, query key, response mapping and refresh
+behaviour remain unchanged.
+
+The current `SuppliersPortalData` type still requires `never_ordered` and
+`never_ordered_count` on every view. Core views receive empty placeholders
+(`[]` / `0`); real Growth-only values are supplied only by the Sourcing route.
+Making those fields optional is separate module-surface cleanup.
+
+### 35.6 Runtime proof
+
+Verified runtime boundary:
+
+- Starter → `purchasing.core`: DENY / `TIER_TOO_LOW`
+- Core → `purchasing.core`: ALLOW
+- Core → `purchasing.sourcing`: DENY / `TIER_TOO_LOW`
+- Growth → `purchasing.sourcing`: commercial gate clears
+- Scale clears both capabilities
+
+The Sourcing domain suite now uses a coherent Growth subscription and Growth JWT.
+
+### 35.7 Verification evidence
+
+- full contract project — **38 / 38 suites, 624 / 624 tests PASS**
+- targeted Purchasing frontend — **2 / 2 suites, 43 / 43 tests PASS**
+- Purchasing/Sourcing backend integration — **2 / 2 suites, 71 / 71 tests PASS**
+- `requireCapability` unit contract — **40 / 40 PASS**
+- backend TypeScript — **0 errors**
+- frontend TypeScript — **19 pre-existing project errors, 0 P0-A3-5 target errors**
+- disposable integration DBs created → migrated → dropped; no orphan test DB
+- no migration, schema, canonical-policy, pricing or billing-state change
+
+One earlier `warehouse.floor_planning @ scale` run hit the Jest 5-second timeout.
+Its isolated rerun passed, followed by the complete **40 / 40** suite. It is
+classified as an unrelated transient timeout.
+
+### 35.8 Unrelated baseline debt observed
+
+The broader frontend commercial-access regression remains non-green for four
+pre-existing failures outside this slice:
+
+- two stale `commercial-context.test.ts` expectations for deprecated
+  `customers` / `specter.full_capture`
+- two `commercial-gate.test.tsx` harness cases missing the required
+  `EntitlementsProvider`
+
+Their files and direct runtime stack were unchanged from the slice anchor.
+All Purchasing/Sourcing frontend contracts are green.
+
+### 35.9 Closure
+
+`P0-A3-5` closes the Purchasing runtime/frontend/direct-URL commercial-access gap.
+
+The active truth is:
+
+    Starter -> no Purchasing
+    Core    -> Purchase Orders + Suppliers + basic Purchasing
+    Growth  -> Core Purchasing + Advanced Sourcing
+    Scale   -> all active Growth Purchasing/Sourcing capability
+
+`BILL-ENTITLEMENT-01` Fact B remains separate P0-B Commercial State Integrity
+work and is unchanged by this slice.

@@ -222,7 +222,7 @@ router.get(
   '/sourcing-worklist',
   authenticateToken,
   requireFt2,
-  requireCapability('purchasing.core'),
+  requireCapability('purchasing.sourcing'),
   requireAction('suppliers:read'),
   httpGetSourcingWorklist
 );
@@ -232,7 +232,7 @@ router.get(
   '/sourcing-recommendations/never-ordered',
   authenticateToken,
   requireFt2,
-  requireCapability('purchasing.core'),
+  requireCapability('purchasing.sourcing'),
   requireAction('suppliers:read'),
   httpGetNeverOrderedVariants
 );
@@ -240,7 +240,7 @@ router.get(
   '/sourcing-recommendations/:variantId',
   authenticateToken,
   requireFt2,
-  requireCapability('purchasing.core'),
+  requireCapability('purchasing.sourcing'),
   requireAction('suppliers:read'),
   httpGetSourcingRecommendations
 );
@@ -248,22 +248,22 @@ router.get(
 // ── SUPPLIER-PRODUCT PREFERENCES (sourcing-recommendation-playbook.md §7) ──
 router.get(
   '/preferences',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:read'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:read'),
   httpListPreferences
 );
 router.post(
   '/preferences',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpCreatePreference
 );
 router.patch(
   '/preferences/:id',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpUpdatePreference
 );
 router.delete(
   '/preferences/:id',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpDeletePreference
 );
 
@@ -271,22 +271,22 @@ router.delete(
 // convert must be registered before :id to avoid route shadowing
 router.post(
   '/reorder-requests/convert',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpConvertReorderRequests
 );
 router.get(
   '/reorder-requests',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:read'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:read'),
   httpListReorderRequests
 );
 router.post(
   '/reorder-requests',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpCreateReorderRequest
 );
 router.delete(
   '/reorder-requests/:id',
-  authenticateToken, requireFt2, requireCapability('purchasing.core'), requireAction('suppliers:write'),
+  authenticateToken, requireFt2, requireCapability('purchasing.sourcing'), requireAction('suppliers:write'),
   httpDeleteReorderRequest
 );
 

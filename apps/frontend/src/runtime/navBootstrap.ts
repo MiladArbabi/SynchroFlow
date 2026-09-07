@@ -130,9 +130,14 @@ export function bootstrapNavGroups() {
     ],
   });
 
-  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B: Purchasing and every child migrated to
-  // capabilityId (purchasing.core, Starter+) — decision comes from the shared
-  // commercial adapter, never inherited from a parent.
+  // COMMERCIAL-ACCESS-ARCH-01 P0-A2B / P0-A3-5: Purchasing and every child are
+  // capabilityId-driven — the decision comes from the shared commercial
+  // adapter, never a raw tier/module compare and never inherited from a parent.
+  //
+  // COMMERCIAL-REMODEL-ALIGN-01 ratified the Purchasing split:
+  //   purchasing.core     (suppliers-portal, Core+)   Open POs / Suppliers
+  //   purchasing.sourcing (suppliers-portal, Growth+) ADVANCED SOURCING
+  // Starter holds no Purchasing surface at all.
   registerNavItem({
     id: 'purchasing',
     title: 'Purchasing',
@@ -144,7 +149,7 @@ export function bootstrapNavGroups() {
     children: [
       { id: 'open-pos',               title: 'Open POs',   path: '/suppliers-portal',            capabilityId: 'purchasing.core' },
       { id: 'suppliers',              title: 'Suppliers',        path: '/suppliers-portal/suppliers', capabilityId: 'purchasing.core' },
-      { id: 'sourcing',               title: 'Sourcing',         path: '/suppliers-portal/sourcing',  capabilityId: 'purchasing.core' },
+      { id: 'sourcing',               title: 'Sourcing',         path: '/suppliers-portal/sourcing',  capabilityId: 'purchasing.sourcing' },
     ],
   });
 

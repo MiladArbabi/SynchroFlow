@@ -78,7 +78,9 @@ describe('C6 — direct-route commercial parity', () => {
       purchasing: 'purchasing.core',
       'open-pos': 'purchasing.core',
       suppliers: 'purchasing.core',
-      sourcing: 'purchasing.core',
+      // P0-A3-5: Sourcing is Growth+ ADVANCED SOURCING — the stale
+      // purchasing.core row is retired here.
+      sourcing: 'purchasing.sourcing',
       demand: 'demand.forecasting',
     };
     const missing = Object.entries(expected).filter(([id, capabilityId]) =>
@@ -300,5 +302,76 @@ describe('B18 — unknown CapabilityId fails closed in the shared engine', () =>
     expect((CP as any).isCapabilityId('warehouse.operations')).toBe(true);
     expect((CP as any).isCapabilityId('warehouse.__not_real__')).toBe(false);
     expect((CP as any).CAPABILITY_REQUIREMENTS['warehouse.__not_real__']).toBeUndefined();
+  });
+});
+
+// ###########################################################################
+// PUR-C4 — DIRECT-URL PARITY FOR THE PURCHASING SPLIT (P0-A3-5)
+// ###########################################################################
+// /suppliers-portal and /suppliers-portal/suppliers resolve purchasing.core.
+// /suppliers-portal/sourcing resolves purchasing.sourcing.
+//
+// The load-bearing point: the SuppliersPortalPage subtree carries ONE outer
+// purchasing.core gate today, and every child route — including /sourcing —
+// inherits only that. Inheritance from a Core+ gate is NOT evidence for a
+// Growth+ surface: a Core merchant typing /suppliers-portal/sourcing directly
+// clears the outer gate and reaches the Growth-only surface. The Sourcing
+// route element must therefore carry its own purchasing.sourcing decision.
+
+const SUPPLIERS_PORTAL_PAGE_SRC = read(SUPPLIERS_PAGE);
+
+/**
+ * The `<Route path="/sourcing" ... />` element and everything wrapping it
+ * inside the page's <Routes> block, bounded to that block so a purchasing.
+ * sourcing reference anywhere else in the file cannot satisfy the contract.
+ */
+function routesBlock(): string {
+  const start = SUPPLIERS_PORTAL_PAGE_SRC.indexOf('<Routes>');
+  const end = SUPPLIERS_PORTAL_PAGE_SRC.indexOf('</Routes>');
+  return start > -1 && end > start ? SUPPLIERS_PORTAL_PAGE_SRC.slice(start, end) : '';
+}
+
+describe('PUR-C4 — /suppliers-portal direct-URL capability resolution', () => {
+  it('GREEN CONTROL: the /suppliers-portal subtree carries an outer purchasing.core gate', () => {
+    expect(/<CommercialGate\s+capabilityId="purchasing\.core"/.test(SUPPLIERS_PORTAL_PAGE_SRC)).toBe(true);
+  });
+
+  it('GREEN CONTROL: the page registers the three ratified sub-routes', () => {
+    const block = routesBlock();
+    expect(block.length).toBeGreaterThan(0);
+    expect(/path="\/"/.test(block)).toBe(true);
+    expect(/path="\/suppliers"/.test(block)).toBe(true);
+    expect(/path="\/sourcing"/.test(block)).toBe(true);
+  });
+
+  it('EXPECTED RED: the /sourcing route element carries its own purchasing.sourcing gate', () => {
+    // A single outer purchasing.core gate is explicitly NOT sufficient
+    // evidence — the Growth-only decision must be expressed on the Sourcing
+    // route itself.
+    const block = routesBlock();
+    expect(/purchasing\.sourcing/.test(block)).toBe(true);
+  });
+
+  it('EXPECTED RED: Sourcing direct navigation cannot be satisfied by purchasing.core alone', () => {
+    // Structural proof that the Sourcing element is gated by a DIFFERENT
+    // capability than its Core+ siblings: the segment of the routes block that
+    // contains path="/sourcing" must name purchasing.sourcing.
+    const block = routesBlock();
+    const idx = block.indexOf('path="/sourcing"');
+    expect(idx).toBeGreaterThan(-1);
+    // Bound to the Sourcing route's own JSX region (its wrapper + element).
+    const sourcingRegion = block.slice(Math.max(0, idx - 400), idx + 400);
+    expect(/purchasing\.sourcing/.test(sourcingRegion)).toBe(true);
+  });
+
+  it('GREEN CONTROL: canonical policy makes the two gates genuinely different decisions at Core', () => {
+    const decide = (cap: string, tier: 'starter' | 'core' | 'growth' | 'scale') =>
+      (CP as any).evaluateAccess(
+        (CP as any).CAPABILITY_REQUIREMENTS[cap],
+        (CP as any).standardContextForTier(tier),
+      ).allowed;
+    expect(decide('purchasing.core', 'core')).toBe(true);
+    expect(decide('purchasing.sourcing', 'core')).toBe(false);
+    expect(decide('purchasing.sourcing', 'growth')).toBe(true);
   });
 });

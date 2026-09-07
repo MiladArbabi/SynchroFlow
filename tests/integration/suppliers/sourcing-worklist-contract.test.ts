@@ -105,7 +105,13 @@ async function bootstrapShop(unique: string) {
     });
     await trx('shop_subscriptions').insert({
       shop_id: shopId,
-      tier: 'core',
+      // P0-A3-5 (COMMERCIAL-REMODEL-ALIGN-01): ADVANCED SOURCING is
+      // purchasing.sourcing (Growth+). This suite owns Sourcing DOMAIN
+      // behaviour, so its fixture must be commercially eligible for the
+      // surface under test. Core->Sourcing commercial DENIAL is owned by
+      // tests/integration/entitlements/representative-route-commercial-gate.test.ts,
+      // never here.
+      tier: 'growth',
       allow_overage: true,
       billing_provider: 'stripe',
       stripe_customer_id: null,
@@ -128,7 +134,8 @@ async function bootstrapShop(unique: string) {
     ]);
   });
 
-  return { shopId, userId, token: issueTestToken({ userId, shopId, tier: 'core' }) };
+  // Token tier stays coherent with the shop_subscriptions row above (Growth).
+  return { shopId, userId, token: issueTestToken({ userId, shopId, tier: 'growth' }) };
 }
 
 async function seedProduct(shopId: number, productId: string, title: string) {

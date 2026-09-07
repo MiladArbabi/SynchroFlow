@@ -15,9 +15,17 @@
 // sidenav decision from config keeps this contract environment-independent.
 //
 // Canonical effective module floors are mirrored from modulesForTier(), not
-// from the frozen backend-core TIER_CONFIG seed lists. Purchasing is Starter+
-// in that effective model. Expected RED remains on capability expression and
-// cross-surface convergence, not on an obsolete rows-only availability model.
+// from the frozen backend-core TIER_CONFIG seed lists. Expected RED remains on
+// capability expression and cross-surface convergence, not on an obsolete
+// rows-only availability model.
+//
+// P0-A3-5 (COMMERCIAL-REMODEL-ALIGN-01): Purchasing is NOT Starter+. The
+// ratified split is purchasing.core (suppliers-portal, Core+) and
+// purchasing.sourcing (suppliers-portal, Growth+). Every Starter+ Purchasing
+// assertion that used to live in this file is retired below — Purchasing
+// decisions are now taken from the REAL policy engine (policyAllows) rather
+// than a module-membership-only model, because a module-only model cannot
+// express the Core/Growth tier walls the split introduces.
 
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -87,11 +95,12 @@ import { INVENTORY_MODULE_TABS } from 'pages/ft2-pages/inventoryModuleTabs';
 // ---- canonical effective inputs, mirrored (deterministic, no env) ---------
 // Source: @lasyncro/commercial-policy modulesForTier(tier). Persisted rows are
 // additive and therefore cannot remove these standard plan-floor modules.
+// P0-A3-5: `suppliers-portal` is a CORE-floor module, never Starter.
 const STARTER_MODULES = [
   'overview', 'order-nexus', 'fulfillment', 'alerts',
-  'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes', 'suppliers-portal',
+  'shopify_integration', 'specter_sdk_free', 'wms', 'barcodes',
 ];
-const CORE_MODULES = [...STARTER_MODULES, 'returns', 'products', 'problem-center'];
+const CORE_MODULES = [...STARTER_MODULES, 'returns', 'products', 'problem-center', 'suppliers-portal'];
 const GROWTH_MODULES = [...CORE_MODULES, 'customers', 'finances', 'demand', 'specter', 'floor-planning'];
 const SCALE_MODULES = [...GROWTH_MODULES];
 const GRANTED: Record<string, Set<string>> = {
@@ -107,17 +116,20 @@ const GRANTED: Record<string, Set<string>> = {
 // the stale `wms-lite` entry that used to live here was never a valid
 // canonical module id (see C4/C13 in the contract suite) and is removed.
 // Warehouse's Sidenav decision is now modelled via CAPABILITY_MODULE /
-// effectiveCapabilityAllows('warehouse.operations', tier) below. `purchasing`
-// and `inventory` are unmigrated at the parent level and still carry a real
-// requiredModuleId, so they remain here.
+// effectiveCapabilityAllows('warehouse.operations', tier) below. `inventory`
+// is unmigrated at the parent level and still carries a real requiredModuleId,
+// so it remains here. P0-A3-5 retired the `purchasing` row: the Purchasing nav
+// parent carries a capabilityId, not a requiredModuleId, and its decision is a
+// tier decision a module-membership model cannot express.
 const NAV_REQUIRED_MODULE: Record<string, string> = {
-  purchasing: 'suppliers-portal',
   inventory: 'products',
 };
 
+// Module-membership-only model. Deliberately excludes the purchasing
+// capabilities (P0-A3-5): both require the SAME module and differ only by
+// minimum tier, so module membership is not a decision for them.
 const CAPABILITY_MODULE: Record<string, string> = {
   'warehouse.operations': 'wms',
-  'purchasing.core': 'suppliers-portal',
   'demand.forecasting': 'demand',
 };
 
@@ -130,6 +142,18 @@ function sidenavAllows(navItemId: keyof typeof NAV_REQUIRED_MODULE, tier: string
 
 function effectiveCapabilityAllows(capabilityId: keyof typeof CAPABILITY_MODULE, tier: string): boolean {
   return GRANTED[tier].has(CAPABILITY_MODULE[capabilityId]);
+}
+
+/**
+ * P0-A3-5 — the REAL canonical decision for a capability at a standard-plan
+ * tier. Not a mirror: this calls the shipped policy engine, so a policy change
+ * cannot silently drift away from what this file asserts.
+ */
+function policyAllows(capabilityId: string, tier: typeof TIERS[number]): boolean {
+  return evaluateAccess(
+    CAPABILITY_REQUIREMENTS[capabilityId as keyof typeof CAPABILITY_REQUIREMENTS],
+    standardContextForTier(tier),
+  ).allowed;
 }
 
 /** Render one tab bar at `tier`, click `label`, report whether it navigated. */
@@ -167,38 +191,117 @@ describe('C5 — Warehouse Operations parity', () => {
 });
 
 // ===========================================================================
-// PURCHASING + SOURCING — ratified Starter+ (P-A), must ALLOW everywhere
+// PURCHASING + SOURCING — P0-A3-5 ratified split
+//   purchasing.core     (suppliers-portal, Core+)   Open POs / Suppliers
+//   purchasing.sourcing (suppliers-portal, Growth+) Sourcing
+//
+// The whole Starter+ Purchasing model this describe used to assert is retired
+// (PUR-C10). Decisions come from policyAllows() — the real engine.
 // ===========================================================================
-describe('C5 — Purchasing / Sourcing parity', () => {
-  it('GREEN: ModuleTabBar allows Open POs / Suppliers / Sourcing for every tier', () => {
+/**
+ * The Purchasing registerNavItem(...) call together with the comment block
+ * directly above it. Splitting navBootstrap on 'registerNavItem(' leaves an
+ * item's own leading comment attached to the PREVIOUS chunk, which would make
+ * a stale-comment assertion vacuous — this walks back over the contiguous
+ * comment lines so the claim is actually inspected.
+ */
+function purchasingNavRegion(): string {
+  const idx = NAV_BOOTSTRAP_SRC.indexOf("id: 'purchasing'");
+  if (idx < 0) return '';
+  const callStart = NAV_BOOTSTRAP_SRC.lastIndexOf('registerNavItem(', idx);
+  if (callStart < 0) return '';
+  const before = NAV_BOOTSTRAP_SRC.slice(0, callStart).split('\n');
+  let firstLine = before.length - 1;
+  while (firstLine > 0 && /^\s*(\/\/|$)/.test(before[firstLine - 1])) firstLine -= 1;
+  const commentStart = before.slice(0, firstLine).join('\n').length;
+  const close = NAV_BOOTSTRAP_SRC.indexOf('\n  });', idx);
+  const end = close < 0 ? NAV_BOOTSTRAP_SRC.length : close + '\n  });'.length;
+  return NAV_BOOTSTRAP_SRC.slice(commentStart, end);
+}
+
+describe('PUR-C2/PUR-C3 — Purchasing / Sourcing parity (ratified split)', () => {
+  it('GREEN CONTROL: the canonical engine denies Purchasing at Starter and Sourcing below Growth', () => {
+    expect(TIERS.map((t) => [t, policyAllows('purchasing.core', t)])).toEqual([
+      ['starter', false], ['core', true], ['growth', true], ['scale', true],
+    ]);
+    expect(TIERS.map((t) => [t, policyAllows('purchasing.sourcing', t)])).toEqual([
+      ['starter', false], ['core', false], ['growth', true], ['scale', true],
+    ]);
+  });
+
+  it('GREEN CONTROL: the Open POs tab decision equals purchasing.core at every tier', () => {
     for (const t of TIERS) {
-      expect(tabAllows(PURCHASING_SUB_TABS, 'Open POs', t)).toBe(true);
-      expect(tabAllows(PURCHASING_SUB_TABS, 'Suppliers', t)).toBe(true);
-      expect(tabAllows(PURCHASING_SUB_TABS, 'Sourcing', t)).toBe(true);
+      expect({ t, tab: tabAllows(PURCHASING_SUB_TABS, 'Open POs', t) })
+        .toEqual({ t, tab: policyAllows('purchasing.core', t) });
     }
   });
 
-  it('GREEN: purchasing.core is available from the canonical effective tier floor at every tier', () => {
+  it('GREEN CONTROL: the Suppliers tab decision equals purchasing.core at every tier', () => {
     for (const t of TIERS) {
-      expect(effectiveCapabilityAllows('purchasing.core', t)).toBe(true);
-      expect(sidenavAllows('purchasing', t)).toBe(true);
+      expect({ t, tab: tabAllows(PURCHASING_SUB_TABS, 'Suppliers', t) })
+        .toEqual({ t, tab: policyAllows('purchasing.core', t) });
     }
   });
 
-  it('EXPECTED RED: Purchasing declares purchasing.core on Sidenav, tabs, and CommercialGate', () => {
+  it('EXPECTED RED: the Sourcing tab decision equals purchasing.sourcing at every tier', () => {
     for (const t of TIERS) {
-      expect(tabAllows(PURCHASING_SUB_TABS, 'Sourcing', t)).toBe(effectiveCapabilityAllows('purchasing.core', t));
+      expect({ t, tab: tabAllows(PURCHASING_SUB_TABS, 'Sourcing', t) })
+        .toEqual({ t, tab: policyAllows('purchasing.sourcing', t) });
     }
-    for (const id of ['purchasing', 'open-pos', 'suppliers', 'sourcing']) {
-      expect(capRefRe('purchasing.core', id).test(NAV_BOOTSTRAP_SRC)).toBe(true);
+  });
+
+  it('EXPECTED RED: a Core merchant sees Open POs and Suppliers but NOT Sourcing', () => {
+    expect({
+      openPos: tabAllows(PURCHASING_SUB_TABS, 'Open POs', 'core'),
+      suppliers: tabAllows(PURCHASING_SUB_TABS, 'Suppliers', 'core'),
+      sourcing: tabAllows(PURCHASING_SUB_TABS, 'Sourcing', 'core'),
+    }).toEqual({ openPos: true, suppliers: true, sourcing: false });
+  });
+
+  it('GREEN CONTROL: Growth and Scale see Sourcing', () => {
+    for (const t of ['growth', 'scale'] as const) {
+      expect({ t, sourcing: tabAllows(PURCHASING_SUB_TABS, 'Sourcing', t) })
+        .toEqual({ t, sourcing: true });
     }
-    for (const id of ['purchasing-pos', 'purchasing-suppliers', 'purchasing-sourcing']) {
-      expect(capRefRe('purchasing.core', id).test(PURCHASING_TABS_SRC)).toBe(true);
+  });
+
+  it('GREEN CONTROL: Sidenav declares purchasing.core on the Purchasing parent, Open POs and Suppliers', () => {
+    for (const id of ['purchasing', 'open-pos', 'suppliers']) {
+      expect({ id, declared: capRefRe('purchasing.core', id).test(NAV_BOOTSTRAP_SRC) })
+        .toEqual({ id, declared: true });
     }
+  });
+
+  it('EXPECTED RED: Sidenav declares purchasing.sourcing on the Sourcing child', () => {
+    expect(capRefRe('purchasing.sourcing', 'sourcing').test(NAV_BOOTSTRAP_SRC)).toBe(true);
+  });
+
+  it('EXPECTED RED: the Purchasing nav subtree carries no stale Starter+ commercial claim', () => {
+    const region = purchasingNavRegion();
+    expect(region.length).toBeGreaterThan(0);
+    // The region must genuinely contain the Purchasing item (guards against a
+    // vacuous PASS from an empty/mis-bounded slice).
+    expect(region.includes("id: 'purchasing'")).toBe(true);
+    expect(/Starter\+/.test(region)).toBe(false);
+  });
+
+  it('EXPECTED RED: the Purchasing tab config carries no stale Starter+ commercial claim', () => {
+    expect(/Starter\+/.test(PURCHASING_TABS_SRC)).toBe(false);
+  });
+
+  it('GREEN CONTROL: no raw requiredModuleId / requiredTier substitutes for a Purchasing commercial decision', () => {
+    const region = purchasingNavRegion();
+    expect(region.includes("id: 'purchasing'")).toBe(true);
+    expect(/requiredModuleId\s*:|requiredTier\s*:/.test(region)).toBe(false);
+    expect(/requiredModuleId\s*:|requiredTier\s*:/.test(PURCHASING_TABS_SRC)).toBe(false);
+  });
+
+  it('EXPECTED RED: the route surface expresses BOTH purchasing capabilities', () => {
     const routeSurface = readSrc('apps/frontend/src/lifecycle/LifecycleRouteHost.tsx') +
       readSrc('apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx');
     expect(/CommercialGate/.test(routeSurface)).toBe(true);
     expect(/purchasing\.core/.test(routeSurface)).toBe(true);
+    expect(/purchasing\.sourcing/.test(routeSurface)).toBe(true);
   });
 });
 
@@ -247,7 +350,13 @@ import * as path from 'path';
 // `.js` extensions from relative TS source imports (same generic rule the
 // contract/backend-legacy projects already used), so this file can import
 // @lasyncro/commercial-policy directly instead of mirroring its data.
-import { isModuleId, MODULE_CLASSIFICATION } from '@lasyncro/commercial-policy';
+import {
+  isModuleId,
+  MODULE_CLASSIFICATION,
+  CAPABILITY_REQUIREMENTS,
+  evaluateAccess,
+  standardContextForTier,
+} from '@lasyncro/commercial-policy';
 import { buildCommercialContext } from 'runtime/commercialContext';
 
 const REPO_ROOT = path.resolve(__dirname, '../../../..');
@@ -265,6 +374,9 @@ const PROOF_CAPS = [
   'warehouse.floor_planning',
   'warehouse.problem_center',
   'purchasing.core',
+  // P0-A3-5: ADVANCED SOURCING is its own ratified capability and must be
+  // expressed independently on every surface.
+  'purchasing.sourcing',
   'demand.forecasting',
 ] as const;
 
@@ -272,20 +384,16 @@ const PROOF_CAPS = [
 const RATIFIED: Record<typeof TIERS[number], Record<string, boolean>> = {
   starter: {
     'warehouse.operations': true, 'warehouse.analytics': false, 'warehouse.floor_planning': false,
-    'warehouse.problem_center': false, 'purchasing.core': true, 'demand.forecasting': false,
+    'warehouse.problem_center': false, 'purchasing.core': false, 'purchasing.sourcing': false,
+    'demand.forecasting': false,
   },
   core: {
     'warehouse.operations': true, 'warehouse.analytics': false, 'warehouse.floor_planning': false,
-    'warehouse.problem_center': true, 'purchasing.core': true, 'demand.forecasting': false,
+    'warehouse.problem_center': true, 'purchasing.core': true, 'purchasing.sourcing': false,
+    'demand.forecasting': false,
   },
-  growth: Object.fromEntries(
-    ['warehouse.operations', 'warehouse.analytics', 'warehouse.floor_planning',
-      'warehouse.problem_center', 'purchasing.core', 'demand.forecasting'].map((c) => [c, true]),
-  ),
-  scale: Object.fromEntries(
-    ['warehouse.operations', 'warehouse.analytics', 'warehouse.floor_planning',
-      'warehouse.problem_center', 'purchasing.core', 'demand.forecasting'].map((c) => [c, true]),
-  ),
+  growth: Object.fromEntries(PROOF_CAPS.map((c) => [c, true])),
+  scale: Object.fromEntries(PROOF_CAPS.map((c) => [c, true])),
 };
 const canonicalAllows = (cap: string, tier: typeof TIERS[number]): boolean => RATIFIED[tier][cap];
 
@@ -295,7 +403,8 @@ const NAV_ID_FOR: Record<string, string[]> = {
   'warehouse.analytics': ['wms-analytics'],
   'warehouse.floor_planning': ['floor-planning'],
   'warehouse.problem_center': ['product-issues'],
-  'purchasing.core': ['purchasing', 'open-pos', 'suppliers', 'sourcing'],
+  'purchasing.core': ['purchasing', 'open-pos', 'suppliers'],
+  'purchasing.sourcing': ['sourcing'],
   'demand.forecasting': ['demand'],
 };
 const TAB_SRC_FOR: Record<string, { src: string; ids: string[] }> = {
@@ -303,7 +412,8 @@ const TAB_SRC_FOR: Record<string, { src: string; ids: string[] }> = {
   'warehouse.analytics': { src: WAREHOUSE_TABS_SRC, ids: ['wms-analytics'] },
   'warehouse.floor_planning': { src: WAREHOUSE_TABS_SRC, ids: ['floor-planning'] },
   'warehouse.problem_center': { src: WAREHOUSE_TABS_SRC, ids: ['product-issues'] },
-  'purchasing.core': { src: PURCHASING_TABS_SRC, ids: ['purchasing-pos', 'purchasing-suppliers', 'purchasing-sourcing'] },
+  'purchasing.core': { src: PURCHASING_TABS_SRC, ids: ['purchasing-pos', 'purchasing-suppliers'] },
+  'purchasing.sourcing': { src: PURCHASING_TABS_SRC, ids: ['purchasing-sourcing'] },
   'demand.forecasting': { src: INVENTORY_TABS_SRC, ids: ['demand'] },
 };
 
@@ -350,7 +460,8 @@ describe('B12 — ratified decision matrix (GREEN CONTROL: the target every surf
       ['warehouse.analytics', false],
       ['warehouse.floor_planning', false],
       ['warehouse.problem_center', false],
-      ['purchasing.core', true],
+      ['purchasing.core', false],
+      ['purchasing.sourcing', false],
       ['demand.forecasting', false],
     ]);
     expect(PROOF_CAPS.map((c) => [c, canonicalAllows(c, 'core')])).toEqual([
@@ -359,6 +470,7 @@ describe('B12 — ratified decision matrix (GREEN CONTROL: the target every surf
       ['warehouse.floor_planning', false],
       ['warehouse.problem_center', true],
       ['purchasing.core', true],
+      ['purchasing.sourcing', false],
       ['demand.forecasting', false],
     ]);
   });
