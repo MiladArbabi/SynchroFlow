@@ -4370,3 +4370,94 @@ Regression evidence:
 - target `git diff --check`: passed
 
 The worktree also contained pre-existing Order Detail changes when this slice opened. Those files are outside NAV-ACCOUNT-TIER-01 and were deliberately left untouched.
+
+### BILL-CALLBACK-AUTH-01 — retire tier-authoritative Shopify billing callback — 2026-09-07
+
+**Problem**
+
+The legacy Shopify billing callback remained registered at
+`GET /api/v1/shopify-billing/callback` after direct Billing API charge creation
+was retired for Shopify Managed Pricing.
+
+The route was unauthenticated and its handler accepted `shopId`, `tier`,
+`interval`, and `charge_id` from query parameters. A non-empty `charge_id` was
+not verified against authoritative Shopify billing state before the handler
+upserted `shop_subscriptions` and granted tier entitlements.
+
+This left a retired billing path capable of becoming tier-authoritative even
+though Managed Pricing and Shopify billing reconciliation are the intended
+commercial-state authorities.
+
+**Correction**
+
+- removed `handleShopifyCallback` from the active Shopify billing router
+- removed registration of `/api/v1/shopify-billing/callback`
+- preserved the authenticated `/api/v1/shopify-billing/subscription` route
+- did not change Shopify reconciliation, Stripe billing, entitlement policy,
+  tier definitions, DB schema, migrations, workers, frontend, or provider state
+- the legacy controller function remains unmounted in this bounded slice; the
+  security boundary is that no active Express route exposes it
+
+**Regression contracts**
+
+Added:
+
+- `tests/contract/shopify-billing-retired-callback.contract.test.ts`
+  - prevents `/callback` from being re-registered
+  - prevents `handleShopifyCallback` from being imported into the active router
+- `tests/integration/billing/shopify-billing-retired-callback.test.ts`
+  - real `createApp()` control proves `/api/v1/shopify-billing/subscription`
+    remains mounted and returns unauthenticated `401`
+  - the retired callback returns `404` even when legacy billing query parameters
+    are supplied
+
+**Verification evidence**
+
+- RED first:
+  - 1 contract suite failed
+  - 2 / 2 assertions failed against the live callback registration/import
+- focused contract GREEN:
+  - 1 / 1 suite passed
+  - 2 / 2 tests passed
+- API integration:
+  - real Express application
+  - disposable PostgreSQL created, migrated, runtime-checked, and dropped
+  - 1 / 1 suite passed
+  - 2 / 2 tests passed
+- broader commercial/backend contract regression:
+  - 3 / 3 suites passed
+  - 72 / 72 tests passed
+- backend TypeScript:
+  - 0 total errors
+  - 0 target errors
+- `git diff --check`: passed
+- no DB, migration, provider, worker, frontend, package, lockfile, or generated
+  artifact changes
+
+**Verification-harness note**
+
+Jest initially discovered a duplicate `@lasyncro/commercial-policy` package
+inside `.claude/worktrees/...`, preventing two existing commercial suites from
+executing. This was an environment/Haste-map collision, not a product failure.
+The affected targeted runs were rerun with `.claude/worktrees` excluded and
+passed. One earlier broad integration invocation also selected all backend
+integration suites; that noisy run is not acceptance evidence for this issue.
+
+**Certification state**
+
+`BILL-CALLBACK-AUTH-01` is **IMPLEMENTED / AUTOMATED VERIFIED**.
+
+Production certification remains pending after commit, push, CI, and deploy.
+Certification must use a non-mutating request proving the retired callback is
+unreachable.
+
+**P0-B carry-forward**
+
+`BILL-ENTITLEMENT-01` Fact B remains **OPEN**.
+
+This correction removes one concrete unsafe tier-writing path but does not prove
+that this callback caused the historical reviewer-shop Growth → Scale state.
+Provider mapping, all remaining `shop_subscriptions` writers, transition
+ordering/idempotency, reconciliation, JWT/current-state freshness, and durable
+commercial-state transition provenance remain part of P0-B Commercial State
+Integrity.

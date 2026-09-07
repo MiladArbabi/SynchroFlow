@@ -2,15 +2,13 @@
 //
 // Shopify Billing routes (MON-09)
 // --------------------------------
-// Note: /callback is intentionally unauthenticated —
-// Shopify redirects the browser here after charge approval.
-// shopId is embedded in the return_url query param and validated in controller.
+// Managed Pricing owns plan selection.
+// The retired direct-charge callback must not be exposed by this router.
 
 import { Router } from 'express';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireAction } from '../../middleware/require-action.middleware.js';
 import {
-  handleShopifyCallback,
   getShopifySubscription,
 } from './shopify.billing.controller.js';
 
@@ -29,8 +27,4 @@ router.get('/subscription', authenticateToken, requireAction('shopify-billing:re
  * entitlements will sync via the Active Subscription API (separate workstream).
  * Routes intentionally removed rather than left live and silently broken.
  */
-// GET  /api/v1/shopify-billing/callback — no JWT auth (browser redirect from Shopify)
-// Dormant: no charge-creation path remains to redirect here, kept for now.
-router.get('/callback', handleShopifyCallback);
-
 export default router;
