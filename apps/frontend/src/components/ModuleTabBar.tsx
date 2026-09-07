@@ -26,6 +26,7 @@ import { useAppTheme } from '../hooks/useAppTheme';
 import { usePlanEntitlement } from '../hooks/usePlanEntitlement';
 import { useCommercialAccess } from '../runtime/commercialContext';
 import { UpgradePrompt } from './UpgradePrompt';
+import { getCapabilityPresentation } from '../commercial/capabilityPresentation';
 import type { PlanFeature } from '../hooks/usePlanEntitlement';
 import { tierAtLeast } from '@lasyncro/commercial-policy';
 import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
@@ -97,8 +98,9 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
   const handleClick = (tab: ModuleTab) => {
     if (isLocked(tab)) {
       const decision = decisionFor(tab);
-      setUpgradeFeature(tab.label);
-      setUpgradeBenefits(tab.upgradeBenefits);
+      const presentation = getCapabilityPresentation(tab.capabilityId);
+      setUpgradeFeature(presentation?.featureName ?? tab.label);
+      setUpgradeBenefits(presentation?.benefits ?? tab.upgradeBenefits);
       setUpgradeDecision(decision);
       setUpgradeLegacyTier(decision ? undefined : tab.requiredTier);
       setUpgradeOpen(true);

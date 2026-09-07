@@ -4218,6 +4218,52 @@ Static:
 - no package/lockfile changes
 - no generated artifacts intentionally changed
 
+### Sidenav / ModuleTabBar upgrade-presentation parity follow-up — 2026-09-07
+
+Production certification exposed a second presentation defect: the locked
+Sourcing entry in `ModuleTabBar` showed the approved feature-specific benefits,
+while the same `purchasing.sourcing` denial opened from `SidenavContent` used
+the generic upgrade presentation.
+
+The correction keeps commercial access authority unchanged. Canonical
+`AccessDecision` still determines denial reason and required tier. Merchant-facing
+presentation metadata is now frontend-owned and resolved by `CapabilityId`.
+
+Implementation:
+
+- added `apps/frontend/src/commercial/capabilityPresentation.ts`
+- `purchasing.sourcing` now has one canonical frontend presentation definition:
+  - feature name `Sourcing`
+  - Prioritize sourcing work from current inventory demand
+  - Compare supplier recommendations by product
+  - Use supplier-product preferences
+  - Accumulate reorder quantities against MOQ
+- `ModuleTabBar` resolves that shared presentation metadata
+- `SidenavContent` resolves the same metadata before opening `UpgradePrompt`
+- `purchasingSubTabs.ts` no longer owns duplicated Sourcing benefit copy
+- capabilities without presentation metadata retain the generic upgrade prompt
+- no commercial-policy, backend, entitlement, tier, billing, route, DB, migration,
+  package, or lockfile behaviour changed
+
+Regression evidence:
+
+- RED first: Sidenav `benefits` was `undefined` for locked Sourcing
+- targeted regression: 4 suites PASS, 8 / 8 tests GREEN
+- frontend TypeScript: 19 pre-existing baseline errors, 0 target-file errors
+- broader commercial-access regression: 12 suites total, 10 PASS;
+  92 / 96 tests GREEN
+- the 4 broader failures are the previously established baseline:
+  - 2 commercial-context additive entitlement expectations
+  - 2 CommercialGate test-harness failures
+- one broader run regenerated 23 `modules/ui-ft2/dist/**` declaration artifacts;
+  all were restored and excluded from this slice
+- final targeted rerun: 4 suites PASS, 8 / 8 tests GREEN
+- `git diff --check` PASS
+- generated-artifact scope clean
+
+Production browser certification of Sourcing parity remains pending after
+commit, push, CI, and deploy.
+
 ### Certification state
 
 `PUR-COMM-UX-01` is **IMPLEMENTED / AUTOMATED VERIFIED**.

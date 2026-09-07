@@ -14,12 +14,13 @@ import {
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ArrowUp, ChevronDown, Settings, LogOut, CircleArrowUp, CircleHelp, Plug } from 'lucide-react';
 import { UpgradePrompt } from '../../components/UpgradePrompt';
+import { getCapabilityPresentation } from '../../commercial/capabilityPresentation';
 import SimpleBar from '../../ui-component/third-party/SimpleBar';
 import { useResolvedNavigation } from '../../runtime/useResolvedNavigation';
 import { useModuleHealth } from '../../runtime/useModuleHealth';
 import { useAlerts } from '../../pages/alerts/useAlerts';
 import type { ResolvedNavItem, ResolvedNavGroup } from '../../runtime/resolveNavigation';
-import type { AccessDecision } from '@lasyncro/commercial-policy';
+import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
 import { Popper, Paper, ClickAwayListener, Divider } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { useAuth } from '../../contexts/AuthContext';
@@ -55,6 +56,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+  const [upgradeBenefits, setUpgradeBenefits] = useState<string[] | undefined>();
   // SECURITY/UX FIX (audit ISS-P15/P17): requiredTier was hardcoded to
   // 'growth' in the modal JSX below regardless of which item was clicked —
   // a Scale-gated item would incorrectly tell the user to upgrade to
@@ -66,8 +68,10 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const [upgradeDecision, setUpgradeDecision] = useState<AccessDecision | null>(null);
   const [upgradeLegacyTier, setUpgradeLegacyTier] = useState<string | undefined>();
 
-  const openDenial = (title: string, decision: AccessDecision | undefined, legacyTier: string | undefined) => {
-    setUpgradeFeature(title);
+  const openDenial = (title: string, decision: AccessDecision | undefined, legacyTier: string | undefined, capabilityId?: CapabilityId) => {
+    const presentation = getCapabilityPresentation(capabilityId);
+    setUpgradeFeature(presentation?.featureName ?? title);
+    setUpgradeBenefits(presentation?.benefits);
     setUpgradeDecision(decision ?? null);
     setUpgradeLegacyTier(decision ? undefined : legacyTier);
     setUpgradeOpen(true);
@@ -194,7 +198,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     );
   };
 
-  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string; decision?: AccessDecision; disabled: boolean }) => {
+  const renderChild = (child: { id: string; title: string; path: string; requiredTier?: string; capabilityId?: CapabilityId; decision?: AccessDecision; disabled: boolean }) => {
     // Children are leaf routes — exact match only. startsWith would cause/wms to match /wms/analytics.
     const isActive = pathname === child.path || pathname.startsWith(child.path + '?');
     const isLocked = child.disabled;
@@ -204,7 +208,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
     // bypass the same tier restriction ModuleTabBar already enforces.
     const handleChildClick = () => {
       if (isLocked) {
-        openDenial(child.title, child.decision, child.requiredTier);
+        openDenial(child.title, child.decision, child.requiredTier, child.capabilityId);
         return;
       }
       navigate(child.path);
@@ -628,6 +632,7 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
         decision={upgradeDecision ?? undefined}
         mode="modal"
         featureName={upgradeFeature}
+        benefits={upgradeBenefits}
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
       />
