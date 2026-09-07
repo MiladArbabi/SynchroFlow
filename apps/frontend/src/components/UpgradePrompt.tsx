@@ -279,7 +279,7 @@ function LockedGate({
       minHeight: 300, width: '100%',
       border: `1px solid ${theme.palette.divider}`,
       borderRadius: '14px',
-      background: theme.palette.background.default,
+      background: 'var(--surface)',
       p: 5,
     }}>
       <Box sx={{ textAlign: 'center', maxWidth: 420 }}>
@@ -409,7 +409,7 @@ function UpgradeModal({
           fontSize: 24, fontWeight: 400, letterSpacing: '-0.01em', lineHeight: 1.2,
           color: 'text.primary', mt: 1.75, mb: 0.875,
         }}>
-          {featureName ? `Unlock ${featureName.toLowerCase()}` : `${tierLabel} required`}
+          {featureName ? `Unlock ${featureName}` : `${tierLabel} required`}
         </Typography>
 
         {/* Sub-copy */}

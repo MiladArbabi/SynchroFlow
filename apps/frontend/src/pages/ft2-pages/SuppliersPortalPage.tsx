@@ -348,7 +348,11 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
         <Route
           path="/sourcing"
           element={
-            <CommercialGate capabilityId="purchasing.sourcing">
+            <CommercialGate
+              capabilityId="purchasing.sourcing"
+              featureName="Sourcing"
+              featureBlurb="Turn inventory demand into supplier recommendations, purchasing priorities, and smarter reorder decisions."
+            >
               <SourcingRoute {...sharedProps} />
             </CommercialGate>
           }

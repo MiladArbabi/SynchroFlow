@@ -47,6 +47,8 @@ export interface ModuleTab {
    * fields remain supported as transitional support for non-migrated tabs.
    */
   capabilityId?: CapabilityId;
+  /** Optional benefit lines for this tab's upgrade modal. */
+  upgradeBenefits?: string[];
 }
 
 interface ModuleTabBarProps {
@@ -67,6 +69,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeFeature, setUpgradeFeature] = useState<string | undefined>();
+  const [upgradeBenefits, setUpgradeBenefits] = useState<string[] | undefined>();
   const [upgradeDecision, setUpgradeDecision] = useState<AccessDecision | null>(null);
   const [upgradeLegacyTier, setUpgradeLegacyTier] = useState<'core' | 'growth' | 'scale' | undefined>();
 
@@ -95,6 +98,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
     if (isLocked(tab)) {
       const decision = decisionFor(tab);
       setUpgradeFeature(tab.label);
+      setUpgradeBenefits(tab.upgradeBenefits);
       setUpgradeDecision(decision);
       setUpgradeLegacyTier(decision ? undefined : tab.requiredTier);
       setUpgradeOpen(true);
@@ -215,6 +219,7 @@ export function ModuleTabBar({ tabs }: ModuleTabBarProps) {
         decision={upgradeDecision ?? undefined}
         mode="modal"
         featureName={upgradeFeature}
+        benefits={upgradeBenefits}
         open={upgradeOpen}
         onClose={() => setUpgradeOpen(false)}
       />

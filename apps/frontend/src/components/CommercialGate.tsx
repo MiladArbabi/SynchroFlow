@@ -31,6 +31,7 @@ export interface CommercialGateProps {
   /** Denial presentation — defaults to a full-container empty state. */
   mode?: 'locked' | 'teased';
   featureName?: string;
+  featureBlurb?: string;
 }
 
 export const CommercialGate: React.FC<CommercialGateProps> = ({
@@ -38,6 +39,7 @@ export const CommercialGate: React.FC<CommercialGateProps> = ({
   children,
   mode = 'locked',
   featureName,
+  featureBlurb,
 }) => {
   const { decide, isResolved } = useCommercialAccess();
 
@@ -58,6 +60,7 @@ export const CommercialGate: React.FC<CommercialGateProps> = ({
       decision={decision}
       mode={mode}
       featureName={featureName}
+      featureBlurb={featureBlurb}
       open
     >
       {mode === 'teased' ? children : undefined}

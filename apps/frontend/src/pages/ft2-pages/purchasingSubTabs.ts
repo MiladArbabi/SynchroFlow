@@ -16,5 +16,13 @@ import type { ModuleTab } from '../../components/ModuleTabBar';
 export const PURCHASING_SUB_TABS: ModuleTab[] = [
   { id: 'purchasing-pos',       label: 'Open POs',  path: '/suppliers-portal',           capabilityId: 'purchasing.core' },
   { id: 'purchasing-suppliers', label: 'Suppliers', path: '/suppliers-portal/suppliers', capabilityId: 'purchasing.core' },
-  { id: 'purchasing-sourcing',  label: 'Sourcing',  path: '/suppliers-portal/sourcing',  capabilityId: 'purchasing.sourcing' },
+  {
+    id: 'purchasing-sourcing', label: 'Sourcing', path: '/suppliers-portal/sourcing', capabilityId: 'purchasing.sourcing',
+    upgradeBenefits: [
+      'Prioritize sourcing work from current inventory demand',
+      'Compare supplier recommendations by product',
+      'Use supplier-product preferences',
+      'Accumulate reorder quantities against MOQ',
+    ],
+  },
 ];

@@ -4106,3 +4106,121 @@ The active truth is:
 
 `BILL-ENTITLEMENT-01` Fact B remains separate P0-B Commercial State Integrity
 work and is unchanged by this slice.
+
+---
+
+## 36. Sourcing Growth Teaser / Paywall UX — `PUR-COMM-UX-01` (implemented + automated verified 2026-09-07)
+
+`P0-A3-5` closed the commercial-access boundary between Core Purchasing and
+Growth Sourcing. Live browser certification then exposed a presentation defect:
+the access decision was correct, but the Sourcing denial used a generic locked
+card with non-FT2 styling and generic "full intelligence suite" copy.
+
+`PUR-COMM-UX-01` changes presentation only. It does not change the canonical
+commercial policy, backend enforcement, entitlement resolution, tier matrix,
+RBAC, or Sourcing data-acquisition boundary.
+
+### Ratified UX contract
+
+For a Core merchant:
+
+- Purchasing remains available.
+- Open POs remains available.
+- Suppliers remains available.
+- Sourcing remains visible as an upgrade-discovery surface with its Growth badge.
+- Clicking the locked Sourcing tab does not navigate. It opens the canonical
+  commercial upgrade modal.
+- The modal identifies `Sourcing`, preserves the canonical
+  `purchasing.sourcing` access decision, and shows the exact required tier
+  supplied by that decision.
+- The Sourcing modal communicates:
+  - Prioritize sourcing work from current inventory demand
+  - Compare supplier recommendations by product
+  - Use supplier-product preferences
+  - Accumulate reorder quantities against MOQ
+- Direct navigation to `/suppliers-portal/sourcing` remains a hard commercial
+  gate. A denied merchant never mounts `SourcingRoute` and therefore never
+  issues Growth-only Sourcing requests.
+- The direct-route denial identifies `Sourcing` and uses:
+  `Turn inventory demand into supplier recommendations, purchasing priorities,
+  and smarter reorder decisions.`
+- The locked route uses the FT2 `var(--surface)` token.
+- Growth and Scale continue to navigate to and mount Sourcing normally.
+
+### Implementation
+
+Production files changed:
+
+1. `apps/frontend/src/components/ModuleTabBar.tsx`
+   - supports optional upgrade benefits per tab
+   - preserves the canonical `AccessDecision`
+   - forwards benefits to the upgrade modal
+   - locked tabs do not navigate
+
+2. `apps/frontend/src/pages/ft2-pages/purchasingSubTabs.ts`
+   - keeps `purchasing.sourcing`
+   - adds the four Sourcing-specific Growth benefits
+
+3. `apps/frontend/src/components/CommercialGate.tsx`
+   - adds optional `featureBlurb`
+   - forwards it to `UpgradePrompt`
+   - access and mounting semantics remain unchanged
+
+4. `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx`
+   - supplies `featureName="Sourcing"` and the Sourcing-specific blurb
+   - keeps `SourcingRoute` physically inside the commercial gate
+
+5. `apps/frontend/src/components/UpgradePrompt.tsx`
+   - locked state uses `var(--surface)`
+   - modal preserves supplied feature capitalization (`Unlock Sourcing`)
+   - pricing, CTA, analytics and decision semantics remain unchanged
+
+### Regression contracts
+
+Added:
+
+- `tests/unit/ui/commercial-access/purchasing-sourcing-tab-upgrade-ux.test.tsx`
+- `tests/unit/ui/commercial-access/purchasing-sourcing-direct-gate-ux.test.ts`
+
+Existing `purchasing-core-shell-sourcing-fetch.test.tsx` continues to protect
+against eager Growth-only Sourcing acquisition from the Core Purchasing shell.
+
+### Verification evidence
+
+Targeted frontend regression:
+
+- 6 suites PASS
+- 57 / 57 tests GREEN
+
+Frontend TypeScript:
+
+- 19 pre-existing baseline errors
+- 0 errors in the five `PUR-COMM-UX-01` production files
+
+Broader commercial-access regression:
+
+- 10 suites total
+- 8 suites PASS
+- 89 / 93 tests GREEN
+- 4 failures are pre-existing baseline failures:
+  - 2 stale `commercial-context.test.ts` expectations for deprecated
+    `customers` / `specter.full_capture` truth
+  - 2 `commercial-gate.test.tsx` harness failures from missing
+    `EntitlementsProvider`
+- all `PUR-COMM-UX-01` tests remain GREEN
+
+Static:
+
+- `git diff --check` PASS
+- no backend changes
+- no commercial-policy changes
+- no DB/migration changes
+- no package/lockfile changes
+- no generated artifacts intentionally changed
+
+### Certification state
+
+`PUR-COMM-UX-01` is **IMPLEMENTED / AUTOMATED VERIFIED**.
+
+Final browser certification of the revised modal and direct-route locked state
+remains pending after commit/deploy.
