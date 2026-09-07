@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { ReactNode, useCallback, useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -105,6 +105,44 @@ function decisionResponse(constraints: Constraint[]) {
   };
 }
 
+/**
+ * GH-1053 HARNESS MIGRATION
+ * --------------------------
+ * EntityDetailModal renders this component as `children` and the ReactNode it
+ * hands back through onFooterReady into the `footerActions` slot. Blocker
+ * remediation now lives in that slot, so a harness that drops the footer node
+ * on the floor can no longer see the CTA it is asserting on.
+ *
+ * This host renders both regions — same pattern as
+ * tests/unit/ui/orders/OrderDetailModal.redesign-1053.test.tsx — so every
+ * behavioural contract below is asserted against the COMPLETE modal surface.
+ * No assertion, route, or execute/non-execute expectation changed with it.
+ */
+const noop = () => {};
+
+function ModalHost({ queryClient }: { queryClient: QueryClient }) {
+  const [footer, setFooter] = useState<ReactNode>(null);
+  const handleFooterReady = useCallback((node: ReactNode) => setFooter(node), []);
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <div data-testid="modal-body">
+          <OrderDetailModalBody
+            orderId="order-1"
+            onTitleReady={noop}
+            onSubtitleReady={noop}
+            onNavigateToOrder={noop}
+            onFooterReady={handleFooterReady}
+            onClose={noop}
+          />
+        </div>
+        <div data-testid="modal-footer">{footer}</div>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
 function renderModal() {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -113,20 +151,7 @@ function renderModal() {
     },
   });
 
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
-        <OrderDetailModalBody
-          orderId="order-1"
-          onTitleReady={jest.fn()}
-          onSubtitleReady={jest.fn()}
-          onNavigateToOrder={jest.fn()}
-          onFooterReady={jest.fn()}
-          onClose={jest.fn()}
-        />
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+  return render(<ModalHost queryClient={queryClient} />);
 }
 
 /**

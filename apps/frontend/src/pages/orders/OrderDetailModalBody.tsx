@@ -57,6 +57,14 @@ import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { useUpdateShippingAddress } from './useShippingAddress';
 import type { OrderShipping, OrderAddressAssist } from './useOrderDetail';
 import { useCurrency } from '../../hooks/useCurrency';
+/**
+ * GH-1053: the compact Warehouse Status visualization REUSES the existing
+ * embeddable primitive. IsometricZoneView is presentational and inert (no
+ * pan/zoom, no live data, no entitlement behaviour) — the full Overview
+ * IsometricCanvas is deliberately NOT mounted here.
+ */
+import { IsometricZoneView } from '@lasyncro/shared/ui';
+import type { WarehouseZone } from '@lasyncro/shared/ui';
 
 /**
  * INV-ACTION-ARCH-01 (2026-09-06): `resolve_inventory_block: 'Go to sourcing'`
@@ -118,8 +126,6 @@ function formatTimelineEventLabel(status: string): string {
   };
   return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ');
 }
-
-const TIMELINE_VISIBLE_COUNT = 3;
 
 /**
  * useCachedConstrainedRow
@@ -571,6 +577,139 @@ function ShippingAddressDialog({
   );
 }
 
+/**
+ * WAREHOUSE STATUS — CANONICAL STAGE, NOT A PHYSICAL LOCATION (GH-1053)
+ * ----------------------------------------------------------------------
+ * Truth is order.warehouseStatus (order_warehouse_status_type). That column
+ * says which STAGE of the pick/pack/ship pipeline an order has reached — it
+ * does NOT say where any unit physically is, and no per-order live position
+ * signal exists behind this surface. So this panel states the stage and
+ * nothing more: the words "current location" and "live location" must never
+ * appear here, and the isometric box is a stage representation, never the
+ * merchant's actual zone.
+ *
+ * `zoneType: null` renders stage text without a box (unblocked order pool,
+ * cancelled, or fulfilled outside LaSyncro). Blocked orders in the pool use
+ * the synthetic `order_pool` type for a presentational box, not a location.
+ *
+ * `inZone: false` renders the box inactive/muted rather than as an occupied
+ * zone: unreleased blocked orders, shipped, or partially_shipped.
+ */
+type WarehouseStageView = {
+  status: string;
+  context: string;
+  zoneType: string | null;
+  inZone: boolean;
+};
+
+const WAREHOUSE_STAGE_VIEWS: Record<string, WarehouseStageView> = {
+  awaiting_pick:     { status: 'Awaiting pick',     context: 'Released, waiting on a picker', zoneType: 'storage', inZone: true },
+  picking:           { status: 'Picking',           context: 'Pick stage',                    zoneType: 'pick',    inZone: true },
+  picked:            { status: 'Picked',            context: 'Pick stage complete',           zoneType: 'pick',    inZone: true },
+  packing:           { status: 'Packing',           context: 'Pack stage',                    zoneType: 'pack',    inZone: true },
+  packed:            { status: 'Packed',            context: 'Outbound stage',                zoneType: 'ship',    inZone: true },
+  shipped:           { status: 'Shipped',           context: 'Left the warehouse',            zoneType: 'ship',    inZone: false },
+  partially_shipped: { status: 'Partially shipped', context: 'Outbound stage — units remain', zoneType: 'ship',    inZone: false },
+  cancelled:         { status: 'Cancelled',         context: 'No longer in the pipeline',     zoneType: null,      inZone: false },
+};
+
+function resolveWarehouseStageView(
+  warehouseStatus: string | null,
+  hasAnyActiveConstraint: boolean,
+  isFulfilled: boolean,
+): WarehouseStageView {
+  if (warehouseStatus) {
+    return (
+      WAREHOUSE_STAGE_VIEWS[warehouseStatus] ?? {
+        // Unknown future status: say the stage, claim nothing about it.
+        // Same tolerance formatWarehouseStatus already had.
+        status: formatWarehouseStatus(warehouseStatus),
+        context: 'Warehouse stage',
+        zoneType: null,
+        inZone: false,
+      }
+    );
+  }
+  // Null stage is a real state, not missing data.
+  if (hasAnyActiveConstraint) {
+    return { status: 'Blocked', context: 'Order pool', zoneType: 'order_pool', inZone: false };
+  }
+  if (isFulfilled) {
+    // ISS-07b: fulfilled outside LaSyncro's own pipeline — never described as
+    // sitting in a warehouse zone.
+    return { status: 'Fulfilled', context: 'Fulfilled outside the warehouse pipeline', zoneType: null, inZone: false };
+  }
+  return { status: 'In pool', context: 'Not yet released to a pick batch', zoneType: null, inZone: false };
+}
+
+/**
+ * Synthetic presentation geometry for the stage box. This is NOT a
+ * warehouse_locations row and must never be mistaken for one — hence the
+ * empty location_code: IsometricZoneView paints location_code as the box
+ * label, and any code we invented there would read as one of the merchant's
+ * real zones. The shared WarehouseZone type is used as-is, not weakened.
+ */
+function buildStageZone(view: WarehouseStageView): WarehouseZone {
+  return {
+    location_code: '',
+    type: 'bin',
+    parent_location_code: null,
+    barcode: null,
+    active: view.inZone,
+    children_count: 0,
+    position_x: 0,
+    position_y: 0,
+    width: 1.6,
+    depth: 1.1,
+    orientation: 0,
+    rack_levels: 2,
+    zone_type: view.zoneType,
+    last_printed_at: null,
+    warehouse_name: null,
+  };
+}
+
+function WarehouseStatusPanel({
+  view,
+  tone,
+}: {
+  view: WarehouseStageView;
+  tone: 'danger' | 'success' | 'accent' | 'neutral';
+}) {
+  const statusColor =
+    tone === 'danger' ? '#A32D2D' : tone === 'success' ? 'var(--confirm-ink)' : tone === 'accent' ? 'var(--accent)' : 'var(--ink-2)';
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.25,
+        p: 1.25,
+        bgcolor: 'var(--bg-2)',
+        border: '1px solid var(--rule)',
+        borderRadius: '10px',
+      }}
+    >
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.5 }}>
+          Warehouse status
+        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 600, color: statusColor }}>{view.status}</Typography>
+        <Typography sx={{ fontSize: 11.5, color: 'var(--ink-4)', mt: 0.25 }}>{view.context}</Typography>
+      </Box>
+
+      {view.zoneType && (
+        // Decorative reinforcement only — the stage is fully carried by the
+        // text above (WCAG 1.4.1).
+        <Box aria-hidden sx={{ flexShrink: 0, opacity: view.inZone ? 1 : 0.55 }}>
+          <IsometricZoneView zone={buildStageZone(view)} width={156} height={106} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 export function OrderDetailModalBody({
   orderId,
   onTitleReady,
@@ -631,8 +770,6 @@ export function OrderDetailModalBody({
   const resolveException = useResolvePickException(orderId);
   const detailQuery = useOrderDetail(orderId);
   const cachedRow = useCachedConstrainedRow(orderId);
-  const queryClient = useQueryClient();
-  const [timelineExpanded, setTimelineExpanded] = useState(false);
   /**
    * ORDM-04b (2026-07-01): local pending/success state for the modal's
    * "Prioritize" action — deliberately NOT reusing OrdersModuleFT2's
@@ -644,33 +781,10 @@ export function OrderDetailModalBody({
   const [prioritized, setPrioritized] = useState(false);
 
   /**
-   * OF-10 (2026-07-02): two real bugs fixed here.
-   * (a) getQueriesData({ queryKey: ['orders', 'constrained'] })
-   * prefix-matches ALL cached variants — the real key includes
-   * { page, limit, constraint_type } (see useConstrainedOrders.ts), so
-   * the same order can legitimately exist in multiple cached variants
-   * (e.g. an unfiltered list AND a constraint_type-filtered list both
-   * containing it). Flattening without dedup produced the same order
-   * appearing 2-3x in "similar orders" — deduped by order_id here.
-   * (b) revenue is `o.total_price`, a Postgres DECIMAL column returned
-   * as a string by knex/pg, not a number despite its TS type — same
-   * class of bug as margin_pct (see buildUrgencySubtitle above).
-   * Coerced at the read site, same pattern.
+   * GH-1053: the cross-order "similar orders" derivation that used to live
+   * here was removed with the surface it fed. cachedRow stays — it still
+   * supplies the urgency subtitle (buildUrgencySubtitle above).
    */
-  const allConstrainedRaw = queryClient
-    .getQueriesData<ConstrainedOrdersResponse>({ queryKey: ['orders', 'constrained'] })
-    .flatMap(([, d]) => d?.data ?? []);
-  const allConstrained = Array.from(
-    new Map(allConstrainedRaw.map((o) => [o.order_id, o])).values()
-  );
-  const similarOrders = cachedRow
-    ? allConstrained.filter(
-        (o) =>
-          o.order_id !== orderId &&
-          o.constraint_type === cachedRow.constraint_type &&
-          o.block_type === cachedRow.block_type
-      )
-    : [];
 
   // data is undefined on 404 — every read below already tolerates that
   // via ?? [] / ?. fallbacks, no additional guarding needed.
@@ -781,43 +895,221 @@ export function OrderDetailModalBody({
     setAddressRecheckPending(false);
   }, [orderId]);
 
-  const handleOpenSourcing = (variantId: string) => {
-    onClose?.();
-    /**
-     * SRC-L3-11A (SOURCING-UX-COGNITIVE-01 Slice 1A): carry the originating
-     * order as CONTEXT so Sourcing can say which order sent the merchant there.
-     *
-     * `orderId` is the canonical orders.lasyncro_order_id — the same key the
-     * decision and constrained read models use. Deliberately nothing else:
-     * shortage, value, inbound and constraint id are all mutable facts the
-     * server re-derives, and a display number or Shopify id could not be
-     * matched against canonical order state anyway.
-     */
-    navigate(
-      `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}` +
-        `&orderId=${encodeURIComponent(orderId)}`
-    );
-  };
+  const showInventoryResolvedBanner = !hasActiveInventoryConstraint && isSuccess;
 
-  const handleOpenReturnJob = () => {
-    if (!returnJobId) return;
-    onClose?.();
-    if (returnJobStatus === 'awaiting_decision') {
-      navigate(`/returns/items?returnJobId=${encodeURIComponent(returnJobId)}`);
-      return;
-    }
-    navigate(`/wms?returnJobId=${encodeURIComponent(returnJobId)}`);
-  };
   /**
-   * FOOTER LIFT (2026-07-02)
-   * ------------------------
-   * Computed here (not inline in JSX) because it must reach
-   * EntityDetailModal's footerActions slot via onFooterReady, not
-   * render inside this component's own body. Only the constraint-free/
-   * unbatched case has a footer today — other states (blocked,
-   * resolved) render nothing here, same as before this change.
+   * REMEDIATION LIVES IN THE FOOTER (GH-1053)
+   * ------------------------------------------
+   * Blocker remediation used to render inside this component's scrollable
+   * body, so the one action the operator opened the modal for could scroll
+   * out of sight. It now reaches EntityDetailModal's `footerActions` slot
+   * through the existing onFooterReady path — the SAME path the healthy-pool
+   * footer already used. Nothing about what each action DOES changed:
+   * customer still opens ShippingAddressDialog (still mounted by this
+   * component), inventory still routes per constraint target_id and never
+   * executes, returned packages still route to their exact job, and the
+   * generic path still runs execute(orderId) with its own error/loading and
+   * alternate actions.
+   *
+   * MUST stay referentially stable between renders — onFooterReady is fired
+   * from an effect and the parent stores the node in state, so a fresh node
+   * every render would loop. Hence useMemo with the primitives the content
+   * actually reads (the two navigation handlers are inlined here for the same
+   * reason: as plain per-render closures they would defeat the memo).
    */
-  const footerContent = useMemo(() => {
+  const remediationFooter = useMemo(() => {
+    if (showInventoryResolvedBanner) return null;
+
+    const hasRemediation =
+      hasActiveCustomerConstraint ||
+      hasReturnedPackageAction ||
+      hasInventorySourcingAction ||
+      Boolean(executableRecommendedAction);
+
+    if (!hasRemediation) return null;
+
+    const openSourcing = (variantId: string) => {
+      onClose?.();
+      /**
+       * SRC-L3-11A (SOURCING-UX-COGNITIVE-01 Slice 1A): carry the originating
+       * order as CONTEXT so Sourcing can say which order sent the merchant
+       * there. `orderId` is the canonical orders.lasyncro_order_id — the same
+       * key the decision and constrained read models use. Deliberately
+       * nothing else: shortage, value, inbound and constraint id are all
+       * mutable facts the server re-derives, and a display number or Shopify
+       * id could not be matched against canonical order state anyway.
+       */
+      navigate(
+        `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}` +
+          `&orderId=${encodeURIComponent(orderId)}`
+      );
+    };
+
+    const openReturnJob = () => {
+      if (!returnJobId) return;
+      onClose?.();
+      if (returnJobStatus === 'awaiting_decision') {
+        navigate(`/returns/items?returnJobId=${encodeURIComponent(returnJobId)}`);
+        return;
+      }
+      navigate(`/wms?returnJobId=${encodeURIComponent(returnJobId)}`);
+    };
+
+    const primaryButtonSx = {
+      bgcolor: 'var(--accent)',
+      color: 'var(--accent-ink)',
+      borderRadius: '6px',
+      fontWeight: 600,
+      textTransform: 'none',
+      minWidth: 168,
+      '&:hover': { bgcolor: 'var(--accent)', opacity: 0.88 },
+    } as const;
+
+    /**
+     * OF-08 (2026-07-02): customer/incomplete_address blocks get a real
+     * in-app resolution form instead of the generic execute button —
+     * resolve_customer_block's own handler is a documented manual no-op
+     * (resolve_customer_block.handler.ts), so that button never did
+     * anything. Precedence below is unchanged from the body version:
+     * customer > returned package > inventory sourcing > generic execute.
+     */
+    const actions = hasActiveCustomerConstraint ? (
+      addressRecheckPending ? (
+        // BL-16-UX-02: address persistence is immediate; blocker resolution
+        // stays server-confirmed. The footer shows the recheck state rather
+        // than a duplicate actionable button.
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+            p: 1.25,
+            bgcolor: 'var(--confirm-ghost)',
+            border: '1px solid var(--confirm-border)',
+            borderRadius: '10px',
+          }}
+        >
+          <CircularProgress size={14} thickness={5} sx={{ color: 'var(--confirm-ink)', flexShrink: 0 }} />
+          <Typography sx={{ fontSize: 12.5, fontWeight: 300, color: 'var(--confirm-ink)' }}>
+            Address updated — rechecking order…
+          </Typography>
+        </Box>
+      ) : (
+        <Button variant="contained" onClick={() => setShippingAddressDialogOpen(true)} sx={primaryButtonSx}>
+          Correct shipping address
+        </Button>
+      )
+    ) : hasReturnedPackageAction ? (
+      <Button variant="contained" onClick={openReturnJob} sx={primaryButtonSx}>
+        {returnJobActionLabel}
+      </Button>
+    ) : hasInventorySourcingAction ? (
+      /*
+       * ORD-DECISION-01: an active oversell routes to Sourcing and runs NO
+       * execute mutation. One action per blocked variant, each carrying its
+       * own constraint target_id — see inventorySourcingTargets above for why
+       * this is derived from constraints rather than the elected decision.
+       */
+      <>
+        {inventorySourcingTargets.map((variantId) => (
+          <Button
+            key={variantId}
+            variant="contained"
+            startIcon={<ArrowRight size={16} />}
+            onClick={() => openSourcing(variantId)}
+            sx={primaryButtonSx}
+          >
+            Source this item
+          </Button>
+        ))}
+      </>
+    ) : executableRecommendedAction ? (
+      isExecError ? (
+        <Button variant="contained" onClick={() => execute(orderId)} sx={primaryButtonSx}>
+          {getActionLabel(executableRecommendedAction.type)}
+        </Button>
+      ) : (
+        <Button
+          variant="contained"
+          disabled={isPending}
+          onClick={() => execute(orderId)}
+          startIcon={isPending ? <CircularProgress size={16} color="inherit" /> : null}
+          sx={primaryButtonSx}
+        >
+          {isPending ? 'Processing…' : getActionLabel(executableRecommendedAction.type)}
+        </Button>
+      )
+    ) : null;
+
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%' }}>
+        {executableRecommendedAction && isExecError && (
+          <Alert severity="error" sx={{ py: 0 }}>
+            {execError?.message ?? 'Execution failed. Please try again.'}
+          </Alert>
+        )}
+
+        <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+          Recommended action
+        </Typography>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          {actions}
+
+          {executableRecommendedAction && alternateActions.length > 0 && (
+            <>
+              <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>Other options</Typography>
+              {alternateActions.map((a) => (
+                <Button
+                  key={a.type}
+                  variant="outlined"
+                  size="small"
+                  disabled={isPending}
+                  onClick={() => execute(orderId)}
+                  sx={{ fontSize: 12.5, color: 'var(--ink-2)', borderColor: 'var(--rule)', textTransform: 'none' }}
+                >
+                  {getActionLabel(a.type)}
+                </Button>
+              ))}
+            </>
+          )}
+        </Box>
+      </Box>
+    );
+  }, [
+    showInventoryResolvedBanner,
+    hasActiveCustomerConstraint,
+    addressRecheckPending,
+    hasReturnedPackageAction,
+    returnJobActionLabel,
+    returnJobId,
+    returnJobStatus,
+    hasInventorySourcingAction,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    inventorySourcingTargets.join(','),
+    executableRecommendedAction,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    alternateActions.map((a) => a.type).join(','),
+    isExecError,
+    execError,
+    isPending,
+    execute,
+    orderId,
+    onClose,
+    navigate,
+  ]);
+
+  /**
+   * FOOTER LIFT (2026-07-02, extended by GH-1053)
+   * ---------------------------------------------
+   * Computed here (not inline in JSX) because it must reach
+   * EntityDetailModal's footerActions slot via onFooterReady, not render
+   * inside this component's own body. Remediation now takes the slot
+   * whenever a blocker offers a real action; the constraint-free/unbatched
+   * Prioritize + Go to order flow footer is unchanged below it.
+   */
+  const actionFooter = useMemo(() => {
+    if (remediationFooter) return remediationFooter;
     if (hasAnyActiveConstraint || order?.warehouseStatus) return null;
     return (
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
@@ -861,8 +1153,49 @@ export function OrderDetailModalBody({
         </Button>
       </Box>
     );
-  }, [hasAnyActiveConstraint, order?.warehouseStatus, prioritized, isPrioritizing, onPriorityFlag, orderId, onClose, navigate]);
-  const showInventoryResolvedBanner = !hasActiveInventoryConstraint && isSuccess;
+  }, [remediationFooter, hasAnyActiveConstraint, order?.warehouseStatus, prioritized, isPrioritizing, onPriorityFlag, orderId, onClose, navigate]);
+
+  // The timeline is chronological, as in the former body presentation.
+  // Memoize from rendered primitives so equivalent refetched arrays cannot
+  // republish the footer through onFooterReady.
+  const newestEvent = order?.timeline?.[order.timeline.length - 1];
+  const previousEvent = order?.timeline?.[order.timeline.length - 2];
+  const newestLabel = newestEvent ? formatTimelineEventLabel(newestEvent.status) : undefined;
+  const newestTimestamp = newestEvent ? new Date(newestEvent.event_occurred_at).toLocaleString() : undefined;
+  const previousLabel = previousEvent ? formatTimelineEventLabel(previousEvent.status) : undefined;
+  const previousTimestamp = previousEvent ? new Date(previousEvent.event_occurred_at).toLocaleString() : undefined;
+
+  const activityFooter = useMemo(() => {
+    if (newestLabel === undefined) return null;
+    return (
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+          Latest activity
+        </Typography>
+        {[
+          { label: newestLabel, timestamp: newestTimestamp },
+          { label: previousLabel, timestamp: previousTimestamp },
+        ].filter((event) => event.label !== undefined).map((event, i) => (
+          <Box key={i} sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: 1, mt: i === 0 ? 0 : 0.5 }}>
+            <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{event.label}</Typography>
+            <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{event.timestamp}</Typography>
+          </Box>
+        ))}
+      </Box>
+    );
+  }, [newestLabel, newestTimestamp, previousLabel, previousTimestamp]);
+
+  const footerContent = useMemo(() => {
+    if (!actionFooter && !activityFooter) return null;
+    return (
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { xs: 'stretch', md: 'flex-start' }, gap: 2, width: '100%' }}>
+        {actionFooter && <Box sx={{ flex: 1, minWidth: 0 }}>{actionFooter}</Box>}
+        {activityFooter && <Box sx={{ flex: 1, minWidth: 0, ml: { md: 'auto' }, maxWidth: { md: 380 } }}>{activityFooter}</Box>}
+      </Box>
+    );
+  }, [actionFooter, activityFooter]);
+
+  const urgencySubtitle = buildUrgencySubtitle(cachedRow, format);
 
   useEffect(() => {
     if (order) {
@@ -871,8 +1204,8 @@ export function OrderDetailModalBody({
   }, [order, orderId, onTitleReady]);
 
   useEffect(() => {
-    onSubtitleReady(buildUrgencySubtitle(cachedRow, format));
-  }, [cachedRow, format, onSubtitleReady]);
+    onSubtitleReady(urgencySubtitle);
+  }, [urgencySubtitle, onSubtitleReady]);
 
   useEffect(() => {
     onFooterReady(footerContent);
@@ -901,11 +1234,16 @@ export function OrderDetailModalBody({
   // backend (orders.service.ts) — no backend or type change needed, this
   // field was simply never read here.
   const isFulfilled = order?.fulfillment?.status === 'fulfilled';
-  const pipelineLabel = hasAnyActiveConstraint
-    ? 'Blocked'
-    : isFulfilled
-    ? 'Fulfilled'
-    : formatWarehouseStatus(order?.warehouseStatus ?? null);
+  /**
+   * GH-1053: the old "Pipeline status" chip in the money column is replaced by
+   * the Warehouse Status plane below — same three-tier truth (Blocked >
+   * Fulfilled > real warehouse stage > pool), stated once instead of twice.
+   */
+  const stageView = resolveWarehouseStageView(
+    order?.warehouseStatus ?? null,
+    hasAnyActiveConstraint,
+    isFulfilled,
+  );
   const pipelineColorKey = hasAnyActiveConstraint
     ? 'danger'
     : isFulfilled
@@ -914,446 +1252,176 @@ export function OrderDetailModalBody({
     ? 'accent'
     : 'neutral';
 
-  const timelineEvents = order?.timeline ?? [];
-  const visibleTimeline = timelineExpanded ? timelineEvents : timelineEvents.slice(-TIMELINE_VISIBLE_COUNT).reverse();
-  const hiddenTimelineCount = Math.max(0, timelineEvents.length - TIMELINE_VISIBLE_COUNT);
-  const fullTimelineDescending = [...timelineEvents].reverse();
-  const displayedTimeline = timelineExpanded ? fullTimelineDescending : fullTimelineDescending.slice(0, TIMELINE_VISIBLE_COUNT);
-
   return (
     <Box>
-      {order && (
-        <Box sx={{ mb: 3, pb: 2, borderBottom: '1px solid var(--rule)', display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-          {/*
-            LEFT COLUMN — ITEMS
-            Per target design (2026-07-01) + explicit layout instruction:
-            top section = order details in two columns (items / customer
-            + summary), "Why — activity" stays full-width below this
-            block, unchanged.
-          */}
-          <Box sx={{ flex: '1 1 260px', minWidth: 0 }}>
-            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-              Order contents
-            </Typography>
-            {order.lineItems.map((item) => (
-              <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.75 }}>
-                {item.image_url ? (
-                  <Box component="img" src={item.image_url} alt=""
-                    sx={{ width: 36, height: 36, borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--rule)' }} />
-                ) : (
-                  // VO-08: no placeholder asset exists yet — a plain
-                  // bordered box avoids a broken-image icon without
-                  // inventing product imagery.
-                  <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, border: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }} />
-                )}
-                <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{item.title}</Typography>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{item.sku ?? 'No SKU'} · qty {item.quantity}</Typography>
-                </Box>
-                <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
-                  {format(item.line_total, { currency: order.currency })}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-
-          {/*
-            RIGHT COLUMN — CUSTOMER + SUMMARY
-            Customer identity sourced from orders.shipping_* (VO-01/
-            VO-07) — NOT customers.email/first_name, which is
-            structurally blank for most merchants (Shopify PCD scope).
-            "name" here is the shipping recipient, not a verified
-            account identity — do not imply otherwise in copy.
-            No order-count/"returning" badge — that requires a
-            customers-table join keyed on data we've confirmed is
-            usually blank; not worth building on an unreliable key.
-          */}
-          <Box sx={{ flex: '1 1 220px', minWidth: 200 }}>
-            {order.shipping.name && (
-              <Box sx={{ mb: 2 }}>
-                <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-                  Customer
-                </Typography>
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{order.shipping.name}</Typography>
-                {order.shipping.address1 && (
-                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.5 }}>{order.shipping.address1}</Typography>
-                )}
-                {order.shipping.address2 && (
-                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{order.shipping.address2}</Typography>
-                )}
-                {(order.shipping.city || order.shipping.province || order.shipping.countryCode) && (
-                  <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
-                    {[order.shipping.city, order.shipping.province, order.shipping.countryCode].filter(Boolean).join(', ')}
-                  </Typography>
-                )}
-              </Box>
-            )}
-
-            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-              Summary
-            </Typography>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Subtotal</Typography>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.subtotal, { currency: order.currency })}</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.375 }}>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Tax</Typography>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.tax, { currency: order.currency })}</Typography>
-            </Box>
-            {/* Shipping line intentionally omitted — GH-1032, no reliable source yet */}
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 1, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
-              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Total</Typography>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{format(order.total, { currency: order.currency })}</Typography>
-            </Box>
-
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1.75 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Payment status</Typography>
-                <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'rgba(99,153,34,0.12)', color: '#3B6D11' }}>
-                  {order.paymentState.replace(/_/g, ' ')}
-                </Box>
-              </Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Pipeline status</Typography>
-                <Box sx={{
-                  px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500,
-                  bgcolor: pipelineColorKey === 'danger' ? 'rgba(226,75,74,0.12)' : pipelineColorKey === 'accent' ? 'var(--accent-ghost)' : pipelineColorKey === 'success' ? 'var(--confirm-ghost)' : 'var(--rule)',
-                  color: pipelineColorKey === 'danger' ? '#A32D2D' : pipelineColorKey === 'accent' ? 'var(--accent)' : pipelineColorKey === 'success' ? 'var(--confirm-ink)' : 'var(--ink-3)',
-                }}>
-                  {pipelineLabel}
-                </Box>
-              </Box>
-            </Box>
-
-            {order.tracking?.tracking_number && (
-              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 1.5 }}>
-                Tracking: {order.tracking.tracking_number}{order.tracking.carrier_code && ` (${order.tracking.carrier_code})`}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      )}
-
-      {timelineEvents.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-            Why — activity
-          </Typography>
-          <Box sx={{ borderLeft: '2px solid var(--rule)', pl: 2, ml: 0.5 }}>
-            {displayedTimeline.map((event, i) => (
-              <Box key={event.id} sx={{ pb: i < displayedTimeline.length - 1 ? 1.25 : 0, position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 1 }}>
-                <Box sx={{ position: 'absolute', left: -25, top: 4, width: 8, height: 8, borderRadius: '50%', bgcolor: i === 0 ? 'var(--accent)' : 'var(--ink-4)' }} />
-                <Typography sx={{ fontSize: 13, color: 'var(--ink)', flexShrink: 0 }}>{formatTimelineEventLabel(event.status)}</Typography>
-                {/*
-                  ORDM-04f (2026-07-02): dotted leader connects label to
-                  timestamp, closing the empty-space gap flagged live —
-                  was a bare flex justify-between with nothing filling
-                  the middle.
-                */}
-                <Box sx={{ flex: 1, borderBottom: '1px dotted var(--rule)', mb: '3px', minWidth: 12 }} />
-                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0, whiteSpace: 'nowrap' }}>{new Date(event.event_occurred_at).toLocaleString()}</Typography>
-              </Box>
-            ))}
-          </Box>
-          {!timelineExpanded && hiddenTimelineCount > 0 && (
-            <Button size="small" onClick={() => setTimelineExpanded(true)}
-              sx={{ fontSize: 11.5, color: 'var(--accent)', textTransform: 'none', mt: 1, px: 0 }}>
-              Show {hiddenTimelineCount} more
-            </Button>
-          )}
-        </Box>
-      )}
-
-      {constraints.length > 0 && (
-        <Box sx={{ mb: 3 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 1 }}>
-            Issue
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {constraints.map((c, i) => (
-              <ConstraintAlertCard key={i} constraintType={c.constraint_type} blockType={c.block_type} />
-            ))}
-          </Box>
-
-          {similarOrders.length > 0 && (
-            <Box sx={{ mt: 1.5, p: 1.25, bgcolor: 'var(--accent-ghost)', border: '1px solid var(--accent-border)', borderRadius: '8px' }}>
-              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-2)', mb: 1 }}>
-                {similarOrders.length} other order{similarOrders.length === 1 ? '' : 's'} share this exact issue —{' '}
-                {format(similarOrders.reduce((sum, o) => sum + Number(o.revenue ?? 0), 0))} combined at stake
-              </Typography>
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-                {similarOrders.slice(0, 5).map((o) => (
-                  <Box key={o.order_id} onClick={() => onNavigateToOrder(o.order_id)}
-                    sx={{ display: 'flex', justifyContent: 'space-between', px: 1, py: 0.5, borderRadius: '6px', cursor: 'pointer', '&:hover': { bgcolor: 'var(--accent-border)' } }}>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink)' }}>#{o.external_order_id ?? o.order_id.slice(0, 8).toUpperCase()}</Typography>
-                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{o.revenue != null ? format(o.revenue) : '—'}</Typography>
-                  </Box>
-                ))}
-                {similarOrders.length > 5 && (
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', px: 1, mt: 0.25 }}>+{similarOrders.length - 5} more</Typography>
-                )}
-              </Box>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {!hasAnyActiveConstraint && !order?.warehouseStatus && !isFulfilled && (
-        <Box sx={{ mb: 3, display: 'flex', flexDirection: 'column', gap: 1.25, bgcolor: 'var(--bg-2)', borderRadius: '10px', p: 1.25 }}>
-          <Box sx={{ display: 'flex', gap: 1.25 }}>
-            <Clock size={16} color="var(--ink-3)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
-              No open issues. Order is in the pool, waiting to be releasedinto a pick batch.
-            </Typography>
-          </Box>
-        </Box>
-      )}
-
-      {showInventoryResolvedBanner && (
-        <Box sx={{ mb: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(99,153,34,0.12)', borderRadius: '10px', p: 1.25 }}>
-            <Typography sx={{ fontSize: 12.5, color: '#3B6D11' }}>Stock confirmed — inventory block resolved</Typography>
-          </Box>
-        </Box>
-      )}
-
       {/*
-        OF-08 (2026-07-02): customer/incomplete_address blocks get a
-        real in-app resolution form instead of the generic execute
-        button — resolve_customer_block's own handler is a documented
-        manual no-op (resolve_customer_block.handler.ts), so the old
-        button never actually did anything. All other recommended
-        actions keep the original execute-button behavior, unchanged
-        below.
+        THREE-PLANE BODY (GH-1053)
+        ---------------------------
+        Facts | Money | Why + Warehouse status, as a compact desktop grid that
+        fits without scrolling at normal desktop width, and stacks at narrow
+        widths. Density comes from spacing and hierarchy overhead only —
+        established type sizes are unchanged. Remediation is NOT here; it
+        lives in the footer (see remediationFooter above), so the action never
+        scrolls out of reach.
       */}
-      {!showInventoryResolvedBanner && (hasActiveCustomerConstraint || hasReturnedPackageAction || hasInventorySourcingAction || executableRecommendedAction) && (
-      <Box sx={{ mb: 3 }}>
-        <Typography
-          sx={{
-            fontSize: 11,
-            fontWeight: 500,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: 'var(--ink-4)',
-            mb: 1,
-          }}
-        >
-          Recommended action
-        </Typography>
-
-        <Collapse
-          in={hasActiveCustomerConstraint && !addressRecheckPending}
-          timeout={180}
-          unmountOnExit
-        >
-          <Button
-            variant="contained"
-            fullWidth
-            onClick={() => setShippingAddressDialogOpen(true)}
-            sx={{
-              bgcolor: 'var(--accent)',
-              color: 'var(--accent-ink)',
-              borderRadius: '6px',
-              fontWeight: 600,
-              textTransform: 'none',
-              '&:hover': {
-                bgcolor: 'var(--accent)',
-                opacity: 0.88,
-              },
-            }}
-          >
-            Correct shipping address
-          </Button>
-        </Collapse>
-
-        <Collapse
-          in={hasActiveCustomerConstraint && addressRecheckPending}
-          timeout={180}
-          unmountOnExit
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              p: 1.25,
-              bgcolor: 'var(--confirm-ghost)',
-              border: '1px solid var(--confirm-border)',
-              borderRadius: '10px',
-            }}
-          >
-            <CircularProgress
-              size={14}
-              thickness={5}
-              sx={{ color: 'var(--confirm-ink)', flexShrink: 0 }}
-            />
-
-            <Typography
-              sx={{
-                fontSize: 12.5,
-                fontWeight: 300,
-                color: 'var(--confirm-ink)',
-              }}
-            >
-              Address updated — rechecking order…
-            </Typography>
-          </Box>
-        </Collapse>
-
-        <Collapse
-          in={!hasActiveCustomerConstraint && (hasReturnedPackageAction || hasInventorySourcingAction || Boolean(executableRecommendedAction))}
-          timeout={180}
-          unmountOnExit
-        >
-          {hasReturnedPackageAction ? (
-            <Button
-              variant="contained"
-              fullWidth
-              onClick={handleOpenReturnJob}
-              sx={{
-                bgcolor: 'var(--accent)',
-                color: 'var(--accent-ink)',
-                borderRadius: '6px',
-                fontWeight: 600,
-                textTransform: 'none',
-                '&:hover': {
-                  bgcolor: 'var(--accent)',
-                  opacity: 0.88,
-                },
-              }}
-            >
-              {returnJobActionLabel}
-            </Button>
-          ) : hasInventorySourcingAction ? (
-            /*
-             * ORD-DECISION-01: an active oversell routes to Sourcing and
-             * runs NO execute mutation. One button per blocked variant,
-             * each carrying its own constraint target_id — see
-             * inventorySourcingTargets above for why this is derived from
-             * constraints rather than the elected decision.
-             */
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {inventorySourcingTargets.map((variantId) => (
-                <Button
-                  key={variantId}
-                  variant="contained"
-                  fullWidth
-                  startIcon={<ArrowRight size={16} />}
-                  onClick={() => handleOpenSourcing(variantId)}
-                  sx={{
-                    bgcolor: 'var(--accent)',
-                    color: 'var(--accent-ink)',
-                    borderRadius: '6px',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    '&:hover': {
-                      bgcolor: 'var(--accent)',
-                      opacity: 0.88,
-                    },
-                  }}
-                >
-                  Source this item
-                </Button>
-              ))}
-            </Box>
-          ) : executableRecommendedAction && (
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.25fr) minmax(0, 0.85fr) minmax(0, 1fr)' },
+          gap: 2.5,
+          alignItems: 'start',
+          mb: 2.5,
+        }}
+      >
+        {/* ── PLANE A — FACTS ─────────────────────────────────────────────
+            Order contents, shipping/customer context, and the compact
+            activity trail. Customer identity is sourced from orders.shipping_*
+            (VO-01/VO-07) — NOT customers.email/first_name, which is
+            structurally blank for most merchants (Shopify PCD scope). "name"
+            here is the shipping recipient, not a verified account identity —
+            do not imply otherwise in copy. */}
+        <Box sx={{ minWidth: 0 }}>
+          {order && (
             <>
-              {isExecError ? (
-                <>
-                  <Alert severity="error" sx={{ mb: 1 }}>
-                    {execError?.message ?? 'Execution failed. Please try again.'}
-                  </Alert>
-
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => execute(orderId)}
-                    sx={{
-                      bgcolor: 'var(--accent)',
-                      color: 'var(--accent-ink)',
-                      borderRadius: '6px',
-                      fontWeight: 600,
-                      textTransform: 'none',
-                      '&:hover': {
-                        bgcolor: 'var(--accent)',
-                        opacity: 0.88,
-                      },
-                    }}
-                  >
-                    {getActionLabel(executableRecommendedAction.type)}
-                  </Button>
-                </>
-              ) : (
-                <Button
-                  variant="contained"
-                  fullWidth
-                  disabled={isPending}
-                  onClick={() => execute(orderId)}
-                  startIcon={
-                    isPending
-                      ? <CircularProgress size={16} color="inherit" />
-                      : null
-                  }
-                  sx={{
-                    bgcolor: 'var(--accent)',
-                    color: 'var(--accent-ink)',
-                    borderRadius: '6px',
-                    fontWeight: 600,
-                    textTransform: 'none',
-                    '&:hover': {
-                      bgcolor: 'var(--accent)',
-                      opacity: 0.88,
-                    },
-                  }}
-                >
-                  {isPending ? 'Processing…' : getActionLabel(executableRecommendedAction.type)}
-                </Button>
-              )}
-
-              {alternateActions.length > 0 && (
-                <Box sx={{ mt: 1.5 }}>
-                  <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mb: 0.75 }}>
-                    Other options
+              <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+                Order contents
+              </Typography>
+              {order.lineItems.map((item) => (
+                <Box key={item.id} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 0.5 }}>
+                  {item.image_url ? (
+                    <Box component="img" src={item.image_url} alt=""
+                      sx={{ width: 36, height: 36, borderRadius: '6px', objectFit: 'cover', flexShrink: 0, border: '1px solid var(--rule)' }} />
+                  ) : (
+                    // VO-08: no placeholder asset exists yet — a plain
+                    // bordered box avoids a broken-image icon without
+                    // inventing product imagery.
+                    <Box sx={{ width: 36, height: 36, borderRadius: '6px', flexShrink: 0, border: '1px solid var(--rule)', bgcolor: 'var(--bg-2)' }} />
+                  )}
+                  <Box sx={{ minWidth: 0, flex: 1 }}>
+                    <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{item.title}</Typography>
+                    <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>{item.sku ?? 'No SKU'} · qty {item.quantity}</Typography>
+                  </Box>
+                  <Typography sx={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)' }}>
+                    {format(item.line_total, { currency: order.currency })}
                   </Typography>
+                </Box>
+              ))}
 
-                  {alternateActions.map((a) => (
-                    <Button
-                      key={a.type}
-                      variant="outlined"
-                      fullWidth
-                      size="small"
-                      disabled={isPending}
-                      onClick={() => execute(orderId)}
-                      sx={{
-                        mb: 0.75,
-                        fontSize: 12.5,
-                        color: 'var(--ink-2)',
-                        borderColor: 'var(--rule)',
-                      }}
-                    >
-                      {getActionLabel(a.type)}
-                    </Button>
-                  ))}
+              {order.shipping.name && (
+                <Box sx={{ mt: 2 }}>
+                  <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+                    Customer
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: 'var(--ink)' }}>{order.shipping.name}</Typography>
+                  {order.shipping.address1 && (
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 0.25 }}>{order.shipping.address1}</Typography>
+                  )}
+                  {order.shipping.address2 && (
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>{order.shipping.address2}</Typography>
+                  )}
+                  {(order.shipping.city || order.shipping.province || order.shipping.countryCode) && (
+                    <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                      {[order.shipping.city, order.shipping.province, order.shipping.countryCode].filter(Boolean).join(', ')}
+                    </Typography>
+                  )}
                 </Box>
               )}
             </>
           )}
-        </Collapse>
 
-        <ShippingAddressDialog
-          key={orderId}
-          open={shippingAddressDialogOpen}
-          onClose={() => setShippingAddressDialogOpen(false)}
-          onSaved={() => {
-            setShippingAddressDialogOpen(false);
-            setAddressRecheckPending(true);
-          }}
-          orderId={orderId}
-          currentShipping={order?.shipping}
-          addressAssist={order?.addressAssist}
-        />
+        </Box>
+
+        {/* ── PLANE B — MONEY ─────────────────────────────────────────────
+            Shipping line intentionally omitted — GH-1032, no reliable source
+            yet, and it must not be derived client-side either. */}
+        {order && (
+          <Box sx={{ minWidth: 0 }}>
+            <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+              Summary
+            </Typography>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Subtotal</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.subtotal, { currency: order.currency })}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', py: 0.25 }}>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>Tax</Typography>
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink)' }}>{format(order.tax, { currency: order.currency })}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', pt: 0.75, mt: 0.5, borderTop: '1px solid var(--rule)' }}>
+              <Typography sx={{ fontSize: 12, fontWeight: 500, color: 'var(--ink-3)', textTransform: 'uppercase' }}>Total</Typography>
+              <Typography sx={{ fontSize: 13, fontWeight: 700, color: 'var(--ink)' }}>{format(order.total, { currency: order.currency })}</Typography>
+            </Box>
+
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 1.5 }}>
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)' }}>Payment status</Typography>
+              <Box sx={{ px: 1.25, py: 0.375, borderRadius: '999px', fontSize: 11, fontWeight: 500, bgcolor: 'rgba(99,153,34,0.12)', color: '#3B6D11' }}>
+                {order.paymentState.replace(/_/g, ' ')}
+              </Box>
+            </Box>
+
+            {order.tracking?.tracking_number && (
+              <Typography sx={{ fontSize: 12, color: 'var(--ink-3)', mt: 1.25 }}>
+                Tracking: {order.tracking.tracking_number}{order.tracking.carrier_code && ` (${order.tracking.carrier_code})`}
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {/* ── PLANE C — WHY / WAREHOUSE STATUS ────────────────────────────
+            Active blockers first (constraints[] is canonical blocker truth,
+            decision enrichment may be absent), then the compact stage
+            visualization. The similar-orders surface that used to sit under
+            the blocker cards is removed — see GH-1053. */}
+        <Box sx={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
+          {constraints.length > 0 && (
+            <Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', mb: 0.75 }}>
+                Issue
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {constraints.map((c, i) => (
+                  <ConstraintAlertCard key={i} constraintType={c.constraint_type} blockType={c.block_type} />
+                ))}
+              </Box>
+            </Box>
+          )}
+
+          <WarehouseStatusPanel view={stageView} tone={pipelineColorKey} />
+
+          {showInventoryResolvedBanner && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(99,153,34,0.12)', borderRadius: '10px', p: 1.25 }}>
+              <Typography sx={{ fontSize: 12.5, color: '#3B6D11' }}>Stock confirmed — inventory block resolved</Typography>
+            </Box>
+          )}
+
+          {!hasAnyActiveConstraint && !order?.warehouseStatus && !isFulfilled && (
+            <Box sx={{ display: 'flex', gap: 1.25, bgcolor: 'var(--bg-2)', borderRadius: '10px', p: 1.25 }}>
+              <Clock size={16} color="var(--ink-3)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
+                No open issues. Order is in the pool, waiting to be releasedinto a pick batch.
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </Box>
-    )}
+
+      {/*
+        Mounted by this component regardless of where its trigger lives — the
+        footer's "Correct shipping address" action only flips the open state.
+        PATCH / recheck / canonical-constraint semantics are unchanged.
+      */}
+      <ShippingAddressDialog
+        key={orderId}
+        open={shippingAddressDialogOpen}
+        onClose={() => setShippingAddressDialogOpen(false)}
+        onSaved={() => {
+          setShippingAddressDialogOpen(false);
+          setAddressRecheckPending(true);
+        }}
+        orderId={orderId}
+        currentShipping={order?.shipping}
+        addressAssist={order?.addressAssist}
+      />
 
       {!exceptionsQuery.isLoading && exceptions.length > 0 && (
         <Box sx={{ mb: 3 }}>

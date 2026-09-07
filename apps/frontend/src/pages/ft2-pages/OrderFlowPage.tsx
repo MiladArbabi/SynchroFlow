@@ -177,6 +177,9 @@ export default function OrderFlowPage() {
     [bulkSetPriority]
   );
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const handleCloseOrderDetail = useCallback(() => {
+    setSelectedOrderId(null);
+  }, []);
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
@@ -1814,7 +1817,7 @@ export default function OrderFlowPage() {
       */}
       <EntityDetailModal
         entityId={selectedOrderId}
-        onClose={() => setSelectedOrderId(null)}
+        onClose={handleCloseOrderDetail}
         title={modalTitle}
         subtitle={modalSubtitle}
         maxWidth="md"
@@ -1828,7 +1831,7 @@ export default function OrderFlowPage() {
               onNavigateToOrder={setSelectedOrderId}
               onFooterReady={setModalFooter}
               onPriorityFlag={onPriorityFlag}
-              onClose={() => setSelectedOrderId(null)}
+              onClose={handleCloseOrderDetail}
             />
         )}
       </EntityDetailModal>

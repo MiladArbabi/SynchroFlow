@@ -227,6 +227,78 @@ Frontend: raw status codes were leaking into the UI unlabeled (`'pending'` rende
 
 **NOTE, per explicit instruction (2026-07-01):** this codebase's docs are known to run stale in places — this conversation's approvals are the current source of truth where they conflict with anything written earlier in thisfile, including §2.5's now-superseded line above.
 
+
+### GH #1053 — scroll-free Order Detail contract (2026-09-07)
+
+**Requirement:** essential Order Detail context, blockers, recommended action,
+and primary CTA must fit at normal desktop sizes without internal vertical
+scrolling. Smaller supported viewport heights may scroll, but the footer CTA
+must remain immediately visible and stable.
+
+**Shipped structure:**
+
+- The opening body uses three information planes:
+  **Order contents + customer**, **Summary**, and
+  **Issue + Warehouse Status**.
+- Remediation moved out of the scrollable body into
+  `EntityDetailModal.footerActions`.
+- Footer-left owns **Recommended action + CTA**. The existing healthy-pool
+  state remains **Prioritize + Go to order flow**.
+- Footer-right owns **Latest activity**, limited to the two newest available
+  timeline events. Activity no longer consumes body height and has no
+  expandable "Show more" state.
+- **Similar Orders** was removed from the opening Order Detail modal.
+- Warehouse Status uses the shared compact isometric primitive driven only by
+  canonical order warehouse stage/status. It does **not** claim an exact or
+  live physical location. A blocked order with no warehouse-stage row renders
+  as **Blocked / Order pool** rather than fabricating a warehouse location.
+- Existing blocker ownership remains unchanged: customer/address correction,
+  returned-package handling, target-specific inventory sourcing, and generic
+  executable actions preserve their existing domain routes and precedence.
+- `proceed_fulfillment` remains unavailable from Order Detail.
+
+**Runtime-stability correction discovered during live verification:**
+
+Two React parent/child publication loops were found and corrected rather than
+suppressed:
+
+1. Subtitle publication depended on the referential identity of the currency
+   formatter. Order Detail now derives the semantic subtitle string first and
+   republishes only when that string changes.
+2. Footer publication could loop because Order Detail consumers supplied a new
+   inline `onClose` callback on each parent render. `OrderFlowPage`,
+   `OrdersFT2Page`, and `OrdersOutboundPage` now each create one stable
+   `useCallback` close handler and pass that same handler to both
+   `EntityDetailModal` and `OrderDetailModalBody`.
+
+The permanent regression contract verifies stable close-callback wiring at
+those consumer boundaries rather than teaching the child to ignore arbitrary
+callback churn.
+
+**Verification evidence:**
+
+- Targeted Order Detail Jest matrix: **4 suites / 39 tests passed**.
+- Frontend TypeScript: **19 pre-existing global baseline errors;
+  0 errors in the four GH #1053 production files**.
+- Normal desktop live browser at **1378 × 676**:
+  `DialogContent clientHeight=298`, `scrollHeight=298`,
+  therefore **scroll-free**; footer visible; `Review return` CTA visible;
+  Activity absent from body; Latest activity present in footer;
+  Similar Orders absent.
+- Reduced-height live browser at **1381 × 501**:
+  body `clientHeight=265`, `scrollHeight=298` and therefore scrolls as allowed;
+  footer remains visible and `Review return` CTA remains visible.
+- Repeated opening/closing and switching across blocked orders no longer
+  produced the previously observed **Maximum update depth exceeded** loop.
+
+**Explicit follow-ups, not part of GH #1053:**
+
+- **GH #1054** — improve Order Detail dark-mode contrast/hierarchy.
+- **GH #1055** — evolve Warehouse Status toward the Overview-style embedded
+  2.5D/isometric treatment with minimal text and no nested-card framing.
+- **GH #1056** — audit pick-exception blocking semantics and isolate Returns
+  reviewer fixtures from generic Order Flow seed orders.
+
 ## 2.10 Outbound module audit fixes (2026-07-04)
 
 **ISS-01 — `StatusBadge`'s `alpha('var(--ink-4)', ...)` MUI crash

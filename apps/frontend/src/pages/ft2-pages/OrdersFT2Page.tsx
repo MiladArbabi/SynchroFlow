@@ -51,6 +51,9 @@ const __DEV__ = import.meta.env.DEV;
 
 export default function OrdersFT2Page() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const handleCloseOrderDetail = useCallback(() => {
+    setSelectedOrderId(null);
+  }, []);
   const [modalTitle, setModalTitle] = useState('');
   const [exportDrawerOpen, setExportDrawerOpen] = useState(false);
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
@@ -118,7 +121,7 @@ export default function OrdersFT2Page() {
       />
      <EntityDetailModal
         entityId={selectedOrderId}
-        onClose={() => setSelectedOrderId(null)}
+        onClose={handleCloseOrderDetail}
         title={modalTitle}
         subtitle={modalSubtitle}
         maxWidth="md"
@@ -132,7 +135,7 @@ export default function OrdersFT2Page() {
               onNavigateToOrder={setSelectedOrderId}
               onFooterReady={setModalFooter}
               onPriorityFlag={onPriorityFlag}
-              onClose={() => setSelectedOrderId(null)}
+              onClose={handleCloseOrderDetail}
             />
         )}
       </EntityDetailModal>

@@ -240,6 +240,9 @@ export default function OrdersOutboundPage() {
   // (entity-detail-modal-playbook.md §2). OrderDetailPage.tsx removed 2026-07-11
   // (ISS-OD-01) — modal is now the single order detail surface.
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const handleCloseOrderDetail = useCallback(() => {
+    setSelectedOrderId(null);
+  }, []);
   const [modalTitle, setModalTitle] = useState('');
   const [modalSubtitle, setModalSubtitle] = useState<string | undefined>(undefined);
   const [modalFooter, setModalFooter] = useState<ReactNode>(null);
@@ -1158,7 +1161,7 @@ export default function OrdersOutboundPage() {
       />
       <EntityDetailModal
         entityId={selectedOrderId}
-        onClose={() => setSelectedOrderId(null)}
+        onClose={handleCloseOrderDetail}
         title={modalTitle}
         subtitle={modalSubtitle}
         maxWidth="md"
@@ -1172,7 +1175,7 @@ export default function OrdersOutboundPage() {
               onNavigateToOrder={setSelectedOrderId}
               onFooterReady={setModalFooter}
               onPriorityFlag={onPriorityFlag}
-              onClose={() => setSelectedOrderId(null)}
+              onClose={handleCloseOrderDetail}
             />
         )}
       </EntityDetailModal>
