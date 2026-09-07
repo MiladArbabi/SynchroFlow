@@ -30,7 +30,15 @@ jest.mock('hooks/usePlanEntitlement', () => ({
   usePlanEntitlement: () => ({ tier: 'core', can: () => true }),
 }));
 jest.mock('runtime/commercialContext', () => ({
-  useCommercialAccess: () => ({ isResolved: true, decide: mockDecide }),
+  useCommercialAccess: () => ({
+    context: {
+      tier: 'core',
+      modules: new Set(),
+      flags: new Set(),
+    },
+    isResolved: true,
+    decide: mockDecide,
+  }),
 }));
 jest.mock('runtime/useResolvedNavigation', () => ({
   useResolvedNavigation: () => ({ groups: mockGroups }),

@@ -4342,3 +4342,31 @@ legacy gating surfaces.
 - `git diff --check`: pass.
 - No migration, DB fixture, worker, API, provider, or generated-artifact changes.
 - Live browser certification remains required after deployment.
+
+### NAV-ACCOUNT-TIER-01 — account menu plan visibility — 2026-09-07
+
+The bottom-left account popover now shows the shop's resolved commercial plan directly below the signed-in email.
+
+Behavior:
+- resolved `starter` → `Starter plan`
+- resolved `core` → `Core plan`
+- resolved `growth` → `Growth plan`
+- resolved `scale` → `Scale plan`
+- unresolved commercial context → no plan label is shown
+
+Commercial authority remains `useCommercialAccess()`. The account menu reads `context.tier` only after `isResolved` is true. It does not read tier from AuthContext, JWT data, billing state, or a separate subscription lookup.
+
+Scope:
+- modified `apps/frontend/src/layouts/AppLayout/SidenavContent.tsx`
+- added `tests/unit/ui/commercial-access/sidenav-account-tier.test.tsx`
+- updated the existing Sidenav commercial-access test harness to provide the canonical commercial context shape
+- no backend, database, billing, entitlement-policy, pricing, or navigation changes
+
+Regression evidence:
+- focused Sidenav suites: 2/2 passed
+- focused assertions: 8/8 passed
+- frontend TypeScript baseline: 19 existing errors
+- target TypeScript errors: 0
+- target `git diff --check`: passed
+
+The worktree also contained pre-existing Order Detail changes when this slice opened. Those files are outside NAV-ACCOUNT-TIER-01 and were deliberately left untouched.

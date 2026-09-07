@@ -24,6 +24,7 @@ import type { AccessDecision, CapabilityId } from '@lasyncro/commercial-policy';
 import { Popper, Paper, ClickAwayListener, Divider } from '@mui/material';
 import { useTheme, alpha } from '@mui/material/styles';
 import { useAuth } from '../../contexts/AuthContext';
+import { useCommercialAccess } from '../../runtime/commercialContext';
 import { axiosInstance } from '../../api/axiosConfig';
 
 type SidenavState = 'EXPANDED' | 'COMPACT';
@@ -45,6 +46,10 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const moduleHealth = useModuleHealth();
   const theme = useTheme();
   const { user, logout } = useAuth();
+  const {
+    context: commercialContext,
+    isResolved: isCommercialResolved,
+  } = useCommercialAccess();
 
   // Unread alert count for badge
   const { data: alertsData } = useAlerts();
@@ -135,6 +140,10 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
   const displayName = user?.first_name
     ? `${user.first_name}${user.last_name ? ' ' + user.last_name : ''}`
     : user?.email ?? 'Account';
+
+  const planLabel = isCommercialResolved
+    ? `${commercialContext.tier.charAt(0).toUpperCase()}${commercialContext.tier.slice(1)} plan`
+    : undefined;
 
   const profileMenuItemSx = {
     minHeight: 44,
@@ -506,10 +515,12 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                   {/* Target hierarchy uses the account identity as a quiet header. */}
                   <Box
                     sx={{
-                      minHeight: 40,
+                      minHeight: 48,
                       px: 2,
                       display: 'flex',
-                      alignItems: 'center',
+                      flexDirection: 'column',
+                      justifyContent: 'center',
+                      alignItems: 'flex-start',
                     }}
                   >
                     <Typography
@@ -522,6 +533,20 @@ const SidenavContent: React.FC<SidenavProps> = ({ sidenavState, isFt2Ready }) =>
                     >
                       {user?.email}
                     </Typography>
+                    {planLabel && (
+                      <Typography
+                        noWrap
+                        sx={{
+                          width: '100%',
+                          mt: 0.25,
+                          fontSize: 11,
+                          fontWeight: 500,
+                          color: 'var(--ink-4)',
+                        }}
+                      >
+                        {planLabel}
+                      </Typography>
+                    )}
                   </Box>
 
                   <Box sx={{ py: 0.5 }}>
