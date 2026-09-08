@@ -871,6 +871,21 @@ export function OrderDetailModalBody({
   const unresolvedExceptions = exceptions.filter((e) => !e.resolved);
   const order = detailQuery.data;
 
+  /**
+   * GH-1057: hydrate the modal's local optimistic priority state from
+   * canonical persisted truth. Local state is still retained so the existing
+   * prioritize mutation can flip the button immediately after success.
+   *
+   * orderId is included deliberately: switching directly between two orders
+   * must never carry the previous modal's local priority state forward.
+   */
+  const persistedPriority =
+    order?.fulfillment?.is_priority_flagged ?? false;
+
+  useEffect(() => {
+    setPrioritized(persistedPriority);
+  }, [orderId, persistedPriority]);
+
   // INV-TREAT-01: fresh, read-only evidence/recommendations from Order Detail.
   // constraints[] remains canonical blocker truth; assist only enriches it.
   const inventoryAssistItems = order?.inventoryAssist?.items;
