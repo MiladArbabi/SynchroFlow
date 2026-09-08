@@ -1022,7 +1022,7 @@ export function OrderDetailModalBody({
 
     if (!hasRemediation) return null;
 
-    const openSourcing = (variantId: string) => {
+    const openSourcing = (variantId: string, treatmentKey?: string) => {
       onClose?.();
       /**
        * SRC-L3-11A (SOURCING-UX-COGNITIVE-01 Slice 1A): carry the originating
@@ -1033,9 +1033,20 @@ export function OrderDetailModalBody({
        * mutable facts the server re-derives, and a display number or Shopify
        * id could not be matched against canonical order state anyway.
        */
+      /**
+       * OUTCOME-INV-01: `treatmentKey` is ADVISORY provenance — what this
+       * surface was recommending at the moment the merchant followed it. It is
+       * never authoritative: the server validates the order, resolves the exact
+       * constraint itself, and normalizes an unrecognised key to null.
+       *
+       * constraintId is still deliberately NOT carried (see above): it is
+       * mutable canonical state the server re-derives, and a client-supplied
+       * constraint id would let a link claim any blocker.
+       */
       navigate(
         `/suppliers-portal/sourcing?variantId=${encodeURIComponent(variantId)}` +
-          `&orderId=${encodeURIComponent(orderId)}`
+          `&orderId=${encodeURIComponent(orderId)}` +
+          (treatmentKey ? `&treatmentKey=${encodeURIComponent(treatmentKey)}` : '')
       );
     };
 
@@ -1164,7 +1175,7 @@ export function OrderDetailModalBody({
                 <Button
                   variant="contained"
                   startIcon={<ArrowRight size={16} />}
-                  onClick={() => openSourcing(variantId)}
+                  onClick={() => openSourcing(variantId, treatment.type)}
                   sx={primaryButtonSx}
                 >
                   {treatmentLabel(treatment)}

@@ -231,6 +231,11 @@ const handleDeletePreference = useCallback(async (id: string): Promise<void> => 
     supplier_id: number;
     qty_requested: number;
     source: 'alert' | 'manual';
+    // OUTCOME-INV-01 attribution provenance, both optional. Passed straight
+    // through: the server resolves the exact constraint itself and normalizes
+    // the advisory treatment key. Neither is ever a gate.
+    originating_order_id?: string;
+    shown_treatment_key?: string;
   }): Promise<ReorderRequest> => {
     const { data } = await axiosInstance.post('/api/v1/suppliers/reorder-requests', input);
     return data.request;

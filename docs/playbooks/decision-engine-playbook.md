@@ -981,18 +981,21 @@ Priority item 3 (`INV-TREAT-01`) is **COMPLETED / LIVE VERIFIED** — see §11.8
 Priority item 4 (`SLA-TREAT-01`) is **COMPLETED / LIVE VERIFIED / CLOSED** — see §11.9.
 Priority item 5 (Outcome/value layer) is **IN PROGRESS**.
 
-Its foundation and the Address pilot (`OUTCOME-ATTR-01`) are **COMPLETED /
+Its foundation and the Address pilot (`OUTCOME-ATTR-01`) remain **CLOSED /
 LIVE VERIFIED** — see §11.10. The item as a whole is **not** closed.
+
+`OUTCOME-INV-01` — **IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING**
+— see §11.11.
 
 Still outstanding before the broader Outcome/value layer is complete:
 
-1. `OUTCOME-INV-01` — inventory intervention attribution;
+1. live / production certification of `OUTCOME-INV-01`;
 2. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
    defensible prevented-breach attribution;
 3. broader attributable value reporting, only where the evidence actually
    supports it.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (OUTCOME-ATTR-01 foundation + Address pilot COMPLETED / LIVE VERIFIED; inventory, SLA and broader value attribution remain outstanding).**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (OUTCOME-ATTR-01 foundation + Address pilot CLOSED / LIVE VERIFIED; OUTCOME-INV-01 IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING; SLA and broader value attribution remain outstanding).**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1846,4 +1849,232 @@ after the recorded intervention.**
 **OUTCOME-ATTR-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
 
 The broader Outcome/value roadmap item (§11.5 priority item 5) remains **IN
-PROGRESS** — inventory, SLA and broader value attribution are still outstanding.
+PROGRESS** — inventory live certification, SLA and broader value attribution
+remain outstanding; see §11.11 for the automated-verified inventory pilot.
+
+### 11.11 OUTCOME-INV-01 — inventory intervention attribution
+
+Implemented 2026-09-08.
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING.**
+
+This slice adds inventory intervention provenance + canonical verified-resolution
+attribution for one bounded pilot:
+
+active inventory/oversell constraint
+→ targeted Sourcing
+→ merchant materially creates/raises reorder intent
+→ durable `decision_intervention`
+→ same exact constraint episode remains pending until pickable stock changes
+→ same canonical constraint episode later resolves
+→ read model may return `verified_resolved`.
+
+The only safe claim is **"verified resolved after the recorded intervention."**
+It does not establish causality. Forbidden claims are **oversell prevented**,
+**revenue saved**, **revenue protected**, **ROI**, and **inventory issue resolved
+by laSyncro**. No prevention, revenue, or ROI metric is introduced.
+
+#### Pilot boundary and material purchasing change
+
+`open_sourcing` remains navigation-only and is not an intervention. Opening
+Sourcing writes no `decision_intervention`, writes no reorder request, alters no
+inventory, and resolves no constraint.
+
+The meaningful intervention is `inventory_reorder_intent` →
+`create_reorder_request`, and only when durable purchasing state materially
+changes. Existing reorder semantics remain: `qty_requested` is a **LEVEL, not a
+delta**; an existing pending request retains `max(previous, requested)`.
+
+| Purchasing operation | Durable result | New interventions |
+| --- | --- | --- |
+| New pending reorder request | Request created | Exactly one |
+| Existing pending level genuinely raised | Higher level persisted | Exactly one |
+| Same quantity resubmitted | Level unchanged | Zero |
+| Lower quantity submitted | Existing higher level remains | Zero |
+
+Attribution tracks durable purchasing-state change, not clicks or HTTP success.
+In `OUTCOME-INV-09`, four successful HTTP 201 requests produced exactly two
+interventions because only two materially changed durable purchasing state.
+This sequence does not establish broader concurrency or exactly-once semantics.
+
+#### Exact server-side attribution and durable provenance
+
+The browser never supplies `constraint_id`. For a targeted reorder, the backend
+resolves the exact active canonical row using the same tenant order,
+`constraint_type = inventory`, `block_type = oversell`,
+`target_id = requested variant`, and `is_active = true`.
+
+| Intervention field | Value |
+| --- | --- |
+| `entity_type` | `order` |
+| `entity_id` | Originating order ID |
+| `constraint_id` | Exact server-resolved inventory constraint |
+| `decision_id` | `null` |
+| `treatment_key` | `inventory_reorder_intent` |
+| `action_key` | `create_reorder_request` |
+| `actor_type` | `user` |
+| `actor_user_id` | Authenticated user where available |
+| `source_surface` | `sourcing_targeted_reorder_queue` |
+
+Metadata records `variant_id`, `supplier_id`, `reorder_request_id`,
+`requested_qty`, `previous_qty_requested`, `resulting_qty_requested`,
+`constraint_started_at`, and advisory-only `shown_treatment_key`.
+A usable active episode anchor is required for inventory attribution.
+
+The reorder mutation and intervention INSERT share the same existing
+transaction. Without a matching active oversell constraint, purchasing remains
+valid and no intervention is manufactured. Generic Sourcing with no originating
+blocked order likewise preserves purchasing without a Decision Engine
+intervention. Unusable optional attribution context does not fail purchasing.
+
+#### Frontend provenance and trust boundary
+
+Order Detail still carries `variantId` and `orderId`. For an actual displayed
+treatment it may additionally carry `treatmentKey`; `constraintId` remains
+absent from the URL.
+
+When Add to queue writes the reorder, targeted Sourcing uses
+`targeted.originating_order_id` from the **server-validated sourcing response**.
+It does not trust raw URL `orderId` for attribution, and honors a server null or
+refusal. Generic sourcing carries no originating order.
+
+`shown_treatment_key` is advisory provenance only, normalized server-side. It
+cannot authorize, choose a constraint, rank treatments, or determine outcome.
+Unknown values become null / non-authoritative; invalid advisory provenance
+does not fail purchasing.
+
+#### Purchasing is not availability
+
+A reorder request, pending queue quantity, draft PO, PO placement / committed
+inbound, and committed inbound quantity do **not** clear oversell. These are
+purchasing workflow or future-supply evidence. Only canonical pickable inventory
+can make the inventory evaluator stop returning oversell.
+
+This slice adds no `inventory_truth` write, PO status mutation, or Decision
+execution enqueue. No outcome is persisted.
+
+#### Canonical verification and inventory episode guard
+
+Outcomes remain read through
+`readOrderInterventionOutcomes({ shopId, lasyncroOrderId })`.
+Canonical `order_constraints` remains the sole outcome authority. For a matching
+constraint episode:
+
+| Canonical state | Derived outcome |
+| --- | --- |
+| Active, consistent constraint | `pending_verification` |
+| Inactive + `resolved_at` + valid chronology | `verified_resolved` |
+| Missing, inconsistent, or impossible evidence | `unknown` |
+
+Chronology remains strict:
+`latencyMs = resolvedAt.getTime() - occurredAt.getTime()`;
+negative latency means `unknown`. There is no arbitrary tolerance.
+
+The inventory-specific audit found that `constraint_id` is deterministic and
+reused across resolve → re-raise → resolve. A later activation reuses the row
+but changes `started_at`. Constraint identity + chronology alone could therefore
+falsely credit a later episode to an earlier intervention.
+
+Inventory intervention metadata captures `constraint_started_at`. When that
+metadata exists, the recorded anchor must equal current
+`order_constraints.started_at` at **JavaScript Date millisecond precision**.
+Mismatched, invalid, or missing episode evidence returns `status = unknown` and
+`resolutionLatencyMs = null`. This guard runs **before** either pending or
+verified classification, without a tolerance window.
+
+The episode requirement is not applied retroactively to Address interventions
+without `constraint_started_at` metadata. Existing Address behavior remains
+unchanged and was regression-verified.
+
+The inventory tests make stock pickable, then exercise the existing production
+`revalidateOrdersForReceivedVariants` path. They do not hand-write or hand-clear
+`order_constraints`, or hand-edit `started_at` / `resolved_at`. Episode
+reactivation also uses the canonical evaluator/projection lifecycle.
+
+#### Permanent automated contracts
+
+| Contract | Protected behavior |
+| --- | --- |
+| `OUTCOME-INV-01` | Exact active inventory constraint + material reorder creation writes one intervention with exact constraint ID and episode provenance. |
+| `OUTCOME-INV-02` | Before stock becomes pickable, outcome is `pending_verification`. |
+| `OUTCOME-INV-03` | Real canonical inventory revalidation resolving the same episode yields `verified_resolved`. |
+| `OUTCOME-INV-04` | A coexisting customer/incomplete_address constraint receives no inventory attribution. |
+| `OUTCOME-INV-05` | No active oversell for the exact order + variant permits purchasing but manufactures no intervention. |
+| `OUTCOME-INV-06` | Resolve A → re-raise the same deterministic constraint as B → resolve B: the episode-A intervention reads `unknown`. |
+| `OUTCOME-INV-07` | `open_sourcing` / navigation alone writes nothing. |
+| `OUTCOME-INV-08` | Generic reorder without an originating blocked order writes no intervention. |
+| `OUTCOME-INV-09` | Same/lower level creates no new intervention; a genuine raise creates exactly one. |
+
+Frontend `OUTCOME-INV-UI-01..05` protects, respectively:
+
+1. Server-validated originating order carried into Add to queue.
+2. Advisory shown treatment carried explicitly.
+3. Server refusal / null attribution honored.
+4. Generic sourcing carries no originating order.
+5. Merely opening targeted Sourcing writes nothing.
+
+#### Automated verification evidence
+
+The completed implementation verification supplied for this documentation phase
+records the following evidence; live certification remains pending.
+
+**Backend RED:** 4 failed / 3 passed / 7 total. Failing contracts were
+`OUTCOME-INV-01/02/03`, `OUTCOME-INV-04`, `OUTCOME-INV-06`, and `OUTCOME-INV-09`:
+expected intervention rows were absent before writer implementation. The
+disposable DB was dropped successfully.
+
+**Frontend RED:** 2 failed / 22 passed / 24 total. `OUTCOME-INV-UI-01` and
+`OUTCOME-INV-UI-02` failed on missing provenance fields, the intended defect.
+
+Negative "writes nothing" contracts passed structurally at RED and only became
+meaningful after the writer existed. Those passes are not RED defect evidence.
+
+| GREEN verification | Result |
+| --- | --- |
+| Focused inventory outcome backend | 7 passed / 7 total; disposable DB dropped |
+| Targeted Sourcing frontend | 24 passed / 24 total |
+| `inventory-treatment-assist-contract` | 10/10; disposable DB dropped |
+| `inventory-decision-contract` | 12/12; disposable DB dropped |
+| `address-outcome-attribution` | 4/4; disposable DB dropped |
+| Backend TypeScript | 0 errors |
+| Frontend TypeScript | 19 repository baseline errors / 0 target errors |
+| Jest ownership | `UNOWNED=0`, `MULTI_OWNED=0` |
+| Whitespace | Tracked OUTCOME-INV files and new inventory outcome test clean |
+
+All disposable DBs were dropped. Address regression includes
+`OUTCOME-ADDR-07`: a post-resolution intervention still reads `unknown`.
+
+#### Implementation scope
+
+Production files:
+
+- `apps/backend/src/api/suppliers/reorderRequests.controller.ts`
+- `apps/backend/src/services/decision/interventionOutcome.service.ts`
+- `apps/frontend/src/pages/orders/OrderDetailModalBody.tsx`
+- `apps/frontend/src/pages/ft2-pages/SuppliersPortalPage.tsx`
+- `modules/suppliers-portal/src/ui/pages/SuppliersPortalModuleFT2.tsx`
+
+Permanent tests:
+
+- `tests/integration/orders/inventory-outcome-attribution.test.ts`
+- `tests/unit/ui/suppliers-portal/SourcingTargetedActions.test.tsx`
+
+No migration, `order_constraints` schema/identity change, inventory evaluator
+change, receive/stow change, or Decision execution change was introduced.
+
+#### Open / deferred
+
+- Production/live certification is pending.
+- Attribution covers only targeted blocked-order → reorder flow; generic
+  Sourcing reorder activity is intentionally unattributed.
+- Long `pending_verification` periods are expected and correct.
+- One intervention per genuine material raise is the current ratified behavior.
+- `treatmentKey` remains advisory provenance.
+- The causal boundary is weaker than Address: reorder intent does not itself
+  clear the blocker; later pickable stock does.
+- `OUTCOME-SLA-01` remains deferred until intervention → dispatch evidence
+  supports defensible prevented-breach attribution.
+- Broader attributable value reporting remains deferred to supporting evidence.
+
+Priority item 5 remains **IN PROGRESS**. This pilot creates no prevention,
+revenue, or ROI metric.

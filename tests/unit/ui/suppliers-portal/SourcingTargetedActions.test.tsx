@@ -152,6 +152,10 @@ type RenderOptions = {
   orderId?: string | null;
   onCreatePreference?: jest.Mock;
   onFetchSourcingRecommendations?: jest.Mock;
+  /** OUTCOME-INV-01: captured so the queue payload can be asserted. */
+  onCreateReorderRequest?: jest.Mock;
+  /** OUTCOME-INV-01: advisory treatment provenance carried in the deep link. */
+  treatmentKey?: string | null;
 };
 
 function renderTargeted(options: RenderOptions = {}) {
@@ -180,9 +184,15 @@ function renderTargeted(options: RenderOptions = {}) {
   const orderId =
     options.orderId === undefined ? ORIGINATING_ORDER_ID : options.orderId;
 
+  const onCreateReorderRequest =
+    options.onCreateReorderRequest ?? jest.fn(() => Promise.resolve({} as never));
+
+  const treatmentKey = options.treatmentKey ?? null;
+
   const search =
     `?variantId=${encodeURIComponent(TARGET_VARIANT_ID)}` +
-    (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '');
+    (orderId ? `&orderId=${encodeURIComponent(orderId)}` : '') +
+    (treatmentKey ? `&treatmentKey=${encodeURIComponent(treatmentKey)}` : '');
 
   const utils = render(
     <MemoryRouter initialEntries={[`/suppliers-portal/sourcing${search}`]}>
@@ -216,14 +226,19 @@ function renderTargeted(options: RenderOptions = {}) {
         onUpdatePreference={jest.fn()}
         onDeletePreference={jest.fn().mockResolvedValue(undefined)}
         onFetchReorderRequests={jest.fn().mockResolvedValue([])}
-        onCreateReorderRequest={jest.fn()}
+        onCreateReorderRequest={onCreateReorderRequest}
         onDeleteReorderRequest={jest.fn().mockResolvedValue(undefined)}
         onConvertReorderRequests={jest.fn()}
       />
     </MemoryRouter>
   );
 
-  return { ...utils, onFetchSourcingRecommendations, onCreatePreference };
+  return {
+    ...utils,
+    onFetchSourcingRecommendations,
+    onCreatePreference,
+    onCreateReorderRequest,
+  };
 }
 
 /** Waits for the targeted surface to have loaded before asserting on actions. */
@@ -657,5 +672,116 @@ describe('SOURCING-UX-COGNITIVE-01 Slice 1B — targeted recovery actions', () =
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByDisplayValue('9')).toBeInTheDocument();
+  });
+});
+
+
+// ── OUTCOME-INV-UI-01..05 — reorder provenance for inventory attribution ────
+//
+// OUTCOME-INV-01 pilot. A queued reorder becomes a durable INTERVENTION only
+// when the server can attribute it to an exact active inventory/oversell
+// constraint. That requires the originating order to travel with the write.
+//
+// This is PROVENANCE ONLY. Queueing intent buys nothing, receives nothing and
+// makes nothing pickable — these contracts assert no prevention, no revenue and
+// no resolution, and none may be inferred from them.
+//
+// The originating order used for the payload is the SERVER-VALIDATED
+// `originating_order_id` from the targeted sourcing response, never the raw URL
+// value: the server checks it against that variant's canonical blocking orders
+// and returns null when it does not belong.
+
+const QUEUE_SUPPLIER = recommendation({ moq: 10, units_to_moq: 4 });
+
+/** Below-MOQ state, where "Add to queue" is the dominant action. */
+function queueableResult(overrides: Partial<SourcingResult> = {}): SourcingResult {
+  return sourcingResult({
+    recommendations: [QUEUE_SUPPLIER],
+    queue_qty: 10,
+    ...overrides,
+  });
+}
+
+describe('OUTCOME-INV-UI — targeted reorder carries attribution provenance', () => {
+  it('OUTCOME-INV-UI-01: Add to queue carries the server-validated originating order', async () => {
+    const { onCreateReorderRequest } = renderTargeted({ result: queueableResult() });
+
+    await targetedSurface();
+    fireEvent.click(screen.getByTestId(DOMINANT));
+
+    await waitFor(() => expect(onCreateReorderRequest).toHaveBeenCalledTimes(1));
+    expect(onCreateReorderRequest.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        lasyncro_variant_id: TARGET_VARIANT_ID,
+        supplier_id: SUPPLIER_ID,
+        originating_order_id: ORIGINATING_ORDER_ID,
+      })
+    );
+  });
+
+  it('OUTCOME-INV-UI-02: advisory shown treatment provenance is carried explicitly when present', async () => {
+    const { onCreateReorderRequest } = renderTargeted({
+      result: queueableResult(),
+      treatmentKey: 'source_remaining',
+    });
+
+    await targetedSurface();
+    fireEvent.click(screen.getByTestId(DOMINANT));
+
+    await waitFor(() => expect(onCreateReorderRequest).toHaveBeenCalledTimes(1));
+    expect(onCreateReorderRequest.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        originating_order_id: ORIGINATING_ORDER_ID,
+        shown_treatment_key: 'source_remaining',
+      })
+    );
+  });
+
+  it('OUTCOME-INV-UI-03: a server that refuses the originating order yields no attribution claim', async () => {
+    // The deep link asserts an order, but the server did not validate it
+    // against this variant's blocking orders. The client must defer to the
+    // server, not to its own URL.
+    const { onCreateReorderRequest } = renderTargeted({
+      result: queueableResult({ originating_order_id: null, blocking_orders: [] }),
+    });
+
+    await targetedSurface();
+    fireEvent.click(screen.getByTestId(DOMINANT));
+
+    await waitFor(() => expect(onCreateReorderRequest).toHaveBeenCalledTimes(1));
+    const payload = onCreateReorderRequest.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.originating_order_id ?? null).toBeNull();
+    // The purchasing write itself is still perfectly valid.
+    expect(payload).toEqual(
+      expect.objectContaining({ lasyncro_variant_id: TARGET_VARIANT_ID, supplier_id: SUPPLIER_ID })
+    );
+  });
+
+  it('OUTCOME-INV-UI-04: generic sourcing carries no originating order', async () => {
+    const { onCreateReorderRequest } = renderTargeted({
+      result: queueableResult({ originating_order_id: null, blocking_orders: [] }),
+      orderId: null,
+    });
+
+    await targetedSurface();
+    fireEvent.click(screen.getByTestId(DOMINANT));
+
+    await waitFor(() => expect(onCreateReorderRequest).toHaveBeenCalledTimes(1));
+    const payload = onCreateReorderRequest.mock.calls[0][0] as Record<string, unknown>;
+    expect(payload.originating_order_id ?? null).toBeNull();
+  });
+
+  it('OUTCOME-INV-UI-05: merely opening targeted Sourcing writes nothing', async () => {
+    const { onCreateReorderRequest } = renderTargeted({
+      result: queueableResult(),
+      treatmentKey: 'source_remaining',
+    });
+
+    await targetedSurface();
+
+    // Evidence and a recommendation are on screen. Nothing has been bought,
+    // queued or committed — Add to queue remains the sole write.
+    expect(screen.getByTestId(DOMINANT)).toBeInTheDocument();
+    expect(onCreateReorderRequest).not.toHaveBeenCalled();
   });
 });

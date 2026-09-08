@@ -75,6 +75,7 @@ interface InterventionRow {
   metadata: Record<string, unknown> | null;
   constraint_is_active: boolean | null;
   constraint_resolved_at: Date | string | null;
+  constraint_started_at: Date | string | null;
   constraint_order_id: string | null;
 }
 
@@ -106,6 +107,52 @@ function deriveOutcome(
       constraintResolvedAt: null,
       resolutionLatencyMs: null,
     };
+  }
+
+  /**
+   * EPISODE GUARD (OUTCOME-INV-01).
+   *
+   * constraint_id is DETERMINISTIC — uuidv5(order + type + target) — and the
+   * row is REUSED across resolve → re-raise cycles: orderConstraintProjection
+   * updates the same row, clearing resolved_at and re-stamping started_at.
+   * Inventory oversell flips this way routinely (stock lands, a competing order
+   * consumes it, a reservation changes).
+   *
+   * Chronology alone cannot catch that. An intervention from episode A, then a
+   * re-raise, then a resolution of episode B, leaves resolved_at legitimately
+   * LATER than occurred_at — so a chronology check would happily credit the
+   * earlier intervention with a resolution it had nothing to do with.
+   *
+   * Only episode IDENTITY separates them. An intervention that recorded the
+   * constraint's started_at at write time is checked against the row's current
+   * started_at, at the same JavaScript-millisecond precision used everywhere
+   * else here. Any mismatch, absence or unparseable value means this read model
+   * cannot say what happened, so it says 'unknown' rather than guessing in the
+   * flattering direction.
+   *
+   * Interventions with NO recorded episode anchor are unaffected. The Address
+   * pilot predates this field, and customer/incomplete_address does not exhibit
+   * the reactivation pattern — this is deliberately not applied retroactively.
+   */
+  const recordedEpisode = (row.metadata ?? {}).constraint_started_at;
+
+  if (recordedEpisode !== undefined && recordedEpisode !== null) {
+    const recordedEpisodeAt = asDate(recordedEpisode);
+    const currentEpisodeAt = asDate(row.constraint_started_at);
+
+    const episodeMatches =
+      recordedEpisodeAt !== null &&
+      currentEpisodeAt !== null &&
+      recordedEpisodeAt.getTime() === currentEpisodeAt.getTime();
+
+    if (!episodeMatches) {
+      return {
+        status: 'unknown',
+        constraintIsActive: isActive,
+        constraintResolvedAt: resolvedAt,
+        resolutionLatencyMs: null,
+      };
+    }
   }
 
   if (isActive === true) {
@@ -215,6 +262,7 @@ export async function readOrderInterventionOutcomes(input: {
         'i.metadata',
         'c.is_active as constraint_is_active',
         'c.resolved_at as constraint_resolved_at',
+        'c.started_at as constraint_started_at',
         'c.lasyncro_order_id as constraint_order_id'
       )
   );

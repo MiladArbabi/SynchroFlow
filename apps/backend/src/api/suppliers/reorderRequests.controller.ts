@@ -18,7 +18,50 @@
 // reserved for "nothing queued".
 
 import { Request, Response } from 'express';
+import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
+
+/**
+ * OUTCOME-INV-01 — INVENTORY INTERVENTION PROVENANCE
+ * ---------------------------------------------------
+ * GOVERNING INVARIANT
+ *   execution success != treatment success != operational outcome
+ *
+ * Queueing a reorder is a real, durable, operator-initiated purchasing
+ * commitment against a blocker the merchant was actually shown. It is NOT
+ * supply: it moves no stock, makes nothing pickable, and therefore cannot clear
+ * an oversell. What is recorded below is only that the treatment was APPLIED.
+ *
+ * The outcome is derived later, at READ time, from canonical order_constraints
+ * (services/decision/interventionOutcome.service.ts). Nothing here resolves a
+ * constraint, touches inventory_truth, changes PO status, or enqueues Decision
+ * execution — and open_sourcing navigation still writes nothing at all.
+ */
+const INVENTORY_TREATMENT_KEY = 'inventory_reorder_intent';
+const INVENTORY_ACTION_KEY = 'create_reorder_request';
+const INVENTORY_SOURCE_SURFACE = 'sourcing_targeted_reorder_queue';
+
+/**
+ * The treatment vocabulary inventoryTreatmentAssist.service.ts can emit.
+ *
+ * ADVISORY ONLY. This records what the merchant says they were looking at when
+ * they acted. It is never used for authorization, constraint lookup, ranking or
+ * outcome derivation, and an unrecognised value must never fail an otherwise
+ * valid purchasing write — provenance is not a gate.
+ */
+const KNOWN_SHOWN_TREATMENT_KEYS = [
+  'wait_for_inbound',
+  'continue_purchasing',
+  'source_remaining',
+  'find_supplier',
+  'investigate_inventory',
+] as const;
+
+const normalizeShownTreatmentKey = (value: unknown): string | null =>
+  typeof value === 'string' &&
+  (KNOWN_SHOWN_TREATMENT_KEYS as readonly string[]).includes(value)
+    ? value
+    : null;
 
 // ── GET /reorder-requests ─────────────────────────────────────────────────────
 // Returns all pending requests grouped by supplier, with MOQ progress.
@@ -114,7 +157,16 @@ export async function httpCreateReorderRequest(req: Request, res: Response) {
   const userId = req.user?.userId;
   if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { lasyncro_variant_id, supplier_id, qty_requested, source } = req.body ?? {};
+  const {
+    lasyncro_variant_id,
+    supplier_id,
+    qty_requested,
+    source,
+    // OUTCOME-INV-01 — optional attribution context. Absent means this is an
+    // ordinary generic reorder and nothing below changes for it.
+    originating_order_id,
+    shown_treatment_key,
+  } = req.body ?? {};
 
   if (!lasyncro_variant_id || !supplier_id || !qty_requested || !source) {
     return res.status(400).json({ error: 'lasyncro_variant_id, supplier_id, qty_requested, and source are required' });
@@ -144,6 +196,61 @@ export async function httpCreateReorderRequest(req: Request, res: Response) {
         .first();
       if (!variant) return; // null row signals 404 below
 
+      /**
+       * OUTCOME-INV-01 — ATTRIBUTION TARGET.
+       *
+       * Resolved SERVER-SIDE from the originating order, before the purchasing
+       * write, and never supplied by the client: constraint_id is mutable
+       * canonical state, and accepting one from a caller would let anything
+       * claim any blocker.
+       *
+       * Locked FOR UPDATE OF the constraint row alone so the active EPISODE
+       * cannot be resolved or re-raised between attribution and the
+       * intervention write. `started_at` is captured as that episode's anchor —
+       * constraint_id is deterministic and REUSED across resolve/re-raise
+       * cycles, so identity alone cannot tell two episodes apart.
+       *
+       * order_constraints has no shop_id column (RLS-only tenant isolation via
+       * a join to orders — migration 0070), so orders is joined explicitly
+       * rather than relying on RLS alone for this cross-order lookup — the same
+       * convention receiveJob.service.ts's revalidation uses.
+       */
+      let attribution:
+        | { constraintId: string; constraintStartedAt: Date }
+        | null = null;
+
+      if (
+        typeof originating_order_id === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(originating_order_id)
+      ) {
+        const constraintRow = await trx('order_constraints as oc')
+          .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+          .where('o.shop_id', shopId)
+          .andWhere('oc.lasyncro_order_id', originating_order_id)
+          .andWhere('oc.constraint_type', 'inventory')
+          .andWhere('oc.block_type', 'oversell')
+          .andWhere('oc.target_id', lasyncro_variant_id)
+          .andWhere('oc.is_active', true)
+          .forUpdate('oc')
+          .first('oc.constraint_id', 'oc.started_at');
+
+        /**
+         * No matching ACTIVE constraint is a perfectly ordinary outcome: buying
+         * ahead of demand is legitimate. It must never manufacture an
+         * intervention, and must never turn a valid purchasing write into a
+         * Decision Engine failure.
+         */
+        const startedAt = constraintRow?.started_at == null
+          ? null
+          : new Date(constraintRow.started_at);
+        if (constraintRow?.constraint_id && startedAt && !Number.isNaN(startedAt.getTime())) {
+          attribution = {
+            constraintId: constraintRow.constraint_id,
+            constraintStartedAt: startedAt,
+          };
+        }
+      }
+
       // SRC-01a: qty_requested is a LEVEL (shortfall), not a delta. Re-queueing
       // the same variant+supplier raises the level to the higher of the two —
       // adding would double-count the same missing units toward MOQ.
@@ -152,32 +259,96 @@ export async function httpCreateReorderRequest(req: Request, res: Response) {
         .forUpdate()
         .first();
 
+      /**
+       * MATERIAL CHANGE, not a successful HTTP call.
+       *
+       * An intervention claims a merchant did something. Re-submitting the same
+       * level, or a lower one against an already-higher pending request, changes
+       * no durable purchasing state — the level rule above deliberately keeps
+       * the higher value. Counting those would inflate attribution with clicks.
+       *
+       * Material iff a new pending request was created, or an existing one's
+       * persisted level genuinely increased.
+       */
+      let previousQtyRequested: number | null = null;
+      let resultingQtyRequested = qty_requested;
+      let materialChange = true;
+
       if (existing) {
+        previousQtyRequested = Number(existing.qty_requested);
+        resultingQtyRequested = Math.max(previousQtyRequested, qty_requested);
+        materialChange = resultingQtyRequested > previousQtyRequested;
+
         const [updated] = await trx('reorder_requests')
           .where({ id: existing.id })
           .update({
-            qty_requested: Math.max(Number(existing.qty_requested), qty_requested),
+            qty_requested: resultingQtyRequested,
             source,
             updated_at:    trx.fn.now(),
           })
           .returning('*');
         row = updated;
-        return;
+      } else {
+        const [inserted] = await trx('reorder_requests')
+          .insert({
+            shop_id:             shopId,
+            lasyncro_variant_id,
+            supplier_id,
+            qty_requested,
+            source,
+            status:              'pending',
+            created_by:          userId ?? null,
+          })
+          .returning('*');
+
+        row = inserted;
       }
 
-      const [inserted] = await trx('reorder_requests')
-        .insert({
-          shop_id:             shopId,
-          lasyncro_variant_id,
-          supplier_id,
-          qty_requested,
-          source,
-          status:              'pending',
-          created_by:          userId ?? null,
-        })
-        .returning('*');
-
-      row = inserted;
+      /**
+       * DURABLE INTERVENTION — only when the purchasing mutation materially
+       * succeeded AND an exact active constraint was attributable.
+       *
+       * Same transaction as the reorder write on purpose: an intervention whose
+       * treatment rolled back is a lie, and a treatment with no recorded
+       * provenance is unattributable.
+       *
+       * The constraint is NOT resolved here and no outcome is stored. Canonical
+       * resolution stays with the inventory lifecycle (receive close / stow
+       * confirm -> revalidateOrdersForReceivedVariants), which may not happen
+       * for days — or ever.
+       */
+      if (attribution && materialChange) {
+        await trx('decision_interventions').insert({
+          id: crypto.randomUUID(),
+          shop_id: shopId,
+          entity_type: 'order',
+          entity_id: originating_order_id,
+          constraint_id: attribution.constraintId,
+          // No decisions row is required. open_sourcing is never enqueued, and
+          // decision lifecycle is not outcome truth.
+          decision_id: null,
+          treatment_key: INVENTORY_TREATMENT_KEY,
+          action_key: INVENTORY_ACTION_KEY,
+          actor_type: 'user',
+          actor_user_id: userId ?? null,
+          source_surface: INVENTORY_SOURCE_SURFACE,
+          occurred_at: trx.fn.now(),
+          metadata: JSON.stringify({
+            variant_id: lasyncro_variant_id,
+            supplier_id,
+            reorder_request_id: row.id,
+            requested_qty: qty_requested,
+            previous_qty_requested: previousQtyRequested,
+            resulting_qty_requested: resultingQtyRequested,
+            // Episode anchor — see the attribution lookup above.
+            constraint_started_at:
+              attribution.constraintStartedAt instanceof Date
+                ? attribution.constraintStartedAt.toISOString()
+                : attribution.constraintStartedAt,
+            shown_treatment_key: normalizeShownTreatmentKey(shown_treatment_key),
+          }),
+        });
+      }
     });
 
     if (!row) return res.status(404).json({ error: 'Supplier or variant not found' });

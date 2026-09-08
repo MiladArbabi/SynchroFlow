@@ -379,7 +379,20 @@ export type SuppliersPortalPageProps = {
   onDeletePreference: (id: string) => Promise<void>;
   // §8 MOQ Accumulation — sourcing-recommendation-playbook.md §8
   onFetchReorderRequests: () => Promise<SupplierAccumulation[]>;
-  onCreateReorderRequest: (input: { lasyncro_variant_id: string; supplier_id: number; qty_requested: number; source: 'alert' | 'manual' }) => Promise<ReorderRequest>;
+  /**
+   * OUTCOME-INV-01: `originating_order_id` and `shown_treatment_key` are
+   * ATTRIBUTION PROVENANCE, both optional. They say which blocked order the
+   * merchant came from and what they were shown — never what was bought, and
+   * never anything about resolution. Generic sourcing sends neither.
+   */
+  onCreateReorderRequest: (input: {
+    lasyncro_variant_id: string;
+    supplier_id: number;
+    qty_requested: number;
+    source: 'alert' | 'manual';
+    originating_order_id?: string;
+    shown_treatment_key?: string;
+  }) => Promise<ReorderRequest>;
   onDeleteReorderRequest: (id: string) => Promise<void>;
   /** SRC-01b: overrideMoq is the operator's explicit under-MOQ decision — the
    *  server rejects with 422 unless it is passed, and stamps it on the PO. */
@@ -1931,6 +1944,13 @@ function PurchasingSourcingView({
   const [searchParams] = useSearchParams();
   const sourcingNavigate = useNavigate();
   const triggerVariantId = searchParams.get('variantId');
+  /**
+   * OUTCOME-INV-01: the inventory treatment the merchant was looking at in
+   * Order Detail when they followed the CTA. ADVISORY PROVENANCE ONLY — the
+   * server never uses it for authorization, constraint lookup, ranking or
+   * outcome, and normalizes anything it does not recognise to null.
+   */
+  const triggerTreatmentKey = searchParams.get('treatmentKey');
   // §8: needed qty from alert deep-link — used for "Add to queue" pre-fill
   // SRC-03: was Number(searchParams.get('needed') ?? 1) || 1 — but nothing in
   // the codebase ever set `?needed=`, so every queued request was 1 unit and
@@ -2085,7 +2105,26 @@ function PurchasingSourcingView({
   const handleAddToQueue = async (variantId: string, supplierId: number) => {
     setQueueButtonState((prev) => ({ ...prev, [supplierId]: 'adding' }));
     try {
-      await onCreateReorderRequest({ lasyncro_variant_id: variantId, supplier_id: supplierId, qty_requested: queueQty, source: triggerVariantId ? 'alert' : 'manual' });
+      /**
+       * OUTCOME-INV-01 — the SERVER-VALIDATED originating order, not the raw
+       * URL value. sourcing-recommendations checks `?orderId=` against this
+       * variant's canonical blocking orders and echoes back
+       * `originating_order_id`, returning null when the order does not belong.
+       * Deferring to that answer means a deep link cannot assert an
+       * attribution the server would refuse.
+       */
+      const originatingOrderId = targeted?.originating_order_id ?? null;
+
+      await onCreateReorderRequest({
+        lasyncro_variant_id: variantId,
+        supplier_id: supplierId,
+        qty_requested: queueQty,
+        source: triggerVariantId ? 'alert' : 'manual',
+        ...(originatingOrderId ? { originating_order_id: originatingOrderId } : {}),
+        ...(originatingOrderId && triggerTreatmentKey
+          ? { shown_treatment_key: triggerTreatmentKey }
+          : {}),
+      });
       const updated = await onFetchReorderRequests();
       setReorderRequests(updated);
       // Flash "Added ✓" for 1.5s so merchant knows the click registered
