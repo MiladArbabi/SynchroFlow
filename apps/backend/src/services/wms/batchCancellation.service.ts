@@ -129,6 +129,18 @@ export async function cancelUnclaimedBatch(
     })
     .delete();
 
+  if (batchOrders.length > 0) {
+    const returnedOrderIds = batchOrders.map((order) => order.lasyncro_order_id);
+
+    await trx('order_line_item_warehouse_status')
+      .whereIn('lasyncro_order_id', returnedOrderIds)
+      .delete();
+
+    await trx('order_warehouse_status')
+      .whereIn('lasyncro_order_id', returnedOrderIds)
+      .delete();
+  }
+
   await trx('pick_batch_orders')
     .where({ pick_batch_id: batchId })
     .delete();

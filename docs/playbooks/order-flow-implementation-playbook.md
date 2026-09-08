@@ -1389,3 +1389,67 @@ Regression protection:
 - Live browser verification on `/orders/flow` confirmed row inspection,
   healthy-order footer actions, checkbox isolation, selection persistence,
   and priority-flag isolation.
+
+### GH #1059 — Batch cancellation restores canonical Order Pool warehouse state (2026-09-08)
+
+Production certification of GH #1057 exposed a warehouse-state integrity defect in the unclaimed-batch cancellation path.
+
+A released order receives two warehouse pipeline projections:
+
+- `order_warehouse_status`
+- `order_line_item_warehouse_status`
+
+Both are initialized to `awaiting_pick` when an order is released into a pick batch. The warehouse-status enum has no separate `pool` or `unreleased` state, so an unreleased Order Pool order is represented by the absence of these warehouse pipeline rows.
+
+Before GH #1059, `cancelUnclaimedBatch()` released reservation inventory, removed reservation allocations and `pick_batch_orders` membership, and marked the batch `cancelled`, but it did not remove the warehouse-status projections created during release.
+
+Production verification showed three orders with the same contradictory state:
+
+- present in the Order Pool;
+- no current `pick_batch_orders` membership;
+- `order_warehouse_status = awaiting_pick`;
+- line-item warehouse status still `awaiting_pick`;
+- referenced pick batch already `cancelled`.
+
+This stale state caused Order Detail to report `Awaiting pick` for orders that had actually returned to the pool.
+
+#### Permanent contract
+
+Cancelling a pending/unclaimed pick batch must atomically return every batch order to canonical unreleased-pool state.
+
+For every order returned by the cancellation:
+
+1. reservation-release behavior remains unchanged;
+2. matching `order_line_item_warehouse_status` rows are deleted;
+3. matching `order_warehouse_status` rows are deleted;
+4. `pick_batch_orders` membership is deleted;
+5. the batch is marked `cancelled`.
+
+The cleanup is restricted to the `lasyncro_order_id` values read from that batch. An empty batch performs no warehouse-status delete queries.
+
+The cancellation path must not set the returned orders to warehouse status `cancelled`; that status represents actual order cancellation, not withdrawal of an unclaimed pick batch.
+
+#### Regression protection
+
+Added:
+
+`tests/integration/wms/batch-cancellation-warehouse-state-1059.test.ts`
+
+The regression uses a two-order pending batch with warehouse state at both order and line-item levels.
+
+RED before the fix:
+
+- `remainingOrderWarehouseRows`: expected `0`, received `2`;
+- `remainingLineWarehouseRows`: expected `0`, received `2`.
+
+GREEN after the fix:
+
+- focused GH #1059 integration test: 1 suite / 1 test passed;
+- full WMS integration surface: 7 suites / 56 tests passed;
+- backend TypeScript: 0 errors;
+- target `batchCancellation.service.ts` TypeScript errors: 0;
+- `git diff --check`: clean.
+
+No schema migration was required and no build was run.
+
+GH #1059 is a prerequisite for resuming GH #1057 production certification.
