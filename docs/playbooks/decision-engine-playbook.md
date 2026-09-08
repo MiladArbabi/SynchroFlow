@@ -836,7 +836,7 @@ inventory constraint truth.
 
 ### Next Decision Engine pair
 
-`SLA-TREAT-01` is **IMPLEMENTED / AUTOMATED VERIFIED** — see §11.9.
+`SLA-TREAT-01` is **IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED** — see §11.9.
 
 This slice extends the Decision Engine from constraint-specific treatment into
 time-sensitive operational assistance while preserving the governing rule:
@@ -1436,7 +1436,17 @@ confirmed cleanup after execution.
 Known harness noise remains the existing Jest `--forceExit` /
 post-test asynchronous logging behavior; it did not fail the verified suites.
 
-**SLA-TREAT-01: IMPLEMENTED / AUTOMATED VERIFIED.**
+**SLA-TREAT-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
 
-Live browser / production certification is intentionally not claimed by this
-entry.
+Production live-browser certification confirmed:
+
+- breached SLA state visible in Order Pool and Order Detail;
+- merchant priority remains above SLA urgency;
+- active blocker remediation remains authoritative when SLA is also breached;
+- no automatic release, claim, pack or fulfillment behavior observed;
+- warehouse picked / ready-to-pack state is visible in the live WMS surface;
+- Order Detail continues server refresh while the modal remains open.
+
+The lack of a direct Order Detail navigation path from ready-to-pack rows is
+a separate product-navigation limitation and does not invalidate this SLA
+treatment contract.
