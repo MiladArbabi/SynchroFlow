@@ -885,6 +885,90 @@ flyctl ssh console -a synchroflow \
 
 Do not declare event-driven remediation complete before its events have been consumed.
 
+## Projection worker supervision invariant — GH-1052
+
+The backend process being alive does **not** prove the authoritative DB projection
+loop is alive.
+
+`startDbProjectionWorker()` intentionally remains fail-fast:
+
+```text
+projection/reconciliation fault
+        ↓
+[projection-db-worker][FATAL]
+        ↓
+current projection-worker run rejects
+```
+
+That rejection must be owned by the dedicated projection-worker supervisor.
+
+The required runtime behavior is:
+
+```text
+projection worker starts
+        ↓
+fatal run rejects
+        ↓
+running latch is cleared
+        ↓
+supervisor records the failure
+        ↓
+bounded restart delay
+        ↓
+projection worker starts again
+```
+
+The projection worker's module-level `running` latch must be cleared before the
+fatal error is rethrown. Otherwise a supervisor retry reaches:
+
+```text
+if (running) return
+```
+
+and silently leaves projection permanently stopped.
+
+The process-wide `unhandledRejection` containment in the HTTP/worker runtimes is
+**not projection supervision**. It exists to stop unrelated background-worker
+faults from taking down the whole process. A projection-worker rejection must be
+owned before it reaches that generic containment path.
+
+Therefore these observations are insufficient on their own:
+
+```text
+Fly machine is healthy
+Node PID is alive
+HTTP health check is 200
+worker process is present in ps
+```
+
+For consequential production verification, correlate process health with
+projection-specific evidence such as:
+
+```text
+projection_cursors.last_processed_event_id advances
+projection_cursors.updated_at advances
+no persistent projection lag/stall
+projection-worker restart/fatal logs when a fault occurred
+```
+
+A process that remains alive while the projection cursor stops advancing is a
+projection outage, even if infrastructure health checks remain green.
+
+Permanent regression protection:
+
+```text
+tests/unit/backend/workers/projection-worker-supervision-1052.test.ts
+```
+
+protects both:
+
+- fatal rejection → supervised delayed restart;
+- runtime wiring + fatal-latch reset required for that restart to be effective.
+
+The existing canonical-quarantine integration contract continues to prove that
+non-canonical/infrastructure faults still fail the individual projection run
+rather than being incorrectly swallowed.
+
 ---
 
 # 27. Idempotency is a production closure gate
