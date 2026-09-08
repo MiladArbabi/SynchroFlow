@@ -1630,7 +1630,7 @@ export function OrderDetailModalBody({
             <Box sx={{ display: 'flex', gap: 1.25, bgcolor: 'var(--bg-2)', borderRadius: '10px', p: 1.25 }}>
               <Clock size={16} color="var(--ink-3)" style={{ flexShrink: 0, marginTop: 1 }} />
               <Typography sx={{ fontSize: 12.5, color: 'var(--ink-3)' }}>
-                No open issues. Order is in the pool, waiting to be releasedinto a pick batch.
+                No open issues. Order is in the pool, waiting to be released into a pick batch.
               </Typography>
             </Box>
           )}
