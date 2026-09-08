@@ -4,6 +4,26 @@ import crypto from 'crypto';
 import db from '@lasyncro/backend-core/db.js';
 
 /**
+ * Accepted address correction provenance values. Kept narrow deliberately —
+ * see the validation site in the handler.
+ */
+const ACCEPTED_CORRECTION_SOURCES = ['manual', 'historical_address_assist'] as const;
+
+type CorrectionSource = (typeof ACCEPTED_CORRECTION_SOURCES)[number];
+
+const isCorrectionSource = (value: unknown): value is CorrectionSource =>
+  typeof value === 'string' &&
+  (ACCEPTED_CORRECTION_SOURCES as readonly string[]).includes(value);
+
+/**
+ * Treatment vocabulary for the OUTCOME-ATTR-01 address pilot. These name WHAT
+ * was applied; they are not an outcome and never become one.
+ */
+const ADDRESS_TREATMENT_KEY = 'address_correction';
+const ADDRESS_ACTION_KEY = 'update_shipping_address';
+const ADDRESS_SOURCE_SURFACE = 'order_detail_shipping_address_dialog';
+
+/**
  * PATCH /api/v1/orders/:orderId/shipping-address
  * -------------------------------------------------
  * Lets an operator correct an order's shipping address directly in-app
@@ -58,6 +78,7 @@ export const httpUpdateShippingAddress = async (
       phone,
       province,
       countryCode,
+      correctionSource,
     } = req.body ?? {};
 
     /**
@@ -80,6 +101,28 @@ export const httpUpdateShippingAddress = async (
       });
     }
 
+    /**
+     * CORRECTION PROVENANCE (OUTCOME-ATTR-01)
+     * ---------------------------------------
+     * HOW the operator arrived at the value they saved. 'manual' means they
+     * typed it; 'historical_address_assist' means they explicitly applied a
+     * previously used address the UI offered as evidence and then saved it
+     * themselves. Both are operator actions — this field claims nothing about
+     * automation, AI resolution, or resolution itself.
+     *
+     * Omitted == 'manual', so every caller predating this field (and the
+     * existing address contract suite) keeps working unchanged. An unsupported
+     * value is rejected rather than persisted: arbitrary provenance is worse
+     * than none, because it would later be read as if it meant something.
+     */
+    const correction: unknown = correctionSource ?? 'manual';
+
+    if (!isCorrectionSource(correction)) {
+      return res.status(400).json({
+        error: `Unsupported correctionSource: ${String(correctionSource)}`,
+      });
+    }
+
     await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
 
@@ -90,6 +133,31 @@ export const httpUpdateShippingAddress = async (
       if (!order) {
         throw new Error('ORDER_NOT_FOUND');
       }
+
+      /**
+       * ATTRIBUTION TARGET (OUTCOME-ATTR-01)
+       * ------------------------------------
+       * Read BEFORE the correction changes any canonical state, so the
+       * intervention names the exact constraint that was live at the moment
+       * the operator acted — not whatever happens to be active after
+       * reevaluation. Attribution is by exact constraint_id: an order can
+       * carry a coexisting inventory blocker, and clearing the customer one
+       * must never claim credit for it.
+       *
+       * Constraint semantics are untouched here. This is a read; the
+       * constraint is resolved later, by canonical projection, from the real
+       * domain event emitted below. Nothing about constraint EVALUATION
+       * depends on intervention tracking.
+       */
+      const activeCustomerConstraint = await trx('order_constraints')
+        .where({
+          lasyncro_order_id: orderId,
+          constraint_type: 'customer',
+          block_type: 'incomplete_address',
+          is_active: true,
+        })
+        .orderBy('started_at', 'asc')
+        .first('constraint_id');
 
       const [updatedOrder] = await trx('orders')
         .where({ shop_id: shopId, lasyncro_order_id: orderId })
@@ -137,6 +205,45 @@ export const httpUpdateShippingAddress = async (
         status: 'address_corrected',
         event_occurred_at: trx.fn.now(),
       });
+
+      /**
+       * DURABLE INTERVENTION (OUTCOME-ATTR-01)
+       * --------------------------------------
+       * Written ONLY when an active customer/incomplete_address constraint
+       * actually existed when the operator acted. Editing an address on an
+       * order that had no blocker is a legitimate data edit, not a treatment —
+       * manufacturing an intervention for it would inflate attribution with
+       * work that solved nothing.
+       *
+       * Same transaction as the address mutation on purpose: an intervention
+       * whose treatment rolled back is a lie, and a treatment with no recorded
+       * provenance is unattributable. They commit or fail together.
+       *
+       * This records only that the treatment was APPLIED. It does NOT mark the
+       * constraint resolved and carries no outcome column — canonical
+       * resolution stays with the projection triggered by the domain event
+       * below, and the outcome is derived at read time from
+       * order_constraints (interventionOutcome.service.ts).
+       */
+      if (activeCustomerConstraint?.constraint_id) {
+        await trx('decision_interventions').insert({
+          id: crypto.randomUUID(),
+          shop_id: shopId,
+          entity_type: 'order',
+          entity_id: orderId,
+          constraint_id: activeCustomerConstraint.constraint_id,
+          // No decisions row is required — a treatment can be applied straight
+          // from constraint truth, and decision lifecycle is not outcome truth.
+          decision_id: null,
+          treatment_key: ADDRESS_TREATMENT_KEY,
+          action_key: ADDRESS_ACTION_KEY,
+          actor_type: 'user',
+          actor_user_id: req.user?.userId ?? null,
+          source_surface: ADDRESS_SOURCE_SURFACE,
+          occurred_at: trx.fn.now(),
+          metadata: JSON.stringify({ correction_source: correction }),
+        });
+      }
 
       /**
        * DOMAIN EVENT EMISSION (GH-1036, 2026-07-02)

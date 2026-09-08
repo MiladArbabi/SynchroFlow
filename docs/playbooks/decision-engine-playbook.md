@@ -979,9 +979,21 @@ Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6.
 Priority item 2 (`ADDR-ASSIST-01`) is **COMPLETED / LIVE VERIFIED** — see §11.7.
 Priority item 3 (`INV-TREAT-01`) is **COMPLETED / LIVE VERIFIED** — see §11.8.
 Priority item 4 (`SLA-TREAT-01`) is **COMPLETED / LIVE VERIFIED / CLOSED** — see §11.9.
-Priority item 5 (Outcome/value layer) is **NEXT / NOT STARTED**.
+Priority item 5 (Outcome/value layer) is **IN PROGRESS**.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 NEXT / NOT STARTED.**
+Its foundation and the Address pilot (`OUTCOME-ATTR-01`) are **IMPLEMENTED /
+AUTOMATED VERIFIED** — see §11.10. The item as a whole is **not** closed.
+
+Still outstanding before the broader Outcome/value layer is complete:
+
+1. live / production certification of the address pilot;
+2. `OUTCOME-INV-01` — inventory intervention attribution;
+3. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
+   defensible prevented-breach attribution;
+4. broader attributable value reporting, only where the evidence actually
+   supports it.
+
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (foundation + Address pilot IMPLEMENTED / AUTOMATED VERIFIED, not yet live certified).**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1451,3 +1463,212 @@ Production live-browser certification confirmed:
 The lack of a direct Order Detail navigation path from ready-to-pack rows is
 a separate product-navigation limitation and does not invalidate this SLA
 treatment contract.
+
+
+### 11.10 OUTCOME-ATTR-01 — intervention provenance + verified outcome foundation
+
+Implemented 2026-09-08.
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED — NOT YET LIVE CERTIFIED.**
+
+Production / live-browser certification has not been performed.
+
+This closes the *foundation* plus the first Address pilot only. The broader
+Outcome/value roadmap item (§11.5 priority item 5) is **not** complete.
+
+#### Why this was required
+
+`decisions.lifecycle.outcome` and `decision_execution_queue` success both
+describe **execution lifecycle**. Neither is a trustworthy statement about
+whether the merchant's operational problem actually went away.
+
+The governing distinction:
+
+> execution success != treatment success != operational outcome
+
+A queue row reaching `success` means a handler ran. A merchant saving an
+address means a treatment was applied. Neither is evidence that the blocker
+cleared.
+
+Order-level or action-type inference was also insufficient: multiple
+constraints can coexist on one order, so "this order improved after this
+action" cannot say *which* blocker the action addressed. The **exact
+`constraint_id`** is therefore the attribution anchor for constraint-backed
+outcomes.
+
+#### Ratified architecture
+
+```
+Constraint
+  → Treatment recommendation
+    → Intervention
+      → Canonical verification
+        → Outcome
+```
+
+#### Intervention semantics
+
+An intervention means a meaningful merchant or system step was **actually
+taken**.
+
+It is deliberately distinct from:
+
+- a treatment merely being displayed;
+- navigation being opened;
+- execution queue success;
+- canonical constraint resolution itself.
+
+#### Persistence
+
+`apps/backend/migrations/20260908140000_0168_create_decision_interventions.ts`
+
+The `decision_interventions` table is generic — it is **not** address-specific.
+The Address pilot is its first writer, not its shape.
+
+- tenant-scoped, with `ENABLE` **and** `FORCE ROW LEVEL SECURITY`;
+- append-only against `UPDATE`;
+- exact `constraint_id` available for constraint-backed attribution;
+- `decision_id` is optional, because modern read-time treatments may have no
+  persisted decision row;
+- provenance carries treatment / action / actor / source surface / timestamp /
+  metadata;
+- **no persisted business-outcome or status column**;
+- **no destructive constraint foreign key** that could erase audit provenance
+  when an order or constraint is removed.
+
+#### Address pilot
+
+The first implemented pilot:
+
+```
+customer / incomplete_address
+  → Correct shipping address
+    → intervention
+      → real orders/shipping_address_corrected event
+        → canonical constraint reevaluation
+          → same exact constraint resolves
+```
+
+Implementation behavior that matters:
+
+- `PATCH /api/v1/orders/:orderId/shipping-address` remains the **only** write
+  path;
+- before changing canonical address state, the controller looks up the exact
+  currently-active `customer` / `incomplete_address` constraint;
+- exactly one intervention is written, and only if that active constraint
+  exists;
+- the intervention and the address mutation share the existing DB transaction;
+- the controller does **not** mark the constraint resolved;
+- existing reconciliation / domain-event projection remains the resolution
+  authority.
+
+#### Provenance
+
+`correctionSource` records **how** the operator arrived at the value they
+saved:
+
+- `manual`
+- `historical_address_assist`
+
+Rules:
+
+- an omitted source defaults to `manual`, for compatibility;
+- an unsupported source is rejected;
+- "Use this address" only pre-fills the form;
+- the operator must still explicitly save;
+- editing the assisted candidate before saving falls back to `manual`;
+- `historical_address_assist` is **provenance only** — it does not mean
+  automatic or AI resolution.
+
+#### Outcome read model
+
+`apps/backend/src/services/decision/interventionOutcome.service.ts`
+
+```
+readOrderInterventionOutcomes({
+  shopId,
+  lasyncroOrderId
+})
+```
+
+This is an **internal read model, not a new HTTP endpoint**.
+
+Outcome is derived at read time from the exact linked `order_constraints` row:
+
+| canonical constraint state | outcome |
+| --- | --- |
+| active constraint | `pending_verification` |
+| inactive + `resolved_at` present + temporally valid resolution | `verified_resolved` |
+| missing, inconsistent, or impossible chronology | `unknown` |
+
+`resolutionLatencyMs` may be derived from `occurred_at` → `resolved_at`.
+
+Outcome is **not** derived from:
+
+- `decision.status`;
+- `decisions.lifecycle.outcome`;
+- `decision_execution_queue.status`;
+- frontend state;
+- the existence of `address_corrected` alone.
+
+`verified_resolved` is a **read-time derivation, never persisted state**.
+
+#### Permanent contracts
+
+- **`OUTCOME-ADDR-01`** — the exact active `constraint_id` plus provenance is
+  recorded.
+- **`OUTCOME-ADDR-02`** — immediately after the PATCH, the outcome remains
+  pending verification.
+- **`OUTCOME-ADDR-03`** — after the real projection resolves the same
+  constraint, the read-time outcome becomes `verified_resolved`.
+- **`OUTCOME-ADDR-04`** — a coexisting inventory blocker survives and receives
+  no false attribution.
+- **`OUTCOME-ADDR-05`** — no active incomplete-address constraint means no
+  manufactured intervention.
+- **`OUTCOME-ADDR-06`** — the frontend distinguishes manual from
+  historical-address-assist provenance while preserving explicit merchant
+  review and save.
+
+#### Automated verification
+
+- backend outcome integration —
+  `tests/integration/orders/address-outcome-attribution.test.ts`:
+  3 passed / 3 total;
+- neighboring canonical address integration —
+  `tests/integration/orders/address-customer-decision-contract.test.ts`:
+  16 passed / 16 total;
+- frontend —
+  `tests/unit/ui/orders/OrderDetailModalBody.customer-address.test.tsx`:
+  10 passed / 10 total;
+- Jest project ownership: `UNOWNED=0`, `MULTI_OWNED=0`;
+- backend TypeScript: 0 errors;
+- frontend TypeScript: 19 repository-baseline errors, 0 target errors in this
+  slice;
+- `git diff --check`: clean.
+
+The disposable `synchroflow_test_*` integration database was created,
+migrated, exercised and dropped successfully.
+
+#### Boundaries and claim discipline
+
+v1 makes **no** claim of:
+
+- revenue saved;
+- revenue protected;
+- oversell prevented;
+- SLA breach prevented;
+- ROI generated;
+- "resolved by laSyncro" merely because the constraint later cleared.
+
+The safe language is:
+
+> verified resolved after the recorded intervention.
+
+Also explicitly out of scope in this slice:
+
+- no historical backfill or inferred attribution;
+- no inventory outcome attribution yet;
+- no SLA prevention attribution yet;
+- no Decision Engine execution-semantics redesign.
+
+Canonical `order_constraints` remains the outcome authority.

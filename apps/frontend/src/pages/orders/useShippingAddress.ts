@@ -20,6 +20,20 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { axiosInstance } from 'api/axiosConfig';
 
+/**
+ * HOW the operator arrived at the address they saved (OUTCOME-ATTR-01).
+ *
+ *   'manual'                    — they typed it.
+ *   'historical_address_assist' — they explicitly applied a previously used
+ *                                 address the dialog offered as evidence, then
+ *                                 saved it themselves.
+ *
+ * Provenance ONLY. Applying a candidate pre-fills a form the operator still
+ * reviews and still submits by hand — this field claims nothing about
+ * automation, AI resolution, or whether the underlying block cleared.
+ */
+export type AddressCorrectionSource = 'manual' | 'historical_address_assist';
+
 export interface UpdateShippingAddressPayload {
   orderId: string;
   name?: string;
@@ -30,6 +44,7 @@ export interface UpdateShippingAddressPayload {
   phone?: string;
   province?: string;
   countryCode: string;
+  correctionSource: AddressCorrectionSource;
 }
 
 export function useUpdateShippingAddress() {

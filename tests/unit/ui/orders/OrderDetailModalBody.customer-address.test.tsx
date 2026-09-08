@@ -500,3 +500,116 @@ describe('ADDR-ASSIST — Address Assist v1 in the existing correction dialog', 
     expect(mockExecute).not.toHaveBeenCalled();
   });
 });
+
+
+// ── OUTCOME-ADDR-06 — correction provenance (RED: correctionSource absent) ──
+//
+// OUTCOME-ATTR-01 pilot. The intervention record needs to know HOW the operator
+// arrived at the address they saved, because "typed it themselves" and "accepted
+// a previously used address after reviewing it" are different operator actions
+// with different follow-up value.
+//
+// This is PROVENANCE ONLY. Selecting the candidate pre-fills a form that the
+// operator still reviews and still submits by hand. These contracts deliberately
+// assert nothing about AI resolution, automatic correction, prevented revenue,
+// or reduced operator review — no such claim is being made, and none may be
+// inferred from the value of this field.
+//
+// The write path is unchanged: the same dialog, the same PATCH, the same single
+// mutation. Only the payload gains one field.
+
+describe('OUTCOME-ADDR-06 — address correction provenance on the save payload', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('submits correctionSource "manual" when the operator types the address themselves', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    // Assist evidence is present but deliberately NOT used — availability of a
+    // candidate must not by itself change the recorded provenance.
+    setOrderDetail(ADDRESS_ASSIST);
+
+    renderModal();
+
+    openDialogAndFill({
+      address1: '9 Typed Lane',
+      city: 'Bristol',
+      zip: 'BS1 1AA',
+      countryCode: 'GB',
+    });
+
+    // The candidate was offered and left alone.
+    expect(useThisAddressButton()).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        address1: '9 Typed Lane',
+        city: 'Bristol',
+        zip: 'BS1 1AA',
+        countryCode: 'GB',
+        correctionSource: 'manual',
+      })
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('submits correctionSource "historical_address_assist" when the operator applies the candidate and then saves', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    setOrderDetail(ADDRESS_ASSIST);
+
+    renderModal();
+    fireEvent.click(correctAddressButton()!);
+
+    // Applying the candidate is a pre-fill. It writes nothing on its own.
+    fireEvent.click(useThisAddressButton()!);
+    expect(mockUpdateAddress).not.toHaveBeenCalled();
+
+    // The operator still performs the save, as always.
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        orderId: 'order-1',
+        address1: '221B Baker Street',
+        city: 'London',
+        zip: 'NW1 6XE',
+        countryCode: 'GB',
+        correctionSource: 'historical_address_assist',
+      })
+    );
+
+    // Still one write, still the same PATCH mutation, still no decision execution.
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
+  it('records manual provenance when the operator edits the applied candidate before saving', () => {
+    setDecisionResponse({ decision: null, constraints: [CUSTOMER_CONSTRAINT] });
+    setOrderDetail(ADDRESS_ASSIST);
+
+    renderModal();
+    fireEvent.click(correctAddressButton()!);
+    fireEvent.click(useThisAddressButton()!);
+
+    // The operator reviews the candidate and changes it — what is saved is no
+    // longer the historical address, so it must not be attributed to the assist.
+    fireEvent.change(screen.getByLabelText(/Address line 1/), {
+      target: { value: '19 Corrected Street' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save address' }));
+
+    expect(mockUpdateAddress).toHaveBeenCalledTimes(1);
+    expect(mockUpdateAddress.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        address1: '19 Corrected Street',
+        correctionSource: 'manual',
+      })
+    );
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});

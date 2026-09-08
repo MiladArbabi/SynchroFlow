@@ -369,6 +369,27 @@ function ShippingAddressDialog({
   const [countryCode, setCountryCode] = useState(currentShipping?.countryCode ?? '');
   const [phone, setPhone] = useState(currentShipping?.phone ?? '');
 
+  /**
+   * CORRECTION PROVENANCE (OUTCOME-ATTR-01)
+   * ---------------------------------------
+   * EXPLICIT state: true only after the operator actually clicked "Use this
+   * address". Provenance is never inferred by comparing typed values against
+   * the candidate — an operator who happens to type the same address did not
+   * use the assist, and recording that they did would be a fabricated fact.
+   *
+   * Any subsequent edit to a field the candidate filled drops back to manual:
+   * what gets saved is no longer the historical address, so it must not be
+   * attributed to the assist.
+   *
+   * Applying a candidate still writes NOTHING. Save remains the sole write.
+   */
+  const [assistApplied, setAssistApplied] = useState(false);
+
+  // Dialog lifecycle reset — provenance must never leak across openings.
+  useEffect(() => {
+    if (!open) setAssistApplied(false);
+  }, [open]);
+
   const updateAddress = useUpdateShippingAddress();
 
   const canSave = Boolean(
@@ -396,6 +417,7 @@ function ShippingAddressDialog({
         province: province.trim() || undefined,
         countryCode: countryCode.trim(),
         phone: phone.trim() || undefined,
+        correctionSource: assistApplied ? 'historical_address_assist' : 'manual',
       },
       {
       // BL-16-UX-02: PATCH success confirms the address write, not constraint resolution.
@@ -491,6 +513,7 @@ function ShippingAddressDialog({
               }}
               onClick={() => {
                 const { candidate } = addressAssist;
+                setAssistApplied(true);
                 setAddress1(candidate.address1);
                 setAddress2(candidate.address2 ?? '');
                 setCity(candidate.city);
@@ -525,7 +548,7 @@ function ShippingAddressDialog({
           required
           label="Address line 1"
           value={address1}
-          onChange={(e) => setAddress1(e.target.value)}
+          onChange={(e) => { setAssistApplied(false); setAddress1(e.target.value); }}
           sx={fieldSx}
         />
 
@@ -534,7 +557,7 @@ function ShippingAddressDialog({
           fullWidth
           label="Address line 2 (optional)"
           value={address2}
-          onChange={(e) => setAddress2(e.target.value)}
+          onChange={(e) => { setAssistApplied(false); setAddress2(e.target.value); }}
           sx={fieldSx}
         />
 
@@ -545,14 +568,14 @@ function ShippingAddressDialog({
             required
             label="City"
             value={city}
-            onChange={(e) => setCity(e.target.value)}
+            onChange={(e) => { setAssistApplied(false); setCity(e.target.value); }}
           />
           <TextField
             size="small"
             fullWidth
             label="State / Province"
             value={province}
-            onChange={(e) => setProvince(e.target.value)}
+            onChange={(e) => { setAssistApplied(false); setProvince(e.target.value); }}
           />
         </Box>
 
@@ -563,7 +586,7 @@ function ShippingAddressDialog({
             required
             label="ZIP / Postal code"
             value={zip}
-            onChange={(e) => setZip(e.target.value)}
+            onChange={(e) => { setAssistApplied(false); setZip(e.target.value); }}
           />
           <TextField
             size="small"
@@ -572,7 +595,7 @@ function ShippingAddressDialog({
             label="Country code"
             placeholder="US"
             value={countryCode}
-            onChange={(e) => setCountryCode(e.target.value.toUpperCase())}
+            onChange={(e) => { setAssistApplied(false); setCountryCode(e.target.value.toUpperCase()); }}
           />
         </Box>
 
