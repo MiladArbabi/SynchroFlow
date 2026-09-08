@@ -1416,7 +1416,7 @@ export default function OrderFlowPage() {
                       return (
                         <Box
                           key={order.lasyncro_order_id}
-                          onClick={() => toggleSelect(order.lasyncro_order_id)}
+                          onClick={() => setSelectedOrderId(order.lasyncro_order_id)}
                           sx={{
                             display: 'grid',
                             gridTemplateColumns: '32px 32px minmax(150px,1fr) 64px 64px 74px',

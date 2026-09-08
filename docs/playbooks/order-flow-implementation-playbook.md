@@ -1351,3 +1351,41 @@ The stage bar keeps `key: 'ready'`; renaming requires a consumer sweep.
 
 **DC-10 (open, P3)** — blocked revenue renders as `$179.85` on Order Flow and
 `$180` on Overview/Orders. Same value, different formatter.
+
+### GH #1057 — Order Pool row inspection contract (2026-09-07)
+
+Production certification of GH #1053 exposed an interaction inconsistency in
+the Order Flow pool: clicking a healthy Order Pool row toggled bulk selection
+instead of opening the shared Order Detail entity modal.
+
+The interaction contract is now:
+
+- Clicking an Order Pool row opens the existing `EntityDetailModal` /
+  `OrderDetailModalBody` using the row's canonical `lasyncro_order_id`.
+- Row inspection does not mutate bulk-selection state.
+- The row checkbox exclusively owns bulk selection and stops propagation.
+- The priority flag remains independently actionable and stops propagation.
+- Opening or closing Order Detail preserves any existing checkbox selection.
+- Healthy, unreleased pool orders expose the existing Order Detail footer:
+  `Prioritize` + `Go to order flow`.
+- No new modal, hook, backend endpoint, data type, or Order Detail behavior was
+  introduced.
+
+Implementation delta:
+
+- `apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx`
+  - row `onClick`: `toggleSelect(order.lasyncro_order_id)`
+    → `setSelectedOrderId(order.lasyncro_order_id)`
+
+Regression protection:
+
+- `tests/unit/ui/orders/OrderFlowPage.pool-row-inspection-1057.test.ts`
+  protects row inspection, checkbox selection isolation, and priority-flag
+  isolation.
+- GH #1053 Order Detail suites were rerun alongside it.
+- Automated verification: 5 suites / 40 tests passed.
+- Frontend TypeScript baseline: 19 existing errors, 0 errors in
+  `OrderFlowPage.tsx`.
+- Live browser verification on `/orders/flow` confirmed row inspection,
+  healthy-order footer actions, checkbox isolation, selection persistence,
+  and priority-flag isolation.
