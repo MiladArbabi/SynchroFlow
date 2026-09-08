@@ -55,19 +55,6 @@ export interface InterventionOutcomeRecord {
   };
 }
 
-/**
- * Chronology tolerance.
- *
- * The intervention's occurred_at and the correction domain event's event_time
- * are both the SAME transaction clock (the PATCH's transaction_timestamp), and
- * projection stamps resolved_at from that event anchor — so the honest expected
- * relationship is resolved_at >= occurred_at, frequently equal to the
- * microsecond. This small tolerance absorbs statement-vs-transaction clock
- * skew only; a resolution that genuinely predates the treatment stays 'unknown'
- * rather than being credited to it.
- */
-const CHRONOLOGY_TOLERANCE_MS = 1_000;
-
 const asDate = (value: unknown): Date | null => {
   if (value == null) return null;
   const date = value instanceof Date ? value : new Date(String(value));
@@ -142,10 +129,31 @@ function deriveOutcome(
     };
   }
 
+  /**
+   * CHRONOLOGY, EVALUATED AT JAVASCRIPT MILLISECOND PRECISION.
+   *
+   * Both timestamps are converted to JS Date, which is millisecond-resolution,
+   * so the rule this model actually enforces is:
+   *
+   *   resolved_at >= occurred_at, at whole-millisecond precision
+   *
+   * PostgreSQL stores microseconds. A production intervention (2026-09-08)
+   * recorded occurred_at 16:24:38.318964+00 against resolved_at
+   * 16:24:38.318+00 — a raw delta of -0.964ms that collapses to the SAME JS
+   * millisecond, and is therefore equal here, and legitimately verified. That
+   * is a precision fact, not a tolerance: sub-millisecond differences are
+   * invisible to this comparison because the comparison has no finer units.
+   *
+   * There is deliberately NO tolerance window. Any negative millisecond
+   * latency is a genuine inversion — the constraint resolved before the
+   * treatment was recorded — and cannot have been caused by it. A tolerance
+   * would let a late, duplicate or replayed intervention inherit a resolution
+   * it played no part in, which is precisely the false credit this whole
+   * module exists to prevent.
+   */
   const latencyMs = resolvedAt.getTime() - occurredAt.getTime();
 
-  // Resolution that predates the treatment cannot have been caused by it.
-  if (latencyMs < -CHRONOLOGY_TOLERANCE_MS) {
+  if (latencyMs < 0) {
     return {
       status: 'unknown',
       constraintIsActive: false,
@@ -158,7 +166,8 @@ function deriveOutcome(
     status: 'verified_resolved',
     constraintIsActive: false,
     constraintResolvedAt: resolvedAt,
-    resolutionLatencyMs: Math.max(latencyMs, 0),
+    // Non-negative by construction — the inversion guard above returned.
+    resolutionLatencyMs: latencyMs,
   };
 }
 

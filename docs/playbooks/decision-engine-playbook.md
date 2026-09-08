@@ -1469,9 +1469,20 @@ treatment contract.
 
 Implemented 2026-09-08.
 
-**Status: IMPLEMENTED / AUTOMATED VERIFIED — NOT YET LIVE CERTIFIED.**
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE FLOW VERIFIED —
+CHRONOLOGY CORRECTION PENDING DEPLOY.**
 
-Production / live-browser certification has not been performed.
+Verified to date:
+
+- foundation plus the Address pilot implemented;
+- automated verified;
+- production Address correction flow live verified (2026-09-08);
+- production intervention persistence verified against a real order;
+- chronology-integrity correction automated verified.
+
+The strict chronology correction (§ *Ratified chronology rule* below) is **not
+yet deployed** at the time of this documentation update, so `OUTCOME-ATTR-01`
+is **not** fully production-certified.
 
 This closes the *foundation* plus the first Address pilot only. The broader
 Outcome/value roadmap item (§11.5 priority item 5) is **not** complete.
@@ -1603,6 +1614,23 @@ Outcome is derived at read time from the exact linked `order_constraints` row:
 
 `resolutionLatencyMs` may be derived from `occurred_at` → `resolved_at`.
 
+##### Ratified chronology rule
+
+Chronology is evaluated at **JavaScript `Date` millisecond precision**, because
+that is the precision the read model actually compares at. After conversion:
+
+```
+latencyMs = resolvedAt.getTime() - occurredAt.getTime()
+
+latencyMs <  0  → unknown
+latencyMs >= 0  → eligible for verified_resolved, assuming the canonical
+                  inactive constraint and resolved_at are otherwise coherent
+```
+
+There is **no arbitrary tolerance window**. Sub-millisecond PostgreSQL
+differences that collapse to the same JavaScript millisecond are equal at the
+read model's actual precision — that is a precision fact, not a tolerance.
+
 Outcome is **not** derived from:
 
 - `decision.status`;
@@ -1628,12 +1656,28 @@ Outcome is **not** derived from:
 - **`OUTCOME-ADDR-06`** — the frontend distinguishes manual from
   historical-address-assist provenance while preserving explicit merchant
   review and save.
+- **`OUTCOME-ADDR-07`** — an intervention that post-dates canonical constraint
+  resolution must never receive credit.
+
+`OUTCOME-ADDR-07` regression construction:
+
+- the canonical address flow genuinely resolves the constraint;
+- a diagnostic intervention is inserted against the **same** resolved
+  `constraint_id`;
+- its `occurred_at` is `resolved_at + 500ms`;
+- the read model must return `unknown`, with `constraintIsActive=false`,
+  `constraintResolvedAt` present, and `resolutionLatencyMs=null`.
+
+The diagnostic intervention is **test-only**. `order_constraints` is neither
+mutated nor hand-cleared: the constraint it points at was resolved by the real
+canonical lifecycle, and the sentinel probes only the read model's
+impossible-chronology branch.
 
 #### Automated verification
 
 - backend outcome integration —
   `tests/integration/orders/address-outcome-attribution.test.ts`:
-  3 passed / 3 total;
+  4 passed / 4 total;
 - neighboring canonical address integration —
   `tests/integration/orders/address-customer-decision-contract.test.ts`:
   16 passed / 16 total;
@@ -1648,6 +1692,15 @@ Outcome is **not** derived from:
 
 The disposable `synchroflow_test_*` integration database was created,
 migrated, exercised and dropped successfully.
+
+Chronology correction, verified RED first:
+
+- `OUTCOME-ADDR-07` RED reproduced against the pre-correction implementation —
+  `Expected: "unknown"`, `Received: "verified_resolved"`;
+- corrected implementation GREEN — 4 passed / 4 total;
+- disposable integration database dropped successfully;
+- backend TypeScript: 0 errors;
+- `git diff --check`: clean.
 
 #### Boundaries and claim discipline
 
@@ -1672,3 +1725,88 @@ Also explicitly out of scope in this slice:
 - no Decision Engine execution-semantics redesign.
 
 Canonical `order_constraints` remains the outcome authority.
+
+#### Live production certification — 2026-09-08
+
+Production order: Shopify external order **#16942811840882**.
+
+Observed browser sequence:
+
+- an active **Address Issue** was visible;
+- **Correct shipping address** opened the focused correction dialog;
+- **no historical-address candidate existed** for this production order;
+- a complete address was entered manually;
+- after **Save address**, the blocker **remained visible** while the UI showed
+  *"Address updated — rechecking order…"* — the PATCH therefore did **not**
+  falsely claim resolution;
+- after canonical server reevaluation, **Address Issue** disappeared;
+- Warehouse Status became **In pool**;
+- the modal showed **No open issues**;
+- Latest Activity showed **Shipping address corrected**.
+
+The production **manual** correction path is therefore **live verified**.
+
+The `historical_address_assist` branch was **not** live verified in this
+`OUTCOME-ATTR-01` production run — no candidate existed for the certified
+order. It remains covered by automated frontend contracts; `ADDR-ASSIST-01`
+carries its own earlier live evidence (§11.7).
+
+#### Production database attribution evidence
+
+The certified correction persisted exactly one intervention:
+
+| field | value |
+| --- | --- |
+| `intervention_id` | `f0cd24d5-06a6-40cc-8dcf-377bf7f5e102` |
+| `shop_id` | `1` |
+| `lasyncro_order_id` | `7c47ecb3-5453-9a27-732f-0b81cf19a73d` |
+| `constraint_id` | `19f58830-bce5-5bcc-9430-89559f267c96` |
+| `treatment_key` | `address_correction` |
+| `action_key` | `update_shipping_address` |
+| `actor_type` | `user` |
+| `actor_user_id` | `1` |
+| `source_surface` | `order_detail_shipping_address_dialog` |
+| `correction_source` | `manual` |
+| `constraint_type` | `customer` |
+| `block_type` | `incomplete_address` |
+
+Canonical constraint after projection: `is_active = false`, `resolved_at`
+present.
+
+This proves:
+
+- a durable intervention persisted;
+- exact constraint attribution persisted;
+- the same canonical `customer` / `incomplete_address` constraint later
+  resolved;
+- no inventory attribution was manufactured.
+
+In the ratified safe language: **verified resolved after the recorded
+intervention.**
+
+#### Chronology defect discovered during production certification
+
+That same production row exposed a precision defect:
+
+```
+intervention occurred_at   2026-09-08 16:24:38.318964+00
+constraint  resolved_at    2026-09-08 16:24:38.318+00
+raw PostgreSQL delta       -0.964 ms
+```
+
+PostgreSQL verification:
+
+```
+resolved_at >= date_trunc('milliseconds', occurred_at)  →  true
+```
+
+The internal read model converts PostgreSQL timestamps to JavaScript `Date`,
+which has millisecond precision, so these two timestamps collapse to the **same
+millisecond**. This legitimate production resolution should — and does — read
+`verified_resolved`.
+
+The initial implementation reached that answer for the wrong reason: it carried
+a **1-second tolerance**, which would also have credited an intervention
+recorded *hundreds of milliseconds after* canonical resolution. That tolerance
+was rejected as too permissive and removed; see the ratified chronology rule
+above and `OUTCOME-ADDR-07`.

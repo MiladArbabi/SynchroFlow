@@ -110,9 +110,10 @@ interface InterventionOutcome {
   occurredAt: string | Date;
   metadata: Record<string, unknown> | null;
   outcome: {
-    status: 'pending_verification' | 'verified_resolved';
+    status: 'pending_verification' | 'verified_resolved' | 'unknown';
     constraintIsActive: boolean;
     constraintResolvedAt: string | Date | null;
+    resolutionLatencyMs: number | null;
   };
 }
 
@@ -592,5 +593,113 @@ describe('OUTCOME-ADDR-05 — no active customer blocker means no intervention a
     // …but there was no problem to solve, so the Decision Engine records no
     // intervention and no outcome. Editing data is not a treatment.
     expect(await readInterventions({ shopId, lasyncroOrderId: orderId })).toEqual([]);
+  }, 180_000);
+});
+
+
+// ── OUTCOME-ADDR-07 ────────────────────────────────────────────────────────
+
+/**
+ * CHRONOLOGY IS NOT NEGOTIABLE.
+ *
+ * An intervention recorded AFTER the constraint had already resolved cannot
+ * have caused that resolution. Crediting it would be the single cheapest way
+ * to manufacture a flattering outcome number — every late, duplicate or
+ * replayed write would inherit someone else's win.
+ *
+ * PRODUCTION EVIDENCE (2026-09-08) that motivates the precision rule:
+ *   occurred_at  2026-09-08 16:24:38.318964+00
+ *   resolved_at  2026-09-08 16:24:38.318+00
+ *   raw Postgres delta -0.964 ms
+ * Both collapse to the SAME JavaScript millisecond, which is the precision the
+ * read model actually evaluates at — so that case is legitimately
+ * verified_resolved, and it is NOT what this contract targets.
+ *
+ * This contract targets a genuine, unambiguous inversion: half a second of
+ * real time, after canonical resolution. There is no tolerance under which
+ * that may be credited.
+ *
+ * The sentinel row below is a DIAGNOSTIC probe of the read model's impossible-
+ * chronology branch. It is the only hand-written row in this file, it is an
+ * intervention (never a constraint), and order_constraints is neither mutated
+ * nor hand-cleared anywhere here — the constraint it points at was resolved by
+ * the real canonical lifecycle above it.
+ */
+describe('OUTCOME-ADDR-07 — an intervention recorded after resolution is never credited', () => {
+  it('returns unknown, not verified_resolved, for an intervention that post-dates canonical resolution', async () => {
+    const { shopId, token } = await provisionFt2Shop('seven');
+    const { orderId } = await ingestPaidOrder({
+      shopId,
+      shippingAddress: INCOMPLETE_ADDRESS,
+    });
+
+    const constraint = await activeCustomerConstraint(shopId, orderId);
+
+    // Real correction, real event, real canonical resolution.
+    const watermark = await maxEventId(shopId);
+    const patch = await patchAddress(token, orderId, {
+      ...COMPLETE_PATCH,
+      correctionSource: 'manual',
+    });
+    expect(patch.status).toBe(200);
+
+    const emitted = await correctionEvents(shopId, watermark);
+    expect(emitted).toHaveLength(1);
+    await projectEvent(shopId, Number(emitted[0].id));
+
+    const resolvedRow = (await constraintsFor(shopId, orderId)).find(
+      (c) => c.constraint_id === constraint.constraint_id
+    );
+    expect(resolvedRow).toBeTruthy();
+    expect(resolvedRow!.is_active).toBe(false);
+    expect(resolvedRow!.resolved_at).toBeTruthy();
+
+    // The genuine intervention still verifies — the sentinel must not change that.
+    const realOutcomes = await readInterventions({ shopId, lasyncroOrderId: orderId });
+    expect(realOutcomes).toHaveLength(1);
+    expect(realOutcomes[0].outcome.status).toBe('verified_resolved');
+
+    /**
+     * Sentinel: same shop, same order, same EXACT constraint_id — but recorded
+     * 500ms after that constraint had already resolved.
+     */
+    const SENTINEL_SURFACE = 'test chronology sentinel';
+    const resolvedAt = new Date(resolvedRow!.resolved_at as unknown as string);
+    const sentinelOccurredAt = new Date(resolvedAt.getTime() + 500);
+
+    await withTenant(shopId, (trx) =>
+      trx('decision_interventions').insert({
+        id: crypto.randomUUID(),
+        shop_id: shopId,
+        entity_type: 'order',
+        entity_id: orderId,
+        constraint_id: constraint.constraint_id,
+        decision_id: null,
+        treatment_key: 'address_correction',
+        action_key: 'update_shipping_address',
+        actor_type: 'user',
+        source_surface: SENTINEL_SURFACE,
+        occurred_at: sentinelOccurredAt,
+        metadata: JSON.stringify({ correction_source: 'manual' }),
+      })
+    );
+
+    const outcomes = await readInterventions({ shopId, lasyncroOrderId: orderId });
+    expect(outcomes).toHaveLength(2);
+
+    const sentinel = outcomes.find((o) => o.sourceSurface === SENTINEL_SURFACE);
+    expect(sentinel).toBeTruthy();
+    expect(sentinel!.constraintId).toBe(constraint.constraint_id);
+
+    // Canonical truth is still reported faithfully — the constraint DID resolve.
+    // What is refused is the causal credit, not the fact.
+    expect(sentinel!.outcome.status).toBe('unknown');
+    expect(sentinel!.outcome.constraintIsActive).toBe(false);
+    expect(sentinel!.outcome.constraintResolvedAt).toBeTruthy();
+    expect(sentinel!.outcome.resolutionLatencyMs).toBeNull();
+
+    // And the genuine intervention is untouched by the sentinel's presence.
+    const real = outcomes.find((o) => o.sourceSurface !== SENTINEL_SURFACE);
+    expect(real!.outcome.status).toBe('verified_resolved');
   }, 180_000);
 });
