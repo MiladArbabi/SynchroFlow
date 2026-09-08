@@ -101,6 +101,8 @@ export function getSecondaryBlockers(order: ConstrainedOrder): string | null {
 }
 
 export type ConstrainedOrder = {
+  sla_state?: 'normal' | 'approaching' | 'breached' | null;
+  is_priority_flagged?: boolean;
   order_id: string;
   external_order_id: string | null;
   constraint_type: string;
@@ -173,6 +175,7 @@ export function getConstraintSeverity(constraintType: string): ConstraintSeverit
 export type SlaProximity = 'breached' | 'warning' | 'ok';
 
 export function getSlaProximity(order: ConstrainedOrder): SlaProximity {
+  if (order.sla_state !== undefined) return order.sla_state === 'breached' ? 'breached' : order.sla_state === 'approaching' ? 'warning' : 'ok';
   if (order.is_shipping_sla_breached || order.is_delivery_sla_breached) {
     return 'breached';
   }

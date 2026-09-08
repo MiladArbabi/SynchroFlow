@@ -1,3 +1,4 @@
+import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/wms/wms.controller.ts
 import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
@@ -3510,6 +3511,8 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
        * Zone distribution: distinct zone_type values of bins holding
        * the order's variants — feeds pre-release preview UI.
        */
+      const slaSettings = await trx('shop_operational_settings').where({ shop_id: shopId }).first('fulfillment_sla_hours');
+      const currentSla = currentFulfillmentSlaSql(slaSettings?.fulfillment_sla_hours);
       const rows = await trx
         .with('latest_age_snapshot', (qb) => {
           // Same DISTINCT ON pattern as sla.metrics.ts / pickBatch.service.ts —
@@ -3545,7 +3548,7 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
         // Shopify order (unresolved intake exception) is not fully executable —
         // fail closed. Same shared predicate as eligibleOrders / the FILTER below.
         .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
-        .orderByRaw('ofs.is_priority_flagged DESC, COALESCE(las.is_shipping_sla_breached, false) DESC, o.order_created_at ASC')
+        .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC`)
         .select(
           'o.lasyncro_order_id',
           'eim.external_order_id',
@@ -3554,7 +3557,8 @@ export const httpGetOrderPool = async (req: Request, res: Response) => {
           'o.order_created_at',
           'o.promised_ship_by',
           'ofs.is_priority_flagged',
-          'las.is_shipping_sla_breached',
+          trx.raw(`${currentSla.breached} as is_shipping_sla_breached`),
+          trx.raw(`${currentSla.state} as sla_state`),
           trx.raw(`null::text as customer_name`),
           // Line item + unit counts via subquery
           trx.raw(`(

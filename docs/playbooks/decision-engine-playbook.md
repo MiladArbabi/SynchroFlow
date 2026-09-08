@@ -836,12 +836,16 @@ inventory constraint truth.
 
 ### Next Decision Engine pair
 
-**NOT YET DOCUMENTED.**
+`SLA-TREAT-01` is **IMPLEMENTED / AUTOMATED VERIFIED** — see §11.9.
 
-As of 2026-09-06, this playbook establishes completed coverage through
-ORD-DECISION-01 Slice 4 and does not establish the next canonical pair.
-The next pair must therefore be selected from verified Decision Engine /
-constraint coverage rather than inferred here.
+This slice extends the Decision Engine from constraint-specific treatment into
+time-sensitive operational assistance while preserving the governing rule:
+
+**constraint determines WHAT must be resolved; SLA determines HOW URGENTLY.**
+
+Customer-delivery promise, carrier/service normalization and full pickup-policy
+reasoning remain deliberately deferred to `SHIP-INTENT-01`,
+`CARRIER-NORM-01`, `CPT-POLICY-01` and `PROMISE-01`.
 
 
 ---
@@ -1250,3 +1254,189 @@ constraint.
 Canonical inventory truth remains the sole resolution authority.
 
 **INV-TREAT-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**
+
+
+### 11.9 SLA-TREAT-01 — SLA urgency + execution treatment assistance
+
+Implemented 2026-09-08.
+
+#### Governing contract
+
+`SLA-TREAT-01` combines four independent evidence families at read time:
+
+- canonical fulfillment-SLA state;
+- current warehouse execution state;
+- active canonical blockers;
+- truthful same-day carrier-pickup-time context.
+
+The Decision Engine preserves these boundaries:
+
+- a canonical constraint determines **what** must be resolved;
+- SLA determines **how urgently** work should be attended to;
+- CPT is contextual evidence only in this slice;
+- merchant priority remains above SLA urgency;
+- SLA or CPT can never release an order automatically;
+- SLA or CPT can never bypass an active blocker;
+- no treatment automatically claims work, scans inventory, completes packing,
+  fulfills an order or performs carrier handoff.
+
+#### Fresh fulfillment-SLA truth
+
+Current SLA state is derived at read time rather than relying solely on a
+persisted `order_age_snapshot`.
+
+The canonical event-anchor precedence is:
+
+1. `paid_at`;
+2. `captured_at`;
+3. `order_processed_at`;
+4. `order_created_at`.
+
+The existing shared SLA contract remains authoritative for thresholds:
+
+- `normal`;
+- `approaching`;
+- `breached`.
+
+`approaching` reuses the existing
+`approachingFulfillmentSlaLeadSeconds()` / `isApproachingFulfillmentSla()`
+semantics. No second SLA threshold was introduced.
+
+Fulfilled and cancelled orders receive no active fulfillment-SLA treatment.
+
+Persisted age snapshots remain valid historical/projection evidence, but a
+stale snapshot cannot prevent an order from crossing a current SLA boundary.
+
+#### Queue ordering invariant
+
+Order Pool, release-selection and constrained-order ordering now preserve:
+
+**merchant priority > SLA urgency > existing age/operator ordering**
+
+Within the same merchant-priority band:
+
+1. breached SLA;
+2. approaching SLA;
+3. normal / not-applicable;
+4. existing final tie-break ordering.
+
+SLA urgency therefore escalates work without crossing merchant-priority bands.
+
+CPT is not an ordering key.
+
+#### Warehouse execution assessment
+
+Execution state is derived from `pick_batch_orders`, `pick_batches` and the
+merchant idle threshold:
+
+- `pending` → `waiting_for_pick`;
+- `picking` → `picking_active` or `picking_stalled`;
+- `pick_complete` → `waiting_for_pack`;
+- `packing` → `packing_active` or `packing_stalled`;
+- `pack_complete` → `warehouse_complete`.
+
+Picking uses `pick_last_activity_at`; packing uses
+`pack_last_activity_at`. Activity from one stage is never substituted for
+another.
+
+Operational stall uses the merchant-configured
+`idle_alert_threshold_minutes` semantics already established by WMS idle
+alerts:
+
+- exactly at the threshold is not stalled;
+- elapsed inactivity strictly greater than the threshold is stalled.
+
+Missing activity or threshold evidence produces unknown/incomplete assessment
+rather than a fabricated fallback.
+
+The legacy revenue-intelligence `stalled_execution` classifier is not used for
+operational Decision Engine treatment.
+
+#### Blocker precedence and assistance
+
+Active `order_constraints` remain the canonical blocker truth.
+
+No synthetic `blocked_waiting` execution state was added.
+
+If a blocker is active, existing blocker-specific remediation remains the
+treatment target even when SLA urgency or warehouse stalling is also present.
+
+Contextual warehouse assistance is navigation/read-model assistance only:
+
+- released + urgent → review warehouse work;
+- stalled picking owned by the current operator → continue picking;
+- stalled picking owned by another operator → review warehouse work;
+- picked + urgent → open packing;
+- stalled packing → open packing;
+- active picking/packing → show urgency without an extra interruptive CTA;
+- warehouse complete → no warehouse treatment.
+
+Existing address, inventory-sourcing, returned-package and generic
+Decision Engine remediation contracts remain authoritative.
+
+#### CPT boundary for this slice
+
+`daily_cpt_local` and the shop timezone are used only for truthful same-day
+context:
+
+- `not_configured`;
+- `before_cutoff`;
+- `cutoff_reached`;
+- `unknown`.
+
+This slice does not infer:
+
+- tomorrow's pickup;
+- weekends or carrier holidays;
+- carrier-specific pickup schedules;
+- transit time;
+- delivery ETA;
+- customer-delivery promise;
+- a CPT-approaching threshold;
+- per-order pickup commitment.
+
+Existing Order Flow CPT buckets are not treated as canonical Decision Engine
+pickup truth.
+
+Full pickup-policy and customer-promise reasoning remain deferred to:
+
+- `SHIP-INTENT-01` — canonical Shopify shipping-intent convergence;
+- `CARRIER-NORM-01` — provider / physical-carrier / service normalization;
+- `CPT-POLICY-01` — next valid pickup opportunity and policy hierarchy;
+- `PROMISE-01` — latest-safe-dispatch and customer-promise risk.
+
+#### Read model and refresh
+
+The assessment is composed through the existing order-detail read path rather
+than a new endpoint, worker or persisted workflow state.
+
+Order Detail receives additive `slaTreatment` evidence and assistance.
+
+Time-sensitive state remains server-authoritative. While Order Detail is open,
+the frontend refreshes approximately every 30 seconds rather than recreating
+SLA, stall or CPT rules client-side.
+
+No schema migration was required.
+
+#### Automated verification
+
+Verified contracts include:
+
+- backend SLA-treatment unit coverage: 6 passing tests;
+- frontend SLA ordering, refresh and Order Detail behavior: 23 passing tests;
+- real-DB `SLA-TREAT-01` integration coverage: 4 passing tests;
+- neighboring SLA Decision Engine / consumer contracts: 7 passing tests;
+- backend TypeScript: 0 errors;
+- frontend TypeScript: existing 19-error baseline, 0 errors in modified
+  `SLA-TREAT-01` target files.
+
+The integration harness used disposable `synchroflow_test_*` databases and
+confirmed cleanup after execution.
+
+Known harness noise remains the existing Jest `--forceExit` /
+post-test asynchronous logging behavior; it did not fail the verified suites.
+
+**SLA-TREAT-01: IMPLEMENTED / AUTOMATED VERIFIED.**
+
+Live browser / production certification is intentionally not claimed by this
+entry.

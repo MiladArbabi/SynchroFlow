@@ -1,3 +1,4 @@
+import { currentFulfillmentSlaSql } from '../orders/fulfillmentSla.service.js';
 // apps/backend/src/services/wms/pickBatch.service.ts
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
@@ -201,6 +202,8 @@ export async function releaseBatch(
   //    order_age_snapshot is append-only/versioned; DISTINCT ON +
   //    aggregate_version DESC guarantees one row per order. Without this,
   //    the join would multiply eligible rows and corrupt the greedy fill below.
+  const slaSettings = await trx('shop_operational_settings').where({ shop_id: shopId }).first('fulfillment_sla_hours');
+  const currentSla = currentFulfillmentSlaSql(slaSettings?.fulfillment_sla_hours);
   const eligibleOrders = await trx
     .with('latest_age_snapshot', (qb) => {
       qb.from('order_age_snapshot as oas')
@@ -232,8 +235,8 @@ export async function releaseBatch(
     // unresolved intake exception (fully non-WMS or partially mapped) is not
     // fully executable — fail closed here too, consistently with the pool query.
     .whereRaw(NO_ACTIVE_INTAKE_EXCEPTION_SQL)
-    .select('o.lasyncro_order_id', 'ofs.is_priority_flagged', 'las.is_shipping_sla_breached')
-    .orderByRaw('ofs.is_priority_flagged DESC, COALESCE(las.is_shipping_sla_breached, false) DESC, o.order_created_at ASC');
+    .select('o.lasyncro_order_id', 'ofs.is_priority_flagged', trx.raw(`${currentSla.breached} as is_shipping_sla_breached`), trx.raw(`${currentSla.state} as sla_state`))
+    .orderByRaw(`ofs.is_priority_flagged DESC, ${currentSla.rank} DESC, o.order_created_at ASC`);
     
 
   // 3. Build ordered candidate list:

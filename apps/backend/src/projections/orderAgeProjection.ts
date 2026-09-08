@@ -1,3 +1,4 @@
+import { fulfillmentSlaAnchor } from '../services/orders/fulfillmentSla.service.js';
 import { Knex } from 'knex';
 
 /**
@@ -53,11 +54,7 @@ export async function projectOrderAge(
    * - deterministic aging
    * - no null propagation
    */
-  const paidAt =
-    row.paid_at ??
-    row.captured_at ??
-    row.order_processed_at ??
-    row.order_created_at;
+  const paidAt = fulfillmentSlaAnchor(row);
 
   /**
    * AGE REFERENCE POINT (CRITICAL FIX)

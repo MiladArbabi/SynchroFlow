@@ -124,7 +124,18 @@ export interface OrderInventoryAssist {
   items: InventoryAssistItem[];
 }
 
+export interface SlaTreatment {
+  assessedAt: string;
+  sla: { state: 'normal' | 'approaching' | 'breached' | null; applicable: boolean; ageSincePaidSeconds: number | null; fulfillmentSlaHours: number; evidenceVersion: number | null };
+  cpt: { state: 'not_configured' | 'before_cutoff' | 'cutoff_reached' | 'unknown'; localTime: string | null; timezone: string | null; hoursRemaining: number | null };
+  execution: { batchId: string | null; batchStatus: string | null; assessment: 'waiting_for_pick' | 'picking_active' | 'picking_stalled' | 'waiting_for_pack' | 'packing_active' | 'packing_stalled' | 'warehouse_complete' | null; stageStartedAt: string | null; lastActivityAt: string | null; idleThresholdMinutes: number | null; evidenceIssue: string | null };
+  activeBlockerRefs: Array<{ constraint_id: string; constraint_type: string; block_type: string | null; target_id: string | null }>;
+  attentionReasons: string[];
+  assistance: { kind: 'navigate'; label: string; href: string } | { kind: 'existing_blocker' } | null;
+}
+
 export interface OrderDetail {
+  slaTreatment?: SlaTreatment;
   id: string;
   externalOrderId: string | null;
   total: number;
@@ -176,5 +187,6 @@ export function useOrderDetail(orderId: string | null) {
     // FIX (2026-07-04): see useOrderDecision.ts — same staleTime=0 +
     // refetchOnWindowFocus flicker, same fix.
     staleTime: 30_000,
+    refetchInterval: orderId ? 30_000 : false,
   });
 }

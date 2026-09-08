@@ -5,7 +5,7 @@
 // The Order Pool's release ranking is owned by the backend, which returns
 // rows already ordered by:
 //
-//   is_priority_flagged DESC, COALESCE(is_shipping_sla_breached, false) DESC,
+//   is_priority_flagged DESC, SLA rank (breached > approaching > normal) DESC,
 //   order_created_at ASC
 //
 // (wms.controller.ts httpGetOrderPool / pickBatch.service.ts releaseBatch —
@@ -40,22 +40,13 @@ export interface PoolSortableOrder {
   unit_count: number;
   is_priority_flagged: boolean;
   is_shipping_sla_breached: boolean | null;
+  sla_state?: string | null;
 }
 
-/**
- * Urgency tier, highest first. Mirrors the backend's two leading sort keys
- * lexicographically: priority outranks SLA, SLA outranks neither.
- *
- *   3 = priority-flagged AND SLA-breached
- *   2 = priority-flagged only
- *   1 = SLA-breached only
- *   0 = neither
- *
- * `is_shipping_sla_breached` is nullable (orders with no age snapshot yet);
- * null is falsy here exactly as COALESCE(..., false) makes it on the server.
- */
+/** Merchant priority > server-assessed SLA urgency > operator tie-break. */
 export function poolUrgencyTier(order: PoolSortableOrder): number {
-  return (order.is_priority_flagged ? 2 : 0) + (order.is_shipping_sla_breached ? 1 : 0);
+  const slaRank = order.sla_state === 'breached' || (order.sla_state === undefined && order.is_shipping_sla_breached) ? 2 : order.sla_state === 'approaching' ? 1 : 0;
+  return (order.is_priority_flagged ? 3 : 0) + slaRank;
 }
 
 /**

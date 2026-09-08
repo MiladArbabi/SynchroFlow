@@ -71,7 +71,8 @@ export const httpGetOrderProfitability = async (req: Request, res: Response) => 
 
     const profitability = await ordersService.getOrderProfitabilityById(
       shopId,
-      id
+      id,
+      req.user?.userId
     );
     res.status(200).json(profitability);
   } catch (error) {
@@ -100,7 +101,8 @@ export const httpGetOrderDetails = async (req: Request, res: Response) => {
 
     const details = await ordersService.getOrderDetailsById(
       shopId,
-      id
+      id,
+      req.user?.userId
     );
     if (details) {
       res.status(200).json(details);

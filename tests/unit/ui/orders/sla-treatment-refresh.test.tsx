@@ -1,0 +1,24 @@
+import React from 'react';
+import { act, renderHook } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useOrderDetail } from 'pages/orders/useOrderDetail';
+const mockGet = jest.fn();
+jest.mock('api/axiosConfig', () => ({ axiosInstance: { get: (...args: unknown[]) => mockGet(...args) } }));
+it('SLA-TREAT-01 refreshes backend truth after 30 seconds and stops when inactive', async () => {
+  jest.useFakeTimers();
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  mockGet.mockResolvedValueOnce({ data: { slaTreatment: { sla: { state: 'normal' } } } }).mockResolvedValue({ data: { slaTreatment: { sla: { state: 'approaching' } } } });
+  const wrapper = ({ children }: { children: React.ReactNode }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
+  const view = renderHook(({ id }: { id: string | null }) => useOrderDetail(id), { initialProps: { id: 'order-a' as string | null }, wrapper });
+  await act(async () => { await jest.advanceTimersByTimeAsync(1); });
+  expect(mockGet).toHaveBeenCalledTimes(1);
+  await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+  expect(mockGet).toHaveBeenCalledTimes(2);
+  expect(view.result.current.data?.slaTreatment?.sla.state).toBe('approaching');
+  view.rerender({ id: null });
+  await act(async () => { await jest.advanceTimersByTimeAsync(30000); });
+  expect(mockGet).toHaveBeenCalledTimes(2);
+  view.unmount();
+  qc.clear();
+  jest.useRealTimers();
+});

@@ -1,3 +1,4 @@
+import { buildSlaTreatment } from '../../services/orders/slaTreatmentAssist.service.js';
 // apps/backend/src/api/orders/orders.service.ts
 import db from "@lasyncro/backend-core/db.js";
 import { tierDataWindowSince } from "@lasyncro/backend-core/utils/tierDataWindow.js";
@@ -48,7 +49,8 @@ export const getAllOrders = async (shopId: number, tier: Tier = 'starter'): Prom
  */
 export const getOrderProfitabilityById = async (
   shopId: number,
-  lasyncroOrderId: string
+  lasyncroOrderId: string,
+  requesterId?: number
 ) => {
 
   /**
@@ -99,7 +101,8 @@ export const getOrderProfitabilityById = async (
  */
 export const getOrderDetailsById = async (
   shopId: number,
-  lasyncroOrderId: string
+  lasyncroOrderId: string,
+  requesterId?: number
 ) => {
   /**
    * RLS CONTEXT (VO-09, 2026-07-01)
@@ -344,6 +347,7 @@ export const getOrderDetailsById = async (
       tracking: shipmentTracking ?? null,
       addressAssist,
       inventoryAssist,
+      slaTreatment: await buildSlaTreatment(trx, shopId, order, requesterId),
       /**
        * SHIPPING IDENTITY (VO-01, 2026-07-01)
        * --------------------------------------

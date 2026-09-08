@@ -30,6 +30,7 @@ export interface PoolOrder {
   promised_ship_by: string | null;
   is_priority_flagged: boolean;
   is_shipping_sla_breached: boolean | null;
+  sla_state?: 'normal' | 'approaching' | 'breached' | null;
   customer_name: string | null;
   line_item_count: number;
   unit_count: number;

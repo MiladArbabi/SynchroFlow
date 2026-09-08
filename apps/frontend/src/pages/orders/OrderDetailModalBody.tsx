@@ -1232,9 +1232,21 @@ export function OrderDetailModalBody({
    * whenever a blocker offers a real action; the constraint-free/unbatched
    * Prioritize + Go to order flow footer is unchanged below it.
    */
+  const slaTreatment = order?.slaTreatment;
+  const slaNavigation = slaTreatment?.assistance?.kind === 'navigate' ? slaTreatment.assistance : null;
+  const slaActionHref = slaNavigation?.href;
+  const slaActionLabel = slaNavigation?.label;
+  const slaHasBlocker = (slaTreatment?.activeBlockerRefs?.length ?? 0) > 0;
+
   const actionFooter = useMemo(() => {
     if (remediationFooter) return remediationFooter;
-    if (hasAnyActiveConstraint || order?.warehouseStatus) return null;
+    if (hasAnyActiveConstraint || slaHasBlocker) return null;
+    if (slaActionHref && slaActionLabel) return (
+      <Button variant="contained" size="small" onClick={() => { onClose?.(); navigate(slaActionHref); }} sx={{ textTransform: 'none' }}>
+        {slaActionLabel}
+      </Button>
+    );
+    if (order?.warehouseStatus) return null;
     return (
       <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-start' }}>
         <Button
@@ -1277,7 +1289,7 @@ export function OrderDetailModalBody({
         </Button>
       </Box>
     );
-  }, [remediationFooter, hasAnyActiveConstraint, order?.warehouseStatus, prioritized, isPrioritizing, onPriorityFlag, orderId, onClose, navigate]);
+  }, [remediationFooter, hasAnyActiveConstraint, slaHasBlocker, slaActionHref, slaActionLabel, order?.warehouseStatus, prioritized, isPrioritizing, onPriorityFlag, orderId, onClose, navigate]);
 
   // The timeline is chronological, as in the former body presentation.
   // Memoize from rendered primitives so equivalent refetched arrays cannot
@@ -1584,6 +1596,14 @@ export function OrderDetailModalBody({
           )}
 
           <WarehouseStatusPanel view={stageView} tone={pipelineColorKey} />
+          {slaTreatment && (
+            <Box sx={{ mt: 1, color: 'var(--ink-3)' }}>
+              {slaTreatment.sla.state && <Typography sx={{ fontSize: 12 }}>Fulfillment SLA: {slaTreatment.sla.state}</Typography>}
+              {slaTreatment.execution.assessment && <Typography sx={{ fontSize: 12 }}>{slaTreatment.execution.assessment.replace(/_/g, ' ')}</Typography>}
+              {slaTreatment.cpt.state === 'before_cutoff' && <Typography sx={{ fontSize: 12 }}>Today's cutoff: {slaTreatment.cpt.localTime?.slice(0, 5)} ({slaTreatment.cpt.timezone})</Typography>}
+              {slaTreatment.cpt.state === 'cutoff_reached' && <Typography sx={{ fontSize: 12 }}>Today's configured cutoff has been reached.</Typography>}
+            </Box>
+          )}
 
           {showInventoryResolvedBanner && (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: 'rgba(99,153,34,0.12)', borderRadius: '10px', p: 1.25 }}>

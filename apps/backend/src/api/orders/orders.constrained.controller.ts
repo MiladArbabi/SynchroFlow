@@ -1,3 +1,4 @@
+import { currentFulfillmentSlaSql } from '../../services/orders/fulfillmentSla.service.js';
 // apps/backend/src/api/orders/orders.constrained.controller.ts
 
 import { Request, Response } from 'express';
@@ -110,8 +111,11 @@ export const httpGetConstrainedOrders = async (
         .groupBy('lasyncro_order_id')
         .as('obt');
 
+      const slaSettings = await trx('shop_operational_settings').where({ shop_id: shopId }).first('fulfillment_sla_hours');
+      const currentSla = currentFulfillmentSlaSql(slaSettings?.fulfillment_sla_hours);
       const query = trx(dedupedConstraints)
         .join('orders as o', 'o.lasyncro_order_id', 'oc.lasyncro_order_id')
+        .leftJoin('order_fulfillment_status as ofs', 'ofs.lasyncro_order_id', 'o.lasyncro_order_id')
         .leftJoin('external_order_identity_map as eim', 'eim.lasyncro_order_id', 'oc.lasyncro_order_id')
         .leftJoin(
           /**
@@ -209,8 +213,10 @@ export const httpGetConstrainedOrders = async (
           'd.id as decision_id',
           // SLA fields
           'oas.age_since_creation_seconds',
-          'oas.age_since_paid_seconds',
-          'oas.is_shipping_sla_breached',
+          trx.raw(`${currentSla.age} as age_since_paid_seconds`),
+          trx.raw(`${currentSla.breached} as is_shipping_sla_breached`),
+          trx.raw(`${currentSla.state} as sla_state`),
+          'ofs.is_priority_flagged',
           'oas.is_delivery_sla_breached',
           'sos.fulfillment_sla_hours',
           // Margin fields (Growth-tier display only — never used for enforcement)
@@ -223,7 +229,8 @@ export const httpGetConstrainedOrders = async (
          * Priority: SLA breached first, then by age descending.
          * Operators must see the most urgent orders at the top.
          */
-        .orderByRaw('oas.is_shipping_sla_breached DESC NULLS LAST')
+        .orderByRaw('COALESCE(ofs.is_priority_flagged, false) DESC')
+        .orderByRaw(`${currentSla.rank} DESC`)
         .orderByRaw('oas.age_since_creation_seconds DESC NULLS LAST')
         .orderBy('d.priority', 'desc')
         .limit(limit)

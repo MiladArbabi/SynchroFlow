@@ -668,3 +668,53 @@ describe('GH-1053 live-browser regression contracts', () => {
     expect(footer().getByRole('button', { name: 'Correct shipping address' })).toBeInTheDocument();
   });
 });
+
+describe('SLA-TREAT-01 assistance', () => {
+  beforeEach(() => { jest.clearAllMocks(); });
+  function treatment(assistance: unknown, assessment = 'picking_stalled') {
+    mockUseOrderDetail.mockReturnValue({ data: { ...orderDetail('picking'), slaTreatment: {
+      sla: { state: 'approaching' }, cpt: { state: 'before_cutoff', localTime: '16:00', hoursRemaining: 2 },
+      execution: { assessment }, activeBlockerRefs: [], assistance,
+    } }, isLoading: false });
+  }
+  it('navigates to the exact picking batch without an execute mutation', () => {
+    setDecision(decisionResponse([]));
+    treatment({ kind: 'navigate', label: 'Continue picking', href: '/wms?batchId=batch-sla' });
+    renderModal();
+    expect(mockExecute).not.toHaveBeenCalled();
+    fireEvent.click(footer().getByRole('button', { name: 'Continue picking' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/wms?batchId=batch-sla');
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+  it('keeps canonical blocker CTA above warehouse assistance', () => {
+    setDecision(decisionResponse([CUSTOMER_CONSTRAINT]));
+    treatment({ kind: 'navigate', label: 'Continue picking', href: '/wms?batchId=batch-sla' });
+    renderModal();
+    expect(footer().getByRole('button', { name: 'Correct shipping address' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Continue picking' })).not.toBeInTheDocument();
+  });
+  it('uses generic warehouse navigation for another operator and packing', () => {
+    setDecision(decisionResponse([]));
+    treatment({ kind: 'navigate', label: 'Review warehouse work', href: '/wms' });
+    const view = renderModal();
+    fireEvent.click(footer().getByRole('button', { name: 'Review warehouse work' }));
+    expect(mockNavigate).toHaveBeenCalledWith('/wms');
+    view.unmount();
+    treatment({ kind: 'navigate', label: 'Open packing', href: '/wms' }, 'packing_stalled');
+    renderModal();
+    fireEvent.click(footer().getByRole('button', { name: 'Open packing' }));
+    expect(mockNavigate).toHaveBeenLastCalledWith('/wms');
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+  it('adds no execution CTA for active work or completed warehouse work', () => {
+    setDecision(decisionResponse([]));
+    treatment(null, 'picking_active');
+    const view = renderModal();
+    expect(footer().queryByRole('button')).not.toBeInTheDocument();
+    view.unmount();
+    treatment(null, 'warehouse_complete');
+    renderModal();
+    expect(footer().queryByRole('button')).not.toBeInTheDocument();
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+});

@@ -66,7 +66,9 @@ async function seedOrder(input: {
   }>;
 }): Promise<string> {
   const orderId = crypto.randomUUID();
-  const now = new Date('2026-09-01T12:00:00.000Z');
+  const now = new Date();
+  const orderCreatedAt = new Date(now.getTime() - input.creationAgeHours * 3600_000);
+  const paidAt = new Date(now.getTime() - input.paidAgeHours * 3600_000);
 
   await withTenant(input.shopId, async (trx) => {
     await trx('orders').insert({
@@ -77,7 +79,8 @@ async function seedOrder(input: {
       total_price: '100.00',
       subtotal_price: '100.00',
       total_tax: '0.00',
-      order_created_at: now,
+      order_created_at: orderCreatedAt,
+      paid_at: paidAt,
       order_updated_at: now,
       created_at: now,
       updated_at: now,
@@ -204,12 +207,15 @@ describe('SLA-SEM-01 consumer wiring', () => {
       (item: { order_id: string }) => item.order_id === orderId
     );
 
+    expect(Number(row.age_since_creation_seconds)).toBeGreaterThanOrEqual(40 * 3600);
+    expect(Number(row.age_since_creation_seconds)).toBeLessThan(40 * 3600 + 10);
+    expect(Number(row.age_since_paid_seconds)).toBeGreaterThanOrEqual(21 * 3600);
+    expect(Number(row.age_since_paid_seconds)).toBeLessThan(21 * 3600 + 10);
     expect(row).toEqual(
       expect.objectContaining({
-        age_since_creation_seconds: 40 * 3600,
-        age_since_paid_seconds: 21 * 3600,
         fulfillment_sla_hours: 24,
         is_shipping_sla_breached: false,
+        sla_state: 'approaching',
       })
     );
   });

@@ -212,6 +212,12 @@ async function setOrderCreatedAt(shopId: number, orderId: string, at: Date): Pro
   );
 }
 
+async function setOrderPaidAt(shopId: number, orderId: string, at: Date): Promise<void> {
+  await withTenant(shopId, (trx) =>
+    trx('orders').where({ lasyncro_order_id: orderId }).update({ paid_at: at })
+  );
+}
+
 /** Runs the real constraint chain (engine → projection) for one order. */
 async function runConstraintChain(shopId: number, orderId: string): Promise<
   Array<{ type: string; isActive: boolean; blockType: unknown }>
@@ -325,6 +331,9 @@ describe('ORD-DECISION-01 — SLA breach is prioritisation, never a blocker or a
       await setOrderCreatedAt(shopId, calmId, new Date(Date.now() - 30 * 24 * 3600_000));
       await setOrderCreatedAt(shopId, breachedId, new Date());
 
+      // Align persisted evidence and canonical read-time SLA truth.
+      await setOrderPaidAt(shopId, breachedId, new Date(Date.now() - 96 * 3600_000));
+      await setOrderPaidAt(shopId, calmId, new Date(Date.now() - 1 * 3600_000));
       await setShippingSlaBreached(shopId, breachedId, true);
       await setShippingSlaBreached(shopId, calmId, false);
       expect(await latestBreachFlag(shopId, breachedId)).toBe(true);
