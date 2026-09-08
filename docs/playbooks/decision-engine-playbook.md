@@ -981,19 +981,18 @@ Priority item 3 (`INV-TREAT-01`) is **COMPLETED / LIVE VERIFIED** — see §11.8
 Priority item 4 (`SLA-TREAT-01`) is **COMPLETED / LIVE VERIFIED / CLOSED** — see §11.9.
 Priority item 5 (Outcome/value layer) is **IN PROGRESS**.
 
-Its foundation and the Address pilot (`OUTCOME-ATTR-01`) are **IMPLEMENTED /
-AUTOMATED VERIFIED** — see §11.10. The item as a whole is **not** closed.
+Its foundation and the Address pilot (`OUTCOME-ATTR-01`) are **COMPLETED /
+LIVE VERIFIED** — see §11.10. The item as a whole is **not** closed.
 
 Still outstanding before the broader Outcome/value layer is complete:
 
-1. live / production certification of the address pilot;
-2. `OUTCOME-INV-01` — inventory intervention attribution;
-3. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
+1. `OUTCOME-INV-01` — inventory intervention attribution;
+2. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
    defensible prevented-breach attribution;
-4. broader attributable value reporting, only where the evidence actually
+3. broader attributable value reporting, only where the evidence actually
    supports it.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (foundation + Address pilot IMPLEMENTED / AUTOMATED VERIFIED, not yet live certified).**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (OUTCOME-ATTR-01 foundation + Address pilot COMPLETED / LIVE VERIFIED; inventory, SLA and broader value attribution remain outstanding).**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1469,22 +1468,19 @@ treatment contract.
 
 Implemented 2026-09-08.
 
-**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE FLOW VERIFIED —
-CHRONOLOGY CORRECTION PENDING DEPLOY.**
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
 
-Verified to date:
+Verified:
 
 - foundation plus the Address pilot implemented;
 - automated verified;
 - production Address correction flow live verified (2026-09-08);
 - production intervention persistence verified against a real order;
-- chronology-integrity correction automated verified.
+- chronology-integrity correction automated verified;
+- strict chronology rule verified in the deployed production runtime.
 
-The strict chronology correction (§ *Ratified chronology rule* below) is **not
-yet deployed** at the time of this documentation update, so `OUTCOME-ATTR-01`
-is **not** fully production-certified.
-
-This closes the *foundation* plus the first Address pilot only. The broader
+This closes the `OUTCOME-ATTR-01` *foundation* plus the first Address pilot
+only. The broader
 Outcome/value roadmap item (§11.5 priority item 5) is **not** complete.
 
 #### Why this was required
@@ -1810,3 +1806,44 @@ a **1-second tolerance**, which would also have credited an intervention
 recorded *hundreds of milliseconds after* canonical resolution. That tolerance
 was rejected as too permissive and removed; see the ratified chronology rule
 above and `OUTCOME-ADDR-07`.
+
+#### Final production runtime certification
+
+Deployment carrying the strict chronology rule:
+
+| | |
+| --- | --- |
+| main commit containing the chronology correction | `303b907ac4ad69b4c63de5c28629a73b28081651` |
+| merged main / deployed head | `eb857ac1482846b86ab9b02caecdfe8902b7c909` |
+| Fly machine version | `v636` |
+| machine state | `started` |
+| health | 1/1 passing |
+
+A production runtime read was then executed **inside the deployed Fly
+application**, against intervention_id
+`f0cd24d5-06a6-40cc-8dcf-377bf7f5e102`.
+
+Expected and observed:
+
+| field | value |
+| --- | --- |
+| `constraintId` | `19f58830-bce5-5bcc-9430-89559f267c96` |
+| `correctionSource` | `manual` |
+| `outcome.status` | `verified_resolved` |
+| `outcome.constraintIsActive` | `false` |
+| `outcome.constraintResolvedAt` | `2026-09-08T16:24:38.318Z` |
+| `outcome.resolutionLatencyMs` | `0` |
+
+This proves the deployed production read model applies the strict
+JavaScript-millisecond chronology rule correctly to the real production
+sub-millisecond timestamp case (`-0.964 ms` raw, collapsing to `0 ms` at the
+read model's actual precision), **without** requiring the removed 1-second
+tolerance.
+
+The claim this certifies remains exactly the ratified one: **verified resolved
+after the recorded intervention.**
+
+**OUTCOME-ATTR-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
+
+The broader Outcome/value roadmap item (§11.5 priority item 5) remains **IN
+PROGRESS** — inventory, SLA and broader value attribution are still outstanding.
