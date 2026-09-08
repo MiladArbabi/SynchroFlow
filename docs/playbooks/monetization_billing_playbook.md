@@ -4626,9 +4626,53 @@ Permanent regression contracts:
 
 ### 37.7 Certification state
 
-`BILL-ENTITLEMENT-01` / `P0-B2` is **IMPLEMENTED / AUTOMATED VERIFIED**.
+`BILL-ENTITLEMENT-01` / `P0-B2` is **PRODUCTION CERTIFIED — 2026-09-08**.
 
-Production certification remains **pending** after commit, push, CI, and deploy.
+**Commit / push**
+
+- `50c83f718ee586dfab1a9b5c837f7e8f19057fbd` — `feat(billing): add subscription
+  transition provenance`
+- `LOCAL_SHA == REMOTE_SHA`, `PUSH_CONFIRMED`
+
+**CI / deploy**
+
+| Stage | Result |
+|---|---|
+| CI — UI modules | success |
+| CI / RLS Security Boundary | success |
+| Fly Deploy | success |
+| privileged migration step | success |
+| restricted runtime deployment | success |
+
+**Production evidence**
+
+- `GET https://synchroflow.fly.dev/health` → `200 {"status":"ok"}`
+- `knex_migrations`:
+  `20260908120000_0167_create_shop_subscription_transitions.js`, batch 41,
+  `migration_time 2026-09-08 11:11:21.412+00`
+- `migration_checksums` contains the same compiled migration
+- `shop_subscription_transitions` verified in production:
+
+| Protection | State |
+|---|---|
+| RLS enabled | true |
+| RLS forced | true |
+| tenant isolation policy | present |
+| no-update trigger | present |
+| no-delete trigger | present |
+| shop index | present |
+| shop + `occurred_at` index | present |
+| partial unique `(shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL` | present |
+
+- shop 1 commercial state unchanged by the deploy: `tier=scale`,
+  `status=active`, `billing_provider=stripe`, `billing_interval=monthly`
+- shop 1 `transition_count=0`
+
+**Zero transitions is the expected result.** P0-B2 introduces *forward*
+provenance only. It does not synthesize or backfill historical transition rows,
+so an existing shop whose commercial state has not moved since the deploy
+correctly has no ledger rows. The first row for any shop will be written by the
+next genuine authoritative change.
 
 **P0-B carry-forward.** Durable commercial-state transition provenance — listed
 as outstanding in §36's carry-forward — is delivered by this slice. The `P0-B`
