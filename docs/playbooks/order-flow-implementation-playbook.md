@@ -1453,6 +1453,184 @@ Production/live-browser certification of the persisted-priority state remains
 pending until this follow-up is committed, deployed, and verified against the
 clean reviewer tenant.
 
+### GH #1058 — Active fulfillment batch entity detail (2026-09-08)
+
+Production review showed that Fulfillment batch cards on Order Flow exposed
+status and aggregate progress but were read-only summaries. Managers could see
+that a batch existed but could not inspect which exact batch it was, who owned
+it, how far pick/pack work had progressed, or which orders belonged to it.
+
+The implementation deliberately remains read-only. Order Flow must not become a
+manager bypass for the scan-gated and ownership-gated warehouse lifecycle.
+
+#### Read-model decision
+
+No new backend endpoint was required.
+
+The modal composes two existing warehouse read surfaces:
+
+- `GET /api/v1/wms/batches`
+  - canonical batch identity and lifecycle status;
+  - aggregate `total_line_items`, `total_units`, `units_picked`,
+    `units_packed`;
+  - picker/packer ownership;
+  - release, claim, and completion timestamps.
+- `GET /api/v1/wms/batch/:batchId/orders`
+  - canonical batch membership;
+  - external order identity;
+  - warehouse status when present;
+  - order value/currency;
+  - member-order line context.
+
+`GET /api/v1/wms/batch/:batchId/line-items` is intentionally not used for
+entity detail because it is an execution queue: scanned/resolved work
+disappears from that response and therefore it is not a complete batch-history
+read model.
+
+Problem Center pick exceptions are also intentionally excluded from this slice.
+That read surface is protected by the separate
+`warehouse.problem_center` capability, while ordinary batch inspection is a
+`warehouse.operations` + `wms:read` concern. Batch detail must not accidentally
+require a stronger entitlement merely to inspect fulfillment work.
+
+#### Permanent interaction contract
+
+Fulfillment batch cards are now inspectable entities:
+
+- click opens the exact `pick_batch_id`;
+- cards expose `role="button"` and `tabIndex={0}`;
+- `Enter` and `Space` open the same batch as mouse activation;
+- the displayed short batch ID remains presentation-only — selection state
+  stores the full canonical UUID;
+- pending-batch cancel remains a separate explicit control and stops event
+  propagation;
+- opening the inline cancel confirmation does not open Batch Detail.
+
+The shared `EntityDetailModal` shell is reused. Batch Detail shows:
+
+- current batch status and release trigger;
+- picking progress: `units_picked / total_units`;
+- packing progress: `units_packed / total_units`;
+- picker and packer ownership;
+- Released / Pick claimed / Pick completed / Pack claimed / Pack completed
+  timestamps;
+- member-order count, batch line/unit totals, order number, order warehouse
+  status when present, line/unit count, and order value.
+
+Missing lifecycle timestamps are rendered as `—`; the UI does not infer
+timestamps that the backend did not record.
+
+The modal contains no claim, pick-complete, pack-claim, pack-complete, ship, or
+cancel action. Those lifecycle mutations remain on their existing
+operator/scan-gated surfaces.
+
+Member orders reuse the existing Order Detail experience without nesting
+modals:
+
+1. Batch Detail clears `selectedBatchId`;
+2. the clicked order's canonical `lasyncro_order_id` becomes
+   `selectedOrderId`;
+3. the existing Order Detail `EntityDetailModal` opens.
+
+There is therefore never a Batch Detail modal containing another entity modal.
+
+#### Implementation delta
+
+- `apps/frontend/src/pages/ft2-pages/OrderFlowPage.tsx`
+  - added canonical `selectedBatchId` state;
+  - resolves the selected batch from the existing `usePickBatches()` result;
+  - makes Fulfillment cards mouse/keyboard inspectable;
+  - isolates pending cancel from card inspection;
+  - mounts the shared Batch Detail `EntityDetailModal`;
+  - transitions member-order inspection from Batch Detail to Order Detail.
+- `apps/frontend/src/pages/ft2-pages/BatchDetailModalBody.tsx`
+  - new read-only entity body for progress, ownership, lifecycle, and member
+    orders.
+- `apps/frontend/src/pages/wms/usePickBatches.ts`
+  - added typed `usePickBatchOrders(batchId)` over the existing
+    `/wms/batch/:batchId/orders` endpoint.
+- `tests/unit/ui/orders/OrderDetailModal.redesign-1053.test.tsx`
+  - updated the GH #1053 structural contract to scope its close-callback check
+    to the `EntityDetailModal` that owns `OrderDetailModalBody`; Order Flow now
+    legitimately hosts more than one entity-modal shell.
+
+#### Regression protection
+
+New GH #1058 contracts:
+
+- `tests/unit/ui/orders/OrderFlowPage.batch-detail-1058.test.ts`
+  - exact batch opening;
+  - mouse activation;
+  - Enter / Space keyboard activation;
+  - pending-cancel propagation isolation;
+  - Batch Detail shell wiring;
+  - member-order transition to the existing Order Detail shell.
+- `tests/unit/ui/orders/BatchDetailModalBody.1058.test.tsx`
+  - aggregate pick/pack progress;
+  - picker/packer ownership;
+  - lifecycle labels;
+  - canonical member-order rendering;
+  - member-order navigation callback.
+
+RED evidence was captured before each material implementation step:
+
+- batch-card contract failed because the existing card had no `role="button"`;
+- body contract failed because `BatchDetailModalBody` did not yet exist;
+- parent-wiring contract failed because Batch Detail was not yet imported or
+  mounted;
+- lifecycle contract failed because the `Released` timestamp surface did not
+  yet exist.
+
+Final bounded automated verification:
+
+- **5 frontend suites / 28 tests passed**;
+- adjacent GH #1053 and GH #1057 Order Detail / Order Flow contracts passed;
+- frontend TypeScript baseline comparison:
+  **main 19 errors / GH #1058 worktree 19 errors / delta 0**;
+- **0 TypeScript errors in GH #1058 touched source files**;
+- `git diff --check`: clean;
+- no build was run.
+
+#### Live-browser certification
+
+Local browser verification used the isolated GH #1058 worktree frontend on
+`127.0.0.1:5174` against the existing local backend on port `3000`.
+
+Verified:
+
+- pending card inspection;
+- pending cancel confirmation does not open Batch Detail;
+- keyboard `Enter` and `Space`;
+- member order replaces Batch Detail with Order Detail, without nesting;
+- picking state;
+- picked / `pick_complete` state;
+- packing state;
+- no lifecycle mutation actions inside Batch Detail.
+
+The normal local fixture only contained `pending` and `cancelled` batches, so a
+bounded verification fixture was created for stage coverage using only
+`pick_batches` and `pick_batch_orders`:
+
+- picking → order `#900012`, `1 / 2` picked, `0 / 2` packed;
+- pick_complete → order `#900013`, `1 / 1` picked, `0 / 1` packed;
+- packing → order `#900014`, `2 / 2` picked, `1 / 2` packed.
+
+The three verification batches deliberately shared the displayed prefix
+`10580000` while retaining distinct full UUIDs. Opening each status returned
+the correct member order and progress, proving selection uses the full
+`pick_batch_id`, not the shortened display value.
+
+The fixture intentionally did not fabricate order warehouse projections,
+inventory, or scan history. After verification, cleanup was guarded and
+executed:
+
+- before cleanup: **3 batches / 3 memberships**;
+- deleted: **3 `pick_batch_orders` / 3 `pick_batches`**;
+- after cleanup: **0 batches / 0 memberships**.
+
+Production certification remains pending commit, deployment, and verification
+of the shipped GH #1058 frontend.
+
 ### GH #1059 — Batch cancellation restores canonical Order Pool warehouse state (2026-09-08)
 
 Production certification of GH #1057 exposed a warehouse-state integrity defect in the unclaimed-batch cancellation path.
