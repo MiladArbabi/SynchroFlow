@@ -7,7 +7,6 @@ import {
   getSpecterConfig,
   upsertSpecterConfig,
 } from './specter.controller.js';
-import { httpGetSpecterFt2 } from './specter.ft2.controller.js';
 
 const router = Router();
 
@@ -18,7 +17,10 @@ router.get('/state', authenticateToken, requireTier('growth'), getSpecterState);
 router.get('/config', authenticateToken, requireTier('growth'), getSpecterConfig);
 router.put('/config', authenticateToken, requireTier('growth'), upsertSpecterConfig);
 
-// ft2 internal probe — no tier gate (system use only)
-router.get('/ft2', httpGetSpecterFt2);
+// SEC-SPECTER-FT2-UNAUTH-01: `GET /ft2` is RETIRED, not gated.
+// It was mounted with no authenticateToken and resolved the tenant from the
+// client-supplied `x-test-shop-id` header, so any unauthenticated caller could
+// select an arbitrary shop and read its Specter FT2 exposure. The endpoint is
+// removed outright — do not reintroduce it, behind a gate or under another path.
 
 export default router;
