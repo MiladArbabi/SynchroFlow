@@ -1368,8 +1368,8 @@ The interaction contract is now:
 - Opening or closing Order Detail preserves any existing checkbox selection.
 - Healthy, unreleased pool orders expose the existing Order Detail footer:
   `Prioritize` + `Go to order flow`.
-- No new modal, hook, backend endpoint, data type, or Order Detail behavior was
-  introduced.
+- In the original row-inspection slice, no new modal, hook, backend endpoint,
+  data type, or Order Detail behavior was introduced.
 
 Implementation delta:
 
@@ -1389,6 +1389,69 @@ Regression protection:
 - Live browser verification on `/orders/flow` confirmed row inspection,
   healthy-order footer actions, checkbox isolation, selection persistence,
   and priority-flag isolation.
+
+#### Persisted priority hydration follow-up (2026-09-08)
+
+After GH #1059 and GH #1060 cleared the production-state blockers, GH #1057
+certification exposed one remaining Order Detail inconsistency: an order already
+prioritized in `order_fulfillment_status.is_priority_flagged` could open the
+healthy-order modal showing `Prioritize` instead of `Prioritized ✓`.
+
+Root cause:
+
+- `OrderDetailModalBody` initialized its local `prioritized` state to `false`;
+- `GET /api/v1/orders/:id` already read `order_fulfillment_status` but did not
+  select `is_priority_flagged`;
+- the frontend `OrderFulfillment` DTO therefore had no persisted priority field
+  from which to hydrate the modal.
+
+Permanent contract:
+
+- `order_fulfillment_status.is_priority_flagged` remains canonical priority
+  truth;
+- the existing Order Detail read path returns that field inside its existing
+  `fulfillment` object — no new endpoint or parallel priority source;
+- `OrderFulfillment.is_priority_flagged` carries the persisted boolean to the
+  frontend;
+- `OrderDetailModalBody` synchronizes local optimistic state from the persisted
+  boolean and `orderId`, preventing priority state from leaking between orders;
+- persisted `true` opens as disabled `Prioritized ✓` without invoking a
+  mutation;
+- persisted `false` opens as `Prioritize`;
+- the existing successful mutation path remains unchanged:
+  `onPriorityFlag([orderId], true)` followed by local `setPrioritized(true)`.
+
+Implementation delta:
+
+- `apps/backend/src/api/orders/orders.service.ts`
+  - added `is_priority_flagged` to the existing
+    `order_fulfillment_status` select in `getOrderDetailsById()`;
+- `apps/frontend/src/pages/orders/useOrderDetail.ts`
+  - added `is_priority_flagged: boolean` to `OrderFulfillment`;
+- `apps/frontend/src/pages/orders/OrderDetailModalBody.tsx`
+  - hydrates local `prioritized` state from
+    `order.fulfillment.is_priority_flagged`;
+- `tests/unit/ui/orders/OrderDetailModalBody.priority-hydration-1057.test.tsx`
+  - protects persisted-true hydration and the existing optimistic false→true
+    mutation path.
+
+Regression evidence:
+
+- RED: exact GH #1057 priority suite ran 1 suite / 2 tests:
+  persisted-priority hydration failed while the existing optimistic mutation
+  test passed;
+- GREEN: exact GH #1057 priority suite passed 1 suite / 2 tests;
+- bounded Order Flow + Order Detail regression set passed
+  **6 suites / 53 tests**;
+- backend TypeScript: **0 errors**;
+- frontend TypeScript: **19 pre-existing baseline errors, 0 errors in GH #1057
+  touched production files**;
+- `git diff --check`: clean;
+- no build was run.
+
+Production/live-browser certification of the persisted-priority state remains
+pending until this follow-up is committed, deployed, and verified against the
+clean reviewer tenant.
 
 ### GH #1059 — Batch cancellation restores canonical Order Pool warehouse state (2026-09-08)
 

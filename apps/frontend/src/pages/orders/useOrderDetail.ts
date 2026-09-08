@@ -24,6 +24,7 @@ export interface OrderFulfillment {
   operational_block_type: string | null;
   fulfilled_at: string | null;
   status_updated_at: string;
+  is_priority_flagged: boolean;
 }
 
 export interface OrderTimelineEvent {

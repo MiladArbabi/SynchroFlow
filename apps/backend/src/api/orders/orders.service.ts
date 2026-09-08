@@ -235,6 +235,7 @@ export const getOrderDetailsById = async (
         'operational_block_type',
         'fulfilled_at',
         'status_updated_at',
+        'is_priority_flagged',
       )
       .first();
 
