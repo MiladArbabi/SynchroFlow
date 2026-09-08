@@ -17,7 +17,7 @@ are not marked CLOSED until production checks pass.
 
 ## SEC-SPECTER-FT2-UNAUTH-01 — retired unauthenticated tenant-selectable Specter FT2 endpoint
 
-**Status:** IMPLEMENTED + LOCALLY VERIFIED — **NOT YET PRODUCTION CERTIFIED**
+**Status:** **CLOSED / PRODUCTION CERTIFIED**
 
 Discovered during the DEPRECATED-FEATURE-RETIREMENT-01 audit and split out as a
 separate security issue, so it could be triaged on security timelines rather
@@ -162,26 +162,31 @@ none of which those suites exercise.
 Do **not** repair those suites under `SEC-SPECTER-FT2-UNAUTH-01`. They belong to
 `DEPRECATED-FEATURE-RETIREMENT-01` / existing Specter test debt.
 
-### Production certification required after deploy
+### Production certification — PASSED
 
-Verify against production:
+Implementation commit:
 
-```
-GET https://synchroflow.fly.dev/api/v1/specter/ft2
-```
+`35ac53a02f1d378c32dc5cdf1d0e0cb3685ba758`
 
-must return **404**:
+Production deployment:
 
-- without credentials
-- with `x-test-shop-id: 1`
-- with `x-test-shop-id: 999999`
+- Fly version: **638**
+- health: **HTTP 200**
+- machine checks: **1/1 passing**
 
-Also verify:
+Production behavior verified after Fly v638 completed deployment:
 
-```
-GET https://synchroflow.fly.dev/api/v1/specter/state
-```
+- `GET /api/v1/specter/ft2` without credentials → **404**
+- `GET /api/v1/specter/ft2` with `x-test-shop-id: 1` → **404**
+- `GET /api/v1/specter/ft2` with `x-test-shop-id: 999999` → **404**
+- `GET /api/v1/specter/state` without credentials → **401**
 
-remains protected — **401** unauthenticated.
+The unauthenticated tenant-selectable Specter FT2 endpoint is absent in
+production, including when the former client-controlled tenant header is
+supplied, while the surviving Specter state route remains authentication
+protected.
 
-**Do not mark CLOSED / PRODUCTION CERTIFIED until those checks pass.**
+The first production certification attempt occurred before the new Fly
+deployment completed and still observed the previous vulnerable behavior.
+Certification was repeated after Fly v638 was live and healthy; the results
+above are the authoritative production result.
