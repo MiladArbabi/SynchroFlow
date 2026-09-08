@@ -2,6 +2,7 @@
 
 import { getQueueChannel } from './queue.js';
 import { projectDomainEventFromMessage } from './projection/projection.engine.js';
+import { startProjectionWorkerSupervisor } from './workers/projectionWorkerSupervisor.js';
 
 /**
  * WORKER TRANSPORT ADAPTER
@@ -84,13 +85,9 @@ export function startWorker() {
    * ---------------------------------------------
    * Runs in parallel with queue worker during migration phase.
    */
-  import('./workers/projection.db.worker.js')
-    .then(({ startDbProjectionWorker }) => {
-      startDbProjectionWorker();
-    })
-    .catch((err) => {
-      console.error('[worker] Failed to start DB projection worker', err);
-    });
+  void startProjectionWorkerSupervisor().catch((err) => {
+    console.error('[worker] Projection worker supervisor stopped unexpectedly', err);
+  });
 
   const channel = getEventChannel();
 
