@@ -679,6 +679,15 @@ export async function startDbProjectionWorker() {
       console.error('[projection-db-worker][FATAL]', err);
 
       /**
+       * GH-1052 — RESTARTABLE FATAL STATE
+       * ----------------------------------
+       * The supervisor owns this rejection and will restart the worker.
+       * Clear the local running latch first; otherwise the retry immediately
+       * returns through `if (running) return` and projection remains dead.
+       */
+      running = false;
+
+      /**
        * FAIL FAST (CRITICAL)
        * --------------------
        * Projection errors must NEVER be swallowed.
