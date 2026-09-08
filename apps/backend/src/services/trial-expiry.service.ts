@@ -25,6 +25,7 @@ import { EntitlementRevocationService } from './entitlement-revocation.service.j
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { sendTrialExpiryEmail, sendTrialReminderEmail } from './email/email.service.js';
 import { captureEvent } from '../utils/analytics.js';
+import { transitionShopSubscription } from './billing/subscriptionTransition.service.js';
 
 /**
  * Downgrade a single shop from Growth trial to Starter.
@@ -40,18 +41,38 @@ async function downgradeTrialShop(shopId: number): Promise<void> {
   const flagsToRevoke = [...growthConfig.flags];
 
   await withTenant(shopId, async (trx) => {
-    // 1. Downgrade subscription record
-    const updated = await trx('shop_subscriptions')
-      .where({ shop_id: shopId, status: 'trialing' })
-      .update({
-        tier: 'starter',
-        status: 'active',
-        trial_ends_at: null,
-        updated_at: new Date(),
-      });
+    // 1. Downgrade subscription record — BILL-ENTITLEMENT-01
+    //
+    // tier + status are entitlement-authoritative and route through the
+    // canonical transition service. starter + 'active' semantics are preserved
+    // verbatim (this path deliberately differs from the Stripe/Shopify cancel
+    // paths, which record 'canceled'); trial_ends_at stays an accompanying
+    // non-authoritative field.
+    //
+    // The old statement carried its own `status: 'trialing'` guard in the
+    // WHERE clause and exited when it matched nothing. That guard is now an
+    // explicit read: only a shop still on 'trialing' is downgraded, which
+    // keeps the re-run no-op AND prevents the service from treating a missing
+    // subscription row as a creation.
+    const currentSubscription = await trx('shop_subscriptions')
+      .where({ shop_id: shopId })
+      .first('status');
 
-    // Already downgraded — idempotent exit
-    if (updated === 0) return;
+    // Already downgraded (or no subscription row) — idempotent exit
+    if (currentSubscription?.status !== 'trialing') return;
+
+    await transitionShopSubscription(
+      {
+        shopId,
+        to: { tier: 'starter', status: 'active' },
+        fields: { trial_ends_at: null },
+        source: 'trial_expiry_worker',
+        reason: 'trial_expired',
+        actorType: 'worker',
+        actorId: 'trial-expiry',
+      },
+      trx
+    );
 
     // 2. Revoke Growth-only entitlements
     if (modulesToRevoke.length > 0 || flagsToRevoke.length > 0) {

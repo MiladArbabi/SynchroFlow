@@ -14,6 +14,7 @@ import { WebhookEnvelope } from '../../webhooks/types.js';
 import { captureEvent } from '../../../utils/analytics.js';
 import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
+import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
 export async function handleSubscriptionDeleted(
   envelope: WebhookEnvelope,
   trx: Knex.Transaction
@@ -39,19 +40,34 @@ export async function handleSubscriptionDeleted(
   // SHB-14: hard delete is unambiguously terminal — force starter here too,
   // since this handler previously left tier untouched entirely, relying on
   // handleSubscriptionUpsert to have already caught it (it hadn't).
-  const updated = await trx('shop_subscriptions')
-    .where({ shop_id: shopId })
-    .update({
-      tier: 'starter',
-      status: 'canceled',
-      canceled_at: canceledAt,
-      updated_at: new Date(),
-    });
-  if (updated === 0) {
+  // BILL-ENTITLEMENT-01: tier + status are entitlement-authoritative, so this
+  // terminal downgrade goes through the canonical transition service.
+  // canceled_at is an accompanying non-authoritative field, written in the
+  // same statement exactly as before.
+  //
+  // The old "no subscription row" guard was `updated === 0`; it is now the
+  // absence of priorRow, which is the same condition read one statement
+  // earlier. A cancellation must never CREATE a subscription row.
+  if (!priorRow) {
     // Non-fatal: shop may not have a subscription row if never activated
     console.warn('[billing][subscription_deleted] no subscription row found for shop', { shopId, eventId: envelope.eventId });
     return;
   }
+
+  await transitionShopSubscription(
+    {
+      shopId,
+      to: { tier: 'starter', status: 'canceled' },
+      fields: { canceled_at: canceledAt },
+      source: 'stripe_webhook',
+      reason: 'customer.subscription.deleted',
+      actorType: 'stripe',
+      externalEventId: envelope.eventId,
+      idempotencyKey: envelope.eventId,
+      occurredAt: envelope.receivedAt,
+    },
+    trx
+  );
 
   // SHB-14b: revoke whatever the prior paid tier granted that starter does
   // not. No re-seed call needed — starter modules were already granted

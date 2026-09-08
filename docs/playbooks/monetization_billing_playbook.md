@@ -4461,3 +4461,180 @@ Provider mapping, all remaining `shop_subscriptions` writers, transition
 ordering/idempotency, reconciliation, JWT/current-state freshness, and durable
 commercial-state transition provenance remain part of P0-B Commercial State
 Integrity.
+
+---
+
+## 37. Commercial Subscription Transition Provenance — `BILL-ENTITLEMENT-01` / `P0-B2` (implemented + automated verified 2026-09-08)
+
+### 37.1 Audit finding
+
+Production shop 1 carried a definite entitlement transition with no durable
+commercial provenance behind it:
+
+- `trial:growth` created **2026-06-18 12:02:38 UTC**
+- `manual:scale_upgrade` created **2026-06-18 12:36:02.082426 UTC**
+- the relevant Growth grants were closed at that same **12:36** timestamp
+
+The existing audit and event stores could not identify the actor or reason for
+that change, and could not prove the matching `shop_subscriptions.tier`
+transition at all. The grant records showed that entitlements moved; nothing
+recorded that commercial state moved, who moved it, or why.
+
+**This slice does not attribute the historical transition to the retired
+Shopify billing callback (§36 / `BILL-CALLBACK-AUTH-01`).** No evidence
+establishes that path as the cause. The finding here is narrower and provable:
+durable commercial-state provenance was missing.
+
+### 37.2 Architecture
+
+Canonical ledger table:
+
+| Table | Migration |
+|---|---|
+| `shop_subscription_transitions` | 0167 |
+
+Canonical service:
+
+| File | Export |
+|---|---|
+| `apps/backend/src/services/billing/subscriptionTransition.service.ts` | `transitionShopSubscription` |
+
+Entitlement-authoritative dimensions:
+
+- `tier`
+- `status`
+- `billing_provider`
+
+**Rule:** no active runtime writer may directly mutate those three
+`shop_subscriptions` fields outside the canonical service. Enforced by
+`tests/contract/commercial-subscription-writer-boundary.contract.test.ts`, an
+AST scan of `apps/backend/src` and `packages/backend-core/src` that classifies
+each fluent `shop_subscriptions` chain as read vs write and reads the exact
+mutated column set, including `onConflict().merge([...])` lists.
+
+Explicit non-transition exceptions, outside this boundary by design:
+
+- `allow_overage` preference (`billing.controller.ts :: updateOveragePreference`)
+- the `stripe_customer_id`-only checkout-setup write
+  (`handleCheckoutSetupComplete.ts`)
+- `scripts/seed_reviewer.ts` — non-runtime operator script
+- the legacy unmounted Shopify callback — retired in §36, protected there
+- all read-only `shop_subscriptions` references
+
+### 37.3 Ledger semantics
+
+Each row records:
+
+| Field | Notes |
+|---|---|
+| `from_tier` / `to_tier` | full before/after |
+| `from_status` / `to_status` | full before/after |
+| `from_billing_provider` / `to_billing_provider` | full before/after |
+| `source` | writer/subsystem — NOT NULL |
+| `reason` | why the transition happened — NOT NULL |
+| `actor_type` | `system\|stripe\|shopify\|user\|worker` — NOT NULL |
+| `actor_id` | optional |
+| `external_event_id` | optional provider event identity |
+| `idempotency_key` | optional; unique per shop when non-null |
+| `metadata` | jsonb, diagnostic context only — never an entitlement input |
+| `occurred_at` / `created_at` | timestamptz |
+
+Properties:
+
+- **append-only** — `BEFORE UPDATE` / `BEFORE DELETE` triggers raise
+  `[IMMUTABILITY_VIOLATION]` for every role, with no session-setting escape
+  hatch; `INSERT` remains permitted
+- **RLS tenant isolated** — `ENABLE` + `FORCE ROW LEVEL SECURITY` with the
+  standard `app.current_tenant` policy (`USING` + `WITH CHECK`)
+- **same-transaction state + history** — the subscription mutation and the
+  ledger insert share the caller's transaction; if either fails, neither
+  survives
+- **per-shop serialization** — `pg_advisory_xact_lock(91002, shopId)` taken
+  before reading current state. A row lock on `shop_subscriptions` is
+  insufficient because the creation path has no row to lock
+- **idempotency scoped by shop** — partial unique index on
+  `(shop_id, idempotency_key) WHERE idempotency_key IS NOT NULL`; the advisory
+  lock makes the pre-check race-free rather than best-effort
+- **no ledger row for an authoritative no-op** — non-authoritative fields may
+  still be written without manufacturing a transition
+- **creation uses NULL `from_*` values** and establishes the requested state
+
+### 37.4 Writers migrated
+
+All nine active entitlement-authoritative writers now route through the service:
+
+| # | Writer | Source / reason |
+|---|---|---|
+| 1 | auth registration (`registerUser`) | `auth_registration` / `signup_growth_trial_grant` |
+| 2 | Shopify App Store install (`handleShopifyInstall`) | `shopify_app_store_install` / `app_store_install_trial_grant` |
+| 3 | Shopify OAuth provider stamp (`handleOAuthCallback`) | `shopify_oauth_callback` / `billing_provider_stamp:<installSource>` |
+| 4 | Stripe subscription upsert | `stripe_webhook` / provider `eventType` |
+| 5 | Stripe subscription deleted | `stripe_webhook` / `customer.subscription.deleted` |
+| 6 | Stripe payment failed | `stripe_webhook` / `invoice.payment_failed` |
+| 7 | Shopify billing reconciliation (`applyShopifyBillingState`) | `shopify_billing_reconciliation` / `shopify_billing_state_applied` |
+| 8 | Shopify forced Starter downgrade | `shopify_force_downgrade` / caller-supplied cause |
+| 9 | Trial expiry downgrade | `trial_expiry_worker` / `trial_expired` |
+
+Stripe webhook writers pass the provider event id as both `external_event_id`
+and `idempotency_key`. Reconciliation deliberately passes neither — its
+signature carries no provider event id, and a fixed key would block the sweep
+from recording genuine later changes.
+
+### 37.5 Preserved behavior
+
+- **Stripe provider insert-vs-merge asymmetry preserved.** The old upsert set
+  `billing_provider='stripe'` on INSERT but excluded it from the merge list, so
+  a Stripe webhook could never overwrite a `shopify` stamp. Expressed now by
+  passing `billingProvider` only when there is no prior row.
+- **Stripe and Shopify cancellation remain `canceled`.**
+- **Trial expiry remains `starter` + `active`.** The ledger records these
+  divergent downgrade statuses verbatim and does not normalize them.
+- Entitlement grant/revoke behavior remains owned by the existing
+  `EntitlementsService` / `EntitlementRevocationService`.
+- Guards that previously depended on an UPDATE affecting zero rows
+  (payment-failed, subscription-deleted, OAuth stamp, trial expiry) were
+  reconstructed explicitly so a missing subscription row is never silently
+  turned into a creation.
+- No behavior redesign in this slice.
+
+### 37.6 Verification evidence
+
+RED first:
+
+- DB regression: 3 / 3 suites failed, 34 / 34 tests failed — ledger schema and
+  canonical service both absent (two independent RED causes)
+- architecture contract: 2 failed / 8 passed — 9 direct authoritative writers
+  still present, canonical service file absent
+
+GREEN after implementation:
+
+- DB regression: 3 / 3 suites passed, 34 / 34 tests passed
+- architecture contract: 1 / 1 suite passed, 10 / 10 tests passed
+- backend TypeScript: 0 total errors, 0 target errors
+- migration 0167 applied and dropped cleanly in a disposable PostgreSQL database
+  (`TEST_DB_CREATED` → `MIGRATED` → `RUNTIME_OK` → `DROPPED`)
+- RLS check passed and RLS release gate passed
+  (`sf_app` `rolsuper=false`, `rolbypassrls=false`)
+- `git diff --check`: exit 0
+
+Permanent regression contracts:
+
+- `tests/integration/billing/shop-subscription-transition-ledger.test.ts`
+- `tests/integration/billing/shop-subscription-transition-concurrency.test.ts`
+- `tests/integration/billing/shop-subscription-transition-ledger.migration.test.ts`
+- `tests/contract/commercial-subscription-writer-boundary.contract.test.ts`
+
+### 37.7 Certification state
+
+`BILL-ENTITLEMENT-01` / `P0-B2` is **IMPLEMENTED / AUTOMATED VERIFIED**.
+
+Production certification remains **pending** after commit, push, CI, and deploy.
+
+**P0-B carry-forward.** Durable commercial-state transition provenance — listed
+as outstanding in §36's carry-forward — is delivered by this slice. The `P0-B`
+Commercial State Integrity parent remains **OPEN**: provider SKU/price mapping,
+provider/reconciliation review, webhook ordering and idempotency review, and
+JWT / current-state freshness are separate slices and are not addressed here.
+This slice also does not retroactively explain the June 2026 reviewer-shop
+Growth → Scale transition; it makes any future equivalent transition
+attributable.

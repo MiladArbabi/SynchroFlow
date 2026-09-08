@@ -16,6 +16,7 @@
 import type { Knex } from 'knex';
 import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementRevocationService } from '../entitlement-revocation.service.js';
+import { transitionShopSubscription } from '../billing/subscriptionTransition.service.js';
 
 export async function forceDowngradeShopToStarter(
   shopId: number,
@@ -32,13 +33,25 @@ export async function forceDowngradeShopToStarter(
     return; // already starter or no subscription row — nothing to do
   }
 
-  await trx('shop_subscriptions')
-    .where({ shop_id: shopId })
-    .update({
-      tier: 'starter',
-      status: 'canceled',
-      updated_at: new Date(),
-    });
+  // BILL-ENTITLEMENT-01: tier + status are entitlement-authoritative.
+  // The starter + canceled semantics are preserved verbatim — this path
+  // deliberately records 'canceled' where trial expiry records 'active',
+  // and the ledger does not normalize that difference.
+  //
+  // The existing early return above already guarantees a subscription row
+  // exists, so this can never become an unintended creation. `reason` is the
+  // caller-supplied cause ('app_uninstalled_no_grace_remaining' or
+  // 'shopify_grace_period_expired') and is recorded as-is.
+  await transitionShopSubscription(
+    {
+      shopId,
+      to: { tier: 'starter', status: 'canceled' },
+      source: 'shopify_force_downgrade',
+      reason,
+      actorType: 'system',
+    },
+    trx
+  );
 
   const starterConfig = getTierConfig('starter');
   const priorTierConfig = getTierConfig(priorTier);

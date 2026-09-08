@@ -26,6 +26,7 @@ import { getTierConfig, isValidTier, TIER_ORDER, Tier } from '@lasyncro/backend-
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
+import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
 
 // AUD-C16: known extra-seat add-on Price IDs, used to separate seat
 // line items from the base tier line item on a subscription. Read
@@ -118,37 +119,45 @@ export async function handleSubscriptionUpsert(
     .first('tier');
   const priorTier = priorRow?.tier as Tier | undefined;
 
-  // 1. Upsert subscription record
-  await trx('shop_subscriptions')
-    .insert({
-      shop_id: shopId,
-      tier,
-      billing_interval: billingInterval,
-      billing_provider: 'stripe',
-      stripe_customer_id: stripeCustomerId,
-      stripe_subscription_id: stripeSubscriptionId,
-      status,
-      extra_seats: extraSeats,
-      trial_ends_at: trialEnd,
-      current_period_start: currentPeriodStart,
-      current_period_end: currentPeriodEnd,
-      updated_at: new Date(),
-    })
-    .onConflict('shop_id')
-    .merge([
-      'tier',
-      'billing_interval',
-      'stripe_customer_id',
-      'stripe_subscription_id',
-      'status',
-      'extra_seats',
-      'trial_ends_at',
-      'current_period_start',
-      'current_period_end',
-      'updated_at',
-      // billing_provider intentionally excluded — Stripe webhook must never
-      // overwrite a 'shopify' provider stamp set at App Store install.
-    ]);
+  // 1. Upsert subscription record — BILL-ENTITLEMENT-01
+  //
+  // tier + status are entitlement-authoritative and now route through the
+  // canonical transition service. The remaining columns are accompanying
+  // non-authoritative fields and are written unchanged in the same statement.
+  //
+  // The billing_provider asymmetry is PRESERVED EXACTLY. The old upsert put
+  // billing_provider='stripe' in the INSERT payload but deliberately left it
+  // out of the merge list, so a Stripe webhook could establish the stamp on a
+  // brand-new row but never overwrite a 'shopify' stamp set at App Store
+  // install. Here that is expressed by passing billingProvider ONLY when there
+  // is no prior row: an omitted `to` key means "leave this dimension
+  // unchanged", which is precisely what excluding it from the merge did.
+  await transitionShopSubscription(
+    {
+      shopId,
+      to: {
+        tier,
+        status,
+        ...(priorRow ? {} : { billingProvider: 'stripe' }),
+      },
+      fields: {
+        billing_interval: billingInterval,
+        stripe_customer_id: stripeCustomerId,
+        stripe_subscription_id: stripeSubscriptionId,
+        extra_seats: extraSeats,
+        trial_ends_at: trialEnd,
+        current_period_start: currentPeriodStart,
+        current_period_end: currentPeriodEnd,
+      },
+      source: 'stripe_webhook',
+      reason: envelope.eventType,
+      actorType: 'stripe',
+      externalEventId: envelope.eventId,
+      idempotencyKey: envelope.eventId,
+      occurredAt: envelope.receivedAt,
+    },
+    trx
+  );
 
   // 2. Re-seed entitlements from tier constants
   // Additive only — EntitlementsService never revokes

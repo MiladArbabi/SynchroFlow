@@ -19,6 +19,7 @@ import { getTierConfig, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../entitlement-revocation.service.js';
 import { fetchShopifyBillingState, ShopifyBillingState } from './shopifyBillingReconciliation.service.js';
+import { transitionShopSubscription } from '../billing/subscriptionTransition.service.js';
 
 export async function applyShopifyBillingState(
   shopId: number,
@@ -35,23 +36,30 @@ export async function applyShopifyBillingState(
   const priorTier = priorRow?.tier as Tier | undefined;
 
   // 1. Upsert subscription record — billing_provider explicitly stamped (SHB-02)
-  await trx('shop_subscriptions')
-    .insert({
-      shop_id: shopId,
-      tier,
-      billing_provider: 'shopify',
-      status: billingState.status,
-      current_period_end: billingState.currentPeriodEnd,
-      updated_at: new Date(),
-    })
-    .onConflict('shop_id')
-    .merge([
-      'tier',
-      'billing_provider',
-      'status',
-      'current_period_end',
-      'updated_at',
-    ]);
+  //
+  // BILL-ENTITLEMENT-01: tier, status and billing_provider are all
+  // entitlement-authoritative and now route through the canonical transition
+  // service. Unlike the Stripe handler, billing_provider WAS in this upsert's
+  // merge list and is therefore always asserted here — a shop reconciled
+  // against Shopify's live billing state is, by definition, Shopify-billed.
+  // current_period_end remains an accompanying non-authoritative field.
+  //
+  // No externalEventId/idempotencyKey: this function is called both by the
+  // app_subscription_update webhook and by the periodic reconciliation sweep,
+  // and its own signature carries no provider event id. The sweep must stay
+  // free to record every genuine state change it observes, so no key is
+  // invented here.
+  await transitionShopSubscription(
+    {
+      shopId,
+      to: { tier, status: billingState.status, billingProvider: 'shopify' },
+      fields: { current_period_end: billingState.currentPeriodEnd },
+      source: 'shopify_billing_reconciliation',
+      reason: 'shopify_billing_state_applied',
+      actorType: 'shopify',
+    },
+    trx
+  );
 
   // 2. Re-seed entitlements from tier constants (additive only)
   const moduleRows = tierConfig.modules.map((moduleKey) => ({

@@ -36,6 +36,7 @@ import { audit } from '../../utils/audit.js';
 import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
+import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
 import {
   SHOPIFY_REQUIRED_SCOPE_STRING,
   normalizeAndValidateShopifyGrantedScopes,
@@ -721,11 +722,32 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       oauthContext.installSource === 'app_store' ||
       oauthContext.installSource === 'reconnect'
     ) {
-      await withTenant(result.shopId, (trx) =>
-        trx('shop_subscriptions')
+      // BILL-ENTITLEMENT-01: billing_provider is entitlement-authoritative
+      // (it decides whether a merchant is billed through Stripe or Shopify),
+      // so the stamp routes through the canonical transition service and is
+      // recorded as a provider-only transition.
+      //
+      // The pre-existing "no subscription row" behaviour is preserved: the old
+      // UPDATE simply affected zero rows, whereas the service would treat a
+      // missing row as a creation. An OAuth callback must never create a
+      // subscription.
+      await withTenant(result.shopId, async (trx) => {
+        const existing = await trx('shop_subscriptions')
           .where({ shop_id: result.shopId })
-          .update({ billing_provider: 'shopify', updated_at: new Date() })
-      );
+          .first('shop_id');
+        if (!existing) return;
+
+        await transitionShopSubscription(
+          {
+            shopId: result.shopId,
+            to: { billingProvider: 'shopify' },
+            source: 'shopify_oauth_callback',
+            reason: `billing_provider_stamp:${oauthContext.installSource}`,
+            actorType: 'shopify',
+          },
+          trx
+        );
+      });
     }
 
     const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
@@ -946,15 +968,26 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
         const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
         // billing_provider: 'shopify' stamped at birth — never routes to Stripe
-        await trx('shop_subscriptions').insert({
-          shop_id: shopId,
-          tier: 'growth',
-          billing_interval: 'monthly',
-          billing_currency: 'USD',
-          billing_provider: 'shopify',
-          status: 'trialing',
-          trial_ends_at: trialEndsAt,
-        });
+        //
+        // BILL-ENTITLEMENT-01: creation establishes all three entitlement-
+        // authoritative dimensions, so it routes through the canonical
+        // transition service and is recorded as a creation transition with
+        // NULL from_* values. The Growth/trialing/shopify grant is unchanged.
+        await transitionShopSubscription(
+          {
+            shopId,
+            to: { tier: 'growth', status: 'trialing', billingProvider: 'shopify' },
+            fields: {
+              billing_interval: 'monthly',
+              billing_currency: 'USD',
+              trial_ends_at: trialEndsAt,
+            },
+            source: 'shopify_app_store_install',
+            reason: 'app_store_install_trial_grant',
+            actorType: 'shopify',
+          },
+          trx
+        );
 
         await trx('shop_usage_metrics').insert({
           shop_id: shopId,

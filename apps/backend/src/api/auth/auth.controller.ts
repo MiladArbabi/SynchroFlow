@@ -27,6 +27,7 @@ import { rateLimit } from '../../utils/rateLimit.js';
 import { User } from '../../types.js';
 import { sendVerificationEmail, sendPasswordResetEmail } from '../../services/email/email.service.js';
 import { captureEvent } from '../../utils/analytics.js';
+import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
 
 const SALT_ROUNDS = 10; // Standard for bcrypt
 
@@ -140,15 +141,33 @@ export const registerUser = async (req: Request, res: Response) => {
     // Reminder emails sent at D-3 and D-1 (see trial expiry job, MON-07).
     const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
-    await trx('shop_subscriptions')
-      .insert({
-        shop_id: shopId,
-        tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
-        billing_interval: 'monthly',
-        billing_currency: detectBillingCurrency(req.headers['accept-language']),
-        status: 'trialing',
-        trial_ends_at: trialEndsAt,
-      });
+    // BILL-ENTITLEMENT-01: subscription creation establishes entitlement-
+    // authoritative state (tier + status), so it routes through the canonical
+    // transition service, which records it as a creation transition with NULL
+    // from_* values. The Growth trial grant itself is unchanged.
+    //
+    // billing_provider is intentionally NOT passed: this direct-signup path
+    // never set it, relying on the shop_subscriptions column default 'stripe'
+    // (migration 0090). The service applies that same default on creation.
+    await transitionShopSubscription(
+      {
+        shopId,
+        to: {
+          tier: 'growth' satisfies typeof TIERS[number], // Trial tier (MON-07). 'satisfies' ensures compile-time validation against Tier union.
+          status: 'trialing',
+        },
+        fields: {
+          billing_interval: 'monthly',
+          billing_currency: detectBillingCurrency(req.headers['accept-language']),
+          trial_ends_at: trialEndsAt,
+        },
+        source: 'auth_registration',
+        reason: 'signup_growth_trial_grant',
+        actorType: 'user',
+        actorId: String(createdUser.id),
+      },
+      trx
+    );
 
     // Open billing period for usage tracking (MON-05)
     // Must exist before first order ingestion — cap enforcement and shipped order
