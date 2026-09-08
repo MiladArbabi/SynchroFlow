@@ -4935,3 +4935,246 @@ Provider E2E / production certification still requires:
 **Parent.** `BILL-ENTITLEMENT-01` / `P0-B` Commercial State Integrity remains
 **OPEN** after P0-B3. Webhook ordering/idempotency review, reconciliation
 review, and JWT / current-state freshness are still separate slices.
+
+### 38.11 Production certification finding — OAuth completion did not reconcile
+
+P0-B3 reached production certification as §38.10 describes. Certification itself
+uncovered a further, real commercial-integrity defect, corrected locally in this
+slice.
+
+**Deployment and health, before the correction**
+
+- Fly machine healthy; `GET /health` = `200`
+- production `SHOPIFY_API_VERSION` = `2025-07`
+
+**The reviewer credential was dead**
+
+- GraphQL billing reconciliation → HTTP `401`
+- minimal Shopify `/shop.json` → HTTP `401`
+
+**Why** — lifecycle audit, not inference:
+
+- `2026-09-01 13:55:19 UTC` — a verified and processed `app/uninstalled` webhook
+- no later OAuth reconnect was recorded before certification
+
+**The reconnect, through the existing authenticated OAuth path**
+
+Performed for `development-store-15820042357.myshopify.com`. It persisted a fresh
+credential:
+
+- `shopify_app_installations.uninstalled_at` cleared
+- `integrations.updated_at` → `2026-09-08 14:33:11 UTC`
+
+Ownership moved exactly as the P0-B2 ledger records it:
+
+| from | to |
+|---|---|
+| scale / active / stripe | scale / active / shopify |
+
+```
+source     = shopify_oauth_callback
+reason     = billing_provider_stamp:reconnect
+actor_type = shopify
+```
+
+**What Shopify actually said, immediately afterwards**
+
+A real read-only provider query then succeeded and reported **no active
+subscription**. The canonical resolver returned:
+
+| field | value |
+|---|---|
+| tier | `starter` |
+| status | `canceled` |
+| isEntitled | `false` |
+| planHandle | `null` |
+| interval | `null` |
+| price | `null` |
+
+**What the database still said**
+
+```
+scale / active / shopify
+```
+
+**Open entitlement exposure, measured**
+
+| source | open rows |
+|---|---|
+| `free_tier_default` | 4 |
+| `manual:scale_upgrade` | 11 |
+| `trial:growth` | 8 |
+| **total open** | **23** |
+
+The OAuth callback had performed the provider takeover **only**. It never
+consulted live Shopify commercial state before issuing the application session.
+
+### 38.12 Root defect
+
+Before the correction, `handleOAuthCallback` effectively completed in this order:
+
+```
+credential persistence
+  -> issueAuthTokens()
+  -> provider-only 'shopify' ownership stamp
+  -> redirect
+```
+
+Consequences:
+
+- a Shopify-owned tenant could retain a stale paid tier and status
+- old paid entitlements could remain open
+- the freshly issued JWT could carry the stale paid tier
+- Shopify provider truth was not consulted during OAuth completion at all
+
+### 38.13 Approved correction architecture
+
+**Permanent rule.** A Shopify App Store install or authenticated reconnect may
+not complete merely by stamping `billing_provider='shopify'`.
+
+After credential persistence and **before** issuing a successful application
+session:
+
+1. the explicit provider takeover is performed when required;
+2. authoritative Shopify billing state is reconciled through the **existing**
+   `applyShopifyBillingState(shopId, trx)`;
+3. subscription tier/status/provider and entitlements are made consistent;
+4. **only then** are auth tokens issued.
+
+The takeover and the reconciliation share **one tenant-scoped transaction**.
+
+That ordering is not stylistic. `applyShopifyBillingState` issues its own
+transition with `actingProvider='shopify'` and no switch, so the §38.4 ownership
+gate would correctly **reject** it on a still-Stripe-owned tenant. The deliberate
+OAuth takeover must therefore come first, and sharing the transaction is what
+prevents a tenant being marked Shopify-owned but never reconciled.
+
+The explicit takeover remains `allowProviderSwitch=true` for the intentional
+OAuth app-store/reconnect migration path only — unchanged from §38.4.
+
+**If Shopify commercial reconciliation fails:** the transaction rolls back, no
+successful application session is issued, and a stale paid tier cannot be encoded
+into the post-OAuth JWT.
+
+No second Shopify billing mapper was added.
+
+### 38.14 Regression contracts
+
+New:
+
+- `tests/integration/billing/shopify-oauth-commercial-reconciliation.test.ts`
+
+Modified:
+
+- `tests/contract/commercial-provider-mapping-boundary.contract.test.ts`
+
+| # | Integration contract | Expected |
+|---|---|---|
+| A | scale/active/stripe + Shopify reports no subscription | starter/canceled/shopify; paid effective access revoked; Starter/free access preserved; JWT tier `starter` |
+| B | Shopify `planHandle` = scale | scale/active/shopify; JWT `scale` |
+| C | Shopify `planHandle` = growth | growth/active/shopify; JWT `growth` |
+| D | Shopify reconciliation failure | no successful session, no stale JWT |
+| E | transition ledger | contiguous Shopify takeover + reconciliation provenance |
+
+`ARCH-07` proves structurally that:
+
+- `integration.controller.ts` imports the authoritative reconciliation service;
+- the callback actually **invokes** it (an AST CallExpression walk — a mention in
+  a comment cannot satisfy it);
+- the invocation occurs **before** `issueAuthTokens`;
+- the explicit `allowProviderSwitch=true` survives.
+
+### 38.15 RED → GREEN evidence
+
+**RED, before the correction**
+
+- integration: 1 suite failed, **5 / 5 tests failed**
+- architecture: **3 new ARCH-07 assertions failed**, 17 existing and
+  self-verification assertions passed
+
+Which proved: the callback never invoked authoritative Shopify billing
+reconciliation; Scale/Growth provider facts were ignored; a failure still
+produced a stale Scale JWT; and no authoritative reconciliation dependency,
+invocation, or ordering existed at all.
+
+**GREEN, after implementation + fixture correction**
+
+| Scope | Result |
+|---|---|
+| targeted integration | 5 / 5 |
+| targeted architecture | 20 / 20 |
+| broader unit | 57 / 57 |
+| broader integration | 48 / 48 |
+| broader architecture | 30 / 30 |
+| **total consequential regression** | **135 / 135 GREEN** |
+
+- backend TypeScript: **0 errors**; target `integration.controller.ts` errors **0**
+- `git diff --check`: clean
+- disposable DB: created, migrated, runtime verified, dropped successfully
+- no full build was run
+
+### 38.16 Test fixture correction (recorded transparently)
+
+Two post-implementation failures were **fixture defects, not waived product
+contracts**. No production assertion was weakened.
+
+1. **Commercial premise re-established after the fixture's initial callback.**
+   That first callback now genuinely reconciles billing, so the
+   production-reproduction state (tier + status + billing_provider together) has
+   to be established afterwards, and is read back in the same tenant transaction.
+2. **`shop_subscription_transitions` is append-only.** The test had tried to
+   delete ledger history. It now captures a pre-reconnect `MAX(id)` watermark and
+   asserts only rows after that watermark — so provenance assertions describe the
+   reconnect rather than installation history.
+
+### 38.17 Follow-up discovered — `COMM-TIER-CONFIG-DRIFT-01`
+
+Observed while correcting the fixture. **Not changed as part of P0-B3.**
+
+The effective-access layer and the commercial grant/revoke layer are not
+currently identical:
+
+| layer | source |
+|---|---|
+| effective access | `modulesForTier` / `flagsForTier` — `@lasyncro/commercial-policy` |
+| grant / revoke | `getTierConfig` — `backend-core` `config/tiers` |
+
+Examples observed:
+
+- scale **flags** differ between the two sources;
+- `suppliers-portal` appears in effective access but not in `getTierConfig` scale
+  modules;
+- `customers`, `finances` and `specter` appear in `getTierConfig` scale modules
+  but not in the effective-access layer.
+
+**Risk.** A capability treated as paid by effective-access policy but not managed
+by the grant/revoke tier configuration could theoretically survive a downgrade,
+**if such an explicit grant exists**. No production exposure beyond what is
+directly proven above is claimed here.
+
+Tracked as separate follow-up work under `COMM-TIER-CONFIG-DRIFT-01`.
+
+### 38.18 Certification state — updated after the OAuth correction
+
+Supersedes §38.10, which remains as the record of the state at first
+certification.
+
+`BILL-ENTITLEMENT-01` / `P0-B3` is **IMPLEMENTED + LOCALLY VERIFIED**, with
+**135 / 135** targeted and broader consequential regression checks GREEN.
+
+The production correction is **NOT yet deployed or certified**.
+
+Production recertification still requires:
+
+- commit and push
+- CI / deploy green
+- health proof
+- a real Shopify reconnect and provider reconciliation **on the deployed
+  corrected code**
+- proof that production `shop_subscriptions` matches live Shopify state
+- proof that stale paid entitlements are closed
+- proof that the transition ledger records the production correction
+- a re-run of the live provider-fact query
+
+**Parent.** `BILL-ENTITLEMENT-01` / `P0-B` Commercial State Integrity remains
+**OPEN**.

@@ -37,6 +37,7 @@ import { rateLimit } from '../../utils/rateLimit.js';
 import { getQueueChannel, connection } from '../../queue.js';
 import { createTenantShop } from '@lasyncro/backend-core/services/pre-tenant.service.js';
 import { transitionShopSubscription } from '../../services/billing/subscriptionTransition.service.js';
+import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
 import {
   SHOPIFY_REQUIRED_SCOPE_STRING,
   normalizeAndValidateShopifyGrantedScopes,
@@ -656,6 +657,83 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
        */
     });
 
+    /**
+     * COMMERCIAL RECONCILIATION — BILL-ENTITLEMENT-01 / P0-B3
+     * ------------------------------------------------------
+     * A Shopify install/reconnect must not complete merely by stamping
+     * billing_provider='shopify'.
+     *
+     * Production proved the gap: a reviewer tenant sat at scale/active/stripe,
+     * a reconnect migrated ownership to Shopify, and tier/status were left
+     * untouched — while the live Shopify billing query for that same shop
+     * reported NO active subscription (canonically starter/canceled). 23 paid
+     * entitlement grants stayed open, and the JWT this callback handed back
+     * still carried tier=scale.
+     *
+     * This block therefore runs BEFORE issueAuthTokens() below, so the session
+     * is minted from reconciled commercial state rather than pre-reconnect
+     * state, and so a reconciliation failure can still fail the whole callback
+     * closed (the outer catch returns 500 and no token is ever issued).
+     *
+     * ORDERING INSIDE THE TRANSACTION — both steps, one transaction:
+     *   1. the deliberate provider takeover. This is the ONLY path allowed to
+     *      set allowProviderSwitch, and it must come first because
+     *      applyShopifyBillingState's own transition declares
+     *      actingProvider:'shopify' with NO switch — on a still-Stripe-owned
+     *      tenant the ownership gate would refuse it.
+     *   2. authoritative Shopify commercial state, applied through the EXISTING
+     *      canonical service. No second Shopify tier mapper, no display-name
+     *      authority, no reconciliation logic duplicated here.
+     *
+     * Sharing one tenant-scoped transaction is what makes this safe: if the
+     * live billing fetch or the mapping fails, the takeover rolls back with it
+     * rather than leaving a tenant marked Shopify-owned but never reconciled.
+     */
+    if (
+      oauthContext.installSource === 'app_store' ||
+      oauthContext.installSource === 'reconnect'
+    ) {
+      await withTenant(result.shopId, async (trx) => {
+        const existing = await trx('shop_subscriptions')
+          .where({ shop_id: result.shopId })
+          .first('shop_id');
+
+        if (existing) {
+          /**
+           * BILL-19 / P0-B3: the explicit, merchant-initiated provider
+           * migration. A reconnect must never silently reset an App Store
+           * merchant's billing_provider away from 'shopify', and an App Store
+           * install/reconnect is the deliberate event that makes a tenant
+           * Shopify-owned. No ordinary recurring provider event sets this flag.
+           *
+           * It no-ops when the tenant is already Shopify-owned: the canonical
+           * transition service writes no ledger row when no authoritative
+           * dimension changes.
+           */
+          await transitionShopSubscription(
+            {
+              shopId: result.shopId,
+              to: { billingProvider: 'shopify' },
+              source: 'shopify_oauth_callback',
+              reason: `billing_provider_stamp:${oauthContext.installSource}`,
+              actorType: 'shopify',
+              actingProvider: 'shopify',
+              allowProviderSwitch: true,
+            },
+            trx
+          );
+        }
+
+        /**
+         * Authoritative Shopify commercial truth. Also covers the shop with no
+         * subscription row at all — the canonical service treats a missing row
+         * as first-provider creation, which is exactly right for a tenant whose
+         * ownership this callback has just established.
+         */
+        await applyShopifyBillingState(result.shopId, trx);
+      });
+    }
+
     // 🔒 Security invariants
     if (!oauthContext.userId) {
       throw new Error('OAUTH_INVARIANT_VIOLATION: missing userId');
@@ -714,51 +792,6 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
-
-    // BILL-19: stamp billing_provider on subscription for both App Store installs
-    // AND reconnects (initiateOAuth) — a reconnect must never silently reset an
-    // App Store merchant's billing_provider away from 'shopify'.
-    if (
-      oauthContext.installSource === 'app_store' ||
-      oauthContext.installSource === 'reconnect'
-    ) {
-      // BILL-ENTITLEMENT-01: billing_provider is entitlement-authoritative
-      // (it decides whether a merchant is billed through Stripe or Shopify),
-      // so the stamp routes through the canonical transition service and is
-      // recorded as a provider-only transition.
-      //
-      // The pre-existing "no subscription row" behaviour is preserved: the old
-      // UPDATE simply affected zero rows, whereas the service would treat a
-      // missing row as a creation. An OAuth callback must never create a
-      // subscription.
-      await withTenant(result.shopId, async (trx) => {
-        const existing = await trx('shop_subscriptions')
-          .where({ shop_id: result.shopId })
-          .first('shop_id');
-        if (!existing) return;
-
-        await transitionShopSubscription(
-          {
-            shopId: result.shopId,
-            to: { billingProvider: 'shopify' },
-            source: 'shopify_oauth_callback',
-            reason: `billing_provider_stamp:${oauthContext.installSource}`,
-            actorType: 'shopify',
-            actingProvider: 'shopify',
-            // P0-B3: this is THE explicit provider-migration path. An App Store
-            // install or reconnect (both checked above) is the deliberate,
-            // merchant-initiated event that makes a tenant Shopify-owned, so it
-            // is the one caller permitted to move ownership. BILL-19 behaviour
-            // is preserved exactly — without this the stamp would be refused on
-            // a shop still recorded as stripe-billed, which is precisely the
-            // case it exists to fix. No ordinary recurring provider event sets
-            // this flag.
-            allowProviderSwitch: true,
-          },
-          trx
-        );
-      });
-    }
 
     const connectParam = oauthContext.installSource === 'app_store' ? 'app_store' : 'success';
     return res.redirect(

@@ -42,6 +42,7 @@ const SHOPIFY_RECONCILIATION =
   'apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts';
 const SHOPIFY_APPLY = 'apps/backend/src/services/shopify/applyShopifyBillingState.service.ts';
 const TRANSITION_SERVICE = 'apps/backend/src/services/billing/subscriptionTransition.service.ts';
+const INTEGRATION_CONTROLLER = 'apps/backend/src/api/integrations/integration.controller.ts';
 
 const STRIPE_RESOLVER_MODULE = 'providerPriceResolver.service';
 const SHOPIFY_RESOLVER_MODULE = 'shopifyCommercialResolver.service';
@@ -276,6 +277,192 @@ describe('P0-B3 — commercial provider mapping boundary', () => {
       // ownership as well.
       const controller = read('apps/backend/src/api/billing/billing.controller.ts');
       expect(controller).toContain('APP_STORE_MERCHANT');
+    });
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// ARCH-07 scanner — OAuth reconnect commercial reconciliation, in call order
+// ---------------------------------------------------------------------------
+
+/**
+ * Walks handleOAuthCallback's body and reports, in SOURCE ORDER, the position of
+ * the authoritative reconciliation call and of session issuance.
+ *
+ * Comments are invisible to the AST, so a mention of applyShopifyBillingState in
+ * a comment can never satisfy this. Only a real CallExpression counts.
+ */
+export function analyzeOAuthReconciliationOrder(
+  fileName: string,
+  sourceText: string
+): {
+  found: boolean;
+  reconcileIndex: number | null;
+  issueTokensIndex: number | null;
+  reconcileBeforeIssue: boolean;
+} {
+  const src = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+
+  let target: ts.Node | null = null;
+  const findHandler = (node: ts.Node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === 'handleOAuthCallback' &&
+      node.initializer
+    ) {
+      target = node.initializer;
+    }
+    if (
+      ts.isFunctionDeclaration(node) &&
+      node.name?.text === 'handleOAuthCallback'
+    ) {
+      target = node;
+    }
+    ts.forEachChild(node, findHandler);
+  };
+  findHandler(src);
+
+  if (!target) {
+    return { found: false, reconcileIndex: null, issueTokensIndex: null, reconcileBeforeIssue: false };
+  }
+
+  let reconcileIndex: number | null = null;
+  let issueTokensIndex: number | null = null;
+
+  const calleeName = (call: ts.CallExpression): string => {
+    const expr = call.expression;
+    if (ts.isIdentifier(expr)) return expr.text;
+    if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
+    return '';
+  };
+
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      const name = calleeName(node);
+      const pos = node.getStart(src);
+      if (name === 'applyShopifyBillingState' && reconcileIndex === null) {
+        reconcileIndex = pos;
+      }
+      if (name === 'issueAuthTokens' && issueTokensIndex === null) {
+        issueTokensIndex = pos;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(target);
+
+  return {
+    found: true,
+    reconcileIndex,
+    issueTokensIndex,
+    reconcileBeforeIssue:
+      reconcileIndex !== null &&
+      issueTokensIndex !== null &&
+      reconcileIndex < issueTokensIndex,
+  };
+}
+
+const OAUTH_COMPLIANT_SOURCE = `
+  import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
+  export const handleOAuthCallback = async (req: any, res: any) => {
+    await persistCredential();
+    await withTenant(shopId, async (trx) => {
+      await applyShopifyBillingState(shopId, trx);
+    });
+    const authTokens = await issueAuthTokens({ userId, shopId });
+    return res.redirect(authTokens.userJwt);
+  };
+`;
+
+const OAUTH_STAMP_ONLY_SOURCE = `
+  export const handleOAuthCallback = async (req: any, res: any) => {
+    const authTokens = await issueAuthTokens({ userId, shopId });
+    // applyShopifyBillingState would belong here — mentioning it must not count.
+    await withTenant(shopId, async (trx) => {
+      await transitionShopSubscription({ to: { billingProvider: 'shopify' } }, trx);
+    });
+    return res.redirect(authTokens.userJwt);
+  };
+`;
+
+const OAUTH_LATE_RECONCILE_SOURCE = `
+  import { applyShopifyBillingState } from '../../services/shopify/applyShopifyBillingState.service.js';
+  export const handleOAuthCallback = async (req: any, res: any) => {
+    const authTokens = await issueAuthTokens({ userId, shopId });
+    await withTenant(shopId, (trx) => applyShopifyBillingState(shopId, trx));
+    return res.redirect(authTokens.userJwt);
+  };
+`;
+
+describe('P0-B3 CORRECTION — OAuth reconnect commercial reconciliation', () => {
+  // ── Scanner self-verification (green before AND after the fix) ───────────
+  describe('SCANNER: call-order analysis is real, and comments do not count', () => {
+    it('accepts reconciliation performed before session issuance', () => {
+      const r = analyzeOAuthReconciliationOrder('synthetic-ok.ts', OAUTH_COMPLIANT_SOURCE);
+      expect(r.found).toBe(true);
+      expect(r.reconcileBeforeIssue).toBe(true);
+    });
+
+    it('rejects a stamp-only callback that only MENTIONS the reconciliation in a comment', () => {
+      const r = analyzeOAuthReconciliationOrder('synthetic-stamp.ts', OAUTH_STAMP_ONLY_SOURCE);
+      expect(r.found).toBe(true);
+      expect(r.reconcileIndex).toBeNull();
+      expect(r.reconcileBeforeIssue).toBe(false);
+    });
+
+    it('rejects reconciliation that happens only AFTER the session is issued', () => {
+      const r = analyzeOAuthReconciliationOrder('synthetic-late.ts', OAUTH_LATE_RECONCILE_SOURCE);
+      expect(r.found).toBe(true);
+      expect(r.reconcileIndex).not.toBeNull();
+      expect(r.reconcileBeforeIssue).toBe(false);
+    });
+  });
+
+  // ── ARCH-07 ─────────────────────────────────────────────────────────────
+  describe('ARCH-07: OAuth completion reconciles authoritative Shopify billing state', () => {
+    it('the OAuth controller depends on the existing authoritative reconciliation service', () => {
+      const source = read(INTEGRATION_CONTROLLER);
+      // The one authoritative mapper. A second Shopify billing mapper is
+      // explicitly out of bounds.
+      expect(source).toContain('applyShopifyBillingState.service');
+    });
+
+    it('handleOAuthCallback invokes reconciliation, not provider-stamp-only completion', () => {
+      const result = analyzeOAuthReconciliationOrder(
+        INTEGRATION_CONTROLLER,
+        read(INTEGRATION_CONTROLLER)
+      );
+
+      expect(result.found).toBe(true);
+      expect({
+        file: INTEGRATION_CONTROLLER,
+        callsApplyShopifyBillingState: result.reconcileIndex !== null,
+      }).toMatchObject({ callsApplyShopifyBillingState: true });
+    });
+
+    it('reconciliation happens BEFORE the post-OAuth session is issued', () => {
+      const result = analyzeOAuthReconciliationOrder(
+        INTEGRATION_CONTROLLER,
+        read(INTEGRATION_CONTROLLER)
+      );
+
+      // Issuing a session first mints it from pre-reconnect commercial state —
+      // the stale-JWT ordering risk in the production finding.
+      expect({
+        reconcileIndex: result.reconcileIndex,
+        issueTokensIndex: result.issueTokensIndex,
+        reconcileBeforeIssue: result.reconcileBeforeIssue,
+      }).toMatchObject({ reconcileBeforeIssue: true });
+    });
+
+    it('the deliberate provider-ownership migration survives (P0-B3 protection intact)', () => {
+      // Expected GREEN now and after the fix: the OAuth takeover remains the one
+      // explicitly authorized provider switch. The correction must not remove it.
+      const source = read(INTEGRATION_CONTROLLER);
+      expect(source).toContain('allowProviderSwitch: true');
+      expect(source).toMatch(/actingProvider:\s*'shopify'/);
     });
   });
 });
