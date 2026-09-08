@@ -52,6 +52,7 @@ import { Box, Typography, CircularProgress, Checkbox, useTheme, Collapse } from 
 import { Clock, Flag, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { EntityDetailModal } from '@lasyncro/shared/ui';
 import { OrderDetailModalBody } from '../orders/OrderDetailModalBody';
+import { BatchDetailModalBody } from './BatchDetailModalBody';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { ORDERS_MODULE_TABS } from './ordersModuleTabs';
 import { 
@@ -177,6 +178,7 @@ export default function OrderFlowPage() {
     [bulkSetPriority]
   );
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
   const handleCloseOrderDetail = useCallback(() => {
     setSelectedOrderId(null);
   }, []);
@@ -189,6 +191,10 @@ export default function OrderFlowPage() {
   const blockedOrders = useMemo(() => constrainedQuery.data?.data ?? [], [constrainedQuery.data]);
   const poolOrders = useMemo(() => orderPoolQuery.data?.orders ?? [], [orderPoolQuery.data]);
   const batches = useMemo(() => pickBatchesQuery.data?.batches ?? [], [pickBatchesQuery.data]);
+  const selectedBatch = useMemo(
+    () => batches.find((batch) => batch.pick_batch_id === selectedBatchId) ?? null,
+    [batches, selectedBatchId],
+  );
   // --- Deep-link params: ?constraint=<type> auto-expands its accordion
   // section; ?urgency=sla_breach filters to order_age_snapshot's real
   // is_shipping_sla_breached flag. See cta-deeplink-playbook.md §3 — these
@@ -1623,6 +1629,16 @@ export default function OrderFlowPage() {
                       return (
                         <Box
                           key={batch.pick_batch_id}
+                          role="button"
+                          tabIndex={0}
+                          aria-label={`Inspect batch ${batch.pick_batch_id.slice(0, 8).toUpperCase()}`}
+                          onClick={() => setSelectedBatchId(batch.pick_batch_id)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              setSelectedBatchId(batch.pick_batch_id);
+                            }
+                          }}
                           sx={{
                             border: '1px solid var(--rule)',
                             borderRadius: '10px',
@@ -1630,6 +1646,14 @@ export default function OrderFlowPage() {
                             display: 'flex',
                             flexDirection: 'column',
                             gap: 0.75,
+                            cursor: 'pointer',
+                            '&:hover': {
+                              borderColor: 'var(--accent-border)',
+                            },
+                            '&:focus-visible': {
+                              outline: '2px solid var(--accent)',
+                              outlineOffset: '2px',
+                            },
                           }}
                         >
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1644,7 +1668,8 @@ export default function OrderFlowPage() {
 
                               {batch.status === 'pending' && (
                                 <Box
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    event.stopPropagation();
                                     setCancelError(null);
                                     setCancelConfirmBatchId((current) =>
                                       current === batch.pick_batch_id ? null : batch.pick_batch_id,
@@ -1719,6 +1744,7 @@ export default function OrderFlowPage() {
                             unmountOnExit
                           >
                             <Box
+                              onClick={(event) => event.stopPropagation()}
                               sx={{
                                 mt: 0.25,
                                 pt: 1,
@@ -1815,6 +1841,28 @@ export default function OrderFlowPage() {
         header comment for why it lives in apps/frontend, not
         modules/shared).
       */}
+      <EntityDetailModal
+        entityId={selectedBatchId}
+        onClose={() => setSelectedBatchId(null)}
+        title={`Batch ${selectedBatchId?.slice(0, 8).toUpperCase() ?? ''}`}
+        subtitle={
+          selectedBatch
+            ? `${selectedBatch.status.replace(/_/g, ' ')} · ${selectedBatch.release_trigger ?? 'standard'} release`
+            : undefined
+        }
+        maxWidth="md"
+      >
+        {selectedBatch && (
+          <BatchDetailModalBody
+            batch={selectedBatch}
+            onNavigateToOrder={(orderId) => {
+              setSelectedBatchId(null);
+              setSelectedOrderId(orderId);
+            }}
+          />
+        )}
+      </EntityDetailModal>
+
       <EntityDetailModal
         entityId={selectedOrderId}
         onClose={handleCloseOrderDetail}

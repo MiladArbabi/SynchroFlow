@@ -51,6 +51,41 @@ export function usePickBatches(options?: { refetchInterval?: number }) {
   });
 }
 
+export interface PickBatchOrderLineItem {
+  lasyncro_line_item_id: string;
+  lasyncro_order_id: string;
+  lasyncro_variant_id: string;
+  sku: string | null;
+  product_title: string;
+  variant_title: string | null;
+  quantity: number;
+  pack_scanned: boolean;
+  has_tracked_unit: boolean;
+}
+
+export interface PickBatchOrder {
+  lasyncro_order_id: string;
+  external_order_id: string;
+  wms_barcode: string | null;
+  total_price: number;
+  currency: string;
+  warehouse_status: string | null;
+  line_items: PickBatchOrderLineItem[];
+}
+
+export function usePickBatchOrders(batchId: string | null) {
+  return useQuery<{ orders: PickBatchOrder[] }>({
+    queryKey: ['wms', 'batch-orders', batchId],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get(
+        `/api/v1/wms/batch/${batchId}/orders`,
+      );
+      return data;
+    },
+    enabled: !!batchId,
+  });
+}
+
 export interface CancelBatchResult {
   pick_batch_id: string;
   status: 'cancelled';

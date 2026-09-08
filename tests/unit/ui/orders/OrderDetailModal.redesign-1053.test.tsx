@@ -598,17 +598,53 @@ describe('GH-1053 live-browser regression contracts', () => {
       const source = ts.createSourceFile(filename, fs.readFileSync(filename, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
       const declarations = new Map<string, import('typescript').Expression>();
       const closeProps = new Map<string, import('typescript').Expression[]>();
+
+      // A page may host multiple EntityDetailModal shells. This contract is
+      // specifically about the shell that owns OrderDetailModalBody.
+      const containsOrderDetailBody = (root: import('typescript').Node): boolean => {
+        let found = false;
+        const inspect = (node: import('typescript').Node) => {
+          if (found) return;
+          if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+              ts.isIdentifier(node.tagName) && node.tagName.text === 'OrderDetailModalBody') {
+            found = true;
+            return;
+          }
+          ts.forEachChild(node, inspect);
+        };
+        inspect(root);
+        return found;
+      };
+
       const visit = (node: import('typescript').Node) => {
         if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
           declarations.set(node.name.text, node.initializer);
         }
+
         if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
-            ts.isIdentifier(node.tagName) && ['EntityDetailModal', 'OrderDetailModalBody'].includes(node.tagName.text)) {
-          const prop = node.attributes.properties.find((attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText(source) === 'onClose');
-          if (prop && ts.isJsxAttribute(prop) && prop.initializer && ts.isJsxExpression(prop.initializer) && prop.initializer.expression) {
-            closeProps.set(node.tagName.text, [...(closeProps.get(node.tagName.text) ?? []), prop.initializer.expression]);
+            ts.isIdentifier(node.tagName)) {
+          const isOrderBody = node.tagName.text === 'OrderDetailModalBody';
+          const isOrderShell =
+            node.tagName.text === 'EntityDetailModal' &&
+            ts.isJsxElement(node.parent) &&
+            containsOrderDetailBody(node.parent);
+
+          if (isOrderShell || isOrderBody) {
+            const prop = node.attributes.properties.find(
+              (attribute) =>
+                ts.isJsxAttribute(attribute) &&
+                attribute.name.getText(source) === 'onClose'
+            );
+            if (prop && ts.isJsxAttribute(prop) && prop.initializer &&
+                ts.isJsxExpression(prop.initializer) && prop.initializer.expression) {
+              closeProps.set(
+                node.tagName.text,
+                [...(closeProps.get(node.tagName.text) ?? []), prop.initializer.expression]
+              );
+            }
           }
         }
+
         ts.forEachChild(node, visit);
       };
       visit(source);
