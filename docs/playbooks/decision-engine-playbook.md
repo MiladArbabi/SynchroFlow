@@ -978,9 +978,10 @@ Approved ordering:
 Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6.
 Priority item 2 (`ADDR-ASSIST-01`) is **COMPLETED / LIVE VERIFIED** — see §11.7.
 Priority item 3 (`INV-TREAT-01`) is **COMPLETED / LIVE VERIFIED** — see §11.8.
-Items 4–5 remain not started.
+Priority item 4 (`SLA-TREAT-01`) is **COMPLETED / LIVE VERIFIED / CLOSED** — see §11.9.
+Priority item 5 (Outcome/value layer) is **NEXT / NOT STARTED**.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–3 IMPLEMENTED AND LIVE VERIFIED; items 4–5 NOT STARTED.**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 NEXT / NOT STARTED.**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
