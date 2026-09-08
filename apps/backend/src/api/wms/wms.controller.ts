@@ -1529,6 +1529,7 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       const batch = await trx('pick_batches')
         .where({ pick_batch_id: batchId, shop_id: shopId })
         .select('status', 'packed_by', 'total_units')
+        .forUpdate()
         .first();
 
       if (!batch) throw new Error('BATCH_NOT_FOUND');
@@ -1537,6 +1538,43 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       }
       if (batch.packed_by !== userId) {
         throw new Error('BATCH_NOT_OWNED_BY_PACKER');
+      }
+
+      // PACK-COMPLETE-GUARD-01: contents scans plus parcel closure are the
+      // existing packing evidence. Start from batch membership so missing
+      // status/line/scan rows cannot disappear through an inner join.
+      const packingEvidence = await trx.raw(`
+        SELECT COUNT(*) AS order_count,
+          COUNT(*) FILTER (WHERE
+            ows.pick_batch_id = pbo.pick_batch_id
+            AND ows.status IN ('packed', 'shipped', 'partially_shipped')
+            AND EXISTS (
+              SELECT 1 FROM order_line_items oli
+              WHERE oli.lasyncro_order_id = pbo.lasyncro_order_id
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM order_line_items oli
+              WHERE oli.lasyncro_order_id = pbo.lasyncro_order_id
+                AND (oli.quantity <= 0 OR NOT EXISTS (
+                  SELECT 1 FROM pack_scan_log psl
+                  WHERE psl.shop_id = pbo.shop_id
+                    AND psl.pick_batch_id = pbo.pick_batch_id
+                    AND psl.lasyncro_order_id = oli.lasyncro_order_id
+                    AND psl.lasyncro_line_item_id = oli.lasyncro_line_item_id
+                    AND psl.lasyncro_variant_id = oli.lasyncro_variant_id
+                    AND psl.status = 'confirmed'
+                    AND psl.quantity_confirmed >= oli.quantity
+                ))
+            )
+          ) AS complete_order_count
+        FROM pick_batch_orders pbo
+        LEFT JOIN order_warehouse_status ows
+          ON ows.lasyncro_order_id = pbo.lasyncro_order_id
+        WHERE pbo.shop_id = ? AND pbo.pick_batch_id = ?
+      `, [shopId, batchId]);
+      const { order_count, complete_order_count } = packingEvidence.rows[0];
+      if (Number(order_count) === 0 || Number(complete_order_count) !== Number(order_count)) {
+        throw new Error('BATCH_PACKING_INCOMPLETE');
       }
 
       // --- Usage metering + Starter execution cap (MON-11 / MON-PPO-03) ---
@@ -1853,6 +1891,10 @@ export const httpCompletePack = async (req: Request, res: Response) => {
     }
 
     const message = error instanceof Error ? error.message : 'Unknown error';
+
+    if (message === 'BATCH_PACKING_INCOMPLETE') {
+      return res.status(409).json({ error: 'BATCH_PACKING_INCOMPLETE' });
+    }
 
     if (message === 'BATCH_NOT_FOUND') {
       return res.status(404).json({ error: 'Batch not found' });
