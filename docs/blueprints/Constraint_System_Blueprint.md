@@ -239,6 +239,79 @@ In particular:
 
 The constraint clears when, and only when, the stock is really there.
 
+#### Inventory treatment assistance — updated 2026-09-08 / INV-TREAT-01
+
+Order Detail may expose fresh read-time `inventoryAssist` enrichment for an
+active `inventory/oversell` target.
+
+This enrichment is **not constraint truth**.
+
+Authority remains:
+
+```text
+active inventory constraint target_id
+→ fresh blocker evidence
+→ purchasing evidence
+→ ranked treatment
+→ optional workflow navigation
+```
+
+Rules:
+
+- only a variant named by an active inventory constraint may receive an
+  inventory treatment;
+- stale assist data for a variant that is no longer actively blocked is
+  ignored;
+- missing assist data does not remove the canonical action path — that active
+  variant falls back to **Source this item**;
+- blocker evidence is order-specific: remaining unfulfilled demand, canonical
+  pickable available stock, and exact shortage;
+- current availability uses the same canonical `pickableLocationCondition`
+  used by inventory constraint evaluation;
+- committed inbound is future supply, never current availability;
+- pending purchasing queue and draft PO quantities are workflow state, never
+  stock;
+- purchasing evidence may enrich the recommendation but may not redefine the
+  oversell verdict;
+- v1 presents exactly one ranked treatment (`treatments[0]`) per assisted
+  blocked variant;
+- `open_sourcing` is workflow navigation only;
+- `investigate_inventory` is informational and has no action;
+- the read path performs no inventory mutation, constraint resolution,
+  reconciliation, queueing, or Decision Engine execution.
+
+Supported v1 treatment types:
+
+```text
+wait_for_inbound
+continue_purchasing
+source_remaining
+find_supplier
+investigate_inventory
+```
+
+Not implemented in this slice:
+
+```text
+automatic PO/reorder
+transfer
+silent reallocation
+substitution
+cancellation
+fulfillment-location change
+inventory movement
+```
+
+Transfer is deliberately excluded from v1 because canonical oversell
+evaluation already aggregates pickable availability shop-wide. Existing
+canonically pickable stock is therefore already represented in the shortage
+verdict.
+
+**Invariant:**
+
+> `inventoryAssist` may explain and recommend against canonical inventory
+> truth. It may never create, hide, clear, or replace that truth.
+
 #### Action → required active constraint (stale-decision defence)
 
 `decisions` is enrichment; `order_constraints` is truth. A decision

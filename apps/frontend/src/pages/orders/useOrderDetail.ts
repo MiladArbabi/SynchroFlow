@@ -63,6 +63,67 @@ export interface OrderAddressAssist {
   lastUsedAt: string;
 }
 
+/**
+ * INV-TREAT-01 — INVENTORY TREATMENT ASSIST.
+ * Present only for ACTIVE inventory/oversell blockers. Read-only evidence plus
+ * one ranked recommendation per blocked variant: rank=1 is BEST, the array is
+ * ordered ascending, and treatments[0] is the primary recommendation. `action`
+ * is navigation only — never a decision execution.
+ */
+export type InventoryTreatmentType =
+  | 'wait_for_inbound'
+  | 'continue_purchasing'
+  | 'source_remaining'
+  | 'find_supplier'
+  | 'investigate_inventory';
+
+export interface InventoryTreatment {
+  type: InventoryTreatmentType;
+  rank: number;
+  quantity: number | null;
+  reason: string;
+  automationLevel: 'inform' | 'assist';
+  action: {
+    type: 'open_sourcing';
+    variantId: string;
+    orderId: string;
+  } | null;
+}
+
+export interface InventoryAssistItem {
+  variantId: string;
+  identity: {
+    productTitle: string | null;
+    variantTitle: string | null;
+    sku: string | null;
+    imageUrl: string | null;
+  };
+  /** THIS order's demand against canonical pickable stock. */
+  blockerEvidence: {
+    orderRemainingQty: number;
+    pickableAvailableQty: number;
+    shortageQty: number;
+  };
+  /**
+   * Variant-wide purchasing truth. committedInboundQty is future supply and is
+   * never part of pickableAvailableQty; pendingQueueQty and draftPoQty are
+   * workflow and are never supply at all.
+   */
+  purchasingEvidence: {
+    variantOpenDemandQty: number;
+    committedInboundQty: number;
+    pendingQueueQty: number;
+    draftPoQty: number;
+    supplierOptionCount: number;
+  };
+  treatments: InventoryTreatment[];
+}
+
+export interface OrderInventoryAssist {
+  generatedAt: string;
+  items: InventoryAssistItem[];
+}
+
 export interface OrderDetail {
   id: string;
   externalOrderId: string | null;
@@ -100,6 +161,7 @@ export interface OrderDetail {
    */
   shipping: OrderShipping;
   addressAssist: OrderAddressAssist | null;
+  inventoryAssist: OrderInventoryAssist | null;
 }
 
 export function useOrderDetail(orderId: string | null) {

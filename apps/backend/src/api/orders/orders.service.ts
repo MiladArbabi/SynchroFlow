@@ -2,6 +2,7 @@
 import db from "@lasyncro/backend-core/db.js";
 import { tierDataWindowSince } from "@lasyncro/backend-core/utils/tierDataWindow.js";
 import type { Tier } from "@lasyncro/backend-core/config/tiers.js";
+import { buildInventoryAssist } from "../../services/inventory/inventoryTreatmentAssist.service.js";
 
 interface OrderList {
   id: string; // lasyncro_order_id
@@ -198,6 +199,15 @@ export const getOrderDetailsById = async (
       )[0]?.[1] ?? null;
     }
 
+    /**
+     * INV-TREAT-01 — INVENTORY TREATMENT ASSIST.
+     * Fresh, variant-scoped evidence plus one ranked recommendation for every
+     * ACTIVE inventory/oversell blocker on this order. Read-only: it resolves
+     * no constraint, moves no stock and starts no purchase — see
+     * inventoryTreatmentAssist.service.ts for the invariants it owns.
+     */
+    const inventoryAssist = await buildInventoryAssist(trx, shopId, lasyncroOrderId);
+
     // Line items joined to variants for image_url
     const lineItems = await trx('order_line_items as oli')
       .leftJoin('variants as v', 'v.lasyncro_variant_id', 'oli.lasyncro_variant_id')
@@ -333,6 +343,7 @@ export const getOrderDetailsById = async (
       timeline,
       tracking: shipmentTracking ?? null,
       addressAssist,
+      inventoryAssist,
       /**
        * SHIPPING IDENTITY (VO-01, 2026-07-01)
        * --------------------------------------

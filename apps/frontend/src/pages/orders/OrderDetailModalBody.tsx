@@ -55,7 +55,12 @@ import {
 import { usePickExceptionsForOrder, useResolvePickException } from './usePickExceptionsForOrder';
 import { useOrderPackDecisions } from '../problem-center/usePackDecisions';
 import { useUpdateShippingAddress } from './useShippingAddress';
-import type { OrderShipping, OrderAddressAssist } from './useOrderDetail';
+import type {
+  OrderShipping,
+  OrderAddressAssist,
+  InventoryAssistItem,
+  InventoryTreatment,
+} from './useOrderDetail';
 import { useCurrency } from '../../hooks/useCurrency';
 /**
  * GH-1053: the compact Warehouse Status visualization REUSES the existing
@@ -226,6 +231,53 @@ function ConstraintAlertCard({
       </Box>
     </Box>
   );
+}
+
+/**
+ * INV-TREAT-01 — compact evidence/recommendation copy for the GH-1053 modal.
+ * These helpers are presentation-only. constraints[] remains blocker truth,
+ * and treatment actions remain navigation-only.
+ */
+function treatmentLabel(treatment: InventoryTreatment): string {
+  switch (treatment.type) {
+    case 'wait_for_inbound':
+      return 'Review incoming stock';
+    case 'continue_purchasing':
+      return 'Continue purchasing';
+    case 'source_remaining':
+      return `Source ${treatment.quantity ?? 0} units`;
+    case 'find_supplier':
+      return 'Find a supplier';
+    case 'investigate_inventory':
+    default:
+      return 'Recheck inventory';
+  }
+}
+
+function treatmentContext(
+  item: InventoryAssistItem,
+  treatment: InventoryTreatment
+): string {
+  const {
+    committedInboundQty,
+    pendingQueueQty,
+    draftPoQty,
+    supplierOptionCount,
+  } = item.purchasingEvidence;
+
+  switch (treatment.type) {
+    case 'wait_for_inbound':
+      return `${committedInboundQty} committed inbound`;
+    case 'continue_purchasing':
+      return `${pendingQueueQty} queued · ${draftPoQty} in draft`;
+    case 'source_remaining':
+      return `${supplierOptionCount} supplier ${supplierOptionCount === 1 ? 'option' : 'options'}`;
+    case 'find_supplier':
+      return 'No supplier set up yet';
+    case 'investigate_inventory':
+    default:
+      return 'Current stock no longer matches this blocker.';
+  }
 }
 
 // §ISS-OD-02: PackDecisionHistory merged from OrderDetailPage (removed 2026-07-11)
@@ -819,6 +871,10 @@ export function OrderDetailModalBody({
   const unresolvedExceptions = exceptions.filter((e) => !e.resolved);
   const order = detailQuery.data;
 
+  // INV-TREAT-01: fresh, read-only evidence/recommendations from Order Detail.
+  // constraints[] remains canonical blocker truth; assist only enriches it.
+  const inventoryAssistItems = order?.inventoryAssist?.items;
+
   const hasActiveInventoryConstraint = constraints.some((c) => c.constraint_type === 'inventory');
   /**
    * INVENTORY SOURCING TARGETS (ORD-DECISION-01)
@@ -1003,27 +1059,94 @@ export function OrderDetailModalBody({
       <Button variant="contained" onClick={openReturnJob} sx={primaryButtonSx}>
         {returnJobActionLabel}
       </Button>
-    ) : hasInventorySourcingAction ? (
+            ) : hasInventorySourcingAction ? (
       /*
-       * ORD-DECISION-01: an active oversell routes to Sourcing and runs NO
-       * execute mutation. One action per blocked variant, each carrying its
-       * own constraint target_id — see inventorySourcingTargets above for why
-       * this is derived from constraints rather than the elected decision.
+       * INV-TREAT-01 + GH-1053:
+       * ACTIVE constraint target_ids own inventory action truth.
+       * inventoryAssist may enrich each target, but can never create one.
+       * Missing/stale assist data falls back per variant to Source this item.
        */
       <>
-        {inventorySourcingTargets.map((variantId) => (
-          <Button
-            key={variantId}
-            variant="contained"
-            startIcon={<ArrowRight size={16} />}
-            onClick={() => openSourcing(variantId)}
-            sx={primaryButtonSx}
-          >
-            Source this item
-          </Button>
-        ))}
+        {inventorySourcingTargets.map((variantId) => {
+          const item = inventoryAssistItems?.find(
+            (candidate) => candidate.variantId === variantId
+          );
+          const treatment = item?.treatments[0];
+
+          if (!item || !treatment) {
+            return (
+              <Button
+                key={variantId}
+                variant="contained"
+                startIcon={<ArrowRight size={16} />}
+                onClick={() => openSourcing(variantId)}
+                sx={primaryButtonSx}
+              >
+                Source this item
+              </Button>
+            );
+          }
+
+          const action = treatment.action;
+          const itemLabel =
+            [
+              item.identity.variantTitle ?? item.identity.productTitle,
+              item.identity.sku,
+            ]
+              .filter(Boolean)
+              .join(' · ') || 'Inventory item';
+
+          return (
+            <Box
+              key={variantId}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                flexWrap: 'wrap',
+              }}
+            >
+              <Box sx={{ minWidth: 0 }}>
+                <Typography
+                  sx={{
+                    fontSize: 11.5,
+                    fontWeight: 500,
+                    color: 'var(--ink-2)',
+                  }}
+                >
+                  {itemLabel}
+                </Typography>
+
+                <Typography sx={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                  {treatmentContext(item, treatment)}
+                </Typography>
+              </Box>
+
+              {action ? (
+                <Button
+                  variant="contained"
+                  startIcon={<ArrowRight size={16} />}
+                  onClick={() => openSourcing(variantId)}
+                  sx={primaryButtonSx}
+                >
+                  {treatmentLabel(treatment)}
+                </Button>
+              ) : (
+                <Typography
+                  sx={{
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--ink-2)',
+                  }}
+                >
+                  {treatmentLabel(treatment)}
+                </Typography>
+              )}
+            </Box>
+          );
+        })}
       </>
-    ) : executableRecommendedAction ? (
+) : executableRecommendedAction ? (
       isExecError ? (
         <Button variant="contained" onClick={() => execute(orderId)} sx={primaryButtonSx}>
           {getActionLabel(executableRecommendedAction.type)}
@@ -1084,6 +1207,7 @@ export function OrderDetailModalBody({
     returnJobActionLabel,
     returnJobId,
     returnJobStatus,
+    inventoryAssistItems,
     hasInventorySourcingAction,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     inventorySourcingTargets.join(','),
@@ -1379,9 +1503,82 @@ export function OrderDetailModalBody({
                 Issue
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                {constraints.map((c, i) => (
-                  <ConstraintAlertCard key={i} constraintType={c.constraint_type} blockType={c.block_type} />
-                ))}
+                {constraints.map((c, i) => {
+                  const assistItem =
+                    c.constraint_type === 'inventory' &&
+                    typeof c.target_id === 'string'
+                      ? inventoryAssistItems?.find((item) => item.variantId === c.target_id)
+                      : undefined;
+
+                  return (
+                    <Box
+                      key={`${c.constraint_type}-${c.block_type ?? 'unknown'}-${c.target_id ?? i}`}
+                      sx={{ display: 'flex', flexDirection: 'column', gap: assistItem ? 0.5 : 0 }}
+                    >
+                      <ConstraintAlertCard
+                        constraintType={c.constraint_type}
+                        blockType={c.block_type}
+                      />
+
+                      {assistItem && (
+                        <Box
+                          data-testid={`inv-assist-item-${assistItem.variantId}`}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1,
+                            px: 1.25,
+                            py: 0.5,
+                            borderRadius: '8px',
+                            bgcolor: 'var(--bg-2)',
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              minWidth: 0,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontSize: 11.5,
+                              color: 'var(--ink-3)',
+                            }}
+                          >
+                            {[
+                              assistItem.identity.productTitle,
+                              assistItem.identity.variantTitle,
+                              assistItem.identity.sku,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              flexShrink: 0,
+                              fontSize: 11.5,
+                              fontWeight: 500,
+                              color: 'var(--ink-2)',
+                            }}
+                          >
+                            Need{' '}
+                            <span data-testid={`inv-assist-need-${assistItem.variantId}`}>
+                              {assistItem.blockerEvidence.orderRemainingQty}
+                            </span>
+                            {' · '}Available{' '}
+                            <span data-testid={`inv-assist-available-${assistItem.variantId}`}>
+                              {assistItem.blockerEvidence.pickableAvailableQty}
+                            </span>
+                            {' · '}Short{' '}
+                            <span data-testid={`inv-assist-short-${assistItem.variantId}`}>
+                              {assistItem.blockerEvidence.shortageQty}
+                            </span>
+                          </Typography>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
               </Box>
             </Box>
           )}

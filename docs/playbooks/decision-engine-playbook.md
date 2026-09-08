@@ -826,15 +826,13 @@ cover:
 reason to pause baseline Decision Engine coverage or reopen already-closed
 slices by default.
 
-### Existing related open follow-up
+### Existing related follow-up
 
-`INV-ACTION-ARCH-01` remains independently OPEN:
+`INV-ACTION-ARCH-01` is **COMPLETED / VERIFIED** — see §11.6.
 
-> Decouple inventory workflow navigation from legacy
-> `resolve_inventory_block` machine execution through a neutral workflow action
-> such as `open_sourcing`.
-
-Its implementation scope remains unchanged.
+New inventory decisions use the neutral workflow action `open_sourcing`.
+It is navigation-only, non-executable, and remains bound to active canonical
+inventory constraint truth.
 
 ### Next Decision Engine pair
 
@@ -851,7 +849,8 @@ constraint coverage rather than inferred here.
 ## 11. ORD-DECISION-AUTO-01 — Approved Treatment Workshops
 
 The three treatment workshops below were **approved on 2026-09-06**. This
-section records ratified product contract only. Nothing here is implemented.
+section records the ratified product contract together with the bounded
+implementation slices completed underneath that framework.
 
 ### 11.1 inventory / oversell
 
@@ -973,10 +972,11 @@ Approved ordering:
 5. Outcome/value layer, after reliable attributable treatment events exist
 
 Priority item 1 (`INV-ACTION-ARCH-01`) is **COMPLETED** — see §11.6.
-Priority item 2 (`ADDR-ASSIST-01`) is **COMPLETED through automated verification** — see §11.7.
-Items 3–5 remain not started.
+Priority item 2 (`ADDR-ASSIST-01`) is **COMPLETED / LIVE VERIFIED** — see §11.7.
+Priority item 3 (`INV-TREAT-01`) is **COMPLETED / LIVE VERIFIED** — see §11.8.
+Items 4–5 remain not started.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–2 IMPLEMENTED, items 3–5 NOT STARTED.**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–3 IMPLEMENTED AND LIVE VERIFIED; items 4–5 NOT STARTED.**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1095,3 +1095,158 @@ Items 3–5 remain not started.
   `customer_hashed_id` and was restored to `NULL` after verification.
 
 **ADDR-ASSIST-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**
+
+### 11.8 INV-TREAT-01 — Inventory evidence + ranked treatment options
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED — 2026-09-08.**
+
+#### Purpose
+
+An active `inventory/oversell` blocker no longer stops at a generic
+**Source this item** instruction when trustworthy evidence can explain the
+shortage and recommend a safer next treatment.
+
+The implementation is advisory and read-only. It does not create stock,
+change allocations, create purchasing work, execute a Decision Engine action,
+or clear the inventory constraint.
+
+#### Canonical authority
+
+`constraints[]` remains blocker truth.
+
+`inventoryAssist` is fresh read-time enrichment only. It may explain and
+recommend against an active inventory target, but it may never create,
+replace, hide or clear canonical blocker truth.
+
+For each active inventory target:
+
+- current-order demand is remaining unfulfilled `order_revenue_units`;
+- available stock is aggregated from `inventory_truth` using the canonical
+  `pickableLocationCondition`;
+- `shortageQty = max(orderRemainingQty - pickableAvailableQty, 0)`;
+- the active constraint `target_id` determines which variant may receive a
+  treatment;
+- stale assist data for a non-active variant is ignored;
+- if an active blocked variant has no assist data, it safely falls back to
+  **Source this item**.
+
+No migration or constraint-row evidence snapshot was introduced.
+
+#### Purchasing evidence
+
+The assist read path also assembles:
+
+- variant-wide open demand;
+- committed inbound quantity;
+- pending purchasing queue quantity;
+- draft PO quantity;
+- supplier option count.
+
+These quantities have deliberately different meanings:
+
+- committed inbound is **future supply**, not current availability;
+- pending queue and draft PO quantities are **workflow state**, not stock;
+- none of them may alter the canonical oversell verdict.
+
+Shared purchasing-evidence helpers are also consumed by targeted Sourcing so
+Order Detail and Sourcing do not independently redefine these quantities.
+
+#### Ranked treatment contract
+
+v1 returns exactly **one ranked treatment per assisted blocked variant**.
+
+`rank=1` is best and `treatments[0]` is the recommendation presented to the
+merchant.
+
+| Treatment | Merchant label | Automation | Action |
+|---|---|---|---|
+| `wait_for_inbound` | Review incoming stock | Assist | `open_sourcing` |
+| `continue_purchasing` | Continue purchasing | Assist | `open_sourcing` |
+| `source_remaining` | Source N units | Assist | `open_sourcing` |
+| `find_supplier` | Find a supplier | Assist | `open_sourcing` |
+| `investigate_inventory` | Recheck inventory | Inform | none |
+
+`open_sourcing` remains navigation-only and cannot enter Decision Engine
+execution.
+
+`investigate_inventory` is deliberately non-mutating. If fresh evidence no
+longer agrees with a still-active blocker, the read path reports the mismatch
+but does not reconcile or clear it.
+
+#### v1 safety boundary
+
+This slice does **not** perform or offer:
+
+- automatic PO creation or reorder;
+- inventory transfer;
+- silent reallocation;
+- substitution;
+- cancellation;
+- fulfillment-location changes;
+- inventory movements or stock mutation.
+
+Transfer is deliberately excluded from v1 treatment ranking because canonical
+oversell availability already aggregates pickable stock shop-wide. Stock that
+is already canonically usable is therefore already represented in the
+shortage verdict.
+
+#### Order Detail / GH-1053 integration
+
+The scroll-free Order Detail modal keeps canonical truth and treatment
+presentation separate:
+
+- every active blocker remains visible in Plane C;
+- matching inventory evidence appears beside the inventory blocker;
+- evidence shows product / variant / SKU plus **Need / Available / Short**;
+- treatment recommendation and action remain in the footer;
+- multiple blocked variants remain independently actionable;
+- customer-address remediation retains precedence over returned-package
+  remediation, which retains precedence over inventory remediation;
+- generic executable Decision Engine action remains the final fallback;
+- Warehouse Status and Latest Activity remain visible.
+
+#### Automated evidence
+
+- inventory treatment assist integration: **10/10 passed**
+- targeted Sourcing integration: **21/21 passed**
+- existing inventory decision integration: **12/12 passed**
+- inventory-specific frontend contract: **16/16 passed**
+- GH-1053 + INV-TREAT frontend matrix: **4 suites / 50 tests passed**
+- Jest ownership: `UNOWNED=0`, `MULTI_OWNED=0`
+- backend production TSC: **0 total / 0 target**
+- frontend production TSC: **19 pre-existing baseline / 0 target**
+- test TSC: **1 pre-existing unrelated baseline / 0 target**
+- static safety inspection found no inventory write, reconciliation, enqueue
+  or Decision execution path in the assist services
+
+#### Live browser evidence
+
+The browser was certified with both frontend and backend running from the
+`inv-treat-audit` worktree.
+
+Order `#800002` showed:
+
+- active **Out of Stock / oversell**;
+- **Need 1 · Available 0 · Short 1**;
+- **20 committed inbound**;
+- recommended treatment **Review incoming stock**;
+- Warehouse Status and Latest Activity visible without internal modal
+  scrolling at the tested desktop size.
+
+Selecting the recommendation opened targeted Sourcing with the blocked variant
+and originating order preserved.
+
+Sourcing still showed:
+
+- open demand `1`;
+- available `0`;
+- inbound `20`;
+- short now `1`;
+- one order blocked.
+
+Navigation therefore did not manufacture availability or resolve the
+constraint.
+
+Canonical inventory truth remains the sole resolution authority.
+
+**INV-TREAT-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED.**

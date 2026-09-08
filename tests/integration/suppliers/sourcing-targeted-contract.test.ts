@@ -557,7 +557,7 @@ async function createFixture(): Promise<Fixture> {
   return {
     shopId,
     userId,
-    token: issueTestToken({ userId, shopId, tier: 'core' }),
+    token: issueTestToken({ userId, shopId, tier: 'growth' }),
     supplierId,
     foreignShopId,
     foreignVariantId,

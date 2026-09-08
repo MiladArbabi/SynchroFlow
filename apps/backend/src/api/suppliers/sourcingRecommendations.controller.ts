@@ -48,27 +48,22 @@ import { Request, Response } from 'express';
 import db from '@lasyncro/backend-core/db.js';
 import { computeVariantPlanning } from '../../services/demand/demandIntelligence.service.js';
 import type { DemandVelocity } from '../../services/demand/demandIntelligence.service.js';
+import {
+  COMMITTED_INBOUND_PO_STATUSES,
+  getCommittedInboundQty,
+  getDraftPoQty,
+  getPendingQueueQty,
+  getVariantOpenDemandQty,
+} from '../../services/purchasing/purchasingEvidence.js';
 
 /**
- * SRC-L3-07 — COMMITTED INBOUND STATUS DOMAIN
- * -------------------------------------------
- * Units already bought from a supplier and not yet received. Excluded:
- *   draft     — not yet placed with anyone, so nothing is coming
- *   received  — already landed, so it is in inventory_truth, not inbound
- *   cancelled — never arriving
- *
- * This is the MERCHANT-FACING "what is already coming" set. It is
- * intentionally NOT demandIntelligence's narrower, ETA-windowed "reliable
- * future inbound", which answers a different (planning) question. Two
- * questions, two definitions, both canonical — kept apart deliberately.
+ * SRC-L3-07 — COMMITTED INBOUND STATUS DOMAIN, and the purchasing aggregates
+ * built on it, now live in services/purchasing/purchasingEvidence.ts so this
+ * endpoint and the Order Detail inventory assist (INV-TREAT-01) share ONE
+ * definition of what is already coming and what is already being bought.
+ * The SQL moved unchanged; the contracts SRC-L3-07/08/09 and SRC-ACT-BE-01/02
+ * protect still mean exactly what they meant before the extraction.
  */
-const COMMITTED_INBOUND_PO_STATUSES = [
-  'ordered',
-  'confirmed',
-  'in_production',
-  'shipped',
-  'partially_received',
-] as const;
 
 /** SRC-L3-02: what the merchant is actually looking at. */
 type TargetedIdentity = {
@@ -180,12 +175,12 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
       // enforces fulfilled_quantity <= quantity (CHECK constraint), so a fully
       // shipped line contributes 0 — no order-status filter needed, and none
       // exists on `orders` anyway.
-      const demandRow = await trx('order_revenue_units as oru')
-        .join('orders as o', 'o.lasyncro_order_id', 'oru.lasyncro_order_id')
-        .where('o.shop_id', shopId)
-        .andWhere('oru.lasyncro_variant_id', variantId)
-        .sum({ demand: trx.raw('oru.quantity - oru.fulfilled_quantity') })
-        .first();
+      const variantIdForEvidence = Array.isArray(variantId) ? variantId[0] : variantId;
+      const openDemandQty = await getVariantOpenDemandQty(
+        trx,
+        shopId,
+        variantIdForEvidence
+      );
 
       // inventory_truth is written ONLY by physical events (receive, stow,
       // pick, cancel). A variant with no row has genuinely never been received,
@@ -197,7 +192,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
         .sum({ available: 'available_quantity' })
         .first();
 
-      demandQty    = Number(demandRow?.demand ?? 0);
+      demandQty    = openDemandQty;
       availableQty = Number(availRow?.available ?? 0);
       neededQty    = Math.max(0, demandQty - availableQty);
 
@@ -217,19 +212,11 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
        * reorder_requests are NOT consulted: a queued request is buying intent
        * pooled for MOQ, with no supplier commitment and no ETA.
        */
-      const inboundRow = await trx('purchase_order_line_items as poli')
-        .join('purchase_orders as po', 'po.id', 'poli.po_id')
-        .where('po.shop_id', shopId)
-        .andWhere('poli.lasyncro_variant_id', variantId)
-        .whereIn('po.status', COMMITTED_INBOUND_PO_STATUSES as unknown as string[])
-        .sum({
-          inbound: trx.raw(
-            'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
-          ),
-        })
-        .first();
-
-      committedInbound = Number(inboundRow?.inbound ?? 0);
+      committedInbound = await getCommittedInboundQty(
+        trx,
+        shopId,
+        variantIdForEvidence
+      );
 
       /**
        * SRC-ACT-BE-01 — PENDING QUEUE INTENT.
@@ -237,16 +224,11 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
        * the tenant; the shop predicate is stated anyway so the query's grain is
        * legible at the call site rather than inferred from session state.
        */
-      const queueRow = await trx('reorder_requests')
-        .where({
-          shop_id: shopId,
-          lasyncro_variant_id: variantId,
-          status: 'pending',
-        })
-        .sum({ qty: 'qty_requested' })
-        .first();
-
-      pendingQueueQty = Number(queueRow?.qty ?? 0);
+      pendingQueueQty = await getPendingQueueQty(
+        trx,
+        shopId,
+        variantIdForEvidence
+      );
 
       /**
        * SRC-ACT-BE-02 — DRAFT PURCHASING WORK.
@@ -255,19 +237,7 @@ export async function httpGetSourcingRecommendations(req: Request, res: Response
        * status that is prepared work rather than supply, which is exactly why
        * it is excluded from COMMITTED_INBOUND_PO_STATUSES and counted here.
        */
-      const draftRow = await trx('purchase_order_line_items as poli')
-        .join('purchase_orders as po', 'po.id', 'poli.po_id')
-        .where('po.shop_id', shopId)
-        .andWhere('poli.lasyncro_variant_id', variantId)
-        .andWhere('po.status', 'draft')
-        .sum({
-          qty: trx.raw(
-            'GREATEST(poli.quantity_ordered - poli.quantity_received, 0)'
-          ),
-        })
-        .first();
-
-      draftPoQty = Number(draftRow?.qty ?? 0);
+      draftPoQty = await getDraftPoQty(trx, shopId, variantIdForEvidence);
 
       /**
        * SRC-L3-10/11B — BLOCKING ORDER CONTEXT
