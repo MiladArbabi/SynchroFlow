@@ -62,6 +62,7 @@ export async function handleSubscriptionDeleted(
       source: 'stripe_webhook',
       reason: 'customer.subscription.deleted',
       actorType: 'stripe',
+      actingProvider: 'stripe',
       externalEventId: envelope.eventId,
       idempotencyKey: envelope.eventId,
       occurredAt: envelope.receivedAt,

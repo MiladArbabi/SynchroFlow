@@ -83,7 +83,14 @@ export const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency, {
 // Required env vars — all use STRIPE_PRICE_{TIER}_{INTERVAL}_{CURRENCY} convention:
 //   STRIPE_PRICE_{CORE|GROWTH|SCALE}_{MONTHLY|ANNUAL}_{USD|GBP|EUR}
 
-const PRICE_ID_ENV_KEYS: Record<Exclude<Tier, 'starter'>, Record<BillingCurrency, {
+/**
+ * BILL-ENTITLEMENT-01 / P0-B3: exported so the INBOUND reverse resolver
+ * (apps/backend/src/services/billing/providerPriceResolver.service.ts) is built
+ * from the exact same table that drives outbound checkout. There must never be
+ * a second, manually maintained list of Stripe commercial meanings — a reverse
+ * map that can drift from the forward map is the defect this slice closes.
+ */
+export const PRICE_ID_ENV_KEYS: Record<Exclude<Tier, 'starter'>, Record<BillingCurrency, {
   monthly: string;
   annual: string;
 }>> = {
@@ -136,7 +143,8 @@ export const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, numbe
   growth: { GBP: 1000, USD: 1200, EUR: 1100 },
 };
 
-const SEAT_PRICE_ID_ENV_KEYS: Record<SeatTier, Record<BillingCurrency, string>> = {
+/** Exported for the same single-source-of-truth reason as PRICE_ID_ENV_KEYS. */
+export const SEAT_PRICE_ID_ENV_KEYS: Record<SeatTier, Record<BillingCurrency, string>> = {
   core: {
     GBP: 'STRIPE_PRICE_SEAT_ADDON_CORE_GBP',
     USD: 'STRIPE_PRICE_SEAT_ADDON_CORE_USD',

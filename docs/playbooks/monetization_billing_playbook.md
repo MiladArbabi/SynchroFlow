@@ -4682,3 +4682,256 @@ JWT / current-state freshness are separate slices and are not addressed here.
 This slice also does not retroactively explain the June 2026 reviewer-shop
 Growth → Scale transition; it makes any future equivalent transition
 attributable.
+
+---
+
+## 38. Provider Plan / Price Mapping Integrity — `BILL-ENTITLEMENT-01` / `P0-B3` (implemented + locally verified 2026-09-08)
+
+§37 proved that every authoritative write goes through one service and leaves
+provenance. It did not govern whether the *value* being written was grounded in
+what the merchant actually bought. This slice closes that.
+
+### 38.1 Audit finding — the defect before P0-B3
+
+| Provider | What decided the tier | Consequence |
+|---|---|---|
+| Stripe | `sub.metadata.tier` (`handleSubscriptionUpsert.ts:59`) | mutable, not rewritten by portal-driven plan changes, absent on any subscription created outside our own checkout |
+| Shopify | `AppSubscription.name` via `PLAN_NAME_TO_TIER` | a Partner Dashboard rename was a silent commercial outage; any plan named "Growth" granted Growth at any price |
+
+Specifically:
+
+- the actual Stripe `price.id` was never reverse-mapped to a tier — no such map
+  existed anywhere in the repository
+- unknown Stripe line items could be treated as the base item **by exclusion**
+  (`items.find(i => !SEAT_ADDON_PRICE_IDS.has(...)) ?? items[0]`)
+- missing seat-price env configuration silently degraded classification: the set
+  was built with `.filter(Boolean)`, so an unset var turned a real seat line into
+  a base-tier candidate
+- Shopify recurring price amount, currency and interval were never fetched, so
+  no commercial cross-check was possible
+- provider ownership was enforced mostly by callers and controllers (the
+  outbound `403 APP_STORE_MERCHANT` guards), not at the canonical transition
+  boundary
+
+Audit verdict was `DEFECT_FOUND`.
+
+### 38.2 Stripe — permanent architecture
+
+The actual Stripe **`price.id` is authoritative**.
+
+Canonical reverse identity:
+
+```
+price.id  ->  { tier, currency, interval, itemKind }
+itemKind  ->  base | seat_addon
+```
+
+One shared pricing source drives both directions: the reverse table is built by
+inverting `PRICE_ID_ENV_KEYS` and `SEAT_PRICE_ID_ENV_KEYS` — the same tables
+`getStripePriceId` / `getSeatPriceId` use for outbound checkout. There is
+deliberately no second hand-maintained list, because a reverse map that can
+drift from the forward map would reintroduce this exact class of defect.
+
+Rules:
+
+- `metadata.tier` is **diagnostic / cross-check only** and can never decide a tier
+- unknown or ambiguous prices **fail closed**
+- **no `items[0]` fallback**, and no classification by "not a seat add-on"
+- **exactly one** known base plan line is required — zero or several is rejected
+- a duplicate configured price id (the same id under two env keys) fails at
+  table construction
+- price-configuration completeness can be asserted explicitly via
+  `assertStripePriceConfigComplete()`; the resolvers deliberately do not call it,
+  so a webhook fails on the specific item it cannot recognize rather than on an
+  unrelated currency the shop never uses
+- terminal `canceled` / `unpaid` → Starter behaviour is **preserved**, and
+  `past_due` remains excluded from it (Stripe's own dunning grace still applies)
+- interval and currency now come from the price identity; period boundaries come
+  from the actual resolved base item; `extra_seats` is counted only from lines
+  that genuinely resolve as seat add-ons
+
+A metadata/price disagreement is recorded on the transition (`metadata_tier`,
+`metadata_disagreement`, `stripe_base_price_id`, `price_derived_*`) and logged
+loudly but non-fatally — the price has already decided the tier.
+
+### 38.3 Shopify — permanent architecture
+
+Shopify-installed tenants are Shopify-billed and Shopify-owned.
+
+Authoritative Managed Pricing path:
+
+```
+AppSubscription
+  -> lineItems[]
+  -> plan
+  -> pricingDetails            (AppRecurringPricing)
+  -> planHandle                -> canonical tier
+```
+
+| planHandle | tier |
+|---|---|
+| `early-access` | starter |
+| `core` | core |
+| `growth` | growth |
+| `scale` | scale |
+
+- `AppSubscription.name` is **diagnostic / display only** and no longer
+  influences tier. `PLAN_NAME_TO_TIER` and its name-normalizer are removed.
+- recurring `price.amount`, `price.currencyCode` and `interval` are fetched and
+  carried through as **provider facts for cross-check and provenance** — they
+  are not hardcoded expectations, because no canonical source declares per-plan
+  Shopify amounts
+- a missing or unmapped handle throws, with an explicit refusal to fall back to
+  the display name
+- existing semantics are **preserved unchanged**: `ACTIVE` entitlement,
+  `CANCELLED`/`FROZEN` in-period grace (SHB-08), lapsed grace → Starter
+  (SHB-13), `PENDING`/`DECLINED`/`EXPIRED` → not entitled, the Shopify→DB status
+  mapping, `currentPeriodEnd` handling, and the no-active-subscription Starter
+  fallback
+
+**Correction to an earlier note.** §SHB-12 recorded that `AppSubscription` has
+no handle field and that tier therefore had to key on `name`. That is no longer
+accurate: `AppRecurringPricing.planHandle` is available from Admin API 2025-04
+onward. The name-keyed mapping is retired.
+
+### 38.4 Provider ownership
+
+Enforcement now lives **in `transitionShopSubscription`** — the one boundary
+every authoritative write already passes through — rather than only in
+individual controllers.
+
+- a normal Stripe event cannot mutate Shopify-owned commercial state
+- a normal Shopify event cannot mutate Stripe-owned commercial state
+- first-provider initialization remains allowed (a shop with no subscription row
+  is unowned)
+- an explicit provider migration requires `allowProviderSwitch=true`
+- the current explicit Shopify takeover path is OAuth / app-store / reconnect
+  provider stamping — the deliberate, merchant-initiated event that makes a
+  tenant Shopify-owned, already gated on `installSource`
+- system / auth / trial transitions remain **non-provider** transitions: they
+  declare no acting provider and keep their pre-P0-B3 behaviour exactly
+
+The gate runs after the advisory lock and after the current-state read, so the
+decision is made on a value no competing transition can change until the
+transaction ends — a check-then-act race cannot let a foreign write land in the
+gap. A refusal raises a dedicated `ProviderOwnershipError` and occurs before any
+mutation, so it leaves zero side effects.
+
+The outbound `403 APP_STORE_MERCHANT` controller guards remain as defence in
+depth.
+
+**P0-B2 semantics preserved:** advisory lock, same-transaction atomicity,
+per-shop idempotency, the no-ledger-row-for-no-op rule, and the append-only
+ledger are all unchanged. The new inputs are additive and optional.
+
+### 38.5 Implementation files
+
+New:
+
+- `apps/backend/src/services/billing/providerPriceResolver.service.ts`
+- `apps/backend/src/services/shopify/shopifyCommercialResolver.service.ts`
+
+Modified:
+
+- `packages/backend-core/src/config/pricing.config.ts`
+- `packages/backend-core/dist/config/pricing.config.js`
+- `packages/backend-core/dist/config/pricing.config.d.ts`
+- `apps/backend/src/services/billing/subscriptionTransition.service.ts`
+- `apps/backend/src/api/billing/handlers/handleSubscriptionUpsert.ts`
+- `apps/backend/src/api/billing/handlers/handleSubscriptionDeleted.ts`
+- `apps/backend/src/api/billing/handlers/handlePaymentFailed.ts`
+- `apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts`
+- `apps/backend/src/services/shopify/applyShopifyBillingState.service.ts`
+- `apps/backend/src/services/shopify/forceDowngradeToStarter.service.ts`
+- `apps/backend/src/api/integrations/integration.controller.ts`
+
+### 38.6 Regression contracts
+
+- `tests/unit/backend/billing/provider-price-resolver.test.ts`
+- `tests/unit/backend/shopify/shopify-commercial-resolver.test.ts`
+- `tests/integration/billing/provider-commercial-mapping.test.ts`
+- `tests/integration/billing/provider-ownership-concurrency.test.ts`
+- `tests/contract/commercial-provider-mapping-boundary.contract.test.ts`
+
+79 new tests, authored RED first.
+
+Initial product RED proved:
+
+- a Stripe **Scale** price with `metadata.tier=growth` persisted **Growth**
+- the canonical Stripe and Shopify resolvers were absent
+- a metadata-derived tier taint reached the transition boundary (proven by an
+  AST taint walk, not a same-line grep — the old handler laundered metadata
+  through a local and a ternary before the value reached the call)
+- provider ownership was absent at the canonical boundary
+
+### 38.7 Implementation correction
+
+The first GREEN attempt exposed **stale compiled `backend-core` output**:
+
+- `src` exported `PRICE_ID_ENV_KEYS` / `SEAT_PRICE_ID_ENV_KEYS`
+- `dist` still had them private
+- a targeted `npm --prefix packages/backend-core run build` corrected `dist`
+- the same build regenerated
+  `packages/backend-core/dist/services/entitlements.service.js`, which was
+  identified as stale **unrelated** generated output and restored to HEAD rather
+  than carried in this slice
+- the architecture test additionally found only a stale legacy symbol name in a
+  comment; the comment was corrected — no behaviour change
+
+### 38.8 Verification evidence
+
+P0-B3 targeted:
+
+| Layer | Result |
+|---|---|
+| unit | 2 / 2 suites, 57 / 57 tests PASS |
+| integration | 2 / 2 suites, 9 / 9 tests PASS |
+| architecture / static | 1 / 1 suite, 13 / 13 tests PASS |
+| **total** | **79 / 79 PASS** |
+
+- disposable integration database created, migrated, runtime-checked and
+  dropped successfully
+
+P0-B2 regression (no prior contract weakened):
+
+- subscription transition integration: 3 / 3 suites, 34 / 34 PASS
+- commercial writer boundary: 1 / 1 suite, 10 / 10 PASS
+
+Other:
+
+- backend TypeScript: **0 errors**
+- `backend-core` targeted build: exit 0
+
+### 38.9 Configuration facts (recorded, not changed)
+
+| Setting | Value |
+|---|---|
+| local root `.env` `SHOPIFY_API_VERSION` | `2026-04` |
+| production runtime `SHOPIFY_API_VERSION` | `2025-07` |
+| released Shopify webhook API config | `2026-04` |
+
+All relevant versions support `AppRecurringPricing.planHandle` (available from
+2025-04). Version alignment across these three is **adjacent work**, not part of
+P0-B3, and nothing in this slice changed `SHOPIFY_API_VERSION`.
+
+### 38.10 Certification state
+
+`BILL-ENTITLEMENT-01` / `P0-B3` is **IMPLEMENTED + LOCALLY VERIFIED**.
+
+It is **not** yet committed, pushed, CI/deploy certified, or production
+certified. All evidence in §38.8 is local source-and-test evidence.
+
+Provider E2E / production certification still requires:
+
+- deployed Shopify reconciliation capability verified against real provider data
+  (a live `AppSubscription` actually returning `planHandle` through the
+  production API version)
+- the Stripe live/default Customer Portal configuration checked read-only if
+  relevant — whether portal plan switching is enabled is Stripe Dashboard state,
+  not repository state, and remains the one question the source audit could not
+  settle
+- production health and deployment evidence
+
+**Parent.** `BILL-ENTITLEMENT-01` / `P0-B` Commercial State Integrity remains
+**OPEN** after P0-B3. Webhook ordering/idempotency review, reconciliation
+review, and JWT / current-state freshness are still separate slices.

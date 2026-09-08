@@ -744,6 +744,16 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
             source: 'shopify_oauth_callback',
             reason: `billing_provider_stamp:${oauthContext.installSource}`,
             actorType: 'shopify',
+            actingProvider: 'shopify',
+            // P0-B3: this is THE explicit provider-migration path. An App Store
+            // install or reconnect (both checked above) is the deliberate,
+            // merchant-initiated event that makes a tenant Shopify-owned, so it
+            // is the one caller permitted to move ownership. BILL-19 behaviour
+            // is preserved exactly — without this the stamp would be refused on
+            // a shop still recorded as stripe-billed, which is precisely the
+            // case it exists to fix. No ordinary recurring provider event sets
+            // this flag.
+            allowProviderSwitch: true,
           },
           trx
         );
@@ -985,6 +995,9 @@ export const handleShopifyInstall = async (req: Request, res: Response) => {
             source: 'shopify_app_store_install',
             reason: 'app_store_install_trial_grant',
             actorType: 'shopify',
+            // P0-B3: creation — the shop has no prior row, so this is
+            // first-provider initialization, never a switch.
+            actingProvider: 'shopify',
           },
           trx
         );

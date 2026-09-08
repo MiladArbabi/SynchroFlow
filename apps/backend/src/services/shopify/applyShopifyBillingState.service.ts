@@ -57,6 +57,19 @@ export async function applyShopifyBillingState(
       source: 'shopify_billing_reconciliation',
       reason: 'shopify_billing_state_applied',
       actorType: 'shopify',
+      actingProvider: 'shopify',
+      // P0-B3: the provider facts that decided this tier. planHandle is the
+      // authoritative key; name/price/interval are cross-check context. All are
+      // provider configuration identifiers, not secrets.
+      metadata: {
+        shopify_plan_handle: billingState.planHandle,
+        shopify_subscription_id: billingState.shopifySubscriptionId,
+        shopify_display_name: billingState.shopifySubscriptionName,
+        shopify_price_amount: billingState.price?.amount ?? null,
+        shopify_price_currency: billingState.price?.currencyCode ?? null,
+        shopify_interval: billingState.interval,
+        shopify_is_entitled: billingState.isEntitled,
+      },
     },
     trx
   );

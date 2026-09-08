@@ -22,27 +22,19 @@
 
 import type { Knex } from 'knex';
 import { WebhookEnvelope } from '../../webhooks/types.js';
-import { getTierConfig, isValidTier, TIER_ORDER, Tier } from '@lasyncro/backend-core/config/tiers.js';
+import { getTierConfig, TIER_ORDER, Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { EntitlementsService } from '@lasyncro/backend-core/services/entitlements.service.js';
 import { EntitlementRevocationService } from '../../../services/entitlement-revocation.service.js';
 import { captureEvent } from '../../../utils/analytics.js';
 import { transitionShopSubscription } from '../../../services/billing/subscriptionTransition.service.js';
+import { resolveStripeSubscriptionCommercial } from '../../../services/billing/providerPriceResolver.service.js';
 
-// AUD-C16: known extra-seat add-on Price IDs, used to separate seat
-// line items from the base tier line item on a subscription. Read
-// directly from env rather than importing getSeatPriceId, since we
-// need the full set to test membership, not a single tier/currency
-// lookup.
-const SEAT_ADDON_PRICE_IDS = new Set(
-  [
-    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_USD,
-    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_GBP,
-    process.env.STRIPE_PRICE_SEAT_ADDON_CORE_EUR,
-    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_USD,
-    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_GBP,
-    process.env.STRIPE_PRICE_SEAT_ADDON_GROWTH_EUR,
-  ].filter(Boolean)
-);
+// BILL-ENTITLEMENT-01 / P0-B3: the env-derived SEAT_ADDON_PRICE_IDS set that
+// used to live here has been removed. It classified items by exclusion
+// ("not a seat => it's the base tier"), and because it was built with
+// `.filter(Boolean)` an unset seat env var silently turned a real seat line
+// into the base tier line. Item classification is now positive and total —
+// every line must resolve through the canonical provider-price resolver.
 
 export async function handleSubscriptionUpsert(
   envelope: WebhookEnvelope,
@@ -56,15 +48,15 @@ export async function handleSubscriptionUpsert(
     throw new Error('[billing][subscription_upsert] shopId required');
   }
 
-  const rawTier = sub?.metadata?.tier;
-  if (!isValidTier(rawTier)) {
-    console.error('[billing][subscription_upsert] invalid or missing tier in metadata', {
-      eventId: envelope.eventId,
-      shopId,
-      rawTier,
-    });
-    throw new Error(`[billing][subscription_upsert] invalid tier: "${rawTier}"`);
-  }
+  // BILL-ENTITLEMENT-01 / P0-B3: the tier is derived from the Stripe price the
+  // merchant actually bought, never from sub.metadata.tier. Metadata is mutable,
+  // is NOT rewritten when a merchant switches plan in the Stripe Customer Portal,
+  // and is absent on any subscription created outside our own checkout.
+  //
+  // resolveStripeSubscriptionCommercial fails closed on an unknown price, on zero
+  // or multiple base lines, and on any unrecognized line item — there is no
+  // metadata fallback and no items[0] fallback.
+  const commercial = resolveStripeSubscriptionCommercial(sub);
 
   const status = sub?.status ?? 'active';
 
@@ -78,7 +70,7 @@ export async function handleSubscriptionUpsert(
   const TERMINAL_STRIPE_STATUSES = new Set(['canceled', 'unpaid']);
   const tier: Tier = TERMINAL_STRIPE_STATUSES.has(status)
     ? 'starter'
-    : (rawTier as Tier);
+    : commercial.tier;
   const tierConfig = getTierConfig(tier);
 
   // AUD-C16: subscription items now may include a seat add-on line
@@ -86,13 +78,15 @@ export async function handleSubscriptionUpsert(
   // base item. extra_seats is derived fresh from Stripe's item list
   // every upsert, so removing seats via the Stripe portal self-corrects
   // on the next webhook without separate remove logic.
-  const items = sub?.items?.data ?? [];
-  const baseItem = items.find((i: any) => !SEAT_ADDON_PRICE_IDS.has(i?.price?.id)) ?? items[0];
-  const extraSeats = items
-    .filter((i: any) => SEAT_ADDON_PRICE_IDS.has(i?.price?.id))
-    .reduce((sum: number, i: any) => sum + (i?.quantity ?? 0), 0);
+  // Base item and seat count both come from the resolver's positive
+  // classification, so period boundaries below are read from the line that
+  // genuinely IS the tier line rather than from whichever line Stripe listed
+  // first. Seats are counted only from lines that resolved as seat add-ons.
+  const baseItem = commercial.baseItem;
+  const extraSeats = commercial.extraSeats;
 
-  const billingInterval = baseItem?.plan?.interval === 'year' ? 'annual' : 'monthly';
+  // Interval comes from the price identity, not from the item's plan object.
+  const billingInterval = commercial.interval;
   const stripeCustomerId = sub?.customer ?? null;
   const stripeSubscriptionId = sub?.id ?? null;
 
@@ -152,12 +146,38 @@ export async function handleSubscriptionUpsert(
       source: 'stripe_webhook',
       reason: envelope.eventType,
       actorType: 'stripe',
+      actingProvider: 'stripe',
       externalEventId: envelope.eventId,
       idempotencyKey: envelope.eventId,
       occurredAt: envelope.receivedAt,
+      // Provider facts that decided this transition, so a metadata/price
+      // disagreement is inspectable after the fact. Price IDs and tier names
+      // are configuration identifiers, not secrets — no key or token is stored.
+      metadata: {
+        stripe_base_price_id: commercial.basePriceId,
+        price_derived_tier: commercial.tier,
+        price_derived_interval: commercial.interval,
+        price_derived_currency: commercial.currency,
+        metadata_tier: commercial.metadataTier,
+        metadata_disagreement: commercial.metadataDisagreement,
+        extra_seats: commercial.extraSeats,
+      },
     },
     trx
   );
+
+  if (commercial.metadataDisagreement) {
+    // Loud, but non-fatal: the price has already decided the tier. This is the
+    // signal that a portal-driven or dashboard-driven plan change happened
+    // without our metadata being rewritten.
+    console.warn('[billing][subscription_upsert] stripe metadata.tier disagrees with purchased price', {
+      shopId,
+      eventId: envelope.eventId,
+      priceDerivedTier: commercial.tier,
+      metadataTier: commercial.metadataTier,
+      basePriceId: commercial.basePriceId,
+    });
+  }
 
   // 2. Re-seed entitlements from tier constants
   // Additive only — EntitlementsService never revokes

@@ -52,6 +52,8 @@ const CREATION_DEFAULTS = {
   billingProvider: 'stripe',
 } as const;
 
+export type ProviderId = 'stripe' | 'shopify';
+
 export type AuthoritativeState = {
   tier: string;
   status: string;
@@ -97,6 +99,27 @@ export interface SubscriptionTransitionInput {
 
   metadata?: Record<string, unknown> | null;
   occurredAt?: Date;
+
+  /**
+   * BILL-ENTITLEMENT-01 / P0-B3 — provider ownership.
+   *
+   * The provider whose event is driving this transition. Normal Stripe webhook
+   * callers declare 'stripe'; normal Shopify webhook/reconciliation callers
+   * declare 'shopify'.
+   *
+   * OMITTED means "not a provider event" (auth registration, the trial-expiry
+   * worker, system corrections). Those keep their pre-P0-B3 behaviour exactly
+   * and are never treated as foreign-provider events.
+   */
+  actingProvider?: ProviderId;
+
+  /**
+   * Explicit, separately-authorized provider migration. Only a genuinely
+   * deliberate switch may set this — an App Store install/reconnect asserting
+   * Shopify ownership, or an operator-run commercial migration. It must never
+   * be set by an ordinary recurring provider event.
+   */
+  allowProviderSwitch?: boolean;
 }
 
 export interface SubscriptionTransitionResult {
@@ -112,6 +135,30 @@ export interface SubscriptionTransitionResult {
   to: AuthoritativeState;
   /** Ledger row id, or null when nothing authoritative changed. */
   transitionId: string | null;
+}
+
+/**
+ * Raised when a provider event targets a tenant owned by the other provider.
+ * Distinct class so callers/tests can tell an ownership refusal apart from a
+ * mapping or database failure.
+ */
+export class ProviderOwnershipError extends Error {
+  readonly shopId: number;
+  readonly actingProvider: ProviderId;
+  readonly currentProvider: string;
+
+  constructor(shopId: number, actingProvider: ProviderId, currentProvider: string) {
+    super(
+      `[subscription-transition] provider ownership violation: shop ${shopId} is billed by ` +
+        `'${currentProvider}' but a '${actingProvider}' event attempted to change ` +
+        `entitlement-authoritative state. An explicit provider migration must set ` +
+        `allowProviderSwitch.`
+    );
+    this.name = 'ProviderOwnershipError';
+    this.shopId = shopId;
+    this.actingProvider = actingProvider;
+    this.currentProvider = currentProvider;
+  }
 }
 
 interface SubscriptionRow {
@@ -151,6 +198,43 @@ export async function transitionShopSubscription(
     shopId,
   ]);
 
+  const current = (await trx(SUBSCRIPTION_TABLE)
+    .where({ shop_id: shopId })
+    .first('tier', 'status', 'billing_provider')) as SubscriptionRow | undefined;
+
+  const from: AuthoritativeState | null = current
+    ? {
+        tier: current.tier,
+        status: current.status,
+        billingProvider: current.billing_provider,
+      }
+    : null;
+
+  /**
+   * PROVIDER OWNERSHIP GATE — BILL-ENTITLEMENT-01 / P0-B3.
+   *
+   * Enforced HERE, at the one boundary every authoritative write already goes
+   * through, rather than only in individual controllers. billing.controller.ts's
+   * 403 APP_STORE_MERCHANT guards remain as defence in depth on the outbound
+   * side; this is the inbound guarantee.
+   *
+   * Runs after the advisory lock and after reading current state, so the
+   * decision is made against a value no competing transition can change until
+   * this transaction ends — a check-then-act race cannot let a foreign write
+   * land in the gap.
+   *
+   * A shop with no subscription row is unowned: first-provider initialization
+   * is always legitimate.
+   */
+  if (
+    input.actingProvider !== undefined &&
+    from !== null &&
+    from.billingProvider !== input.actingProvider &&
+    input.allowProviderSwitch !== true
+  ) {
+    throw new ProviderOwnershipError(shopId, input.actingProvider, from.billingProvider);
+  }
+
   const idempotencyKey = input.idempotencyKey ?? null;
 
   if (idempotencyKey !== null) {
@@ -183,18 +267,6 @@ export async function transitionShopSubscription(
       };
     }
   }
-
-  const current = (await trx(SUBSCRIPTION_TABLE)
-    .where({ shop_id: shopId })
-    .first('tier', 'status', 'billing_provider')) as SubscriptionRow | undefined;
-
-  const from: AuthoritativeState | null = current
-    ? {
-        tier: current.tier,
-        status: current.status,
-        billingProvider: current.billing_provider,
-      }
-    : null;
 
   const to: AuthoritativeState = {
     tier: input.to.tier ?? from?.tier ?? CREATION_DEFAULTS.tier,

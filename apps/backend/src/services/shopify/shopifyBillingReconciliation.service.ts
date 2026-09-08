@@ -1,106 +1,36 @@
-
-// apps/backend/src/services/shopify/shopifyBillingReconciliation.service.ts
-//
-// Shopify Managed Pricing Reconciliation (SHB-01)
-// -------------------------------------------------
-// Authoritative fetch of a shop's live Shopify billing state via the
-// Admin GraphQL Active Subscription API. Reusable by:
-//   - handleAppSubscriptionUpdate webhook handler (event-triggered)
-//   - GET /api/v1/shopify-billing/subscription (on-demand, e.g. post-redirect)
-//   - future install-time / cron reconciliation
-//
-// HARD RULES:
-//   - Read-only against Shopify — never mutates shop_subscriptions itself.
-//     Callers own the DB write, matching handleSubscriptionUpsert's pattern.
-//   - AppSubscription has NO `handle` field (verified via introspection,
-//     SHB-12) — tier mapping keys on `name`, the invoice-facing display
-//     string. Comparison is normalized (trim + lowercase) to tolerate
-//     incidental whitespace/casing drift without silently breaking sync.
-//   - Multiple activeSubscriptions should not occur (Shopify allows one
-//     active app subscription per shop) but we defensively take the
-//     first ACTIVE one if present, else the first entry, rather than
-//     assume array length === 1.
-
 import { Tier } from '@lasyncro/backend-core/config/tiers.js';
 import { resolveShopifyAccessToken } from '../../api/shopify/shopify.billing.controller.js';
+import {
+  resolveShopifySubscriptionCommercial,
+  type ShopifyRecurringPrice,
+} from './shopifyCommercialResolver.service.js';
 
 const SHOPIFY_API_VERSION = process.env.SHOPIFY_API_VERSION!;
 
-// SHB-12: keys are the exact "Plan name for merchant invoices" values
-// as saved in the Partner Dashboard. Normalized lowercase at lookup time.
-const PLAN_NAME_TO_TIER: Record<string, Tier> = {
-  'early access': 'starter',
-  'core': 'core',
-  'growth': 'growth',
-  'scale': 'scale',
-};
+// BILL-ENTITLEMENT-01 / P0-B3: the legacy name-keyed tier map has been removed.
+// Tier used to be keyed on AppSubscription.name — the merchant-facing invoice
+// string — so a Partner Dashboard rename was a silent commercial outage and any
+// plan named "Growth" granted Growth at any price. Tier now comes from the
+// immutable AppRecurringPricing.planHandle via shopifyCommercialResolver.
+// Status/grace mapping moved there too, unchanged in behaviour.
 
-// Statuses that represent a merchant with paid access currently live.
-// PENDING is intentionally excluded — approval not yet completed.
+// Selection only (not entitlement): Shopify allows one active app subscription
+// per shop, but we defensively prefer an ACTIVE entry rather than assuming
+// array length === 1. Entitlement itself is decided by the canonical resolver.
 const ACTIVE_STATUSES = new Set(['ACTIVE']);
-
-// SHB-08: uninstall/cancellation must not cut access before the merchant's
-// already-paid period ends — Shopify still owes them that time. Only
-// statuses that represent a subscription that WAS genuinely active and
-// paid for get this grace: CANCELLED (explicit cancel or uninstall, which
-// auto-cancels the charge) and FROZEN (payment failure on an active sub —
-// same semantics as Stripe past_due, conventionally given a grace/dunning
-// window). DECLINED and EXPIRED mean the merchant never completed approval
-// in the first place — no paid period was ever purchased, so no grace
-// applies; downgrade is immediate. Confirmed with product owner.
-const GRACE_PERIOD_STATUSES = new Set(['CANCELLED', 'FROZEN']);
 
 export interface ShopifyBillingState {
   tier: Tier;
-  status: string; // raw Shopify status, stored verbatim for audit/display
-  isEntitled: boolean; // true only when status is a recognized active state
+  status: string; // mapped DB status
+  isEntitled: boolean; // true only when active or inside a paid grace period
   currentPeriodEnd: Date | null;
   shopifySubscriptionId: string | null;
   shopifySubscriptionName: string | null;
-}
-
-
-// shop_subscriptions.status has a DB check constraint
-// (shop_subscriptions_status_valid) written for Stripe's lowercase
-// lifecycle vocabulary: trialing, active, past_due, canceled, unpaid.
-// Shopify's AppSubscriptionStatus enum (ACTIVE, PENDING, DECLINED,
-// EXPIRED, FROZEN, CANCELLED) has no exact equivalents — writing the
-// raw Shopify value verbatim violates the constraint even for the
-// success case (case mismatch alone: 'ACTIVE' !== 'active'). Mapped
-// by closest semantic fit, confirmed with product owner:
-//   ACTIVE    -> active     (live paid entitlement)
-//   PENDING   -> unpaid     (no payment collected, awaiting decision)
-//   FROZEN    -> past_due   (billing issue, Shopify-side hold)
-//   DECLINED  -> canceled   (never activated)
-//   EXPIRED   -> canceled
-//   (no sub)  -> canceled   (no live paid subscription)
-const SHOPIFY_STATUS_TO_DB_STATUS: Record<string, string> = {
-  ACTIVE: 'active',
-  PENDING: 'unpaid',
-  FROZEN: 'past_due',
-  DECLINED: 'canceled',
-  EXPIRED: 'canceled',
-  CANCELLED: 'canceled',
-};
-
-function mapToDbStatus(shopifyStatus: string): string {
-  return SHOPIFY_STATUS_TO_DB_STATUS[shopifyStatus] ?? 'canceled';
-}
-
-export interface ShopifyBillingState {
-  tier: Tier;
-  status: string; // raw Shopify status, stored verbatim for audit/display
-  isEntitled: boolean; // true only when status is a recognized active state
-  shopifySubscriptionId: string | null;
-  shopifySubscriptionName: string | null;
-}
-
-// Shopify Managed Pricing plan names may use hyphens where our map uses
-// spaces (confirmed live: saved name is "Early-access", not "Early Access").
-// Normalize hyphens/underscores to spaces before lowercasing so both forms
-// match the same map key, rather than hardcoding one exact string.
-function normalizePlanName(name: string): string {
-  return name.trim().toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ');
+  /** Authoritative provider fact that decided the tier. */
+  planHandle: string | null;
+  /** Provider recurring pricing facts, for commercial cross-check/provenance. */
+  price: ShopifyRecurringPrice | null;
+  interval: string | null;
 }
 
 /**
@@ -118,6 +48,10 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      // P0-B3: lineItems -> plan -> pricingDetails is the authoritative path.
+      // planHandle is available from Admin API 2025-04 onward (production runs
+      // 2025-07, released webhook config 2026-04). `name` is still requested,
+      // but only for display/diagnostics.
       query: `{
         currentAppInstallation {
           activeSubscriptions {
@@ -125,6 +59,21 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
             name
             status
             currentPeriodEnd
+            lineItems {
+              id
+              plan {
+                pricingDetails {
+                  ... on AppRecurringPricing {
+                    planHandle
+                    interval
+                    price {
+                      amount
+                      currencyCode
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }`,
@@ -147,42 +96,30 @@ export async function fetchShopifyBillingState(shopId: number): Promise<ShopifyB
       currentPeriodEnd: null,
       shopifySubscriptionId: null,
       shopifySubscriptionName: null,
+      planHandle: null,
+      price: null,
+      interval: null,
     };
   }
 
   const sub =
     subscriptions.find((s: any) => ACTIVE_STATUSES.has(s.status)) ?? subscriptions[0];
 
-  const normalizedName = normalizePlanName(sub.name ?? '');
-  const tier = PLAN_NAME_TO_TIER[normalizedName];
-
-  if (!tier) {
-    console.error('[shopify_billing_reconciliation] unrecognized plan name', {
-      shopId,
-      rawName: sub.name,
-      subscriptionId: sub.id,
-    });
-    throw new Error(`[shopify_billing_reconciliation] unrecognized plan name: "${sub.name}"`);
-  }
-
-  const currentPeriodEnd = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
-  const inGracePeriod =
-    GRACE_PERIOD_STATUSES.has(sub.status) &&
-    currentPeriodEnd !== null &&
-    currentPeriodEnd.getTime() > Date.now();
-
-  // SHB-08: during grace, keep the merchant on their paid tier — the
-  // shopify-uninstall-grace worker sweeps shop_subscriptions directly
-  // (status + current_period_end) and downgrades once the period truly
-  // lapses, since Shopify sends no further webhook at that boundary.
-  const isEntitled = ACTIVE_STATUSES.has(sub.status) || inGracePeriod;
+  // Authoritative resolution is delegated to the canonical resolver, which
+  // keys on planHandle and preserves the SHB-08 grace and SHB-13 starter
+  // semantics exactly. An unmapped or missing handle throws there rather than
+  // falling back to the display name.
+  const commercial = resolveShopifySubscriptionCommercial(sub);
 
   return {
-    tier: isEntitled ? tier : 'starter', // SHB-13: force starter once active/grace both end
-    status: mapToDbStatus(sub.status),
-    isEntitled,
-    currentPeriodEnd,
-    shopifySubscriptionId: sub.id ?? null,
-    shopifySubscriptionName: sub.name ?? null,
+    tier: commercial.tier,
+    status: commercial.status,
+    isEntitled: commercial.isEntitled,
+    currentPeriodEnd: commercial.currentPeriodEnd,
+    shopifySubscriptionId: commercial.shopifySubscriptionId,
+    shopifySubscriptionName: commercial.displayName,
+    planHandle: commercial.planHandle,
+    price: commercial.price,
+    interval: commercial.interval,
   };
 }

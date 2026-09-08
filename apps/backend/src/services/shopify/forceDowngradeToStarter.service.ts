@@ -49,6 +49,12 @@ export async function forceDowngradeShopToStarter(
       source: 'shopify_force_downgrade',
       reason,
       actorType: 'system',
+      // P0-B3: both call sites are Shopify-scoped by construction —
+      // handleAppUninstalled gates on billing_provider === 'shopify', and the
+      // grace worker iterates list_expired_shopify_grace_tenants(). Declaring
+      // the acting provider therefore changes no behaviour and closes the path
+      // to a foreign-provider downgrade.
+      actingProvider: 'shopify',
     },
     trx
   );

@@ -9,6 +9,17 @@ export declare const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency,
     annual: number;
 }>>;
 /**
+ * BILL-ENTITLEMENT-01 / P0-B3: exported so the INBOUND reverse resolver
+ * (apps/backend/src/services/billing/providerPriceResolver.service.ts) is built
+ * from the exact same table that drives outbound checkout. There must never be
+ * a second, manually maintained list of Stripe commercial meanings — a reverse
+ * map that can drift from the forward map is the defect this slice closes.
+ */
+export declare const PRICE_ID_ENV_KEYS: Record<Exclude<Tier, 'starter'>, Record<BillingCurrency, {
+    monthly: string;
+    annual: string;
+}>>;
+/**
  * Returns the Stripe Price ID for a given tier, currency, and interval.
  * Throws loudly if the env var is missing — fail at checkout creation,
  * not silently with an undefined Price ID passed to Stripe.
@@ -16,6 +27,8 @@ export declare const PEGGED_DISPLAY_PRICES: Record<Tier, Record<BillingCurrency,
 export declare function getStripePriceId(tier: Exclude<Tier, 'starter'>, currency: BillingCurrency, interval: BillingInterval): string;
 export type SeatTier = 'core' | 'growth';
 export declare const SEAT_DISPLAY_PRICES: Record<SeatTier, Record<BillingCurrency, number>>;
+/** Exported for the same single-source-of-truth reason as PRICE_ID_ENV_KEYS. */
+export declare const SEAT_PRICE_ID_ENV_KEYS: Record<SeatTier, Record<BillingCurrency, string>>;
 /**
  * Returns the Stripe Price ID for an extra-seat add-on.
  * Throws loudly if the env var is missing, same contract as getStripePriceId.

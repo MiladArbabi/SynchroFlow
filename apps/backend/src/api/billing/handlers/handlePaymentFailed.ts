@@ -41,6 +41,7 @@ export async function handlePaymentFailed(
       source: 'stripe_webhook',
       reason: 'invoice.payment_failed',
       actorType: 'stripe',
+      actingProvider: 'stripe',
       externalEventId: envelope.eventId,
       idempotencyKey: envelope.eventId,
       occurredAt: envelope.receivedAt,
