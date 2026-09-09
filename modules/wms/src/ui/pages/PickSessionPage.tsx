@@ -43,7 +43,8 @@ import { useScanSourceDetector } from '../hooks/useScanSourceDetector.js';
  * PICK-AUD-08    — No MUI color= props, sx with var(--accent) tokens throughout
  * PICK-AUD-09    — fontWeight max 600
  * PICK-AUD-10    — Full exception taxonomy from Playbook §3
- * PICK-AUD-11    — onCreateProblemTask called on every exception
+ * PICK-AUD-11    — SUPERSEDED by GH-1049: the server owns Problem Center task
+ *                  creation. Pick reports physical truth exactly once.
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -80,6 +81,28 @@ export interface ConfirmScanParams {
 export interface ReportExceptionParams {
   lasyncro_line_item_id: string;
   lasyncro_variant_id: string;
+  /** GH-1049: exact physical pick task; undefined on legacy batches. */
+  reservation_allocation_id?: string;
+  exception_type: string;
+  /** GH-1049: Pick clients report at the pick stage. */
+  stage: 'pick';
+  quantity_required: number;
+  quantity_found: number;
+  /** GH-1049: stable per-report id so a retry replays instead of duplicating. */
+  device_event_id: string;
+  notes?: string;
+}
+
+/**
+ * Pack-stage exception payload.
+ *
+ * Pack custody is a later GH-1049 slice, so this deliberately keeps the
+ * pre-GH-1049 shape and is NOT the Pick contract above — Pick alone carries
+ * allocation identity, stage and a device event id today.
+ */
+export interface ReportPackExceptionParams {
+  lasyncro_line_item_id: string;
+  lasyncro_variant_id: string;
   exception_type: string;
   quantity_required: number;
   quantity_found: number;
@@ -107,22 +130,21 @@ export interface PickSessionPageProps {
   onResolveBarcode: (scannedValue: string) => Promise<{ lasyncro_variant_id: string; lasyncro_unit_id?: string } | null>;
   onConfirmScan: (params: ConfirmScanParams) => Promise<void>;
   onReportException: (params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
-  onCreateProblemTask: (params: CreateProblemTaskParams) => Promise<void>;
   onPickComplete: () => Promise<void>;
 }
 
 type SessionPhase = 'brief' | 'location_scan' | 'product_scan' | 'qty_confirm' | 'summary' | 'done';
 
+/**
+ * GH-1049 operator taxonomy — exactly the five physical outcomes a picker can
+ * report. order_cancelled is a system outcome and never operator-selectable.
+ */
 type ExceptionType =
   | 'item_missing'
   | 'short_pick'
-  | 'defect'
-  | 'packaging_damage'
-  | 'wrong_item'
-  | 'wrong_variant'
-  | 'wrong_quantity'
-  | 'barcode_mismatch'
-  | 'other';
+  | 'product_defect'
+  | 'packaging_defect'
+  | 'wrong_item';
 
 interface PickResult {
   lineItem: LineItem;
@@ -135,19 +157,22 @@ interface PickResult {
 const EXCEPTION_LABELS: Record<ExceptionType, string> = {
   item_missing:      'Item not found at location',
   short_pick:        'Short pick — fewer units than required',
-  defect:            'Product defect',
-  packaging_damage:  'Packaging damaged',
+  product_defect:    'Product defect',
+  packaging_defect:  'Packaging damaged',
   wrong_item:        'Wrong item entirely',
-  wrong_variant:     'Wrong variant (size / colour)',
-  wrong_quantity:    'Wrong quantity on label',
-  barcode_mismatch:  'Barcode mismatch',
-  other:             'Other',
 };
 
-const NOTES_REQUIRED: ExceptionType[] = ['barcode_mismatch', 'other'];
+const NOTES_REQUIRED: ExceptionType[] = [];
 const QTY_REQUIRED: ExceptionType[] = ['short_pick'];
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Stable client event id for one exception report (GH-1049 idempotency). */
+function newEventId(): string {
+  const c = globalThis.crypto as { randomUUID?: () => string } | undefined;
+  if (c?.randomUUID) return c.randomUUID();
+  return `evt-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
 
 /** Accept LOC-A-1-3-7 or A-1-3-7 against location_code A-1-3-7 */
 function locationMatches(scanned: string, locationCode: string): boolean {
@@ -172,7 +197,6 @@ export default function PickSessionPage({
   onResolveBarcode,
   onConfirmScan,
   onReportException,
-  onCreateProblemTask,
   onPickComplete,
 }: PickSessionPageProps) {
   const theme = useTheme();
@@ -198,6 +222,12 @@ export default function PickSessionPage({
   const [exceptionNotes,      setExceptionNotes]      = useState('');
   const [exceptionError,      setExceptionError]      = useState<string | null>(null);
   const [exceptionProcessing, setExceptionProcessing] = useState(false);
+  /**
+   * GH-1049 — stable identity for ONE operator report. Minted when the dialog
+   * opens and held across retries, so a resubmit after a failed response
+   * replays the same incident instead of creating a second one.
+   */
+  const [exceptionEventId, setExceptionEventId] = useState<string>(() => newEventId());
 
   const [pickResults,    setPickResults]    = useState<PickResult[]>([]);
   const [completingPick, setCompletingPick] = useState(false);
@@ -346,23 +376,24 @@ try {
     setExceptionError(null);
     const qtyFound = exceptionType === 'short_pick' ? (parseInt(exceptionQty, 10) || 0) : 0;
 
+    /**
+     * GH-1049 — one report carries the whole physical truth: which allocation,
+     * what was expected, what was actually found. The server creates the
+     * linked Problem Center task in the same transaction; the client must not
+     * mint a second incident.
+     */
     onReportException({
       lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
       lasyncro_variant_id:   currentItem.lasyncro_variant_id,
+      reservation_allocation_id:
+        currentItem.reservation_allocation_id ?? undefined,
       exception_type:        exceptionType,
+      stage:                 'pick',
       quantity_required:     currentItem.quantity,
       quantity_found:        qtyFound,
+      device_event_id:       exceptionEventId,
       notes:                 exceptionNotes.trim() || undefined,
     })
-      .then((reported) =>
-        onCreateProblemTask({
-          lasyncro_variant_id: currentItem.lasyncro_variant_id,
-          quantity:            currentItem.quantity - qtyFound,
-          exception_type:      exceptionType,
-          source:              'pick',
-          source_exception_id: reported?.pick_exception_id,
-        })
-      )
       .then(() => {
         setPickResults(prev => [...prev, { lineItem: currentItem, status: 'exception', exceptionType }]);
         setExceptionDialog(false);
@@ -376,7 +407,7 @@ try {
         setExceptionError(msg);
       })
       .finally(() => setExceptionProcessing(false));
-  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, onReportException, onCreateProblemTask, advanceOrSummary]);
+  }, [currentItem, exceptionType, exceptionQty, exceptionNotes, exceptionEventId, onReportException, advanceOrSummary]);
 
   // ── Pick complete ──────────────────────────────────────────
   const handlePickComplete = useCallback(() => {
@@ -395,6 +426,7 @@ try {
   }, [onPickComplete, onComplete]);
 
   const openExceptionDialog = useCallback(() => {
+    setExceptionEventId(newEventId());
     setExceptionType(null);
     setExceptionQty('');
     setExceptionNotes('');

@@ -20,6 +20,7 @@ import PickSessionPage, {
   type LineItem,
   type ConfirmScanParams,
   type ReportExceptionParams,
+  type ReportPackExceptionParams,
   type CreateProblemTaskParams,
 } from './PickSessionPage.js';
 import PackSessionPage, {
@@ -154,7 +155,7 @@ export type WmsModuleFT2Props = {
     lasyncro_variant_id: string;
     quantity_confirmed: number;
   }) => Promise<{ order_complete: boolean }>;
-  onReportPackException: (batchId: string, params: ReportExceptionParams) => Promise<{ pick_exception_id: string }>;
+  onReportPackException: (batchId: string, params: ReportPackExceptionParams) => Promise<{ pick_exception_id: string }>;
   onPrintLabel: (orderId: string) => Promise<void>;
   onPrintInvoice: (orderId: string) => Promise<void>;
   onPackComplete: (batchId: string) => Promise<void>;
@@ -1201,7 +1202,6 @@ function WmsModuleFT2Inner({
         onResolveBarcode={onResolveBarcode}
         onConfirmScan={(params) => onConfirmScan(activeSession.batchId, params)}
         onReportException={(params) => onReportException(activeSession.batchId, params)}
-        onCreateProblemTask={onCreateProblemTask}
         onPickComplete={() => onPickComplete(activeSession.batchId)}
       />
     );

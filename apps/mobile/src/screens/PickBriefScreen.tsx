@@ -45,6 +45,8 @@ type LineItem = {
   lasyncro_line_item_id: string;
   lasyncro_variant_id:   string;
   lasyncro_order_id:     string;
+  /** GH-1049: exact physical pick task; absent on legacy batches. */
+  reservation_allocation_id?: string | null;
   sku:                   string | null;
   title:                 string;
   quantity:              number;
@@ -250,27 +252,38 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
       if (!currentItem) return 'No active item.';
       try {
         const eventId = newEventId(); // MOB-PCK-07
-        const { data: probData } = await apiClient.post(
+        /**
+         * GH-1049 — one report, physical truth only.
+         *
+         * ProblemSheet's stepper is "Quantity affected", i.e. the units that
+         * are NOT in the operator's hand. quantity_found is therefore what was
+         * actually found: the full shortfall for every non-short_pick outcome,
+         * and required minus affected for a short pick.
+         *
+         * The server creates the linked Problem Center task in the same
+         * transaction — the client no longer POSTs a standalone incident, and
+         * the old probData?.exception_id read (a field this endpoint never
+         * returned) is gone with it.
+         */
+        const quantityFound =
+          type === 'short_pick'
+            ? Math.max(0, currentItem.quantity - qty)
+            : 0;
+
+        await apiClient.post(
           `/api/v1/wms/batch/${task.id}/exception`,
           {
             lasyncro_line_item_id: currentItem.lasyncro_line_item_id,
             lasyncro_variant_id:   currentItem.lasyncro_variant_id,
+            reservation_allocation_id:
+              currentItem.reservation_allocation_id ?? undefined,
             exception_type:        type,
             stage:                 'pick',
             quantity_required:     currentItem.quantity,
-            quantity_found:        currentItem.quantity - qty,
+            quantity_found:        quantityFound,
             device_event_id:       eventId,
           }
         );
-        void apiClient
-          .post('/api/v1/wms/problem-center', {
-            lasyncro_variant_id: currentItem.lasyncro_variant_id,
-            quantity:            qty,
-            exception_type:      type,
-            source:              'pick',
-            source_exception_id: probData?.exception_id ?? task.id,
-          })
-          .catch(() => {/* non-fatal */});
         pendingExQtyRef.current = qty;
       } catch (err: unknown) {
         return (
@@ -547,6 +560,7 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
           onReport={handleExceptionReport}
           lasyncroVariantId={currentItem.lasyncro_variant_id}
           source="pick"
+          serverOwnsProblemTask
           defaultQty={1}
         />
       </Screen>
@@ -588,6 +602,7 @@ function PickBriefInner({ task }: { task: { id: string; title: string } }) {
           onReport={handleExceptionReport}
           lasyncroVariantId={currentItem.lasyncro_variant_id}
           source="pick"
+          serverOwnsProblemTask
           defaultQty={1}
         />
       </Screen>

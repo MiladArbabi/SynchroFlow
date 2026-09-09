@@ -425,13 +425,21 @@ required =
 COUNT(pick_reservation_allocations)
 
 resolved =
-COUNT(DISTINCT confirmed reservation_allocation_id)
+SUM(accounted allocation outcomes)
 ```
 
-The batch cannot transition to `pick_complete` while:
+For each allocation, GH-1049 defines:
 
 ```text
-resolved < required
+accounted =
+  confirmed physical quantity
+  + (exception.quantity_required - exception.quantity_found)
+```
+
+The batch cannot transition to `pick_complete` while any allocation has:
+
+```text
+accounted != allocation.quantity
 ```
 
 Historical zero-allocation batches preserve the legacy completion contract:
@@ -442,21 +450,26 @@ confirmed scans
 >= total_line_items
 ```
 
-### Allocation-backed exceptions
+### Allocation-backed exceptions — GH-1049 LIVE
 
-Pick exceptions against allocation-backed lines currently fail closed.
+Allocation-backed Pick exceptions are supported.
 
-The endpoint returns HTTP 409 and does not create a reservation-resolving exception.
+The reporting allocation remains immutable and remains part of the batch.
+Normal Pick and exception reporting serialize on the allocation row.
 
-This is intentional until an allocation-aware exception workflow explicitly defines:
+`item_missing` records the incident without fabricating physical movement.
 
-```text
-reservation release
-or reassignment
-or replacement allocation
-```
+`short_pick` records the physically found quantity and its Pick-time
+`pick_removal` / partial `reservation_release` atomically, while the missing
+remainder remains represented by the exception and linked Problem Center task.
 
-An exception must never silently satisfy the allocation completion guard.
+Pick completion is quantity-accounted; an exception never pretends missing
+units were physically picked.
+
+Residual reservation disposition, Problem Bin custody and the Pack fulfillment
+gate are downstream contracts and are not completed by GH-1049 Pick-core.
+
+See `docs/playbooks/pick_exception_workflow.md`.
 
 ---
 
