@@ -18,6 +18,8 @@
 // - No fetching. All data via props.
 // - fontWeight max 500. border 0.5px solid var(--rule).
 
+import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
@@ -147,6 +149,16 @@ export interface ProductsModuleFT2DataProps {
    * import — see modules-ux-playbook §14 module boundary.
    */
   onExport?: () => void | Promise<void>;
+
+  /**
+   * INV-UX-01 2B — live map surface supplied by the app shell.
+   *
+   * The module never decides map eligibility or acquires floor data; it only
+   * leases the left slot. When present, the canonical live-intelligence layout
+   * renders (map + compact decision rail). When absent, the legacy layout is
+   * preserved so existing consumers keep working.
+   */
+  mapContent?: ReactNode;
 
   trend?: unknown;
   signals?: unknown;
@@ -363,12 +375,59 @@ function InboundRow({ po, isOverdue }: {
   );
 }
 
+// ─── DECISION GROUP ROW ───────────────────────────────────────
+// INV-UX-01 2B: the rail carries GROUP summaries, not individual product / PO /
+// return rows. Detail belongs to the destination module, which is where the
+// operator acts on it.
+
+type DecisionGroup = {
+  id: string;
+  tone: 'critical' | 'warning' | 'optimize';
+  label: string;
+  meta: string;
+  href: string;
+};
+
+function DecisionGroupRow({ group }: { group: DecisionGroup }) {
+  const theme = useTheme();
+  const navigate = useNavigate();
+
+  const dotColor =
+    group.tone === 'critical' ? theme.palette.error.main :
+    group.tone === 'warning'  ? theme.palette.warning.main :
+                                'var(--ink-4)';
+
+  return (
+    <Box
+      onClick={() => navigate(group.href)}
+      sx={{
+        display: 'flex', alignItems: 'flex-start', gap: 1.25,
+        px: 1.75, py: 1.25,
+        cursor: 'pointer',
+        borderBottom: '0.5px solid var(--rule)',
+        '&:last-of-type': { borderBottom: 'none' },
+        '&:hover': { bgcolor: 'action.hover' },
+      }}
+    >
+      <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0, mt: '5px' }} />
+      <Box sx={{ minWidth: 0 }}>
+        <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }}>
+          {group.label}
+        </Typography>
+        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }}>
+          {group.meta}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 
 export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   const theme = useTheme();
   const navigate = useNavigate();
-  const { context, operatorSummary, dataFreshness, currency, onExport } = props;
+  const { context, operatorSummary, dataFreshness, currency, onExport, mapContent } = props;
 
   const fmt$ = (n: number | null | undefined): string =>
     formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
@@ -440,6 +499,87 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
   if (os?.inbound?.total_units_expected) signalParts.push(`${os.inbound.total_units_expected} units inbound`);
   if (os?.warehouse?.pick_zone_occupancy_pct != null) signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
 
+  // INV-UX-01 2B — grouped decisions for the live-intelligence rail.
+  // Same authoritative facts and same priority order as the legacy Action
+  // queue; only the presentation collapses to one row per problem class.
+  const uncoveredStockouts = (os?.demand?.reorder_now ?? []).filter(v => {
+    const coveredByPO = os?.inbound
+      ? [...os.inbound.overdue_pos, ...os.inbound.pending_pos].some(po =>
+          po.covers_stocked_out_skus.includes(v.lasyncro_variant_id)
+        )
+      : false;
+    return v.days_of_stock_remaining === 0 && !coveredByPO;
+  }).length;
+
+  const overdueCoveringStockouts = (os?.inbound?.overdue_pos ?? [])
+    .filter(po => po.covers_stocked_out_skus.length > 0).length;
+
+  const noBin = os?.warehouse?.variants_with_stock_no_bin ?? 0;
+  const criticallyLow = os?.demand
+    ? os.demand.critical_reorder_count - os.demand.stockout_count
+    : 0;
+  const unrestockedReturns = os?.topReturned.length ?? 0;
+  const deadCapital = os?.demand?.dead_capital_value ?? 0;
+
+  const decisionGroups: DecisionGroup[] = [
+    uncoveredStockouts > 0 && {
+      id: 'stockout-uncovered',
+      tone: 'critical' as const,
+      label: `${uncoveredStockouts} stocked out with no inbound cover`,
+      meta: 'Nothing on order to bring them back',
+      href: '/suppliers',
+    },
+    overdueCoveringStockouts > 0 && {
+      id: 'overdue-inbound',
+      tone: 'critical' as const,
+      label: `${overdueCoveringStockouts} overdue PO${overdueCoveringStockouts === 1 ? '' : 's'} covering stocked-out SKUs`,
+      meta: 'Chase the supplier',
+      href: '/orders/inbound',
+    },
+    noSku > 0 && {
+      id: 'no-sku',
+      tone: 'warning' as const,
+      label: `${noSku} SKUs have no product code`,
+      meta: 'Cannot be picked or received',
+      href: '/inventory/catalog',
+    },
+    noBin > 0 && {
+      id: 'no-bin',
+      tone: 'warning' as const,
+      label: `${noBin} SKUs have stock but no pick bin`,
+      meta: 'Stow before the next pick run',
+      href: '/wms/readiness',
+    },
+    criticallyLow > 0 && {
+      id: 'critically-low',
+      tone: 'warning' as const,
+      label: `${criticallyLow} SKUs under 7 days stock`,
+      meta: 'Order before they run out',
+      href: '/demand',
+    },
+    unrestockedReturns > 0 && {
+      id: 'unrestocked-returns',
+      tone: 'optimize' as const,
+      label: `${unrestockedReturns} returned product${unrestockedReturns === 1 ? '' : 's'} not restocked`,
+      meta: 'Refunded and not recovered',
+      href: '/returns',
+    },
+    deadCapital > 0 && {
+      id: 'dead-capital',
+      tone: 'optimize' as const,
+      label: `${fmt$(deadCapital)} in non-moving stock`,
+      meta: 'Stock with zero velocity',
+      href: '/demand',
+    },
+  ].filter(Boolean) as DecisionGroup[];
+
+  const DECISION_PREVIEW_LIMIT = 3;
+  const [showAllDecisions, setShowAllDecisions] = useState(false);
+  const visibleDecisionGroups = showAllDecisions
+    ? decisionGroups
+    : decisionGroups.slice(0, DECISION_PREVIEW_LIMIT);
+  const hiddenDecisionCount = decisionGroups.length - visibleDecisionGroups.length;
+
   return (
     <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
@@ -503,8 +643,77 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
         </Box>
       )}
 
-      {/* ── 4. TWO COLUMN BODY ────────────────────────────────── */}
-      {/* LEFT: Action queue  |  RIGHT: Inbound pipeline + Return leakage */}
+      {/* ── 4A. LIVE INTELLIGENCE BODY (INV-UX-01 2B) ─────────── */}
+      {/* LEFT: live map surface  |  RIGHT: fixed 280px decision rail.
+          The long parent detail sections (action queue rows, inbound pipeline,
+          return leakage list) are deliberately NOT rendered here — each group
+          links to the module that owns the detail. */}
+      {mapContent ? (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: { xs: 'column', lg: 'row' },
+            gap: 2.25,
+            alignItems: 'stretch',
+          }}
+        >
+          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {mapContent}
+          </Box>
+
+          <Box
+            sx={{
+              flex: { xs: '1 1 auto', lg: '0 0 280px' },
+              width: { lg: 280 },
+              minWidth: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            {decisionGroups.length > 0 && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Needs a decision
+                  </Typography>
+                </Box>
+
+                {visibleDecisionGroups.map(group => (
+                  <DecisionGroupRow key={group.id} group={group} />
+                ))}
+
+                {hiddenDecisionCount > 0 && (
+                  <Box
+                    onClick={() => setShowAllDecisions(true)}
+                    sx={{
+                      px: 1.75, py: 1,
+                      borderTop: '0.5px solid var(--rule)',
+                      cursor: 'pointer',
+                      '&:hover': { opacity: 0.75 },
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
+                      See {hiddenDecisionCount} more →
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            {os && (
+              <PulseCard
+                title="Inventory pulse"
+                rows={inventoryPulseRows}
+              />
+            )}
+          </Box>
+        </Box>
+      ) : (
+      /* ── 4B. LEGACY TWO COLUMN BODY ─────────────────────────
+         Preserved verbatim as the fallback when no map surface is supplied,
+         so existing consumers of this module keep their current layout.
+         LEFT: Action queue | RIGHT: Inbound pipeline + Return leakage */
       <Box
         sx={{
           display: 'flex',
@@ -781,7 +990,9 @@ export default function ProductsModuleFT2(props: ProductsModuleFT2Props) {
           })()}
 
         </Box>{/* end RIGHT COLUMN */}
-      </Box>{/* end TWO COLUMN BODY */}
+      </Box>
+      /* end 4B legacy two column body */
+      )}
 
     </Box>
   );

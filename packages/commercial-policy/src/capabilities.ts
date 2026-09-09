@@ -14,6 +14,7 @@ export type CapabilityId =
   | 'overview.live_map'
   | 'orders.core'
   | 'inventory.core'
+  | 'inventory.live_map'
   | 'demand.forecasting'
   | 'alerts.inbox'
   | 'alerts.rules'
@@ -34,6 +35,7 @@ export const CAPABILITY_REQUIREMENTS: Readonly<Record<CapabilityId, AccessRequir
   'overview.live_map':        { moduleId: 'overview', minimumTier: 'growth' },
   'orders.core':              { moduleId: 'order-nexus' },
   'inventory.core':           { moduleId: 'products', minimumTier: 'core' },
+  'inventory.live_map':       { moduleId: 'products', minimumTier: 'growth' },
   'demand.forecasting':       { moduleId: 'demand', minimumTier: 'growth', feature: 'demand.forecasting' },
   'alerts.inbox':             { moduleId: 'alerts' },
   'alerts.rules':             { moduleId: 'alerts', minimumTier: 'growth', feature: 'alerts.rules' },

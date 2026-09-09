@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 export interface ProductsModuleFT2DataProps {
     context: {
@@ -132,6 +133,15 @@ export interface ProductsModuleFT2DataProps {
      * import — see modules-ux-playbook §14 module boundary.
      */
     onExport?: () => void | Promise<void>;
+    /**
+     * INV-UX-01 2B — live map surface supplied by the app shell.
+     *
+     * The module never decides map eligibility or acquires floor data; it only
+     * leases the left slot. When present, the canonical live-intelligence layout
+     * renders (map + compact decision rail). When absent, the legacy layout is
+     * preserved so existing consumers keep working.
+     */
+    mapContent?: ReactNode;
     trend?: unknown;
     signals?: unknown;
     productDataIntegrity?: unknown;

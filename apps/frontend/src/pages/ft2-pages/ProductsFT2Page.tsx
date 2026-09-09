@@ -12,8 +12,10 @@
 //   /products/costs     → Costs (cost entry + bulk CSV upload)
 //   /products/wms-readiness → WMS Readiness (pickability, variance, shrinkage)
 
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { Box, Typography } from '@mui/material';
 import { ModuleTabBar } from '../../components/ModuleTabBar';
 import { CommercialGate } from '../../components/CommercialGate';
 import { INVENTORY_MODULE_TABS } from './inventoryModuleTabs';
@@ -29,8 +31,153 @@ import { ExportDrawer } from 'components/ExportDrawer';
 import ProductsCatalogPage from './ProductsCatalogPage';
 import ProductsCostsPage from './ProductsCostsPage';
 import ProductsWmsReadinessPage from './ProductsWmsReadinessPage';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { WarehouseZone } from '@lasyncro/shared/ui';
+import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
+import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { useCommercialAccess } from '../../runtime/commercialContext';
+import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { useWarehouseGridOccupancy } from '../floor-planning/useWarehouseGrid';
 
 const __DEV__ = import.meta.env.DEV;
+
+/**
+ * INVENTORY INTELLIGENCE — app-side commercial + data boundary (INV-UX-01 2B)
+ * ---------------------------------------------------------------------------
+ * Deliberately a separate component mounted ONLY by <Route path="/">.
+ *
+ * ProductsFT2Page hosts every /inventory child, so placing these hooks at its
+ * top level would make Catalog, Costs and Data Quality acquire floor geometry
+ * and occupancy they never render. Scoping them here keeps map data acquisition
+ * tied to the one surface that shows a map.
+ *
+ * The canonical inventory.live_map AccessDecision is the only authority for map
+ * eligibility. Never reconstruct it from a raw tier compare.
+ */
+function InventoryIntelligenceView({
+  snapshotQuery,
+  operatorQuery,
+  currency,
+  onExport,
+}: {
+  snapshotQuery: ReturnType<typeof useProductsFt2Snapshot>;
+  operatorQuery: ReturnType<typeof useProductsOperatorSummary>;
+  currency: CurrencyContext;
+  onExport: () => void | Promise<void>;
+}) {
+  const navigate = useNavigate();
+
+  // isResolved is the canonical commercial-resolution signal — map access stays
+  // false until the entitlement snapshot lands, so a Growth tenant never sees a
+  // teaser flash before resolution.
+  const { decide, isResolved } = useCommercialAccess();
+  const liveMapDecision = decide('inventory.live_map');
+  const hasMapAccess = isResolved && liveMapDecision.allowed;
+
+  // A denied tenant must not ACQUIRE floor geometry either — the same decision
+  // that hides the map stops the layout fetch.
+  const floorPlanning = useFloorPlanning(hasMapAccess);
+  const zones: WarehouseZone[] = floorPlanning.data?.zones ?? [];
+
+  // Matches Overview semantics exactly (OverviewFT2Page hasPlacedFloor): a floor
+  // exists only when a zone carries geometry. Every shop is bootstrapped with a
+  // WH-{shopId}-ROOT row whose position_x/position_y are null, so a row count
+  // would report a floor that IsometricCanvas would then paint empty.
+  const hasPlacedFloor = zones.some(
+    (z: WarehouseZone) => z.position_x != null && z.position_y != null
+  );
+
+  const occupancyQuery = useWarehouseGridOccupancy(hasMapAccess && hasPlacedFloor);
+
+  let mapContent: ReactNode;
+
+  if (!hasMapAccess) {
+    // Core (or any canonical denial): full-size teaser in the map slot. The
+    // right rail keeps showing real Inventory Pulse and decisions.
+    mapContent = (
+      <LiveMapTeaser
+        requiredTier={liveMapDecision.requiredTier ?? null}
+        onUpgrade={() => navigate('/settings/billing')}
+      />
+    );
+  } else if (hasPlacedFloor) {
+    mapContent = (
+      <Box sx={{
+        minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
+        borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)',
+      }}>
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          <IsometricCanvas
+            zones={zones}
+            occupancy={occupancyQuery.data?.occupancy}
+            overlay="occupancy"
+            showLegend={false}
+            showControls={false}
+            enableHoverFocus
+            disablePan
+            autoFit
+            fitPhysicalFloorFirst
+            fitPadding={0.88}
+          />
+        </Box>
+      </Box>
+    );
+  } else {
+    // Allowed, but no floor has been mapped yet. Never fall back to the old
+    // dashboard — the map slot explains what is missing and how to fix it.
+    mapContent = (
+      <Box sx={{
+        minHeight: 520, height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+        gap: 1, p: 3,
+        borderRadius: '14px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+      }}>
+        <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>
+          Map your warehouse floor first
+        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', maxWidth: 360, mb: 1.5 }}>
+          Place your zones and bins once, and this becomes a live view of where
+          every unit actually sits.
+        </Typography>
+        <Box
+          component="button"
+          type="button"
+          onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            px: '14px', py: '7px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+            color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            '&:hover': { opacity: 0.88 },
+          }}
+        >
+          Map the floor
+        </Box>
+      </Box>
+    );
+  }
+
+  if (!snapshotQuery.isSuccess) {
+    if (__DEV__) console.debug('[ProductsFT2Page] awaiting FT2 snapshot');
+    return <div>Loading product insights…</div>;
+  }
+
+  const props = mapProductsFt2Props(snapshotQuery.data);
+  const operatorSummary: ProductsOperatorSummary | null =
+    operatorQuery.isSuccess ? operatorQuery.data : null;
+
+  if (__DEV__) console.debug('[ProductsFT2Page] rendering intelligence tab', { props, operatorSummary });
+
+  return (
+    <ProductsModuleFT2
+      {...props}
+      operatorSummary={operatorSummary}
+      currency={currency}
+      mapContent={mapContent}
+      onExport={onExport}
+    />
+  );
+}
 
 export default function ProductsFT2Page() {
   const [range, setRange] = useState<FT2DateRange>({
@@ -58,24 +205,14 @@ export default function ProductsFT2Page() {
       <ModuleTabBar tabs={INVENTORY_MODULE_TABS} />
 
       <Routes>
-        <Route path="/" element={(() => {
-          if (!snapshotQuery.isSuccess) {
-            if (__DEV__) console.debug('[ProductsFT2Page] awaiting FT2 snapshot');
-            return <div>Loading product insights…</div>;
-          }
-          const props = mapProductsFt2Props(snapshotQuery.data);
-          const operatorSummary: ProductsOperatorSummary | null =
-            operatorQuery.isSuccess ? operatorQuery.data : null;
-          if (__DEV__) console.debug('[ProductsFT2Page] rendering intelligence tab', { props, operatorSummary });
-          return (
-            <ProductsModuleFT2
-              {...props}
-              operatorSummary={operatorSummary}
-              currency={{ displayCurrency, locale, rates }}
-              onExport={async () => setExportDrawerOpen(true)}
-            />
-          );
-        })()} />
+        <Route path="/" element={
+          <InventoryIntelligenceView
+            snapshotQuery={snapshotQuery}
+            operatorQuery={operatorQuery}
+            currency={{ displayCurrency, locale, rates }}
+            onExport={async () => setExportDrawerOpen(true)}
+          />
+        } />
 
         <Route path="/catalog"        element={<ProductsCatalogPage range={range} onChange={setRange} />} />
         <Route path="/costs"          element={<ProductsCostsPage />} />

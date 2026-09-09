@@ -803,7 +803,21 @@ directly in new components — reference the token.
 
 **Wrap-behavior consistency audit, 2026-07-22 — all five migrated surfaces use Overview's reference layout: breakpoint-based direction/wrapping plus `alignItems: 'stretch'`.**
 
-**PULSE-02A — Inventory Intelligence:** Six verified operator-summary metrics map into the shared severity model. The 300px rail contains summary pulse data only; the actionable Inbound Pipeline remains in the primary column. Repeated row-action CTAs use a 120px action width, while header and contextual CTAs remain content-sized.
+**PULSE-02A — Inventory Intelligence:** Six verified operator-summary metrics map into the shared severity model.
+
+**2026-09-09 — INV-UX-01 supersedes the former Inventory Intelligence parent layout.** The canonical landing surface is now Live Intelligence:
+
+- left: the Inventory live-map slot, `flex: 1 1 0`
+- right: a fixed `280px` Inventory Intelligence rail
+- the rail combines grouped **Needs a decision** summaries with the shared `Inventory pulse`
+- parent-level SKU, PO and return detail lists are not rendered in this branch
+- detailed records remain in their owning workflow/tab rather than being reproduced on Intelligence
+- only the first three decision groups are previewed; additional groups use bounded reveal
+- Core receives the same information architecture with a synthetic premium map teaser
+- Growth/Scale receive the real warehouse map
+- the previous Action Queue + Inbound Pipeline + Return Leakage layout remains only as a compatibility fallback when no `mapContent` is supplied
+
+The parent-screen rule is: **status → problem → consequence → action**. Spatial operational truth belongs on the map; non-spatial commercial/product problems remain in the decision/Pulse rail.
 
 **2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
 `--good-ink` were added to `docs/color-pallet/index.md` correctly but

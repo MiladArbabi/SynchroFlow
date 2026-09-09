@@ -18,6 +18,7 @@ import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 // - No cross-module imports.
 // - No fetching. All data via props.
 // - fontWeight max 500. border 0.5px solid var(--rule).
+import { useState } from 'react';
 import { Box, Typography, useTheme } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { alpha } from '@mui/material/styles';
@@ -77,11 +78,26 @@ function InboundRow({ po, isOverdue }) {
             '&:last-child': { borderBottom: 'none' },
         }, children: [_jsx(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: _jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: po.supplier_name }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: [po.po_short_ref, " \u00B7 ", statusLabel] })] }) }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 2 }, children: [_jsxs(Box, { sx: { textAlign: 'right' }, children: [_jsx(Typography, { sx: { fontSize: 12, fontWeight: 500, color: isOverdue ? theme.palette.error.main : 'var(--ink-3)', fontVariantNumeric: 'tabular-nums' }, children: isOverdue ? `${po.overdue_days}d overdue` : `Due ${dateLabel}` }), _jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)' }, children: [po.total_units_ordered, " units", po.covers_stocked_out_skus.length > 0 && ` · covers ${po.covers_stocked_out_skus.length} stocked out`] })] }), isOverdue && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Chase \u2192" })), !isOverdue && po.status === 'shipped' && (_jsx(Box, { onClick: () => navigate('/orders/inbound'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Receive \u2192" }))] })] }));
 }
+function DecisionGroupRow({ group }) {
+    const theme = useTheme();
+    const navigate = useNavigate();
+    const dotColor = group.tone === 'critical' ? theme.palette.error.main :
+        group.tone === 'warning' ? theme.palette.warning.main :
+            'var(--ink-4)';
+    return (_jsxs(Box, { onClick: () => navigate(group.href), sx: {
+            display: 'flex', alignItems: 'flex-start', gap: 1.25,
+            px: 1.75, py: 1.25,
+            cursor: 'pointer',
+            borderBottom: '0.5px solid var(--rule)',
+            '&:last-of-type': { borderBottom: 'none' },
+            '&:hover': { bgcolor: 'action.hover' },
+        }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: dotColor, flexShrink: 0, mt: '5px' } }), _jsxs(Box, { sx: { minWidth: 0 }, children: [_jsx(Typography, { sx: { fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }, children: group.label }), _jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }, children: group.meta })] })] }));
+}
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 export default function ProductsModuleFT2(props) {
     const theme = useTheme();
     const navigate = useNavigate();
-    const { context, operatorSummary, dataFreshness, currency, onExport } = props;
+    const { context, operatorSummary, dataFreshness, currency, onExport, mapContent } = props;
     const fmt$ = (n) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
     const os = operatorSummary;
     const sellable = os?.sellability.sellable ?? 0;
@@ -152,6 +168,80 @@ export default function ProductsModuleFT2(props) {
         signalParts.push(`${os.inbound.total_units_expected} units inbound`);
     if (os?.warehouse?.pick_zone_occupancy_pct != null)
         signalParts.push(`${os.warehouse.pick_zone_occupancy_pct}% warehouse occupancy`);
+    // INV-UX-01 2B — grouped decisions for the live-intelligence rail.
+    // Same authoritative facts and same priority order as the legacy Action
+    // queue; only the presentation collapses to one row per problem class.
+    const uncoveredStockouts = (os?.demand?.reorder_now ?? []).filter(v => {
+        const coveredByPO = os?.inbound
+            ? [...os.inbound.overdue_pos, ...os.inbound.pending_pos].some(po => po.covers_stocked_out_skus.includes(v.lasyncro_variant_id))
+            : false;
+        return v.days_of_stock_remaining === 0 && !coveredByPO;
+    }).length;
+    const overdueCoveringStockouts = (os?.inbound?.overdue_pos ?? [])
+        .filter(po => po.covers_stocked_out_skus.length > 0).length;
+    const noBin = os?.warehouse?.variants_with_stock_no_bin ?? 0;
+    const criticallyLow = os?.demand
+        ? os.demand.critical_reorder_count - os.demand.stockout_count
+        : 0;
+    const unrestockedReturns = os?.topReturned.length ?? 0;
+    const deadCapital = os?.demand?.dead_capital_value ?? 0;
+    const decisionGroups = [
+        uncoveredStockouts > 0 && {
+            id: 'stockout-uncovered',
+            tone: 'critical',
+            label: `${uncoveredStockouts} stocked out with no inbound cover`,
+            meta: 'Nothing on order to bring them back',
+            href: '/suppliers',
+        },
+        overdueCoveringStockouts > 0 && {
+            id: 'overdue-inbound',
+            tone: 'critical',
+            label: `${overdueCoveringStockouts} overdue PO${overdueCoveringStockouts === 1 ? '' : 's'} covering stocked-out SKUs`,
+            meta: 'Chase the supplier',
+            href: '/orders/inbound',
+        },
+        noSku > 0 && {
+            id: 'no-sku',
+            tone: 'warning',
+            label: `${noSku} SKUs have no product code`,
+            meta: 'Cannot be picked or received',
+            href: '/inventory/catalog',
+        },
+        noBin > 0 && {
+            id: 'no-bin',
+            tone: 'warning',
+            label: `${noBin} SKUs have stock but no pick bin`,
+            meta: 'Stow before the next pick run',
+            href: '/wms/readiness',
+        },
+        criticallyLow > 0 && {
+            id: 'critically-low',
+            tone: 'warning',
+            label: `${criticallyLow} SKUs under 7 days stock`,
+            meta: 'Order before they run out',
+            href: '/demand',
+        },
+        unrestockedReturns > 0 && {
+            id: 'unrestocked-returns',
+            tone: 'optimize',
+            label: `${unrestockedReturns} returned product${unrestockedReturns === 1 ? '' : 's'} not restocked`,
+            meta: 'Refunded and not recovered',
+            href: '/returns',
+        },
+        deadCapital > 0 && {
+            id: 'dead-capital',
+            tone: 'optimize',
+            label: `${fmt$(deadCapital)} in non-moving stock`,
+            meta: 'Stock with zero velocity',
+            href: '/demand',
+        },
+    ].filter(Boolean);
+    const DECISION_PREVIEW_LIMIT = 3;
+    const [showAllDecisions, setShowAllDecisions] = useState(false);
+    const visibleDecisionGroups = showAllDecisions
+        ? decisionGroups
+        : decisionGroups.slice(0, DECISION_PREVIEW_LIMIT);
+    const hiddenDecisionCount = decisionGroups.length - visibleDecisionGroups.length;
     return (_jsxs(Box, { sx: { p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }, children: [_jsxs(Box, { sx: {
                     display: 'flex',
                     flexDirection: { xs: 'column', sm: 'row' },
@@ -167,7 +257,29 @@ export default function ProductsModuleFT2(props) {
                     borderRadius: '8px',
                 }, children: [_jsx(RefreshCw, { size: 12, color: theme.palette.warning.main }), _jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-3)' }, children: ["Some data may be stale \u2014", ' ', ['structural', 'inventory', 'sales', 'fulfillment', 'cost']
                                 .filter(k => dataFreshness[k] === 'stale')
-                                .join(', '), ' ', "data needs a sync."] })] })), _jsxs(Box, { sx: {
+                                .join(', '), ' ', "data needs a sync."] })] })), mapContent ? (_jsxs(Box, { sx: {
+                    display: 'flex',
+                    flexDirection: { xs: 'column', lg: 'row' },
+                    gap: 2.25,
+                    alignItems: 'stretch',
+                }, children: [_jsx(Box, { sx: { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }, children: mapContent }), _jsxs(Box, { sx: {
+                            flex: { xs: '1 1 auto', lg: '0 0 280px' },
+                            width: { lg: 280 },
+                            minWidth: 0,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                        }, children: [decisionGroups.length > 0 && (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }, children: [_jsx(Box, { sx: { px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }, children: _jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Needs a decision" }) }), visibleDecisionGroups.map(group => (_jsx(DecisionGroupRow, { group: group }, group.id))), hiddenDecisionCount > 0 && (_jsx(Box, { onClick: () => setShowAllDecisions(true), sx: {
+                                            px: 1.75, py: 1,
+                                            borderTop: '0.5px solid var(--rule)',
+                                            cursor: 'pointer',
+                                            '&:hover': { opacity: 0.75 },
+                                        }, children: _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: 'var(--accent)' }, children: ["See ", hiddenDecisionCount, " more \u2192"] }) }))] })), os && (_jsx(PulseCard, { title: "Inventory pulse", rows: inventoryPulseRows }))] })] })) : (
+            /* ── 4B. LEGACY TWO COLUMN BODY ─────────────────────────
+               Preserved verbatim as the fallback when no map surface is supplied,
+               so existing consumers of this module keep their current layout.
+               LEFT: Action queue | RIGHT: Inbound pipeline + Return leakage */
+            _jsxs(Box, { sx: {
                     display: 'flex',
                     flexDirection: { xs: 'column', lg: 'row' },
                     flexWrap: { xs: 'nowrap', lg: 'wrap' },
@@ -218,6 +330,8 @@ export default function ProductsModuleFT2(props) {
                                                     '&:last-child': { borderBottom: 'none' },
                                                 }, children: [_jsxs(Box, { sx: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.75 }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 13, fontWeight: 500, color: 'var(--ink)' }, children: item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : item.sku ?? `Item ${idx + 1}` }), item.sku && (_jsx(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', fontFamily: 'monospace' }, children: item.sku }))] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsxs(Typography, { sx: { fontSize: 12, color: 'var(--ink-4)' }, children: [item.unitsReturned, " returned"] }), _jsxs(Typography, { sx: { fontSize: 12, fontWeight: 500, color: theme.palette.error.main }, children: [fmt$(item.revenueLeakage), " lost"] }), _jsx(Box, { onClick: () => navigate('/returns'), sx: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: ROW_ACTION_CTA_WIDTH, boxSizing: 'border-box', px: 1.25, py: 0.5, fontSize: 11, fontWeight: 600, bgcolor: 'var(--accent)', color: theme.palette.common.white, borderRadius: '6px', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, '&:hover': { opacity: 0.88 } }, children: "Restock \u2192" })] })] }), _jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1.5 }, children: [_jsx(Box, { sx: { flex: 1, height: 4, borderRadius: 1, bgcolor: 'var(--bg)', overflow: 'hidden' }, children: _jsx(Box, { sx: { height: '100%', width: `${barPct}%`, bgcolor: rateColor, borderRadius: 1, transition: 'width 0.3s ease' } }) }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: rateColor, minWidth: 70, textAlign: 'right' }, children: [item.returnRatePct, "% returned"] })] })] }, idx));
                                         })] }));
-                            })()] })] })] }));
+                            })()] })] })
+            /* end 4B legacy two column body */
+            )] }));
 }
 //# sourceMappingURL=ProductsModuleFT2.js.map

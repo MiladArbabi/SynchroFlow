@@ -104,6 +104,33 @@ describe('IPA-C1 — inventory.core is products + Core+', () => {
 });
 
 // ===========================================================================
+// C1B — inventory.live_map canonical policy
+// ===========================================================================
+
+describe('IPA-C1B — inventory.live_map is Products + Growth+', () => {
+  it('requirement is exactly { moduleId: products, minimumTier: growth }', () => {
+    const req = requirementOrFail('inventory.live_map');
+    expect(req.moduleId).toBe('products');
+    expect(req.minimumTier).toBe('growth');
+    expect(req.feature).toBeUndefined();
+  });
+
+  it.each<[Tier, boolean]>([
+    ['starter', false],
+    ['core', false],
+    ['growth', true],
+    ['scale', true],
+  ])('inventory.live_map @ %s => %s', (tier, allowed) => {
+    expect(decide('inventory.live_map', tier).allowed).toBe(allowed);
+  });
+
+  it('CONTROL: Core Inventory does not imply access to the live map', () => {
+    expect(decide('inventory.core', 'core').allowed).toBe(true);
+    expect(decide('inventory.live_map', 'core').allowed).toBe(false);
+  });
+});
+
+// ===========================================================================
 // C2 — Inventory navigation
 //
 // INHERITANCE, not duplication. The ratified boundary is owned ONCE by the

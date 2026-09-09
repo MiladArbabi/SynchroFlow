@@ -3956,6 +3956,51 @@ and `AlertsPage.tsx`.
 - Legacy `/api/v1/products/...` aliases remain mounted; removal is future cleanup.
 - No canonical policy matrix change, no migration, no DB schema change.
 
+### 34.11 Inventory Live Map — `INV-UX-01` (ratified + implemented 2026-09-09)
+
+Inventory keeps its existing Core+ parent boundary, while the spatial live-map experience has its own Growth+ capability:
+
+    inventory.core
+      moduleId:    products
+      minimumTier: core
+
+    inventory.live_map
+      moduleId:    products
+      minimumTier: growth
+
+| Tier | Inventory subtree | Inventory live-map slot | Real floor / occupancy acquired |
+|---|---|---|---|
+| Starter | **DENY** | N/A | **none** |
+| Core | ALLOW | synthetic premium teaser | **none** |
+| Growth | ALLOW | real Inventory live map | yes |
+| Scale | ALLOW | real Inventory live map | yes |
+
+Locked rules:
+
+- `inventory.core` remains the owner of `/inventory/*`; this change does not make Inventory available to Starter.
+- `inventory.live_map` governs only the premium spatial visualization.
+- The page consumes the canonical `AccessDecision`; raw tier comparisons are not commercial authority.
+- A denied Core tenant does not acquire real floor geometry or occupancy data.
+- The teaser uses static synthetic geometry/occupancy only; no real merchant map is blurred or partially exposed.
+- Growth and Scale share the same live-map capability.
+- Catalog, Costs and Data Quality do not acquire map data merely because they share the Inventory route host.
+- The right-hand decision/Pulse information remains available independently of live-map entitlement.
+- Detailed SKU, PO and return records are not reproduced on the Intelligence parent screen.
+
+Verification:
+
+- `commercial-inventory-products-access.contract.test.ts` — `inventory.live_map` policy matrix GREEN
+- `inventory-live-map-commercial-access.test.tsx` — 7 / 7 PASS
+- `ProductsModuleFT2.test.tsx` — 6 / 6 PASS
+- `modules/products` build PASS
+- frontend TSC baseline: 19 total errors, **TARGET_ERROR_COUNT = 0**
+- live browser:
+  - Core synthetic teaser PASS
+  - Growth real map PASS
+  - hover/focus PASS
+  - upgrade CTA PASS
+  - desktop no-page-scroll PASS
+
 ---
 
 ## 35. Purchasing / Sourcing Commercial Access — `P0-A3-5` (ratified + implemented 2026-09-07)
