@@ -984,18 +984,17 @@ Priority item 5 (Outcome/value layer) is **IN PROGRESS**.
 Its foundation and the Address pilot (`OUTCOME-ATTR-01`) remain **CLOSED /
 LIVE VERIFIED** — see §11.10. The item as a whole is **not** closed.
 
-`OUTCOME-INV-01` — **IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING**
+`OUTCOME-INV-01` — **IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED**
 — see §11.11.
 
 Still outstanding before the broader Outcome/value layer is complete:
 
-1. live / production certification of `OUTCOME-INV-01`;
-2. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
+1. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
    defensible prevented-breach attribution;
-3. broader attributable value reporting, only where the evidence actually
+2. broader attributable value reporting, only where the evidence actually
    supports it.
 
-**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (OUTCOME-ATTR-01 foundation + Address pilot CLOSED / LIVE VERIFIED; OUTCOME-INV-01 IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING; SLA and broader value attribution remain outstanding).**
+**ORD-DECISION-AUTO-01 workshops: PRODUCT CONTRACT RATIFIED / FRAMEWORK OPEN — priority items 1–4 IMPLEMENTED AND LIVE VERIFIED; item 5 IN PROGRESS (OUTCOME-ATTR-01 foundation + Address pilot CLOSED / LIVE VERIFIED; OUTCOME-INV-01 CLOSED / LIVE VERIFIED; SLA and broader value attribution remain outstanding).**
 
 
 ### 11.6 INV-ACTION-ARCH-01 — Inventory workflow-action correction
@@ -1849,14 +1848,14 @@ after the recorded intervention.**
 **OUTCOME-ATTR-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
 
 The broader Outcome/value roadmap item (§11.5 priority item 5) remains **IN
-PROGRESS** — inventory live certification, SLA and broader value attribution
-remain outstanding; see §11.11 for the automated-verified inventory pilot.
+PROGRESS** — `OUTCOME-INV-01` is now **CLOSED / LIVE VERIFIED**; SLA and broader
+value attribution remain outstanding.
 
 ### 11.11 OUTCOME-INV-01 — inventory intervention attribution
 
 Implemented 2026-09-08.
 
-**Status: IMPLEMENTED / AUTOMATED VERIFIED — LIVE CERTIFICATION PENDING.**
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED — 2026-09-09.**
 
 This slice adds inventory intervention provenance + canonical verified-resolution
 attribution for one bounded pilot:
@@ -2016,7 +2015,8 @@ Frontend `OUTCOME-INV-UI-01..05` protects, respectively:
 #### Automated verification evidence
 
 The completed implementation verification supplied for this documentation phase
-records the following evidence; live certification remains pending.
+records the following automated evidence. Production certification evidence is
+recorded separately below.
 
 **Backend RED:** 4 failed / 3 passed / 7 total. Failing contracts were
 `OUTCOME-INV-01/02/03`, `OUTCOME-INV-04`, `OUTCOME-INV-06`, and `OUTCOME-INV-09`:
@@ -2062,9 +2062,73 @@ Permanent tests:
 No migration, `order_constraints` schema/identity change, inventory evaluator
 change, receive/stow change, or Decision execution change was introduced.
 
+#### Production live certification — 2026-09-09
+
+Production reviewer-store certification exercised the complete bounded
+inventory-attribution contract against shop `1`, order
+`e30ecddc-03ef-a101-f78e-d89e50057dc4` (external order `16942725759346`),
+variant `fa4d3a26-a147-4302-8275-ae20989e30ae`, and exact oversell constraint
+`add38e38-c853-5013-bbbc-94e363d5ef9f`.
+
+The live sequence was:
+
+1. The active oversell constraint routed the merchant into targeted Sourcing
+   with advisory treatment `source_remaining`.
+2. A material reorder level of `2` was persisted as reorder request
+   `1bc87dcd-ec66-42b3-85b3-e88a031dd3d9`.
+3. Exactly one durable intervention was written:
+   `5407b380-e46e-44b6-a04a-318fdeda9470`,
+   `treatment_key = inventory_reorder_intent`,
+   `action_key = create_reorder_request`,
+   `source_surface = sourcing_targeted_reorder_queue`.
+4. The intervention preserved exact constraint identity plus episode anchor
+   `constraint_started_at = 2026-08-16T12:29:38.514Z`.
+5. The purchasing workflow progressed through a real PO and canonical WMS
+   receive. Two physical units were accepted. Receive remained the inventory
+   credit boundary.
+6. Canonical inventory reevaluation cleared the same constraint episode at
+   `2026-09-09T13:09:58.503Z`.
+7. The deployed `readOrderInterventionOutcomes` read model returned
+   `verified_resolved`, `constraintIsActive = false`, and
+   `resolutionLatencyMs = 3639886`.
+8. A separate negative-root WMS invariant was exposed while physically stowing
+   the received units. Certification cleanup used the existing canonical blind
+   recount workflow, not a direct `inventory_truth` edit: recount
+   `CNT-1-0001` counted `WH-1-ROOT = 1` and `PICK-0A = 1`, owner/admin review
+   accepted the proven root variance, and commit wrote exactly one
+   `+1 reconciliation_correction`.
+9. Both received LSUs were then stowed to `PICK-0A`. Stow preserved the
+   receive/stow semantic contract: two root debits and two destination credits
+   produced aggregate `WH-1-ROOT = -2`, `PICK-0A = +2`, warehouse-wide net
+   `0`. Final inventory truth was root `0/0` and `PICK-0A 2/2`, with both
+   physical units `stowed`.
+10. A final deployed outcome read returned the same intervention and exact
+    constraint episode as `verified_resolved`. The subsequent recount and stow
+    operations did not alter or manufacture the attribution.
+
+The safe production claim remains:
+
+**Verified resolved after the recorded intervention.**
+
+This certification does not establish causality and does not support
+`oversell prevented`, revenue-saved, revenue-protected, ROI, or
+`resolved by laSyncro` claims.
+
+The certification also surfaced separate follow-up work that remains open and
+does not become part of this attribution slice:
+
+- **#1081** — negative-root / received-LSU WMS invariant plus incremental
+  `available_quantity` divergence. The recount above was controlled
+  reviewer-store cleanup, not a production-code fix.
+- **#1082** — separate guided recount `Next Bin` semantics from future free /
+  ad-hoc `Scan another bin` reconciliation UX.
+- Existing production UX findings **#1073, #1075 and #1077** remain separately
+  tracked; closing `OUTCOME-INV-01` does not imply closure of those issues.
+
+**OUTCOME-INV-01: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED / CLOSED.**
+
 #### Open / deferred
 
-- Production/live certification is pending.
 - Attribution covers only targeted blocked-order → reorder flow; generic
   Sourcing reorder activity is intentionally unattributed.
 - Long `pending_verification` periods are expected and correct.
