@@ -13,6 +13,7 @@ import { axiosInstance } from 'api/axiosConfig';
 import type {
   ConfirmScanParams,
   ReportExceptionParams,
+  ReportPackExceptionParams,
   CreateProblemTaskParams,
   LineItem,
   PackOrder,
@@ -206,10 +207,12 @@ export default function WmsOperationsPage() {
   }, [submitScan]);
 
   const handleReportException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
-    const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
-      ...params,
-      stage: 'pick',
-    });
+    // GH-1049: PickSessionPage owns the full report payload — allocation
+    // identity, stage, physical quantities and the stable device_event_id.
+    const { data } = await axiosInstance.post(
+      `/api/v1/wms/batch/${batchId}/exception`,
+      params
+    );
     return data as { pick_exception_id: string };
   }, []);
 
@@ -251,7 +254,7 @@ export default function WmsOperationsPage() {
     return data;
   }, []);
 
-  const handleReportPackException = useCallback(async (batchId: string, params: ReportExceptionParams) => {
+  const handleReportPackException = useCallback(async (batchId: string, params: ReportPackExceptionParams) => {
     const { data } = await axiosInstance.post(`/api/v1/wms/batch/${batchId}/exception`, {
       ...params,
       stage: 'pack',

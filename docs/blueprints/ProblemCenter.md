@@ -83,10 +83,10 @@ pick | pack | stow | receive | returns
 
 | Column | Purpose |
 | --- | --- |
-| `problem_bin_location` | Configurable per-shop (e.g. `PROBLEM`). Required for Problem Center creation; copied into the task at creation. No synthetic fallback location is generated when unset. |
-| `prob_label_sequence` | Auto-incrementing integer. Atomically incremented on each task creation. |
+| `problem_bin_location` | Configurable per-shop (e.g. `PROBLEM`). The generic/manual Problem Center creation path requires it. GH-1049 server-owned Pick incident creation is different: the incident must still be created when this setting is absent, and stores `NULL` until downstream custody is handled. |
+| `prob_label_sequence` | Auto-incrementing integer used by the generic/manual Problem Center label flow. GH-1049 server-owned Pick incident creation does not increment it or print a new PROB label. |
 
-**INV-BLOCK-18:** Problem Center now fails closed when `shop_wms_settings.problem_bin_location` is null or empty. Task creation returns `409` and does not create a task, PROB label, or synthetic `WH-{shopId}-PROBLEM` location.
+**INV-BLOCK-18 scope clarification — GH-1049:** the generic `/problem-center` creation path still fails closed when `shop_wms_settings.problem_bin_location` is null or empty. That rule does **not** apply to server-owned Pick incident creation from `httpReportPickException`; a real Pick discrepancy must be recorded even when physical Problem Bin configuration is incomplete.
 
 ---
 

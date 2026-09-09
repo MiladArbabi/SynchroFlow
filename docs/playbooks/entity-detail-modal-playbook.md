@@ -50,6 +50,21 @@ Both `/orders/blocked` and `/fulfillment` are confirmed legacy routes that just 
 
 ### 2.3 ⚠️ THE TRAP — Problem Center has TWO separate resolution domains, don't confuse them again
 
+> **GH-1049 UPDATE — 2026-09-09:** The investigation below is retained as
+> historical context, but its conclusion that `pick_exceptions` and
+> `problem_center_tasks` are permanently separate is now superseded.
+>
+> The direct `pick_exceptions` query/resolve routes still exist. However, new
+> Pick exception reporting now creates exactly one linked
+> `problem_center_tasks` incident server-side in the same transaction, using the
+> real `pick_exception_id` as the source identity. This does not mean the two
+> resolution APIs have been fully unified; downstream custody and final
+> owner/admin disposition remain later work.
+>
+> Current Pick-stage authority:
+> `docs/playbooks/pick_exception_workflow.md`.
+
+
 This cost significant investigation time tonight and is exactly the kind of thing worth writing down precisely so nobody re-walks the same path.
 
 **The wrong assumption, held for several turns:** that `problem_center_tasks` (the table `ProblemCenterModuleFT2.tsx`/`useProblemCenter.ts` already has a full UI for) was *the* destination for pick-exception escalation — i.e., that fixing the operational-band CTA meant building a "create a `problem_center_tasks` row from a pick exception" write path, possibly via the table's `source_exception_id` field (which exists specifically to reference an exception by ID without an FK).

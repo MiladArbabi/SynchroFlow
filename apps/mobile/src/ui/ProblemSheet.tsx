@@ -60,6 +60,13 @@ export type ProblemSheetProps = {
   sourceExceptionId?: string;
   /** Default qty shown in stepper (default: 1) */
   defaultQty?: number;
+  /**
+   * GH-1049 — the workflow endpoint already creates the linked Problem Center
+   * task server-side inside the same transaction as its exception, so this
+   * sheet must not POST a second, unlinked incident. Pick sets this. Stow and
+   * receive keep the legacy client-side POST until their own slices land.
+   */
+  serverOwnsProblemTask?: boolean;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -79,6 +86,7 @@ export function ProblemSheet({
   source,
   sourceExceptionId,
   defaultQty = 1,
+  serverOwnsProblemTask = false,
 }: ProblemSheetProps) {
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [qty, setQty] = useState(defaultQty);
@@ -116,7 +124,9 @@ export function ProblemSheet({
       }
 
       // 2 — Problem Center POST (§3 contract — all exceptions go here)
-      if (lasyncroVariantId) {
+      if (serverOwnsProblemTask) {
+        // Server created the linked task in the workflow transaction.
+      } else if (lasyncroVariantId) {
         await apiClient.post(PROBLEM_CENTER_URL, {
           lasyncro_variant_id: lasyncroVariantId,
           quantity: qty,
@@ -145,7 +155,8 @@ export function ProblemSheet({
     }
   }, [
     selectedType, qty, submitting, onReport,
-    lasyncroVariantId, source, sourceExceptionId, onClose,
+    lasyncroVariantId, source, sourceExceptionId, serverOwnsProblemTask,
+    onClose,
   ]);
 
   return (

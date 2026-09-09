@@ -160,19 +160,22 @@ Historical zero-allocation batches preserve the legacy completion rule.
 
 ## Exception contract
 
-Allocation-backed pick exceptions currently fail closed.
+> **SUPERSEDED 2026-09-09 by GH-1049.** This section records the August 10
+> fail-closed state and is retained as historical evidence. The current
+> allocation-aware Pick contract is authoritative in
+> `docs/playbooks/pick_exception_workflow.md`.
 
-Current behavior:
+At the time of this playbook, allocation-backed Pick exceptions failed closed:
 
 ```text
 HTTP 409
 ALLOCATION_PICK_EXCEPTION_NOT_READY
 ```
 
-They do not satisfy allocation completion and do not release the
-reservation.
-
-Reservation-aware exception settlement is a future design.
+GH-1049 removed that gate. Allocation-aware Pick exceptions now preserve the
+allocation identity, use quantity-accounted Pick completion, create the linked
+Problem Center task server-side, and keep residual reservation settlement
+separate from Pick-time physical accounting.
 
 ---
 
@@ -354,20 +357,34 @@ A pick scan against a batch no longer in `picking` state is correctly
 rejected, but currently falls through to HTTP 500 rather than an
 appropriate 4xx state-conflict response.
 
-### Allocation-aware pick exceptions — OPEN DESIGN
+### Allocation-aware pick exceptions — SUPERSEDED / PARTIALLY CLOSED BY GH-1049
 
-A future implementation must explicitly define:
+The August 10 open-design state is no longer current.
+
+GH-1049 now defines and verifies:
 
 ```text
-allocation resolution
-reservation release/reassignment
-replacement task behavior
-line completion
-batch completion
-Problem Center integration
+allocation identity remains immutable
+Pick exception + Problem task are one transaction
+short_pick physical quantity accounting
+Pick-stage completion accounting
+retry/concurrency behavior
+server-owned Problem Center task creation
 ```
 
-Until then, fail-closed behavior remains intentional.
+Still intentionally deferred beyond GH-1049 Pick-core:
+
+```text
+residual reservation disposition
+Problem Bin custody
+Pack fulfillment gate
+owner/admin commercial resolution
+replacement/re-stow execution
+partial fulfillment
+```
+
+See `docs/playbooks/pick_exception_workflow.md` for the current authoritative
+contract.
 
 ---
 
