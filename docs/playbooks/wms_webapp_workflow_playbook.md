@@ -539,13 +539,13 @@ See `docs/blueprints/unit_barcode_architecture.md` for locked decisions, data mo
 
 - **Summary:** results reflect physical task execution. Backend remains authoritative for completion.
 
-- **Completion contract:** for allocation-backed batches, `POST /api/v1/wms/batch/:id/pick-complete` requires every persisted reservation allocation to have a confirmed scan. Order-line cardinality alone is not sufficient.
+- **Completion contract — GH-1049:** for allocation-backed batches, `POST /api/v1/wms/batch/:id/pick-complete` uses quantity accounting per allocation: confirmed physical quantity + exception missing quantity (`quantity_required - quantity_found`) must equal the persisted allocation quantity. An unresolved Pick exception may account for Pick-stage completion without pretending the missing units were physically picked. See `docs/playbooks/pick_exception_workflow.md`.
 
 - **Legacy compatibility:** batches with zero `pick_reservation_allocations` retain the historical line-based completion behavior.
 
 - **Session key:** `?batchId=` in URL, set by `onPickSessionEnter`, cleared by `onSessionExit`.
 
-- **Exception behavior — allocation-backed tasks:** current pick exceptions fail closed with HTTP 409 until reservation-aware exception settlement exists. They must not satisfy allocation completion or silently release held reservation quantity.
+- **Exception behavior — allocation-backed tasks — GH-1049:** allocation-backed Pick exceptions are live. The picker reports against `reservation_allocation_id`; the order remains in the batch and healthy work continues. `item_missing` creates no fake physical movement. `short_pick` records the physically found quantity plus a missing-quantity exception atomically. The server creates one linked Problem Center task in the same transaction. See `docs/playbooks/pick_exception_workflow.md`.
 
 - **Backend API:** `GET /api/v1/wms/batch/:id/line-items` emits allocation-backed physical tasks when allocations exist; legacy batches continue through the historical line-item path. Allocation tasks are ordered by warehouse location coordinates for the optimized route.
 

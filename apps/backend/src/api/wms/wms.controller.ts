@@ -18,7 +18,26 @@ import { cancelUnclaimedBatch } from '../../services/wms/batchCancellation.servi
 import { resolveBarcode } from '../../services/wms/barcodeResolution.service.js';
 import { generateUnitLabelsForLine } from '../../services/wms/unitLabelPdf.service.js';
 import { computeCoverage } from '../../services/wms/inventoryUnit.service.js';
-import { confirmPickScan } from '../../services/wms/pickScan.service.js';
+import {
+  confirmPickScan,
+  recordShortPickPhysicalOutcome,
+} from '../../services/wms/pickScan.service.js';
+/**
+ * GH-1049 — plain named import, matching every other service import in this
+ * file. Under the repository's Babel CommonJS transform this compiles to a
+ * property read on the module's own exports object at call time:
+ *
+ *   var _p = require('../../services/wms/problemCenterTask.service.js');
+ *   ... (0, _p.createProblemCenterTask)(trx, {...})
+ *
+ * so the Pick exception path invokes whatever that module currently exports.
+ * A namespace import instead routes the same access through Babel's
+ * _interopRequireWildcard helper, adding an indirection between the exports
+ * object and the object the caller reads. The named form has no such
+ * indirection, which is what keeps the whole outcome — exception, physical
+ * effects and Problem task — observable as one atomic unit at this seam.
+ */
+import { createProblemCenterTask } from '../../services/wms/problemCenterTask.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
@@ -723,21 +742,48 @@ export const httpCompletePick = async (req: Request, res: Response) => {
     let requiredCount: number;
 
     if (allocationCount > 0) {
-      const confirmedAllocationScans =
-        await trx('pick_scan_log')
-          .where({
-            shop_id: shopId,
-            pick_batch_id: batchId,
-            status: 'confirmed',
-          })
-          .whereNotNull('reservation_allocation_id')
-          .countDistinct<{ count: string }>(
-            'reservation_allocation_id as count'
-          )
-          .first();
+      /**
+       * GH-1049 — QUANTITY ACCOUNTING, not "one confirmed scan per allocation".
+       *
+       * Per allocation:
+       *   accounted = confirmed physical quantity
+       *             + exception missing quantity (required - found)
+       *
+       * and completion requires accounted == allocation.quantity, so:
+       *   normal      5 = 5 + 0
+       *   short_pick  5 = 3 + 2
+       *   item_missing 5 = 0 + 5
+       *   incomplete  3 != 5   → blocked
+       *
+       * An unresolved exception does not block Pick completion; it travels
+       * with the order and is answered at Pack.
+       */
+      const unaccounted = await trx('pick_reservation_allocations as pra')
+        .leftJoin('pick_scan_log as psl', function () {
+          this
+            .on('psl.reservation_allocation_id', '=', 'pra.allocation_id')
+            .andOnVal('psl.status', 'confirmed');
+        })
+        .leftJoin('pick_exceptions as pe', function () {
+          this
+            .on('pe.reservation_allocation_id', '=', 'pra.allocation_id')
+            .andOnVal('pe.stage', 'pick');
+        })
+        .where({
+          'pra.shop_id': shopId,
+          'pra.pick_batch_id': batchId,
+        })
+        .whereRaw(`
+          COALESCE(psl.quantity_confirmed, 0)
+          + COALESCE(pe.quantity_required - pe.quantity_found, 0)
+          <> pra.quantity
+        `)
+        .count<{ count: string }>('pra.allocation_id as count')
+        .first();
 
-      resolvedCount =
-        Number(confirmedAllocationScans?.count ?? 0);
+      const unaccountedCount = Number(unaccounted?.count ?? 0);
+
+      resolvedCount = allocationCount - unaccountedCount;
       requiredCount = allocationCount;
     } else {
       // Legacy batches: exceptions count as deliberately resolved lines.
@@ -2458,23 +2504,30 @@ export const httpReportPickException = async (req: Request, res: Response) => {
 
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
- const batchId = String(req.params.batchId);
+  const batchId = String(req.params.batchId);
 
   const {
     lasyncro_line_item_id,
     lasyncro_variant_id,
+    reservation_allocation_id,
     exception_type,
     stage,
     quantity_required,
     quantity_found,
+    device_event_id,
+    notes,
   } = req.body;
 
+  /**
+   * GH-1049 — operator taxonomy.
+   * order_cancelled is a system outcome written by cancellation unwind, never
+   * a value an operator may report through this route.
+   */
   const VALID_EXCEPTION_TYPES = [
     'item_missing',
     'short_pick',
     'product_defect',
     'packaging_defect',
-    'order_cancelled',
     'wrong_item',
   ];
 
@@ -2500,9 +2553,30 @@ export const httpReportPickException = async (req: Request, res: Response) => {
     return res.status(400).json({ error: `Invalid stage: ${stage}` });
   }
 
+  if (
+    quantity_required <= 0 ||
+    quantity_found < 0 ||
+    quantity_found > quantity_required
+  ) {
+    return res.status(400).json({ error: 'Invalid exception quantities' });
+  }
+
+  if (exception_type === 'short_pick' && quantity_found <= 0) {
+    return res.status(400).json({
+      error: 'short_pick requires a found quantity greater than zero',
+    });
+  }
+
+  const deviceEventId =
+    typeof device_event_id === 'string' && device_event_id.length > 0
+      ? device_event_id
+      : null;
+
   try {
-    const exceptionId = await db.transaction(async (trx) => {
+    const outcome = await db.transaction(async (trx) => {
       await trx.raw(`SET LOCAL "app.current_tenant" = '${shopId}'`);
+      // short_pick writes real inventory_movements in this transaction.
+      await trx.raw(`SET LOCAL "synchroflow.projection" = 'true'`);
 
       // Validate batch exists and is active
       const batch = await trx('pick_batches')
@@ -2517,18 +2591,116 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         throw new Error(`BATCH_NOT_ACTIVE:${batch.status}`);
       }
 
-      if (stage === 'pick') {
-        const allocationBackedLine =
-          await trx('pick_reservation_allocations')
+      /**
+       * GH-1049 — allocation identity + cross-outcome serialization.
+       *
+       * The allocation row is the single lock every competing outcome for this
+       * physical pick task takes: a normal confirmed scan (confirmPickScan)
+       * and an exception report both lock it FOR UPDATE, so scan-vs-exception
+       * and exception-vs-exception races serialize here rather than racing to
+       * two incompatible outcomes. The row itself is never updated.
+       */
+      const allocationBackedLine =
+        stage === 'pick'
+          ? await trx('pick_reservation_allocations')
+              .where({
+                shop_id: shopId,
+                pick_batch_id: batchId,
+                lasyncro_line_item_id,
+              })
+              .first('allocation_id')
+          : null;
+
+      let allocation:
+        | {
+            allocation_id: string;
+            quantity: number;
+            location_code: string;
+          }
+        | null = null;
+
+      if (allocationBackedLine) {
+        if (typeof reservation_allocation_id !== 'string') {
+          throw new Error('RESERVATION_ALLOCATION_REQUIRED');
+        }
+
+        allocation =
+          (await trx('pick_reservation_allocations')
             .where({
+              allocation_id: reservation_allocation_id,
               shop_id: shopId,
               pick_batch_id: batchId,
               lasyncro_line_item_id,
+              lasyncro_variant_id,
             })
-            .first('allocation_id');
+            .forUpdate()
+            .first('allocation_id', 'quantity', 'location_code')) ?? null;
 
-        if (allocationBackedLine) {
-          throw new Error('ALLOCATION_PICK_EXCEPTION_NOT_READY');
+        if (!allocation) {
+          throw new Error('RESERVATION_ALLOCATION_MISMATCH');
+        }
+
+        if (quantity_required !== Number(allocation.quantity)) {
+          throw new Error('EXCEPTION_QUANTITY_MISMATCH');
+        }
+      }
+
+      /**
+       * Exact replay: the same device event resolves to the same incident.
+       * A materially different request reusing that event id is a conflict —
+       * never a silent success carrying an unrelated result.
+       */
+      if (deviceEventId) {
+        const replayed = await trx('pick_exceptions')
+          .where({ shop_id: shopId, device_event_id: deviceEventId })
+          .first();
+
+        if (replayed) {
+          const sameRequest =
+            replayed.pick_batch_id === batchId &&
+            replayed.lasyncro_line_item_id === lasyncro_line_item_id &&
+            replayed.lasyncro_variant_id === lasyncro_variant_id &&
+            replayed.exception_type === exception_type &&
+            replayed.stage === stage &&
+            Number(replayed.quantity_required) === quantity_required &&
+            Number(replayed.quantity_found) === quantity_found &&
+            (replayed.reservation_allocation_id ?? null) ===
+              (allocation ? allocation.allocation_id : null);
+
+          if (!sameRequest) {
+            throw new Error('EXCEPTION_EVENT_CONFLICT');
+          }
+
+          return {
+            pickExceptionId: replayed.pick_exception_id as string,
+            replay: true,
+          };
+        }
+      }
+
+      if (allocation) {
+        const allocationException = await trx('pick_exceptions')
+          .where({
+            shop_id: shopId,
+            reservation_allocation_id: allocation.allocation_id,
+            stage: 'pick',
+          })
+          .first('pick_exception_id');
+
+        if (allocationException) {
+          throw new Error('ALLOCATION_EXCEPTION_EXISTS');
+        }
+
+        const confirmedScan = await trx('pick_scan_log')
+          .where({
+            shop_id: shopId,
+            reservation_allocation_id: allocation.allocation_id,
+            status: 'confirmed',
+          })
+          .first('scan_id');
+
+        if (confirmedScan) {
+          throw new Error('ALLOCATION_ALREADY_SCANNED');
         }
       }
 
@@ -2541,16 +2713,69 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         pick_batch_id: batchId,
         lasyncro_line_item_id,
         lasyncro_variant_id,
+        reservation_allocation_id: allocation
+          ? allocation.allocation_id
+          : null,
         exception_type,
         stage,
         quantity_required,
         quantity_found,
+        device_event_id: deviceEventId,
         raised_by: userId,
         raised_at: new Date(),
         resolved: false,
       });
 
-      // Fire proactive alert to supervisor
+      /**
+       * SHORT-PICK ATOMIC COMPOSITE
+       * ---------------------------
+       * The units the operator actually holds are a real physical pick and are
+       * recorded as such — confirmed scan, pick_removal, reservation_release,
+       * inventory_truth, units_picked — in this same transaction.
+       *
+       * item_missing and the defect types found nothing to remove, so they
+       * write no scan and no movement. Nothing physical is fabricated.
+       */
+      if (
+        allocation &&
+        exception_type === 'short_pick' &&
+        quantity_found > 0
+      ) {
+        await recordShortPickPhysicalOutcome(trx, {
+          shopId,
+          pickBatchId: batchId,
+          pickExceptionId,
+          reservationAllocationId: allocation.allocation_id,
+          lasyncroLineItemId: lasyncro_line_item_id,
+          lasyncroVariantId: lasyncro_variant_id,
+          locationCode: allocation.location_code,
+          quantityFound: quantity_found,
+          scannedBy: userId,
+        });
+      }
+
+      /**
+       * Server-owned Problem Center incident, same transaction as the
+       * exception. Called through the module binding so the whole outcome
+       * rolls back together if task creation fails.
+       */
+      const problemQuantity = quantity_required - quantity_found;
+
+      if (problemQuantity > 0) {
+        await createProblemCenterTask(trx, {
+          shopId,
+          source: 'pick',
+          sourceExceptionId: pickExceptionId,
+          sourcePickExceptionId: pickExceptionId,
+          lasyncroVariantId: lasyncro_variant_id,
+          quantity: problemQuantity,
+          exceptionType: exception_type,
+          notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
+        });
+      }
+
+      // Fire proactive alert to supervisor. New incidents only — a replay
+      // returns above and never re-alerts.
       await firePickExceptionAlert(trx, {
         shopId,
         batchId,
@@ -2567,10 +2792,12 @@ export const httpReportPickException = async (req: Request, res: Response) => {
         raised_by: userId,
       });
 
-      return pickExceptionId;
+      return { pickExceptionId, replay: false };
     });
 
-    return res.status(201).json({ pick_exception_id: exceptionId });
+    return res
+      .status(201)
+      .json({ pick_exception_id: outcome.pickExceptionId });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
 
@@ -2581,10 +2808,89 @@ export const httpReportPickException = async (req: Request, res: Response) => {
       return res.status(409).json({ error: `Batch is not active: ${message.split(':')[1]}` });
     }
 
-    if (message === 'ALLOCATION_PICK_EXCEPTION_NOT_READY') {
+    if (message === 'RESERVATION_ALLOCATION_REQUIRED') {
+      return res.status(400).json({
+        error:
+          'reservation_allocation_id is required for allocation-backed picking.',
+      });
+    }
+
+    if (message === 'RESERVATION_ALLOCATION_MISMATCH') {
+      return res.status(400).json({
+        error:
+          'reservation_allocation_id does not match the requested pick task.',
+      });
+    }
+
+    if (message === 'EXCEPTION_QUANTITY_MISMATCH') {
+      return res.status(400).json({
+        error:
+          'quantity_required must equal the reserved quantity for this pick task.',
+      });
+    }
+
+    if (message === 'EXCEPTION_EVENT_CONFLICT') {
       return res.status(409).json({
         error:
-          'Allocation-backed pick exceptions are temporarily blocked until reservation settlement is enabled.',
+          'This device event was already used for a different exception report.',
+      });
+    }
+
+    if (message === 'ALLOCATION_EXCEPTION_EXISTS') {
+      return res.status(409).json({
+        error:
+          'This pick task already has a reported exception.',
+      });
+    }
+
+    if (message === 'ALLOCATION_ALREADY_SCANNED') {
+      return res.status(409).json({
+        error:
+          'This pick task was already confirmed as picked and can no longer be excepted.',
+      });
+    }
+
+    if (message.includes('INVENTORY_TRUTH_NOT_FOUND')) {
+      return res.status(409).json({
+        error:
+          'Inventory state for this pick location has changed. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (message.includes('INSUFFICIENT_ON_HAND')) {
+      return res.status(409).json({
+        error:
+          'Not enough stock remains at this location for the reported short pick. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (message.includes('INSUFFICIENT_RESERVED')) {
+      return res.status(409).json({
+        error:
+          'This pick is no longer fully reserved. Refresh the pick task before continuing.',
+      });
+    }
+
+    if (
+      message.includes('PICK_REMOVAL_ALREADY_EXISTS') ||
+      message.includes('RESERVATION_RELEASE_ALREADY_EXISTS') ||
+      message.includes('INVENTORY_TRUTH_UPDATE_FAILED')
+    ) {
+      return res.status(409).json({
+        error:
+          'This pick outcome may already have been recorded. Refresh the pick task before trying again.',
+      });
+    }
+
+    /**
+     * Deterministic conflicts must never surface as 500s. Any unique-violation
+     * that reaches here is a lost race on one of the GH-1049 partial unique
+     * indexes — the losing request is a conflict, not a server fault.
+     */
+    if ((error as { code?: string })?.code === '23505') {
+      return res.status(409).json({
+        error:
+          'This pick task already has a reported exception.',
       });
     }
 
@@ -2792,6 +3098,17 @@ export const httpConfirmPickScan = async (req: Request, res: Response) => {
       return res.status(409).json({
         error:
           'Inventory changed while this pick was being confirmed. Refresh the pick task before trying again.',
+      });
+    }
+
+    if (
+      message.includes(
+        'ALLOCATION_EXCEPTION_EXISTS'
+      )
+    ) {
+      return res.status(409).json({
+        error:
+          'An exception was already reported for this pick task; it can no longer be confirmed as picked.',
       });
     }
 

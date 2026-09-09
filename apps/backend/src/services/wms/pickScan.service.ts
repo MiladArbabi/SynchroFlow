@@ -220,6 +220,32 @@ export async function confirmPickScan(
     }
   }
 
+  /**
+   * GH-1049 cross-outcome guard.
+   *
+   * A pick-stage exception is the allocation's recorded physical outcome.
+   * Once it exists the allocation may not also be confirmed as a normal full
+   * pick. The allocation row is already locked FOR UPDATE above, so this
+   * serializes against a concurrent exception report on the same allocation.
+   *
+   * short_pick is exempt by construction: its confirmed scan and its exception
+   * are written together as one composite operation by
+   * recordShortPickPhysicalOutcome, not through this path.
+   */
+  if (allocationBackedLine) {
+    const allocationException = await trx('pick_exceptions')
+      .where({
+        shop_id: shopId,
+        reservation_allocation_id: reservationAllocationId,
+        stage: 'pick',
+      })
+      .first('pick_exception_id');
+
+    if (allocationException) {
+      throw new Error('[PICK_SCAN] ALLOCATION_EXCEPTION_EXISTS');
+    }
+  }
+
   // 4. Guard against duplicate confirmed scan for this pick task.
   // Allocation-backed batches use allocation identity; legacy batches
   // preserve the existing line-level duplicate guard.
@@ -632,5 +658,236 @@ export async function confirmPickScan(
   return {
     scan_id: scanId,
     inventory_movement_id: inventoryMovementId,
+  };
+}
+/**
+ * SHORT-PICK PHYSICAL OUTCOME (GH-1049)
+ * --------------------------------------
+ * The physical half of a short_pick: the operator found `quantityFound` of an
+ * allocation of `allocation.quantity`. This writes ONLY the units actually in
+ * the operator's hand. The missing remainder is carried by the Pick exception
+ * and its Problem task, not by a fabricated movement.
+ *
+ * Written inside the caller's exception transaction, so the scan, both
+ * movements, inventory_truth and units_picked commit or roll back with the
+ * exception and its Problem task.
+ *
+ * ECONOMIC IDENTITY
+ * -----------------
+ * Both movements are keyed on the pick_exception_id, NOT on the allocation id.
+ * confirmPickScan's full-allocation reservation_release already owns
+ * (shop_id, 'pick_reservation_allocation', allocation_id, variant, location,
+ * 'reservation_release'). Reusing that identity here would consume the
+ * allocation's one reservation_release row and silently swallow the later
+ * disposition of the remaining reserved units — the residual settlement that
+ * write_off / discard / re-stow resolution will need. Keying on the exception
+ * leaves the allocation-scoped identity free for that separate economic event.
+ *
+ * Caller must have SET LOCAL "app.current_tenant" and
+ * SET LOCAL "synchroflow.projection" = 'true' active, and must already hold
+ * the pick_reservation_allocations row lock.
+ */
+export interface ShortPickPhysicalOutcomeInput {
+  shopId: number;
+  pickBatchId: string;
+  pickExceptionId: string;
+  reservationAllocationId: string;
+  lasyncroLineItemId: string;
+  lasyncroVariantId: string;
+  locationCode: string;
+  quantityFound: number;
+  scannedBy: number;
+  scanSource?: 'camera' | 'usb' | 'bt' | 'manual';
+}
+
+export interface ShortPickPhysicalOutcomeResult {
+  scan_id: string;
+  inventory_movement_id: string;
+  reservation_release_movement_id: string;
+}
+
+export async function recordShortPickPhysicalOutcome(
+  trx: Knex.Transaction,
+  input: ShortPickPhysicalOutcomeInput
+): Promise<ShortPickPhysicalOutcomeResult> {
+  const {
+    shopId,
+    pickBatchId,
+    pickExceptionId,
+    reservationAllocationId,
+    lasyncroLineItemId,
+    lasyncroVariantId,
+    locationCode,
+    quantityFound,
+    scannedBy,
+    scanSource = 'manual',
+  } = input;
+
+  if (!Number.isInteger(quantityFound) || quantityFound <= 0) {
+    throw new Error('[PICK_SHORT] QUANTITY_FOUND_INVALID');
+  }
+
+  const inventoryTruth = await trx('inventory_truth')
+    .where({
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+    })
+    .forUpdate()
+    .select('on_hand_quantity', 'reserved_quantity')
+    .first();
+
+  if (!inventoryTruth) {
+    throw new Error('[PICK_SHORT] INVENTORY_TRUTH_NOT_FOUND');
+  }
+
+  if (Number(inventoryTruth.on_hand_quantity) < quantityFound) {
+    throw new Error('[PICK_SHORT] INSUFFICIENT_ON_HAND');
+  }
+
+  if (Number(inventoryTruth.reserved_quantity) < quantityFound) {
+    throw new Error('[PICK_SHORT] INSUFFICIENT_RESERVED');
+  }
+
+  const occurredAt = new Date();
+
+  const inventoryMovementId = uuidv5(
+    `${pickBatchId}:${pickExceptionId}:inventory:short_pick_removal`,
+    PICK_SCAN_NAMESPACE
+  );
+
+  const insertedPickRemovals = await trx('inventory_movements')
+    .insert({
+      lasyncro_inventory_movement_id: inventoryMovementId,
+      lasyncro_variant_id: lasyncroVariantId,
+      shop_id: shopId,
+      movement_type: 'pick_removal',
+      quantity_delta: -quantityFound,
+      location_code: locationCode,
+      reference_type: 'pick_exception',
+      reference_id: pickExceptionId,
+      platform: null,
+      scan_source: scanSource,
+      occurred_at: occurredAt,
+      device_event_id: uuidv5(
+        `${pickBatchId}:${pickExceptionId}:short_pick_removal`,
+        PICK_SCAN_NAMESPACE
+      ),
+      operator_id: scannedBy,
+      triggered_by: 'pick_exception',
+    })
+    .onConflict(['device_event_id'])
+    .ignore()
+    .returning('lasyncro_inventory_movement_id');
+
+  if (insertedPickRemovals.length !== 1) {
+    throw new Error('[PICK_SHORT] PICK_REMOVAL_ALREADY_EXISTS');
+  }
+
+  const reservationReleaseMovementId = uuidv5(
+    `${pickBatchId}:${pickExceptionId}:inventory:short_reservation_release`,
+    PICK_SCAN_NAMESPACE
+  );
+
+  const insertedReservationReleases = await trx('inventory_movements')
+    .insert({
+      lasyncro_inventory_movement_id: reservationReleaseMovementId,
+      lasyncro_variant_id: lasyncroVariantId,
+      shop_id: shopId,
+      movement_type: 'reservation_release',
+      quantity_delta: -quantityFound,
+      location_code: locationCode,
+      reference_type: 'pick_exception',
+      reference_id: pickExceptionId,
+      platform: 'wms',
+      scan_source: scanSource,
+      occurred_at: occurredAt,
+      device_event_id: uuidv5(
+        `${pickBatchId}:${pickExceptionId}:short_reservation_release`,
+        PICK_SCAN_NAMESPACE
+      ),
+      operator_id: scannedBy,
+      triggered_by: 'pick_exception',
+    })
+    .onConflict([
+      'shop_id',
+      'reference_type',
+      'reference_id',
+      'lasyncro_variant_id',
+      'location_code',
+      'movement_type',
+    ])
+    .ignore()
+    .returning('lasyncro_inventory_movement_id');
+
+  if (insertedReservationReleases.length !== 1) {
+    throw new Error('[PICK_SHORT] RESERVATION_RELEASE_ALREADY_EXISTS');
+  }
+
+  const updatedTruthRows = await trx('inventory_truth')
+    .where({
+      shop_id: shopId,
+      lasyncro_variant_id: lasyncroVariantId,
+      location_code: locationCode,
+    })
+    .where('on_hand_quantity', '>=', quantityFound)
+    .where('reserved_quantity', '>=', quantityFound)
+    .update({
+      on_hand_quantity: trx.raw('on_hand_quantity - ?', [quantityFound]),
+      reserved_quantity: trx.raw('reserved_quantity - ?', [quantityFound]),
+      last_evaluated_at: occurredAt,
+      updated_at: occurredAt,
+    });
+
+  if (updatedTruthRows !== 1) {
+    throw new Error('[PICK_SHORT] INVENTORY_TRUTH_UPDATE_FAILED');
+  }
+
+  const scanId = randomUUID();
+
+  /**
+   * The confirmed scan records the units physically removed, not the
+   * allocation total. pick_scan_log_confirmed_allocation_unique still admits
+   * exactly one confirmed scan for this allocation.
+   *
+   * order_line_item_warehouse_status is deliberately NOT advanced to 'picked':
+   * the line is short. Pack-stage handling of that state is a later slice.
+   */
+  await trx('pick_scan_log').insert({
+    scan_id: scanId,
+    shop_id: shopId,
+    pick_batch_id: pickBatchId,
+    lasyncro_line_item_id: lasyncroLineItemId,
+    lasyncro_variant_id: lasyncroVariantId,
+    reservation_allocation_id: reservationAllocationId,
+    lasyncro_unit_id: null,
+    location_code: locationCode,
+    quantity_confirmed: quantityFound,
+    status: 'confirmed',
+    scanned_by: scannedBy,
+    scanned_at: occurredAt,
+    inventory_movement_id: inventoryMovementId,
+  });
+
+  await trx('pick_batches')
+    .where({ pick_batch_id: pickBatchId })
+    .update({
+      units_picked: trx.raw('units_picked + ?', [quantityFound]),
+      pick_last_activity_at: occurredAt,
+      updated_at: occurredAt,
+    });
+
+  console.info('[PICK_SHORT_PICK_RECORDED]', {
+    pickBatchId,
+    pickExceptionId,
+    reservationAllocationId,
+    quantityFound,
+    shopId,
+  });
+
+  return {
+    scan_id: scanId,
+    inventory_movement_id: inventoryMovementId,
+    reservation_release_movement_id: reservationReleaseMovementId,
   };
 }
