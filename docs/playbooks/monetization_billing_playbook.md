@@ -3929,8 +3929,8 @@ canonical route middleware is authoritative and denial is the shared
 ### 34.8 Stale frontend links
 
 `missing_cogs` alert actions now route to **`/inventory/costs`** (label "Costs")
-instead of the retired `/products`, consistently in both `TopnavbarContent.tsx`
-and `AlertsPage.tsx`.
+instead of the retired `/products`, consistently in the canonical
+`pages/alerts/alertDeepLink.ts` resolver and `AlertsPage.tsx`.
 
 ### 34.9 Verification evidence
 
