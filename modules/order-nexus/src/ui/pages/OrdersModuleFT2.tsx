@@ -17,6 +17,7 @@
 // - Font: Plus Jakarta Sans (app default) — never set fontFamily explicitly.
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Box, Collapse, Typography } from '@mui/material';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -102,6 +103,16 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
    * Handler is owned by the app shell because export API/auth concerns live outside order-nexus.
    */
   onExport?: () => void | Promise<void>;
+
+  /**
+   * ORD-UX-01 — live Orders map surface supplied by the app shell.
+   *
+   * The module never decides map eligibility and never acquires floor or
+   * activity data; it only leases the left slot. When present, the canonical
+   * Live Intelligence layout renders (map + compact 280px decision rail).
+   * When absent, the triage-first layout is preserved for existing consumers.
+   */
+  mapContent?: ReactNode;
 
   operatorSummary?: {
     constraintCounts?: { inventory: number; customer: number; operational: number };
@@ -272,13 +283,15 @@ function PrioritizeButton({
 // MAIN COMPONENT
 export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const navigate = useNavigate();
+  const [showAllRailGroups, setShowAllRailGroups] = useState(false);
   const { 
     operationalControl, 
     revenue, 
     operatorSummary, 
     currency, 
     onExport, 
-    onOrderClick, 
+    onOrderClick,
+    mapContent,
     onPriorityFlag 
   } = props
 
@@ -683,6 +696,51 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
   const allStages    = [{ key: 'new', label: 'New', count: newCount }, ...stageData];
   const stageTotal   = allStages.reduce((s, d) => s + d.count, 0) || 1;
 
+  /**
+   * ORD-UX-01 — GROUP summaries for the 280px Live Intelligence rail.
+   *
+   * Reuses `criticalGroups` verbatim: same authoritative population, same
+   * commercial-consequence ordering (revenue at stake, descending), same
+   * labels. The rail only changes the PRESENTATION — one line per issue class,
+   * never per order. Aging is appended last because it is imminent risk rather
+   * than a realised blocker, matching the Watch band's meaning in the triage
+   * layout. No group is invented: each one only exists when its authoritative
+   * population is non-empty.
+   */
+  const railGroups: Array<{
+    key: string;
+    label: string;
+    count: number;
+    revenue: number | null;
+    oldestAgeHours: number | null;
+    orderIds: string[];
+  }> = [
+    ...criticalGroups.map(group => ({
+      key: group.key,
+      label: group.label,
+      count: group.orders.length,
+      revenue: group.revenue,
+      oldestAgeHours: group.oldestAgeHours,
+      orderIds: group.orders.map(o => o.lasyncro_order_id),
+    })),
+    ...(watchOrders.length > 0
+      ? [{
+          key: 'aging',
+          label: 'Aging — review soon',
+          count: watchOrders.length,
+          revenue: watchOrders.reduce((sum, o) => sum + (o.revenue ?? 0), 0),
+          oldestAgeHours: Math.max(...watchOrders.map(o => o.ageHours)),
+          orderIds: watchOrders.map(o => o.lasyncro_order_id),
+        }]
+      : []),
+  ];
+
+  const RAIL_GROUP_PREVIEW_LIMIT = 3;
+  const visibleRailGroups = showAllRailGroups
+    ? railGroups
+    : railGroups.slice(0, RAIL_GROUP_PREVIEW_LIMIT);
+  const hiddenRailGroupCount = railGroups.length - visibleRailGroups.length;
+
   return (
     <Box sx={{ p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }}>
 
@@ -736,7 +794,92 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
         </Box>
       </Box>
 
-      {/* ── TRIAGE-FIRST GRID ─────────────────────────────────── */}
+      {/* ── LIVE INTELLIGENCE BODY (ORD-UX-01) ────────────────── */}
+      {/* LEFT: live Orders map  |  RIGHT: fixed 280px decision rail.
+          The triage card, individual critical/watch order rows, expanded order
+          lists and the inline bulk-priority confirmation UI are deliberately
+          NOT rendered here — each group links to the workflow that owns the
+          detail, and bulk mutation stays in Order Flow. */}
+      {mapContent ? (
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.25, alignItems: 'stretch' }}>
+          <Box sx={{ flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            {mapContent}
+          </Box>
+
+          <Box sx={{ flex: { xs: '1 1 auto', lg: '0 0 280px' }, width: { lg: 280 }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {railGroups.length > 0 && (
+              <Box sx={{ bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }}>
+                <Box sx={{ px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
+                    Needs a decision
+                  </Typography>
+                </Box>
+
+                {visibleRailGroups.map(group => (
+                  <Box
+                    key={group.key}
+                    onClick={() => {
+                      // A single concrete order is the natural action — open it.
+                      // Anything wider belongs to the workflow that owns it.
+                      if (group.orderIds.length === 1 && onOrderClick) {
+                        onOrderClick(group.orderIds[0]);
+                        return;
+                      }
+                      navigate('/orders/flow');
+                    }}
+                    sx={{
+                      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1,
+                      px: 1.75, py: 1.25, cursor: 'pointer',
+                      borderBottom: '0.5px solid var(--rule)',
+                      '&:last-of-type': { borderBottom: 'none' },
+                      '&:hover': { bgcolor: 'action.hover' },
+                    }}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }}>
+                        {group.count} {group.label}
+                      </Typography>
+                      {group.oldestAgeHours != null && (
+                        <Typography sx={{ fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }}>
+                          oldest {fmtSlaAge(group.oldestAgeHours)}
+                        </Typography>
+                      )}
+                    </Box>
+                    {group.revenue != null && (
+                      <Typography sx={{ fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                        {fmt$(group.revenue)}
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+
+                {hiddenRailGroupCount > 0 && (
+                  <Box
+                    onClick={() => setShowAllRailGroups(true)}
+                    sx={{ px: 1.75, py: 1, borderTop: '0.5px solid var(--rule)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }}
+                  >
+                    <Typography sx={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)' }}>
+                      See {hiddenRailGroupCount} more →
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            <PulseCard
+            title="Today's pulse"
+            rows={[
+              { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
+              { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
+              { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
+              { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
+            ]}
+          />
+          </Box>
+        </Box>
+      ) : (
+      /* ── TRIAGE-FIRST GRID (compatibility fallback) ──────────
+         Preserved unchanged for consumers that supply no map surface. */
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }}>
 
         {/* ── LEFT: Needs a decision ──────────────────────────── */}
@@ -1352,6 +1495,7 @@ export default function OrdersModuleFT2(props: OrdersModuleFT2DataProps) {
           />
         </Box>
       </Box>
+      )}
     </Box>
   );
 }

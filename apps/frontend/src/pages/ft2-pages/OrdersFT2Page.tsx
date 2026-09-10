@@ -46,6 +46,14 @@ import { ShippedOrderCapBanner } from '../../components/ShippedOrderCapBanner';
 import { ExportDrawer } from 'components/ExportDrawer';
 import { OrderDetailModalBody } from 'pages/orders/OrderDetailModalBody';
 import { Box } from '@mui/system';
+import { Typography } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
+import { IsometricCanvas } from '@lasyncro/shared/ui';
+import type { WarehouseZone, LiveBinActivity } from '@lasyncro/shared/ui';
+import { LiveMapTeaser } from 'components/LiveMapTeaser';
+import { useCommercialAccess } from '../../runtime/commercialContext';
+import { useFloorPlanning } from '../floor-planning/useFloorPlanning';
+import { useOrdersLiveActivity } from '../wms/useWmsLiveActivity';
 
 const __DEV__ = import.meta.env.DEV;
 
@@ -68,6 +76,148 @@ export default function OrdersFT2Page() {
   const { displayCurrency, locale, tier } = useEntitlements();
   const { rates } = useExchangeRates();
   const bulkSetPriority = useBulkSetPriority();
+  const navigate = useNavigate();
+
+  /**
+   * ORD-UX-01 — Orders Live Intelligence commercial + acquisition boundary.
+   *
+   * The canonical orders.live_map AccessDecision is the only authority. Never
+   * reconstruct eligibility from a raw tier compare. isResolved keeps map
+   * access false until the entitlement snapshot lands, so a Growth tenant never
+   * flashes the teaser first.
+   */
+  const { decide, isResolved } = useCommercialAccess();
+  const liveMapDecision = decide('orders.live_map');
+  const hasMapAccess = isResolved && liveMapDecision.allowed;
+
+  // A denied tenant must not ACQUIRE floor geometry either.
+  const floorPlanning = useFloorPlanning(hasMapAccess);
+  const floorZones: WarehouseZone[] = floorPlanning.data?.zones ?? [];
+
+  // Same positioned-zone semantics as Overview and Inventory: rows exist on
+  // every tenant (the bootstrapped WH-{shopId}-ROOT row), a floor does not.
+  const hasPlacedFloor = floorZones.some(
+    (z: WarehouseZone) => z.position_x != null && z.position_y != null
+  );
+
+  // Live operator activity is only drawable on a placed floor, so acquisition
+  // follows both the decision and the floor.
+  const ordersLiveActivity = useOrdersLiveActivity(hasMapAccess && hasPlacedFloor);
+
+  /**
+   * V1 map semantics: "where are today's orders moving or getting stuck?"
+   *
+   * Built ONLY from real attribution already in the live payload — pickerPositions
+   * carry a real location_code, and activeBatches carry the phase. Nothing is
+   * placed on the floor that the payload does not locate: no order-to-bin
+   * inference, no inventory occupancy, no fabricated pack locations. Non-spatial
+   * order problems stay in the right rail.
+   */
+  const batchStatusById = (ordersLiveActivity.data?.activeBatches ?? []).reduce<Record<string, string>>(
+    (acc, b) => { acc[b.batch_id] = b.status; return acc; },
+    {}
+  );
+  const staleThresholdMs =
+    (ordersLiveActivity.data?.staleThresholdMinutes ?? 15) * 60 * 1000;
+
+  const orderFloorActivity = (ordersLiveActivity.data?.pickerPositions ?? []).reduce<
+    Record<string, LiveBinActivity>
+  >((acc, p) => {
+    const existing = acc[p.location_code];
+    const status = batchStatusById[p.batch_id];
+    const pickingCount = (existing?.pickingCount ?? 0) + (status === 'picking' ? 1 : 0);
+    const packingCount = (existing?.packingCount ?? 0) + (status === 'packing' ? 1 : 0);
+    const freshnessAt = Math.max(
+      p.last_scan_at ? new Date(p.last_scan_at).getTime() : 0,
+      new Date(p.batch_activity_at).getTime()
+    );
+    const isStale = Date.now() - freshnessAt > staleThresholdMs;
+
+    acc[p.location_code] = {
+      operatorCount: (existing?.operatorCount ?? 0) + 1,
+      hasActivePick: true,
+      pickingCount,
+      packingCount,
+      staleCount: (existing?.staleCount ?? 0) + (isStale ? 1 : 0),
+      lastActivityAt: Math.max(existing?.lastActivityAt ?? 0, freshnessAt),
+      status:
+        pickingCount > 0 && packingCount === 0
+          ? 'picking'
+          : packingCount > 0 && pickingCount === 0
+            ? 'packing'
+            : undefined,
+    };
+    return acc;
+  }, {});
+
+  let mapContent: ReactNode;
+
+  if (!hasMapAccess) {
+    mapContent = (
+      <LiveMapTeaser
+        title="Orders live map"
+        description="Watch today's orders move across your floor — who is picking what, where work is stalling, and which bins are holding the queue up."
+        requiredTier={liveMapDecision.requiredTier ?? null}
+        onUpgrade={() => navigate('/settings/billing')}
+      />
+    );
+  } else if (hasPlacedFloor) {
+    mapContent = (
+      <Box sx={{
+        minHeight: { xs: 420, lg: 460 }, height: '100%', display: 'flex', flexDirection: 'column',
+        borderRadius: '14px', overflow: 'hidden', border: '0.5px solid var(--rule)',
+      }}>
+        <Box sx={{ flex: 1, minHeight: 0 }}>
+          {/* No `occupancy` — stock levels are an Inventory question. This map
+              answers where ORDER work is happening, from real operator
+              positions and real batch phases only. */}
+          <IsometricCanvas
+            zones={floorZones}
+            liveActivity={orderFloorActivity}
+            showLegend={false}
+            showControls={false}
+            enableHoverFocus
+            disablePan
+            autoFit
+            fitPhysicalFloorFirst
+            fitPadding={0.88}
+          />
+        </Box>
+      </Box>
+    );
+  } else {
+    mapContent = (
+      <Box sx={{
+        minHeight: { xs: 420, lg: 460 }, height: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', textAlign: 'center',
+        gap: 1, p: 3,
+        borderRadius: '14px', border: '0.5px solid var(--rule)', bgcolor: 'var(--surface)',
+      }}>
+        <Typography sx={{ fontSize: 16, fontWeight: 500, color: 'var(--ink)' }}>
+          Map your warehouse floor first
+        </Typography>
+        <Typography sx={{ fontSize: 13, fontWeight: 300, color: 'var(--ink-3)', maxWidth: 360, mb: 1.5 }}>
+          Place your zones and bins once, and this becomes a live view of where
+          today's orders are moving — and where they are getting stuck.
+        </Typography>
+        <Box
+          component="button"
+          type="button"
+          onClick={() => navigate('/floor-planning?tab=setup&view=canvas')}
+          sx={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            px: '14px', py: '7px', fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+            color: 'var(--accent-ink)', bgcolor: 'var(--accent)',
+            border: 'none', borderRadius: '6px', cursor: 'pointer',
+            '&:hover': { opacity: 0.88 },
+          }}
+        >
+          Map the floor
+        </Box>
+      </Box>
+    );
+  }
+
   const onPriorityFlag = useCallback(
     // THREAD B (2026-06-30): consolidated from an N-call Promise.all loop
     // against the singular WMS endpoint to one call against the bulk
@@ -108,6 +258,7 @@ export default function OrdersFT2Page() {
         currency={{ displayCurrency, locale, rates }}
         onPriorityFlag={onPriorityFlag}
         onOrderClick={(orderId) => setSelectedOrderId(orderId)}
+        mapContent={mapContent}
         // §6 — Orders/Overview is specced as "Export → opens drawer with
         // format picker", same as Overview's Export brief). Keep this surface
         // focused on the canonical All Orders export; filtered variants remain

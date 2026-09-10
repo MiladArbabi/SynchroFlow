@@ -110,7 +110,8 @@ function PrioritizeButton({ isPriorityFlagged, onPrioritize, }) {
 // MAIN COMPONENT
 export default function OrdersModuleFT2(props) {
     const navigate = useNavigate();
-    const { operationalControl, revenue, operatorSummary, currency, onExport, onOrderClick, onPriorityFlag } = props;
+    const [showAllRailGroups, setShowAllRailGroups] = useState(false);
+    const { operationalControl, revenue, operatorSummary, currency, onExport, onOrderClick, mapContent, onPriorityFlag } = props;
     const fmt$ = (n) => formatCurrencyCompact(n, currency?.displayCurrency, currency?.locale, currency?.rates);
     // ── Derived counts ──────────────────────────────────────────
     const qReady = operatorSummary?.queueCounts?.readyToShip ?? operationalControl?.queue_ready_to_ship ?? 0;
@@ -452,6 +453,42 @@ export default function OrdersModuleFT2(props) {
     const newCount = Math.max(0, totalOrders - accountedFor);
     const allStages = [{ key: 'new', label: 'New', count: newCount }, ...stageData];
     const stageTotal = allStages.reduce((s, d) => s + d.count, 0) || 1;
+    /**
+     * ORD-UX-01 — GROUP summaries for the 280px Live Intelligence rail.
+     *
+     * Reuses `criticalGroups` verbatim: same authoritative population, same
+     * commercial-consequence ordering (revenue at stake, descending), same
+     * labels. The rail only changes the PRESENTATION — one line per issue class,
+     * never per order. Aging is appended last because it is imminent risk rather
+     * than a realised blocker, matching the Watch band's meaning in the triage
+     * layout. No group is invented: each one only exists when its authoritative
+     * population is non-empty.
+     */
+    const railGroups = [
+        ...criticalGroups.map(group => ({
+            key: group.key,
+            label: group.label,
+            count: group.orders.length,
+            revenue: group.revenue,
+            oldestAgeHours: group.oldestAgeHours,
+            orderIds: group.orders.map(o => o.lasyncro_order_id),
+        })),
+        ...(watchOrders.length > 0
+            ? [{
+                    key: 'aging',
+                    label: 'Aging — review soon',
+                    count: watchOrders.length,
+                    revenue: watchOrders.reduce((sum, o) => sum + (o.revenue ?? 0), 0),
+                    oldestAgeHours: Math.max(...watchOrders.map(o => o.ageHours)),
+                    orderIds: watchOrders.map(o => o.lasyncro_order_id),
+                }]
+            : []),
+    ];
+    const RAIL_GROUP_PREVIEW_LIMIT = 3;
+    const visibleRailGroups = showAllRailGroups
+        ? railGroups
+        : railGroups.slice(0, RAIL_GROUP_PREVIEW_LIMIT);
+    const hiddenRailGroupCount = railGroups.length - visibleRailGroups.length;
     return (_jsxs(Box, { sx: { p: '24px 40px', minHeight: '100%', bgcolor: 'var(--bg)' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }, children: [_jsxs(Box, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: '#4CAF7A', flexShrink: 0 } }), _jsxs(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: [dayLabel, " \u00B7 Channels live \u00B7 ", syncLabel] })] }), _jsx(Typography, { sx: { fontSize: 26, fontWeight: 700, color: 'var(--ink)', lineHeight: 1.1, letterSpacing: '-0.02em', mb: 0.375 }, children: "Orders" }), _jsx(Typography, { sx: { fontSize: 13, fontWeight: 300, color: 'var(--ink-3)' }, children: constrained > 0
                                     ? `${constrained} order${constrained === 1 ? '' : 's'} constrained · ${fmt$(blockedRevenue)} blocked · ${qPicking} in pick & pack`
                                     // FIX (2026-07-01): previously only checked `constrained`
@@ -472,7 +509,36 @@ export default function OrdersModuleFT2(props) {
                                         ? `${criticalOrders.length} critical order${criticalOrders.length === 1 ? '' : 's'} · ${fmt$(criticalOrders.reduce((s, o) => s + (o.revenue ?? 0), 0))} at stake`
                                         : watchOrders.length > 0
                                             ? `${watchOrders.length} order${watchOrders.length === 1 ? '' : 's'} aging · review soon`
-                                            : 'All orders on track — nothing needs immediate action' })] }), _jsx(Box, { sx: { display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }, children: onExport && (_jsx(Box, { onClick: onExport, sx: { display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Export \u2192" })) })] }), _jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }, children: "Needs a decision" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: "Ranked by commercial consequence" })] }), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: syncLabel })] }), criticalOrders.length > 0 ? (_jsxs(_Fragment, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.07)' }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }, children: "Critical \u2014 act today" }), _jsx(Box, { sx: { flex: 1 } }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [criticalOrders.length, " orders \u00B7 ", criticalGroups.length, " ", criticalGroups.length === 1 ? 'issue' : 'issues'] })] }), criticalGroups.map(group => {
+                                            : 'All orders on track — nothing needs immediate action' })] }), _jsx(Box, { sx: { display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }, children: onExport && (_jsx(Box, { onClick: onExport, sx: { display: 'inline-flex', alignItems: 'center', px: '12px', py: '6px', fontSize: 12, fontWeight: 500, color: 'var(--accent)', border: '0.5px solid var(--accent-border)', borderRadius: '6px', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: "Export \u2192" })) })] }), mapContent ? (_jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsx(Box, { sx: { flex: '1 1 0', minWidth: 0, display: 'flex', flexDirection: 'column' }, children: mapContent }), _jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '0 0 280px' }, width: { lg: 280 }, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }, children: [railGroups.length > 0 && (_jsxs(Box, { sx: { bgcolor: 'var(--surface)', border: '0.5px solid var(--rule)', borderRadius: '10px', overflow: 'hidden' }, children: [_jsx(Box, { sx: { px: 1.75, py: 1.25, borderBottom: '0.5px solid var(--rule)' }, children: _jsx(Typography, { sx: { fontSize: 10, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }, children: "Needs a decision" }) }), visibleRailGroups.map(group => (_jsxs(Box, { onClick: () => {
+                                            // A single concrete order is the natural action — open it.
+                                            // Anything wider belongs to the workflow that owns it.
+                                            if (group.orderIds.length === 1 && onOrderClick) {
+                                                onOrderClick(group.orderIds[0]);
+                                                return;
+                                            }
+                                            navigate('/orders/flow');
+                                        }, sx: {
+                                            display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1,
+                                            px: 1.75, py: 1.25, cursor: 'pointer',
+                                            borderBottom: '0.5px solid var(--rule)',
+                                            '&:last-of-type': { borderBottom: 'none' },
+                                            '&:hover': { bgcolor: 'action.hover' },
+                                        }, children: [_jsxs(Box, { sx: { minWidth: 0 }, children: [_jsxs(Typography, { sx: { fontSize: 12.5, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.35 }, children: [group.count, " ", group.label] }), group.oldestAgeHours != null && (_jsxs(Typography, { sx: { fontSize: 11, color: 'var(--ink-4)', mt: 0.125 }, children: ["oldest ", fmtSlaAge(group.oldestAgeHours)] }))] }), group.revenue != null && (_jsx(Typography, { sx: { fontSize: 11.5, fontWeight: 500, color: 'var(--ink-3)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }, children: fmt$(group.revenue) }))] }, group.key))), hiddenRailGroupCount > 0 && (_jsx(Box, { onClick: () => setShowAllRailGroups(true), sx: { px: 1.75, py: 1, borderTop: '0.5px solid var(--rule)', cursor: 'pointer', '&:hover': { opacity: 0.75 } }, children: _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 500, color: 'var(--accent)' }, children: ["See ", hiddenRailGroupCount, " more \u2192"] }) }))] })), _jsx(PulseCard, { title: "Today's pulse", headline: {
+                                    value: `${fmtN(slaBreachedCount)} breached`,
+                                    tone: slaBreachedCount > 0 ? 'critical' : 'good',
+                                    colorOverride: slaBreachedCount > 0 ? STAGE_COLORS.breached : 'var(--ink)',
+                                    subtext: unprioritizedCriticalCount > 0
+                                        ? `${unprioritizedCriticalCount} still need priority`
+                                        : 'Critical queue is under control',
+                                }, rows: [
+                                    { id: 'breached', label: 'Breached', value: slaBreachedCount, tone: 'critical', colorOverride: STAGE_COLORS.breached, progress: { value: slaBreachedCount, max: pulseMax } },
+                                    { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
+                                    { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
+                                    { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
+                                ], footerNote: _jsxs(_Fragment, { children: [_jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmtN(props.orders?.fulfilled) }), ' fulfilled to date · ', _jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmt$(revenue?.earned) }), ' collected to date'] }), footerCta: { label: 'View order flow', onClick: () => navigate('/orders/flow') } })] })] })) : (
+            /* ── TRIAGE-FIRST GRID (compatibility fallback) ──────────
+               Preserved unchanged for consumers that supply no map surface. */
+            _jsxs(Box, { sx: { display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, flexWrap: { xs: 'nowrap', lg: 'wrap' }, gap: 2.25, alignItems: 'stretch' }, children: [_jsxs(Box, { sx: { flex: { xs: '1 1 auto', lg: '1 1 0' }, minWidth: 0, bgcolor: 'var(--surface)', border: '1px solid var(--rule)', borderRadius: '14px', overflow: 'hidden' }, children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', p: '16px 20px 14px', borderBottom: '1px solid var(--rule)' }, children: [_jsxs(Box, { children: [_jsx(Typography, { sx: { fontSize: 14, fontWeight: 500, color: 'var(--ink)', mb: 0.375 }, children: "Needs a decision" }), _jsx(Typography, { sx: { fontSize: 12, fontWeight: 300, color: 'var(--ink-4)' }, children: "Ranked by commercial consequence" })] }), _jsx(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)', mt: 0.25 }, children: syncLabel })] }), criticalOrders.length > 0 ? (_jsxs(_Fragment, { children: [_jsxs(Box, { sx: { display: 'flex', alignItems: 'center', gap: 1, px: 2.5, py: 1, bgcolor: 'rgba(229,72,77,0.07)' }, children: [_jsx(Box, { sx: { width: 6, height: 6, borderRadius: '50%', bgcolor: '#E5484D', flexShrink: 0 } }), _jsx(Typography, { sx: { fontSize: 10, fontWeight: 600, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#F2555A' }, children: "Critical \u2014 act today" }), _jsx(Box, { sx: { flex: 1 } }), _jsxs(Typography, { sx: { fontSize: 11, fontWeight: 300, color: 'var(--ink-4)' }, children: [criticalOrders.length, " orders \u00B7 ", criticalGroups.length, " ", criticalGroups.length === 1 ? 'issue' : 'issues'] })] }), criticalGroups.map(group => {
                                         const expanded = expandedCriticalGroupKeys.has(group.key);
                                         const bulkPriorityOrderIds = group.key === 'sla'
                                             ? group.orders
@@ -720,6 +786,6 @@ export default function OrdersModuleFT2(props) {
                                 { id: 'blocked', label: 'Blocked', value: constrained, tone: 'warning', colorOverride: STAGE_COLORS.blocked, progress: { value: constrained, max: pulseMax } },
                                 { id: 'picking', label: 'Picking', value: qPicking, tone: 'neutral', colorOverride: STAGE_COLORS.picking, progress: { value: qPicking, max: pulseMax } },
                                 { id: 'ready', label: 'Fulfillable', value: qReady, tone: 'good', colorOverride: STAGE_COLORS.ready, progress: { value: qReady, max: pulseMax } },
-                            ], footerNote: _jsxs(_Fragment, { children: [_jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmtN(props.orders?.fulfilled) }), ' fulfilled to date · ', _jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmt$(revenue?.earned) }), ' collected to date'] }), footerCta: { label: 'View order flow', onClick: () => navigate('/orders/flow') } }) })] })] }));
+                            ], footerNote: _jsxs(_Fragment, { children: [_jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmtN(props.orders?.fulfilled) }), ' fulfilled to date · ', _jsx(Box, { component: "span", sx: { fontWeight: 600, color: 'var(--ink)' }, children: fmt$(revenue?.earned) }), ' collected to date'] }), footerCta: { label: 'View order flow', onClick: () => navigate('/orders/flow') } }) })] }))] }));
 }
 //# sourceMappingURL=OrdersModuleFT2.js.map

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { FT2TemporalProps } from '@lasyncro/ui-ft2';
 import type { CurrencyContext } from '@lasyncro/shared/ui-contracts';
 export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
@@ -68,6 +69,15 @@ export interface OrdersModuleFT2DataProps extends FT2TemporalProps {
      * Handler is owned by the app shell because export API/auth concerns live outside order-nexus.
      */
     onExport?: () => void | Promise<void>;
+    /**
+     * ORD-UX-01 — live Orders map surface supplied by the app shell.
+     *
+     * The module never decides map eligibility and never acquires floor or
+     * activity data; it only leases the left slot. When present, the canonical
+     * Live Intelligence layout renders (map + compact 280px decision rail).
+     * When absent, the triage-first layout is preserved for existing consumers.
+     */
+    mapContent?: ReactNode;
     operatorSummary?: {
         constraintCounts?: {
             inventory: number;
