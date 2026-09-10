@@ -4088,7 +4088,41 @@ Verification record (supplied for this documentation slice):
 - Core live browser: teaser in map slot PASS; real decision + Business pulse rail PASS; old triage body absent PASS; billing CTA PASS; premium acquisition boundary PASS.
 - Growth local browser: real Overview map ultimately renders correctly PASS; teaser absent PASS.
 
-OV-UX-02 is implemented with the verification recorded above; production certification is not yet claimed.
+**OV-UX-02 — CLOSED / PRODUCTION CERTIFIED**
+
+Production evidence (supplied for this documentation slice):
+
+- Growth/Scale: the real Overview live warehouse map rendered in production; the synthetic teaser was absent; the Needs a decision + Business pulse rail was present.
+- Core: the shared synthetic/blurred Overview live-map teaser rendered in the canonical map slot; real Needs a decision + Business pulse remained visible.
+- Core: the required tier correctly displayed as Growth and the CTA correctly displayed **Upgrade to Growth**.
+- Core: no request to `/api/v1/floor-planning/layout` and no request to `/api/v1/wms/live-activity`.
+- Core: the teaser CTA navigated successfully to `/settings/billing`.
+
+Loading the frontend JS bundle containing `useWmsLiveActivity` is not equivalent to acquiring `/api/v1/wms/live-activity` data. `/api/v1/layouts/dashboard` is unrelated to premium floor-map acquisition.
+
+**BILL-UX-01 — Billing typography consistency**
+
+Status: **DEFERRED / OPEN**
+
+Problem: `/settings/billing` typography and hierarchy are visually inconsistent with the canonical FT2/app typography system.
+
+Requirement: audit and align headings, labels, body copy, card hierarchy, weights, sizing and spacing with the shared app design language. No implementation in this slice.
+
+**BILL-UX-02 — Plan transition CTA semantics**
+
+Status: **DEFERRED / OPEN**
+
+Problem: plan CTA wording must reflect the direction of the plan transition.
+
+Contract:
+
+- Lower → higher tier: “Upgrade to <Tier>”.
+- Higher → lower tier: “Downgrade to <Tier>”.
+- Current tier: non-action/current-plan treatment.
+- Never render “Upgrade to Core” or “Upgrade to Starter” when the current plan is Growth/Scale.
+- CTA semantics must derive from canonical plan ordering/current plan, not ad-hoc copy.
+
+No implementation in this slice.
 
 **MAP-TIER-01 — DEFERRED / UNRESOLVED DEVELOPMENT-ONLY OBSERVATION**
 
