@@ -5,11 +5,15 @@ on:
       - 'modules/**'
       - 'scripts/**'
       - 'tests/contract/**'
+      - 'apps/frontend/**'
+      - '.github/workflows/ci-ui-modules.yml'
   pull_request:
     paths:
       - 'modules/**'
       - 'scripts/**'
       - 'tests/contract/**'
+      - 'apps/frontend/**'
+      - '.github/workflows/ci-ui-modules.yml'
 
 jobs:
   validate-modules:
