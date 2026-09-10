@@ -1,6 +1,7 @@
 // apps/backend/src/services/wms/packScan.service.ts
 import { Knex } from 'knex';
 import { randomUUID } from 'crypto';
+import { assertOrderPackEligible } from './packEligibility.service.js';
 
 /**
  * PACK SCAN SERVICE
@@ -85,6 +86,27 @@ export async function confirmPackScan(
       `[PACK_SCAN] Variant mismatch — scanned: ${lasyncroVariantId}, expected: ${lineItem.lasyncro_variant_id}`
     );
   }
+
+  /**
+   * 3b. PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
+   * ----------------------------------------------------
+   * The mutation boundary, deliberately placed before every write below so
+   * that no Pack entry path — direct scan, unit free-scan, invoice close —
+   * can reach pack_scan_log, units_packed, line/unit status or inventory_units
+   * for an order that is not commercially authorized to ship.
+   *
+   * Throws PACK_ORDER_NOT_AUTHORIZED when the order carries an unresolved
+   * fulfillment deficit with no approved owner/admin decision behind it, and
+   * PACK_QUANTITY_EXCEEDS_PICK_EVIDENCE when the scan would confirm more than
+   * was physically picked. Missing units are never fabricated into evidence.
+   */
+  await assertOrderPackEligible(trx, {
+    shopId,
+    pickBatchId,
+    lasyncroOrderId,
+    lasyncroLineItemId,
+    quantityConfirmed,
+  });
 
   // 4. Guard against duplicate confirmed scan
   const existingScan = await trx('pack_scan_log')

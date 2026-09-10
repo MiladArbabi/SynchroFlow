@@ -12,7 +12,7 @@ import { dispatchNotification } from '../notifications/notificationDispatch.serv
  * Lifecycle:
  *   Operator raises request → pack job pauses on that order
  *   Owner notified (push + Alert: warehouse_floor, owner)
- *   Owner approves (partial_shipment=true|false) or rejects (requeue)
+ *   Owner approves (partial_shipment=true|false) or rejects (hold — never requeue)
  *   Packer polls GET until status !== pending
  *
  * Invariants:
@@ -22,6 +22,21 @@ import { dispatchNotification } from '../notifications/notificationDispatch.serv
  *   - partial_shipment only set on approval
  */
 
+/**
+ * LEGACY WIRE TOKEN — 'hold_and_requeue'
+ * --------------------------------------
+ * Retained deliberately: it is a persisted column value in
+ * pack_decision_requests.question and an accepted request value on
+ * POST /api/v1/wms/pack/decision-request, with rows and clients already in the
+ * field. Renaming it is a breaking wire change and is out of scope for GH-1086.
+ *
+ * Its CURRENT semantics are HOLD ONLY. Nothing requeues: resolving the
+ * decision never detaches the order from pick_batch_orders, never returns it
+ * to Order Pool, and never adds it to Blocked Orders. The name is history, not
+ * behaviour — so no human-readable copy may repeat the promise it implies.
+ * tests/contract/pack-decision-hold-semantics-1086.contract.test.ts pins both
+ * halves of that: the token stays, the copy stays honest.
+ */
 export type PackDecisionQuestion = 'ship_partial' | 'hold_and_requeue';
 export type PackDecisionStatus   = 'pending' | 'approved' | 'rejected';
 
@@ -118,9 +133,11 @@ export async function raisePackDecisionRequest(
 
   // Push notification — owner needs to respond to unblock packer
   const batchShort = pickBatchId.slice(0, 8).toUpperCase();
+  // 'hold_and_requeue' is a legacy wire token (see PackDecisionQuestion); the
+  // behaviour it names is HOLD only, so the owner is never told otherwise.
   const questionLabel = question === 'ship_partial'
     ? 'Ship partial or hold?'
-    : 'Hold and requeue?';
+    : 'Hold order?';
 
   dispatchNotification({
     shopId,
@@ -161,9 +178,15 @@ export async function getPackDecisionRequest(
  * resolvePackDecisionRequest
  * --------------------------
  * Owner/admin approves or rejects.
- * - approved + partial_shipment=true  → packer ships without missing item
- * - approved + partial_shipment=false → packer holds (treated as requeue)
- * - rejected                          → order removed from batch, re-queued
+ * - approved + partial_shipment=true  → packer ships what was physically picked
+ * - approved + partial_shipment=false → order is HELD, not packable
+ * - rejected                          → order is HELD, not packable
+ *
+ * GH-1086 / PACK-GATE-01 — "hold" never means requeue.
+ * The order stays attached to its pick batch, keeps its warehouse history,
+ * never returns to Order Pool, and never appears in Blocked Orders. It simply
+ * stops being packable, which packEligibility.service.ts derives from this
+ * row. Nothing here mutates batch membership or warehouse state.
  *
  * Returns updated request — mobile uses status + partial_shipment to proceed.
  */
@@ -193,24 +216,23 @@ export async function resolvePackDecisionRequest(
     .returning('*');
 
   /**
-   * REQUEUE ON REJECTION
-   * --------------------
-   * Remove order from pick_batch_orders so it re-surfaces in the
-   * order pool (GET /wms/order-pool filters WHERE pick_batch_orders IS NULL).
-   * order_warehouse_status is NOT touched — monotonic trigger blocks
-   * backward transitions. The order stays in its current warehouse
-   * status for audit; what matters for re-release is the pool query.
-   * order_fulfillment_status remains pending/processing — unchanged.
+   * HOLD ON REJECTION (GH-1086 — replaces the former requeue-by-delete)
+   * -------------------------------------------------------------------
+   * This deliberately performs NO state mutation.
+   *
+   * The previous implementation deleted the pick_batch_orders row so the
+   * order re-surfaced in the order pool (GET /wms/order-pool filters
+   * WHERE pick_batch_orders IS NULL). That is now invalid: an order already
+   * inside warehouse execution must never be returned to Order Pool or
+   * Blocked Orders because of a Pick problem, and detaching it destroys the
+   * batch/history association that Problem Center and the audit trail rely on.
+   *
+   * The hold is expressed purely by this row's resolved status. Pack surfaces
+   * read it through packEligibility.service.ts and refuse execution, while
+   * batch membership and warehouse history stay intact.
    */
   if (status === 'rejected') {
-    await trx('pick_batch_orders')
-      .where({
-        lasyncro_order_id: existing.lasyncro_order_id,
-        shop_id:           shopId,
-      })
-      .delete();
-
-    console.info('[PACK_DECISION_ORDER_REQUEUED]', {
+    console.info('[PACK_DECISION_ORDER_HELD]', {
       requestId,
       lasyncroOrderId: existing.lasyncro_order_id,
       pickBatchId:     existing.pick_batch_id,

@@ -466,8 +466,10 @@ remainder remains represented by the exception and linked Problem Center task.
 Pick completion is quantity-accounted; an exception never pretends missing
 units were physically picked.
 
-Residual reservation disposition, Problem Bin custody and the Pack fulfillment
-gate are downstream contracts and are not completed by GH-1049 Pick-core.
+Residual reservation disposition and Problem Bin custody remain downstream
+contracts. The Pack fulfillment gate is now implemented by GH-1086 / PACK-GATE-01:
+a recorded Pick deficit makes only the affected order non-packable unless explicit
+commercial authorization permits a quantity-correct partial shipment.
 
 See `docs/playbooks/pick_exception_workflow.md`.
 
@@ -480,6 +482,23 @@ See `docs/playbooks/pick_exception_workflow.md`.
 
 **Pack Session Lifecycle**  
 `pick_complete → packing → pack_complete`
+
+**Pick-deficit Pack gate — GH-1086 / PACK-GATE-01 [LIVE]**
+
+- A post-Pick `item_missing` / `short_pick` remains a **Problem Center** concern.
+  It does not return the order to Order Pool or Blocked Orders.
+- The affected order remains attached to its Pick batch and warehouse history.
+- Healthy sibling orders in the same batch remain independently packable.
+- Operational Problem Center resolution (`re_stow`, `discard`, `write_off`,
+  `quarantine`, `find_replacement`) does not by itself authorize shipment.
+- Full Pack requires no recorded fulfillment deficit plus sufficient physical
+  fulfillment evidence.
+- Partial Pack requires explicit owner/admin `partial_shipment=true` approval and
+  cannot exceed physically picked evidence.
+- Hold/reject means the order remains in its batch and stays non-packable; it is
+  never detached or requeued.
+- A batch cannot reach `pack_complete` while a member order still carries an
+  unauthorized fulfillment deficit.
 
 **Current Pack Flow — order-centric [WEB-PACK-01 ✅]**
 

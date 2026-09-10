@@ -1,8 +1,8 @@
 # WMS Pack Decision Request — Playbook
 
 **LaSyncro | WMS-Lite Subsystem**
-**Version:** 1.0
-**Date:** May 30, 2026
+**Version:** 1.1
+**Date:** September 10, 2026
 **Status:** ✅ Live — shipped May 30, 2026
 **Replaces:** WM-33 (planned `pack_exception_threads` pattern — retired)
 
@@ -28,7 +28,7 @@ Packer hits item_missing or short_pick
   → Pack job pauses on that order
   → Owner notified: push + Alert (warehouse_floor, audience: owner)
   → Owner sees pending strip in Problem Center
-  → Owner approves (ship_partial=true|false) or rejects (requeue)
+  → Owner approves (ship_partial=true|false) or rejects (hold)
   → Packer gets green light or hold instruction
   → Decision auditable: who raised, who resolved, when, note
 ```
@@ -181,8 +181,24 @@ messages array for owner-operator threading. Retired in favour of
 
 ---
 
-## 11. Open / Fast-Follow
+## 11. GH-1086 Pack Authorization Semantics
+
+`pack_decision_requests` is the commercial authorization layer for recorded Pick
+deficits.
+
+- `approved + partial_shipment=true` authorizes a quantity-correct partial Pack,
+  bounded by physically picked evidence.
+- `approved + partial_shipment=false` is a hold.
+- `rejected` is a hold.
+- Hold never detaches the order from its Pick batch and never returns it to Order
+  Pool or Blocked Orders.
+- Resolving the underlying Pick exception or Problem Center custody task does not
+  grant shipment authorization.
+- `hold_and_requeue` remains a legacy persisted/API wire token; its current
+  behavior is HOLD only.
+
+## 12. Open / Fast-Follow
 
 - Alert `wms_pack_exception` deep link currently points to `/problem-center` ✅
-- ✅ Rejected decisions requeue order to pool — `pick_batch_orders` row deleted on rejection; order re-surfaces in `GET /wms/order-pool` immediately (pool query: `WHERE pick_batch_orders IS NULL`)
+- ✅ GH-1086: rejected/held decisions keep the order attached to `pick_batch_orders`; the order remains in warehouse history and stays non-packable. It does not return to Order Pool or Blocked Orders.
 - Decision history visible in order detail page (fast-follow)

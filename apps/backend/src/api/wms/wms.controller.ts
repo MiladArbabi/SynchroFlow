@@ -39,6 +39,13 @@ import {
  */
 import { createProblemCenterTask } from '../../services/wms/problemCenterTask.service.js';
 import { confirmPackScan } from '../../services/wms/packScan.service.js';
+import {
+  getBatchPackEligibility,
+  getOrderPackEligibility,
+  isHeldForFulfillmentDeficit,
+  PACK_ORDER_NOT_AUTHORIZED,
+  PACK_QUANTITY_EXCEEDS_PICK_EVIDENCE,
+} from '../../services/wms/packEligibility.service.js';
 import { confirmShipment } from '../../services/wms/shipConfirmation.service.js';
 import { createStowTask, claimStowTask, confirmStow } from '../../services/wms/stow.service.js';
 import { writeAuditLog } from '../../services/audit/operatorAudit.service.js';
@@ -881,8 +888,11 @@ export const httpClaimPack = async (req: Request, res: Response) => {
 
   if (!shopId || !userId) return res.status(401).json({ error: 'Unauthorized' });
 
-  const { batchId } = req.params;
-  if (!batchId) return res.status(400).json({ error: 'batchId is required' });
+  const batchIdParam = req.params.batchId;
+  if (!batchIdParam || Array.isArray(batchIdParam)) {
+    return res.status(400).json({ error: 'batchId is required' });
+  }
+  const batchId = batchIdParam;
 
   try {
     await db.transaction(async (trx) => {
@@ -899,6 +909,34 @@ export const httpClaimPack = async (req: Request, res: Response) => {
 
       const now = new Date();
 
+      /**
+       * PACK-GATE-01 (GH-1086) — the claim is batch-level, the transition is not.
+       *
+       * Claiming Pack is an operator action, never a commercial authorization
+       * event. Only orders that are actually executable move into 'packing';
+       * an order held for an unresolved fulfillment deficit keeps its current
+       * warehouse state and its batch membership, and simply waits for an
+       * owner/admin decision. A batch with no executable Pack work at all is a
+       * deliberate business refusal, not a server fault.
+       */
+      const allBatchOrders = await trx('pick_batch_orders')
+        .where({ pick_batch_id: batchId, shop_id: shopId })
+        .select('lasyncro_order_id');
+
+      const eligibility = await getBatchPackEligibility(trx, {
+        shopId,
+        pickBatchId: batchId,
+      });
+
+      const batchOrders = allBatchOrders.filter(
+        (o: { lasyncro_order_id: string }) =>
+          eligibility.get(o.lasyncro_order_id)?.packable === true
+      );
+
+      if (batchOrders.length === 0) {
+        throw new Error('BATCH_NO_PACKABLE_ORDERS');
+      }
+
       await trx('pick_batches')
         .where({ pick_batch_id: batchId })
         .update({
@@ -909,11 +947,7 @@ export const httpClaimPack = async (req: Request, res: Response) => {
           updated_at: now,
         });
 
-      // Transition all orders in batch → packing
-      const batchOrders = await trx('pick_batch_orders')
-        .where({ pick_batch_id: batchId })
-        .select('lasyncro_order_id');
-
+      // Transition only Pack-eligible orders in batch → packing
       for (const order of batchOrders) {
         await trx('order_warehouse_status')
           .where({ lasyncro_order_id: order.lasyncro_order_id })
@@ -961,6 +995,14 @@ export const httpClaimPack = async (req: Request, res: Response) => {
     if (message === 'BATCH_NOT_FOUND') return res.status(404).json({ error: 'Batch not found' });
     if (message === 'BATCH_ALREADY_CLAIMED') return res.status(409).json({ error: 'Batch already claimed by another packer' });
     if (message.startsWith('BATCH_NOT_CLAIMABLE')) return res.status(409).json({ error: `Batch is not in pick_complete status: ${message.split(':')[1]}` });
+    if (message === 'BATCH_NO_PACKABLE_ORDERS') {
+      return res.status(409).json({
+        error: 'BATCH_NO_PACKABLE_ORDERS',
+        message:
+          'No order in this batch is authorized for Pack. Resolve the pending ' +
+          'pack decisions in Problem Center before claiming.',
+      });
+    }
     console.error('[WMS_PACK_CLAIM_FAILED]', { shopId, userId, batchId, error: message });
     return res.status(500).json({ error: `Pack claim failed: ${message}` });
   }
@@ -1067,7 +1109,35 @@ export const httpGetReadyToPack = async (req: Request, res: Response) => {
           'o.wms_barcode',
         );
 
-      const orderIds = batchOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
+      /**
+       * PACK-GATE-01 (GH-1086) — ordinary ready-to-pack work only.
+       *
+       * An order carrying an unresolved fulfillment deficit with no approved
+       * owner/admin decision behind it is not executable Pack work, so it is
+       * withheld here. It is NOT removed from pick_batch_orders and NOT added
+       * to Blocked Orders — Problem Center stays its canonical visible surface
+       * and batch membership stays authoritative.
+       */
+      const batchIds = [
+        ...new Set(batchOrders.map((o: { pick_batch_id: string }) => o.pick_batch_id)),
+      ] as string[];
+
+      const eligibleOrderIds = new Set<string>();
+      for (const eligibleBatchId of batchIds) {
+        const eligibility = await getBatchPackEligibility(trx, {
+          shopId,
+          pickBatchId: eligibleBatchId,
+        });
+        for (const [orderId, entry] of eligibility) {
+          if (entry.packable) eligibleOrderIds.add(orderId);
+        }
+      }
+
+      const packableOrders = batchOrders.filter(
+        (o: { lasyncro_order_id: string }) => eligibleOrderIds.has(o.lasyncro_order_id)
+      );
+
+      const orderIds = packableOrders.map((o: { lasyncro_order_id: string }) => o.lasyncro_order_id);
       if (orderIds.length === 0) return [];
 
       const lineItems = await trx('order_line_items as oli')
@@ -1088,7 +1158,7 @@ export const httpGetReadyToPack = async (req: Request, res: Response) => {
           'pskl.lasyncro_unit_id as unit_barcode'
         );
 
-      return batchOrders.map((order: { lasyncro_order_id: string }) => ({
+      return packableOrders.map((order: { lasyncro_order_id: string }) => ({
         ...order,
         line_items: lineItems.filter((li: { lasyncro_order_id: string }) => li.lasyncro_order_id === order.lasyncro_order_id),
       }));
@@ -1147,6 +1217,46 @@ export const httpConfirmPackScan = async (req: Request, res: Response) => {
     return res.status(201).json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+
+    /**
+     * PACK-GATE-01 (GH-1086) — expected Pack gating is a business outcome and
+     * must never reach the client as a 500. The resource exists; its
+     * warehouse state or commercial authorization forbids execution, which is
+     * exactly 409.
+     */
+    if (message.startsWith(PACK_ORDER_NOT_AUTHORIZED)) {
+      return res.status(409).json({
+        error: PACK_ORDER_NOT_AUTHORIZED,
+        message:
+          'This order is not authorized for Pack. It has an unresolved ' +
+          'fulfillment deficit awaiting an owner decision.',
+        detail: message.split(':')[1] ?? null,
+      });
+    }
+    if (message.startsWith(PACK_QUANTITY_EXCEEDS_PICK_EVIDENCE)) {
+      return res.status(409).json({
+        error: PACK_QUANTITY_EXCEEDS_PICK_EVIDENCE,
+        message:
+          'Pack quantity exceeds the quantity physically picked for this line.',
+        detail: message.split(':')[1] ?? null,
+      });
+    }
+    if (message.includes('Batch not in packing status')) {
+      return res.status(409).json({ error: 'BATCH_NOT_IN_PACKING', message });
+    }
+    if (message.includes('already scanned at pack')) {
+      return res.status(409).json({ error: 'LINE_ALREADY_PACK_SCANNED', message });
+    }
+    if (message.includes('Batch owned by different packer')) {
+      return res.status(409).json({ error: 'BATCH_NOT_OWNED_BY_PACKER', message });
+    }
+    if (message.includes('Variant mismatch')) {
+      return res.status(409).json({ error: 'PACK_VARIANT_MISMATCH', message });
+    }
+    if (message.includes('Batch not found') || message.includes('Line item not found in batch')) {
+      return res.status(404).json({ error: 'PACK_SCAN_TARGET_NOT_FOUND', message });
+    }
+
     console.error('[WMS_PACK_SCAN_FAILED]', { shopId, userId, error: message });
     return res.status(500).json({ error: `Pack scan failed: ${message}` });
   }
@@ -1207,27 +1317,51 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           return { error: 'batch_not_packing', message: 'No active packing batch found for this order' };
         }
 
-        // All line items must be confirmed before shipping
-        const [totalRow, confirmedRow] = await Promise.all([
-          trx('order_line_items')
-            .where({ lasyncro_order_id: order.lasyncro_order_id })
-            .count<{ count: string }>('lasyncro_line_item_id as count')
-            .first(),
-          trx('pack_scan_log')
-            .where({ pick_batch_id: batchOrder.pick_batch_id, lasyncro_order_id: order.lasyncro_order_id, status: 'confirmed' })
-            .count<{ count: string }>('scan_id as count')
-            .first(),
-        ]);
+        /**
+         * PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
+         * ------------------------------------------------
+         * Closing the parcel is the moment the order becomes shippable, so
+         * authorization is enforced here as well as at the contents scan.
+         */
+        const closeEligibility = await getOrderPackEligibility(trx, {
+          shopId,
+          pickBatchId: batchOrder.pick_batch_id,
+          lasyncroOrderId: order.lasyncro_order_id,
+        });
 
-        const total = Number(totalRow?.count ?? 0);
-        const confirmed = Number(confirmedRow?.count ?? 0);
+        if (!closeEligibility || !closeEligibility.packable) {
+          return {
+            error: 'order_not_pack_authorized',
+            message:
+              'This order has an unresolved fulfillment deficit and is not ' +
+              'authorized for Pack. Resolve the pack decision in Problem Center.',
+            lasyncro_order_id: order.lasyncro_order_id,
+            eligibility_status: closeEligibility?.status ?? 'not_in_batch',
+          };
+        }
 
-        if (confirmed < total) {
+        /**
+         * Closure is measured against the packable ceiling, not the ordered
+         * quantity. A full shipment therefore still requires complete physical
+         * evidence, while an approved partial shipment closes on exactly what
+         * was physically picked — closure never demands an impossible scan for
+         * a unit that does not exist.
+         */
+        if (!closeEligibility.packEvidenceComplete) {
+          const outstanding = closeEligibility.lines
+            .filter((l) => l.packedQuantity < l.packableQuantity)
+            .map((l) => ({
+              lasyncro_line_item_id: l.lasyncroLineItemId,
+              packed: l.packedQuantity,
+              required: l.packableQuantity,
+            }));
+
           return {
             error: 'siblings_incomplete',
             message: 'Not all items in this order have been scanned',
-            confirmed,
-            total,
+            confirmed: closeEligibility.lines.reduce((n, l) => n + l.packedQuantity, 0),
+            total: closeEligibility.lines.reduce((n, l) => n + l.packableQuantity, 0),
+            outstanding,
           };
         }
 
@@ -1290,6 +1424,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           invoice_not_found: 404,
           batch_not_packing: 409,
           siblings_incomplete: 409,
+          order_not_pack_authorized: 409,
         };
         return res.status(statusMap[result.error as string] ?? 500).json(result);
       }
@@ -1372,6 +1507,31 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
         if (!lineItemRow) return { error: 'line_item_not_found', message: 'Line item not found' };
         const lasyncroOrderId: string = lineItemRow.lasyncro_order_id;
 
+        /**
+         * 4b. PACK AUTHORIZATION GATE (GH-1086 / PACK-GATE-01)
+         * ----------------------------------------------------
+         * Evaluated BEFORE auto-claim, deliberately. Scanning a unit that
+         * belongs to a held order must not drag the entire batch — including
+         * every healthy sibling order — into 'packing'. The scan fails closed
+         * with zero mutations and the batch stays exactly as it was.
+         */
+        const batchEligibility = await getBatchPackEligibility(trx, {
+          shopId,
+          pickBatchId: pickLog.pick_batch_id,
+        });
+        const orderEligibility = batchEligibility.get(lasyncroOrderId);
+
+        if (!orderEligibility || !orderEligibility.packable) {
+          return {
+            error: 'order_not_pack_authorized',
+            message:
+              'This order has an unresolved fulfillment deficit and is not ' +
+              'authorized for Pack. Resolve the pack decision in Problem Center.',
+            lasyncro_order_id: lasyncroOrderId,
+            eligibility_status: orderEligibility?.status ?? 'not_in_batch',
+          };
+        }
+
         // 5. Auto-claim batch on first LSU- scan (batch was pick_complete)
         const now = new Date();
         const autoClaimed = batch.status === 'pick_complete';
@@ -1387,9 +1547,16 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
               updated_at: now,
             });
 
-          const batchOrders = await trx('pick_batch_orders')
-            .where({ pick_batch_id: pickLog.pick_batch_id })
-            .select('lasyncro_order_id');
+          // Only Pack-eligible orders enter 'packing'. Held orders stay
+          // attached to the batch and untouched.
+          const batchOrders = (
+            await trx('pick_batch_orders')
+              .where({ pick_batch_id: pickLog.pick_batch_id, shop_id: shopId })
+              .select('lasyncro_order_id')
+          ).filter(
+            (o: { lasyncro_order_id: string }) =>
+              batchEligibility.get(o.lasyncro_order_id)?.packable === true
+          );
 
           for (const o of batchOrders) {
             await trx('order_warehouse_status')
@@ -1523,6 +1690,7 @@ export const httpPackFreeScan = async (req: Request, res: Response) => {
           batch_not_found: 404,
           batch_not_ready: 409,
           line_item_not_found: 500,
+          order_not_pack_authorized: 409,
         };
         return res.status(statusMap[result.error as string] ?? 500).json(result);
       }
@@ -1585,6 +1753,33 @@ export const httpCompletePack = async (req: Request, res: Response) => {
       }
       if (batch.packed_by !== userId) {
         throw new Error('BATCH_NOT_OWNED_BY_PACKER');
+      }
+
+      /**
+       * PACK-GATE-01 (GH-1086) — a batch may not be declared complete while
+       * any member order is still held or awaiting a commercial decision for
+       * an unresolved fulfillment deficit.
+       *
+       * This is asserted explicitly rather than left to the packing-evidence
+       * count below: a held order must block completion because it is
+       * unauthorized, not merely because it happens to be unscanned. Healthy
+       * orders keep completing their own Pack work while the batch stays open.
+       */
+      const completionEligibility = await getBatchPackEligibility(trx, {
+        shopId,
+        pickBatchId: batchId,
+      });
+
+      const heldOrders = [...completionEligibility.values()].filter(
+        isHeldForFulfillmentDeficit
+      );
+
+      if (heldOrders.length > 0) {
+        throw new Error(
+          `BATCH_HAS_UNAUTHORIZED_ORDERS:${heldOrders
+            .map((o) => o.lasyncroOrderId)
+            .join(',')}`
+        );
       }
 
       // PACK-COMPLETE-GUARD-01: contents scans plus parcel closure are the
@@ -1941,6 +2136,15 @@ export const httpCompletePack = async (req: Request, res: Response) => {
 
     if (message === 'BATCH_PACKING_INCOMPLETE') {
       return res.status(409).json({ error: 'BATCH_PACKING_INCOMPLETE' });
+    }
+    if (message.startsWith('BATCH_HAS_UNAUTHORIZED_ORDERS')) {
+      return res.status(409).json({
+        error: 'BATCH_HAS_UNAUTHORIZED_ORDERS',
+        message:
+          'This batch still contains an order held for an unresolved ' +
+          'fulfillment deficit. Resolve its pack decision before completing.',
+        lasyncro_order_ids: (message.split(':')[1] ?? '').split(',').filter(Boolean),
+      });
     }
 
     if (message === 'BATCH_NOT_FOUND') {
@@ -4830,8 +5034,15 @@ export const httpGetPackDecision = async (req: Request, res: Response) => {
  * ----------------------------------------------------------
  * Owner/admin approves or rejects the decision.
  * approved + partial_shipment=true  → packer proceeds with partial ship
- * approved + partial_shipment=false → packer holds
- * rejected                          → order requeued
+ * approved + partial_shipment=false → order is held, not packable
+ * rejected                          → order is held, not packable
+ *
+ * GH-1086 / PACK-GATE-01 — a rejection is a HOLD, never a requeue. The order
+ * stays attached to its pick batch and its warehouse history; it does not go
+ * back to Order Pool and it does not appear in Blocked Orders. It simply stops
+ * being packable until an owner authorizes it. ('hold_and_requeue' remains an
+ * accepted `question` value purely as a legacy wire token.)
+ *
  * Role enforcement: controller checks owner/admin — backend guard.
  */
 export const httpResolvePackDecision = async (req: Request, res: Response) => {
