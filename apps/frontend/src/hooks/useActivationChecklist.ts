@@ -96,5 +96,9 @@ export function useActivationChecklist() {
     completedCount,
     allComplete,
     isLoading: readiness.isLoading || events.isLoading,
+    // OPS-CONSOLE-01: surfaced so the Ops Console can render a deliberate
+    // failed-fetch state instead of an empty SETUP section that would read as
+    // "nothing left to do". Completion logic above is untouched.
+    isError: readiness.isError || events.isError,
   };
 }
