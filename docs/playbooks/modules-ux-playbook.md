@@ -819,6 +819,28 @@ directly in new components — reference the token.
 
 The parent-screen rule is: **status → problem → consequence → action**. Spatial operational truth belongs on the map; non-spatial commercial/product problems remain in the decision/Pulse rail.
 
+**2026-09-10 — ORD-UX-01**
+
+The canonical Orders Overview landing pattern is Live Intelligence:
+
+- left: Orders live-map slot, `flex: 1 1 0`
+- right: fixed `280px` Orders rail
+- the rail combines grouped **Needs a decision** summaries with **Today's pulse**
+- the live-map Pulse is intentionally compact: title + **Breached / Blocked / Picking / Fulfillable** rows only
+- the redundant headline, cumulative footer note and footer CTA are omitted in the live-map branch so the rail does not unnecessarily determine excessive page height
+- individual order rows and expanded critical/watch lists do not render on the landing-map branch
+- a single concrete decision group may open the canonical `EntityDetailModal`
+- broader issue groups route to `/orders/flow`
+- bulk priority mutation remains in Order Flow
+- Starter/Core receive a synthetic premium map teaser
+- Growth/Scale receive the real Orders live map
+- denied users acquire neither real floor geometry nor Orders live activity
+- no inventory occupancy or invented order/bin attribution is used on the Orders map
+- the old triage-first Orders layout remains a compatibility fallback when `mapContent` is absent
+- spatial truth belongs on the map; non-spatial order/commercial issues stay in the decision/Pulse rail
+
+All essential Orders landing content fits visibly in the first viewport. Residual ~64px vertical overflow at the tested desktop viewport is intentionally **DEFERRED** as non-blocking polish. The scroll-free requirement is **not fully closed/clean**; residual scroll is not resolved.
+
 **2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
 `--good-ink` were added to `docs/color-pallet/index.md` correctly but
 initially missed from `apps/frontend/src/themes/index.tsx` — the actual

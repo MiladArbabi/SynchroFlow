@@ -847,6 +847,57 @@ Customer-delivery promise, carrier/service normalization and full pickup-policy
 reasoning remain deliberately deferred to `SHIP-INTENT-01`,
 `CARRIER-NORM-01`, `CPT-POLICY-01` and `PROMISE-01`.
 
+### OPS-CONSOLE-01 — persistent Decision Engine attention surface
+
+**Status: IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED — 2026-09-10.**
+
+The Ops Console is now the single topnav attention surface and replaces the
+legacy Activation Checklist popover plus the topnav Alerts popover.
+
+This is a **surface architecture change**, not a new Decision Engine truth
+authority.
+
+Its source boundaries are:
+
+- `NOW` may consume the existing canonical alert inbox;
+- `SETUP` consumes existing onboarding readiness / activation truth;
+- `RECENT ALERTS` and `ALERT HISTORY` may consume authoritative closed-alert
+  lifecycle records;
+- `WAITING` remains absent until a shop-wide persisted
+  intervention/verification read exists;
+- `/alerts` remains the advanced management surface for Inbox, Snoozed,
+  Resolved and Rules.
+
+The following distinctions are mandatory:
+
+```text
+navigation != intervention
+alert acknowledgement != resolution
+alert closure != verified Decision Engine outcome
+action completion != canonical problem resolution
+```
+
+Future Decision Engine treatments may surface through the Ops Console, but only
+persisted meaningful interventions may enter `WAITING`, and only canonical
+verification may produce a verified outcome.
+
+`OUTCOME-SLA-01` remains the next Outcome/value slice. Its first defensible
+classification should be factual chronology such as:
+
+```text
+pending_dispatch
+verified_dispatched_before_deadline
+verified_dispatched_after_deadline
+```
+
+Shipping before a deadline after an intervention proves chronology. It does
+**not** by itself prove that laSyncro prevented an SLA breach. A
+`breach_prevented` claim remains disallowed unless stronger causal evidence is
+established.
+
+`OPS-CONSOLE-01` therefore provides the persistent surface needed for future SLA
+interventions without inventing the missing intervention semantics itself.
+
 
 ---
 
@@ -989,8 +1040,9 @@ LIVE VERIFIED** — see §11.10. The item as a whole is **not** closed.
 
 Still outstanding before the broader Outcome/value layer is complete:
 
-1. `OUTCOME-SLA-01`, only once intervention → dispatch evidence can support
-   defensible prevented-breach attribution;
+1. `OUTCOME-SLA-01`, beginning with factual intervention → dispatch chronology;
+   prevented-breach attribution remains forbidden unless stronger causal evidence
+   supports it;
 2. broader attributable value reporting, only where the evidence actually
    supports it.
 

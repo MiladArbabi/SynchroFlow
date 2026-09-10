@@ -273,6 +273,36 @@ describe('overview.live_map — GET /api/v1/wms/live-activity', () => {
 });
 
 // ===========================================================================
+// Orders Live Map  ->  orders.live_map  (Growth+; ORD-UX-01)
+//
+// A SEPARATE representative route from the Overview one above. Orders must not
+// borrow overview.live_map, so both routes are asserted here: each denies on
+// its OWN capabilityId, which is what proves the two boundaries are distinct
+// rather than one gate serving two surfaces.
+// ===========================================================================
+describe('orders.live_map — GET /api/v1/wms/orders-live-activity', () => {
+  it('Starter => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW on orders.live_map', async () => {
+    const res = await get('/api/v1/wms/orders-live-activity', 'starter');
+    expectCommercialDenied(res, 'orders.live_map', 'starter');
+  });
+
+  it('Core => COMMERCIAL_ACCESS_DENIED / TIER_TOO_LOW on orders.live_map', async () => {
+    const res = await get('/api/v1/wms/orders-live-activity', 'core');
+    expectCommercialDenied(res, 'orders.live_map', 'core');
+  });
+
+  it('Growth clears the commercial gate', async () => {
+    const res = await get('/api/v1/wms/orders-live-activity', 'growth');
+    expect(commercialGatePassed(res)).toBe(true);
+  });
+
+  it('CONTROL: the Overview route still denies on overview.live_map, not orders.live_map', async () => {
+    const res = await get('/api/v1/wms/live-activity', 'core');
+    expectCommercialDenied(res, 'overview.live_map', 'core');
+  });
+});
+
+// ===========================================================================
 // demand  ->  demand.forecasting  (Growth+)
 // ===========================================================================
 describe('demand.forecasting — GET /api/v1/modules/demand/', () => {

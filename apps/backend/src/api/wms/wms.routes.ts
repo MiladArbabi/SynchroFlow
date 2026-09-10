@@ -53,6 +53,7 @@ import {
   httpPackFreeScan,
   httpBulkGenerateShippingLabels,
   httpGetLiveActivity,
+  httpGetOrdersLiveActivity,
 } from './wms.controller.js';
 import { httpGetPackedHandoffQueue } from './wms.handoff.controller.js';
 import {
@@ -899,6 +900,26 @@ router.get(
   '/live-activity',
   authenticateToken, requireFt2, requireCapability('overview.live_map'), requireAction('wms:read'),
   httpGetLiveActivity
+);
+
+router.get(
+  /**
+   * ORD-UX-01 — Orders live operational map.
+   *
+   * Deliberately a SEPARATE route rather than a second capability on
+   * `/live-activity`: that route's overview.live_map ownership is asserted by
+   * existing Overview contracts and must not be widened or weakened. This one
+   * reuses the SAME controller (httpGetLiveActivity) — identical payload, no
+   * duplicated controller or service logic — behind the Orders capability.
+   *
+   * The comment lives inside the registration on purpose: the route-contract
+   * tests bound each registration by the blank line before the next
+   * `router.` call, so an intervening top-level comment would silently merge
+   * this route into the Overview route's asserted chunk.
+   */
+  '/orders-live-activity',
+  authenticateToken, requireFt2, requireCapability('orders.live_map'), requireAction('wms:read'),
+  httpGetOrdersLiveActivity
 );
 
 export default router;

@@ -33,7 +33,7 @@ const WMS_ROUTES = 'apps/backend/src/api/wms/wms.routes.ts';
 const NAV_BOOTSTRAP = 'apps/frontend/src/runtime/navBootstrap.ts';
 const INVENTORY_TABS = 'apps/frontend/src/pages/ft2-pages/inventoryModuleTabs.ts';
 const INVENTORY_PAGE = 'apps/frontend/src/pages/ft2-pages/ProductsFT2Page.tsx';
-const TOPNAV = 'apps/frontend/src/layouts/AppLayout/TopnavbarContent.tsx';
+const ALERT_DEEP_LINK = 'apps/frontend/src/pages/alerts/alertDeepLink.ts';
 const ALERTS_PAGE = 'apps/frontend/src/pages/ft2-pages/AlertsPage.tsx';
 
 type Tier = 'starter' | 'core' | 'growth' | 'scale';
@@ -358,7 +358,7 @@ describe('IPA-C6 — inventory recount resolves inventory.core', () => {
 // ===========================================================================
 describe('IPA-C8 — active links target /inventory, never the retired /products', () => {
   it.each([
-    ['TopnavbarContent', TOPNAV],
+    ['alertDeepLink', ALERT_DEEP_LINK],
     ['AlertsPage', ALERTS_PAGE],
   ])('EXPECTED RED: %s missing_cogs routes to Inventory, not /products', (_name, rel) => {
     const line = read(rel)

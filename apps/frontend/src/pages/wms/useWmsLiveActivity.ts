@@ -76,6 +76,31 @@ export interface WmsLiveActivity {
   staleThresholdMinutes: number;
 }
 
+/**
+ * ORD-UX-01 — Orders live operational map.
+ *
+ * Same payload, same shape, different commercial owner. The Overview hook above
+ * is deliberately left byte-identical: `/api/v1/wms/live-activity` is owned by
+ * overview.live_map and existing Overview contracts assert that ownership, so
+ * Orders reads the parallel `/orders-live-activity` route, which reuses the
+ * same backend controller behind requireCapability('orders.live_map').
+ *
+ * Its own query key keeps the two surfaces' caches independent, so a denied
+ * Orders tenant can never be served an Overview-authorised payload from cache.
+ */
+export function useOrdersLiveActivity(enabled = true) {
+  return useQuery<WmsLiveActivity>({
+    queryKey: ['wms', 'orders-live-activity'],
+    queryFn: async () => {
+      const { data } = await axiosInstance.get('/api/v1/wms/orders-live-activity');
+      return data;
+    },
+    refetchInterval: 15_000,
+    staleTime: 0,
+    enabled,
+  });
+}
+
 export function useWmsLiveActivity(enabled = true) {
   return useQuery<WmsLiveActivity>({
     queryKey: ['wms', 'live-activity'],

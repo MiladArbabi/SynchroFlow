@@ -3929,8 +3929,8 @@ canonical route middleware is authoritative and denial is the shared
 ### 34.8 Stale frontend links
 
 `missing_cogs` alert actions now route to **`/inventory/costs`** (label "Costs")
-instead of the retired `/products`, consistently in both `TopnavbarContent.tsx`
-and `AlertsPage.tsx`.
+instead of the retired `/products`, consistently in the canonical
+`pages/alerts/alertDeepLink.ts` resolver and `AlertsPage.tsx`.
 
 ### 34.9 Verification evidence
 
@@ -4000,6 +4000,67 @@ Verification:
   - hover/focus PASS
   - upgrade CTA PASS
   - desktop no-page-scroll PASS
+
+
+### 34.12 Orders Live Map — `ORD-UX-01` (ratified + implemented 2026-09-10)
+
+Canonical capabilities:
+
+    orders.core
+      moduleId: order-nexus
+      [no minimumTier]
+
+    orders.live_map
+      moduleId: order-nexus
+      minimumTier: growth
+
+| Tier | Orders subtree | Orders live-map slot | Real floor / Orders live activity acquired |
+|---|---|---|---|
+| Starter | ALLOW | synthetic premium teaser | none |
+| Core | ALLOW | synthetic premium teaser | none |
+| Growth | ALLOW | real Orders live map | yes |
+| Scale | ALLOW | real Orders live map | yes |
+
+Locked rules:
+
+- `orders.core` remains unchanged.
+- `orders.live_map` governs only premium spatial visualization.
+- The canonical `AccessDecision` is authority, never a raw tier comparison.
+- Denied users do not acquire premium floor/activity data.
+- The teaser is synthetic, never blurred real merchant data.
+- Orders uses its own `/api/v1/wms/orders-live-activity` entitlement route.
+- Overview `/live-activity` ownership remains `overview.live_map`.
+- Orders and Overview handlers remain distinct but share extracted live-activity service logic.
+- The Orders map uses only real picker location + batch phase attribution.
+- No Inventory occupancy is used.
+- No fabricated pack/bin/order attribution is used.
+- Decision/Pulse information remains available despite live-map denial.
+- Detailed order records remain in the owning workflow/modal.
+
+Verification (record supplied for this documentation slice):
+
+- `OrdersModuleFT2.test.tsx`: 11 / 11 PASS
+- `orders-live-map-commercial-access.test.tsx`: 8 / 8 PASS
+- orders-live-map commercial contract: 27 / 27 PASS
+- entitlement mounts contract: PASS unchanged
+- representative-route commercial gate integration: 49 / 49 PASS
+- commercial-policy build PASS
+- order-nexus build PASS
+- backend TSC 0
+- frontend TSC 19 baseline / `TARGET_ERROR_COUNT` 0
+- `git diff --check` PASS
+- browser:
+  - Core synthetic teaser PASS
+  - denied Core premium acquisition absent PASS
+  - Growth Orders live endpoint 200 PASS
+  - Growth real map PASS
+  - hover/focus PASS
+  - Upgrade CTA → `/settings/billing` PASS
+  - Order Flow regression PASS
+  - all essential content fits first viewport PASS
+  - ~64px residual vertical overflow **DEFERRED** as non-blocking polish
+
+The residual scroll is not resolved; the scroll-free requirement is not fully closed/clean.
 
 ---
 

@@ -1,9 +1,9 @@
 # LaSyncro — Onboarding & Progressive Disclosure Playbook
 
-> **Status:** v1.0 — 2026-07-09
+> **Status:** v1.1 — 2026-09-10
 > **Author:** Product + Engineering session (ISS-RQ series)
 > **Reading order:** Read `lifecycle_playbook.md` and `modules-ux-playbook.md` before this.
-> **Purpose:** Canonical reference for all onboarding, activation checklist, spotlight coaching,
+> **Purpose:** Canonical reference for onboarding, Ops Console setup guidance, spotlight coaching,
 > and progressive-disclosure patterns. Every engineer touching first-run UX must read this first.
 
 ---
@@ -28,63 +28,189 @@ Three principles drive every decision in this playbook:
 
 ## 2. The Three Layers
 
-### Layer 1 — Activation Checklist (topnav popover)
+### Layer 1 — Ops Console (persistent topnav attention surface)
 
-**What it is:** A topnav icon (left of the bell) that opens a popover — same shell,
-same tokens as the alerts popover in `TopnavbarContent.tsx`. Badge shows remaining
-incomplete items in `--accent` orange. Disappears from nav entirely once all items
-are green and the user dismisses.
+**Status:** `OPS-CONSOLE-01` — **IMPLEMENTED / AUTOMATED VERIFIED / LIVE VERIFIED — 2026-09-10.**
 
-**Design rationale:** The alerts popover is already a known mental model for the user.
-Reusing the shell removes cognitive overhead. The checklist is a parallel track —
-urgent signals in the bell, activation progress in the new icon — same zone, distinct
-purpose.
+**What it is:** The single topnav attention surface for the authenticated FT2
+application. Its trigger opens a compact fixed right-side operational rail while
+leaving the working surface visible on desktop.
 
-**Trigger:** Rendered only while `lifecyclePhase === 'FT2_READY'` AND
-`user_states.checklist:completed` is absent. After dismissal, the icon never reappears.
+The Ops Console replaces both legacy topnav surfaces:
 
-**Five items — all driven by real data state:**
+- the Activation Checklist / "Getting started" popover;
+- the Alerts bell / quick-alert popover.
 
-| # | Label | Signal / condition | Source |
+It does **not** replace their authoritative data sources.
+
+`/alerts` remains the advanced alert-management workspace for Inbox, Snoozed,
+Resolved and Rules. The console provides a subordinate `Manage alerts →` path
+to that workspace.
+
+**Design rationale:** Setup work, operational alerts and future Decision Engine
+interventions are all forms of "what needs my attention next". Splitting them
+across adjacent topnav icons forced the merchant to understand system
+architecture before acting. The Ops Console provides one attention entry point
+while the destination modules remain the places where work is performed.
+
+#### Information architecture
+
+```text
+OPS CONSOLE
+
+OPEN | HISTORY
+
+NOW
+  current consequential operational attention
+
+WAITING
+  persisted interventions awaiting canonical verification
+  [absent in V1 because no shop-wide authoritative read exists]
+
+SETUP
+  incomplete onboarding/configuration work
+
+RECENT ALERTS
+  recently closed alert-lifecycle records
+
+ALERT HISTORY
+  older closed alert-lifecycle records
+```
+
+`WAITING` must not render merely to complete the visual design. It becomes valid
+only when a shop-wide authoritative intervention/verification source exists.
+
+#### Setup contract
+
+`useActivationChecklist` remains the single frontend assembler and completion
+authority for setup state.
+
+| # | Label | Authoritative condition | Action |
 |---|---|---|---|
-| 1 | Connect your store | `integration.connected === true` | readiness manifest |
-| 2 | Complete first sync | `integration.syncCompleted === true` | readiness manifest |
-| 3 | Fix missing product costs | `orderNexus.missingCostCount === 0` | readiness manifest |
-| 4 | Release your first wave | `activation_audit_events WHERE event_type = 'wave_released'` | audit log |
-| 5 | Export your first brief | `activation_audit_events WHERE event_type = 'brief_exported'` | audit log |
+| 1 | Connect your store | readiness `platform / connect-store` | none |
+| 2 | Complete your first sync | readiness `platform / complete-sync` | none |
+| 3 | Fix missing product costs | readiness `order-nexus / orderNexus.resolveMissingCosts` | `/inventory/catalog` |
+| 4 | Map your warehouse zones | readiness `wms / map-zones` | `/floor-planning` |
+| 5 | Print your first location barcode | readiness `wms / print-barcodes` | `/floor-planning` |
+| 6 | Release your first batch | persisted `wave_released` activation event | `/orders/flow` |
 
-Items 1–3 are already computable from `GET /api/v1/onboarding/readiness` (the
-`OnboardingReadinessService`). Items 4–5 require audit events to be emitted at the
-success path of their respective endpoints (see §5).
+The old `Export your first brief` checklist item is no longer part of the Layer
+1 setup contract.
 
-**Persistence:** Dismissal writes `user_states` key `checklist:completed` → `"1"`.
-Read on mount via `GET /api/v1/user-state`. This is a per-user, not per-shop, flag —
-each owner/admin tracks their own dismissal.
+**Completion rule:** activation remains data-state, never click-tracking.
+Opening a destination does not complete a setup item.
 
-**Popover anatomy:**
+Incomplete items remain individually actionable. Completed items are visually
+subordinate/collapsible. When all six are complete, the section collapses to a
+compact `Setup complete · 6/6` state rather than rendering six permanent rows.
 
+The legacy per-user `checklist:completed` flag remains readable for backward
+compatibility. It may suppress already-completed SETUP content, but it must
+never hide the Ops Console itself. No replacement "Dismiss checklist" action or
+new persistence mechanism is introduced.
+
+#### Operational truth
+
+`TopnavbarContent` remains the single shell-level owner of the canonical inbox
+poll:
+
+```text
+useAlerts({ status: 'inbox' }, { enabled: isFt2, poll: true })
 ```
-┌─────────────────────────────────────────┐
-│ Getting started          2 of 5 done    │  ← header, ink / ink-4
-├─────────────────────────────────────────┤
-│ ✅  Connect your store                  │
-│ ✅  Complete first sync                 │
-│ ⬜  Fix missing product costs   Fix →  │  ← accent ghost pill CTA
-│ ⬜  Release your first wave    Go →   │
-│ ⬜  Export your first brief    Go →   │
-├─────────────────────────────────────────┤
-│              Dismiss checklist          │  ← only when all 5 green
-└─────────────────────────────────────────┘
+
+The inbox rows are passed into the Ops Console. The console must not create a
+second inbox polling owner.
+
+Resolved alerts may populate `RECENT ALERTS` / `ALERT HISTORY` only when the
+backend provides authoritative `resolved_at` state. Alert resolution is an
+**alert-lifecycle fact only** and is not evidence of a verified Decision Engine
+outcome.
+
+Accordingly:
+
+- resolved alert rows use neutral `closed` state and glyph `·`;
+- closed alerts never receive green / `✓` verified-outcome treatment;
+- alert acknowledgement does not equal resolution;
+- navigation does not equal intervention;
+- navigation does not manufacture WAITING or VERIFIED state.
+
+#### Status grammar
+
+```text
+○  available / setup required
+!  attention required
+→  actionable navigation
+…  persisted intervention awaiting verification
+✓  authoritative verified completion
+×  failed
+–  dismissed / expired
+·  authoritative alert lifecycle closed
 ```
 
-Rules:
-- Incomplete items show a Tier 2 ghost pill CTA navigating to the relevant surface.
-- Complete items show a green `✅` check (use `--confirm-ink` / `--confirm-ghost`
-  per modules-ux-playbook §10 — this is a persisted state indicator, not an action).
-- "Dismiss checklist" footer link only renders when all 5 items are complete.
-- Never show partial completion as a percentage — use "N of 5 done" plain text.
-- Icon in topnav: `ListChecks` from lucide-react. Badge: `--accent` orange, count of
-  remaining incomplete items. When all complete, badge disappears; icon stays until dismissed.
+The meaning of `✓` depends on the source authority. For setup, a real readiness
+condition may justify it. For Decision Engine outcomes, canonical verification
+must justify it. A click alone never does.
+
+#### Ranking and filtering
+
+V1 has no merchant-controlled sorting.
+
+Open operational rows preserve the canonical backend alert ranking. The broader
+product ordering is:
+
+```text
+critical blocker
+→ deadline / urgency
+→ merchant priority where authoritative
+→ recommended action
+→ setup
+→ waiting
+→ recent history
+```
+
+V1 filtering is deliberately small:
+
+```text
+OPEN | HISTORY
+```
+
+Advanced alert filtering, snoozing, acknowledgement, resolution and Rules stay
+on `/alerts`.
+
+#### Responsive contract
+
+- `xs`: full viewport-width console, pinned to both viewport edges;
+- `sm+`: compact 340px right rail;
+- no horizontal overflow;
+- narrow operational rows may reflow their CTA onto a second compact line;
+- CTA labels must remain fully visible and tappable;
+- vertical scrolling belongs inside the console;
+- the console is non-modal on desktop and must not add an invisible backdrop.
+
+#### Verification evidence
+
+Automated:
+
+- Ops Console frontend contracts: **70 / 70 passed**;
+- neighboring `TopnavbarContent`: **13 / 13 passed**;
+- ownership: `UNOWNED=0`, `MULTI_OWNED=0`;
+- frontend TSC remained at the pre-existing baseline:
+  `486 total / 2 target`, with no normalized error-set delta;
+- `git diff --check`: clean.
+
+Live browser:
+
+- dark desktop: passed;
+- light desktop: passed;
+- underlying application remained clickable while the rail was open;
+- console persisted across route navigation;
+- `Manage alerts →` reached `/alerts`;
+- one topnav attention surface remained;
+- 390px responsive full-width behavior passed after correction;
+- CTA clipping and horizontal overflow were absent after correction.
+
+The Ops Console is now the canonical Layer 1 attention surface. Do not
+reintroduce separate onboarding or quick-alert topnav popovers.
 
 ---
 

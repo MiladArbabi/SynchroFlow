@@ -10,6 +10,10 @@ export const CAPABILITY_REQUIREMENTS = Object.freeze({
     'overview.core': { moduleId: 'overview' },
     'overview.live_map': { moduleId: 'overview', minimumTier: 'growth' },
     'orders.core': { moduleId: 'order-nexus' },
+    // ORD-UX-01: the Orders live operational map is the Growth+ half of Orders,
+    // mirroring overview.live_map / inventory.live_map. orders.core is unchanged —
+    // Starter/Core keep the Orders surface and lose only the map.
+    'orders.live_map': { moduleId: 'order-nexus', minimumTier: 'growth' },
     'inventory.core': { moduleId: 'products', minimumTier: 'core' },
     'inventory.live_map': { moduleId: 'products', minimumTier: 'growth' },
     'demand.forecasting': { moduleId: 'demand', minimumTier: 'growth', feature: 'demand.forecasting' },
