@@ -20,7 +20,7 @@
 // hand-reimplementing commercial policy.
 
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 
 const mockNavigate = jest.fn();
 const mockUseMorningBriefSnapshot = jest.fn();
@@ -28,17 +28,18 @@ const mockRefreshMorningBrief = jest.fn();
 const mockFloorPlanningRefetch = jest.fn();
 const mockUseFloorPlanning = jest.fn();
 const mockUseWmsLiveActivity = jest.fn();
+const mockUseOccupancy = jest.fn();
+const mockUseIdleAlerts = jest.fn();
+const mockUseProblemCenter = jest.fn();
 const mockEmit = jest.fn();
 
 // Exposes the props the production page cannot be observed through
-// otherwise: pulse/morningBrief continuity, and whether mapContent /
-// upgradeTeaser were supplied at all.
+// otherwise: pulse/morningBrief continuity and the supplied mapContent.
 const mockOverviewModuleFT2 = jest.fn((props: Record<string, unknown>) => (
   <div>
     <div data-testid="pulse-prop">{props.pulse ? 'present' : 'missing'}</div>
     <div data-testid="morning-brief-prop">{props.morningBrief ? 'present' : 'missing'}</div>
     <div data-testid="map-content">{(props.mapContent as React.ReactNode) ?? null}</div>
-    <div data-testid="upgrade-teaser">{(props.upgradeTeaser as React.ReactNode) ?? null}</div>
   </div>
 ));
 
@@ -51,7 +52,9 @@ jest.mock('@lasyncro/overview', () => ({
 }), { virtual: true });
 
 jest.mock('@lasyncro/shared/ui', () => ({
-  IsometricCanvas: () => <div data-testid="live-map" />,
+  IsometricCanvas: ({ zones }: { zones: Array<{ location_code: string }> }) => (
+    <div data-testid={zones[0]?.location_code === 'PREVIEW' ? 'synthetic-map' : 'live-map'} />
+  ),
 }));
 
 jest.mock('analytics/useUiEvents', () => ({
@@ -139,11 +142,11 @@ jest.mock('pages/floor-planning/useFloorPlanning', () => ({
 }));
 
 jest.mock('pages/floor-planning/useWarehouseGrid', () => ({
-  useWarehouseGridOccupancy: () => ({
+  useWarehouseGridOccupancy: (enabled: boolean) => { mockUseOccupancy(enabled); return ({
     data: { occupancy: {} },
     isLoading: false,
     isError: false,
-  }),
+  }); },
 }));
 
 jest.mock('pages/wms/useOrderPool', () => ({
@@ -162,19 +165,19 @@ jest.mock('pages/wms/useWmsLiveActivity', () => ({
 }));
 
 jest.mock('../../../../apps/frontend/src/hooks/useIdleAlerts', () => ({
-  useIdleAlerts: () => ({
+  useIdleAlerts: (enabled: boolean) => { mockUseIdleAlerts(enabled); return ({
     alerts: [],
     isLoading: false,
     isError: false,
-  }),
+  }); },
 }));
 
 jest.mock('pages/problem-center/useProblemCenter', () => ({
-  useProblemCenter: () => ({
+  useProblemCenter: (enabled: boolean) => { mockUseProblemCenter(enabled); return ({
     data: { tasks: [] },
     isLoading: false,
     isError: false,
-  }),
+  }); },
 }));
 
 import OverviewPageFT2 from 'pages/ft2-pages/OverviewFT2Page';
@@ -250,7 +253,7 @@ beforeEach(() => {
 // OVLM-A — legacy tier Growth/Scale + canonical DENY: denied path must win
 // ===========================================================================
 describe('OVLM-A — canonical overview.live_map DENY wins over a permissive legacy tier', () => {
-  it('EXPECTED RED: legacy tier growth (would satisfy the legacy hasMapTier check), canonical DENY — teaser wins, live map absent, polling disabled', () => {
+  it('legacy tier growth (would satisfy the legacy hasMapTier check), canonical DENY — teaser wins, live map absent, polling disabled', () => {
     mockTier = 'growth';
     mockDecide = () => DENY_TIER_TOO_LOW('growth');
     render(<OverviewPageFT2 />);
@@ -259,14 +262,18 @@ describe('OVLM-A — canonical overview.live_map DENY wins over a permissive leg
     // decorative preview IsometricCanvas (also mocked to this testid), so an
     // unscoped query would be ambiguous between the two.
     expect(screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')).toBeNull();
-    expect(screen.getByTestId('upgrade-teaser')).not.toBeEmptyDOMElement();
+    expect(screen.getByTestId('map-content')).toContainElement(screen.getByText('Overview live map'));
+    expect(screen.getByTestId('synthetic-map')).toBeInTheDocument();
     expect(mockUseWmsLiveActivity).toHaveBeenLastCalledWith(false);
     // P0-A3-2 CORRECTION: a denial must also stop ACQUIRING floor geometry,
     // not merely stop rendering it.
     expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(false);
+    expect(mockUseOccupancy).toHaveBeenLastCalledWith(false);
+    expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(false);
+    expect(mockUseProblemCenter).toHaveBeenLastCalledWith(false);
   });
 
-  it('EXPECTED RED: legacy tier scale, canonical DENY — same authority requirement', () => {
+  it('legacy tier scale, canonical DENY — same authority requirement', () => {
     mockTier = 'scale';
     mockDecide = () => DENY_TIER_TOO_LOW('growth');
     render(<OverviewPageFT2 />);
@@ -275,9 +282,13 @@ describe('OVLM-A — canonical overview.live_map DENY wins over a permissive leg
     // decorative preview IsometricCanvas (also mocked to this testid), so an
     // unscoped query would be ambiguous between the two.
     expect(screen.getByTestId('map-content').querySelector('[data-testid="live-map"]')).toBeNull();
-    expect(screen.getByTestId('upgrade-teaser')).not.toBeEmptyDOMElement();
+    expect(screen.getByTestId('map-content')).toContainElement(screen.getByText('Overview live map'));
+    expect(screen.getByTestId('synthetic-map')).toBeInTheDocument();
     expect(mockUseWmsLiveActivity).toHaveBeenLastCalledWith(false);
     expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(false);
+    expect(mockUseOccupancy).toHaveBeenLastCalledWith(false);
+    expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(false);
+    expect(mockUseProblemCenter).toHaveBeenLastCalledWith(false);
   });
 
   it('GREEN CONTROL: Pulse and Decisions continuity survive a commercial denial', () => {
@@ -294,27 +305,35 @@ describe('OVLM-A — canonical overview.live_map DENY wins over a permissive leg
 // OVLM-B — legacy tier Starter/Core + canonical ALLOW: allowed path must win
 // ===========================================================================
 describe('OVLM-B — canonical overview.live_map ALLOW wins over a restrictive legacy tier', () => {
-  it('EXPECTED RED: legacy tier starter (would fail the legacy hasMapTier check), canonical ALLOW — live map wins, teaser absent, polling enabled', () => {
+  it('legacy tier starter (would fail the legacy hasMapTier check), canonical ALLOW — live map wins, teaser absent, polling enabled', () => {
     mockTier = 'starter';
     mockDecide = () => ALLOW;
     render(<OverviewPageFT2 />);
 
     expect(screen.getByTestId('live-map')).not.toBeNull();
-    expect(screen.getByTestId('upgrade-teaser')).toBeEmptyDOMElement();
+    expect(screen.queryByText('Overview live map')).toBeNull();
+    expect(screen.queryByTestId('synthetic-map')).toBeNull();
     expect(mockUseWmsLiveActivity).toHaveBeenLastCalledWith(true);
     // P0-A3-2 CORRECTION: an allowance must actually acquire floor geometry.
     expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
+    expect(mockUseOccupancy).toHaveBeenLastCalledWith(true);
+    expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(true);
+    expect(mockUseProblemCenter).toHaveBeenLastCalledWith(true);
   });
 
-  it('EXPECTED RED: legacy tier core, canonical ALLOW — same authority requirement', () => {
+  it('legacy tier core, canonical ALLOW — same authority requirement', () => {
     mockTier = 'core';
     mockDecide = () => ALLOW;
     render(<OverviewPageFT2 />);
 
     expect(screen.getByTestId('live-map')).not.toBeNull();
-    expect(screen.getByTestId('upgrade-teaser')).toBeEmptyDOMElement();
+    expect(screen.queryByText('Overview live map')).toBeNull();
+    expect(screen.queryByTestId('synthetic-map')).toBeNull();
     expect(mockUseWmsLiveActivity).toHaveBeenLastCalledWith(true);
     expect(mockUseFloorPlanning).toHaveBeenLastCalledWith(true);
+    expect(mockUseOccupancy).toHaveBeenLastCalledWith(true);
+    expect(mockUseIdleAlerts).toHaveBeenLastCalledWith(true);
+    expect(mockUseProblemCenter).toHaveBeenLastCalledWith(true);
   });
 });
 
@@ -323,16 +342,15 @@ describe('OVLM-B — canonical overview.live_map ALLOW wins over a restrictive l
 // never a hardcoded Growth assumption
 // ===========================================================================
 describe('OVLM-C — teaser required-tier metadata derives from AccessDecision, not a hardcoded value', () => {
-  it('EXPECTED RED: a deliberate non-growth requiredTier from the decision reaches the upgrade-prompt analytics payload', () => {
+  it('a deliberate non-growth requiredTier from the decision reaches the teaser and its CTA opens billing', () => {
     mockTier = 'starter';
     // Deliberately NOT 'growth' — proves the teaser must read this value
     // from the decision rather than assuming Growth unconditionally.
     mockDecide = () => DENY_TIER_TOO_LOW('scale');
     render(<OverviewPageFT2 />);
 
-    expect(mockEmit).toHaveBeenCalledWith(
-      'upgrade_prompt.shown',
-      expect.objectContaining({ requiredTier: 'scale' }),
-    );
+    expect(screen.getByText('Available on Scale')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Upgrade/i }));
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/billing');
   });
 });

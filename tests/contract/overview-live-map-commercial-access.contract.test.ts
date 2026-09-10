@@ -148,12 +148,19 @@ describe('OVLM-C6 — Overview gates floor-planning acquisition on the same cano
 // ===========================================================================
 // OVLM-C4 — teaser required-tier metadata derives from the AccessDecision
 // ===========================================================================
-describe('OVLM-C4 — LiveMapUpgradeTeaser derives required-tier metadata from AccessDecision, not a hardcoded value', () => {
-  it('EXPECTED RED: the teaser function does not hardcode requiredTier: \'growth\'', () => {
+describe('OVLM-C4 — denied shared teaser derives required-tier metadata from AccessDecision', () => {
+  it('uses the canonical decision in the denied map slot without a local Growth requirement', () => {
     const src = read(OVERVIEW_PAGE);
-    const teaserBody = sliceFunction(src, 'LiveMapUpgradeTeaser');
-    expect(teaserBody.length).toBeGreaterThan(0);
-    expect(/requiredTier:\s*'growth'/.test(teaserBody)).toBe(false);
+    expect(src).toMatch(/const\s+liveMapDecision\s*=\s*decide\(\s*['"]overview\.live_map['"]\s*\)/);
+
+    const deniedSlot = /if\s*\(\s*!hasMapAccess\s*\)\s*\{([\s\S]*?)\}\s*else/.exec(src)?.[1];
+    expect(deniedSlot).toBeDefined();
+    expect(deniedSlot).toMatch(/mapContent\s*=\s*\(\s*<LiveMapTeaser\b/);
+    // A null fallback preserves the decision's tier when present and supplies
+    // neutral teaser wording when the decision carries no required tier.
+    expect(deniedSlot).toMatch(/requiredTier\s*=\s*\{\s*liveMapDecision\.requiredTier\s*(?:\?\?\s*null\s*)?\}/);
+    expect(src).toMatch(/import\s*\{\s*LiveMapTeaser\s*\}\s*from\s*['"]components\/LiveMapTeaser['"]/);
+    expect(src).not.toMatch(/\brequiredTier\s*(?:=\s*\{?\s*|:\s*)['"`]growth['"`]/);
   });
 });
 

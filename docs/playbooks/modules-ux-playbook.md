@@ -841,6 +841,45 @@ The canonical Orders Overview landing pattern is Live Intelligence:
 
 All essential Orders landing content fits visibly in the first viewport. Residual ~64px vertical overflow at the tested desktop viewport is intentionally **DEFERRED** as non-blocking polish. The scroll-free requirement is **not fully closed/clean**; residual scroll is not resolved.
 
+**2026-09-10 — OV-UX-02 — Overview Live Intelligence teaser parity**
+
+Starter/Core Overview now uses the canonical Live Intelligence layout:
+
+`[ synthetic LiveMapTeaser ][ Needs a decision + Business pulse 280px ]`
+
+- The shared synthetic `LiveMapTeaser` occupies the `mapContent` slot beside the real decision and Business pulse rail.
+- The old large triage-first landing body is no longer the normal denied-tier Overview experience.
+- Growth/Scale continue to receive the existing real Overview operational map.
+- `overview.live_map` remains Growth+; commercial policy and backend were not changed.
+- Canonical `AccessDecision` remains authority; `requiredTier` is sourced from `liveMapDecision.requiredTier`.
+- The Upgrade CTA routes to `/settings/billing`.
+- Denied tenants do not acquire real floor geometry, occupancy, idle-alert map data, problem-center map data or WMS live activity.
+- The synthetic teaser never contains blurred real merchant data.
+- The bespoke Overview `LiveMapUpgradeTeaser` and separate `upgradeTeaser` path were retired.
+- `OverviewModuleFT2` preserves its triage-first compatibility fallback when another consumer supplies no `mapContent`.
+
+Verification record (supplied for this documentation slice):
+
+- overview commercial UI: 6/6 PASS
+- `OverviewModuleFT2`: 2/2 PASS
+- `overview.live_map` commercial contract: 8/8 PASS
+- `git diff --check`: PASS
+- Core live browser: teaser in map slot PASS; real decision + Business pulse rail PASS; old triage body absent PASS; billing CTA PASS; premium acquisition boundary PASS.
+- Growth local browser: real Overview map ultimately renders correctly PASS; teaser absent PASS.
+
+OV-UX-02 is implemented with the verification recorded above; production certification is not yet claimed.
+
+**MAP-TIER-01 — DEFERRED / UNRESOLVED DEVELOPMENT-ONLY OBSERVATION**
+
+- During local Core → Growth tier changes, Overview/Orders/Inventory have several times temporarily lost access to floor-map data.
+- Observed states include Overview FL-503 and Orders/Inventory “Map your warehouse floor first”.
+- All three maps later recover without rebuilding warehouse geometry, sometimes after ~15–20 minutes.
+- This indicates no demonstrated warehouse-data loss.
+- Root cause has NOT been established.
+- It has NOT been reproduced in production.
+- MAP-TIER-01 remains unresolved and is not marked fixed.
+- If production reproduces it, reopen as a priority shared map/runtime defect.
+
 **2026-07-22 — Runtime token gap caught late.** `--critical-ink` and
 `--good-ink` were added to `docs/color-pallet/index.md` correctly but
 initially missed from `apps/frontend/src/themes/index.tsx` — the actual

@@ -97,7 +97,6 @@ export type OverviewModuleFT2Props = OverviewModuleFT2DataProps & {
    * Tier gate and zone guard are resolved by the page layer — module is layout-only.
    */
   mapContent?: ReactNode;
-  upgradeTeaser?: ReactNode;
 };
 
 type Signal = NonNullable<NonNullable<OverviewModuleFT2DataProps['morningBrief']>['signals'][number]>;
@@ -547,7 +546,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
     onRefreshBrief,
     isRefreshingBrief = false,
     mapContent,
-    upgradeTeaser,
   } = props;
 
   const isLoading    = morningBrief === undefined;
@@ -862,11 +860,6 @@ function OverviewModuleFT2Inner(props: OverviewModuleFT2Props) {
                   rows={buildBusinessPulseRows(pulse, currency)}
                   footerCta={onNavigate ? { label: 'View order flow', onClick: () => onNavigate('/orders/flow') } : undefined}
                 />
-              </Box>
-            )}
-            {upgradeTeaser && (
-              <Box sx={{ flex: '1 0 100%', minWidth: 0 }}>
-                {upgradeTeaser}
               </Box>
             )}
           </Box>
