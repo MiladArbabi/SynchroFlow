@@ -1,5 +1,7 @@
 // File: apps/frontend/src/pages/ft2-pages/OverviewFT2Page.tsx
 // Lines 1–12 (imports)
+import { useEffect, useRef } from 'react';
+import { useUiEvents } from 'analytics/useUiEvents';
 import { useNavigate } from 'react-router-dom';
 import { Box, Typography } from '@mui/material';
 import { useOverviewModulesFt2Snapshot } from '../overview/useOverviewModulesFt2Snapshot';
@@ -48,6 +50,37 @@ export default function OverviewPageFT2() {
   // resolves. Prevents premature triage-layout flash while the entitlement
   // snapshot is still in flight.
   const hasMapAccess = isResolved && liveMapDecision.allowed;
+  const { emit } = useUiEvents();
+  const teaserShown = useRef(false);
+  const requiredTier = liveMapDecision.requiredTier;
+  const teaserVisible = isResolved && !hasMapAccess && isOwnerOrAdmin &&
+    !overviewModules.isPending && !overviewModules.isError &&
+    !(morningBrief.data === undefined && (morningBrief.isPending || morningBrief.isError));
+
+  useEffect(() => {
+    if (!teaserVisible) {
+      teaserShown.current = false;
+      return;
+    }
+    if (teaserShown.current) return;
+    teaserShown.current = true;
+    emit('upgrade_prompt.shown', {
+      featureName: 'Overview live operations map',
+      mode: 'teaser',
+      surface: 'overview',
+      ...(requiredTier ? { requiredTier } : {}),
+    });
+  }, [teaserVisible, requiredTier, emit]);
+
+  const upgradeLiveMap = () => {
+    emit('upgrade_prompt.clicked', {
+      featureName: 'Overview live operations map',
+      surface: 'overview',
+      ...(requiredTier ? { requiredTier } : {}),
+    });
+    navigate('/settings/billing');
+  };
+
   // P0-A3-2: gated tenants must not ACQUIRE floor geometry either — the same
   // decision that hides the map also stops the layout fetch.
   const floorPlanning = useFloorPlanning(hasMapAccess);
@@ -414,7 +447,7 @@ export default function OverviewPageFT2() {
         title="Overview live map"
         description="Follow picks, stock pressure and blocked work on one live floor."
         requiredTier={liveMapDecision.requiredTier ?? null}
-        onUpgrade={() => navigate('/settings/billing')}
+        onUpgrade={upgradeLiveMap}
       />
     );
   } else if (floorPlanning.isLoading) {

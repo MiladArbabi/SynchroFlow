@@ -347,10 +347,24 @@ describe('OVLM-C — teaser required-tier metadata derives from AccessDecision, 
     // Deliberately NOT 'growth' — proves the teaser must read this value
     // from the decision rather than assuming Growth unconditionally.
     mockDecide = () => DENY_TIER_TOO_LOW('scale');
-    render(<OverviewPageFT2 />);
+    const { rerender } = render(<OverviewPageFT2 />);
+
+    expect(mockEmit).toHaveBeenCalledWith('upgrade_prompt.shown', {
+      featureName: 'Overview live operations map',
+      mode: 'teaser',
+      surface: 'overview',
+      requiredTier: 'scale',
+    });
+    rerender(<OverviewPageFT2 />);
+    expect(mockEmit.mock.calls.filter(([event]) => event === 'upgrade_prompt.shown')).toHaveLength(1);
 
     expect(screen.getByText('Available on Scale')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Upgrade/i }));
+    expect(mockEmit).toHaveBeenCalledWith('upgrade_prompt.clicked', {
+      featureName: 'Overview live operations map',
+      surface: 'overview',
+      requiredTier: 'scale',
+    });
     expect(mockNavigate).toHaveBeenCalledWith('/settings/billing');
   });
 });
