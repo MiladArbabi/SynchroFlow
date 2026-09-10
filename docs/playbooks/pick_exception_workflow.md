@@ -47,7 +47,13 @@ The affected order remains part of the batch and reaches downstream Pack
 context, where unresolved Pick exceptions can later block fulfillment of that
 specific order.
 
-Pack gating/custody is a later implementation slice.
+Pack gating is now implemented by GH-1086 / PACK-GATE-01. A recorded Pick
+deficit blocks only the affected order from ordinary Pack while healthy sibling
+orders continue. The affected order remains in its batch/history and is owned by
+Problem Center; it never returns to Order Pool or Blocked Orders. Operational
+exception resolution alone does not authorize shipment. Partial shipment requires
+explicit owner/admin approval and is bounded by physically picked evidence.
+Residual reservation/custody disposition remains a separate downstream concern.
 
 ---
 

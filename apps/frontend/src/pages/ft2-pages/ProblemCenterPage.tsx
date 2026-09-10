@@ -162,7 +162,7 @@ function PendingDecisionsStrip() {
           <Typography sx={{ fontSize: 13, color: pal.ink3, mb: 2 }}>
             {dialog?.action === 'approved'
               ? `Order ${dialog?.orderRef} will ship without the missing item. The packer will be notified.`
-              : `Order ${dialog?.orderRef} will be held and re-queued. The packer will be notified.`}
+              : `Order ${dialog?.orderRef} will remain on hold and will not move to packing. The packer will be notified.`}
           </Typography>
           <TextField
             label="Note to packer (optional)"
