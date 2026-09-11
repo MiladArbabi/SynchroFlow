@@ -10,6 +10,11 @@ import {
   StockProtectionPolicyVersionRequiredError,
   StockProtectionPolicyConflictError,
 } from '../../services/inventory/stockProtectionPolicy.service.js';
+import {
+  gatherBufferDiagnosisEvidence,
+  BufferDiagnosisVariantNotFoundError,
+} from '../../services/inventory/stockProtectionBufferEvidence.js';
+import { computeBufferDiagnosis } from '../../services/inventory/stockProtectionBufferDiagnosis.js';
 
 /**
  * GET /api/v1/modules/demand
@@ -111,5 +116,35 @@ export const httpUpsertStockProtectionPolicy = async (req: Request, res: Respons
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('[STOCK_PROTECTION_POLICY_UPSERT_FAILED]', { error: message });
     return res.status(500).json({ error: `Failed to upsert stock protection policy: ${message}` });
+  }
+};
+
+/**
+ * GET /api/v1/modules/demand/stock-protection-recommendation/:variantId
+ * ----------------------------------------------------------------
+ * STOCK-PROTECT-02 — read-only Buffer Diagnosis recommendation for one
+ * variant. Evidence only, never approved-policy authority: this endpoint
+ * never reads or writes stock_protection_policies /
+ * stock_protection_policy_transitions. Owns no business math itself —
+ * gathers evidence via stockProtectionBufferEvidence.ts, then delegates the
+ * decision entirely to the pure computeBufferDiagnosis().
+ */
+export const httpGetStockProtectionRecommendation = async (req: Request, res: Response) => {
+  try {
+    const shopId = req.user?.shopId;
+    if (!shopId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const variantId = String(req.params.variantId ?? '');
+    const evidence = await withTenant(shopId, (trx) => gatherBufferDiagnosisEvidence(trx, shopId, variantId));
+    const diagnosis = computeBufferDiagnosis(evidence);
+
+    return res.status(200).json(diagnosis);
+  } catch (error) {
+    if (error instanceof BufferDiagnosisVariantNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[STOCK_PROTECTION_RECOMMENDATION_FETCH_FAILED]', { error: message });
+    return res.status(500).json({ error: `Failed to fetch stock protection recommendation: ${message}` });
   }
 };

@@ -1,6 +1,11 @@
 // apps/backend/src/api/demand/demand.routes.ts
 import { Router } from 'express';
-import { httpGetDemand, httpGetStockProtectionPolicy, httpUpsertStockProtectionPolicy } from './demand.controller.js';
+import {
+  httpGetDemand,
+  httpGetStockProtectionPolicy,
+  httpUpsertStockProtectionPolicy,
+  httpGetStockProtectionRecommendation,
+} from './demand.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
@@ -30,6 +35,17 @@ router.put(
   requireFt2,
   requireCapability('demand.forecasting'),
   httpUpsertStockProtectionPolicy
+);
+
+// STOCK-PROTECT-02 — sibling read-only Buffer Diagnosis recommendation,
+// same capability boundary; delegates entirely to
+// stockProtectionBufferEvidence.ts + stockProtectionBufferDiagnosis.ts.
+router.get(
+  '/stock-protection-recommendation/:variantId',
+  authenticateToken,
+  requireFt2,
+  requireCapability('demand.forecasting'),
+  httpGetStockProtectionRecommendation
 );
 
 export default router;

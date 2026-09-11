@@ -80,6 +80,15 @@ export type DemandVelocity = {
   /** Supplier-configured planning lead time — null when not configured */
   supplier_lead_time_days: number | null;
   /**
+   * STOCK-PROTECT-02: the identity behind supplier_lead_time_days — the
+   * approved policy's anchored supplier when one is set, otherwise the
+   * variant's most-recent-PO supplier (same resolution as
+   * supplier_lead_time_days itself). Null when neither exists. Exposed so a
+   * downstream evidence reader can identify which supplier's reliability to
+   * evaluate without reimplementing this selection.
+   */
+  planning_supplier_id: number | null;
+  /**
    * Days of demand the suggestion is sized to cover:
    * lead time + safety days + purchasing cycle. Returned so consumers can
    * state the figure without restating the system defaults, which would
@@ -258,6 +267,7 @@ export async function computeVariantPlanning(
       .select(
         'poli.lasyncro_variant_id',
         's.lead_time_days',
+        's.id as supplier_id',
       )
       .orderBy('poli.lasyncro_variant_id')
       .orderBy('po.created_at', 'desc');
@@ -267,6 +277,15 @@ export async function computeVariantPlanning(
         r.lasyncro_variant_id,
         r.lead_time_days !== null ? Number(r.lead_time_days) : null,
       ])
+    );
+
+    // STOCK-PROTECT-02: same most-recent-PO supplier identity used to derive
+    // supplierLeadTimeMap above, kept as a separate map so the id is
+    // available even for variants whose supplier HAS a configured
+    // lead_time_days of null (supplierLeadTimeMap intentionally collapses
+    // that case to null, losing the id).
+    const legacySupplierIdMap = new Map<string, number>(
+      supplierLeadTime.map((r: any) => [r.lasyncro_variant_id, Number(r.supplier_id)])
     );
 
     /**
@@ -540,6 +559,16 @@ export async function computeVariantPlanning(
           leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null;
         }
 
+        // STOCK-PROTECT-02: the supplier IDENTITY behind leadTimeDays above,
+        // exposed unconditionally (unlike leadTimeDays, which is null when
+        // the anchored supplier is invalid/inactive) — a downstream reader
+        // still needs to know WHICH supplier to evaluate even when that
+        // supplier's configured lead time itself is unusable.
+        const planningSupplierId: number | null =
+          effectivePolicy.source === 'merchant_approved' && effectivePolicy.planning_supplier_id !== null
+            ? effectivePolicy.planning_supplier_id
+            : legacySupplierIdMap.get(row.lasyncro_variant_id) ?? null;
+
         // Velocity trend: compare current vs prior 30d
         const velocityTrend: 'up' | 'down' | 'stable' = (() => {
           if (unitsPrev30d === 0 && units30d > 0) return 'up';
@@ -641,6 +670,7 @@ export async function computeVariantPlanning(
           estimated_stockout_date: stockoutDate,
           suggested_reorder_qty: suggestedReorderQty,
           supplier_lead_time_days: supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null,
+          planning_supplier_id: planningSupplierId,
           target_coverage_days: targetCoverageDays,
         };
       })

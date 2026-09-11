@@ -157,6 +157,17 @@ owns no business logic.
 - **STOCK-PROTECT-06** — Impact UX
 - **STOCK-PROTECT-07** — Multi-location Protection
 
+**STOCK-PROTECT-02 is now implemented** — see
+`stock-protection-buffer-diagnosis-playbook.md` for full detail. The
+boundary between the two slices is exact: STOCK-PROTECT-01 (this document)
+is the approved merchant policy — the only authority planning actually
+consumes. STOCK-PROTECT-02 is a read-only recommendation/diagnosis layer
+that reads evidence and proposes a `safety_days` value, but never writes to
+`stock_protection_policies` or `stock_protection_policy_transitions`. A
+recommendation becomes policy **only** when a merchant explicitly approves
+it through the existing `PUT` route below — it never becomes policy
+silently.
+
 ## 12. Verification Evidence (2026-09-11)
 
 | Gate | Result |
@@ -169,7 +180,9 @@ owns no business logic.
 
 ---
 
-*Adjacent docs: `sourcing-recommendation-playbook.md` §14 (supplier-authority
+*Adjacent docs: `stock-protection-buffer-diagnosis-playbook.md`
+(STOCK-PROTECT-02 — the read-only recommendation layer built on this
+foundation), `sourcing-recommendation-playbook.md` §14 (supplier-authority
 supersession), `DemandModule.md` (Demand module structure — its urgency
 table and "always-null lead time" description predate this work and should
 not be treated as current without re-verifying against
