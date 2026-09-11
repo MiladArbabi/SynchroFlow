@@ -2,6 +2,8 @@
 
 import type { Knex } from 'knex';
 import db from '@lasyncro/backend-core/db.js';
+import { pickableLocationCondition } from '../inventory/pickableLocation.js';
+import { resolveEffectivePolicy as resolveEffectiveStockProtectionPolicy } from '../inventory/stockProtectionPolicyResolution.js';
 
 /**
  * DEMAND INTELLIGENCE SERVICE (DF-01, DF-02, DF-03 / SRC-11)
@@ -105,13 +107,21 @@ const VELOCITY_WINDOW_DAYS = 30;
 const MEDIUM_VELOCITY_WINDOW_DAYS = 90;
 const MAX_VELOCITY_WINDOW_DAYS = 180;
 const MIN_FULFILLMENT_EVENTS = 3;
-const SYSTEM_SAFETY_DAYS = 5;
-const SYSTEM_PURCHASING_CYCLE_DAYS = 7;
+
+/**
+ * STOCK-PROTECT-01: safety_days is no longer a fixed system constant here.
+ * The no-policy default (5) is now owned by
+ * stockProtectionPolicyResolution.ts (resolveEffectivePolicy(null)) — the
+ * single source of truth for legacy fallback behaviour — and the effective,
+ * per-variant value (approved policy or that same default) is threaded in
+ * below as `effectiveSafetyDays`.
+ */
 function deriveUrgency(
   daysOfStock: number | null,
   velocityPerDay: number,
   availableQty: number,
-  leadTimeDays: number | null
+  leadTimeDays: number | null,
+  effectiveSafetyDays: number
 ): 'critical' | 'warning' | 'healthy' | 'planning_data_required' | 'no_velocity' {
   if (availableQty <= 0) return 'critical';
 
@@ -124,7 +134,7 @@ function deriveUrgency(
   }
 
   if (daysOfStock <= leadTimeDays) return 'critical';
-  if (daysOfStock <= leadTimeDays + SYSTEM_SAFETY_DAYS) return 'warning';
+  if (daysOfStock <= leadTimeDays + effectiveSafetyDays) return 'warning';
 
   return 'healthy';
 }
@@ -260,6 +270,42 @@ export async function computeVariantPlanning(
     );
 
     /**
+     * STOCK-PROTECT-01: APPROVED STOCK PROTECTION POLICY PER VARIANT
+     * ----------------------------------------------------------------
+     * Read-only. Never mutates stock_protection_policies / writes a
+     * transition — that boundary belongs exclusively to
+     * stockProtectionPolicy.service.ts (upsertStockProtectionPolicy). This
+     * demand recomputation may change derived buffer/reorder-quantity/
+     * urgency output every time it runs; it must never change or version
+     * the approved policy that produced those inputs.
+     *
+     * When an approved policy anchors an explicit planning_supplier_id, that
+     * supplier's lead_time_days is authoritative and a newer PO from a
+     * different supplier must not override it (contract item 11). An
+     * anchored supplier that is missing or inactive is never silently
+     * substituted — it resolves to leadTimeDays=null below, which the
+     * existing deriveUrgency/targetCoverageDays logic already turns into
+     * 'planning_data_required' rather than a guess (contract item 12/14).
+     */
+    const policyRows: any[] = await trx('stock_protection_policies')
+      .where('shop_id', shopId)
+      .modify((qb: Knex.QueryBuilder) => { if (variantIds?.length) qb.whereIn('lasyncro_variant_id', variantIds); })
+      .select('lasyncro_variant_id', 'version', 'safety_days', 'review_cycle_days', 'planning_supplier_id');
+
+    const policyMap = new Map(policyRows.map((r: any) => [r.lasyncro_variant_id, r]));
+
+    const anchoredSupplierIds = Array.from(
+      new Set(policyRows.map((r: any) => r.planning_supplier_id).filter((id: any) => id !== null))
+    );
+    const anchoredSupplierRows: any[] = anchoredSupplierIds.length
+      ? await trx('suppliers')
+          .whereIn('id', anchoredSupplierIds)
+          .andWhere('shop_id', shopId)
+          .select('id', 'active', 'lead_time_days')
+      : [];
+    const anchoredSupplierMap = new Map(anchoredSupplierRows.map((r: any) => [r.id, r]));
+
+    /**
      * OPEN CUSTOMER DEMAND
      */
     const openDemandRows: any[] = await trx('order_revenue_units as oru')
@@ -364,8 +410,23 @@ export async function computeVariantPlanning(
 
     /**
      * INVENTORY TRUTH + VARIANT DETAILS
+     * ---------------------------------
+     * STOCK-PROTECT-01 (contract item 10 / SP-POL-12): availability is
+     * fulfillment-consistent, not location-blind. Joins warehouse_locations
+     * and reuses the SAME canonical pickableLocationCondition() predicate as
+     * batchReservation.service.ts / the constraint evaluator, rather than a
+     * second copy of the pick/warehouse zone_type condition. Receive,
+     * returns, pack, ship, kitting, problem, and quarantine stock are real
+     * stock but not sellable-from, and stay excluded exactly as they do for
+     * pick allocation.
      */
     const inventoryRows: any[] = await trx('inventory_truth as it')
+      .join('warehouse_locations as wl', function () {
+        this.on('wl.location_code', '=', 'it.location_code')
+          .andOn('wl.shop_id', '=', trx.raw('?', [shopId]))
+          .andOnVal('wl.active', true)
+          .andOn(pickableLocationCondition(trx));
+      })
       .join('variants as v', 'v.lasyncro_variant_id', 'it.lasyncro_variant_id')
       .join('products as p', 'p.lasyncro_product_id', 'v.lasyncro_product_id')
       .where('it.shop_id', shopId)
@@ -438,7 +499,46 @@ export async function computeVariantPlanning(
         // demand below 0.005 units/day into false zero demand.
         const velocityPerDay =
           velocityUnits > 0 ? velocityUnits / velocityWindowDays : 0;
-        const leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null;
+
+        /**
+         * STOCK-PROTECT-01: effective safety/review-cycle days come from the
+         * approved policy when one exists, otherwise the same legacy 5/7
+         * default resolveEffectivePolicy(null) has always returned.
+         *
+         * Supplier lead time: an approved policy's explicit
+         * planning_supplier_id is authoritative (contract item 11) and is
+         * NEVER overridden by a newer PO from a different supplier. If that
+         * anchored supplier is missing/inactive, leadTimeDays resolves to
+         * null here — never silently substituted — which deriveUrgency
+         * below already turns into 'planning_data_required'. Only when
+         * there is no approved policy, or the approved policy has no
+         * explicit supplier anchor, does legacy most-recent-PO resolution
+         * (supplierLeadTimeMap) apply.
+         */
+        const policyRow = policyMap.get(row.lasyncro_variant_id);
+        const effectivePolicy = resolveEffectiveStockProtectionPolicy(
+          policyRow
+            ? {
+                version: policyRow.version,
+                safety_days: policyRow.safety_days,
+                review_cycle_days: policyRow.review_cycle_days,
+                planning_supplier_id: policyRow.planning_supplier_id,
+              }
+            : null
+        );
+        const effectiveSafetyDays = effectivePolicy.safety_days;
+        const effectiveReviewCycleDays = effectivePolicy.review_cycle_days;
+
+        let leadTimeDays: number | null;
+        if (effectivePolicy.source === 'merchant_approved' && effectivePolicy.planning_supplier_id !== null) {
+          const anchoredSupplier = anchoredSupplierMap.get(effectivePolicy.planning_supplier_id);
+          leadTimeDays =
+            anchoredSupplier && anchoredSupplier.active && anchoredSupplier.lead_time_days !== null
+              ? Number(anchoredSupplier.lead_time_days)
+              : null;
+        } else {
+          leadTimeDays = supplierLeadTimeMap.get(row.lasyncro_variant_id) ?? null;
+        }
 
         // Velocity trend: compare current vs prior 30d
         const velocityTrend: 'up' | 'down' | 'stable' = (() => {
@@ -459,8 +559,8 @@ export async function computeVariantPlanning(
         const targetCoverageDays =
           leadTimeDays !== null
             ? leadTimeDays +
-              SYSTEM_SAFETY_DAYS +
-              SYSTEM_PURCHASING_CYCLE_DAYS
+              effectiveSafetyDays +
+              effectiveReviewCycleDays
             : null;
 
         /**
@@ -511,7 +611,8 @@ export async function computeVariantPlanning(
           daysOfStock,
           velocityPerDay,
           availableQty,
-          leadTimeDays
+          leadTimeDays,
+          effectiveSafetyDays
         );
         const reorderSignal = urgency === 'critical' || urgency === 'warning';
 

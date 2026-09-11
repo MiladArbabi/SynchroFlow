@@ -13,7 +13,7 @@ A popup-based MOQ check was designed, then abandoned in favor of a **dedicated p
 ## 2. Confirmed Facts (ground truth, 2026-06-29)
 
 - `suppliers` table already has a full unused scorecard: `on_time_rate`, `fill_rate`, `defect_rate`, `avg_delivery_days`, `moq`, `lead_time_days` — all computed by `supplierRating.service.ts`, **used in zero recommendation/comparison logic anywhere.**
-- No stored supplier link exists on `variants`. Supplier lineage is derived *only* from the most recent received PO containing that variant (`demandIntelligence.service.ts`), defaulting lead time to 14 days when no history exists.
+- No stored supplier link exists on `variants`. Supplier lineage is derived *only* from the most recent received PO containing that variant (`demandIntelligence.service.ts`), defaulting lead time to 14 days when no history exists. **Superseded 2026-09-11 (STOCK-PROTECT-01, §14):** this is now the fallback used only when no approved Stock Protection Policy exists for the variant. When one exists, its explicit `planning_supplier_id` is authoritative and is never overridden by a newer PO.
 - Multi-supplier-per-variant query returned 0 rows in current data (no variant has >1 historical supplier yet) — does not rule out future need; dataset is tiny (3 of 17 variants have any order history at all).
 - **Decision: no `default_supplier_id` FK.** Locking a single default would regress the flexibility the data model already implicitly allows (each PO's supplier is independent of the variant). The recommendation page must compute fresh each time, ranking a variant's full supplier history, never assuming "last used = correct again."
 - `purchase_orders.status` enum: `draft, ordered, confirmed, in_production, shipped, partially_received, received, cancelled`. `draft` maps directly onto "to be ordered" tracking — no new field needed.
@@ -1857,6 +1857,29 @@ manual pass).
 
 ---
 
+## 14. STOCK-PROTECT-01 — supplier-authority supersession (2026-09-11)
+
+✅ Implemented, live and verified. Full detail lives in the dedicated
+`stock-protection-policy-playbook.md` — this section exists only to correct
+§2's ground truth, which predates it.
+
+The "most recent received PO" supplier-lineage rule described in §2 is now
+the **fallback path only**, used exactly when no approved Stock Protection
+Policy exists for a variant, or an approved policy has no explicit supplier
+anchor. When an approved policy sets `planning_supplier_id`, that supplier
+is authoritative for planning lead time and is never silently overridden by
+a newer PO from a different supplier. If the anchored supplier becomes
+invalid or inactive, planning surfaces `planning_data_required` rather than
+substituting another supplier.
+
+This does not change anything else in this playbook: the two-branch
+recommendation logic (§6a), category precedence, and the canonical planning
+signal (`computeVariantPlanning`) are unchanged — only one of that
+formula's inputs (supplier lead time) now has an authoritative override.
+
+---
+
 *Adjacent docs: `SuppliersModule.md` §3 (schema, updated 2026-07-10),
 `onboarding-progressive-disclosure-playbook.md` (Loop 2 / Reorder Loop context),
-`product-structure.md` §6 (The Three Must-Have Loops).*
+`product-structure.md` §6 (The Three Must-Have Loops),
+`stock-protection-policy-playbook.md` (STOCK-PROTECT-01, full detail).*

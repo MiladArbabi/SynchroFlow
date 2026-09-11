@@ -1,6 +1,6 @@
 // apps/backend/src/api/demand/demand.routes.ts
 import { Router } from 'express';
-import { httpGetDemand } from './demand.controller.js';
+import { httpGetDemand, httpGetStockProtectionPolicy, httpUpsertStockProtectionPolicy } from './demand.controller.js';
 import { authenticateToken } from '@lasyncro/backend-core/middleware/auth.middleware.js';
 import { requireFt2 } from '../../middleware/require-ft2.middleware.js';
 import { requireCapability } from '../../middleware/require-entitlement.middleware.js';
@@ -13,5 +13,23 @@ const router = Router();
 // — runtime-identical to the prior Growth tier gate (Starter/Core deny,
 // Growth/Scale allow).
 router.get('/', authenticateToken, requireFt2, requireCapability('demand.forecasting'), httpGetDemand);
+
+// STOCK-PROTECT-01 — smallest read+approval surface under the same
+// demand.forecasting capability boundary; delegates entirely to
+// stockProtectionPolicy.service.ts.
+router.get(
+  '/stock-protection-policy/:variantId',
+  authenticateToken,
+  requireFt2,
+  requireCapability('demand.forecasting'),
+  httpGetStockProtectionPolicy
+);
+router.put(
+  '/stock-protection-policy/:variantId',
+  authenticateToken,
+  requireFt2,
+  requireCapability('demand.forecasting'),
+  httpUpsertStockProtectionPolicy
+);
 
 export default router;
